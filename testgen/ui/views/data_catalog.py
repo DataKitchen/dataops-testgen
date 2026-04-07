@@ -25,6 +25,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import (
+    COLUMN_GOVERNANCE_FIELDS,
     TAG_FIELDS,
     get_column_by_id,
     get_columns_by_id,
@@ -377,7 +378,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, table_group_id: str, payl
     attributes = ["description"]
     attributes.extend(TAG_FIELDS)
 
-    tags = payload["tags"]
+    tags = {k: v for k, v in payload["tags"].items() if k in COLUMN_GOVERNANCE_FIELDS}
     set_attributes = [f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags]
     params = {key: tags.get(key) or "" for key in attributes if key in tags}
     if "critical_data_element" in tags:

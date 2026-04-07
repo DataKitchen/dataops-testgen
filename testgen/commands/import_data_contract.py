@@ -301,7 +301,7 @@ def run_import_data_contract(yaml_content: str, table_group_id: str, dry_run: bo
     doc, errors = validate_contract_yaml(yaml_content)
     if errors or doc is None:
         diff = ContractDiff()
-        diff.errors.extend(errors or ["Failed to parse YAML document."])
+        diff.errors.extend(errors if errors else ["Failed to parse YAML document."])
         return diff
 
     diff = compute_diff(doc, table_group_id, schema)

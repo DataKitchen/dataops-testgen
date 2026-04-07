@@ -169,12 +169,29 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
                 "detail": "Column no longer present in profiled data",
             })
 
+    # Normalize SQL type aliases so equivalent types don't appear as changes.
+    _TYPE_ALIASES: dict[str, str] = {
+        "character varying": "varchar",
+        "character":         "char",
+        "integer":           "int",
+        "int4":              "int",
+        "int8":              "bigint",
+        "int2":              "smallint",
+        "float4":            "real",
+        "float8":            "double precision",
+        "bool":              "boolean",
+        "timestamptz":       "timestamp with time zone",
+    }
+
+    def _norm_type(t: str) -> str:
+        return _TYPE_ALIASES.get(t.lower().strip(), t.lower().strip())
+
     # Changed columns (data_type differs)
     for key in snapshot_cols:
         if key in current_cols:
             snap_type = snapshot_cols[key]["physical_type"]
             curr_type = current_cols[key]["physical_type"]
-            if snap_type and curr_type and snap_type.lower() != curr_type.lower():
+            if snap_type and curr_type and _norm_type(snap_type) != _norm_type(curr_type):
                 cur = current_cols[key]
                 diff.schema_changes.append({
                     "change": "changed",

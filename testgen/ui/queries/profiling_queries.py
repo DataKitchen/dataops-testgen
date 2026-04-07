@@ -16,6 +16,13 @@ TAG_FIELDS = [
     "aggregation_level",
     "data_product",
 ]
+
+# All column-level governance fields that may be written by the UI.
+# Shared between data_catalog.on_tags_changed and data_contract._save_governance_data
+# so both paths stay in sync when fields are added.
+COLUMN_GOVERNANCE_FIELDS: frozenset[str] = frozenset({
+    "description", "pii_flag", "critical_data_element", "excluded_data_element",
+} | set(TAG_FIELDS))
 COLUMN_PROFILING_FIELDS = """
 -- Value Counts
 profile_results.record_ct,

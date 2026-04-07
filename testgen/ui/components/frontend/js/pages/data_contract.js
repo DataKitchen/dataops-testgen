@@ -1,7 +1,7 @@
 /**
  * Data Contract page — VanJS component.
  *
- * @typedef ClaimItem
+ * @typedef TermItem
  * @type {object}
  * @property {string} name
  * @property {string} value
@@ -17,14 +17,14 @@
  * @property {boolean} is_pk
  * @property {boolean} is_fk
  * @property {string} status  - "clean" | "passing" | "warning" | "failing"
- * @property {ClaimItem[]} static_claims
- * @property {ClaimItem[]} live_claims
+ * @property {TermItem[]} static_terms
+ * @property {TermItem[]} live_terms
  *
  * @typedef TableData
  * @type {object}
  * @property {string} name
  * @property {number} column_count
- * @property {ClaimItem[]} table_claims
+ * @property {TermItem[]} table_terms
  * @property {ColumnData[]} columns
  *
  * @typedef MatrixRow
@@ -95,51 +95,51 @@ const mat = (name, size = 16) =>
 const statusClass = (s) =>
     ({ passing: 'pass', warning: 'warn', failing: 'fail', error: 'fail' }[s] ?? 'none');
 
-// ── Claim chip ────────────────────────────────────────────────────────────────
+// ── Term chip ────────────────────────────────────────────────────────────────
 
 // Format ODCS camelCase type to readable label: "notNull" → "Not Null"
 const formatTestType = (t) =>
     t ? t.replace(/([A-Z])/g, ' $1').trim().replace(/^./, (s) => s.toUpperCase()) : '';
 
-const ClaimChip = (claim, tableName, colName) => {
-    const srcCls = SOURCE_CLASS[claim.source] || 'obs';
-    const srcLabel = SOURCE_LABEL[claim.source] || claim.source;
-    const verif = VERIF_META[claim.verif] || { icon: '', label: claim.verif, cls: 'badge-obs' };
-    const isLive = claim.source === 'test';
-    const status = claim.status;
+const TermChip = (term, tableName, colName) => {
+    const srcCls = SOURCE_CLASS[term.source] || 'obs';
+    const srcLabel = SOURCE_LABEL[term.source] || term.source;
+    const verif = VERIF_META[term.verif] || { icon: '', label: term.verif, cls: 'badge-obs' };
+    const isLive = term.source === 'test';
+    const status = term.status;
     const statusCls = status ? statusClass(status) : null;
 
-    // Only hygiene/anomaly claims (verif=monitored) skip the detail dialog.
-    const hasDetail = claim.verif !== 'monitored';
+    // Only hygiene/anomaly terms (verif=monitored) skip the detail dialog.
+    const hasDetail = term.verif !== 'monitored';
 
     // Attribute label shown next to source in the header — same pattern for all chip types
-    const testTypeLabel = isLive ? formatTestType(claim.test_type || '') : '';
-    const testName = isLive ? (claim.test_name || '') : '';
+    const testTypeLabel = isLive ? formatTestType(term.test_type || '') : '';
+    const testName = isLive ? (term.test_name || '') : '';
     const attrLabel = isLive
-        ? (testTypeLabel && testTypeLabel.toLowerCase() !== testName.toLowerCase() ? testTypeLabel : claim.name)
-        : (claim.name || '');
+        ? (testTypeLabel && testTypeLabel.toLowerCase() !== testName.toLowerCase() ? testTypeLabel : term.name)
+        : (term.name || '');
 
     return div(
         {
-            class: `claim-chip ${srcCls}${hasDetail ? ' claim-chip--clickable' : ''}`,
+            class: `term-chip ${srcCls}${hasDetail ? ' term-chip--clickable' : ''}`,
             onclick: hasDetail
                 ? (e) => {
                     e.stopPropagation();
-                    emitEvent('ClaimDetailClicked', {
-                        payload: { claim, tableName, colName },
+                    emitEvent('TermDetailClicked', {
+                        payload: { term, tableName, colName },
                     });
                 }
                 : null,
         },
         div(
-            { class: 'claim-chip__header' },
-            span({ class: 'claim-chip__src' }, srcLabel),
-            attrLabel ? span({ class: 'claim-chip__attr' }, `· ${attrLabel}`) : '',
+            { class: 'term-chip__header' },
+            span({ class: 'term-chip__src' }, srcLabel),
+            attrLabel ? span({ class: 'term-chip__attr' }, `· ${attrLabel}`) : '',
         ),
-        span({ class: 'claim-chip__val' }, claim.value),
+        span({ class: 'term-chip__val' }, term.value),
         div(
             { class: 'dc-chip-footer' },
-            span({ class: `claim-chip__badge ${verif.cls}` }, `${verif.icon} ${verif.label}`),
+            span({ class: `term-chip__badge ${verif.cls}` }, `${verif.icon} ${verif.label}`),
             isLive && statusCls && statusCls !== 'none'
                 ? span({ class: `status-pill ${statusCls}` }, status)
                 : '',
@@ -150,7 +150,7 @@ const ClaimChip = (claim, tableName, colName) => {
 // ── Governance add/edit button ────────────────────────────────────────────────
 
 const GovernanceButton = (col, tableName) => {
-    const hasGov = [...col.static_claims, ...col.live_claims].some((c) => c.source === 'governance');
+    const hasGov = [...col.static_terms, ...col.live_terms].some((c) => c.source === 'governance');
     return div(
         {
             class: 'gov-btn',
@@ -182,26 +182,26 @@ const ColumnRow = (col, tableName) => {
             GovernanceButton(col, tableName),
         ),
         div(
-            { class: 'claims-row' },
-            ...col.static_claims.map((c) => ClaimChip(c, tableName, col.name)),
-            ...col.live_claims.map((c) => ClaimChip(c, tableName, col.name)),
+            { class: 'terms-row' },
+            ...col.static_terms.map((c) => TermChip(c, tableName, col.name)),
+            ...col.live_terms.map((c) => TermChip(c, tableName, col.name)),
         ),
     );
 };
 
-// ── Table-level claims row ────────────────────────────────────────────────────
+// ── Table-level terms row ────────────────────────────────────────────────────
 
-const TableClaimsRow = (tableClaims, tableName) => {
-    if (!tableClaims || !tableClaims.length) return '';
+const TableTermsRow = (tableTerms, tableName) => {
+    if (!tableTerms || !tableTerms.length) return '';
     return div(
-        { class: 'col-row table-claims-row' },
+        { class: 'col-row table-terms-row' },
         div(
             { class: 'col-header' },
             span({ class: 'col-name-link table-level-label' }, mat('table_rows', 13), ' Table-level'),
         ),
         div(
-            { class: 'claims-row' },
-            ...tableClaims.map((c) => ClaimChip(c, tableName, '')),
+            { class: 'terms-row' },
+            ...tableTerms.map((c) => TermChip(c, tableName, '')),
         ),
     );
 };
@@ -210,9 +210,9 @@ const TableClaimsRow = (tableClaims, tableName) => {
 
 const TableSection = (tableData, startOpen = false) => {
     const open = van.state(startOpen);
-    const tblClaimCount = (tableData.table_claims || []).length;
-    const colClaimCount = tableData.columns.reduce(
-        (sum, col) => sum + col.static_claims.length + col.live_claims.length, 0,
+    const tblTermCount = (tableData.table_terms || []).length;
+    const colTermCount = tableData.columns.reduce(
+        (sum, col) => sum + col.static_terms.length + col.live_terms.length, 0,
     );
     return div(
         { class: 'table-section' },
@@ -225,26 +225,26 @@ const TableSection = (tableData, startOpen = false) => {
             span({ class: 'ts-name' }, tableData.name),
             div({ class: 'ts-meta' },
                 span({ class: 'count-badge' }, `${tableData.column_count} column${tableData.column_count !== 1 ? 's' : ''}`),
-                () => !open.val ? span({ class: 'count-badge count-badge--table' }, `${tblClaimCount} table-level claim${tblClaimCount !== 1 ? 's' : ''}`) : '',
-                () => !open.val ? span({ class: 'count-badge count-badge--claims' }, `${colClaimCount} column-level claim${colClaimCount !== 1 ? 's' : ''}`) : '',
+                () => !open.val ? span({ class: 'count-badge count-badge--table' }, `${tblTermCount} table-level term${tblTermCount !== 1 ? 's' : ''}`) : '',
+                () => !open.val ? span({ class: 'count-badge count-badge--terms' }, `${colTermCount} column-level term${colTermCount !== 1 ? 's' : ''}`) : '',
             ),
             span({ class: () => `table-section-chevron${open.val ? ' open' : ''}` }, 'expand_more'),
         ),
         () => open.val
             ? div(
-                TableClaimsRow(tableData.table_claims || [], tableData.name),
+                TableTermsRow(tableData.table_terms || [], tableData.name),
                 ...tableData.columns.map((col) => ColumnRow(col, tableData.name)),
               )
             : '',
     );
 };
 
-// ── Claims detail tab ─────────────────────────────────────────────────────────
+// ── Terms detail tab ─────────────────────────────────────────────────────────
 
-const ClaimsDetail = (tables, activeFilter) => {
+const TermsDetail = (tables, activeFilter) => {
     const grandTotal = tables.reduce(
         (sum, t) => sum + t.columns.reduce(
-            (s, col) => s + col.static_claims.length + col.live_claims.length, 0,
+            (s, col) => s + col.static_terms.length + col.live_terms.length, 0,
         ), 0,
     );
     return div(
@@ -252,8 +252,8 @@ const ClaimsDetail = (tables, activeFilter) => {
             { class: 'section-header' },
             div(
                 { class: 'section-title' },
-                mat('list_alt'), ' Data Contract Claims Detail',
-                span({ style: 'font-weight: 300; font-size: 0.85em; color: var(--caption-text-color); margin-left: 6px;' }, `(${grandTotal} total claims)`),
+                mat('list_alt'), ' Data Contract Terms Detail',
+                span({ style: 'font-weight: 300; font-size: 0.85em; color: var(--caption-text-color); margin-left: 6px;' }, `(${grandTotal} total terms)`),
             ),
             div(
                 { class: 'filter-pills' },
@@ -286,7 +286,7 @@ const ClaimsDetail = (tables, activeFilter) => {
             const COVERED_VERIFS = new Set(['tested', 'monitored', 'declared']);
             const FAILING_STATUS  = new Set(['failing', 'error']);
 
-            const claimFilter = (c) => {
+            const termFilter = (c) => {
                 if (filter === 'uncovered') return false; // handled at column level
                 if (filter === 'failing')   return c.kind === 'live' && FAILING_STATUS.has(c.status);
                 if (filter === 'anomalies') return c.kind === 'live' && c.source === 'profiling';
@@ -295,33 +295,33 @@ const ClaimsDetail = (tables, activeFilter) => {
 
             const colFilter = (col) => {
                 if (filter === 'uncovered') {
-                    // uncovered = column has NO tested/monitored/declared claims
-                    const allClaims = [...(col.static_claims || []), ...(col.live_claims || [])];
-                    return !allClaims.some((c) => COVERED_VERIFS.has(c.verif));
+                    // uncovered = column has NO tested/monitored/declared terms
+                    const allTerms = [...(col.static_terms || []), ...(col.live_terms || [])];
+                    return !allTerms.some((c) => COVERED_VERIFS.has(c.verif));
                 }
-                const sc = (col.static_claims || []).filter(claimFilter);
-                const lc = (col.live_claims   || []).filter(claimFilter);
+                const sc = (col.static_terms || []).filter(termFilter);
+                const lc = (col.live_terms   || []).filter(termFilter);
                 return sc.length > 0 || lc.length > 0;
             };
 
             const filtered = tables
                 .map((t) => {
-                    const table_claims = filter === 'uncovered'
+                    const table_terms = filter === 'uncovered'
                         ? []
-                        : (t.table_claims || []).filter(claimFilter);
+                        : (t.table_terms || []).filter(termFilter);
                     const cols = t.columns
                         .filter(colFilter)
                         .map((col) => filter === 'uncovered' ? col : {
                             ...col,
-                            static_claims: (col.static_claims || []).filter(claimFilter),
-                            live_claims:   (col.live_claims   || []).filter(claimFilter),
+                            static_terms: (col.static_terms || []).filter(termFilter),
+                            live_terms:   (col.live_terms   || []).filter(termFilter),
                         });
-                    return { ...t, table_claims, columns: cols };
+                    return { ...t, table_terms, columns: cols };
                 })
-                .filter((t) => t.table_claims.length > 0 || t.columns.length > 0);
+                .filter((t) => t.table_terms.length > 0 || t.columns.length > 0);
 
             if (!filtered.length) {
-                return div({ class: 'dc-empty' }, 'No claims match the current filter.');
+                return div({ class: 'dc-empty' }, 'No terms match the current filter.');
             }
             return div(...filtered.map((t, i) => TableSection(t, i === 0)));
         },
@@ -372,7 +372,7 @@ const MatrixTableSection = (tableName, rows, startOpen, totals) => {
                         ...rows.map((row) => tr(
                             td(span({ class: 'col-name' }, row.column)),
                             ...MATRIX_COLS.map((c) => td(
-                                { class: `tier-cell ${row[c.key] > 0 ? 'has-claims' : 'no-claims'}` },
+                                { class: `tier-cell ${row[c.key] > 0 ? 'has-terms' : 'no-terms'}` },
                                 fmtCount(row[c.key]),
                             )),
                         )),
@@ -417,7 +417,7 @@ const CoverageMatrix = (matrix, suiteScope, tables) => {
         for (const c of MATRIX_COLS) grand[c.key] += row[c.key] || 0;
     }
 
-    const countsBar = (tables && tables.length) ? ClaimCountsBar(tables) : '';
+    const countsBar = (tables && tables.length) ? TermCountsBar(tables) : '';
 
     const tableEntries = [...tableMap.entries()];
     return div(
@@ -439,22 +439,22 @@ const CoverageMatrix = (matrix, suiteScope, tables) => {
     );
 };
 
-// ── Claim counts summary bar ──────────────────────────────────────────────────
+// ── Term counts summary bar ──────────────────────────────────────────────────
 
-const ClaimCountsBar = (tables) => {
-    // Accumulate counts across all tables/columns for both static and live claims
+const TermCountsBar = (tables) => {
+    // Accumulate counts across all tables/columns for both static and live terms
     // monitor source is grouped under test (monitors are a type of test, not a distinct origin)
     const bySrc  = { ddl: 0, profiling: 0, governance: 0, test: 0 };
     const byVerif = { db_enforced: 0, tested: 0, monitored: 0, observed: 0, declared: 0 };
 
     for (const t of tables) {
-        for (const c of (t.table_claims || [])) {
+        for (const c of (t.table_terms || [])) {
             const srcKey = c.source === 'monitor' ? 'test' : c.source;
             if (srcKey in bySrc)     bySrc[srcKey]++;
             if (c.verif in byVerif)  byVerif[c.verif]++;
         }
         for (const col of t.columns) {
-            for (const c of [...col.static_claims, ...col.live_claims]) {
+            for (const c of [...col.static_terms, ...col.live_terms]) {
                 const srcKey = c.source === 'monitor' ? 'test' : c.source;
                 if (srcKey in bySrc)    bySrc[srcKey]++;
                 if (c.verif in byVerif) byVerif[c.verif]++;
@@ -514,7 +514,7 @@ const ClaimCountsBar = (tables) => {
 
 const GapAnalysis = (gaps, tables) => {
     const items = gaps.items || [];
-    const countsBar = (tables && tables.length) ? ClaimCountsBar(tables) : '';
+    const countsBar = (tables && tables.length) ? TermCountsBar(tables) : '';
 
     if (items.length === 0) {
         return div(
@@ -618,7 +618,7 @@ function _loadPrism(cb) {
     );
 }
 
-const YamlViewer = (yamlContent) => {
+const YamlViewer = (yamlContent, tgName) => {
     const content = yamlContent || '# No contract data yet';
     const preEl = document.createElement('pre');
     const codeEl = document.createElement('code');
@@ -645,9 +645,26 @@ const YamlViewer = (yamlContent) => {
         () => copied.val ? span(mat('check', 14), ' Copied') : span(mat('content_copy', 14), ' Copy'),
     );
 
+    // Download button
+    const downloadBtn = div(
+        {
+            class: 'yaml-copy-btn',
+            onclick: () => {
+                const blob = new Blob([content], { type: 'text/yaml' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${tgName || 'contract'}_contract.yaml`;
+                a.click();
+                URL.revokeObjectURL(url);
+            },
+        },
+        span(mat('download', 14), ' Download'),
+    );
+
     return div(
         { class: 'yaml-wrap' },
-        div({ class: 'yaml-toolbar' }, copyBtn),
+        div({ class: 'yaml-toolbar' }, copyBtn, downloadBtn),
         preEl,
     );
 };
@@ -786,7 +803,7 @@ const HealthGrid = (health, activeFilter, activeTab) => {
             div({ class: 'progress-track' },
                 div({ class: `progress-fill ${coverageCls}`, style: `width:${health.coverage_pct}%` }),
             ),
-            div({ class: 'health-card__sub' }, `${health.covered} of ${health.n_cols} columns have ≥1 non-schema claim`),
+            div({ class: 'health-card__sub' }, `${health.covered} of ${health.n_cols} columns have ≥1 non-schema term`),
             health.n_cols - health.covered > 0
                 ? filterButton(`View ${health.n_cols - health.covered} uncovered →`, 'uncovered')
                 : '',
@@ -825,6 +842,16 @@ const HealthGrid = (health, activeFilter, activeTab) => {
                         CountDot('#ef4444', 'failed',  totalFailed),
                     ),
                     totalFailed ? filterButton(`View ${totalFailed} failing →`, 'failing') : '',
+                    suiteRuns.length > 1
+                        ? span(
+                            {
+                                class: 'health-filter-btn',
+                                style: 'margin-top:4px',
+                                onclick: (e) => { e.stopPropagation(); emitEvent('SuitePickerClicked', {}); },
+                            },
+                            `View by suite (${suiteRuns.length}) →`,
+                          )
+                        : '',
                   ]
                 : div({ class: 'health-card__sub' }, 'No tests defined yet'),
             health.last_test_run
@@ -917,70 +944,14 @@ const SuiteScope = (suiteScope, meta) => {
 // ── Page header ───────────────────────────────────────────────────────────────
 
 const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
-    const statusColors = {
-        active:     { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e', border: 'rgba(34,197,94,0.3)'   },
-        proposed:   { bg: 'rgba(79,142,247,0.15)',  color: '#4f8ef7', border: 'rgba(79,142,247,0.3)'  },
-        draft:      { bg: 'rgba(249,115,22,0.15)',  color: '#f97316', border: 'rgba(249,115,22,0.3)'  },
-        deprecated: { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444', border: 'rgba(239,68,68,0.3)'   },
-        retired:    { bg: 'rgba(100,116,139,0.15)', color: '#94a3b8', border: 'rgba(100,116,139,0.3)' },
-    };
-    const sc = statusColors[meta.status] || statusColors.draft;
-
-    const downloadYaml = () => {
-        const blob = new Blob([yamlContent || ''], { type: 'text/yaml' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${tgName}_contract.yaml`;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-
     return div(
         { class: 'dc-page-header' },
         div(
             { class: 'dc-page-header__left' },
-            h2(
-                { class: 'dc-page-title' },
-                mat('contract', 22),
-                ' ',
-                tgName,
-                span(
-                    {
-                        class: 'status-chip',
-                        style: `background:${sc.bg};color:${sc.color};border:1px solid ${sc.border}`,
-                    },
-                    meta.status.charAt(0).toUpperCase() + meta.status.slice(1),
-                ),
-            ),
             meta.description_purpose
                 ? p({ class: 'purpose-text' }, meta.description_purpose)
                 : '',
-            div(
-                { class: 'meta-pills' },
-                meta.version    ? span({ class: 'pill' }, mat('tag', 13), ` v${meta.version}`)          : '',
-                meta.domain     ? span({ class: 'pill' }, mat('domain', 13), ` ${meta.domain}`)         : '',
-                meta.data_product ? span({ class: 'pill' }, mat('inventory_2', 13), ` ${meta.data_product}`) : '',
-                meta.server_type  ? span({ class: 'pill' }, mat('storage', 13), ` ${meta.server_type}`)  : '',
-            ),
             suiteScope ? SuiteScope(suiteScope, meta) : '',
-        ),
-        div(
-            { class: 'dc-page-actions' },
-            Button({
-                type: 'stroked',
-                icon: 'refresh',
-                label: 'Refresh',
-                width: 'fit-content',
-                onclick: () => emitEvent('RefreshClicked', {}),
-            }),
-            Button({
-                type: 'stroked',
-                icon: 'download',
-                label: 'Download YAML',
-                width: 'fit-content',
-                onclick: downloadYaml,
-            }),
         ),
     );
 };
@@ -988,7 +959,7 @@ const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 const TABS = [
-    { id: 'overview',  label: 'Overview'        },
+    { id: 'overview',  label: 'Contract Terms'   },
     { id: 'matrix',    label: 'Coverage Matrix' },
     { id: 'yaml',      label: 'YAML'            },
     { id: 'upload',    label: 'Upload Changes'  },
@@ -1012,13 +983,13 @@ const TabBar = (activeTab) =>
                 class: () => `dc-tab-help${activeTab.val === 'help' ? ' active' : ''}`,
                 onclick: () => { activeTab.val = activeTab.val === 'help' ? 'overview' : 'help'; },
             },
-            mat('help_outline', 13), ' What are contract claims?',
+            mat('help_outline', 13), ' What are contract terms?',
         ),
     );
 
-// ── Claims help panel ─────────────────────────────────────────────────────────
+// ── Terms help panel ─────────────────────────────────────────────────────────
 
-const ClaimsHelpPanel = () => {
+const TermsHelpPanel = () => {
     const SectionLabel = (title) =>
         div({ class: 'help-section-label' }, title);
 
@@ -1038,12 +1009,12 @@ const ClaimsHelpPanel = () => {
         );
 
     return div(
-        { class: 'claims-help-panel' },
+        { class: 'terms-help-panel' },
         div(
             { class: 'help-intro' },
             'A ',
-            span({ class: 'help-em' }, 'contract claim'),
-            ' is any assertion TestGen can make about a column. Every claim has two dimensions: ',
+            span({ class: 'help-em' }, 'contract term'),
+            ' is any assertion TestGen can make about a column. Every term has two dimensions: ',
             span({ class: 'help-em' }, 'Source'),
             ' — where we learned it — and ',
             span({ class: 'help-em' }, 'Verification Level'),
@@ -1055,7 +1026,7 @@ const ClaimsHelpPanel = () => {
             // ── Sources column ──────────────────────────────────────────
             div(
                 { class: 'help-col' },
-                SectionLabel('Claim Sources'),
+                SectionLabel('Term Sources'),
                 div(
                     { class: 'help-col-header' },
                     span('Source'),
@@ -1099,9 +1070,9 @@ const ClaimsHelpPanel = () => {
         div(
             { class: 'help-footer' },
             span({ class: 'help-em' }, 'Contract Completeness'),
-            ' measures what percentage of columns have at least one non-schema claim ',
+            ' measures what percentage of columns have at least one non-schema term ',
             '(classification, description, format pattern, or a quality test rule). ',
-            'Columns with only DDL claims — and nothing richer — appear in the ',
+            'Columns with only DDL terms — and nothing richer — appear in the ',
             span({ class: 'help-em' }, 'Uncovered'),
             ' filter on the Overview tab.',
         ),
@@ -1140,11 +1111,11 @@ const DataContract = (props) => {
                 TabBar(activeTab),
                 () => {
                     const tab = activeTab.val;
-                    if (tab === 'overview') return ClaimsDetail(tables, activeFilter);
+                    if (tab === 'overview') return TermsDetail(tables, activeFilter);
                     if (tab === 'matrix')   return CoverageMatrix(matrix, suiteScope, tables);
-                    if (tab === 'yaml')     return YamlViewer(yaml);
+                    if (tab === 'yaml')     return YamlViewer(yaml, tgName);
                     if (tab === 'upload')   return UploadTab();
-                    if (tab === 'help')     return ClaimsHelpPanel();
+                    if (tab === 'help')     return TermsHelpPanel();
                     return '';
                 },
             );
@@ -1184,16 +1155,6 @@ stylesheet.replace(`
     flex-wrap: wrap;
 }
 .dc-page-header__left { flex: 1; min-width: 0; }
-.dc-page-title {
-    margin: 0 0 6px 0;
-    font-size: 22px;
-    font-weight: 600;
-    color: var(--primary-text-color);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-}
 .status-chip {
     font-size: 11px;
     font-weight: 600;
@@ -1223,7 +1184,6 @@ stylesheet.replace(`
     align-items: center;
     gap: 4px;
 }
-.dc-page-actions { display: flex; gap: 8px; align-items: flex-start; flex-shrink: 0; }
 
 /* ── Health grid ── */
 .health-grid {
@@ -1421,7 +1381,7 @@ stylesheet.replace(`
 .filter-pill--badge-obs.active      { color: #94a3b8; border-color: rgba(100,116,139,0.4); background: rgba(100,116,139,0.15); }
 .filter-pill--badge-decl.active     { color: #f59e0b; border-color: rgba(245,158,11,0.4);  background: rgba(245,158,11,0.15);  }
 
-/* ── Table section (claims detail) ── */
+/* ── Table section (terms detail) ── */
 .table-section { margin-bottom: 24px; }
 .table-section-header {
     display: flex;
@@ -1447,7 +1407,7 @@ stylesheet.replace(`
     color: var(--caption-text-color);
     font-weight: 400;
 }
-.count-badge--claims {
+.count-badge--terms {
     font-size: 11px;
     color: var(--link-text-color);
     font-weight: 500;
@@ -1465,7 +1425,7 @@ stylesheet.replace(`
     padding: 1px 7px;
     border-radius: 10px;
 }
-.table-claims-row {
+.table-terms-row {
     background: rgba(245,158,11,0.03);
     border-left: 2px solid rgba(245,158,11,0.3) !important;
 }
@@ -1517,10 +1477,10 @@ stylesheet.replace(`
 }
 .col-type { font-size: 13px; color: var(--caption-text-color); font-family: monospace; }
 .key-badge { font-size: 11px; color: var(--link-text-color); display: flex; align-items: center; gap: 2px; }
-.claims-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.terms-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
-/* ── Claim chips ── */
-.claim-chip {
+/* ── Term chips ── */
+.term-chip {
     display: inline-flex;
     flex-direction: column;
     gap: 3px;
@@ -1534,34 +1494,34 @@ stylesheet.replace(`
     transition: transform 0.1s;
     cursor: default;
 }
-.claim-chip:hover { transform: translateY(-1px); }
-.claim-chip.ddl  { border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.07); }
-.claim-chip.prof { border-color: rgba(79,142,247,0.3);  background: rgba(79,142,247,0.07);  }
-.claim-chip.tst  { border-color: rgba(34,197,94,0.3);   background: rgba(34,197,94,0.07);   }
-.claim-chip.gov  { border-color: rgba(245,158,11,0.3);  background: rgba(245,158,11,0.07);  }
-.claim-chip.obs  { border-color: rgba(100,116,139,0.3); background: rgba(100,116,139,0.07); }
-.claim-chip__header { display: flex; align-items: center; gap: 5px; }
-.claim-chip__src {
+.term-chip:hover { transform: translateY(-1px); }
+.term-chip.ddl  { border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.07); }
+.term-chip.prof { border-color: rgba(79,142,247,0.3);  background: rgba(79,142,247,0.07);  }
+.term-chip.tst  { border-color: rgba(34,197,94,0.3);   background: rgba(34,197,94,0.07);   }
+.term-chip.gov  { border-color: rgba(245,158,11,0.3);  background: rgba(245,158,11,0.07);  }
+.term-chip.obs  { border-color: rgba(100,116,139,0.3); background: rgba(100,116,139,0.07); }
+.term-chip__header { display: flex; align-items: center; gap: 5px; }
+.term-chip__src {
     font-size: 10px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     opacity: 0.65;
 }
-.claim-chip.ddl  .claim-chip__src { color: #a78bfa; }
-.claim-chip.prof .claim-chip__src { color: #4f8ef7; }
-.claim-chip.tst  .claim-chip__src { color: #22c55e; }
-.claim-chip.gov  .claim-chip__src { color: #f59e0b; }
-.claim-chip.obs  .claim-chip__src { color: #94a3b8; }
-.claim-chip__attr {
+.term-chip.ddl  .term-chip__src { color: #a78bfa; }
+.term-chip.prof .term-chip__src { color: #4f8ef7; }
+.term-chip.tst  .term-chip__src { color: #22c55e; }
+.term-chip.gov  .term-chip__src { color: #f59e0b; }
+.term-chip.obs  .term-chip__src { color: #94a3b8; }
+.term-chip__attr {
     font-size: 10px;
     font-weight: 500;
     color: var(--caption-text-color);
     opacity: 0.9;
 }
-.claim-chip__val { font-size: 12px; font-weight: 600; color: var(--primary-text-color); word-break: break-word; }
+.term-chip__val { font-size: 12px; font-weight: 600; color: var(--primary-text-color); word-break: break-word; }
 .dc-chip-footer { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 1px; }
-.claim-chip__badge {
+.term-chip__badge {
     display: inline-flex;
     align-items: center;
     gap: 2px;
@@ -1609,8 +1569,8 @@ stylesheet.replace(`
 }
 .matrix-table tr:hover td { background: rgba(128,128,128,0.03); }
 .tier-cell { text-align: center; font-variant-numeric: tabular-nums; }
-.tier-cell.has-claims { font-weight: 600; color: var(--primary-text-color); }
-.tier-cell.no-claims  { color: var(--caption-text-color); }
+.tier-cell.has-terms { font-weight: 600; color: var(--primary-text-color); }
+.tier-cell.no-terms  { color: var(--caption-text-color); }
 .matrix-totals-row td { font-weight: 700; background: rgba(128,128,128,0.04); border-top: 2px solid var(--border-color); }
 .matrix-grand-total {
     margin-top: 16px;
@@ -1665,7 +1625,7 @@ stylesheet.replace(`
 .tier-badge.obs  { color: #94a3b8; border-color: rgba(100,116,139,0.3); background: rgba(100,116,139,0.08); }
 .tier-badge.decl { color: #d97706; border-color: rgba(245,158,11,0.3);  background: rgba(245,158,11,0.08);  }
 
-/* ── Claim counts bar ── */
+/* ── Term counts bar ── */
 .ccbar-wrap {
     display: flex;
     align-items: flex-start;
@@ -1784,6 +1744,7 @@ stylesheet.replace(`
     display: flex;
     justify-content: flex-end;
     align-items: center;
+    gap: 8px;
     padding: 6px 12px;
     background: rgba(128,128,128,0.04);
     border-bottom: 1px solid var(--border-color);
@@ -1906,8 +1867,8 @@ stylesheet.replace(`
     background: rgba(79,142,247,0.10);
 }
 
-/* ── Claims help panel ── */
-.claims-help-panel {
+/* ── Terms help panel ── */
+.terms-help-panel {
     padding: 28px 0 12px;
     max-width: 960px;
 }
@@ -2111,9 +2072,9 @@ stylesheet.replace(`
 }
 .table-section-chevron.open { transform: rotate(180deg); }
 
-/* ── Claim chip — clickable indicator ── */
-.claim-chip--clickable { cursor: pointer; }
-.claim-chip--clickable:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+/* ── Term chip — clickable indicator ── */
+.term-chip--clickable { cursor: pointer; }
+.term-chip--clickable:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 `);
 
 export { DataContract };

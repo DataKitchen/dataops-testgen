@@ -298,7 +298,7 @@ Add to `claude_desktop_config.json`:
 The Data Contract feature surfaces TestGen test suites as a formal data contract, mapped to ODCS v3.1.0 YAML.
 
 ### Files
-- **`testgen/ui/views/data_contract.py`** — Main Streamlit view: health grid, claims detail panel, suite picker, claim modals
+- **`testgen/ui/views/data_contract.py`** — Main Streamlit view: health grid, terms detail panel, suite picker, term modals
 - **`testgen/ui/components/frontend/js/pages/data_contract.js`** — VanJS frontend page
 - **`testgen/commands/export_data_contract.py`** — Exports a data contract as ODCS v3.1.0 YAML
 - **`testgen/commands/import_data_contract.py`** — Imports YAML changes back to the database

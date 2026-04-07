@@ -32,6 +32,10 @@ from testgen.ui.views.data_contract import (  # noqa: E402
     _pending_edit_count,
     _patch_yaml_governance,
 )
+from testgen.ui.views.data_contract_yaml import (  # noqa: E402
+    _build_pending_governance_edit,
+    _gov_field_to_db_col,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -167,3 +171,68 @@ class Test_PatchYamlGovernance:
         }
         _patch_yaml_governance(doc, "orders", "customer_id", "Classification", "restricted")
         assert "classification" not in doc["schema"][1]["properties"][0]
+
+
+# ---------------------------------------------------------------------------
+# Test_GovFieldHelpers
+# ---------------------------------------------------------------------------
+
+class Test_GovFieldHelpers:
+    def test_classification_maps_to_pii_flag(self):
+        result = _gov_field_to_db_col("Classification")
+        assert result is not None
+        col, _ = result
+        assert col == "pii_flag"
+
+    def test_description_maps_to_description(self):
+        result = _gov_field_to_db_col("Description")
+        assert result is not None
+        col, _ = result
+        assert col == "description"
+
+    def test_cde_maps_to_critical_data_element(self):
+        result = _gov_field_to_db_col("CDE")
+        assert result is not None
+        col, _ = result
+        assert col == "critical_data_element"
+
+    def test_critical_data_element_alias_maps_correctly(self):
+        result = _gov_field_to_db_col("Critical Data Element")
+        assert result is not None
+        col, _ = result
+        assert col == "critical_data_element"
+
+    def test_pii_alias_maps_to_pii_flag(self):
+        result = _gov_field_to_db_col("PII")
+        assert result is not None
+        col, _ = result
+        assert col == "pii_flag"
+
+    def test_unknown_field_returns_none(self):
+        assert _gov_field_to_db_col("NonExistentField") is None
+
+    def test_empty_string_returns_none(self):
+        assert _gov_field_to_db_col("") is None
+
+    def test_build_pending_governance_edit_returns_correct_dict(self):
+        result = _build_pending_governance_edit("orders", "email", "Classification", "restricted")
+        assert result is not None
+        assert result["table"] == "orders"
+        assert result["col"] == "email"
+        assert result["field"] == "Classification"
+        assert result["value"] == "restricted"
+
+    def test_build_pending_governance_edit_unknown_field_returns_none(self):
+        result = _build_pending_governance_edit("orders", "email", "UnknownField", "value")
+        assert result is None
+
+    def test_build_pending_governance_edit_preserves_value_type(self):
+        result = _build_pending_governance_edit("orders", "is_cde", "CDE", True)
+        assert result is not None
+        assert result["value"] is True
+
+    def test_build_pending_governance_edit_description(self):
+        result = _build_pending_governance_edit("users", "name", "Description", "Full name of the user")
+        assert result is not None
+        assert result["col"] == "name"
+        assert result["value"] == "Full name of the user"

@@ -541,10 +541,11 @@ def _build_sla(ctx: dict) -> list[dict]:
             "unit": "day",
             "description": "Maximum acceptable age of data before a freshness violation is raised",
         })
-    if ctx.get("last_run_dq_score") is not None:
+    dq_score = _safe_float(ctx.get("last_run_dq_score"))
+    if dq_score is not None:
         sla.append({
             "property": "errorRate",
-            "value": round(1.0 - float(ctx["last_run_dq_score"] or 0), 4),
+            "value": round(1.0 - dq_score, 4),
             "description": "Observed test failure rate from last test run",
         })
     return sla
@@ -618,9 +619,9 @@ def _build_compliance_summary(tests: list[dict]) -> dict:
 
 _SECTION_COMMENTS: dict[str, str] = {
     "servers:":          "# ── Connection & Server ──────────────────────────────────────────────",
-    "schema:":           "# ── Schema — DDL + profiling claims (tables, columns, types) ───────────",
+    "schema:":           "# ── Schema — DDL + profiling terms (tables, columns, types) ────────────",
     "references:":       "# ── References — referential integrity (foreign keys) ──────────────────",
-    "quality:":          "# ── Quality rules — test claims (active test definitions) ───────────────",
+    "quality:":          "# ── Quality rules — test terms (active test definitions) ────────────────",
     "slaProperties:":    "# ── SLA Properties ───────────────────────────────────────────────────",
     "testRunHistory:":   "# ── Test Run History — last 5 completed runs ──────────────────────────",
     "compliance:":       "# ── Compliance Summary ───────────────────────────────────────────────",

@@ -69,6 +69,15 @@ class Test_DeriveOrigin:
     def test_no_auto_gen_date_returns_manual(self):
         assert _derive_origin(None, None, "N", "Row_Ct") == "manual"
 
+    def test_manual_update_before_auto_gen_returns_auto_generated(self):
+        auto   = datetime(2026, 3, 1)
+        manual = datetime(2026, 1, 1)  # manual earlier than auto — auto wins
+        assert _derive_origin(auto, manual, "N", "Row_Ct") == "auto_generated"
+
+    def test_manual_update_only_no_auto_gen_returns_business_rule(self):
+        # manual without any auto_gen_date — manual overrides
+        assert _derive_origin(None, datetime(2026, 1, 1), "N", "Row_Ct") == "manual"
+
 
 class Test_SafeFloat:
     def test_numeric_string(self):
@@ -211,6 +220,15 @@ class Test_BuildSchema:
     def test_description_omitted_when_empty(self):
         prop = _build_schema([self._col(description="")])[0]["properties"][0]
         assert "description" not in prop
+
+    def test_required_false_when_record_ct_is_none(self):
+        # When profiling data is absent (record_ct=None), required must not be True.
+        prop = _build_schema([self._col(record_ct=None, null_value_ct=None)])[0]["properties"][0]
+        assert not prop.get("required", False)
+
+    def test_required_false_when_record_ct_is_zero(self):
+        prop = _build_schema([self._col(record_ct=0, null_value_ct=0)])[0]["properties"][0]
+        assert not prop.get("required", False)
 
 
 # ---------------------------------------------------------------------------
@@ -373,6 +391,20 @@ class Test_BuildSla:
         props = {s["property"] for s in sla}
         assert "latency" in props
         assert "errorRate" in props
+
+    def test_null_dq_score_omits_error_rate(self):
+        sla = _build_sla({"profiling_delay_days": None, "last_run_dq_score": None})
+        assert not any(s["property"] == "errorRate" for s in sla)
+
+    def test_non_numeric_dq_score_omits_error_rate(self):
+        # Malformed DB value must not cause 1.0 - 0 = 1.0 to be emitted.
+        sla = _build_sla({"profiling_delay_days": None, "last_run_dq_score": "N/A"})
+        assert not any(s["property"] == "errorRate" for s in sla)
+
+    def test_dq_score_one_gives_zero_error_rate(self):
+        sla = _build_sla({"profiling_delay_days": None, "last_run_dq_score": 1.0})
+        er = next(s for s in sla if s["property"] == "errorRate")
+        assert er["value"] == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
