@@ -430,6 +430,10 @@ class DataContractPage(Page):
                 doc = parsed if isinstance(parsed, dict) else {}
             except yaml.YAMLError:
                 doc = {}
+        # Ensure ODCS v3.1.0 envelope fields are always present at top of YAML
+        if "apiVersion" not in doc or "kind" not in doc:
+            doc = {"apiVersion": "v3.1.0", "kind": "DataContract", **doc}
+            contract_yaml = yaml.dump(doc, allow_unicode=True, sort_keys=False)
 
         # ── Staleness check (latest version only) ─────────────────────────────
         stale_diff: StaleDiff | None = None
