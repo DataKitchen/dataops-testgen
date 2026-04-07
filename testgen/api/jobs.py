@@ -19,7 +19,7 @@ _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
 }
 
-router = APIRouter(prefix="/api/v1", tags=["jobs"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(prefix="/api/v1", tags=["Jobs"], dependencies=[Depends(db_session)], responses=_error_responses)
 
 
 @router.post(

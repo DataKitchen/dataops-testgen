@@ -22,7 +22,7 @@ _error_responses = {
 
 router = APIRouter(
     prefix="/api/v1",
-    tags=["test-definitions"],
+    tags=["Test Definitions"],
     dependencies=[Depends(db_session)],
     responses=_error_responses,
 )

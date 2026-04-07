@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 
 from testgen import settings
 
-router = APIRouter()
+router = APIRouter(tags=["OAuth"])
 
 
 @router.get("/.well-known/oauth-authorization-server")

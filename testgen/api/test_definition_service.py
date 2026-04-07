@@ -261,14 +261,20 @@ def _apply_actions(
     session = get_current_session()
     now = datetime.now(UTC)
 
-    ids_to_delete: list[UUID] = []
+    # Pass 1: build new TDs and register them in the session.
     for planned in actions:
         if planned.action == ImportAction.create and planned.td_import is not None:
             td = _create_td(planned.td_import, test_suite, table_group, config, now)
             session.add(td)
-            session.flush([td])
             planned.target = td
-        elif planned.action == ImportAction.update and planned.target is not None and planned.td_import is not None:
+
+    # Single flush emits all INSERTs in one batch (SQLAlchemy uses executemany).
+    session.flush()
+
+    # Pass 2: updates and deletes.
+    ids_to_delete: list[UUID] = []
+    for planned in actions:
+        if planned.action == ImportAction.update and planned.target is not None and planned.td_import is not None:
             _update_td(planned.td_import, planned.target)
         elif planned.action == ImportAction.delete and planned.target is not None:
             ids_to_delete.append(planned.target.id)
