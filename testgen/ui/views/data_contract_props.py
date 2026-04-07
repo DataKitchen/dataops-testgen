@@ -630,7 +630,6 @@ def _build_contract_props(
                 if c.get("name") == "Hygiene" and worst_live == "clean":
                     worst_live = "warning"
 
-            col_refs_full = refs_by_col.get(col_key, []) + refs_by_col.get(col_name, [])
             is_cov        = _is_covered(prop, col_rules)
             column_id     = (gov or {}).get("column_id", "")
 
@@ -638,7 +637,7 @@ def _build_contract_props(
                 "name":         col_name,
                 "type":         prop.get("physicalType") or "",
                 "is_pk":        bool((prop.get("logicalTypeOptions") or {}).get("primaryKey")),
-                "is_fk":        bool(col_refs_full),
+                "is_fk":        bool(col_refs),
                 "column_id":    column_id,
                 "covered":      is_cov,
                 "status":       worst_live,
@@ -648,19 +647,20 @@ def _build_contract_props(
                 ],
                 "live_terms": [
                     {
-                        "name":        c["name"],
-                        "value":       c["value"],
-                        "source":      c["source"],
-                        "verif":       c["verif"],
-                        "status":      c.get("status") or "",
-                        "rule_id":     str(c.get("rule", {}).get("id", "") or ""),
-                        "suite_id":    str(c.get("rule", {}).get("suiteId", "") or ""),
-                        "test_name":   (c.get("rule", {}).get("name") or c.get("rule", {}).get("testType") or ""),
-                        "test_type":   (c.get("rule", {}).get("type") or c.get("rule", {}).get("testType") or ""),
-                        "element":     (c.get("rule", {}).get("element") or ""),
-                        "dimension":   (c.get("rule", {}).get("dimension") or ""),
-                        "severity":    (c.get("rule", {}).get("severity") or ""),
-                        "executed_at": ((c.get("rule", {}).get("lastResult") or {}).get("executedAt") or ""),
+                        "name":         c["name"],
+                        "value":        c["value"],
+                        "source":       c["source"],
+                        "verif":        c["verif"],
+                        "status":       c.get("status") or "",
+                        "rule_id":      str(c.get("rule", {}).get("id", "") or ""),
+                        "suite_id":     str(c.get("rule", {}).get("suiteId", "") or ""),
+                        "test_name":    (c.get("rule", {}).get("name") or c.get("rule", {}).get("testType") or ""),
+                        "test_type":    (c.get("rule", {}).get("type") or c.get("rule", {}).get("testType") or ""),
+                        "element":      (c.get("rule", {}).get("element") or ""),
+                        "dimension":    (c.get("rule", {}).get("dimension") or ""),
+                        "severity":     (c.get("rule", {}).get("severity") or ""),
+                        "executed_at":  ((c.get("rule", {}).get("lastResult") or {}).get("executedAt") or ""),
+                        "anomaly_type": (c.get("anomaly", {}) or {}).get("anomaly_type", "") if c["name"] == "Hygiene" else "",
                     }
                     for c in live_terms
                 ],

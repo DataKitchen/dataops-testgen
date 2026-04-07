@@ -134,9 +134,9 @@ const ProjectDashboard = (/** @type Properties */ props) => {
 }
 
 const DcPill = ({ tableGroupId }) => button(
-    { class: 'tg-dc-pill', title: 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroupId } }) },
+    { class: 'tg-dc-pill', title: 'View Data Contract', 'aria-label': 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroupId } }) },
     i({ class: 'material-symbols-rounded' }, 'contract'),
-    span({}, 'Data Contract'),
+    span({ class: 'tg-dc-label', 'aria-hidden': 'true' }, 'Data Contract'),
 );
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {

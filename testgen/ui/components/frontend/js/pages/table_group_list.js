@@ -36,15 +36,15 @@ const { button, div, h4, i, span } = van.tags;
  * @returns {HTMLElement}
  */
 const DcButton = ({ tableGroupId }) => button(
-    { class: 'tg-dc-pill', title: 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroupId } }) },
+    { class: 'tg-dc-pill', title: 'View Data Contract', 'aria-label': 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroupId } }) },
     i({ class: 'material-symbols-rounded' }, 'contract'),
     span({ class: 'tg-dc-label' }, 'Data Contract'),
 );
 
 const ActionIcon = ({ icon, label, tooltip, onclick }) => button(
-    { class: 'tg-action-icon', title: tooltip, onclick },
+    { class: 'tg-action-icon', title: tooltip, 'aria-label': tooltip, onclick },
     i({ class: 'material-symbols-rounded' }, icon),
-    span({ class: 'tg-action-label' }, label),
+    span({ class: 'tg-action-label', 'aria-hidden': 'true' }, label),
 );
 
 const TableGroupList = (props) => {
@@ -374,8 +374,9 @@ button.tg-dc-pill:hover {
     background: rgba(0, 0, 0, .04);
 }
 
-/* Collapse DC when hovering an action icon */
-.tg-action-group:has(button.tg-action-icon:hover) button.tg-dc-pill {
+/* Collapse DC when hovering or focusing an action icon */
+.tg-action-group:has(button.tg-action-icon:hover) button.tg-dc-pill,
+.tg-action-group:has(button.tg-action-icon:focus-visible) button.tg-dc-pill {
     max-width: 36px;
     border-radius: 50%;
     padding: 0;
@@ -383,7 +384,8 @@ button.tg-dc-pill:hover {
     color: rgba(0, 0, 0, .54);
 }
 
-.tg-action-group:has(button.tg-action-icon:hover) button.tg-dc-pill .tg-dc-label {
+.tg-action-group:has(button.tg-action-icon:hover) button.tg-dc-pill .tg-dc-label,
+.tg-action-group:has(button.tg-action-icon:focus-visible) button.tg-dc-pill .tg-dc-label {
     max-width: 0;
     opacity: 0;
     margin-left: 0;
@@ -437,16 +439,20 @@ button.tg-action-icon .tg-action-label {
         margin-left .25s ease;
 }
 
-button.tg-action-icon:hover {
+button.tg-action-icon:hover,
+button.tg-action-icon:focus-visible {
     max-width: 180px;
     width: auto;
     border-radius: 20px;
     padding: 0 14px 0 10px;
     color: rgba(0, 0, 0, .87);
     background: rgba(0, 0, 0, .05);
+    outline: 2px solid rgba(0, 0, 0, .4);
+    outline-offset: 1px;
 }
 
-button.tg-action-icon:hover .tg-action-label {
+button.tg-action-icon:hover .tg-action-label,
+button.tg-action-icon:focus-visible .tg-action-label {
     max-width: 100px;
     opacity: 1;
     margin-left: 6px;

@@ -400,9 +400,11 @@ def _persist_governance_deletion(
     """Write a governance term deletion directly to data_column_chars so it survives the next export."""
     schema = get_tg_schema()
     field_map: dict[str, tuple[str, object]] = {
-        "Description":    ("description",          None),
-        "CDE":            ("critical_data_element", False),
-        "Classification": ("pii_flag",              None),
+        "Description":            ("description",          None),
+        "CDE":                    ("critical_data_element", False),
+        "Critical Data Element":  ("critical_data_element", False),
+        "Classification":         ("pii_flag",              None),
+        "PII":                    ("pii_flag",              None),
     }
     entry = field_map.get(term_name)
     if not entry:
@@ -412,4 +414,35 @@ def _persist_governance_deletion(
         f"UPDATE {schema}.data_column_chars SET {db_col} = :val "
         "WHERE table_groups_id = :tg_id AND table_name = :tbl AND column_name = :col",
         {"val": db_val, "tg_id": table_group_id, "tbl": table_name, "col": col_name},
+    )])
+
+
+@with_database_session
+def _dismiss_hygiene_anomaly(
+    table_group_id: str,
+    table_name: str,
+    col_name: str,
+    anomaly_type: str,
+) -> None:
+    """Set disposition='Inactive' on the matching anomaly in the latest profiling run."""
+    schema = get_tg_schema()
+    execute_db_queries([(
+        f"""
+        UPDATE {schema}.profile_anomaly_results r
+           SET disposition = 'Inactive'
+          FROM {schema}.profile_anomaly_types t
+         WHERE r.anomaly_id = t.id
+           AND r.table_groups_id = :tg_id
+           AND r.table_name = :tbl
+           AND r.column_name = :col
+           AND t.anomaly_type = :atype
+           AND r.profile_run_id = (
+               SELECT id FROM {schema}.profiling_runs
+                WHERE table_groups_id = :tg_id
+                  AND status = 'Complete'
+                ORDER BY profiling_starttime DESC
+                LIMIT 1
+           )
+        """,
+        {"tg_id": table_group_id, "tbl": table_name, "col": col_name, "atype": anomaly_type},
     )])

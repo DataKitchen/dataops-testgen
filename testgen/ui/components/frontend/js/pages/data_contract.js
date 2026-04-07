@@ -147,6 +147,27 @@ const TermChip = (term, tableName, colName) => {
     );
 };
 
+// ── Pending-deletion ghost chip ───────────────────────────────────────────────
+
+const DeletedTermChip = (term) => {
+    const srcCls = SOURCE_CLASS[term.source] || 'obs';
+    const srcLabel = SOURCE_LABEL[term.source] || term.source;
+    const verif = VERIF_META[term.verif] || { icon: '', label: term.verif, cls: 'badge-obs' };
+    return div(
+        { class: `term-chip ${srcCls} term-chip--deleted`, title: 'Pending deletion — will be removed when you save' },
+        div(
+            { class: 'term-chip__header' },
+            span({ class: 'term-chip__src' }, srcLabel),
+        ),
+        span({ class: 'term-chip__val' }, term.name),
+        div(
+            { class: 'dc-chip-footer' },
+            span({ class: `term-chip__badge ${verif.cls}` }, `${verif.icon} ${verif.label}`),
+            span({ class: 'term-chip__deleted-label' }, 'deleted'),
+        ),
+    );
+};
+
 // ── Governance add/edit button ────────────────────────────────────────────────
 
 const GovernanceButton = (col, tableName) => {
@@ -185,6 +206,7 @@ const ColumnRow = (col, tableName) => {
             { class: 'terms-row' },
             ...col.static_terms.map((c) => TermChip(c, tableName, col.name)),
             ...col.live_terms.map((c) => TermChip(c, tableName, col.name)),
+            ...(col.pending_delete_terms || []).map((c) => DeletedTermChip(c)),
         ),
     );
 };
@@ -1495,6 +1517,16 @@ stylesheet.replace(`
     cursor: default;
 }
 .term-chip:hover { transform: translateY(-1px); }
+.term-chip--deleted { opacity: 0.45; cursor: default; pointer-events: none; }
+.term-chip--deleted:hover { transform: none; }
+.term-chip__deleted-label {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #ef4444;
+    margin-left: auto;
+}
 .term-chip.ddl  { border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.07); }
 .term-chip.prof { border-color: rgba(79,142,247,0.3);  background: rgba(79,142,247,0.07);  }
 .term-chip.tst  { border-color: rgba(34,197,94,0.3);   background: rgba(34,197,94,0.07);   }

@@ -49,9 +49,9 @@ def _delete_term_yaml_patch(
             opts: dict = prop.setdefault("logicalTypeOptions", {})
 
             if source == "governance":
-                if term_name == "Classification":
+                if term_name in ("Classification", "PII"):
                     prop.pop("classification", None)
-                elif term_name == "CDE":
+                elif term_name in ("CDE", "Critical Data Element"):
                     prop.pop("criticalDataElement", None)
                 elif term_name == "Description":
                     prop.pop("description", None)
@@ -114,13 +114,21 @@ def _apply_pending_governance_edit(
     col_name: str,
     field: str,
     value: object,
+    snapshot: dict | None = None,
 ) -> dict:
-    """Add or replace a governance edit in the pending dict. Returns updated pending."""
+    """Add or replace a governance edit in the pending dict. Returns updated pending.
+
+    snapshot — optional term display data for pending-deletion chips:
+        {"name": str, "source": str, "verif": str}
+    """
     gov = [
         e for e in pending.get("governance", [])
         if not (e["table"] == table_name and e["col"] == col_name and e["field"] == field)
     ]
-    gov.append({"table": table_name, "col": col_name, "field": field, "value": value})
+    entry: dict = {"table": table_name, "col": col_name, "field": field, "value": value}
+    if snapshot is not None:
+        entry["snapshot"] = snapshot
+    gov.append(entry)
     return {**pending, "governance": gov}
 
 

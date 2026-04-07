@@ -175,13 +175,15 @@ def compute_diff(doc: dict, table_group_id: str, schema: str) -> ContractDiff:
                 updates["test_description"] = imported_name
 
             # threshold (operator key holds the value)
-            for op_key in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
-                           "mustBeLessThan", "mustBeLessOrEqualTo"):
-                if op_key in rule:
-                    new_val = str(rule[op_key])
-                    if new_val != current_test.get("threshold_value"):
-                        updates["threshold_value"] = new_val
-                    break
+            # CUSTOM tests use mustBeLessOrEqualTo for skip_errors, not threshold_value — skip here.
+            if current_test["test_type"] != "CUSTOM":
+                for op_key in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
+                               "mustBeLessThan", "mustBeLessOrEqualTo"):
+                    if op_key in rule:
+                        new_val = str(rule[op_key])
+                        if new_val != current_test.get("threshold_value"):
+                            updates["threshold_value"] = new_val
+                        break
 
             # tolerance band
             if "mustBeBetween" in rule and isinstance(rule["mustBeBetween"], list) and len(rule["mustBeBetween"]) == 2:

@@ -13,7 +13,6 @@ import logging
 import typing
 
 _log = logging.getLogger(__name__)
-LOG = logging.getLogger("testgen")
 
 import streamlit as st
 import yaml
@@ -66,10 +65,29 @@ from testgen.ui.views.dialogs.data_contract_dialogs import (
     _term_edit_dialog,
     _term_read_dialog,
     _test_term_dialog,
+    cancel_all_changes_dialog,
 )
 
 PAGE_TITLE = "Data Contract"
 PAGE_ICON = "contract"
+
+
+def _format_pending_labels(pending: dict) -> list[str]:
+    labels: list[str] = []
+    for e in pending.get("governance", []):
+        col = e.get("col", "?")
+        if e.get("value") is None:
+            labels.append(f"deleted {col}")
+        else:
+            labels.append(f"edited {col}.{e.get('field', '')}")
+    for e in pending.get("tests", []):
+        if e.get("_removed"):
+            col_hint = e.get("_col") or e.get("rule_id", "?")[:8]
+            labels.append(f"deleted {col_hint} test")
+        else:
+            col_hint = e.get("col") or e.get("rule_id", "?")[:8]
+            labels.append(f"edited {col_hint} rule")
+    return labels
 
 
 # ---------------------------------------------------------------------------
@@ -104,13 +122,10 @@ def _render_health_dashboard(
 
     covered = sum(
         1 for tbl, prop in all_props
-        if (
-            prop.get("classification")
-            or prop.get("criticalDataElement")
-            or prop.get("description")
-            or (prop.get("logicalTypeOptions") or {}).get("format")
-            or rules_by_element.get(f"{tbl}.{prop.get('name', '')}")
-            or rules_by_element.get(prop.get("name", ""))
+        if _is_covered(
+            prop,
+            rules_by_element.get(f"{tbl}.{prop.get('name', '')}", [])
+            + rules_by_element.get(prop.get("name", ""), []),
         )
     )
     coverage_pct = int(100 * covered / n_cols) if n_cols else 0
@@ -498,6 +513,21 @@ class DataContractPage(Page):
                 if st.button(save_label, type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
                     _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
 
+        # ── Unsaved changes banner ────────────────────────────────────────────
+        if is_latest and pending_ct > 0:
+            labels = _format_pending_labels(pending)
+            shown = labels[:3]
+            remainder = len(labels) - 3
+            summary = ", ".join(shown) + (f" and {remainder} more" if remainder > 0 else "")
+            noun = "change" if pending_ct == 1 else "changes"
+            warn_col, cancel_col = st.columns([7, 1])
+            with warn_col:
+                st.warning(f"{pending_ct} unsaved {noun}: {summary}", icon="⚠️")
+            with cancel_col:
+                st.markdown("<div style='margin-top:0.4rem'></div>", unsafe_allow_html=True)
+                if st.button("✕ Cancel all", key=f"dc_cancel_all:{table_group_id}", type="tertiary", use_container_width=True):
+                    cancel_all_changes_dialog(table_group_id, pending_ct, version_record["contract_yaml"])
+
         # ── Historic read-only banner ─────────────────────────────────────────
         if not is_latest:
             saved_at = version_record.get("saved_at")
@@ -531,6 +561,22 @@ class DataContractPage(Page):
             run_dates, suite_scope, test_statuses, gov_by_col,
         )
 
+        # Inject pending deletions as grayed-out ghost chips in the terms grid
+        if pending:
+            deletions_by_col: dict[tuple[str, str], list[dict]] = {}
+            for e in pending.get("governance", []):
+                if e.get("value") is None and "snapshot" in e:
+                    deletions_by_col.setdefault((e["table"], e["col"]), []).append(e["snapshot"])
+            for e in pending.get("tests", []):
+                if e.get("_removed") and "_snapshot" in e:
+                    deletions_by_col.setdefault((e["_table"], e["_col"]), []).append(e["_snapshot"])
+            if deletions_by_col:
+                for tbl in props.get("tables", []):
+                    for col in tbl.get("columns", []):
+                        ghosts = deletions_by_col.get((tbl["name"], col["name"]))
+                        if ghosts:
+                            col["pending_delete_terms"] = ghosts
+
         props["version_info"] = {
             "version":       version_record["version"],
             "saved_at":      version_record["saved_at"].isoformat() if version_record.get("saved_at") else None,
@@ -560,7 +606,7 @@ class DataContractPage(Page):
                 _monitor_term_dialog(term.get("rule", {}), term_name, table_name, col_name)
             elif source == "test":
                 _project_code = getattr(table_group, "project_code", "")
-                _test_term_dialog(term, table_name, col_name, _project_code)
+                _test_term_dialog(term, table_name, col_name, _project_code, yaml_key, table_group_id)
             elif source == "governance" and verif == "declared":
                 _term_edit_dialog(term, table_name, col_name, table_group_id, yaml_key)
             else:

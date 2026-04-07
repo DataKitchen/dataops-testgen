@@ -18,6 +18,7 @@ from testgen.commands.contract_versions import save_contract_version
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.data_contract_queries import (
     _capture_yaml,
+    _dismiss_hygiene_anomaly,
     _fetch_governance_data,
     _fetch_test_live_info,
     _lookup_column_id,
@@ -356,6 +357,7 @@ def _monitor_term_dialog(rule: dict, term_name: str, table_name: str = "", col_n
         st.markdown(f"**Last Run** &nbsp; {last['executedAt']}")
     st.divider()
     st.caption("📡 Managed in TestGen Monitors. To configure or run it, go to Monitors.")
+    st.caption("To delete the term from the contract go to the monitors page.")
     if st.button("Close", key="monitor_term_close", use_container_width=True):
         safe_rerun()
 
@@ -365,7 +367,14 @@ def _monitor_term_dialog(rule: dict, term_name: str, table_name: str = "", col_n
 # ---------------------------------------------------------------------------
 
 @st.dialog("Test Term Detail", width="small")
-def _test_term_dialog(term: dict, table_name: str, col_name: str, project_code: str) -> None:
+def _test_term_dialog(
+    term: dict,
+    table_name: str,
+    col_name: str,
+    project_code: str,
+    yaml_key: str = "",
+    table_group_id: str = "",
+) -> None:
     status      = term.get("status", "")
     status_icon = _STATUS_ICON.get(status, "⏳")  # noqa: F841
     test_name   = term.get("test_name") or "Test"
@@ -433,6 +442,40 @@ def _test_term_dialog(term: dict, table_name: str, col_name: str, project_code: 
     if close_col.button("Close", key="test_term_close", use_container_width=True):
         safe_rerun()
 
+    if yaml_key and table_group_id and rule_id:
+        st.divider()
+        if st.button("Delete term from contract", key="test_term_delete", use_container_width=True):
+            current_yaml = st.session_state.get(yaml_key, "")
+            try:
+                _parsed = yaml.safe_load(current_yaml)
+                if not isinstance(_parsed, dict):
+                    st.error("Could not parse the contract YAML — unexpected format.")
+                    return
+                doc = _parsed
+            except yaml.YAMLError:
+                st.error("Could not parse current contract YAML.")
+                return
+            quality = doc.get("quality") or []
+            before = len(quality)
+            doc["quality"] = [q for q in quality if str(q.get("id", "")) != rule_id]
+            if len(doc["quality"]) == before:
+                st.warning(f"Rule `{rule_id[:8]}…` not found in contract YAML — no changes made.")
+                return
+            patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            st.session_state[yaml_key] = patched_yaml
+            pending_key = f"dc_pending:{table_group_id}"
+            st.session_state[pending_key] = _apply_pending_test_edit(
+                st.session_state.get(pending_key, {}),
+                rule_id,
+                {
+                    "_removed": True,
+                    "_table": table_name,
+                    "_col": col_name,
+                    "_snapshot": {"name": test_name_short, "source": "test", "verif": "tested"},
+                },
+            )
+            safe_rerun()
+
 
 # ---------------------------------------------------------------------------
 # Term read-only dialog
@@ -463,9 +506,29 @@ def _term_read_dialog(
         st.caption("⚠️ This change is temporary and will be lost when you generate a new contract version.")
 
     st.divider()
+    if term_name == "Hygiene":
+        anomaly_type = term.get("anomaly_type", "")
+        st.caption("🔍 Hygiene findings are live data quality anomalies detected during profiling.")
+        dis_col, close_col = st.columns(2)
+        if dis_col.button("Delete term from contract", key="hygiene_dismiss", use_container_width=True):
+            if anomaly_type:
+                _dismiss_hygiene_anomaly(table_group_id, table_name, col_name, anomaly_type)
+            # Clear the cached anomaly list so the dismissed chip disappears on next render
+            st.session_state.pop(f"dc_anomalies:{table_group_id}", None)
+            pending_key = f"dc_pending:{table_group_id}"
+            st.session_state[pending_key] = _apply_pending_governance_edit(
+                st.session_state.get(pending_key, {}),
+                table_name, col_name, f"Hygiene:{anomaly_type or term.get('value', '')}",
+                None,
+                snapshot={"name": "Hygiene", "source": "profiling", "verif": "observed"},
+            )
+            safe_rerun()
+        if close_col.button("Close", key="hygiene_close", use_container_width=True):
+            safe_rerun()
+        return
     if can_delete:
         del_col, close_col = st.columns(2)
-        if del_col.button("Delete Term", key="term_read_delete", use_container_width=True):
+        if del_col.button("Delete term from contract", key="term_read_delete", use_container_width=True):
             current_yaml = st.session_state.get(yaml_key, "")
             try:
                 _parsed = yaml.safe_load(current_yaml)
@@ -483,8 +546,18 @@ def _term_read_dialog(
                 st.error(err or "Could not remove this term.")
                 return
             patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
+            pending_key = f"dc_pending:{table_group_id}"
             if src == "governance":
                 _persist_governance_deletion(term_name, table_group_id, table_name, col_name)
+            else:
+                # Track profiling/DDL deletions in pending so the banner shows,
+                # pending_count changes (triggering VanJS re-render), and cancel can restore them.
+                # Store a snapshot so the JS can render a grayed-out "deleted" card.
+                st.session_state[pending_key] = _apply_pending_governance_edit(
+                    st.session_state.get(pending_key, {}),
+                    table_name, col_name, term_name, None,
+                    snapshot={"name": term_name, "source": src, "verif": verif},
+                )
             st.session_state[yaml_key] = patched_yaml
             safe_rerun()
         if close_col.button("Close", key="term_read_close", use_container_width=True):
@@ -558,7 +631,7 @@ def _term_edit_dialog(
         safe_rerun()
 
     st.divider()
-    if st.button("Delete Term", key="term_edit_delete", use_container_width=True):
+    if st.button("Delete term from contract", key="term_edit_delete", use_container_width=True):
         current_yaml = st.session_state.get(yaml_key, "")
         try:
             _parsed = yaml.safe_load(current_yaml)
@@ -577,10 +650,12 @@ def _term_edit_dialog(
             return
         patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
         st.session_state[yaml_key] = patched_yaml
+        _persist_governance_deletion(term_name, table_group_id, table_name, col_name)
         pending_key = f"dc_pending:{table_group_id}"
         st.session_state[pending_key] = _apply_pending_governance_edit(
             st.session_state.get(pending_key, {}),
             table_name, col_name, term_name, None,
+            snapshot={"name": term_name, "source": "governance", "verif": term.get("verif", "declared")},
         )
         safe_rerun()
 
@@ -715,7 +790,7 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str) -> None:
         safe_rerun()
 
     st.divider()
-    if st.button("Remove from Contract", key="rule_delete_btn", use_container_width=True):
+    if st.button("Delete term from contract", key="rule_delete_btn", use_container_width=True):
         current_yaml = st.session_state.get(yaml_key, "")
         try:
             _parsed = yaml.safe_load(current_yaml)
@@ -903,3 +978,27 @@ def _review_changes_panel(
     if save_col.button("Save new version →", type="primary", use_container_width=True):
         pending = st.session_state.get(f"dc_pending:{table_group_id}", {})
         _save_version_dialog(table_group_id, pending, current_yaml, version_record.get("version"))
+
+
+# ---------------------------------------------------------------------------
+# Cancel all changes dialog
+# ---------------------------------------------------------------------------
+
+@st.dialog("Discard Changes", width="small")
+def cancel_all_changes_dialog(
+    table_group_id: str,
+    pending_ct: int,
+    original_yaml: str,
+) -> None:
+    """Confirm and discard all pending (unsaved) edits, restoring the last-saved YAML."""
+    noun = "change" if pending_ct == 1 else "changes"
+    st.markdown(f"Discard **{pending_ct} unsaved {noun}**? This cannot be undone.")
+    st.caption("The contract will be restored to its last saved state.")
+    st.divider()
+    confirm_col, back_col = st.columns(2)
+    if confirm_col.button("Discard", type="primary", use_container_width=True):
+        st.session_state.pop(f"dc_pending:{table_group_id}", None)
+        st.session_state[f"dc_yaml:{table_group_id}"] = original_yaml
+        safe_rerun()
+    if back_col.button("Go back", use_container_width=True):
+        safe_rerun()
