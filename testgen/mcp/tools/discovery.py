@@ -1,6 +1,7 @@
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
+from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import parse_uuid
@@ -63,6 +64,10 @@ def list_test_suites(project_code: str) -> str:
     if not summaries:
         return f"No test suites found for project `{project_code}`."
 
+    # Batch-lookup job_execution_ids for latest runs
+    run_ids = [s.latest_run_id for s in summaries if s.latest_run_id]
+    job_exec_map = TestRun.get_job_execution_ids(run_ids) if run_ids else {}
+
     lines = [f"# Test Suites for `{project_code}`\n"]
     for s in summaries:
         lines.append(f"## {s.test_suite} (id: `{s.id}`)")
@@ -73,7 +78,8 @@ def list_test_suites(project_code: str) -> str:
         lines.append(f"- Test definitions: {s.test_ct or 0}")
 
         if s.latest_run_id:
-            lines.append(f"- Latest run: `{s.latest_run_id}` ({s.latest_run_start})")
+            run_id = job_exec_map.get(s.latest_run_id) or s.latest_run_id
+            lines.append(f"- Latest run: `{run_id}` ({s.latest_run_start})")
             lines.append(
                 f"  - {s.last_run_test_ct or 0} tests: "
                 f"{s.last_run_passed_ct or 0} passed, "

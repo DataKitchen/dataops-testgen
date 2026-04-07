@@ -62,7 +62,7 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
         errors = run.error_ct or 0
 
         lines.append(f"### {run.test_starttime} — {run.status_label}")
-        lines.append(f"- **Run ID:** `{run.test_run_id}`")
+        lines.append(f"- **Run ID:** `{run.job_execution_id}`")
         lines.append(f"- **Started:** {run.test_starttime}  |  **Ended:** {run.test_endtime}")
         lines.append(f"- **Results:** {run.test_ct or 0} tests — {passed} passed, {failed} failed, {warning} warnings, {errors} errors")
 
@@ -74,6 +74,6 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
 
         lines.append("")
 
-    lines.append("Use `get_test_results(test_run_id='...')` for detailed results of a specific run.")
+    lines.append("Use `get_test_results(job_execution_id='...')` for detailed results of a specific run.")
 
     return "\n".join(lines)

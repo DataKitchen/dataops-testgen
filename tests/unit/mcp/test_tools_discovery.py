@@ -113,8 +113,11 @@ def test_list_projects_filters_for_scoped_user(mock_compute, mock_project, db_se
     assert "Secret" not in result
 
 
+@patch("testgen.mcp.tools.discovery.TestRun")
 @patch("testgen.mcp.tools.discovery.TestSuite")
-def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
+def test_list_test_suites_returns_stats(mock_suite, mock_test_run, db_session_mock):
+    run_id = uuid4()
+    job_exec_id = uuid4()
     summary = MagicMock()
     summary.id = uuid4()
     summary.test_suite = "Quality Suite"
@@ -122,7 +125,7 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     summary.table_groups_name = "core_tables"
     summary.test_suite_description = "Main quality checks"
     summary.test_ct = 50
-    summary.latest_run_id = uuid4()
+    summary.latest_run_id = run_id
     summary.latest_run_start = "2024-01-15T10:00:00"
     summary.last_run_test_ct = 50
     summary.last_run_passed_ct = 45
@@ -131,6 +134,7 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     summary.last_run_error_ct = 0
     summary.last_run_dismissed_ct = 0
     mock_suite.select_summary.return_value = [summary]
+    mock_test_run.get_job_execution_ids.return_value = {run_id: job_exec_id}
 
     from testgen.mcp.tools.discovery import list_test_suites
 
@@ -139,6 +143,7 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     assert "Quality Suite" in result
     assert "45 passed" in result
     assert "3 failed" in result
+    assert str(job_exec_id) in result
 
 
 @patch("testgen.mcp.tools.discovery.TestSuite")

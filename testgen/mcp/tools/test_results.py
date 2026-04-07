@@ -1,6 +1,7 @@
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult
+from testgen.common.models.test_run import TestRun
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import parse_result_status, parse_uuid
@@ -17,7 +18,7 @@ def _resolve_test_type(short_name: str) -> str:
 @with_database_session
 @mcp_permission("view")
 def get_test_results(
-    test_run_id: str,
+    job_execution_id: str,
     status: str | None = None,
     table_name: str | None = None,
     test_type: str | None = None,
@@ -27,14 +28,18 @@ def get_test_results(
     """Get individual test results for a test run, with optional filters.
 
     Args:
-        test_run_id: The UUID of the test run.
+        job_execution_id: The UUID of the job execution for the test run.
         status: Filter by result status (Passed, Failed, Warning, Error, Log).
         table_name: Filter by table name.
         test_type: Filter by test type (e.g. 'Alpha Truncation', 'Unique Percent').
         limit: Maximum number of results per page (default 50).
         page: Page number, starting from 1 (default 1).
     """
-    run_uuid = parse_uuid(test_run_id, "test_run_id")
+    job_uuid = parse_uuid(job_execution_id, "job_execution_id")
+    test_run = TestRun.get_by_id_or_job(job_uuid)
+    if not test_run:
+        raise MCPUserError(f"No test run found for job execution `{job_execution_id}`.")
+
     status_enum = parse_result_status(status) if status else None
     offset = (page - 1) * limit
 
@@ -43,7 +48,7 @@ def get_test_results(
     perms = get_project_permissions()
 
     results = TestResult.select_results(
-        test_run_id=run_uuid,
+        test_run_id=test_run.id,
         status=status_enum,
         table_name=table_name,
         test_type=test_type_code,
@@ -61,11 +66,11 @@ def get_test_results(
         if test_type:
             filters.append(f"type={test_type}")
         filter_str = f" (filters: {', '.join(filters)})" if filters else ""
-        return f"No test results found for run `{test_run_id}`{filter_str}."
+        return f"No test results found for run `{job_execution_id}`{filter_str}."
 
     type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
-    lines = [f"# Test Results for run `{test_run_id}`\n"]
+    lines = [f"# Test Results for run `{job_execution_id}`\n"]
     lines.append(f"Showing {len(results)} result(s) (page {page}).\n")
 
     for r in results:
@@ -92,24 +97,27 @@ def get_test_results(
 
 @with_database_session
 @mcp_permission("view")
-def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
+def get_failure_summary(job_execution_id: str, group_by: str = "test_type") -> str:
     """Get a summary of test failures (Failed and Warning) grouped by test type, table name, or column.
 
     Args:
-        test_run_id: The UUID of the test run.
+        job_execution_id: The UUID of the job execution for the test run.
         group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
     """
-    run_uuid = parse_uuid(test_run_id, "test_run_id")
+    job_uuid = parse_uuid(job_execution_id, "job_execution_id")
+    test_run = TestRun.get_by_id_or_job(job_uuid)
+    if not test_run:
+        raise MCPUserError(f"No test run found for job execution `{job_execution_id}`.")
 
     perms = get_project_permissions()
 
     # Map public param names to model field names
     model_group_map = {"table": "table_name", "column": "column_names"}
     model_group_by = model_group_map.get(group_by, group_by)
-    failures = TestResult.select_failures(test_run_id=run_uuid, group_by=model_group_by, project_codes=perms.allowed_codes)
+    failures = TestResult.select_failures(test_run_id=test_run.id, group_by=model_group_by, project_codes=perms.allowed_codes)
 
     if not failures:
-        return f"No confirmed failures found for run `{test_run_id}`."
+        return f"No confirmed failures found for run `{job_execution_id}`."
 
     total = sum(row[-1] for row in failures)
 
@@ -117,7 +125,7 @@ def get_failure_summary(test_run_id: str, group_by: str = "test_type") -> str:
         type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
     lines = [
-        f"# Failure Summary for run `{test_run_id}`\n",
+        f"# Failure Summary for run `{job_execution_id}`\n",
         f"**Total confirmed failures (Failed + Warning):** {total}\n",
     ]
 

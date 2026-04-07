@@ -9,7 +9,8 @@ from testgen.mcp.permissions import ProjectPermissions
 
 def _make_run_summary(**overrides):
     defaults = {
-        "test_run_id": uuid4(), "test_suite": "Quality Suite", "project_name": "Demo",
+        "test_run_id": uuid4(), "job_execution_id": uuid4(),
+        "test_suite": "Quality Suite", "project_name": "Demo",
         "table_groups_name": "core_tables", "status": "Complete",
         "test_starttime": "2024-01-15T10:00:00", "test_endtime": "2024-01-15T10:05:00",
         "test_ct": 50, "passed_ct": 45, "failed_ct": 3, "warning_ct": 2, "error_ct": 0,
@@ -126,6 +127,22 @@ def test_get_recent_test_runs_shows_failure_counts(mock_suite, mock_run, db_sess
 
     assert "5 failed" in result
     assert "2 warnings" in result
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_get_recent_test_runs_outputs_job_execution_id(mock_suite, mock_run, db_session_mock):
+    """Output should contain job_execution_id, not test_run_id."""
+    job_exec_id = uuid4()
+    run = _make_run_summary(job_execution_id=job_exec_id)
+    mock_run.select_summary.return_value = [run]
+
+    from testgen.mcp.tools.test_runs import get_recent_test_runs
+
+    result = get_recent_test_runs("demo")
+
+    assert str(job_exec_id) in result
+    assert "job_execution_id" in result
 
 
 def test_get_recent_test_runs_empty_project_code(db_session_mock):
