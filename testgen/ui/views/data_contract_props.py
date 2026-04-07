@@ -492,35 +492,6 @@ def _build_contract_props(
     )
     coverage_pct = int(100 * covered / n_cols) if n_cols else 0
 
-    # Tier counts — one entry per column plus one per table (table-level element)
-    # We pre-compute effective_gov here for health before the full gov fetch below.
-    _early_gov = gov_by_col or {}
-    _tier_tg   = 0
-    _tier_db   = 0
-    _tier_unf  = 0
-    _tier_none = 0
-    for tbl_name, prop in all_props:
-        col_name_h = prop.get("name", "")
-        col_rules_h = (
-            rules_by_element.get(f"{tbl_name}.{col_name_h}", [])
-            + rules_by_element.get(col_name_h, [])
-        )
-        gov_col_h = _early_gov.get((tbl_name, col_name_h))
-        t = _classify_enforcement_tier(prop, col_rules_h, gov_col=gov_col_h)
-        if t == "tg":    _tier_tg   += 1
-        elif t == "db":  _tier_db   += 1
-        elif t == "unf": _tier_unf  += 1
-        else:            _tier_none += 1
-    # Table-level elements: one per table; tier is binary (tg | none).
-    # DDL and governance constraints apply to columns, not table-level rows,
-    # so db/unf tiers are not meaningful here.
-    for tbl in schema:
-        tbl_name_h = tbl.get("name", "")
-        tbl_rules_h = rules_by_element.get(tbl_name_h, [])
-        if tbl_rules_h:
-            _tier_tg += 1
-        else:
-            _tier_none += 1
     _n_elements = n_cols + len(schema)
 
     counts = _quality_counts(quality)
@@ -539,10 +510,10 @@ def _build_contract_props(
         "coverage_pct":          coverage_pct,
         "covered":               covered,
         "n_cols":                n_cols,
-        "tg_enforced":           _tier_tg,
-        "db_enforced":           _tier_db,
-        "unenforced":            _tier_unf,
-        "uncovered":             _tier_none,
+        "tg_enforced":           0,
+        "db_enforced":           0,
+        "unenforced":            0,
+        "uncovered":             0,
         "n_elements":            _n_elements,
         "n_tests":               len(quality),
         "passing":               counts.get("passing", 0),
@@ -652,6 +623,22 @@ def _build_contract_props(
                 "decl":   decl_ct,
                 "tier":   _classify_enforcement_tier(prop, col_rules, gov_col=gov_col, col_refs=col_refs),
             })
+
+    # ── Tier counts from matrix rows (matches JS pill logic exactly) ─────────
+    _tier_tg = _tier_db = _tier_unf = _tier_none = 0
+    for _row in matrix_rows:
+        _has_tg  = (_row["tested"] + _row["mon"]) > 0
+        _has_db  = _row["db"] > 0
+        _has_unf = (_row["obs"] + _row["decl"]) > 0
+        if _has_tg:  _tier_tg  += 1
+        if _has_db:  _tier_db  += 1
+        if _has_unf: _tier_unf += 1
+        if not _has_tg and not _has_db and not _has_unf:
+            _tier_none += 1
+    health["tg_enforced"] = _tier_tg
+    health["db_enforced"] = _tier_db
+    health["unenforced"]  = _tier_unf
+    health["uncovered"]   = _tier_none
 
     # ── Gap analysis ──────────────────────────────────────────────────────────
     gap_items: list[dict] = []

@@ -691,7 +691,9 @@ class Test_HealthTierCounts:
         return {"schema": tables, "quality": quality or [], "references": []}
 
     def test_all_uncovered(self):
-        """Two bare-text columns -> n_elements >= 2, uncovered >= 2, tg_enforced == 0."""
+        """Two bare-text columns have obs=1 each (untyped physical type), so they are
+        'unenforced' not 'uncovered'. Only the table-level row (no rules, no obs/decl)
+        is truly uncovered."""
         doc = self._doc([{"name": "t", "properties": [
             {"name": "a", "physicalType": "text"},
             {"name": "b", "physicalType": "text"},
@@ -699,8 +701,9 @@ class Test_HealthTierCounts:
         props = _props_from_doc(doc)
         h = props["health"]
         assert h["n_elements"] >= 2
-        assert h["uncovered"] >= 2
         assert h["tg_enforced"] == 0
+        # bare text columns have obs=1 → unenforced, not uncovered
+        assert h["unenforced"] >= 2
 
     def test_tg_enforced_counted(self):
         """Column with a quality rule -> tg_enforced >= 1."""
@@ -722,17 +725,29 @@ class Test_HealthTierCounts:
         h = props["health"]
         assert h["db_enforced"] >= 1
 
-    def test_tier_counts_sum_to_n_elements(self):
-        """tg + db + unf + uncovered == n_elements."""
+    def test_uncovered_excludes_elements_with_any_claim(self):
+        """uncovered only counts elements with no claims at any tier (bars are independent)."""
         doc = self._doc([{"name": "t", "properties": [
-            {"name": "a", "physicalType": "varchar(50)", "required": True},
-            {"name": "b", "physicalType": "text", "description": "desc"},
-            {"name": "c", "physicalType": "text"},
+            {"name": "a", "physicalType": "varchar(50)", "required": True},  # db claim
+            {"name": "b", "physicalType": "text", "description": "desc"},    # unf claim
+            {"name": "c", "physicalType": "text"},                           # no claims
         ]}])
         props = _props_from_doc(doc)
         h = props["health"]
-        total = h["tg_enforced"] + h["db_enforced"] + h["unenforced"] + h["uncovered"]
-        assert total == h["n_elements"]
+        assert h["db_enforced"] >= 1
+        assert h["unenforced"] >= 1
+        # only c is truly uncovered (plus table-level row with no rules)
+        assert h["uncovered"] >= 1
+
+    def test_element_counted_in_multiple_tiers(self):
+        """An element with both DDL and description appears in both db and unf counts."""
+        doc = self._doc([{"name": "t", "properties": [
+            {"name": "col", "physicalType": "text", "required": True, "description": "A column"},
+        ]}])
+        props = _props_from_doc(doc)
+        h = props["health"]
+        assert h["db_enforced"] >= 1
+        assert h["unenforced"] >= 1
 
     def test_n_elements_includes_table_level(self):
         """n_elements = columns + one table-level row per table."""
