@@ -30,7 +30,7 @@ LOG = logging.getLogger("testgen")
 
 OAUTH_SESSION_COOKIE = "dk_oauth_session"
 
-router = APIRouter(prefix="/oauth", tags=["oauth"], dependencies=[Depends(db_session)])
+router = APIRouter(prefix="/oauth", tags=["OAuth"], dependencies=[Depends(db_session)])
 
 _server: TestGenAuthorizationServer | None = None
 
