@@ -1306,14 +1306,28 @@ const DifferencesTab = (termDiff, diffFilter) => {
 
     const DiffRow = (entry) => {
         const s = statusStyle[entry.status] || {};
-        return div(
-            { class: 'diff-entry-row' },
-            span({ class: 'diff-icon', style: `color:${s.color || '#999'}` }, s.glyph || ''),
-            span({ class: 'diff-element' }, entry.element),
-            span({ class: 'diff-test-type' }, entry.test_type || ''),
-            span({ class: 'diff-detail' },   entry.detail    || ''),
+        return tr(
+            td({ class: 'diff-icon-cell', style: `color:${s.color || '#999'}` }, s.glyph || ''),
+            td({ class: 'diff-element-cell' }, entry.element),
+            td({ class: 'diff-type-cell' },    entry.test_type || ''),
+            td({ class: 'diff-detail-cell' },  entry.detail    || ''),
         );
     };
+
+    const DiffTable = (items) =>
+        div(
+            { class: 'dc-term-table-wrap' },
+            table(
+                { class: 'dc-term-table' },
+                thead(tr(
+                    th({ class: 'diff-icon-cell' }, ''),
+                    th('Element'),
+                    th('Test Type'),
+                    th('Detail'),
+                )),
+                tbody(...items.map(DiffRow)),
+            ),
+        );
 
     const DiffAccordion = (statusKey, label, items, defaultOpen) => {
         if (items.length === 0) return '';
@@ -1325,7 +1339,7 @@ const DifferencesTab = (termDiff, diffFilter) => {
                 () => mat(isOpen.val ? 'expand_more' : 'chevron_right', 14),
                 ` ${label} (${items.length})`,
             ),
-            () => isOpen.val ? div({ class: 'diff-accordion-body' }, ...items.map(DiffRow)) : '',
+            () => isOpen.val ? DiffTable(items) : '',
         );
     };
 
@@ -1387,26 +1401,34 @@ const ComplianceTab = (termDiff, health) => {
         span({ class: 'compliance-chip', style: `background:${color}` }, label);
 
     const ComplianceRow = (entry) =>
-        div(
-            { class: 'compliance-row' },
-            span({ class: 'diff-element' }, entry.element),
-            span({ class: 'diff-test-type' }, entry.test_type || ''),
-            Chip(statusColor[entry.last_result] || '#6b7280',
-                 (entry.last_result || 'not run').replace('_', ' ')),
+        tr(
+            td({ class: 'diff-element-cell' }, entry.element),
+            td({ class: 'diff-type-cell' },    entry.test_type || ''),
+            td(Chip(statusColor[entry.last_result] || '#6b7280',
+                    (entry.last_result || 'not run').replace('_', ' '))),
         );
 
     const HygieneRow = (entry) =>
+        tr(
+            td({ class: 'diff-element-cell' }, entry.element),
+            td({ class: 'diff-type-cell' },    entry.anomaly_type || ''),
+            td(Chip(likelihoodColor[entry.issue_likelihood] || '#94a3b8', entry.issue_likelihood || '')),
+        );
+
+    const ComplianceTable = (rows, col2Label) =>
         div(
-            { class: 'compliance-row' },
-            span({ class: 'diff-element' }, entry.element),
-            span({ class: 'diff-test-type' }, entry.anomaly_type || ''),
-            Chip(likelihoodColor[entry.issue_likelihood] || '#94a3b8', entry.issue_likelihood || ''),
+            { class: 'dc-term-table-wrap' },
+            table(
+                { class: 'dc-term-table' },
+                thead(tr(th('Element'), th(col2Label), th('Status'))),
+                tbody(...rows),
+            ),
         );
 
     const headerStr = (pairs) =>
         pairs.filter(([, n]) => n > 0).map(([lbl, n]) => `${n} ${lbl}`).join('  ');
 
-    const ComplianceAccordion = (label, rows, headerSummary) => {
+    const ComplianceAccordion = (label, rows, headerSummary, col2Label) => {
         if (rows.length === 0) return '';
         const isOpen = van.state(true);
         return div(
@@ -1417,7 +1439,7 @@ const ComplianceTab = (termDiff, health) => {
                 ` ${label}`,
                 headerSummary ? span({ class: 'accordion-header-stats' }, `  ${headerSummary}`) : '',
             ),
-            () => isOpen.val ? div({ class: 'diff-accordion-body' }, ...rows) : '',
+            () => isOpen.val ? ComplianceTable(rows, col2Label) : '',
         );
     };
 
@@ -1464,16 +1486,16 @@ const ComplianceTab = (termDiff, health) => {
             ['passed', termDiff.tg_monitor_passed], ['failed', termDiff.tg_monitor_failed],
             ['warning', termDiff.tg_monitor_warning], ['error', termDiff.tg_monitor_error],
             ['not run', termDiff.tg_monitor_not_run],
-        ])),
+        ]), 'Test Type'),
         ComplianceAccordion('Tests', testRows.map(ComplianceRow), headerStr([
             ['passed', termDiff.tg_test_passed], ['failed', termDiff.tg_test_failed],
             ['warning', termDiff.tg_test_warning], ['error', termDiff.tg_test_error],
             ['not run', termDiff.tg_test_not_run],
-        ])),
+        ]), 'Test Type'),
         ComplianceAccordion('Hygiene', hygieneRows.map(HygieneRow), headerStr([
             ['definite', termDiff.tg_hygiene_definite], ['likely', termDiff.tg_hygiene_likely],
             ['possible', termDiff.tg_hygiene_possible],
-        ])),
+        ]), 'Anomaly Type'),
     );
 };
 
@@ -2599,35 +2621,39 @@ stylesheet.replace(`
 .diff-accordion-header:hover { background: var(--hover-background-color, rgba(128,128,128,0.06)); }
 .diff-accordion-body { padding: 6px 0; }
 
-/* Grid rows — 4 fixed columns: icon | element | test-type | detail */
-.diff-entry-row {
-    display: grid;
-    grid-template-columns: 20px 220px 160px 1fr;
-    align-items: baseline;
-    padding: 5px 18px;
-    font-size: 12px;
+/* Term tables — shared by Differences and Compliance accordions */
+.dc-term-table-wrap { overflow-x: auto; }
+.dc-term-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+.dc-term-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--caption-text-color);
+    padding: 6px 10px;
     border-bottom: 1px solid var(--border-color);
 }
-.diff-entry-row:last-child { border-bottom: none; }
-.diff-icon { font-weight: 700; text-align: center; }
-.diff-element { font-weight: 600; color: var(--primary-text-color); font-family: monospace; font-size: 12px; padding-right: 8px; }
-.diff-test-type { color: var(--caption-text-color); font-size: 12px; padding-right: 8px; }
-.diff-detail { color: #f59e0b; font-size: 11px; font-style: italic; }
-
-/* Grid rows — 3 fixed columns: element | test-type | chip */
-.compliance-row {
-    display: grid;
-    grid-template-columns: 220px 160px auto;
-    align-items: center;
-    padding: 5px 18px;
-    font-size: 12px;
+.dc-term-table td {
+    padding: 8px 10px;
     border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+    color: var(--secondary-text-color);
 }
-.compliance-row:last-child { border-bottom: none; }
+.dc-term-table tr:last-child td { border-bottom: none; }
+.dc-term-table tr:hover td { background: rgba(128,128,128,0.03); }
+.diff-icon-cell { width: 24px; text-align: center; font-weight: 700; padding-left: 16px !important; }
+.diff-element-cell { font-weight: 600; color: var(--primary-text-color); font-family: monospace; font-size: 12px; white-space: nowrap; }
+.diff-type-cell { color: var(--caption-text-color); font-size: 12px; white-space: nowrap; }
+.diff-detail-cell { color: #f59e0b; font-size: 11px; font-style: italic; }
 .compliance-chip {
     font-size: 10px; font-weight: 600; color: #fff;
     border-radius: 3px; padding: 1px 6px; white-space: nowrap; text-transform: lowercase;
-    justify-self: start;
+    display: inline-block;
 }
 .accordion-header-stats { font-size: 11px; font-weight: 400; color: var(--caption-text-color); }
 
