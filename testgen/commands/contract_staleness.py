@@ -166,6 +166,9 @@ def _thresholds_differ(snap: str, cur: str) -> bool:
         return False
     snap_parts = snap.split(",")
     cur_parts  = cur.split(",")
+    # If one side is a range and the other is a single value, they differ by definition
+    if len(snap_parts) != len(cur_parts):
+        return True
     if len(snap_parts) == 2 and len(cur_parts) == 2:
         try:
             return (float(snap_parts[0]) != float(cur_parts[0])
