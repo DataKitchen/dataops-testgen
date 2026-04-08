@@ -285,6 +285,8 @@ def _term_test_row(
     last_status: str | None = None,
     table: str = "orders",
     column: str = "amount",
+    lower_tolerance: str | None = None,
+    upper_tolerance: str | None = None,
 ) -> dict:
     return {
         "id": test_id,
@@ -292,6 +294,8 @@ def _term_test_row(
         "table_name": table,
         "column_name": column,
         "threshold_value": threshold,
+        "lower_tolerance": lower_tolerance,
+        "upper_tolerance": upper_tolerance,
         "is_monitor": is_monitor,
         "last_status": last_status,  # already normalized (passed/failed/…/not_run)
     }
@@ -431,3 +435,38 @@ class Test_ComputeTermDiff:
                    side_effect=_diff_patch_db(rows)):
             result = compute_term_diff(TABLE_GROUP_ID, saved, [])
         assert result.entries[0].is_monitor is True
+
+    def test_range_same_when_bounds_match(self):
+        """mustBeBetween in YAML matches lower_tolerance + upper_tolerance in DB → same."""
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeBetween": [10, 90]}])
+        rows = [_term_test_row(test_id, threshold="0", lower_tolerance="10", upper_tolerance="90")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.entries[0].status == "same"
+
+    def test_range_changed_when_bounds_differ(self):
+        """mustBeBetween in YAML differs from lower_tolerance + upper_tolerance in DB → changed."""
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeBetween": [10, 90]}])
+        rows = [_term_test_row(test_id, threshold="0", lower_tolerance="10", upper_tolerance="95")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.entries[0].status == "changed"
+        assert "10,90" in result.entries[0].detail
+        assert "10,95" in result.entries[0].detail
+
+    def test_range_same_with_float_db_values(self):
+        """DB returns lower/upper as floats (10.0, 90.0); YAML has ints (10, 90) → same."""
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeBetween": [10, 90]}])
+        rows = [_term_test_row(test_id, threshold="0", lower_tolerance="10.0", upper_tolerance="90.0")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.entries[0].status == "same"

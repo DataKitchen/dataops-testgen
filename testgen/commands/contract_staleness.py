@@ -180,6 +180,8 @@ def compute_term_diff(
                td.table_name,
                td.column_name,
                td.threshold_value,
+               td.lower_tolerance,
+               td.upper_tolerance,
                COALESCE(ts.is_monitor, FALSE) AS is_monitor,
                CASE tr.result_status
                    WHEN 'Passed'  THEN 'passed'
@@ -209,6 +211,20 @@ def compute_term_diff(
         tbl = (row.get("table_name")  or "").strip()
         return f"{tbl}.{col}" if col else tbl
 
+    def _cur_threshold(row: dict[str, Any]) -> str:
+        """Build the DB-side threshold string using the same logic as the YAML export.
+
+        If both lower_tolerance and upper_tolerance are set the export writes
+        ``mustBeBetween: [lower, upper]``, which _snap_threshold returns as
+        ``"lower,upper"``.  Match that format here so the comparison is apples-to-apples.
+        """
+        lower = row.get("lower_tolerance")
+        upper = row.get("upper_tolerance")
+        if lower is not None and upper is not None:
+            return f"{lower},{upper}"
+        val = row.get("threshold_value")
+        return str(val) if val is not None else ""
+
     def _snap_threshold(rule: dict[str, Any]) -> str | None:
         for op in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
                    "mustBeLessThan", "mustBeLessOrEqualTo"):
@@ -223,12 +239,23 @@ def compute_term_diff(
     def _thresholds_differ(snap: str, cur: str) -> bool:
         """Compare thresholds numerically when possible to avoid float/string mismatches.
 
-        The YAML may store ``1000`` (int) while the DB returns ``1000.0`` (numeric).
-        String comparison would flag that as a change; numeric comparison will not.
-        Falls back to string comparison for non-numeric thresholds (e.g. regex patterns).
+        Handles three cases:
+        - Single value: ``"1000"`` vs ``"1000.0"`` → equal
+        - Range (comma-separated): ``"10,90"`` vs ``"10.0,90.0"`` → equal
+        - Non-numeric (e.g. regex): falls back to string comparison
         """
         if snap == cur:
             return False
+        # Range threshold: "lower,upper"
+        snap_parts = snap.split(",")
+        cur_parts  = cur.split(",")
+        if len(snap_parts) == 2 and len(cur_parts) == 2:
+            try:
+                return (float(snap_parts[0]) != float(cur_parts[0])
+                        or float(snap_parts[1]) != float(cur_parts[1]))
+            except (ValueError, TypeError):
+                return snap != cur
+        # Single value
         try:
             return float(snap) != float(cur)
         except (ValueError, TypeError):
@@ -248,7 +275,7 @@ def compute_term_diff(
             is_monitor = bool(row.get("is_monitor", False))
             last_result: str | None = row.get("last_status")
             snap_thresh = _snap_threshold(rule)
-            cur_thresh  = str(row.get("threshold_value") or "")
+            cur_thresh  = _cur_threshold(row)
 
             if snap_thresh is not None and _thresholds_differ(snap_thresh, cur_thresh):
                 entry = TermDiffEntry(
