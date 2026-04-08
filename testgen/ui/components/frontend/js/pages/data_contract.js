@@ -971,48 +971,51 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, diffFilter, versi
 
     const ComplianceCardContent = (h, tdf) => {
         const TierRow = (cnt, lbl, color) =>
-            tr(
-                td({ class: 'ct-count' }, cnt),
-                td({ class: 'ct-label', style: `color:${color}` }, lbl),
+            div({ class: 'ct-tier-row' },
+                span({ class: 'ct-count' }, cnt),
+                span({ class: 'ct-label', style: `color:${color}` }, lbl),
             );
+
+        const SubRow = (lbl, children) =>
+            div({ class: 'ct-sub-row' },
+                span({ class: 'ct-sublabel' }, lbl),
+                div({ class: 'ct-chips' }, ...children),
+            );
+
+        const S = (color, lbl, count) =>
+            count ? span({ class: 'ct-chip', style: `color:${color}` }, `${count} ${lbl}`) : '';
+
         const monitorTotal = tdf.tg_monitor_passed + tdf.tg_monitor_failed + tdf.tg_monitor_warning
                            + tdf.tg_monitor_error  + tdf.tg_monitor_not_run;
-        return table(
-            { class: 'compliance-tier-table' },
-            tbody(
-                TierRow(h.db_enforced  || 0, 'database enforced', '#818cf8'),
-                TierRow(h.unenforced   || 0, 'unenforced',        '#f59e0b'),
-                tr(
-                    td({ class: 'ct-count' }, h.tg_enforced || 0),
-                    td({ class: 'ct-label', style: 'color:#22c55e' }, 'TestGen enforced'),
-                ),
-                monitorTotal > 0
-                    ? tr(td(), td({ class: 'ct-sub' },
-                        'Monitors  ',
-                        StatusCount('#22c55e', 'passed',  tdf.tg_monitor_passed),
-                        StatusCount('#ef4444', 'failed',  tdf.tg_monitor_failed),
-                        StatusCount('#f59e0b', 'warning', tdf.tg_monitor_warning),
-                        StatusCount('#94a3b8', 'error',   tdf.tg_monitor_error),
-                        StatusCount('#6b7280', 'not run', tdf.tg_monitor_not_run),
-                      ))
-                    : '',
-                tr(td(), td({ class: 'ct-sub' },
-                    'Tests  ',
-                    StatusCount('#22c55e', 'passed',  tdf.tg_test_passed),
-                    StatusCount('#ef4444', 'failed',  tdf.tg_test_failed),
-                    StatusCount('#f59e0b', 'warning', tdf.tg_test_warning),
-                    StatusCount('#94a3b8', 'error',   tdf.tg_test_error),
-                    StatusCount('#6b7280', 'not run', tdf.tg_test_not_run),
-                )),
-                tdf.tg_hygiene_definite + tdf.tg_hygiene_likely + tdf.tg_hygiene_possible > 0
-                    ? tr(td(), td({ class: 'ct-sub' },
-                        'Hygiene  ',
-                        StatusCount('#ef4444', 'definite', tdf.tg_hygiene_definite),
-                        StatusCount('#f59e0b', 'likely',   tdf.tg_hygiene_likely),
-                        StatusCount('#94a3b8', 'possible', tdf.tg_hygiene_possible),
-                      ))
-                    : '',
-            ),
+
+        return div(
+            { class: 'ct-card-content' },
+            TierRow(h.db_enforced || 0, 'database enforced', '#818cf8'),
+            TierRow(h.unenforced  || 0, 'unenforced',        '#f59e0b'),
+            TierRow(h.tg_enforced || 0, 'TestGen enforced',  '#22c55e'),
+            monitorTotal > 0
+                ? SubRow('Monitors', [
+                    S('#22c55e', 'passed',  tdf.tg_monitor_passed),
+                    S('#ef4444', 'failed',  tdf.tg_monitor_failed),
+                    S('#f59e0b', 'warning', tdf.tg_monitor_warning),
+                    S('#94a3b8', 'error',   tdf.tg_monitor_error),
+                    S('#6b7280', 'not run', tdf.tg_monitor_not_run),
+                  ])
+                : '',
+            SubRow('Tests', [
+                S('#22c55e', 'passed',  tdf.tg_test_passed),
+                S('#ef4444', 'failed',  tdf.tg_test_failed),
+                S('#f59e0b', 'warning', tdf.tg_test_warning),
+                S('#94a3b8', 'error',   tdf.tg_test_error),
+                S('#6b7280', 'not run', tdf.tg_test_not_run),
+            ]),
+            tdf.tg_hygiene_definite + tdf.tg_hygiene_likely + tdf.tg_hygiene_possible > 0
+                ? SubRow('Hygiene', [
+                    S('#ef4444', 'definite', tdf.tg_hygiene_definite),
+                    S('#f59e0b', 'likely',   tdf.tg_hygiene_likely),
+                    S('#94a3b8', 'possible', tdf.tg_hygiene_possible),
+                  ])
+                : '',
         );
     };
 
@@ -2510,13 +2513,15 @@ stylesheet.replace(`
 .diff-status-count { font-size: 15px; font-weight: 700; min-width: 28px; text-align: right; color: var(--primary-text-color); }
 .diff-status-label { font-size: 12px; color: var(--caption-text-color); text-transform: lowercase; }
 
-/* ── Compliance card table ── */
-.compliance-tier-table { border-collapse: collapse; width: 100%; margin-top: 4px; }
-.compliance-tier-table td { padding: 1px 4px; font-size: 13px; vertical-align: top; }
-.ct-count { text-align: right; font-weight: 700; color: var(--primary-text-color); white-space: nowrap; width: 1%; padding-right: 8px; }
-.ct-label { color: var(--caption-text-color); }
-.ct-sub { color: var(--caption-text-color); font-size: 11px; padding-left: 12px; padding-top: 1px; }
-.ct-sub .count-item { margin-right: 6px; }
+/* ── Compliance card content ── */
+.ct-card-content { margin-top: 4px; }
+.ct-tier-row { display: flex; align-items: baseline; gap: 8px; padding: 1px 0; }
+.ct-count { font-size: 15px; font-weight: 700; min-width: 28px; text-align: right; color: var(--primary-text-color); }
+.ct-label { font-size: 12px; color: var(--caption-text-color); }
+.ct-sub-row { display: flex; align-items: flex-start; padding-left: 36px; padding-top: 2px; gap: 6px; }
+.ct-sublabel { font-size: 11px; color: var(--caption-text-color); min-width: 52px; padding-top: 1px; }
+.ct-chips { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.ct-chip { font-size: 11px; white-space: nowrap; }
 
 /* ── Differences & Compliance tabs ── */
 .dc-differences-tab { padding: 16px 0; }
