@@ -1297,31 +1297,41 @@ const DifferencesTab = (termDiff, diffFilter) => {
         same:    entries.filter(e => e.status === 'same'),
     };
 
-    const statusStyle = {
-        changed: { glyph: '~', color: '#f59e0b' },
-        new:     { glyph: '+', color: '#22c55e'  },
-        deleted: { glyph: '−', color: '#ef4444'  },
-        same:    { glyph: '=', color: '#6b7280'  },
+    const STATUS = {
+        changed: { color: '#f59e0b', label: 'changed' },
+        new:     { color: '#22c55e', label: 'new'     },
+        deleted: { color: '#ef4444', label: 'deleted' },
+        same:    { color: '#6b7280', label: 'same'    },
+    };
+
+    const DetailCell = (detail) => {
+        if (!detail) return td({ class: 'diff-detail-cell' }, '');
+        const idx = detail.indexOf(' → ');
+        if (idx !== -1) {
+            return td({ class: 'diff-detail-cell' },
+                span({ class: 'diff-detail-before' }, detail.slice(0, idx)),
+                span({ class: 'diff-detail-arrow' }, ' → '),
+                span({ class: 'diff-detail-after' },  detail.slice(idx + 3)),
+            );
+        }
+        return td({ class: 'diff-detail-cell' }, detail);
     };
 
     const DiffRow = (entry) => {
-        const s = statusStyle[entry.status] || {};
+        const col = (STATUS[entry.status] || {}).color || '#6b7280';
         return tr(
-            td({ class: 'diff-icon-cell', style: `color:${s.color || '#999'}` }, s.glyph || ''),
-            td({ class: 'diff-element-cell' }, entry.element),
-            td({ class: 'diff-type-cell' },    entry.test_type || ''),
-            td({ class: 'diff-detail-cell' },  entry.detail    || ''),
+            { class: 'dc-term-row' },
+            td({ class: 'diff-element-cell', style: `box-shadow:inset 3px 0 0 ${col}` }, entry.element),
+            td({ class: 'diff-type-cell' },   entry.test_type || ''),
+            DetailCell(entry.detail),
         );
     };
 
     const DiffTable = (items) =>
-        div(
-            { class: 'dc-term-table-wrap' },
-            table(
-                { class: 'dc-term-table' },
+        div({ class: 'dc-term-table-wrap' },
+            table({ class: 'dc-term-table' },
                 thead(tr(
-                    th({ class: 'diff-icon-cell' }, ''),
-                    th('Element'),
+                    th({ class: 'diff-element-cell' }, 'Element'),
                     th('Test Type'),
                     th('Detail'),
                 )),
@@ -1331,40 +1341,61 @@ const DifferencesTab = (termDiff, diffFilter) => {
 
     const DiffAccordion = (statusKey, label, items, defaultOpen) => {
         if (items.length === 0) return '';
+        const s = STATUS[statusKey] || {};
         const isOpen = van.state(diffFilter.val ? diffFilter.val === statusKey : defaultOpen);
         return div(
             { class: 'diff-accordion' },
             div(
-                { class: 'diff-accordion-header', onclick: () => { isOpen.val = !isOpen.val; } },
+                {
+                    class: 'diff-accordion-header',
+                    style: `border-left: 3px solid ${s.color}`,
+                    onclick: () => { isOpen.val = !isOpen.val; },
+                },
                 () => mat(isOpen.val ? 'expand_more' : 'chevron_right', 14),
-                ` ${label} (${items.length})`,
+                span({ class: 'diff-accordion-label' }, ` ${label}`),
+                span({
+                    class: 'diff-count-badge',
+                    style: `color:${s.color};background:${s.color}18;border-color:${s.color}40`,
+                }, items.length),
             ),
             () => isOpen.val ? DiffTable(items) : '',
         );
     };
 
-    const SummaryPill = (color, glyph, label, count) =>
+    const total = entries.length || 1;
+    const BarSeg = (color, count) =>
         count > 0
-            ? div({ class: 'diff-summary-pill' },
-                  span({ class: 'diff-summary-glyph', style: `color:${color}` }, glyph),
+            ? div({ class: 'diff-bar-seg', style: `width:${(100 * count / total).toFixed(1)}%;background:${color}` })
+            : '';
+
+    const SummaryPill = (color, label, count) =>
+        count > 0
+            ? div({ class: 'diff-summary-pill', style: `color:${color};border-color:${color}40;background:${color}10` },
                   span({ class: 'diff-summary-count' }, count),
                   span({ class: 'diff-summary-label' }, label),
               )
             : '';
 
     const DiffSummaryBar = () =>
-        div(
-            { class: 'tab-summary-bar' },
+        div({ class: 'tab-summary-bar' },
             div({ class: 'tab-summary-meta' },
-                span({ class: 'tab-summary-kv' }, `Saved: ${termDiff.saved_count}`),
-                span({ class: 'tab-summary-sep' }, '·'),
-                span({ class: 'tab-summary-kv' }, `Current: ${termDiff.current_count}`),
+                span({ class: 'tab-summary-kv-label' }, 'Saved'),
+                span({ class: 'tab-summary-kv-num' }, termDiff.saved_count),
+                div({ class: 'tab-summary-vsep' }),
+                span({ class: 'tab-summary-kv-label' }, 'Current'),
+                span({ class: 'tab-summary-kv-num' }, termDiff.current_count),
+            ),
+            div({ class: 'diff-stacked-bar' },
+                BarSeg('#6b7280', grouped.same.length),
+                BarSeg('#f59e0b', grouped.changed.length),
+                BarSeg('#ef4444', grouped.deleted.length),
+                BarSeg('#22c55e', grouped.new.length),
             ),
             div({ class: 'diff-summary-pills' },
-                SummaryPill('#6b7280', '=', 'same',    grouped.same.length),
-                SummaryPill('#f59e0b', '~', 'changed', grouped.changed.length),
-                SummaryPill('#ef4444', '−', 'deleted', grouped.deleted.length),
-                SummaryPill('#22c55e', '+', 'new',     grouped.new.length),
+                SummaryPill('#6b7280', 'same',    grouped.same.length),
+                SummaryPill('#f59e0b', 'changed', grouped.changed.length),
+                SummaryPill('#ef4444', 'deleted', grouped.deleted.length),
+                SummaryPill('#22c55e', 'new',     grouped.new.length),
             ),
         );
 
@@ -1398,22 +1429,30 @@ const ComplianceTab = (termDiff, health) => {
     const likelihoodColor = { Definite: '#ef4444', Likely: '#f59e0b', Possible: '#94a3b8' };
 
     const Chip = (color, label) =>
-        span({ class: 'compliance-chip', style: `background:${color}` }, label);
+        span({
+            class: 'compliance-chip',
+            style: `color:${color};background:${color}18;border-color:${color}50`,
+        }, label);
 
-    const ComplianceRow = (entry) =>
-        tr(
-            td({ class: 'diff-element-cell' }, entry.element),
+    const ComplianceRow = (entry) => {
+        const col = statusColor[entry.last_result] || '#6b7280';
+        return tr(
+            { class: 'dc-term-row' },
+            td({ class: 'diff-element-cell', style: `box-shadow:inset 3px 0 0 ${col}` }, entry.element),
             td({ class: 'diff-type-cell' },    entry.test_type || ''),
-            td(Chip(statusColor[entry.last_result] || '#6b7280',
-                    (entry.last_result || 'not run').replace('_', ' '))),
+            td(Chip(col, (entry.last_result || 'not run').replace('_', ' '))),
         );
+    };
 
-    const HygieneRow = (entry) =>
-        tr(
-            td({ class: 'diff-element-cell' }, entry.element),
+    const HygieneRow = (entry) => {
+        const col = likelihoodColor[entry.issue_likelihood] || '#94a3b8';
+        return tr(
+            { class: 'dc-term-row' },
+            td({ class: 'diff-element-cell', style: `box-shadow:inset 3px 0 0 ${col}` }, entry.element),
             td({ class: 'diff-type-cell' },    entry.anomaly_type || ''),
-            td(Chip(likelihoodColor[entry.issue_likelihood] || '#94a3b8', entry.issue_likelihood || '')),
+            td(Chip(col, entry.issue_likelihood || '')),
         );
+    };
 
     const ComplianceTable = (rows, col2Label) =>
         div(
@@ -1425,10 +1464,20 @@ const ComplianceTab = (termDiff, health) => {
             ),
         );
 
-    const headerStr = (pairs) =>
-        pairs.filter(([, n]) => n > 0).map(([lbl, n]) => `${n} ${lbl}`).join('  ');
+    // Render mini status chips in the accordion header
+    const HeaderChips = (pairs) =>
+        div({ class: 'accordion-header-chips' },
+            ...pairs
+                .filter(([, n]) => n > 0)
+                .map(([lbl, n, col]) =>
+                    span({
+                        class: 'accordion-header-chip',
+                        style: `color:${col};background:${col}18;border-color:${col}40`,
+                    }, `${n} ${lbl}`),
+                ),
+        );
 
-    const ComplianceAccordion = (label, rows, headerSummary, col2Label) => {
+    const ComplianceAccordion = (label, rows, chipPairs, col2Label) => {
         if (rows.length === 0) return '';
         const isOpen = van.state(true);
         return div(
@@ -1436,8 +1485,12 @@ const ComplianceTab = (termDiff, health) => {
             div(
                 { class: 'diff-accordion-header', onclick: () => { isOpen.val = !isOpen.val; } },
                 () => mat(isOpen.val ? 'expand_more' : 'chevron_right', 14),
-                ` ${label}`,
-                headerSummary ? span({ class: 'accordion-header-stats' }, `  ${headerSummary}`) : '',
+                span({ class: 'diff-accordion-label' }, ` ${label}`),
+                span({
+                    class: 'diff-count-badge',
+                    style: 'color:var(--caption-text-color);background:rgba(128,128,128,0.1);border-color:var(--border-color)',
+                }, rows.length),
+                HeaderChips(chipPairs),
             ),
             () => isOpen.val ? ComplianceTable(rows, col2Label) : '',
         );
@@ -1482,20 +1535,25 @@ const ComplianceTab = (termDiff, health) => {
     return div(
         { class: 'dc-compliance-tab' },
         ComplianceSummaryBar(),
-        ComplianceAccordion('Monitors', monitorRows.map(ComplianceRow), headerStr([
-            ['passed', termDiff.tg_monitor_passed], ['failed', termDiff.tg_monitor_failed],
-            ['warning', termDiff.tg_monitor_warning], ['error', termDiff.tg_monitor_error],
-            ['not run', termDiff.tg_monitor_not_run],
-        ]), 'Test Type'),
-        ComplianceAccordion('Tests', testRows.map(ComplianceRow), headerStr([
-            ['passed', termDiff.tg_test_passed], ['failed', termDiff.tg_test_failed],
-            ['warning', termDiff.tg_test_warning], ['error', termDiff.tg_test_error],
-            ['not run', termDiff.tg_test_not_run],
-        ]), 'Test Type'),
-        ComplianceAccordion('Hygiene', hygieneRows.map(HygieneRow), headerStr([
-            ['definite', termDiff.tg_hygiene_definite], ['likely', termDiff.tg_hygiene_likely],
-            ['possible', termDiff.tg_hygiene_possible],
-        ]), 'Anomaly Type'),
+        ComplianceAccordion('Monitors', monitorRows.map(ComplianceRow), [
+            ['passed',  termDiff.tg_monitor_passed,  '#22c55e'],
+            ['failed',  termDiff.tg_monitor_failed,  '#ef4444'],
+            ['warning', termDiff.tg_monitor_warning, '#f59e0b'],
+            ['error',   termDiff.tg_monitor_error,   '#94a3b8'],
+            ['not run', termDiff.tg_monitor_not_run, '#6b7280'],
+        ], 'Test Type'),
+        ComplianceAccordion('Tests', testRows.map(ComplianceRow), [
+            ['passed',  termDiff.tg_test_passed,  '#22c55e'],
+            ['failed',  termDiff.tg_test_failed,  '#ef4444'],
+            ['warning', termDiff.tg_test_warning, '#f59e0b'],
+            ['error',   termDiff.tg_test_error,   '#94a3b8'],
+            ['not run', termDiff.tg_test_not_run, '#6b7280'],
+        ], 'Test Type'),
+        ComplianceAccordion('Hygiene', hygieneRows.map(HygieneRow), [
+            ['definite', termDiff.tg_hygiene_definite, '#ef4444'],
+            ['likely',   termDiff.tg_hygiene_likely,   '#f59e0b'],
+            ['possible', termDiff.tg_hygiene_possible, '#94a3b8'],
+        ], 'Anomaly Type'),
     );
 };
 
@@ -2612,73 +2670,93 @@ stylesheet.replace(`
 .dc-differences-tab { padding: 16px 0; }
 .dc-compliance-tab  { padding: 16px 0; }
 .dc-empty-state { padding: 32px; text-align: center; color: var(--caption-text-color); font-size: 14px; }
+
+/* Accordions */
 .diff-accordion { margin-bottom: 8px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
 .diff-accordion-header {
-    display: flex; align-items: center; gap: 6px; padding: 10px 14px;
+    display: flex; align-items: center; gap: 6px; padding: 9px 14px;
     background: var(--card-background-color); color: var(--secondary-text-color);
     font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;
+    border-left: 3px solid transparent; /* overridden inline per accordion */
+    transition: background 0.1s;
 }
 .diff-accordion-header:hover { background: var(--hover-background-color, rgba(128,128,128,0.06)); }
-.diff-accordion-body { padding: 6px 0; }
+.diff-accordion-label { flex: 0 0 auto; }
+.diff-count-badge {
+    font-size: 11px; font-weight: 700; border-radius: 10px; padding: 1px 7px;
+    border: 1px solid; margin-left: 2px; flex-shrink: 0;
+}
+.accordion-header-chips { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-left: 6px; }
+.accordion-header-chip {
+    font-size: 10px; font-weight: 600; border-radius: 10px; padding: 1px 6px;
+    border: 1px solid; white-space: nowrap;
+}
 
 /* Term tables — shared by Differences and Compliance accordions */
 .dc-term-table-wrap { overflow-x: auto; }
-.dc-term-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-}
+.dc-term-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dc-term-table th {
-    text-align: left;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--caption-text-color);
-    padding: 6px 10px;
-    border-bottom: 1px solid var(--border-color);
+    text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--caption-text-color);
+    padding: 6px 10px; border-bottom: 1px solid var(--border-color);
 }
+.dc-term-table th:first-child { padding-left: 14px; }
 .dc-term-table td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--border-color);
-    vertical-align: middle;
-    color: var(--secondary-text-color);
+    padding: 8px 10px; border-bottom: 1px solid var(--border-color);
+    vertical-align: middle; color: var(--secondary-text-color);
+    transition: background 0.1s;
 }
 .dc-term-table tr:last-child td { border-bottom: none; }
-.dc-term-table tr:hover td { background: rgba(128,128,128,0.03); }
-.diff-icon-cell { width: 24px; text-align: center; font-weight: 700; padding-left: 16px !important; }
-.diff-element-cell { font-weight: 600; color: var(--primary-text-color); font-family: monospace; font-size: 12px; white-space: nowrap; }
-.diff-type-cell { color: var(--caption-text-color); font-size: 12px; white-space: nowrap; }
-.diff-detail-cell { color: #f59e0b; font-size: 11px; font-style: italic; }
-.compliance-chip {
-    font-size: 10px; font-weight: 600; color: #fff;
-    border-radius: 3px; padding: 1px 6px; white-space: nowrap; text-transform: lowercase;
-    display: inline-block;
+.dc-term-row:hover td { background: rgba(128,128,128,0.04); }
+
+/* Column cells */
+.diff-element-cell {
+    font-weight: 600; color: var(--primary-text-color);
+    font-family: monospace; font-size: 12px; white-space: nowrap;
+    padding-left: 14px !important; /* space for the left-border stripe */
 }
-.accordion-header-stats { font-size: 11px; font-weight: 400; color: var(--caption-text-color); }
+.diff-type-cell { color: var(--caption-text-color); font-size: 12px; white-space: nowrap; }
+.diff-detail-cell { font-size: 12px; }
+.diff-detail-before { color: var(--caption-text-color); }
+.diff-detail-arrow  { color: var(--caption-text-color); opacity: 0.5; }
+.diff-detail-after  { color: #f59e0b; font-weight: 600; }
+
+/* Compliance status chips — tinted border pills */
+.compliance-chip {
+    font-size: 10px; font-weight: 600; border-radius: 10px;
+    padding: 1px 7px; white-space: nowrap; text-transform: lowercase;
+    display: inline-block; border: 1px solid;
+}
 
 /* Tab summary bars */
 .tab-summary-bar {
-    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
-    padding: 10px 16px 10px;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 14px;
+    padding: 10px 16px; margin-bottom: 12px;
     background: var(--card-background-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    margin-bottom: 12px;
+    border: 1px solid var(--border-color); border-radius: 6px;
 }
-.tab-summary-meta { display: flex; align-items: center; gap: 8px; }
-.tab-summary-kv { font-size: 12px; font-weight: 600; color: var(--primary-text-color); }
-.tab-summary-sep { color: var(--caption-text-color); font-size: 12px; }
-.diff-summary-pills { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tab-summary-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.tab-summary-vsep { width: 1px; height: 18px; background: var(--border-color); }
+.tab-summary-kv-label { font-size: 11px; font-weight: 600; color: var(--caption-text-color); text-transform: uppercase; letter-spacing: 0.04em; }
+.tab-summary-kv-num   { font-size: 15px; font-weight: 700; color: var(--primary-text-color); }
+
+/* Stacked proportion bar */
+.diff-stacked-bar {
+    display: flex; height: 6px; border-radius: 3px; overflow: hidden;
+    flex: 1; min-width: 80px; max-width: 200px; gap: 1px;
+}
+.diff-bar-seg { height: 100%; border-radius: 1px; transition: width 0.3s; }
+
+/* Summary pills */
+.diff-summary-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .diff-summary-pill {
-    display: flex; align-items: center; gap: 4px;
-    background: var(--hover-background-color, rgba(128,128,128,0.06));
-    border: 1px solid var(--border-color);
-    border-radius: 4px; padding: 2px 8px;
+    display: flex; align-items: center; gap: 5px;
+    border-radius: 10px; padding: 2px 9px; border: 1px solid;
+    cursor: pointer; transition: filter 0.15s;
 }
-.diff-summary-glyph { font-weight: 700; font-size: 13px; }
-.diff-summary-count { font-size: 13px; font-weight: 700; color: var(--primary-text-color); }
-.diff-summary-label { font-size: 11px; color: var(--caption-text-color); }
+.diff-summary-pill:hover { filter: brightness(1.1); }
+.diff-summary-count { font-size: 12px; font-weight: 700; }
+.diff-summary-label { font-size: 11px; font-weight: 500; }
 
 /* Compliance summary bar sections */
 .compliance-summary-section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
