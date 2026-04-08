@@ -6,7 +6,6 @@ from functools import partial
 from typing import Literal
 from uuid import UUID
 
-from testgen import settings
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
@@ -20,6 +19,7 @@ from testgen.common import (
     write_to_app_db,
 )
 from testgen.common.database.database_service import ThreadedProgress
+from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -37,22 +37,11 @@ LOG = logging.getLogger("testgen")
 
 
 @with_database_session
-def run_test_execution_in_background(test_suite_id: str | UUID):
-    from testgen.common.models.job_execution import JobExecution
-    from testgen.common.models.test_suite import TestSuite
-
-    LOG.info("Submitting test execution job for test suite %s", test_suite_id)
-    test_suite = TestSuite.get(test_suite_id)
-    JobExecution.submit(
-        job_key="run-tests",
-        kwargs={"test_suite_id": str(test_suite_id)},
-        source="ui",
-        project_code=test_suite.project_code,
-    )
-
-
-@with_database_session
-def run_test_execution(test_suite_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
+def run_test_execution(
+    test_suite_id: str | UUID,
+    username: str | None = None,
+    run_date: datetime | None = None,
+) -> None:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
 
@@ -71,8 +60,8 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_starttime=datetime.now(UTC) + time_delta,
         process_id=os.getpid(),
     )
-    if job_execution_id := os.environ.get("TG_JOB_EXECUTION_ID"):
-        test_run.job_execution_id = job_execution_id
+    if job_id := job_context.get().job_id:
+        test_run.job_execution_id = job_id
 
     # This runs in a subprocess — commit after every save so progress is visible
     # to the UI (separate session) and to execute_db_queries (independent connection).
@@ -154,6 +143,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         session.commit()
 
         send_test_run_notifications(test_run)
+        raise
     else:
         LOG.info("Setting test run status to Completed")
         test_run.test_endtime = datetime.now(UTC) + time_delta
@@ -180,7 +170,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             
         MixpanelService().send_event(
             "run-monitors" if test_suite.is_monitor else "run-tests",
-            source=settings.ANALYTICS_JOB_SOURCE,
+            source=job_context.get().source,
             username=username,
             sql_flavor=connection.sql_flavor_code,
             test_count=test_run.test_ct,
@@ -189,10 +179,6 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
             prediction_duration=(datetime.now(UTC) + time_delta - scoring_endtime).total_seconds(),
         )
 
-    return f"""
-        {"Test execution encountered an error. Check log for details." if test_run.status == "Error" else "Test execution completed."}
-        Run ID: {test_run.id}
-    """
 
 
 def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:

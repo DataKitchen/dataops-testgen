@@ -7,10 +7,10 @@ from functools import partial
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_suite import TestSuite
@@ -330,7 +330,12 @@ class TableGroupsPage(Page):
                     if should_run_profiling():
                         run_profiling = True
                         try:
-                            run_profiling_in_background(table_group.id)
+                            JobExecution.submit(
+                                job_key="run-profile",
+                                kwargs={"table_group_id": str(table_group.id)},
+                                source="ui",
+                                project_code=table_group.project_code,
+                            )
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception:
                             success = False

@@ -3,7 +3,6 @@ import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from testgen import settings
 from testgen.commands.queries.profiling_query import (
     HygieneIssueType,
     ProfilingSQL,
@@ -23,6 +22,7 @@ from testgen.common import (
     write_to_app_db,
 )
 from testgen.common.database.database_service import ThreadedProgress
+from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -37,22 +37,11 @@ LOG = logging.getLogger("testgen")
 
 
 @with_database_session
-def run_profiling_in_background(table_group_id: str | UUID) -> None:
-    from testgen.common.models.job_execution import JobExecution
-    from testgen.common.models.table_group import TableGroup
-
-    LOG.info("Submitting profiling job for table group %s", table_group_id)
-    table_group = TableGroup.get(table_group_id)
-    JobExecution.submit(
-        job_key="run-profile",
-        kwargs={"table_group_id": str(table_group_id)},
-        source="ui",
-        project_code=table_group.project_code,
-    )
-
-
-@with_database_session
-def run_profiling(table_group_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
+def run_profiling(
+    table_group_id: str | UUID,
+    username: str | None = None,
+    run_date: datetime | None = None,
+) -> None:
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -72,8 +61,8 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_starttime=datetime.now(UTC) + time_delta,
         process_id=os.getpid(),
     )
-    if job_execution_id := os.environ.get("TG_JOB_EXECUTION_ID"):
-        profiling_run.job_execution_id = job_execution_id
+    if job_id := job_context.get().job_id:
+        profiling_run.job_execution_id = job_id
 
     # This runs in a subprocess — commit after every save so progress is visible
     # to the UI (separate session) and to execute_db_queries (independent connection).
@@ -119,6 +108,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         session.commit()
 
         send_profiling_run_notifications(profiling_run)
+        raise
     else:
         LOG.info("Setting profiling run status to Completed")
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
@@ -132,7 +122,7 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
     finally:
         MixpanelService().send_event(
             "run-profiling",
-            source=settings.ANALYTICS_JOB_SOURCE,
+            source=job_context.get().source,
             username=username,
             sql_flavor=connection.sql_flavor_code,
             sampling=table_group.profile_use_sampling,
@@ -142,10 +132,6 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
             scoring_duration=(datetime.now(UTC) + time_delta - profiling_run.profiling_endtime).total_seconds(),
         )
 
-    return f"""
-        {"Profiling encountered an error. Check log for details." if profiling_run.status == "Error" else "Profiling completed."}
-        Run ID: {profiling_run.id}
-    """
 
 
 def _exclude_xde_columns(data_chars: list[ColumnChars], table_group_id: UUID) -> list[ColumnChars]:
