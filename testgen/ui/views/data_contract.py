@@ -603,7 +603,12 @@ class DataContractPage(Page):
         deleted_ct = sum(1 for e in term_diff.entries if e.status == "deleted")
         new_ct     = sum(1 for e in term_diff.entries if e.status == "new")
 
-        contract_elements: set[str] = {e.element for e in term_diff.entries if e.element}
+        # Scope to saved-YAML elements only (same/changed/deleted) so hygiene_entries
+        # matches the tg_hygiene_* counts computed in compute_term_diff.
+        contract_elements: set[str] = {
+            e.element for e in term_diff.entries
+            if e.element and e.status != "new"
+        }
         hygiene_entries = [
             {
                 "element": (

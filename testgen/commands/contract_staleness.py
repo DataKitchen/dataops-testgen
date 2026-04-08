@@ -119,6 +119,66 @@ class TermDiffResult:
 
 
 # ---------------------------------------------------------------------------
+# Shared threshold helpers (used by both compute_term_diff and compute_staleness_diff)
+# ---------------------------------------------------------------------------
+
+def _snap_threshold_from_rule(rule: dict[str, Any]) -> str | None:
+    """Extract the threshold string from an ODCS quality rule dict.
+
+    Returns ``"low,high"`` for ``mustBeBetween`` ranges, a plain string for single-value
+    operators, or ``None`` if the rule has no threshold key.
+    """
+    for op in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
+               "mustBeLessThan", "mustBeLessOrEqualTo"):
+        if op in rule:
+            return str(rule[op])
+    if "mustBeBetween" in rule:
+        between = rule["mustBeBetween"]
+        if isinstance(between, list) and len(between) == 2:
+            return f"{between[0]},{between[1]}"
+    return None
+
+
+def _cur_threshold_from_row(row: dict[str, Any]) -> str:
+    """Build the DB-side threshold string using the same logic as the YAML export.
+
+    If both ``lower_tolerance`` and ``upper_tolerance`` are set the export writes
+    ``mustBeBetween: [lower, upper]``, which ``_snap_threshold_from_rule`` returns as
+    ``"lower,upper"``.  Match that format here so the comparison is apples-to-apples.
+    """
+    lower = row.get("lower_tolerance")
+    upper = row.get("upper_tolerance")
+    if lower is not None and upper is not None:
+        return f"{lower},{upper}"
+    val = row.get("threshold_value")
+    return str(val) if val is not None else ""
+
+
+def _thresholds_differ(snap: str, cur: str) -> bool:
+    """Compare thresholds numerically when possible to avoid float/string mismatches.
+
+    Handles:
+    - Single value: ``"1000"`` vs ``"1000.0"`` → equal
+    - Range (comma-separated): ``"10,90"`` vs ``"10.0,90.0"`` → equal
+    - Non-numeric (e.g. regex patterns): falls back to string comparison
+    """
+    if snap == cur:
+        return False
+    snap_parts = snap.split(",")
+    cur_parts  = cur.split(",")
+    if len(snap_parts) == 2 and len(cur_parts) == 2:
+        try:
+            return (float(snap_parts[0]) != float(cur_parts[0])
+                    or float(snap_parts[1]) != float(cur_parts[1]))
+        except (ValueError, TypeError):
+            return snap != cur
+    try:
+        return float(snap) != float(cur)
+    except (ValueError, TypeError):
+        return snap != cur
+
+
+# ---------------------------------------------------------------------------
 # Term diff helpers and main function
 # ---------------------------------------------------------------------------
 
@@ -213,55 +273,7 @@ def compute_term_diff(
         tbl = (row.get("table_name")  or "").strip()
         return f"{tbl}.{col}" if col else tbl
 
-    def _cur_threshold(row: dict[str, Any]) -> str:
-        """Build the DB-side threshold string using the same logic as the YAML export.
-
-        If both lower_tolerance and upper_tolerance are set the export writes
-        ``mustBeBetween: [lower, upper]``, which _snap_threshold returns as
-        ``"lower,upper"``.  Match that format here so the comparison is apples-to-apples.
-        """
-        lower = row.get("lower_tolerance")
-        upper = row.get("upper_tolerance")
-        if lower is not None and upper is not None:
-            return f"{lower},{upper}"
-        val = row.get("threshold_value")
-        return str(val) if val is not None else ""
-
-    def _snap_threshold(rule: dict[str, Any]) -> str | None:
-        for op in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
-                   "mustBeLessThan", "mustBeLessOrEqualTo"):
-            if op in rule:
-                return str(rule[op])
-        if "mustBeBetween" in rule:
-            between = rule["mustBeBetween"]
-            if isinstance(between, list) and len(between) == 2:
-                return f"{between[0]},{between[1]}"
-        return None
-
-    def _thresholds_differ(snap: str, cur: str) -> bool:
-        """Compare thresholds numerically when possible to avoid float/string mismatches.
-
-        Handles three cases:
-        - Single value: ``"1000"`` vs ``"1000.0"`` → equal
-        - Range (comma-separated): ``"10,90"`` vs ``"10.0,90.0"`` → equal
-        - Non-numeric (e.g. regex): falls back to string comparison
-        """
-        if snap == cur:
-            return False
-        # Range threshold: "lower,upper"
-        snap_parts = snap.split(",")
-        cur_parts  = cur.split(",")
-        if len(snap_parts) == 2 and len(cur_parts) == 2:
-            try:
-                return (float(snap_parts[0]) != float(cur_parts[0])
-                        or float(snap_parts[1]) != float(cur_parts[1]))
-            except (ValueError, TypeError):
-                return snap != cur
-        # Single value
-        try:
-            return float(snap) != float(cur)
-        except (ValueError, TypeError):
-            return snap != cur
+    # Use module-level threshold helpers (shared with compute_staleness_diff)
 
     # ------------------------------------------------------------------
     # 3. Build entries: iterate saved YAML rules
@@ -276,8 +288,8 @@ def compute_term_diff(
             row = current_tests[rule_id]
             is_monitor = bool(row.get("is_monitor", False))
             last_result: str | None = row.get("last_status")
-            snap_thresh = _snap_threshold(rule)
-            cur_thresh  = _cur_threshold(row)
+            snap_thresh = _snap_threshold_from_rule(rule)
+            cur_thresh  = _cur_threshold_from_row(row)
 
             if snap_thresh is not None and _thresholds_differ(snap_thresh, cur_thresh):
                 entry = TermDiffEntry(
@@ -478,14 +490,16 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
         if rule_id:
             snapshot_quality[str(rule_id)] = rule
 
-    # Query current active test definitions with last result
+    # Query current active test definitions with last result (exclude referential — not in quality YAML)
     test_rows = fetch_dict_from_db(
         f"""
         SELECT td.id::text, td.test_type, td.table_name, td.column_name,
-               td.threshold_value, td.test_description,
+               td.threshold_value, td.lower_tolerance, td.upper_tolerance,
+               td.test_description,
                tr.result_status AS last_result_status
         FROM {schema}.test_definitions td
         JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
+        JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
         LEFT JOIN LATERAL (
             SELECT result_status FROM {schema}.test_results
             WHERE test_definition_id = td.id
@@ -495,6 +509,7 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
           AND ts.include_in_contract IS NOT FALSE
           AND ts.is_monitor IS NOT TRUE
           AND td.test_active = 'Y'
+          AND COALESCE(tt.test_scope, '') != 'referential'
         """,
         params={"tg_id": table_group_id},
     )
@@ -533,20 +548,10 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
         if rule_id not in current_tests:
             continue
         row = current_tests[rule_id]
-        current_threshold = str(row.get("threshold_value") or "")
+        snap_threshold   = _snap_threshold_from_rule(rule)
+        current_threshold = _cur_threshold_from_row(row)
 
-        snap_threshold: str | None = None
-        for op_key in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
-                       "mustBeLessThan", "mustBeLessOrEqualTo"):
-            if op_key in rule:
-                snap_threshold = str(rule[op_key])
-                break
-        if snap_threshold is None and "mustBeBetween" in rule:
-            between = rule["mustBeBetween"]
-            if isinstance(between, list) and len(between) == 2:
-                snap_threshold = f"{between[0]},{between[1]}"
-
-        if snap_threshold is not None and snap_threshold != current_threshold:
+        if snap_threshold is not None and _thresholds_differ(snap_threshold, current_threshold):
             diff.quality_changes.append({
                 "change":      "changed",
                 "element":     _element_label(row),

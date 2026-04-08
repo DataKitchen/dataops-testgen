@@ -1343,6 +1343,8 @@ const DifferencesTab = (termDiff, diffFilter) => {
         if (items.length === 0) return '';
         const s = STATUS[statusKey] || {};
         const isOpen = van.state(diffFilter.val ? diffFilter.val === statusKey : defaultOpen);
+        // Re-sync when diffFilter changes while the tab is already active (no re-render of tab)
+        van.derive(() => { isOpen.val = diffFilter.val ? diffFilter.val === statusKey : defaultOpen; });
         return div(
             { class: 'diff-accordion' },
             div(
