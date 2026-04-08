@@ -1329,8 +1329,34 @@ const DifferencesTab = (termDiff, diffFilter) => {
         );
     };
 
+    const SummaryPill = (color, glyph, label, count) =>
+        count > 0
+            ? div({ class: 'diff-summary-pill' },
+                  span({ class: 'diff-summary-glyph', style: `color:${color}` }, glyph),
+                  span({ class: 'diff-summary-count' }, count),
+                  span({ class: 'diff-summary-label' }, label),
+              )
+            : '';
+
+    const DiffSummaryBar = () =>
+        div(
+            { class: 'tab-summary-bar' },
+            div({ class: 'tab-summary-meta' },
+                span({ class: 'tab-summary-kv' }, `Saved: ${termDiff.saved_count}`),
+                span({ class: 'tab-summary-sep' }, '·'),
+                span({ class: 'tab-summary-kv' }, `Current: ${termDiff.current_count}`),
+            ),
+            div({ class: 'diff-summary-pills' },
+                SummaryPill('#6b7280', '=', 'same',    grouped.same.length),
+                SummaryPill('#f59e0b', '~', 'changed', grouped.changed.length),
+                SummaryPill('#ef4444', '−', 'deleted', grouped.deleted.length),
+                SummaryPill('#22c55e', '+', 'new',     grouped.new.length),
+            ),
+        );
+
     return div(
         { class: 'dc-differences-tab' },
+        DiffSummaryBar(),
         DiffAccordion('changed', 'Changed', grouped.changed, true),
         DiffAccordion('new',     'New',     grouped.new,     true),
         DiffAccordion('deleted', 'Deleted', grouped.deleted, true),
@@ -1395,8 +1421,45 @@ const ComplianceTab = (termDiff, health) => {
         );
     };
 
+    const complianceStat = (color, count, label) =>
+        count > 0
+            ? span({ class: 'compliance-summary-stat', style: `color:${color}` }, `${count} ${label}`)
+            : '';
+
+    const ComplianceSummaryBar = () => {
+        const h = termDiff;
+        return div(
+            { class: 'tab-summary-bar' },
+            div({ class: 'compliance-summary-section' },
+                span({ class: 'compliance-summary-tier' }, 'Monitors:'),
+                complianceStat('#22c55e', h.tg_monitor_passed,  'passed'),
+                complianceStat('#ef4444', h.tg_monitor_failed,  'failed'),
+                complianceStat('#f59e0b', h.tg_monitor_warning, 'warning'),
+                complianceStat('#94a3b8', h.tg_monitor_error,   'error'),
+                complianceStat('#6b7280', h.tg_monitor_not_run, 'not run'),
+            ),
+            div({ class: 'compliance-summary-sep' }),
+            div({ class: 'compliance-summary-section' },
+                span({ class: 'compliance-summary-tier' }, 'Tests:'),
+                complianceStat('#22c55e', h.tg_test_passed,  'passed'),
+                complianceStat('#ef4444', h.tg_test_failed,  'failed'),
+                complianceStat('#f59e0b', h.tg_test_warning, 'warning'),
+                complianceStat('#94a3b8', h.tg_test_error,   'error'),
+                complianceStat('#6b7280', h.tg_test_not_run, 'not run'),
+            ),
+            div({ class: 'compliance-summary-sep' }),
+            div({ class: 'compliance-summary-section' },
+                span({ class: 'compliance-summary-tier' }, 'Hygiene:'),
+                complianceStat('#ef4444', h.tg_hygiene_definite, 'definite'),
+                complianceStat('#f59e0b', h.tg_hygiene_likely,   'likely'),
+                complianceStat('#94a3b8', h.tg_hygiene_possible, 'possible'),
+            ),
+        );
+    };
+
     return div(
         { class: 'dc-compliance-tab' },
+        ComplianceSummaryBar(),
         ComplianceAccordion('Monitors', monitorRows.map(ComplianceRow), headerStr([
             ['passed', termDiff.tg_monitor_passed], ['failed', termDiff.tg_monitor_failed],
             ['warning', termDiff.tg_monitor_warning], ['error', termDiff.tg_monitor_error],
@@ -2567,6 +2630,35 @@ stylesheet.replace(`
     justify-self: start;
 }
 .accordion-header-stats { font-size: 11px; font-weight: 400; color: var(--caption-text-color); }
+
+/* Tab summary bars */
+.tab-summary-bar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 12px;
+    padding: 10px 16px 10px;
+    background: var(--card-background-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+.tab-summary-meta { display: flex; align-items: center; gap: 8px; }
+.tab-summary-kv { font-size: 12px; font-weight: 600; color: var(--primary-text-color); }
+.tab-summary-sep { color: var(--caption-text-color); font-size: 12px; }
+.diff-summary-pills { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.diff-summary-pill {
+    display: flex; align-items: center; gap: 4px;
+    background: var(--hover-background-color, rgba(128,128,128,0.06));
+    border: 1px solid var(--border-color);
+    border-radius: 4px; padding: 2px 8px;
+}
+.diff-summary-glyph { font-weight: 700; font-size: 13px; }
+.diff-summary-count { font-size: 13px; font-weight: 700; color: var(--primary-text-color); }
+.diff-summary-label { font-size: 11px; color: var(--caption-text-color); }
+
+/* Compliance summary bar sections */
+.compliance-summary-section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.compliance-summary-tier { font-size: 11px; font-weight: 700; color: var(--caption-text-color); text-transform: uppercase; letter-spacing: 0.04em; }
+.compliance-summary-stat { font-size: 12px; font-weight: 600; }
+.compliance-summary-sep { width: 1px; height: 20px; background: var(--border-color); flex-shrink: 0; }
 `);
 
 export { DataContract };
