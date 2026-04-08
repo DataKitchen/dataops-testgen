@@ -4,10 +4,14 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
 from testgen import settings
+
+_FAVICON_PATH = Path(__file__).resolve().parent.parent / "ui" / "assets" / "favicon.ico"
 
 # authlib rejects http:// URIs by default; allow in debug mode for local dev
 if settings.IS_DEBUG:
@@ -25,6 +29,43 @@ from testgen.common import version_service
 from testgen.common.models import with_database_session
 
 LOG = logging.getLogger("testgen")
+
+
+def _patch_openapi_schema(app: FastAPI) -> None:
+    """Strip Pydantic-generated ``title`` fields from the OpenAPI schema.
+
+    Pydantic v2 auto-generates a ``title`` for every model field by converting
+    the Python name to title case (e.g. ``completed_at`` → ``"Completed At"``).
+    Redoc displays these next to the field name, producing redundant labels like
+    ``completed_at  string <date-time> (Completed At)``.  For nullable unions
+    (``anyOf``) the effect is worse: each branch gets its own title, leading to
+    ``"Completed At (string) or Completed At (null) (Completed At)"``.
+
+    This post-processor wraps ``app.openapi()`` and strips ``title`` from:
+    - Component schema properties and their ``anyOf`` branches
+    - Top-level component schema titles (shown in Redoc sidebar)
+    - Path/query parameter schemas
+
+    FastAPI caches the schema after the first call, so the patching runs once.
+    """
+    _original = app.openapi
+
+    def patched_openapi() -> dict:
+        schema = _original()
+        for model_schema in schema.get("components", {}).get("schemas", {}).values():
+            for prop in model_schema.get("properties", {}).values():
+                prop.pop("title", None)
+                for branch in prop.get("anyOf", []):
+                    branch.pop("title", None)
+            model_schema.pop("title", None)
+        for methods in schema.get("paths", {}).values():
+            for details in methods.values():
+                if isinstance(details, dict):
+                    for param in details.get("parameters", []):
+                        param.get("schema", {}).pop("title", None)
+        return schema
+
+    app.openapi = patched_openapi  # type: ignore[method-assign]
 
 
 def create_app() -> FastAPI:
@@ -45,16 +86,40 @@ def create_app() -> FastAPI:
         else:
             yield
 
+    tags_metadata = [
+        {"name": "Jobs", "description": "Submit, poll, cancel, and list job executions (profiling, tests, generation)."},
+        {"name": "Test Definitions", "description": "Export and import test definitions across environments."},
+        {"name": "OAuth", "description": "OAuth 2.0 authorization code flow and token management."},
+        {"name": "API", "description": "Health and version information."},
+    ]
+
     app = FastAPI(
-        title="TestGen API",
+        title=f"{version_data.edition} API",
+        summary="REST API for DataOps TestGen.",
+        description=(
+            "Automate profiling, test execution, and test generation jobs. "
+            "Export and import test definitions for promotion across environments.\n\n"
+            "**Authentication**: OAuth 2.0 authorization code flow. "
+            "See `GET /.well-known/oauth-authorization-server` for discovery."
+        ),
         version=version_data.current or "dev",
-        docs_url="/api/docs",
+        contact={"name": "DataKitchen Support", "email": "support@datakitchen.io", "url": "https://datakitchen.io"},
+        terms_of_service="https://datakitchen.io/terms-of-service/",
+        docs_url=None,
+        redoc_url="/api/docs",
         openapi_url="/api/openapi.json",
+        openapi_tags=tags_metadata,
         lifespan=lifespan,
     )
 
     server = create_authorization_server()
     init_routes(server)
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    def favicon():
+        return FileResponse(_FAVICON_PATH)
+
+    _patch_openapi_schema(app)
 
     app.include_router(metadata_router)
     app.include_router(oauth_router)
