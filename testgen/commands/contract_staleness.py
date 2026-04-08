@@ -91,7 +91,7 @@ class TermDiffEntry:
     test_type: str
     status: TermStatus
     detail: str | None    # non-None only for "changed" rows
-    last_result: str | None  # "passed"/"failed"/"warning"/"error"/"not_run"/None
+    last_result: str | None  # "passed"/"failed"/"warning"/"error"/None (None = not run)
     is_monitor: bool = False
 
 
