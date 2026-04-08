@@ -458,11 +458,17 @@ def show_test_form(
         "Log",
         "Warning",
         "Fail",
+        "Error",
     ]
     if mode == "add" or selected_test_def["severity"] is None:
         severity_index = 0
     else:
-        severity_index = severity_options.index(selected_test_def["severity"])
+        severity_value = selected_test_def["severity"]
+        # DB may store lowercase (e.g. "error"); match case-insensitively
+        severity_index = next(
+            (i for i, opt in enumerate(severity_options) if opt.lower() == severity_value.lower()),
+            0,
+        )
 
     # general value parsing
     table_groups_id = selected_test_def["table_groups_id"] if mode == "edit" else table_group.id
