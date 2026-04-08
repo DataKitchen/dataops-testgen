@@ -17,7 +17,12 @@ _log = logging.getLogger(__name__)
 import streamlit as st
 import yaml
 
-from testgen.commands.contract_staleness import StaleDiff, compute_staleness_diff
+from testgen.commands.contract_staleness import (
+    StaleDiff,
+    TermDiffResult,
+    compute_staleness_diff,
+    compute_term_diff,
+)
 from testgen.commands.contract_versions import (
     has_any_version,
     list_contract_versions,
@@ -589,6 +594,64 @@ class DataContractPage(Page):
             "is_latest":     is_latest,
             "is_stale":      stale_diff is not None,
             "pending_count": pending_ct,
+        }
+
+        # ── Term diff (Card 2 / Card 3 / Differences tab / Compliance tab) ──────
+        term_diff: TermDiffResult = compute_term_diff(table_group_id, contract_yaml, anomalies)
+        same_ct    = sum(1 for e in term_diff.entries if e.status == "same")
+        changed_ct = sum(1 for e in term_diff.entries if e.status == "changed")
+        deleted_ct = sum(1 for e in term_diff.entries if e.status == "deleted")
+        new_ct     = sum(1 for e in term_diff.entries if e.status == "new")
+
+        contract_elements: set[str] = {e.element for e in term_diff.entries if e.element}
+        hygiene_entries = [
+            {
+                "element": (
+                    f"{a['table_name']}.{a['column_name']}"
+                    if a.get("column_name") else a["table_name"]
+                ),
+                "anomaly_type":     a.get("anomaly_type", ""),
+                "issue_likelihood": a.get("issue_likelihood", ""),
+            }
+            for a in anomalies
+            if (
+                f"{a['table_name']}.{a['column_name']}"
+                if a.get("column_name") else a["table_name"]
+            ) in contract_elements
+        ]
+
+        props["term_diff"] = {
+            "saved_count":   term_diff.saved_count,
+            "current_count": term_diff.current_count,
+            "same_count":    same_ct,
+            "changed_count": changed_ct,
+            "deleted_count": deleted_ct,
+            "new_count":     new_ct,
+            "entries": [
+                {
+                    "element":     e.element,
+                    "test_type":   e.test_type,
+                    "status":      e.status,
+                    "detail":      e.detail,
+                    "last_result": e.last_result,
+                    "is_monitor":  e.is_monitor,
+                }
+                for e in term_diff.entries
+            ],
+            "hygiene_entries": hygiene_entries,
+            "tg_monitor_passed":  term_diff.tg_monitor_passed,
+            "tg_monitor_failed":  term_diff.tg_monitor_failed,
+            "tg_monitor_warning": term_diff.tg_monitor_warning,
+            "tg_monitor_error":   term_diff.tg_monitor_error,
+            "tg_monitor_not_run": term_diff.tg_monitor_not_run,
+            "tg_test_passed":     term_diff.tg_test_passed,
+            "tg_test_failed":     term_diff.tg_test_failed,
+            "tg_test_warning":    term_diff.tg_test_warning,
+            "tg_test_error":      term_diff.tg_test_error,
+            "tg_test_not_run":    term_diff.tg_test_not_run,
+            "tg_hygiene_definite": term_diff.tg_hygiene_definite,
+            "tg_hygiene_likely":   term_diff.tg_hygiene_likely,
+            "tg_hygiene_possible": term_diff.tg_hygiene_possible,
         }
 
         # ── Event handlers ────────────────────────────────────────────────────
