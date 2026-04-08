@@ -220,6 +220,20 @@ def compute_term_diff(
                 return f"{between[0]},{between[1]}"
         return None
 
+    def _thresholds_differ(snap: str, cur: str) -> bool:
+        """Compare thresholds numerically when possible to avoid float/string mismatches.
+
+        The YAML may store ``1000`` (int) while the DB returns ``1000.0`` (numeric).
+        String comparison would flag that as a change; numeric comparison will not.
+        Falls back to string comparison for non-numeric thresholds (e.g. regex patterns).
+        """
+        if snap == cur:
+            return False
+        try:
+            return float(snap) != float(cur)
+        except (ValueError, TypeError):
+            return snap != cur
+
     # ------------------------------------------------------------------
     # 3. Build entries: iterate saved YAML rules
     # ------------------------------------------------------------------
@@ -236,7 +250,7 @@ def compute_term_diff(
             snap_thresh = _snap_threshold(rule)
             cur_thresh  = str(row.get("threshold_value") or "")
 
-            if snap_thresh is not None and snap_thresh != cur_thresh:
+            if snap_thresh is not None and _thresholds_differ(snap_thresh, cur_thresh):
                 entry = TermDiffEntry(
                     element=element or _element_of(row),
                     test_type=row.get("test_type") or "",
