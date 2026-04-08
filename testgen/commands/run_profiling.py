@@ -41,7 +41,7 @@ def run_profiling(
     table_group_id: str | UUID,
     username: str | None = None,
     run_date: datetime | None = None,
-) -> None:
+) -> UUID:
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -132,6 +132,7 @@ def run_profiling(
             scoring_duration=(datetime.now(UTC) + time_delta - profiling_run.profiling_endtime).total_seconds(),
         )
 
+    return profiling_run.id
 
 
 def _exclude_xde_columns(data_chars: list[ColumnChars], table_group_id: UUID) -> list[ColumnChars]:

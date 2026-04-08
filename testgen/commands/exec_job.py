@@ -19,7 +19,7 @@ LOG = logging.getLogger("testgen")
 TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELLED})
 POLL_INTERVAL = 2
 
-JOB_DISPATCH: dict[str, Callable[..., None]] = {
+JOB_DISPATCH: dict[str, Callable] = {
     "run-profile": run_profiling,
     "run-tests": run_test_execution,
     "run-monitors": run_test_execution,

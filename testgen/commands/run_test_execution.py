@@ -41,7 +41,7 @@ def run_test_execution(
     test_suite_id: str | UUID,
     username: str | None = None,
     run_date: datetime | None = None,
-) -> None:
+) -> UUID:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
 
@@ -179,6 +179,7 @@ def run_test_execution(
             prediction_duration=(datetime.now(UTC) + time_delta - scoring_endtime).total_seconds(),
         )
 
+    return test_run.id
 
 
 def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
