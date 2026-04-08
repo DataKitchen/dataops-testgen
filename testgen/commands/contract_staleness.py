@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 
@@ -76,6 +76,228 @@ class StaleDiff:
             parts.append(f"{removed_suites} suite{'s' if removed_suites != 1 else ''} removed from contract")
 
         return parts
+
+
+# ---------------------------------------------------------------------------
+# Term diff data structures
+# ---------------------------------------------------------------------------
+
+TermStatus = Literal["same", "changed", "new", "deleted"]
+
+
+@dataclass
+class TermDiffEntry:
+    element: str          # "table.column" or just "table" for table-level terms
+    test_type: str
+    status: TermStatus
+    detail: str | None    # non-None only for "changed" rows
+    last_result: str | None  # "passed"/"failed"/"warning"/"error"/"not_run"/None
+    is_monitor: bool = False
+
+
+@dataclass
+class TermDiffResult:
+    entries: list[TermDiffEntry] = field(default_factory=list)
+    saved_count: int = 0
+    current_count: int = 0
+    # Monitor statuses (contract-scoped)
+    tg_monitor_passed: int = 0
+    tg_monitor_failed: int = 0
+    tg_monitor_warning: int = 0
+    tg_monitor_error: int = 0
+    tg_monitor_not_run: int = 0
+    # Test statuses (contract-scoped)
+    tg_test_passed: int = 0
+    tg_test_failed: int = 0
+    tg_test_warning: int = 0
+    tg_test_error: int = 0
+    tg_test_not_run: int = 0
+    # Hygiene counts (contract-scoped anomalies)
+    tg_hygiene_definite: int = 0
+    tg_hygiene_likely: int = 0
+    tg_hygiene_possible: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Term diff helpers and main function
+# ---------------------------------------------------------------------------
+
+def _add_status_count(result: TermDiffResult, is_monitor: bool, last_status: str | None) -> None:
+    """Increment the appropriate status counter on *result*."""
+    s = last_status if last_status in ("passed", "failed", "warning", "error") else "not_run"
+    prefix = "tg_monitor" if is_monitor else "tg_test"
+    attr = f"{prefix}_{s}"
+    setattr(result, attr, getattr(result, attr) + 1)
+
+
+@with_database_session
+def compute_term_diff(
+    table_group_id: str,
+    saved_yaml: str,
+    anomalies: list[dict[str, Any]],
+) -> TermDiffResult:
+    """
+    Compare the saved contract YAML snapshot against the current active test definitions
+    (including monitors) and return a TermDiffResult with per-term diff entries and
+    compliance status counts.
+
+    Key rule: terms absent from the saved YAML are surfaced as "new" (they exist in
+    TestGen but were never in the contract). Terms in the saved YAML but gone from
+    TestGen are "deleted". Hygiene counts are scoped to elements mentioned in the
+    saved YAML's quality rules.
+    """
+    result = TermDiffResult()
+    schema = get_tg_schema()
+
+    # ------------------------------------------------------------------
+    # 1. Parse the saved YAML
+    # ------------------------------------------------------------------
+    try:
+        snapshot: dict[str, Any] = yaml.safe_load(saved_yaml) or {}
+    except yaml.YAMLError as exc:
+        LOG.warning("compute_term_diff: failed to parse saved YAML: %s", exc)
+        return result
+    if not isinstance(snapshot, dict):
+        return result
+
+    saved_quality: dict[str, dict[str, Any]] = {}
+    for rule in snapshot.get("quality") or []:
+        if not isinstance(rule, dict):
+            continue
+        rule_id = rule.get("id")
+        if rule_id:
+            saved_quality[str(rule_id)] = rule
+
+    result.saved_count = len(saved_quality)
+
+    # ------------------------------------------------------------------
+    # 2. Query current test definitions (monitors included)
+    # ------------------------------------------------------------------
+    test_rows = fetch_dict_from_db(
+        f"""
+        SELECT td.id::text AS id,
+               td.test_type,
+               td.table_name,
+               td.column_name,
+               td.threshold_value,
+               COALESCE(ts.is_monitor, FALSE) AS is_monitor,
+               CASE tr.result_status
+                   WHEN 'Passed'  THEN 'passed'
+                   WHEN 'Failed'  THEN 'failed'
+                   WHEN 'Warning' THEN 'warning'
+                   WHEN 'Error'   THEN 'error'
+                   ELSE NULL
+               END AS last_status
+        FROM {schema}.test_definitions td
+        JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
+        LEFT JOIN LATERAL (
+            SELECT result_status FROM {schema}.test_results
+            WHERE  test_definition_id = td.id
+            ORDER  BY test_time DESC LIMIT 1
+        ) tr ON TRUE
+        WHERE ts.table_groups_id         = :tg_id
+          AND ts.include_in_contract     IS NOT FALSE
+          AND td.test_active             = 'Y'
+        """,
+        params={"tg_id": table_group_id},
+    )
+    current_tests: dict[str, dict[str, Any]] = {str(r["id"]): dict(r) for r in test_rows}
+    result.current_count = len(current_tests)
+
+    def _element_of(row: dict[str, Any]) -> str:
+        col = (row.get("column_name") or "").strip()
+        tbl = (row.get("table_name")  or "").strip()
+        return f"{tbl}.{col}" if col else tbl
+
+    def _snap_threshold(rule: dict[str, Any]) -> str | None:
+        for op in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
+                   "mustBeLessThan", "mustBeLessOrEqualTo"):
+            if op in rule:
+                return str(rule[op])
+        if "mustBeBetween" in rule:
+            between = rule["mustBeBetween"]
+            if isinstance(between, list) and len(between) == 2:
+                return f"{between[0]},{between[1]}"
+        return None
+
+    # ------------------------------------------------------------------
+    # 3. Build entries: iterate saved YAML rules
+    # ------------------------------------------------------------------
+    contract_elements: set[str] = set()
+
+    for rule_id, rule in saved_quality.items():
+        element = rule.get("element") or ""
+        contract_elements.add(element)
+
+        if rule_id in current_tests:
+            row = current_tests[rule_id]
+            is_monitor = bool(row.get("is_monitor", False))
+            last_result: str | None = row.get("last_status")
+            snap_thresh = _snap_threshold(rule)
+            cur_thresh  = str(row.get("threshold_value") or "")
+
+            if snap_thresh is not None and snap_thresh != cur_thresh:
+                entry = TermDiffEntry(
+                    element=element or _element_of(row),
+                    test_type=row.get("test_type") or "",
+                    status="changed",
+                    detail=f"threshold: {snap_thresh} → {cur_thresh}",
+                    last_result=last_result,
+                    is_monitor=is_monitor,
+                )
+            else:
+                entry = TermDiffEntry(
+                    element=element or _element_of(row),
+                    test_type=row.get("test_type") or "",
+                    status="same",
+                    detail=None,
+                    last_result=last_result,
+                    is_monitor=is_monitor,
+                )
+            result.entries.append(entry)
+            _add_status_count(result, is_monitor, last_result)
+        else:
+            result.entries.append(TermDiffEntry(
+                element=element,
+                test_type="",
+                status="deleted",
+                detail=None,
+                last_result=None,
+                is_monitor=False,
+            ))
+
+    # ------------------------------------------------------------------
+    # 4. New entries: in TestGen but absent from saved YAML
+    # ------------------------------------------------------------------
+    for test_id, row in current_tests.items():
+        if test_id not in saved_quality:
+            result.entries.append(TermDiffEntry(
+                element=_element_of(row),
+                test_type=row.get("test_type") or "",
+                status="new",
+                detail=None,
+                last_result=row.get("last_status"),
+                is_monitor=bool(row.get("is_monitor", False)),
+            ))
+
+    # ------------------------------------------------------------------
+    # 5. Hygiene counts — scoped to contract elements
+    # ------------------------------------------------------------------
+    for anomaly in anomalies:
+        tbl = (anomaly.get("table_name") or "").strip()
+        col = (anomaly.get("column_name") or "").strip()
+        element = f"{tbl}.{col}" if col else tbl
+        if element not in contract_elements:
+            continue
+        likelihood = anomaly.get("issue_likelihood") or ""
+        if likelihood == "Definite":
+            result.tg_hygiene_definite += 1
+        elif likelihood == "Likely":
+            result.tg_hygiene_likely += 1
+        elif likelihood == "Possible":
+            result.tg_hygiene_possible += 1
+
+    return result
 
 
 # ---------------------------------------------------------------------------

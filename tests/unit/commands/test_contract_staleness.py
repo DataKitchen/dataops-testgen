@@ -11,7 +11,10 @@ from uuid import uuid4
 import pytest
 import yaml
 
-from testgen.commands.contract_staleness import StaleDiff, compute_staleness_diff
+from testgen.commands.contract_staleness import (
+    StaleDiff, compute_staleness_diff,
+    TermDiffEntry, TermDiffResult, compute_term_diff,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -269,3 +272,162 @@ class Test_ComputeStalenessDiff_SuiteScope:
                    side_effect=_patch_db(suite_rows=[_suite_row("suite_a")])):
             diff = compute_staleness_diff(TABLE_GROUP_ID, snapshot)
         assert not diff.suite_scope_changes
+
+
+# ---------------------------------------------------------------------------
+# compute_term_diff helpers
+# ---------------------------------------------------------------------------
+
+def _term_test_row(
+    test_id: str,
+    threshold: str = "100",
+    is_monitor: bool = False,
+    last_status: str | None = None,
+    table: str = "orders",
+    column: str = "amount",
+) -> dict:
+    return {
+        "id": test_id,
+        "test_type": "Row_Ct",
+        "table_name": table,
+        "column_name": column,
+        "threshold_value": threshold,
+        "is_monitor": is_monitor,
+        "last_status": last_status,  # already normalized (passed/failed/…/not_run)
+    }
+
+
+def _diff_patch_db(test_rows: list | None = None) -> list:
+    """Return side_effect list for the single fetch_dict_from_db call in compute_term_diff."""
+    return [test_rows if test_rows is not None else []]
+
+
+# ---------------------------------------------------------------------------
+# compute_term_diff tests
+# ---------------------------------------------------------------------------
+
+class Test_ComputeTermDiff:
+    def test_same_when_threshold_matches(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 1000}])
+        rows = [_term_test_row(test_id, threshold="1000")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        same = [e for e in result.entries if e.status == "same"]
+        assert len(same) == 1
+        assert same[0].test_type == "Row_Ct"
+        assert same[0].detail is None
+
+    def test_changed_when_threshold_differs(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 500}])
+        rows = [_term_test_row(test_id, threshold="1000")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        changed = [e for e in result.entries if e.status == "changed"]
+        assert len(changed) == 1
+        assert "500" in changed[0].detail
+        assert "1000" in changed[0].detail
+
+    def test_deleted_when_not_in_testgen(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeLessOrEqualTo": 0}])
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db([])):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        deleted = [e for e in result.entries if e.status == "deleted"]
+        assert len(deleted) == 1
+        assert deleted[0].element == "orders.amount"
+
+    def test_new_when_not_in_saved_yaml(self):
+        new_id = str(uuid4())
+        saved = _yaml_with_quality([])
+        rows = [_term_test_row(new_id, threshold="100")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        new = [e for e in result.entries if e.status == "new"]
+        assert len(new) == 1
+
+    def test_saved_and_current_counts(self):
+        id1, id2 = str(uuid4()), str(uuid4())
+        saved = _yaml_with_quality([{"id": id1, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 100}])
+        rows = [
+            _term_test_row(id1, threshold="100"),
+            _term_test_row(id2, threshold="200"),
+        ]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.saved_count == 1
+        assert result.current_count == 2
+
+    def test_monitor_status_counted_separately(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 1}])
+        rows = [_term_test_row(test_id, threshold="1", is_monitor=True, last_status="passed")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.tg_monitor_passed == 1
+        assert result.tg_test_passed == 0
+
+    def test_test_status_counted_separately(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 1}])
+        rows = [_term_test_row(test_id, threshold="1", is_monitor=False, last_status="failed")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.tg_test_failed == 1
+        assert result.tg_monitor_failed == 0
+
+    def test_not_run_when_no_result(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 1}])
+        rows = [_term_test_row(test_id, threshold="1", last_status=None)]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.tg_test_not_run == 1
+
+    def test_hygiene_scoped_to_contract_elements(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 1}])
+        rows = [_term_test_row(test_id, threshold="1", table="orders", column="amount")]
+        anomalies = [
+            {"table_name": "orders", "column_name": "amount", "issue_likelihood": "Definite"},
+            {"table_name": "users",  "column_name": "email",  "issue_likelihood": "Likely"},   # out of contract
+        ]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, anomalies)
+        assert result.tg_hygiene_definite == 1
+        assert result.tg_hygiene_likely == 0   # excluded because not in contract elements
+
+    def test_invalid_yaml_returns_empty_result(self):
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db([])):
+            result = compute_term_diff(TABLE_GROUP_ID, "{{invalid yaml: [}", [])
+        assert result.entries == []
+        assert result.saved_count == 0
+
+    def test_entry_carries_is_monitor_flag(self):
+        test_id = str(uuid4())
+        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+                                     "mustBeGreaterOrEqualTo": 1}])
+        rows = [_term_test_row(test_id, threshold="1", is_monitor=True, last_status="passed")]
+        with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
+                   side_effect=_diff_patch_db(rows)):
+            result = compute_term_diff(TABLE_GROUP_ID, saved, [])
+        assert result.entries[0].is_monitor is True
