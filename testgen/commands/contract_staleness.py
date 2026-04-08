@@ -192,6 +192,7 @@ def compute_term_diff(
                END AS last_status
         FROM {schema}.test_definitions td
         JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
+        JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
         LEFT JOIN LATERAL (
             SELECT result_status FROM {schema}.test_results
             WHERE  test_definition_id = td.id
@@ -200,6 +201,7 @@ def compute_term_diff(
         WHERE ts.table_groups_id         = :tg_id
           AND ts.include_in_contract     IS NOT FALSE
           AND td.test_active             = 'Y'
+          AND COALESCE(tt.test_scope, '') != 'referential'
         """,
         params={"tg_id": table_group_id},
     )
