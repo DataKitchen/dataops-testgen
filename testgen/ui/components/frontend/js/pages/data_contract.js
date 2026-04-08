@@ -1152,12 +1152,12 @@ const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 const TABS = [
-    { id: 'overview',    label: 'Contract Terms'            },
-    { id: 'matrix',      label: 'Contract Term Coverage'    },
-    { id: 'differences', label: 'Contract Term Differences' },
-    { id: 'compliance',  label: 'Contract Term Compliance'  },
-    { id: 'yaml',        label: 'YAML'                      },
-    { id: 'upload',      label: 'Upload Changes'            },
+    { id: 'overview',    label: 'Contract Terms'      },
+    { id: 'matrix',      label: 'Contract Coverage'   },
+    { id: 'differences', label: 'Contract Differences' },
+    { id: 'compliance',  label: 'Contract Compliance'  },
+    { id: 'yaml',        label: 'YAML'                 },
+    { id: 'upload',      label: 'Upload Changes'       },
 ];
 
 const TabBar = (activeTab) =>
@@ -1301,15 +1301,16 @@ const DifferencesTab = (termDiff, diffFilter) => {
         same:    { glyph: '=', color: '#6b7280'  },
     };
 
-    const DiffRow = (entry) =>
-        div(
+    const DiffRow = (entry) => {
+        const s = statusStyle[entry.status] || {};
+        return div(
             { class: 'diff-entry-row' },
-            span({ style: `color:${(statusStyle[entry.status] || {}).color || '#999'};font-weight:700;margin-right:6px;min-width:14px;display:inline-block` },
-                (statusStyle[entry.status] || {}).glyph || ''),
+            span({ class: 'diff-icon', style: `color:${s.color || '#999'}` }, s.glyph || ''),
             span({ class: 'diff-element' }, entry.element),
-            entry.test_type ? span({ class: 'diff-test-type' }, entry.test_type) : '',
-            entry.detail    ? span({ class: 'diff-detail' },    entry.detail)    : '',
+            span({ class: 'diff-test-type' }, entry.test_type || ''),
+            span({ class: 'diff-detail' },   entry.detail    || ''),
         );
+    };
 
     const DiffAccordion = (statusKey, label, items, defaultOpen) => {
         if (items.length === 0) return '';
@@ -2505,50 +2506,62 @@ stylesheet.replace(`
     display: flex; align-items: baseline; gap: 8px; padding: 2px 4px;
     border-radius: 4px; cursor: pointer;
 }
-.diff-status-row:hover { background: rgba(255,255,255,0.06); }
-.diff-status-count { font-size: 15px; font-weight: 700; min-width: 28px; text-align: right; color: #e2e8f0; }
-.diff-status-label { font-size: 12px; color: #94a3b8; text-transform: lowercase; }
+.diff-status-row:hover { background: var(--hover-background-color, rgba(128,128,128,0.06)); }
+.diff-status-count { font-size: 15px; font-weight: 700; min-width: 28px; text-align: right; color: var(--primary-text-color); }
+.diff-status-label { font-size: 12px; color: var(--caption-text-color); text-transform: lowercase; }
 
 /* ── Compliance card table ── */
 .compliance-tier-table { border-collapse: collapse; width: 100%; margin-top: 4px; }
 .compliance-tier-table td { padding: 1px 4px; font-size: 13px; vertical-align: top; }
-.ct-count { text-align: right; font-weight: 700; color: #e2e8f0; white-space: nowrap; width: 1%; padding-right: 8px; }
-.ct-label { color: #94a3b8; }
-.ct-sub { color: #64748b; font-size: 11px; padding-left: 12px; padding-top: 1px; }
+.ct-count { text-align: right; font-weight: 700; color: var(--primary-text-color); white-space: nowrap; width: 1%; padding-right: 8px; }
+.ct-label { color: var(--caption-text-color); }
+.ct-sub { color: var(--caption-text-color); font-size: 11px; padding-left: 12px; padding-top: 1px; }
 .ct-sub .count-item { margin-right: 6px; }
 
-/* ── Differences tab ── */
+/* ── Differences & Compliance tabs ── */
 .dc-differences-tab { padding: 16px 0; }
 .dc-compliance-tab  { padding: 16px 0; }
-.dc-empty-state { padding: 32px; text-align: center; color: #64748b; font-size: 14px; }
-.diff-accordion { margin-bottom: 8px; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden; }
+.dc-empty-state { padding: 32px; text-align: center; color: var(--caption-text-color); font-size: 14px; }
+.diff-accordion { margin-bottom: 8px; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
 .diff-accordion-header {
     display: flex; align-items: center; gap: 6px; padding: 10px 14px;
-    background: #0f172a; color: #cbd5e1; font-size: 13px; font-weight: 600;
-    cursor: pointer; user-select: none;
+    background: var(--card-background-color); color: var(--secondary-text-color);
+    font-size: 13px; font-weight: 600; cursor: pointer; user-select: none;
 }
-.diff-accordion-header:hover { background: #1e293b; }
+.diff-accordion-header:hover { background: var(--hover-background-color, rgba(128,128,128,0.06)); }
 .diff-accordion-body { padding: 6px 0; }
+
+/* Grid rows — 4 fixed columns: icon | element | test-type | detail */
 .diff-entry-row {
-    display: flex; align-items: baseline; gap: 10px; padding: 5px 18px;
-    font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: grid;
+    grid-template-columns: 20px 220px 160px 1fr;
+    align-items: baseline;
+    padding: 5px 18px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-color);
 }
 .diff-entry-row:last-child { border-bottom: none; }
-.diff-element { font-weight: 600; color: #e2e8f0; min-width: 180px; font-family: monospace; font-size: 12px; }
-.diff-test-type { color: #94a3b8; min-width: 140px; font-size: 12px; }
+.diff-icon { font-weight: 700; text-align: center; }
+.diff-element { font-weight: 600; color: var(--primary-text-color); font-family: monospace; font-size: 12px; padding-right: 8px; }
+.diff-test-type { color: var(--caption-text-color); font-size: 12px; padding-right: 8px; }
 .diff-detail { color: #f59e0b; font-size: 11px; font-style: italic; }
 
-/* ── Compliance tab ── */
+/* Grid rows — 3 fixed columns: element | test-type | chip */
 .compliance-row {
-    display: flex; align-items: center; gap: 10px; padding: 5px 18px;
-    font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+    display: grid;
+    grid-template-columns: 220px 160px auto;
+    align-items: center;
+    padding: 5px 18px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border-color);
 }
 .compliance-row:last-child { border-bottom: none; }
 .compliance-chip {
     font-size: 10px; font-weight: 600; color: #fff;
     border-radius: 3px; padding: 1px 6px; white-space: nowrap; text-transform: lowercase;
+    justify-self: start;
 }
-.accordion-header-stats { font-size: 11px; font-weight: 400; color: #64748b; }
+.accordion-header-stats { font-size: 11px; font-weight: 400; color: var(--caption-text-color); }
 `);
 
 export { DataContract };
