@@ -911,7 +911,7 @@ const UploadTab = () => {
 
 // ── Health grid ───────────────────────────────────────────────────────────────
 
-const HealthGrid = (health, activeFilter, activeTab) => {
+const HealthGrid = (health, activeFilter, activeTab, termDiff, diffFilter, versionNum) => {
     const coverageCls = health.coverage_pct >= 80 ? 'good' : health.coverage_pct >= 50 ? 'warn' : 'bad';
 
     // Suite runs from the new backend field; fall back to legacy counts if absent.
@@ -948,6 +948,74 @@ const HealthGrid = (health, activeFilter, activeTab) => {
         }
     };
 
+    const DiffStatusRow = (count, statusKey, label) =>
+        div(
+            {
+                class: 'diff-status-row',
+                onclick: (e) => {
+                    e.stopPropagation();
+                    diffFilter.val = diffFilter.val === statusKey ? '' : statusKey;
+                    activeTab.val  = 'differences';
+                },
+            },
+            span({ class: 'diff-status-count' }, count),
+            span({ class: 'diff-status-label' }, label),
+        );
+
+    const StatusCount = (color, label, count) =>
+        count
+            ? span({ class: 'count-item' },
+                   span({ class: 'count-dot', style: `background:${color}` }),
+                   ` ${count} ${label}`)
+            : '';
+
+    const ComplianceCardContent = (h, tdf) => {
+        const TierRow = (cnt, lbl, color) =>
+            tr(
+                td({ class: 'ct-count' }, cnt),
+                td({ class: 'ct-label', style: `color:${color}` }, lbl),
+            );
+        const monitorTotal = tdf.tg_monitor_passed + tdf.tg_monitor_failed + tdf.tg_monitor_warning
+                           + tdf.tg_monitor_error  + tdf.tg_monitor_not_run;
+        return table(
+            { class: 'compliance-tier-table' },
+            tbody(
+                TierRow(h.db_enforced  || 0, 'database enforced', '#818cf8'),
+                TierRow(h.unenforced   || 0, 'unenforced',        '#f59e0b'),
+                tr(
+                    td({ class: 'ct-count' }, h.tg_enforced || 0),
+                    td({ class: 'ct-label', style: 'color:#22c55e' }, 'TestGen enforced'),
+                ),
+                monitorTotal > 0
+                    ? tr(td(), td({ class: 'ct-sub' },
+                        'Monitors  ',
+                        StatusCount('#22c55e', 'passed',  tdf.tg_monitor_passed),
+                        StatusCount('#ef4444', 'failed',  tdf.tg_monitor_failed),
+                        StatusCount('#f59e0b', 'warning', tdf.tg_monitor_warning),
+                        StatusCount('#94a3b8', 'error',   tdf.tg_monitor_error),
+                        StatusCount('#6b7280', 'not run', tdf.tg_monitor_not_run),
+                      ))
+                    : '',
+                tr(td(), td({ class: 'ct-sub' },
+                    'Tests  ',
+                    StatusCount('#22c55e', 'passed',  tdf.tg_test_passed),
+                    StatusCount('#ef4444', 'failed',  tdf.tg_test_failed),
+                    StatusCount('#f59e0b', 'warning', tdf.tg_test_warning),
+                    StatusCount('#94a3b8', 'error',   tdf.tg_test_error),
+                    StatusCount('#6b7280', 'not run', tdf.tg_test_not_run),
+                )),
+                tdf.tg_hygiene_definite + tdf.tg_hygiene_likely + tdf.tg_hygiene_possible > 0
+                    ? tr(td(), td({ class: 'ct-sub' },
+                        'Hygiene  ',
+                        StatusCount('#ef4444', 'definite', tdf.tg_hygiene_definite),
+                        StatusCount('#f59e0b', 'likely',   tdf.tg_hygiene_likely),
+                        StatusCount('#94a3b8', 'possible', tdf.tg_hygiene_possible),
+                      ))
+                    : '',
+            ),
+        );
+    };
+
     return div(
         { class: 'health-grid' },
         // — Coverage card
@@ -958,7 +1026,7 @@ const HealthGrid = (health, activeFilter, activeTab) => {
                 title: 'View Coverage Matrix',
             },
             div({ class: 'health-card__label' },
-                mat('verified', 13), ' Contract Claim Completeness',
+                mat('verified', 13), ' Contract Term Coverage',
                 span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
             ),
             health.n_elements != null
@@ -970,83 +1038,46 @@ const HealthGrid = (health, activeFilter, activeTab) => {
                     ),
                   ],
         ),
-        // — Test health card
+        // — Differences card
         div(
             {
-                class: () => `health-card tests${health.last_test_run_id ? ' health-card--link' : ''}`,
-                style: 'position: relative;',
-                onclick: handleTestCardClick,
-                title: suiteRuns.length > 1 ? 'Click to choose a test suite' : (health.last_test_run_id ? 'View test results' : ''),
+                class: 'health-card tests health-card--link',
+                onclick: () => { activeTab.val = 'differences'; },
+                title: 'View Contract Term Differences',
             },
             div({ class: 'health-card__label' },
-                mat('science', 13), ' Test Health',
-                health.last_test_run_id
-                    ? span({ class: 'health-card__nav-icon' }, mat(suiteRuns.length > 1 ? 'expand_more' : 'open_in_new', 11))
-                    : '',
+                mat('compare', 13), ` Version ${versionNum} Contract Term Differences`,
+                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
             ),
-            totalRunTests
+            termDiff
                 ? [
-                    div(
-                        { class: 'health-card__value-row' },
-                        span({ class: 'health-card__value neutral', style: 'font-size:24px' }, `${totalRunTests}`),
-                        span({ class: 'health-card__value-unit' }, suiteRuns.length > 1 ? ` tests · ${suiteRuns.length} suites` : ' tests'),
+                    div({ class: 'health-card__sub' },
+                        `Saved: ${termDiff.saved_count}  ·  Current: ${termDiff.current_count}`,
                     ),
                     div(
-                        { class: 'summary-bar' },
-                        totalPassed  ? SummarySegment(Math.round(100 * totalPassed  / totalRunTests), '#22c55e') : '',
-                        totalWarning ? SummarySegment(Math.round(100 * totalWarning / totalRunTests), '#f59e0b') : '',
-                        totalFailed  ? SummarySegment(Math.round(100 * totalFailed  / totalRunTests), '#ef4444') : '',
+                        { class: 'diff-rows' },
+                        termDiff.same_count    ? DiffStatusRow(termDiff.same_count,    'same',    'same')    : '',
+                        termDiff.changed_count ? DiffStatusRow(termDiff.changed_count, 'changed', 'changed') : '',
+                        termDiff.deleted_count ? DiffStatusRow(termDiff.deleted_count, 'deleted', 'deleted') : '',
+                        termDiff.new_count     ? DiffStatusRow(termDiff.new_count,     'new',     'new')     : '',
                     ),
-                    div(
-                        { class: 'summary-counts' },
-                        CountDot('#22c55e', 'passed',  totalPassed),
-                        CountDot('#f59e0b', 'warn',    totalWarning),
-                        CountDot('#ef4444', 'failed',  totalFailed),
-                    ),
-                    totalFailed ? filterButton(`View ${totalFailed} failing →`, 'failing') : '',
-                    suiteRuns.length > 1
-                        ? span(
-                            {
-                                class: 'health-filter-btn',
-                                style: 'margin-top:4px',
-                                onclick: (e) => { e.stopPropagation(); emitEvent('SuitePickerClicked', {}); },
-                            },
-                            `View by suite (${suiteRuns.length}) →`,
-                          )
-                        : '',
                   ]
-                : div({ class: 'health-card__sub' }, 'No tests defined yet'),
-            health.last_test_run
-                ? div({ class: 'health-card__run-time' }, mat('schedule', 11), ` Last run: ${health.last_test_run}`)
-                : div({ class: 'health-card__run-time' }, mat('schedule', 11), ' Never run'),
+                : div({ class: 'health-card__sub' }, 'No saved version yet'),
         ),
-        // — Hygiene card
+        // — Compliance card
         div(
             {
-                class: () => `health-card hygiene${health.last_profiling_run_id ? ' health-card--link' : ''}`,
-                onclick: health.last_profiling_run_id
-                    ? () => emitEvent('LinkClicked', { href: 'profiling-runs:hygiene', params: { run_id: health.last_profiling_run_id } })
-                    : null,
-                title: health.last_profiling_run_id ? 'View hygiene issues' : '',
+                class: 'health-card hygiene health-card--link',
+                onclick: () => { activeTab.val = 'compliance'; },
+                title: 'View Contract Term Compliance',
             },
             div({ class: 'health-card__label' },
-                mat('health_and_safety', 13), ' Hygiene',
-                health.last_profiling_run_id ? span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)) : '',
+                mat('fact_check', 13), ` Version ${versionNum} Contract Term Compliance`,
+                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
             ),
-            health.hygiene_total
-                ? [
-                    div({ class: 'health-card__value warn' }, `${health.hygiene_total} issues`),
-                    div(
-                        { class: 'summary-counts', style: 'margin-top:8px' },
-                        CountDot('#ef4444', 'definite', health.hygiene_definite),
-                        CountDot('#f59e0b', 'likely',   health.hygiene_likely),
-                        CountDot('#94a3b8', 'possible', health.hygiene_possible),
-                    ),
-                  ]
-                : div({ class: 'health-card__value good' }, 'Clean'),
-            health.last_profiling_run
-                ? div({ class: 'health-card__run-time' }, mat('schedule', 11), ` Last profiled: ${health.last_profiling_run}`)
-                : div({ class: 'health-card__run-time' }, mat('schedule', 11), ' Never profiled'),
+            termDiff
+                ? ComplianceCardContent(health, termDiff)
+                : div({ class: 'health-card__sub' }, 'No saved version yet'),
         ),
     );
 };
@@ -1121,10 +1152,12 @@ const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 const TABS = [
-    { id: 'overview',  label: 'Contract Terms'   },
-    { id: 'matrix',    label: 'Contract Claim Completeness' },
-    { id: 'yaml',      label: 'YAML'            },
-    { id: 'upload',    label: 'Upload Changes'  },
+    { id: 'overview',    label: 'Contract Terms'            },
+    { id: 'matrix',      label: 'Contract Term Coverage'    },
+    { id: 'differences', label: 'Contract Term Differences' },
+    { id: 'compliance',  label: 'Contract Term Compliance'  },
+    { id: 'yaml',        label: 'YAML'                      },
+    { id: 'upload',      label: 'Upload Changes'            },
 ];
 
 const TabBar = (activeTab) =>
@@ -1246,6 +1279,137 @@ const TermsHelpPanel = () => {
     );
 };
 
+// ── Differences tab ───────────────────────────────────────────────────────────
+
+const DifferencesTab = (termDiff, diffFilter) => {
+    if (!termDiff || termDiff.saved_count === 0) {
+        return div({ class: 'dc-empty-state' }, 'No saved contract version yet.');
+    }
+
+    const entries = termDiff.entries || [];
+    const grouped = {
+        changed: entries.filter(e => e.status === 'changed'),
+        new:     entries.filter(e => e.status === 'new'),
+        deleted: entries.filter(e => e.status === 'deleted'),
+        same:    entries.filter(e => e.status === 'same'),
+    };
+
+    const statusStyle = {
+        changed: { glyph: '~', color: '#f59e0b' },
+        new:     { glyph: '+', color: '#22c55e'  },
+        deleted: { glyph: '−', color: '#ef4444'  },
+        same:    { glyph: '=', color: '#6b7280'  },
+    };
+
+    const DiffRow = (entry) =>
+        div(
+            { class: 'diff-entry-row' },
+            span({ style: `color:${(statusStyle[entry.status] || {}).color || '#999'};font-weight:700;margin-right:6px;min-width:14px;display:inline-block` },
+                (statusStyle[entry.status] || {}).glyph || ''),
+            span({ class: 'diff-element' }, entry.element),
+            entry.test_type ? span({ class: 'diff-test-type' }, entry.test_type) : '',
+            entry.detail    ? span({ class: 'diff-detail' },    entry.detail)    : '',
+        );
+
+    const DiffAccordion = (statusKey, label, items, defaultOpen) => {
+        if (items.length === 0) return '';
+        const isOpen = van.state(diffFilter.val ? diffFilter.val === statusKey : defaultOpen);
+        return div(
+            { class: 'diff-accordion' },
+            div(
+                { class: 'diff-accordion-header', onclick: () => { isOpen.val = !isOpen.val; } },
+                () => mat(isOpen.val ? 'expand_more' : 'chevron_right', 14),
+                ` ${label} (${items.length})`,
+            ),
+            () => isOpen.val ? div({ class: 'diff-accordion-body' }, ...items.map(DiffRow)) : '',
+        );
+    };
+
+    return div(
+        { class: 'dc-differences-tab' },
+        DiffAccordion('changed', 'Changed', grouped.changed, true),
+        DiffAccordion('new',     'New',     grouped.new,     true),
+        DiffAccordion('deleted', 'Deleted', grouped.deleted, true),
+        DiffAccordion('same',    'Same',    grouped.same,    false),
+    );
+};
+
+// ── Compliance tab ────────────────────────────────────────────────────────────
+
+const ComplianceTab = (termDiff, health) => {
+    if (!termDiff || termDiff.saved_count === 0) {
+        return div({ class: 'dc-empty-state' }, 'No saved contract version yet.');
+    }
+
+    const entries       = termDiff.entries || [];
+    const activeEntries = entries.filter(e => e.status === 'same' || e.status === 'changed');
+    const monitorRows   = activeEntries.filter(e => e.is_monitor);
+    const testRows      = activeEntries.filter(e => !e.is_monitor);
+    const hygieneRows   = termDiff.hygiene_entries || [];
+
+    const statusColor = {
+        passed: '#22c55e', failed: '#ef4444', warning: '#f59e0b',
+        error: '#94a3b8', not_run: '#6b7280',
+    };
+    const likelihoodColor = { Definite: '#ef4444', Likely: '#f59e0b', Possible: '#94a3b8' };
+
+    const Chip = (color, label) =>
+        span({ class: 'compliance-chip', style: `background:${color}` }, label);
+
+    const ComplianceRow = (entry) =>
+        div(
+            { class: 'compliance-row' },
+            span({ class: 'diff-element' }, entry.element),
+            span({ class: 'diff-test-type' }, entry.test_type || ''),
+            Chip(statusColor[entry.last_result] || '#6b7280',
+                 (entry.last_result || 'not run').replace('_', ' ')),
+        );
+
+    const HygieneRow = (entry) =>
+        div(
+            { class: 'compliance-row' },
+            span({ class: 'diff-element' }, entry.element),
+            span({ class: 'diff-test-type' }, entry.anomaly_type || ''),
+            Chip(likelihoodColor[entry.issue_likelihood] || '#94a3b8', entry.issue_likelihood || ''),
+        );
+
+    const headerStr = (pairs) =>
+        pairs.filter(([, n]) => n > 0).map(([lbl, n]) => `${n} ${lbl}`).join('  ');
+
+    const ComplianceAccordion = (label, rows, headerSummary) => {
+        if (rows.length === 0) return '';
+        const isOpen = van.state(true);
+        return div(
+            { class: 'diff-accordion' },
+            div(
+                { class: 'diff-accordion-header', onclick: () => { isOpen.val = !isOpen.val; } },
+                () => mat(isOpen.val ? 'expand_more' : 'chevron_right', 14),
+                ` ${label}`,
+                headerSummary ? span({ class: 'accordion-header-stats' }, `  ${headerSummary}`) : '',
+            ),
+            () => isOpen.val ? div({ class: 'diff-accordion-body' }, ...rows) : '',
+        );
+    };
+
+    return div(
+        { class: 'dc-compliance-tab' },
+        ComplianceAccordion('Monitors', monitorRows.map(ComplianceRow), headerStr([
+            ['passed', termDiff.tg_monitor_passed], ['failed', termDiff.tg_monitor_failed],
+            ['warning', termDiff.tg_monitor_warning], ['error', termDiff.tg_monitor_error],
+            ['not run', termDiff.tg_monitor_not_run],
+        ])),
+        ComplianceAccordion('Tests', testRows.map(ComplianceRow), headerStr([
+            ['passed', termDiff.tg_test_passed], ['failed', termDiff.tg_test_failed],
+            ['warning', termDiff.tg_test_warning], ['error', termDiff.tg_test_error],
+            ['not run', termDiff.tg_test_not_run],
+        ])),
+        ComplianceAccordion('Hygiene', hygieneRows.map(HygieneRow), headerStr([
+            ['definite', termDiff.tg_hygiene_definite], ['likely', termDiff.tg_hygiene_likely],
+            ['possible', termDiff.tg_hygiene_possible],
+        ])),
+    );
+};
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 const DataContract = (props) => {
@@ -1257,32 +1421,37 @@ const DataContract = (props) => {
     resizeFrameHeightToElement(wrapperId);
     resizeFrameHeightOnDOMChange(wrapperId);
 
-    const activeTab = van.state('overview');
+    const activeTab    = van.state('overview');
     const activeFilter = van.state('all');
+    const diffFilter   = van.state('');
 
     return div(
         { id: wrapperId, class: 'dc-page' },
         () => {
             const tgName     = getValue(props.table_group_name) || '';
-            const meta       = getValue(props.meta)         || {};
-            const health     = getValue(props.health)       || {};
-            const yaml       = getValue(props.yaml_content) || '';
-            const tables     = getValue(props.tables)       || [];
-            const matrix     = getValue(props.coverage_matrix) || [];
-            const gaps       = getValue(props.gaps)         || {};
-            const suiteScope = getValue(props.suite_scope)  || {};
+            const meta       = getValue(props.meta)             || {};
+            const health     = getValue(props.health)           || {};
+            const yaml       = getValue(props.yaml_content)     || '';
+            const tables     = getValue(props.tables)           || [];
+            const matrix     = getValue(props.coverage_matrix)  || [];
+            const gaps       = getValue(props.gaps)             || {};
+            const suiteScope = getValue(props.suite_scope)      || {};
+            const termDiff   = getValue(props.term_diff)        || null;
+            const versionNum = (getValue(props.version_info)    || {}).version || '';
 
             return div(
                 PageHeader(tgName, meta, yaml, suiteScope),
-                HealthGrid(health, activeFilter, activeTab),
+                HealthGrid(health, activeFilter, activeTab, termDiff, diffFilter, versionNum),
                 TabBar(activeTab),
                 () => {
                     const tab = activeTab.val;
-                    if (tab === 'overview') return TermsDetail(tables, activeFilter);
-                    if (tab === 'matrix')   return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
-                    if (tab === 'yaml')     return YamlViewer(yaml, tgName);
-                    if (tab === 'upload')   return UploadTab();
-                    if (tab === 'help')     return TermsHelpPanel();
+                    if (tab === 'overview')    return TermsDetail(tables, activeFilter);
+                    if (tab === 'matrix')      return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
+                    if (tab === 'differences') return DifferencesTab(termDiff, diffFilter);
+                    if (tab === 'compliance')  return ComplianceTab(termDiff, health);
+                    if (tab === 'yaml')        return YamlViewer(yaml, tgName);
+                    if (tab === 'upload')      return UploadTab();
+                    if (tab === 'help')        return TermsHelpPanel();
                     return '';
                 },
             );
@@ -2329,6 +2498,57 @@ stylesheet.replace(`
 /* ── Term chip — clickable indicator ── */
 .term-chip--clickable { cursor: pointer; }
 .term-chip--clickable:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+
+/* ── Differences card ── */
+.diff-rows { margin-top: 6px; }
+.diff-status-row {
+    display: flex; align-items: baseline; gap: 8px; padding: 2px 4px;
+    border-radius: 4px; cursor: pointer;
+}
+.diff-status-row:hover { background: rgba(255,255,255,0.06); }
+.diff-status-count { font-size: 15px; font-weight: 700; min-width: 28px; text-align: right; color: #e2e8f0; }
+.diff-status-label { font-size: 12px; color: #94a3b8; text-transform: lowercase; }
+
+/* ── Compliance card table ── */
+.compliance-tier-table { border-collapse: collapse; width: 100%; margin-top: 4px; }
+.compliance-tier-table td { padding: 1px 4px; font-size: 13px; vertical-align: top; }
+.ct-count { text-align: right; font-weight: 700; color: #e2e8f0; white-space: nowrap; width: 1%; padding-right: 8px; }
+.ct-label { color: #94a3b8; }
+.ct-sub { color: #64748b; font-size: 11px; padding-left: 12px; padding-top: 1px; }
+.ct-sub .count-item { margin-right: 6px; }
+
+/* ── Differences tab ── */
+.dc-differences-tab { padding: 16px 0; }
+.dc-compliance-tab  { padding: 16px 0; }
+.dc-empty-state { padding: 32px; text-align: center; color: #64748b; font-size: 14px; }
+.diff-accordion { margin-bottom: 8px; border: 1px solid #1e293b; border-radius: 6px; overflow: hidden; }
+.diff-accordion-header {
+    display: flex; align-items: center; gap: 6px; padding: 10px 14px;
+    background: #0f172a; color: #cbd5e1; font-size: 13px; font-weight: 600;
+    cursor: pointer; user-select: none;
+}
+.diff-accordion-header:hover { background: #1e293b; }
+.diff-accordion-body { padding: 6px 0; }
+.diff-entry-row {
+    display: flex; align-items: baseline; gap: 10px; padding: 5px 18px;
+    font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.diff-entry-row:last-child { border-bottom: none; }
+.diff-element { font-weight: 600; color: #e2e8f0; min-width: 180px; font-family: monospace; font-size: 12px; }
+.diff-test-type { color: #94a3b8; min-width: 140px; font-size: 12px; }
+.diff-detail { color: #f59e0b; font-size: 11px; font-style: italic; }
+
+/* ── Compliance tab ── */
+.compliance-row {
+    display: flex; align-items: center; gap: 10px; padding: 5px 18px;
+    font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.compliance-row:last-child { border-bottom: none; }
+.compliance-chip {
+    font-size: 10px; font-weight: 600; color: #fff;
+    border-radius: 3px; padding: 1px 6px; white-space: nowrap; text-transform: lowercase;
+}
+.accordion-header-stats { font-size: 11px; font-weight: 400; color: #64748b; }
 `);
 
 export { DataContract };
