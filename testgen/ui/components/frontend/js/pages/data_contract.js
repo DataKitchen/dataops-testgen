@@ -90,8 +90,8 @@ const TIER_META = {
 
 // ── Small helpers ─────────────────────────────────────────────────────────────
 
-const mat = (name, size = 16) =>
-    span({ class: 'material', style: `font-size:${size}px` }, name);
+const mat = (name, size = 16, cls = '') =>
+    span({ class: cls ? `material ${cls}` : 'material', style: `font-size:${size}px` }, name);
 
 const statusClass = (s) =>
     ({ passing: 'pass', warning: 'warn', failing: 'fail', error: 'fail' }[s] ?? 'none');
@@ -1122,6 +1122,44 @@ const YamlViewer = (yamlContent, tgName) => {
 
 // ── Upload tab ────────────────────────────────────────────────────────────────
 
+const ODCS_SPEC_URL = 'https://bitol-io.github.io/open-data-contract-standard/v3.1.0/';
+
+const odcsLink = (label = 'ODCS v3.1.0') =>
+    a({ href: ODCS_SPEC_URL, target: '_blank', rel: 'noopener', class: 'odcs-link' }, label);
+
+const TermRow = (name, yamlPath, badge, note) => tr(
+    td({ class: 'utr-name' }, name),
+    td({ class: 'utr-yaml' }, code(yamlPath)),
+    td({ class: 'utr-badge' }, span({ class: `upload-badge ub-${badge}` }, badge === 'written' ? 'Written' : badge === 'created' ? 'Created' : badge === 'partial' ? 'Partial' : badge === 'export' ? 'Export only' : 'Ignored')),
+    td({ class: 'utr-note' }, note),
+);
+
+const TermCategory = (pill, pillCls, title, badgeCls, badgeLabel, rows, noteEl) => {
+    const open = van.state(pill === 'Governance' || pill === 'Quality Rules' || pill === 'Fundamentals');
+    return div(
+        { class: () => `upload-term-cat${open.val ? ' utc-open' : ''}` },
+        div(
+            {
+                class: 'utc-header',
+                onclick: () => { open.val = !open.val; },
+            },
+            span({ class: `utc-pill ${pillCls}` }, pill),
+            span({ class: 'utc-title' }, title),
+            span({ class: `utc-badge ${badgeCls}` }, badgeLabel),
+            mat('expand_more', 18, 'utc-chevron'),
+        ),
+        div(
+            { class: 'utc-body' },
+            table(
+                { class: 'upload-term-table' },
+                thead(tr(th('Term'), th('YAML field'), th('On import'), th('Notes'))),
+                tbody(...rows),
+            ),
+            noteEl || '',
+        ),
+    );
+};
+
 const UploadTab = () => {
     const fileContent = van.state(null);
     const fileName = van.state('');
@@ -1144,40 +1182,50 @@ const UploadTab = () => {
 
     return div(
         { class: 'upload-tab' },
+
+        // ── Description ──
         div({ class: 'upload-desc' },
             p({ style: 'margin: 0 0 10px;' },
-                'Upload a modified ODCS v3.1.0 YAML to sync changes back to TestGen. ',
-                'Rules without an ',
-                span({ style: 'font-family:monospace' }, 'id'),
-                ' field are ',
-                span({ style: 'font-weight:600' }, 'created'),
-                ' as new tests; rules with an ',
-                span({ style: 'font-family:monospace' }, 'id'),
-                ' field ',
-                span({ style: 'font-weight:600' }, 'update'),
-                ' the matching test. After import, download the updated YAML to capture the new test IDs.',
+                'Upload a modified ', odcsLink(), ' YAML to sync changes back to TestGen. ',
+                'Only supported fields are applied — unrecognized or read-only fields are silently ignored. ',
+                'After import, download the updated YAML to capture any new test IDs.',
+            ),
+            p({ style: 'margin: 0 0 14px;' },
+                'Quality rules without an ', code('id'), ' field are ', span({ style: 'font-weight:600' }, 'created'),
+                ' as new tests; rules with an ', code('id'), ' field ', span({ style: 'font-weight:600' }, 'update'),
+                ' the matching test. Governance metadata in ', code('schema[].properties[]'),
+                ' — descriptions, CDE flags, PII classification, and tag fields — is written directly to the column catalog.',
             ),
             div({ class: 'upload-desc-cols' },
                 div(
-                    p({ class: 'upload-desc-heading' }, 'Updated on upload'),
+                    p({ class: 'upload-desc-heading' },
+                        mat('check_circle', 14, 'udh-ok'), 'Applied on upload',
+                    ),
                     ul(
                         li('Contract version, status, and description'),
                         li('Business domain and data product'),
                         li('Latency SLA (profiling delay days)'),
                         li('Quality rule thresholds, tolerances, severity, and description'),
-                        li(span({ style: 'font-weight:600' }, 'New quality rules'), ' — add rules without an ', span({ style: 'font-family:monospace' }, 'id'), ' to create tests'),
+                        li(span({ style: 'font-weight:600' }, 'New quality rules'), ' — add rules without an ', code('id'), ' to create tests'),
+                        li('Column governance — description, CDE, PII, and tag fields'),
                     ),
                 ),
                 div(
-                    p({ class: 'upload-desc-heading' }, 'Not updated — manage in TestGen'),
+                    p({ class: 'upload-desc-heading' },
+                        mat('block', 14, 'udh-no'), 'Ignored — manage in TestGen',
+                    ),
                     ul(
-                        li('Tables, columns, and data types'),
+                        li('Tables, columns, and data types (DDL)'),
+                        li('Profiling statistics (min/max, format)'),
                         li('Test suite settings and connections'),
-                        li('Test type, target table, or column (ignored on import — immutable once created)'),
+                        li('Test type, target table, or column'),
+                        li(code('servers'), ', ', code('slaProperties'), ' beyond SLA delay'),
                     ),
                 ),
             ),
         ),
+
+        // ── File drop ──
         div(
             { class: 'file-drop' },
             mat('upload_file', 32),
@@ -1188,7 +1236,7 @@ const UploadTab = () => {
             ),
             () => fileName.val
                 ? span({ class: 'file-name' }, mat('description', 14), ' ', fileName.val)
-                : span({ class: 'file-hint' }, 'ODCS v3.1.0 data contract (.yaml, .yml)'),
+                : span({ class: 'file-hint' }, odcsLink('Open Data Contract Standard'), ' (.yaml, .yml)'),
         ),
         () => fileError.val ? div({ class: 'upload-error' }, mat('error', 14), ' ', fileError.val) : '',
         () => fileContent.val
@@ -1204,6 +1252,72 @@ const UploadTab = () => {
                 },
               })
             : '',
+
+        // ── Contract term reference ──
+        div({ class: 'upload-term-ref-divider' }),
+        div({ class: 'upload-term-ref-heading' }, 'Contract Term Reference'),
+
+        TermCategory('Fundamentals', 'utcp-fund', 'Contract header fields', 'utcb-rw', '↕ Read & Write', [
+            TermRow('Version',        'version',                               'written', 'Semantic version string, e.g. 1.0.0'),
+            TermRow('Status',         'status',                                'written', 'draft, published, or deprecated'),
+            TermRow('Description',    'description',                           'written', 'Top-level contract description'),
+            TermRow('Business Domain','customProperties[testgen.business_domain]','written','Stored in table group metadata'),
+            TermRow('Data Product',   'customProperties[testgen.data_product]','written', 'Stored in table group metadata'),
+            TermRow('Latency SLA',    'slaProperties[n].value (profilingDelayDays)','written','Maps to profiling delay days on the table group'),
+        ]),
+
+        TermCategory('Governance', 'utcp-gov', 'Column metadata & classifications', 'utcb-rw', '↕ Read & Write', [
+            TermRow('Description',       'schema[].properties[].description',              'written', 'Column description in the column catalog'),
+            TermRow('Critical Data Element','schema[].properties[].criticalDataElement',   'written', 'Boolean flag on the column'),
+            TermRow('PII / Classification','customProperties[testgen.pii_flag]',           'written', 'Exact PII flag value; classification is also read as a fallback'),
+            TermRow('Data Source',       'customProperties[testgen.data_source]',          'written', 'Tag field stored in the column catalog'),
+            TermRow('Source System',     'customProperties[testgen.source_system]',        'written', 'Tag field stored in the column catalog'),
+            TermRow('Source Process',    'customProperties[testgen.source_process]',       'written', 'Tag field stored in the column catalog'),
+            TermRow('Business Domain',   'customProperties[testgen.business_domain]',      'written', 'Tag field stored in the column catalog'),
+            TermRow('Stakeholder Group', 'customProperties[testgen.stakeholder_group]',    'written', 'Tag field stored in the column catalog'),
+            TermRow('Transform Level',   'customProperties[testgen.transform_level]',      'written', 'Tag field stored in the column catalog'),
+            TermRow('Aggregation Level', 'customProperties[testgen.aggregation_level]',    'written', 'Tag field stored in the column catalog'),
+            TermRow('Data Product',      'customProperties[testgen.data_product]',         'written', 'Tag field stored in the column catalog'),
+        ]),
+
+        TermCategory('Quality Rules', 'utcp-test', 'Tests & monitors', 'utcb-rw', '↕ Read & Write', [
+            TermRow('Threshold',         'quality[].threshold_value',          'written', 'Numeric pass/fail threshold'),
+            TermRow('Tolerance',         'quality[].tolerance',                'written', 'Acceptable deviation before a test fails'),
+            TermRow('Severity',          'quality[].severity',                 'written', 'warning, error, or critical'),
+            TermRow('Rule description',  'quality[].description',              'written', 'Human-readable rule description'),
+            TermRow('New rule (no id)',   'quality[] — no id field',            'created', 'Creates a new test; download the updated YAML to get the assigned id'),
+            tr(
+                td({ class: 'utr-name' }, 'TestGen-only types'),
+                td({ class: 'utr-yaml' }, code('quality[].type: custom, vendor: testgen')),
+                td({ class: 'utr-badge' }, span({ class: 'upload-badge ub-partial' }, 'Partial')),
+                td({ class: 'utr-note' }, 'Types like Avg_Shift, Distribution_Shift, Schema_Drift round-trip but are not portable to other ', odcsLink('ODCS'), '-compatible tools'),
+            ),
+            TermRow('Test type',         'quality[].type / testType',          'ignored', 'Cannot change a test\'s type after creation'),
+            TermRow('Target element',    'quality[].element',                  'ignored', 'Cannot re-assign a test to a different table or column'),
+        ]),
+
+        TermCategory('DDL', 'utcp-ddl', 'Schema structure — data types, keys, nullability', 'utcb-ro', '↓ Export only', [
+            TermRow('Data Type',    'schema[].properties[].physicalType',         'ignored', 'Derived from the source database DDL'),
+            TermRow('Not Null',     'schema[].properties[].required / nullable',  'ignored', 'Reflects database schema, not editable via contract'),
+            TermRow('Primary Key',  'customProperties[testgen.primaryKey]',       'ignored', 'Detected during profiling'),
+            TermRow('Foreign Key',  'references[]',                               'ignored', 'Detected during profiling'),
+            TermRow('Logical Type', 'schema[].properties[].logicalType',          'ignored', 'Inferred from the column\'s functional data type'),
+        ], div({ class: 'utc-note' },
+            mat('info', 15, 'utc-note-icon'),
+            span('DDL terms reflect the source database. To change data types, nullability, or keys, alter your database schema and re-run profiling — the contract updates automatically.'),
+        )),
+
+        TermCategory('Profiling', 'utcp-prof', 'Observed statistics — min, max, length, format', 'utcb-ro', '↓ Export only', [
+            TermRow('Min Value',  'customProperties[testgen.minimum]',   'ignored', 'Computed by TestGen during a profiling run'),
+            TermRow('Max Value',  'customProperties[testgen.maximum]',   'ignored', 'Computed by TestGen during a profiling run'),
+            TermRow('Min Length', 'customProperties[testgen.minLength]', 'ignored', 'Computed by TestGen during a profiling run'),
+            TermRow('Max Length', 'customProperties[testgen.maxLength]', 'ignored', 'Computed by TestGen during a profiling run'),
+            TermRow('Format',     'customProperties[testgen.format]',    'ignored', 'Computed by TestGen during a profiling run'),
+            TermRow('Examples',   'schema[].properties[].examples',      'ignored', 'Sampled from top frequent values during profiling'),
+        ], div({ class: 'utc-note' },
+            mat('info', 15, 'utc-note-icon'),
+            span('Profiling statistics are read-only. Run profiling to refresh them.'),
+        )),
     );
 };
 
@@ -2659,25 +2773,40 @@ stylesheet.replace(`
 .token.important { color: #ef4444; font-weight: 600; }
 
 /* ── Upload tab ── */
-.upload-tab { max-width: 680px; }
+.upload-tab { max-width: 720px; }
 .upload-desc { font-size: 13px; color: var(--secondary-text-color); margin-bottom: 20px; line-height: 1.6; }
-.upload-desc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; }
-.upload-desc-heading { margin: 0 0 4px; font-weight: 600; color: var(--primary-text-color); }
+.upload-desc p { margin-bottom: 10px; }
+.upload-desc code { font-family: monospace; font-size: 12px; background: var(--button-generic-background-color); padding: 1px 5px; border-radius: 3px; }
+.upload-desc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-top: 4px; }
+.upload-desc-heading {
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--primary-text-color);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.upload-desc-heading .material-symbols-rounded { font-size: 14px; }
+.udh-ok { color: #2e7d32; }
+.udh-no { color: var(--caption-text-color); }
 .upload-desc ul { margin: 0; padding-left: 18px; }
-.upload-desc li { margin-bottom: 2px; }
+.upload-desc li { margin-bottom: 2px; font-size: 12.5px; }
+.odcs-link { color: var(--link-text-color); text-decoration: none; }
+.odcs-link:hover { text-decoration: underline; }
 .file-drop {
     border: 2px dashed var(--border-color);
     border-radius: 10px;
-    padding: 32px;
+    padding: 28px;
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 12px;
-    margin-bottom: 16px;
+    margin-bottom: 0;
     color: var(--caption-text-color);
     cursor: pointer;
-    transition: border-color 0.2s;
+    transition: border-color 0.2s, background 0.15s;
 }
 .file-drop:hover { border-color: var(--link-text-color); }
 .file-label {
@@ -2693,9 +2822,108 @@ stylesheet.replace(`
     transition: all 0.15s;
 }
 .file-label:hover { color: var(--link-text-color); border-color: rgba(79,142,247,0.4); }
-.file-hint { font-size: 12px; color: var(--caption-text-color); }
+.file-hint { font-size: 12px; color: var(--caption-text-color); display: flex; align-items: center; gap: 4px; }
 .file-name { font-size: 13px; color: var(--primary-text-color); display: flex; align-items: center; gap: 4px; }
 .upload-error { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #ef4444; margin: 6px 0; }
+
+/* ── Upload term reference ── */
+.upload-term-ref-divider { height: 1px; background: var(--border-color); margin: 24px 0; }
+.upload-term-ref-heading {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--caption-text-color);
+    margin-bottom: 12px;
+}
+.upload-term-cat {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+.utc-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s;
+}
+.utc-header:hover { background: var(--button-generic-background-color); }
+.utc-pill {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+.utcp-ddl  { background: #f5f0ff; color: #7c4dff; border: 1px solid rgba(124,77,255,0.22); }
+.utcp-prof { background: #e8f4fd; color: #1976d2; border: 1px solid rgba(25,118,210,0.22); }
+.utcp-gov  { background: #fffde7; color: #c07500; border: 1px solid rgba(192,117,0,0.22); }
+.utcp-test { background: #f1f8e9; color: #2e7d32; border: 1px solid rgba(46,125,50,0.22); }
+.utcp-fund { background: #fef2f8; color: #9d174d; border: 1px solid rgba(157,23,77,0.18); }
+.utc-title { font-size: 13px; font-weight: 600; color: var(--primary-text-color); flex: 1; }
+.utc-badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.utcb-rw { background: #f1f8e9; color: #2e7d32; }
+.utcb-ro { background: var(--button-generic-background-color); color: var(--caption-text-color); }
+.utc-chevron { color: var(--caption-text-color); transition: transform 0.2s; flex-shrink: 0; }
+.utc-open .utc-chevron { transform: rotate(180deg); }
+.utc-body { display: none; border-top: 1px solid var(--border-color); padding: 12px 14px 14px; background: var(--button-generic-background-color); }
+.utc-open .utc-body { display: block; }
+.upload-term-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.upload-term-table th {
+    text-align: left;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--caption-text-color);
+    padding: 0 10px 6px 6px;
+    border-bottom: 1px solid var(--border-color);
+}
+.upload-term-table td { padding: 6px 10px 6px 6px; vertical-align: top; border-bottom: 1px solid var(--border-color); color: var(--secondary-text-color); line-height: 1.5; }
+.upload-term-table tr:last-child td { border-bottom: none; }
+.utr-name { font-weight: 500; color: var(--primary-text-color); white-space: nowrap; }
+.utr-yaml code { font-family: monospace; font-size: 11px; color: var(--secondary-text-color); }
+.utr-badge { white-space: nowrap; }
+.upload-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+.ub-written  { background: #f1f8e9; color: #2e7d32; }
+.ub-created  { background: #f1f8e9; color: #2e7d32; }
+.ub-partial  { background: #fffde7; color: #c07500; }
+.ub-export   { background: #e8f4fd; color: #1976d2; }
+.ub-ignored  { background: var(--button-generic-background-color); color: var(--caption-text-color); }
+.utc-note {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    background: #fffde7;
+    border: 1px solid rgba(192,117,0,0.22);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--secondary-text-color);
+    margin-top: 8px;
+    line-height: 1.5;
+}
+.utc-note-icon { color: #c07500; flex-shrink: 0; margin-top: 1px; }
 
 /* ── Empty / misc ── */
 .dc-empty {
