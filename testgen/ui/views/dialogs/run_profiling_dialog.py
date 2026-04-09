@@ -3,7 +3,8 @@ from uuid import UUID
 
 import streamlit as st
 
-from testgen.commands.run_profiling import run_profiling_in_background
+from testgen.common.models import database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
 from testgen.ui.services.query_cache import get_table_group_stats
@@ -45,7 +46,13 @@ def run_profiling_dialog(project_code: str, table_group_id: str | UUID | None = 
         show_link = session.current_page != LINK_HREF
 
         try:
-            run_profiling_in_background(selected_table_group["id"])
+            with database_session():
+                JobExecution.submit(
+                    job_key="run-profile",
+                    kwargs={"table_group_id": str(selected_table_group["id"])},
+                    source="ui",
+                    project_code=project_code,
+                )
         except Exception as error:
             success = False
             message = f"Profiling run could not be started: {error!s}."

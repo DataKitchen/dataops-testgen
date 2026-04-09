@@ -2,7 +2,8 @@ import time
 
 import streamlit as st
 
-from testgen.commands.run_test_execution import run_test_execution_in_background
+from testgen.common.models import database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.rerun_service import safe_rerun
@@ -64,7 +65,13 @@ def run_tests_dialog(project_code: str, test_suite: TestSuiteMinimal | None = No
         status_container.info("Starting test run ...")
 
         try:
-            run_test_execution_in_background(test_suite_id)
+            with database_session():
+                JobExecution.submit(
+                    job_key="run-tests",
+                    kwargs={"test_suite_id": str(test_suite_id)},
+                    source="ui",
+                    project_code=project_code,
+                )
         except Exception as e:
             status_container.error(f"Test run encountered errors: {e!s}.")
 

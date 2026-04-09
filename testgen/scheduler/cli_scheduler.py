@@ -1,5 +1,4 @@
 import logging
-import os
 import signal
 import subprocess
 import sys
@@ -8,21 +7,17 @@ import time
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from itertools import chain
 from typing import Any
 from uuid import UUID
 
-from click import Command
-
 from testgen import settings
+from testgen.commands.exec_job import JOB_DISPATCH
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy, Job, Scheduler
 
 LOG = logging.getLogger("testgen")
-
-JOB_REGISTRY: dict[str, Command] = {}
 
 @dataclass
 class CliJob(Job):
@@ -42,7 +37,7 @@ class CliScheduler(Scheduler):
         self._current_jobs = {}
         self._poll_interval = settings.JOB_POLL_INTERVAL
         self._poll_batch_size = 5
-        LOG.info("Starting CLI Scheduler with registered jobs: %s", ", ".join(JOB_REGISTRY.keys()))
+        LOG.info("Starting CLI Scheduler with registered jobs: %s", ", ".join(JOB_DISPATCH.keys()))
         super().__init__()
 
     @with_database_session
@@ -54,7 +49,7 @@ class CliScheduler(Scheduler):
 
         jobs = {}
         for job_model in JobSchedule.select_where():
-            if job_model.key not in JOB_REGISTRY:
+            if job_model.key not in JOB_DISPATCH:
                 LOG.error("Job '%s' scheduled but not registered", job_model.key)
                 continue
 
@@ -140,50 +135,38 @@ class CliScheduler(Scheduler):
                 job_exec.mark_cancelled()
 
     def _dispatch(self, job_exec: JobExecution):
-        if job_exec.job_key not in JOB_REGISTRY:
+        if job_exec.job_key not in JOB_DISPATCH:
             with database_session():
                 job_exec.mark_interrupted(f"Unknown job key: {job_exec.job_key}")
             return
 
-        with database_session():
-            if not job_exec.mark_running():
-                return  # cancelled between claim and dispatch
-
-        cmd = JOB_REGISTRY[job_exec.job_key]
-        exec_cmd = [
-            sys.executable,
-            sys.argv[0],
-            cmd.name,
-            *map(str, job_exec.args or []),
-            *chain(*chain(
-                (opt.opts[0], str(job_exec.kwargs[opt.name]))
-                for opt in cmd.params
-                if opt.name in (job_exec.kwargs or {})
-            )),
-        ]
-
+        exec_cmd = [sys.executable, sys.argv[0], "exec-job", str(job_exec.id)]
         LOG.info("Dispatching job execution %s: %s", job_exec.id, " ".join(exec_cmd))
 
         proc = subprocess.Popen(
             exec_cmd,  # noqa: S603
             start_new_session=True,
-            env={**os.environ, "TG_JOB_EXECUTION_ID": str(job_exec.id), "TG_JOB_SOURCE": job_exec.source.upper()},
         )
         threading.Thread(target=self._proc_wrapper, args=(proc, job_exec)).start()
 
     def _proc_wrapper(self, proc: subprocess.Popen, job_exec: JobExecution):
+        """Monitor a subprocess and act as crash-recovery safety net.
+
+        exec_job owns the full lifecycle (mark_running/completed/interrupted).
+        This wrapper only intervenes on nonzero exit codes, which indicate exec_job
+        itself crashed before it could update the DB (OOM, kill -9, etc.).
+        _transition() guards make redundant calls safe.
+        """
         with self._running_jobs_cond:
             self._running_jobs[job_exec.id] = proc
         try:
             ret_code = proc.wait()
             LOG.info("Job PID %d ended with code %d", proc.pid, ret_code)
-            with database_session():
-                if ret_code == 0:
-                    job_exec.mark_completed()
-                else:
+            if ret_code != 0:
+                with database_session():
                     job_exec.mark_interrupted(f"Process {proc.pid} exited with code {ret_code}")
         except Exception:
-            LOG.exception("Error running job PID %d", proc.pid)
+            LOG.exception("Error monitoring job PID %d", proc.pid)
             with database_session():
                 job_exec.mark_interrupted(f"Process monitoring error for PID {proc.pid}")
         finally:
@@ -250,9 +233,3 @@ def run_scheduler():
     scheduler.run()
 
 
-def register_scheduler_job(cmd: Command):
-    if cmd.name in JOB_REGISTRY:
-        raise ValueError(f"A job with the '{cmd.name}' key is already registered.")
-
-    JOB_REGISTRY[cmd.name] = cmd
-    return cmd
