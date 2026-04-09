@@ -16,11 +16,11 @@ except ImportError:
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
 import testgen.ui.services.database_service as db
-from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -462,7 +462,12 @@ class ConnectionsPage(Page):
                     if should_run_profiling:
                         try:
                             run_profiling = True
-                            run_profiling_in_background(table_group.id)
+                            JobExecution.submit(
+                                job_key="run-profile",
+                                kwargs={"table_group_id": str(table_group.id)},
+                                source="ui",
+                                project_code=table_group.project_code,
+                            )
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception as error:
                             message = "Profiling run encountered errors"

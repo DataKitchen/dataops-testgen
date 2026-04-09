@@ -2,8 +2,8 @@ import time
 
 import streamlit as st
 
-from testgen.commands.test_generation import run_test_generation_in_background
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
@@ -69,7 +69,13 @@ def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
         button_container.empty()
 
         try:
-            run_test_generation_in_background(test_suite_id, selected_set)
+            with database_session():
+                JobExecution.submit(
+                    job_key="run-test-generation",
+                    kwargs={"test_suite_id": str(test_suite_id), "generation_set": selected_set},
+                    source="ui",
+                    project_code=test_suite.project_code,
+                )
             status_container.success(f"Test generation started for test suite **{test_suite_name}**.")
         except Exception as e:
             status_container.error(f"Test generation could not be started: {e!s}.")

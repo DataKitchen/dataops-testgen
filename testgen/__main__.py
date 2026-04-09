@@ -10,6 +10,7 @@ import click
 from click.core import Context
 
 from testgen import settings
+from testgen.commands.exec_job import exec_job, submit_and_wait
 from testgen.commands.run_get_entities import (
     run_get_results,
     run_get_test_suite,
@@ -42,15 +43,16 @@ from testgen.common import (
     get_tg_schema,
     version_service,
 )
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.settings import PersistedSetting
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.base import smtp_configured
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.common.notifications.test_run import send_test_run_notifications
-from testgen.scheduler import register_scheduler_job, run_scheduler
+from testgen.scheduler import run_scheduler
 from testgen.utils import plugins
 
 LOG = logging.getLogger("testgen")
@@ -119,7 +121,6 @@ def cli(ctx: Context, verbose: bool):
     LOG.debug("Current Step: Main Program")
 
 
-@register_scheduler_job
 @cli.command("run-profile", help="Generates a new profile of the table group.")
 @click.option(
     "-tg",
@@ -128,13 +129,13 @@ def cli(ctx: Context, verbose: bool):
     type=click.STRING,
     help="ID of the table group to profile. Use a table_group_id shown in list-table-groups.",
 )
-def run_profile(table_group_id: str):
-    click.echo(f"run-profile with table_group_id: {table_group_id}")
-    message = run_profiling(table_group_id)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_profile(table_group_id: str, no_wait: bool):
+    with database_session():
+        project_code = TableGroup.get(table_group_id).project_code
+    submit_and_wait("run-profile", {"table_group_id": str(table_group_id)}, project_code, no_wait)
 
 
-@register_scheduler_job
 @cli.command("run-test-generation", help="Generates or refreshes the tests for a table group.")
 @click.option(
     "-t",
@@ -164,19 +165,19 @@ def run_profile(table_group_id: str):
     required=False,
     default="Standard",
 )
-@with_database_session
-def run_generation(test_suite_id: str | None = None, table_group_id: str | None = None, test_suite_key: str | None = None, generation_set: str | None = None):
-    click.echo(f"run-test-generation for suite: {test_suite_id or test_suite_key}")
-    # For backward compatibility
-    if not test_suite_id:
-        test_suites = TestSuite.select_minimal_where(
-            TestSuite.table_groups_id == table_group_id,
-            TestSuite.test_suite == test_suite_key,
-        )
-        if test_suites:
-            test_suite_id = test_suites[0].id
-    message = run_test_generation(test_suite_id, generation_set)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_generation(test_suite_id: str | None = None, table_group_id: str | None = None, test_suite_key: str | None = None, generation_set: str | None = None, no_wait: bool = False):
+    with database_session():
+        # For backward compatibility
+        if not test_suite_id:
+            test_suites = TestSuite.select_minimal_where(
+                TestSuite.table_groups_id == table_group_id,
+                TestSuite.test_suite == test_suite_key,
+            )
+            if test_suites:
+                test_suite_id = test_suites[0].id
+        project_code = TestSuite.get(test_suite_id).project_code
+    submit_and_wait("run-test-generation", {"test_suite_id": str(test_suite_id), "generation_set": generation_set}, project_code, no_wait)
 
 
 @cli.command("run-monitor-generation", help="Generates or refreshes the monitors for a table group.")
@@ -193,7 +194,6 @@ def generate_monitors(test_suite_id: str):
     run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Schema_Drift"])
 
 
-@register_scheduler_job
 @cli.command("run-tests", help="Performs tests defined for a test suite.")
 @click.option(
     "-t",
@@ -217,22 +217,21 @@ def generate_monitors(test_suite_id: str):
     required=False,
     default=settings.DEFAULT_TEST_SUITE_KEY,
 )
-@with_database_session
-def run_tests(test_suite_id: str | None = None, project_key: str | None = None, test_suite_key: str | None = None):
-    click.echo(f"run-tests for suite: {test_suite_id or test_suite_key}")
-    # For backward compatibility
-    if not test_suite_id:
-        test_suites = TestSuite.select_minimal_where(
-            TestSuite.project_code == project_key,
-            TestSuite.test_suite == test_suite_key,
-        )
-        if test_suites:
-            test_suite_id = test_suites[0].id
-    message = run_test_execution(test_suite_id)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_tests(test_suite_id: str | None = None, project_key: str | None = None, test_suite_key: str | None = None, no_wait: bool = False):
+    with database_session():
+        # For backward compatibility
+        if not test_suite_id:
+            test_suites = TestSuite.select_minimal_where(
+                TestSuite.project_code == project_key,
+                TestSuite.test_suite == test_suite_key,
+            )
+            if test_suites:
+                test_suite_id = test_suites[0].id
+        project_code = TestSuite.get(test_suite_id).project_code
+    submit_and_wait("run-tests", {"test_suite_id": str(test_suite_id)}, project_code, no_wait)
 
 
-@register_scheduler_job
 @cli.command("run-monitors", help="Performs tests defined for a monitor suite.")
 @click.option(
     "-t",
@@ -241,11 +240,17 @@ def run_tests(test_suite_id: str | None = None, project_key: str | None = None, 
     type=click.STRING,
     help="ID of the monitor suite to run.",
 )
-@with_database_session
-def run_monitors(test_suite_id: str):
-    click.echo(f"run-monitors for suite: {test_suite_id}")
-    message = run_test_execution(test_suite_id)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_monitors(test_suite_id: str, no_wait: bool = False):
+    with database_session():
+        project_code = TestSuite.get(test_suite_id).project_code
+    submit_and_wait("run-monitors", {"test_suite_id": str(test_suite_id)}, project_code, no_wait)
+
+
+@cli.command("exec-job", hidden=True, help="Execute a queued job. Internal use by the scheduler.")
+@click.argument("job_execution_id", type=click.UUID)
+def exec_job_cmd(job_execution_id):
+    exec_job(job_execution_id)
 
 
 @cli.command("list-profiles", help="Lists all profile runs for a table group.")
@@ -436,12 +441,10 @@ def quick_start(
     test_suite_id = "9df7489d-92b3-49f9-95ca-512160d7896f"
 
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    message = run_profiling(table_group_id, run_date=now_date + time_delta)
-    click.echo("\n" + message)
+    run_profiling(table_group_id, run_date=now_date + time_delta)
 
     LOG.info(f"run-test-generation with test_suite_id: {test_suite_id}")
-    message = with_database_session(run_test_generation)(test_suite_id, "Standard")
-    click.echo("\n" + message)
+    with_database_session(run_test_generation)(test_suite_id, "Standard")
 
     run_test_execution(test_suite_id, run_date=now_date + time_delta)
 
@@ -741,7 +744,6 @@ def run_ui():
             "--",
             f"{'--debug' if settings.IS_DEBUG else ''}",
         ],
-        env={**os.environ, "TG_JOB_SOURCE": "UI"}
     )
     def term_ui(signum, _):
         LOG.info(f"Sending termination signal {signum} to Testgen UI")

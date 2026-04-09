@@ -48,20 +48,8 @@ def db_jobs(scheduler_instance):
 
 
 @pytest.fixture
-def cmd_mock():
-    opt_mock = Mock()
-    opt_mock.opts = ["-b"]
-    opt_mock.name = "b"
-
-    cmd_mock = Mock()
-    cmd_mock.params = [opt_mock]
-    cmd_mock.name = "test-job"
-    return cmd_mock
-
-
-@pytest.fixture
-def job_data(cmd_mock):
-    with patch.dict("testgen.scheduler.cli_scheduler.JOB_REGISTRY", {"test-job": cmd_mock}):
+def job_data():
+    with patch.dict("testgen.commands.exec_job.JOB_DISPATCH", {"test-job": Mock()}):
         yield {
             "cron_expr": "*/5 9-17 * * *",
             "cron_tz":  "UTC",
@@ -131,8 +119,10 @@ def test_proc_wrapper_status(proc_exit_code, scheduler_instance):
         dict_mock.__delitem__.assert_called_once()
         cond_mock.notify.assert_called_once()
         if proc_exit_code == 0:
-            job_exec_mock.mark_completed.assert_called_once()
+            # exec_job owns mark_completed — wrapper is a no-op on success
+            job_exec_mock.mark_completed.assert_not_called()
         else:
+            # Crash recovery: wrapper calls mark_interrupted on nonzero exit
             job_exec_mock.mark_interrupted.assert_called_once()
 
 
