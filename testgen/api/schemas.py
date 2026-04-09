@@ -87,6 +87,8 @@ class TestRunResponse(BaseModel):
 
     id: UUID
     status: JobStatus
+    test_suite_id: UUID | None = None
+    table_group_id: UUID | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     result: TestRunResult | None = None
@@ -119,6 +121,7 @@ class ProfilingRunResponse(BaseModel):
 
     id: UUID
     status: JobStatus
+    table_group_id: UUID | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
     result: ProfilingRunResult | None = None

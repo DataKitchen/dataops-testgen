@@ -140,11 +140,6 @@ class TestRun(Entity):
         query = select(cls).where((cls.id == identifier) | (cls.job_execution_id == identifier))
         return get_current_session().scalars(query).first()
 
-    @property
-    def project_code(self) -> str:
-        """Resolve project_code via the parent test suite."""
-        return get_current_session().scalar(select(TestSuite.project_code).where(TestSuite.id == self.test_suite_id))
-
     @classmethod
     @st.cache_data(show_spinner=False)
     def get_minimal(cls, run_id: str | UUID) -> TestRunMinimal | None:
