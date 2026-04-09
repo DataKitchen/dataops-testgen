@@ -1956,3 +1956,88 @@ Some TestGen test types (e.g. `Avg_Shift`, `Distribution_Shift`, `Schema_Drift`,
 - Where should the label appear — chip badge, tooltip, export annotation?
 - Should ODCS export use `type: custom, vendor: testgen, testType: <X>` for these (already done for some) — confirm coverage is complete?
 - Should the YAML import importer warn when it encounters a `vendor: testgen` test type that is not in the standard library?
+
+---
+
+### 5. Governance Fields Writable on YAML Import
+
+The YAML import currently skips the `schema` section entirely. Governance fields exported into `schema[].properties[]` — `description`, `criticalDataElement`, `pii`, and tag fields — cannot round-trip back to the DB when a user edits the YAML and uploads it. The schema section should support writes for governance fields on import, making the YAML a true two-way interface for governance metadata.
+
+**Open questions:**
+- Which schema fields should be writable on import? (Governance only, or also `physicalType`, `required`?)
+- Should schema mutations be applied via `_persist_governance_deletion` / a new `_persist_governance_update`, or a dedicated import pathway?
+- What happens when a field present in the exported YAML is absent from the uploaded YAML — is that a deletion or a no-op?
+
+---
+
+### 6. Test Deletion via YAML Import
+
+Currently, omitting a rule from an uploaded YAML that exists in the DB produces an orphan warning and no action. For users treating the YAML as source of truth, there is no supported way to delete a test via the import path. This should be a deliberate opt-in (e.g. a `--allow-deletes` flag or a document-level `allowDeletions: true` field) to avoid accidental data loss.
+
+**Open questions:**
+- Should deletion be opt-in at the document level or via an import UI toggle?
+- How should the import report surface pending deletions before they are applied?
+- Should deleted tests be hard-deleted or soft-deleted (`test_active = 'N'`)?
+
+---
+
+### 7. Version-to-Version Diff
+
+Today the Contract Term Differences tab always compares the selected saved version against the current live TestGen state. There is no way to compare two saved snapshots against each other (e.g. v3 vs. v7) to understand how the contract evolved over time. This would let users audit changes between releases or reviews.
+
+**Open questions:**
+- Should this be a separate "Compare versions" view, or an extension of the existing Differences tab with a version picker for both sides?
+- Is the comparison purely YAML-based (diff the two quality arrays), or should it also pull live test status for each version?
+
+---
+
+### 8. Bulk Governance Edit
+
+The multi-select delete feature allows bulk removal of terms. The symmetric operation — selecting multiple columns and setting a governance field value across all of them at once (e.g. marking 10 columns as CDE, or setting a shared business domain) — does not exist. It would reuse the existing selection mode infrastructure in `data_contract.js`.
+
+**Open questions:**
+- Which governance fields should be bulk-settable?
+- Should the bulk edit open a modal to enter the new value, or use a quick-pick dropdown in the toolbar?
+- Should bulk edit write directly to `data_column_chars` (same path as single-column governance edits) or go through the YAML?
+
+---
+
+### 9. Run Contract Tests from the Contract Page
+
+There is no way to trigger a test run scoped to the contract's included suites from within the contract page. Users must navigate to the test suites view to kick off execution. A "Run Contract Tests" action that launches execution for all `include_in_contract = TRUE` suites for the table group would close the loop between viewing contract health and acting on it.
+
+**Open questions:**
+- Should the run be synchronous (show a spinner) or fire-and-forget with a status banner?
+- Should it run all included suites, or let the user pick which suites to run?
+- Reuse the existing `testgen run-tests` CLI path or add a contract-scoped wrapper?
+
+---
+
+### 10. Contract Compliance Notifications
+
+When a saved contract's test results degrade — tests that were passing begin failing after a run — there is no alert. The email notification infrastructure already exists in `testgen/common/notifications/`. A contract-specific notification that fires when `tg_test_failed` or `tg_monitor_failed` goes above zero (relative to the saved version's last-known-good state) would be a low-cost addition.
+
+**Open questions:**
+- Should the notification fire after every test run, or only when status transitions from passing to failing?
+- Should it reuse the existing `TestRunNotification` template or get its own contract-specific email template?
+- Should per-contract notification preferences be stored in `notification_settings` or a new `contract_notification_settings` table?
+
+---
+
+### 11. YAML Session State Staleness Detection
+
+The contract YAML cached in `st.session_state` can silently diverge from the DB if tests are edited from the test suites page in another browser tab during the same session. The existing staleness banner detects saved-version vs. current-TestGen drift, but not session-cache vs. DB drift. A lightweight DB fingerprint check (e.g. comparing the max `last_modified` timestamp of `test_definitions` for the table group against a value captured at page load) could detect this and prompt the user to reload.
+
+**Open questions:**
+- How frequently should the fingerprint be checked — on every rerun, or only on explicit user actions (save, run)?
+- Should the stale-cache state block saves or just show a warning banner?
+
+---
+
+### 12. Coverage Quality Distinction
+
+The Coverage card currently counts a column as "covered" if it has any non-schema term, including observed DDL terms like `physicalType`. A column with only a data type observed during profiling but no quality assertion is counted as covered. A finer breakdown — "has at least one quality test" vs. "has only schema/governance terms" — would make the coverage metric more meaningful for assessing actual test coverage.
+
+**Open questions:**
+- Should the card show two coverage percentages (schema coverage vs. quality coverage), or replace the existing metric with the stricter definition?
+- Should the Coverage Matrix also visually distinguish columns with only schema terms from columns with quality tests?
