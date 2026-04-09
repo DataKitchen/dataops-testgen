@@ -14,13 +14,36 @@ from testgen.commands.export_data_contract import run_export_data_contract
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_dict_from_db
 from testgen.common.models import with_database_session
-from testgen.ui.queries.profiling_queries import COLUMN_GOVERNANCE_FIELDS
+from testgen.ui.queries.profiling_queries import COLUMN_GOVERNANCE_FIELDS, TAG_FIELDS
 
 _log = logging.getLogger(__name__)
 LOG  = logging.getLogger("testgen")
 
 # Allowlist for governance field writes — mirrors COLUMN_GOVERNANCE_FIELDS
 _GOVERNANCE_ALLOWED_FIELDS: frozenset[str] = COLUMN_GOVERNANCE_FIELDS
+
+# Complete label → (db_column, null/reset value) for all deletable governance terms.
+# Bool fields reset to False; string/enum fields reset to None.
+_BOOL_GOV_DB_FIELDS: frozenset[str] = frozenset({"critical_data_element", "excluded_data_element"})
+_GOVERNANCE_LABEL_TO_FIELD: dict[str, tuple[str, object]] = {
+    "Critical Data Element": ("critical_data_element", False),
+    "Excluded Data Element": ("excluded_data_element", False),
+    "PII":                   ("pii_flag",              None),
+    "Description":           ("description",           None),
+    # aliases used by single-term delete dialog
+    "CDE":                   ("critical_data_element", False),
+    "Classification":        ("pii_flag",              None),
+    **{label: (col_key, None) for label, col_key in [
+        ("Data Source",       "data_source"),
+        ("Source System",     "source_system"),
+        ("Source Process",    "source_process"),
+        ("Business Domain",   "business_domain"),
+        ("Stakeholder Group", "stakeholder_group"),
+        ("Transform Level",   "transform_level"),
+        ("Aggregation Level", "aggregation_level"),
+        ("Data Product",      "data_product"),
+    ]},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -398,21 +421,21 @@ def _persist_governance_deletion(
     col_name: str,
 ) -> None:
     """Write a governance term deletion directly to data_column_chars so it survives the next export."""
-    schema = get_tg_schema()
-    field_map: dict[str, tuple[str, object]] = {
-        "Description":            ("description",          None),
-        "CDE":                    ("critical_data_element", False),
-        "Critical Data Element":  ("critical_data_element", False),
-        "Classification":         ("pii_flag",              None),
-        "PII":                    ("pii_flag",              None),
-    }
-    entry = field_map.get(term_name)
+    if not col_name:
+        LOG.warning("_persist_governance_deletion: col_name is empty for term %r — governance terms are column-scoped only", term_name)
+        return
+    entry = _GOVERNANCE_LABEL_TO_FIELD.get(term_name)
     if not entry:
+        LOG.warning("_persist_governance_deletion: unknown governance term %r — skipping", term_name)
         return
     db_col, db_val = entry
+    if db_col not in _GOVERNANCE_ALLOWED_FIELDS:
+        LOG.error("_persist_governance_deletion: column %r not in allowlist — aborting", db_col)
+        return
+    schema = get_tg_schema()
     execute_db_queries([(
         f"UPDATE {schema}.data_column_chars SET {db_col} = :val "
-        "WHERE table_groups_id = :tg_id AND table_name = :tbl AND column_name = :col",
+        "WHERE table_groups_id = CAST(:tg_id AS uuid) AND table_name = :tbl AND column_name = :col",
         {"val": db_val, "tg_id": table_group_id, "tbl": table_name, "col": col_name},
     )])
 

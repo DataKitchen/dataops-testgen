@@ -1,0 +1,287 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: "test-failure-contract-001"
+
+quality:
+  # Section 1 — Unsupported metrics
+
+  # 1.1 missingValues — no TestGen equivalent
+  - name: empty_string_check
+    type: library
+    metric: missingValues
+    mustBe: 0
+    unit: rows
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments:
+      missingValues: ["", "N/A", "NULL"]
+
+  # 1.2 missingValues with no arguments
+  - name: undefined_missing
+    type: library
+    metric: missingValues
+    mustBe: 0
+    unit: rows
+    element: orders.status
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # Section 2 — Unsupported operators
+
+  # 2.1 mustNotBe
+  - name: id_must_not_be_zero
+    type: library
+    metric: nullValues
+    mustNotBe: 0
+    unit: rows
+    element: orders.order_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 2.2 mustNotBeBetween on rowCount
+  - name: row_count_not_in_danger_zone
+    type: library
+    metric: rowCount
+    mustNotBeBetween: [0, 100]
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 2.3 mustNotBeBetween on nullValues
+  - name: null_pct_not_in_range
+    type: library
+    metric: nullValues
+    mustNotBeBetween: [10, 90]
+    unit: percent
+    element: customers.email
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # Section 3 — invalidValues without actionable arguments
+
+  # 3.1 invalidValues with no arguments block
+  - name: status_no_invalids
+    type: library
+    metric: invalidValues
+    mustBe: 0
+    unit: rows
+    element: orders.status
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 3.2 invalidValues with empty arguments block
+  - name: status_empty_args
+    type: library
+    metric: invalidValues
+    mustBe: 0
+    unit: rows
+    element: orders.status
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments: {}
+
+  # 3.3 invalidValues with only missingValues argument
+  - name: treat_blanks_as_invalid
+    type: library
+    metric: invalidValues
+    mustBe: 0
+    unit: rows
+    element: customers.email
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments:
+      missingValues: ["", " "]
+
+  # 3.4 invalidValues with empty validValues list
+  - name: status_empty_lov
+    type: library
+    metric: invalidValues
+    mustBe: 0
+    unit: rows
+    element: orders.status
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments:
+      validValues: []
+
+  # Section 4 — Non-testgen custom engines
+
+  # 4.1 engine: soda
+  - name: soda_nullcheck
+    type: custom
+    engine: soda
+    mustBe: 0
+    unit: rows
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 4.2 engine: greatExpectations
+  - name: ge_not_null
+    type: custom
+    engine: greatExpectations
+    expectation: expect_column_values_to_not_be_null
+    mustBe: 0
+    unit: rows
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 4.3 engine: montecarlo
+  - name: mc_field_health
+    type: custom
+    engine: montecarlo
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 4.4 engine: dbt
+  - name: dbt_not_null
+    type: custom
+    engine: dbt
+    test: not_null
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 4.5 vendor:testgen but missing testType
+  - name: some_testgen_test
+    type: custom
+    vendor: testgen
+    mustBeLessOrEqualTo: 5.0
+    unit: rows
+    element: orders.amount
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 4.6 vendor:testgen with unknown testType
+  - name: unknown_test
+    type: custom
+    vendor: testgen
+    testType: Fake_Test_That_Does_Not_Exist
+    mustBeLessOrEqualTo: 0
+    unit: rows
+    element: orders.amount
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # Section 5 — type: text (silently skipped)
+
+  # 5.1 text type
+  - name: orders_data_quality_policy
+    type: text
+    description: "All orders must conform to the data quality standards."
+    element: orders
+
+  # Section 6 — sql type problems
+
+  # 6.1 sql with no query field
+  - name: missing_query
+    type: sql
+    mustBeGreaterThan: 0
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 6.2 sql with empty query
+  - name: empty_query
+    type: sql
+    query: ""
+    mustBeGreaterThan: 0
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 6.3 sql with no threshold operator
+  - name: no_threshold_sql
+    type: sql
+    query: "SELECT COUNT(*) FROM orders WHERE status = 'error'"
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # Section 7 — Missing required fields
+
+  # 7.1 no type field
+  - name: mystery_rule
+    metric: nullValues
+    mustBe: 0
+    unit: rows
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 7.2 library with no metric
+  - name: no_metric
+    type: library
+    mustBe: 0
+    unit: rows
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 7.3 library with unrecognized metric
+  - name: unknown_metric
+    type: library
+    metric: dataFreshness
+    mustBeLessOrEqualTo: 5
+    unit: hours
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 7.4 no element field
+  - name: needs_element
+    type: library
+    metric: nullValues
+    mustBe: 0
+    unit: percent
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 7.5 no threshold operator
+  - name: no_operator
+    type: library
+    metric: nullValues
+    unit: percent
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # Section 9 — Malformed values
+
+  # 9.1 non-numeric threshold
+  - name: bad_threshold
+    type: library
+    metric: nullValues
+    mustBeLessOrEqualTo: "high"
+    unit: percent
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 9.2 mustBeBetween is not an array (scalar)
+  - name: bad_between_scalar
+    type: library
+    metric: rowCount
+    mustBeBetween: 1000
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 9.3 mustBeBetween wrong length (1 element)
+  - name: bad_between_length
+    type: library
+    metric: rowCount
+    mustBeBetween: [1000]
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 9.4 mustBeBetween non-numeric bounds
+  - name: bad_between_types
+    type: library
+    metric: rowCount
+    mustBeBetween: ["low", "high"]
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 9.5 mustBeBetween inverted range
+  - name: inverted_range
+    type: library
+    metric: rowCount
+    mustBeBetween: [100000, 1000]
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # Section 12 — rowCount with percent unit
+  - name: row_count_percent
+    type: library
+    metric: rowCount
+    mustBeGreaterThan: 80
+    unit: percent
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"

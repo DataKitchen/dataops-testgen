@@ -1,3 +1,4 @@
+// cache-bust: v2
 /**
  * Data Contract page — VanJS component.
  *
@@ -101,13 +102,36 @@ const statusClass = (s) =>
 const formatTestType = (t) =>
     t ? t.replace(/([A-Z])/g, ' $1').trim().replace(/^./, (s) => s.toUpperCase()) : '';
 
+// Selection mode state — shared across all term chips and the filter bar
+const _selectionMode = van.state(false);
+const _selectedIds = van.state(new Set());    // Set<termKey>
+const _confirmingDelete = van.state(false);   // true = showing "Are you sure?" prompt
+const _flashBtn = van.state('');              // 'visible' | 'context' | '' for button flash
+const _selectionHint = van.state('');         // brief status message shown in the bulk bar
+// Registry: termKey → full term info for delete payload (populated by TermChip on creation)
+const _termInfoByKey = new Map();
+
 const TermChip = (term, tableName, colName) => {
     const srcCls = SOURCE_CLASS[term.source] || 'obs';
     const srcLabel = SOURCE_LABEL[term.source] || term.source;
     const verif = VERIF_META[term.verif] || { icon: '', label: term.verif, cls: 'badge-obs' };
-    const isLive = term.source === 'test';
+    const isLive = term.source === 'test' || term.source === 'monitor';
     const status = term.status;
     const statusCls = status ? statusClass(status) : null;
+
+    // Every chip is selectable — use rule_id when available, else generate a stable key
+    const termKey = term.rule_id || `${term.source}|${term.name}|${String(term.value)}|${tableName}|${colName}`;
+    // Register full term info for use in the delete payload
+    _termInfoByKey.set(termKey, {
+        term_key:    termKey,
+        rule_id:     term.rule_id || '',
+        source:      term.source,
+        name:        term.name,
+        value:       String(term.value || ''),
+        table:       tableName,
+        col:         colName,
+        anomaly_type: term.anomaly_type || '',
+    });
 
     // Only hygiene/anomaly terms (verif=monitored) skip the detail dialog.
     const hasDetail = term.verif !== 'monitored';
@@ -119,18 +143,42 @@ const TermChip = (term, tableName, colName) => {
         ? (testTypeLabel && testTypeLabel.toLowerCase() !== testName.toLowerCase() ? testTypeLabel : term.name)
         : (term.name || '');
 
+    // Static chip element — selection state handled via direct DOM class manipulation
+    const chipCls = `term-chip ${srcCls} term-chip--clickable`;
+    const attrs = { class: chipCls, 'data-term-key': termKey };
+
+    attrs.onclick = (e) => {
+        e.stopPropagation();
+        if (_selectionMode.val) {
+            const next = new Set(_selectedIds.val);
+            if (next.has(termKey)) next.delete(termKey);
+            else next.add(termKey);
+            _selectedIds.val = next;
+            // Immediate visual update on the clicked chip (derive fires async)
+            const chip = e.currentTarget;
+            const isSel = next.has(termKey);
+            chip.classList.toggle('term-chip--selected', isSel && !_confirmingDelete.val);
+            chip.classList.toggle('term-chip--deleting', isSel && _confirmingDelete.val);
+            const cb = chip.querySelector('input[type=checkbox]');
+            if (cb) cb.checked = isSel;
+        } else if (hasDetail) {
+            emitEvent('TermDetailClicked', { payload: { term, tableName, colName } });
+        }
+    };
+
     return div(
-        {
-            class: `term-chip ${srcCls}${hasDetail ? ' term-chip--clickable' : ''}`,
-            onclick: hasDetail
-                ? (e) => {
+        attrs,
+        // Checkbox in DOM for every chip; JS shows/hides via _syncDomToState
+        div(
+            {
+                class: 'term-chip__checkbox',
+                onclick: (e) => {
                     e.stopPropagation();
-                    emitEvent('TermDetailClicked', {
-                        payload: { term, tableName, colName },
-                    });
-                }
-                : null,
-        },
+                    e.currentTarget.closest('.term-chip')?.dispatchEvent(new MouseEvent('click', { bubbles: false }));
+                },
+            },
+            input({ type: 'checkbox' }),
+        ),
         div(
             { class: 'term-chip__header' },
             span({ class: 'term-chip__src' }, srcLabel),
@@ -263,13 +311,194 @@ const TableSection = (tableData, startOpen = false) => {
 
 // ── Terms detail tab ─────────────────────────────────────────────────────────
 
+// Collect all selectable rule_ids from a filtered table list
+// Collect term keys for all terms across a filtered table list
+const _collectAllTermKeys = (filteredTables) => {
+    const keys = [];
+    const addTerm = (term, tableName, colName) => {
+        const k = term.rule_id || `${term.source}|${term.name}|${String(term.value)}|${tableName}|${colName}`;
+        keys.push(k);
+        // Also register in _termInfoByKey so confirmDelete can build the full payload
+        // even for terms that are off-screen (not rendered as DOM chips).
+        if (!_termInfoByKey.has(k)) {
+            _termInfoByKey.set(k, {
+                term_key:    k,
+                rule_id:     term.rule_id || '',
+                source:      term.source,
+                name:        term.name,
+                value:       String(term.value || ''),
+                table:       tableName,
+                col:         colName,
+                anomaly_type: term.anomaly_type || '',
+            });
+        }
+    };
+    for (const t of filteredTables) {
+        for (const term of (t.table_terms || [])) addTerm(term, t.name, '');
+        for (const col of t.columns) {
+            for (const term of (col.static_terms || [])) addTerm(term, t.name, col.name);
+            for (const term of (col.live_terms   || [])) addTerm(term, t.name, col.name);
+        }
+    }
+    return keys;
+};
+
 const TermsDetail = (tables, activeFilter) => {
     const grandTotal = tables.reduce(
         (sum, t) => sum + t.columns.reduce(
             (s, col) => s + col.static_terms.length + col.live_terms.length, 0,
         ), 0,
     );
+
+
+    // ── DOM sync: single source of truth for all chip visual state ──────────────
+    // Called after entering/exiting selection mode AND after any filter change
+    // (filter changes cause VanJS to recreate chip elements, losing inline styles).
+    const _syncDomToState = () => {
+        const inSel = _selectionMode.val;
+        const selected = _selectedIds.val;
+        const confirming = _confirmingDelete.val;
+
+        // Show/hide every checkbox
+        document.querySelectorAll('.term-chip__checkbox').forEach((el) => {
+            el.style.cssText = inSel
+                ? 'display:flex;align-items:center;justify-content:center;'
+                : 'display:none;';
+        });
+
+        // Re-apply selected / deleting highlight on all chips
+        document.querySelectorAll('.term-chip[data-term-key]').forEach((el) => {
+            const isSel = selected.has(el.dataset.termKey);
+            el.classList.toggle('term-chip--selected', isSel && !confirming);
+            el.classList.toggle('term-chip--deleting', isSel && confirming);
+            const cb = el.querySelector('input[type=checkbox]');
+            if (cb) cb.checked = isSel;
+        });
+    };
+
+    // Re-sync DOM after filter changes while in selection mode
+    van.derive(() => {
+        void activeFilter.val;           // register dependency
+        void _selectionMode.val;
+        void _selectedIds.val;
+        void _confirmingDelete.val;
+        setTimeout(_syncDomToState, 0);  // defer until VanJS finishes re-rendering chips
+    });
+
+    const enterSelectionMode = () => {
+        _selectionMode.val = true;
+        document.querySelector('.terms-detail-wrap')?.classList.add('selection-mode-active');
+        setTimeout(_syncDomToState, 0);
+    };
+
+    const exitSelectionMode = () => {
+        _selectionMode.val = false;
+        _selectedIds.val = new Set();
+        _confirmingDelete.val = false;
+        _flashBtn.val = '';
+        _selectionHint.val = '';
+        document.querySelector('.terms-detail-wrap')?.classList.remove('selection-mode-active');
+        _syncDomToState();
+        _termInfoByKey.clear();
+    };
+
+    // Compute the filtered table list (same logic as the render below) for "Select All In Context"
+    const getFilteredTables = () => {
+        const filter = activeFilter.val;
+        if (filter === 'all') return tables;
+        const COVERED_VERIFS = new Set(['tested', 'monitored', 'declared']);
+        const FAILING_STATUS  = new Set(['failing', 'error']);
+        const termFilter = (c) => {
+            if (filter === 'uncovered') return false;
+            if (filter === 'failing')   return c.kind === 'live' && FAILING_STATUS.has(c.status);
+            if (filter === 'anomalies') return c.kind === 'live' && c.source === 'profiling';
+            return c.verif === filter;
+        };
+        const colFilter = (col) => {
+            if (filter === 'uncovered') {
+                const allTerms = [...(col.static_terms || []), ...(col.live_terms || [])];
+                return !allTerms.some((c) => COVERED_VERIFS.has(c.verif));
+            }
+            return (col.static_terms || []).filter(termFilter).length > 0
+                || (col.live_terms || []).filter(termFilter).length > 0;
+        };
+        return tables
+            .map((t) => ({
+                ...t,
+                table_terms: filter === 'uncovered' ? [] : (t.table_terms || []).filter(termFilter),
+                columns: t.columns
+                    .filter(colFilter)
+                    .map((col) => filter === 'uncovered' ? col : {
+                        ...col,
+                        static_terms: (col.static_terms || []).filter(termFilter),
+                        live_terms:   (col.live_terms   || []).filter(termFilter),
+                    }),
+            }))
+            .filter((t) => t.table_terms.length > 0 || t.columns.length > 0);
+    };
+
+    const _setHint = (msg) => {
+        _selectionHint.val = msg;
+        setTimeout(() => { _selectionHint.val = ''; }, 2500);
+    };
+
+    const selectAllInContext = () => {
+        const ids = _collectAllTermKeys(getFilteredTables());
+        if (!ids.length) {
+            _setHint('No terms in this view');
+            _flashBtn.val = 'context';
+            setTimeout(() => { _flashBtn.val = ''; }, 700);
+            return;
+        }
+        _selectedIds.val = new Set(ids);
+        _confirmingDelete.val = false;
+        _selectionHint.val = '';
+        _flashBtn.val = 'context';
+        setTimeout(() => { _flashBtn.val = ''; }, 700);
+        _syncDomToState();
+    };
+
+    const selectAllVisible = () => {
+        const vh = window.innerHeight || document.documentElement.clientHeight;
+        const prev = _selectedIds.val;
+        const next = new Set(prev);
+        document.querySelectorAll('.term-chip[data-term-key]').forEach((el) => {
+            const r = el.getBoundingClientRect();
+            if (r.top < vh && r.bottom > 0) next.add(el.dataset.termKey);
+        });
+        if (next.size === prev.size) {
+            _setHint('No terms visible — scroll to see more');
+            _flashBtn.val = 'visible';
+            setTimeout(() => { _flashBtn.val = ''; }, 700);
+            return;
+        }
+        _selectedIds.val = next;
+        _confirmingDelete.val = false;
+        _selectionHint.val = '';
+        _flashBtn.val = 'visible';
+        setTimeout(() => { _flashBtn.val = ''; }, 700);
+        _syncDomToState();
+    };
+
+    const requestDelete = () => {
+        if (!_selectedIds.val.size) return;
+        _confirmingDelete.val = true;
+        _syncDomToState();
+    };
+
+    const confirmDelete = () => {
+        const terms = [..._selectedIds.val].map((k) => _termInfoByKey.get(k)).filter(Boolean);
+        emitEvent('BulkDeleteTermsClicked', { payload: { terms } });
+        exitSelectionMode();
+    };
+
+    const cancelConfirm = () => {
+        _confirmingDelete.val = false;
+        _syncDomToState();
+    };
+
     return div(
+        { class: 'terms-detail-wrap' },
         div(
             { class: 'section-header' },
             div(
@@ -297,8 +526,68 @@ const TermsDetail = (tables, activeFilter) => {
                         `${meta.icon} ${meta.label}`,
                     );
                 }),
+                () => _selectionMode.val
+                    ? ''
+                    : span(
+                        {
+                            class: 'filter-pill select-mode-btn',
+                            title: 'Select multiple test terms to delete',
+                            onclick: enterSelectionMode,
+                        },
+                        mat('checklist', 13), ' Select',
+                      ),
             ),
         ),
+        // ── Bulk action bar (visible only in selection mode) ──────────────────
+        () => _selectionMode.val
+            ? div(
+                { class: () => `bulk-action-bar${_confirmingDelete.val ? ' bulk-action-bar--confirming' : ''}` },
+                // ── count ──
+                span({ class: 'bulk-action-count' }, () => `${_selectedIds.val.size} selected`),
+                // ── hint message (shown briefly when no selectable terms found) ──
+                () => _selectionHint.val
+                    ? span({ class: 'bulk-action-hint' }, mat('info', 13), ` ${_selectionHint.val}`)
+                    : '',
+                // ── select-all buttons (hidden when confirming) ──
+                () => _confirmingDelete.val ? '' : span(
+                    {
+                        class: () => `bulk-action-btn${_flashBtn.val === 'visible' ? ' bulk-action-btn--flashing' : ''}`,
+                        onclick: selectAllVisible,
+                        title: 'Select terms currently visible in the viewport',
+                    },
+                    mat('select_all', 13), ' Select all visible',
+                ),
+                () => _confirmingDelete.val ? '' : span(
+                    {
+                        class: () => `bulk-action-btn${_flashBtn.val === 'context' ? ' bulk-action-btn--flashing' : ''}`,
+                        onclick: selectAllInContext,
+                        title: 'Select all test terms matching the current filter across the entire contract',
+                    },
+                    mat('done_all', 13), ' Select all in context',
+                ),
+                // ── delete / confirm buttons ──
+                () => !_confirmingDelete.val && _selectedIds.val.size > 0
+                    ? span(
+                        { class: 'bulk-action-btn bulk-action-btn--delete', onclick: requestDelete },
+                        mat('delete', 13), ' Delete contract terms',
+                      )
+                    : '',
+                () => _confirmingDelete.val
+                    ? span({ class: 'bulk-action-confirm__msg' },
+                        mat('warning', 14), ` Delete ${_selectedIds.val.size} contract term${_selectedIds.val.size !== 1 ? 's' : ''}? This cannot be undone.`,
+                      )
+                    : '',
+                () => _confirmingDelete.val
+                    ? span({ class: 'bulk-action-btn bulk-action-btn--confirm-yes', onclick: confirmDelete },
+                        mat('delete_forever', 13), ' Yes, delete',
+                      )
+                    : '',
+                // ── cancel / no-keep ──
+                () => _confirmingDelete.val
+                    ? span({ class: 'bulk-action-btn bulk-action-btn--cancel', onclick: cancelConfirm }, 'No, keep')
+                    : span({ class: 'bulk-action-btn bulk-action-btn--cancel', onclick: exitSelectionMode }, 'Cancel'),
+              )
+            : '',
         () => {
             const filter = activeFilter.val;
             if (filter === 'all') {
@@ -857,8 +1146,16 @@ const UploadTab = () => {
         { class: 'upload-tab' },
         div({ class: 'upload-desc' },
             p({ style: 'margin: 0 0 10px;' },
-                'Upload a modified YAML to sync selected fields back to TestGen. ',
-                'Only the fields listed below are writable — everything else is ignored.',
+                'Upload a modified ODCS v3.1.0 YAML to sync changes back to TestGen. ',
+                'Rules without an ',
+                span({ style: 'font-family:monospace' }, 'id'),
+                ' field are ',
+                span({ style: 'font-weight:600' }, 'created'),
+                ' as new tests; rules with an ',
+                span({ style: 'font-family:monospace' }, 'id'),
+                ' field ',
+                span({ style: 'font-weight:600' }, 'update'),
+                ' the matching test. After import, download the updated YAML to capture the new test IDs.',
             ),
             div({ class: 'upload-desc-cols' },
                 div(
@@ -868,14 +1165,15 @@ const UploadTab = () => {
                         li('Business domain and data product'),
                         li('Latency SLA (profiling delay days)'),
                         li('Quality rule thresholds, tolerances, severity, and description'),
+                        li(span({ style: 'font-weight:600' }, 'New quality rules'), ' — add rules without an ', span({ style: 'font-family:monospace' }, 'id'), ' to create tests'),
                     ),
                 ),
                 div(
                     p({ class: 'upload-desc-heading' }, 'Not updated — manage in TestGen'),
                     ul(
                         li('Tables, columns, and data types'),
-                        li('Which quality rules (tests) exist'),
                         li('Test suite settings and connections'),
+                        li('Test type, target table, or column (ignored on import — immutable once created)'),
                     ),
                 ),
             ),
@@ -2611,6 +2909,88 @@ stylesheet.replace(`
     color: var(--caption-text-color);
     font-style: italic;
     flex-basis: 100%;
+}
+
+/* ── Multi-select: select button & bulk action bar ── */
+.select-mode-btn { margin-left: 4px; display: inline-flex; align-items: center; gap: 3px; }
+.select-mode-btn .material { font-size: 13px; }
+.bulk-action-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    background: rgba(239,68,68,0.05);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 8px;
+    font-size: 12px;
+}
+.bulk-action-count {
+    font-weight: 600;
+    color: var(--primary-text-color);
+    min-width: 70px;
+}
+.bulk-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: var(--button-generic-background-color);
+    color: var(--secondary-text-color);
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.15s;
+    user-select: none;
+}
+.bulk-action-btn:hover { color: var(--link-text-color); border-color: rgba(79,142,247,0.4); background: rgba(79,142,247,0.08); }
+.bulk-action-btn--delete { color: #ef4444; border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.07); }
+.bulk-action-btn--delete:hover { color: #dc2626; border-color: rgba(239,68,68,0.6); background: rgba(239,68,68,0.14); }
+.bulk-action-btn--cancel { color: var(--caption-text-color); }
+.bulk-action-btn--confirm-yes { color: #fff; border-color: #dc2626; background: #dc2626; font-weight: 600; }
+.bulk-action-btn--confirm-yes:hover { background: #b91c1c; border-color: #b91c1c; color: #fff; }
+/* Flash animation for Select All buttons */
+@keyframes btn-flash {
+    0%   { background: rgba(79,142,247,0.25); border-color: rgba(79,142,247,0.7); color: var(--link-text-color); }
+    60%  { background: rgba(79,142,247,0.18); }
+    100% { background: var(--button-generic-background-color); border-color: var(--border-color); color: var(--secondary-text-color); }
+}
+.bulk-action-btn--flashing { animation: btn-flash 0.65s ease-out forwards; }
+.bulk-action-bar--confirming { background: rgba(239,68,68,0.08); border-color: rgba(239,68,68,0.4); }
+.bulk-action-confirm__msg { flex: 1; font-weight: 600; color: #dc2626; display: inline-flex; align-items: center; gap: 5px; }
+.bulk-action-hint { color: var(--caption-text-color); font-style: italic; display: inline-flex; align-items: center; gap: 4px; flex: 1; font-size: 11px; }
+/* ── Multi-select: chip checkbox & selected state ── */
+.term-chip { position: relative; }
+.term-chip__checkbox {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    cursor: pointer;
+    z-index: 2;
+    line-height: 0;
+    display: none;           /* hidden by default */
+    pointer-events: none;    /* invisible = not interactive */
+}
+/* Checkbox visibility is controlled entirely by JS (enterSelectionMode / exitSelectionMode) */
+.term-chip__checkbox input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    accent-color: #22c55e;
+    display: block;
+}
+.term-chip--selected {
+    outline: 2px solid rgba(34,197,94,0.8);
+    outline-offset: 1px;
+    background: rgba(34,197,94,0.1) !important;
+}
+.term-chip--deleting {
+    outline: 2px solid rgba(239,68,68,0.85);
+    outline-offset: 1px;
+    background: rgba(239,68,68,0.1) !important;
+    opacity: 0.85;
 }
 
 /* ── Coverage matrix scope note ── */

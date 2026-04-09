@@ -29,7 +29,8 @@ from testgen.commands.contract_versions import (
     load_contract_version,
     mark_contract_not_stale,
 )
-from testgen.commands.import_data_contract import ContractDiff  # re-exported for test compatibility
+from testgen.commands.odcs_contract import ContractDiff as OdcsContractDiff
+from testgen.commands.odcs_contract import get_updated_yaml, run_import_contract
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import fetch_dict_from_db
 from testgen.common.models import with_database_session
@@ -43,6 +44,8 @@ from testgen.ui.queries.data_contract_queries import (
     _fetch_suite_scope,
     _fetch_test_statuses,
     _lookup_column_id,
+    _dismiss_hygiene_anomaly,
+    _persist_governance_deletion,
 )
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
@@ -76,6 +79,9 @@ from testgen.ui.views.dialogs.data_contract_dialogs import (
 
 PAGE_TITLE = "Data Contract"
 PAGE_ICON = "contract"
+
+# Re-exported for test compatibility (tests/unit/ui/test_data_contract_page.py imports this symbol)
+ContractDiff = OdcsContractDiff
 
 
 def _format_pending_labels(pending: dict) -> list[str]:
@@ -393,10 +399,11 @@ class DataContractPage(Page):
             return
 
         # ── Session state keys ────────────────────────────────────────────────
-        yaml_key    = f"dc_yaml:{table_group_id}"
-        version_key = f"dc_version:{table_group_id}"
-        pending_key = f"dc_pending:{table_group_id}"
-        anomaly_key = f"dc_anomalies:{table_group_id}"
+        yaml_key       = f"dc_yaml:{table_group_id}"
+        version_key    = f"dc_version:{table_group_id}"
+        pending_key    = f"dc_pending:{table_group_id}"
+        anomaly_key    = f"dc_anomalies:{table_group_id}"
+        import_key     = f"dc_import_result:{table_group_id}"
 
         # ── Version picker ────────────────────────────────────────────────────
         versions = list_contract_versions(table_group_id)
@@ -706,13 +713,204 @@ class DataContractPage(Page):
             if rule:
                 _edit_rule_dialog(rule, table_group_id, yaml_key)
 
+        def on_import_contract(payload: dict) -> None:
+            if not is_latest:
+                return
+            yaml_content = payload.get("payload", "")
+            if not yaml_content:
+                return
+            try:
+                diff: OdcsContractDiff = run_import_contract(yaml_content, table_group_id)
+                st.session_state[import_key] = {
+                    "diff": diff,
+                    "original_yaml": yaml_content,
+                }
+                if not diff.has_errors:
+                    # Bust YAML + anomaly caches so the page reflects the newly created tests
+                    st.session_state.pop(yaml_key, None)
+                    st.session_state.pop(anomaly_key, None)
+                    st.session_state.pop(version_key, None)
+            except Exception as exc:  # noqa: BLE001
+                st.session_state[import_key] = {"error": str(exc)}
+            safe_rerun()
+
+        def on_bulk_delete_terms(payload: dict) -> None:  # noqa: C901
+            if not is_latest:
+                return
+            terms: list[dict] = payload.get("terms") or []
+            if not terms:
+                return
+
+            current_yaml = st.session_state.get(yaml_key, "")
+            try:
+                parsed = yaml.safe_load(current_yaml)
+                if not isinstance(parsed, dict):
+                    return
+                doc = parsed
+            except yaml.YAMLError:
+                return
+
+            # ── 1. Delete quality rules (test / monitor terms with rule_id) ──
+            rule_ids_to_delete: set[str] = {
+                t["rule_id"] for t in terms if t.get("rule_id")
+            }
+            element_by_id: dict[str, str] = {
+                str(q.get("id", "")): str(q.get("element", ""))
+                for q in (doc.get("quality") or [])
+            }
+            if rule_ids_to_delete:
+                doc["quality"] = [
+                    q for q in (doc.get("quality") or [])
+                    if str(q.get("id", "")) not in rule_ids_to_delete
+                ]
+
+            # ── 2. Delete schema terms (DDL / profiling / governance) ──────
+            # Map: (table_name, col_name) → list of {source, name} to remove
+            schema_removals: dict[tuple[str, str], list[dict]] = {}
+            for t in terms:
+                if t.get("rule_id"):
+                    continue  # handled above
+                key = (t.get("table", ""), t.get("col", ""))
+                schema_removals.setdefault(key, []).append(t)
+
+            if schema_removals:
+                _SCHEMA_FIELD_MAP: dict[tuple[str, str], str] = {
+                    ("ddl",        "Data Type"):              "physicalType",
+                    ("ddl",        "Not Null"):               "required",
+                    ("ddl",        "Primary Key"):            "_logicalTypeOptions.primaryKey",
+                    ("profiling",  "Min Value"):              "_logicalTypeOptions.minimum",
+                    ("profiling",  "Max Value"):              "_logicalTypeOptions.maximum",
+                    ("profiling",  "Min Length"):             "_logicalTypeOptions.minLength",
+                    ("profiling",  "Max Length"):             "_logicalTypeOptions.maxLength",
+                    ("profiling",  "Format"):                 "_logicalTypeOptions.format",
+                    ("profiling",  "Logical Type"):           "logicalType",
+                    ("governance", "Critical Data Element"):  "criticalDataElement",
+                    ("governance", "Description"):            "description",
+                }
+                for schema_entry in (doc.get("schema") or []):
+                    tbl_name = schema_entry.get("name", "")
+                    for prop in (schema_entry.get("properties") or []):
+                        col_name = prop.get("name", "")
+                        removals = schema_removals.get((tbl_name, col_name), [])
+                        for rem in removals:
+                            field = _SCHEMA_FIELD_MAP.get((rem.get("source", ""), rem.get("name", "")))
+                            if not field:
+                                continue
+                            if field.startswith("_logicalTypeOptions."):
+                                subfield = field[len("_logicalTypeOptions."):]
+                                opts = prop.get("logicalTypeOptions") or {}
+                                opts.pop(subfield, None)
+                                if opts:
+                                    prop["logicalTypeOptions"] = opts
+                                else:
+                                    prop.pop("logicalTypeOptions", None)
+                            else:
+                                prop.pop(field, None)
+
+            updated_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+            # ── 3. Persist governance deletions directly to DB ─────────────
+            # Governance terms live in data_column_chars, not YAML.
+            # Write DB first; only commit YAML to session state if all writes succeed.
+            try:
+                for t in terms:
+                    if t.get("source") == "governance" and not t.get("rule_id"):
+                        _persist_governance_deletion(
+                            term_name=t.get("name", ""),
+                            table_group_id=table_group_id,
+                            table_name=t.get("table", ""),
+                            col_name=t.get("col", ""),
+                        )
+            except Exception:
+                LOG.exception("on_bulk_delete_terms: governance DB write failed — aborting YAML update")
+                st.error("Failed to delete governance terms — database write error. No changes were saved.")
+                return
+
+            # ── 4. Dismiss hygiene anomalies ───────────────────────────────
+            for t in terms:
+                if (
+                    t.get("source") == "profiling"
+                    and t.get("name") == "Hygiene"
+                    and not t.get("rule_id")
+                    and t.get("anomaly_type")
+                ):
+                    try:
+                        _dismiss_hygiene_anomaly(
+                            table_group_id=table_group_id,
+                            table_name=t.get("table", ""),
+                            col_name=t.get("col", ""),
+                            anomaly_type=t.get("anomaly_type", ""),
+                        )
+                    except Exception:
+                        LOG.exception("on_bulk_delete_terms: hygiene anomaly dismiss failed for %s/%s", t.get("table"), t.get("col"))
+
+            st.session_state[yaml_key] = updated_yaml
+
+            # ── 5. Update pending edits for rule deletions ─────────────────
+            pending = st.session_state.get(pending_key, {})
+            for rid in rule_ids_to_delete:
+                element = element_by_id.get(rid, "")
+                parts = element.split(".", 1)
+                tbl = parts[0] if parts else ""
+                col = parts[1] if len(parts) > 1 else ""
+                pending = _apply_pending_test_edit(
+                    pending,
+                    rid,
+                    {
+                        "_removed": True,
+                        "_table": tbl,
+                        "_col": col,
+                        "_snapshot": {"name": element or rid[:8], "source": "test", "verif": "tested"},
+                    },
+                )
+            st.session_state[pending_key] = pending
+            safe_rerun()
+
         testgen_component(
             "data_contract",
             props=props,
             event_handlers={
-                "EditRuleClicked":       on_edit_rule,
-                "TermDetailClicked":     on_term_detail,
-                "SuitePickerClicked":    on_suite_picker,
-                "GovernanceEditClicked": on_governance_edit,
+                "EditRuleClicked":          on_edit_rule,
+                "TermDetailClicked":        on_term_detail,
+                "SuitePickerClicked":       on_suite_picker,
+                "GovernanceEditClicked":    on_governance_edit,
+                "ImportContractClicked":    on_import_contract,
+                "BulkDeleteTermsClicked":   on_bulk_delete_terms,
             },
         )
+
+        # ── Import result banner ──────────────────────────────────────────────
+        import_result = st.session_state.pop(import_key, None)
+        if import_result:
+            if "error" in import_result:
+                st.error(f"Import failed: {import_result['error']}", icon="✗")
+            else:
+                diff_result: OdcsContractDiff = import_result["diff"]
+                if diff_result.has_errors:
+                    for err in diff_result.errors:
+                        st.error(err, icon="✗")
+                else:
+                    created_ct = len(diff_result.test_inserts)
+                    updated_ct = len(diff_result.test_updates)
+                    parts = []
+                    if created_ct:
+                        parts.append(f"{created_ct} test(s) created")
+                    if updated_ct:
+                        parts.append(f"{updated_ct} test(s) updated")
+                    st.success("Import complete — " + (", ".join(parts) or "no changes"), icon="✓")
+                    for warn in diff_result.warnings:
+                        st.warning(warn, icon="⚠")
+                    # Offer updated YAML download if new test IDs were written back
+                    if diff_result.new_id_by_index:
+                        updated_yaml = get_updated_yaml(
+                            import_result["original_yaml"], diff_result.new_id_by_index
+                        )
+                        # Use a unique key per import so repeated imports don't collide
+                        dl_key = f"dc_import_dl:{table_group_id}:{','.join(diff_result.new_id_by_index.values())}"
+                        st.download_button(
+                            label="⬇ Download YAML with new test IDs",
+                            data=updated_yaml,
+                            file_name="contract_with_ids.yaml",
+                            mime="text/yaml",
+                            key=dl_key,
+                        )

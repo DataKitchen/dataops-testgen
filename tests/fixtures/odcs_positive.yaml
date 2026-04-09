@@ -1,0 +1,235 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: "test-positive-contract-001"
+version: "2.0.0"
+status: active
+domain: "commerce"
+dataProduct: "order-management"
+description:
+  purpose: "All orders must conform to the data quality standards."
+
+slaProperties:
+  - property: latency
+    value: 4
+    unit: day
+
+quality:
+  # --- Creates (no id) ---
+
+  # 1.1 nullValues + mustBeLessOrEqualTo + percent → Missing_Pct
+  - name: email_null_pct
+    type: library
+    metric: nullValues
+    mustBeLessOrEqualTo: 5.0
+    unit: percent
+    element: customers.email
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    severity: Fail
+
+  # 1.2 nullValues + mustBe + percent → Missing_Pct (exact zero)
+  - name: customer_id_null_zero
+    type: library
+    metric: nullValues
+    mustBe: 0
+    unit: percent
+    element: orders.customer_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.3 nullValues + mustBeBetween + percent → Missing_Pct (range)
+  - name: phone_null_range
+    type: library
+    metric: nullValues
+    mustBeBetween: [0.0, 10.0]
+    unit: percent
+    element: customers.phone
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.4 nullValues + mustBeGreaterThan → Missing_Pct
+  - name: optional_field_has_some
+    type: library
+    metric: nullValues
+    mustBeGreaterThan: 0
+    unit: percent
+    element: customers.middle_name
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.5 rowCount + mustBeGreaterOrEqualTo → Row_Ct
+  - name: orders_min_rows
+    type: library
+    metric: rowCount
+    mustBeGreaterOrEqualTo: 1000
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.6 rowCount + mustBeBetween → Row_Ct (range)
+  - name: orders_row_range
+    type: library
+    metric: rowCount
+    mustBeBetween: [1000, 100000]
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.7 rowCount + mustBe → Row_Ct (exact)
+  - name: config_exact_rows
+    type: library
+    metric: rowCount
+    mustBe: 52
+    unit: rows
+    element: us_states
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.8 rowCount + mustBeLessThan → Row_Ct
+  - name: error_log_bounded
+    type: library
+    metric: rowCount
+    mustBeLessThan: 500
+    unit: rows
+    element: error_log
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.9 duplicateValues + mustBe 0 rows → Dupe_Rows
+  - name: order_id_no_dups
+    type: library
+    metric: duplicateValues
+    mustBe: 0
+    unit: rows
+    element: orders.order_id
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.10 duplicateValues + mustBeLessOrEqualTo rows → Dupe_Rows with tolerance
+  - name: product_sku_dup_tolerance
+    type: library
+    metric: duplicateValues
+    mustBeLessOrEqualTo: 3
+    unit: rows
+    element: products.sku
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.11 duplicateValues + mustBeGreaterOrEqualTo percent → Unique_Pct
+  - name: email_unique_pct
+    type: library
+    metric: duplicateValues
+    mustBeGreaterOrEqualTo: 99.5
+    unit: percent
+    element: customers.email
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.12 invalidValues + arguments.pattern → Pattern_Match
+  - name: email_format_check
+    type: library
+    metric: invalidValues
+    mustBe: 0
+    unit: rows
+    element: customers.email
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments:
+      pattern: '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+
+  # 1.13 invalidValues + arguments.pattern + tolerance → Pattern_Match
+  - name: zip_format_loose
+    type: library
+    metric: invalidValues
+    mustBeLessOrEqualTo: 2.0
+    unit: percent
+    element: addresses.zip_code
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments:
+      pattern: '^\d{5}(-\d{4})?$'
+
+  # 1.14 invalidValues + arguments.validValues → LOV_Match
+  - name: status_valid_values
+    type: library
+    metric: invalidValues
+    mustBe: 0
+    unit: rows
+    element: orders.status
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments:
+      validValues: [active, inactive, pending, cancelled]
+
+  # 1.15 invalidValues + arguments.validValues + tolerance → LOV_Match
+  - name: country_code_mostly_valid
+    type: library
+    metric: invalidValues
+    mustBeLessOrEqualTo: 5
+    unit: rows
+    element: addresses.country_code
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    arguments:
+      validValues: [US, CA, GB, AU, DE, FR]
+
+  # 1.16 sql type → CUSTOM
+  - name: recent_orders_exist
+    type: sql
+    query: "SELECT COUNT(*) FROM orders WHERE created_at > CURRENT_DATE - INTERVAL '7 days'"
+    mustBeGreaterThan: 0
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.17 sql + mustBeLessOrEqualTo (skip_errors semantics) → CUSTOM
+  - name: orphan_check
+    type: sql
+    query: "SELECT COUNT(*) FROM order_lines ol LEFT JOIN orders o ON o.id = ol.order_id WHERE o.id IS NULL"
+    mustBeLessOrEqualTo: 0
+    unit: rows
+    element: order_lines
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    severity: Fail
+
+  # 1.18 custom/vendor:testgen + testType → any TestGen type
+  - name: amount_avg_shift
+    type: custom
+    vendor: testgen
+    testType: Avg_Shift
+    mustBeLessOrEqualTo: 10.0
+    unit: rows
+    element: orders.amount
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    severity: Warning
+
+  # 1.19 custom/vendor:testgen + Schema_Drift
+  - name: orders_schema_stable
+    type: custom
+    vendor: testgen
+    testType: Schema_Drift
+    mustBeLessOrEqualTo: 0
+    unit: rows
+    element: orders
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # 1.20 custom/vendor:testgen + Distribution_Shift
+  - name: amount_dist_shift
+    type: custom
+    vendor: testgen
+    testType: Distribution_Shift
+    mustBeLessOrEqualTo: 5.0
+    unit: rows
+    element: orders.amount
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+
+  # --- Updates (have id) ---
+
+  # 2.1 Update threshold only
+  - id: "aaaaaaaa-1111-1111-1111-111111111111"
+    name: email_null_pct_update
+    type: library
+    metric: nullValues
+    mustBeLessOrEqualTo: 3.0
+    unit: percent
+    element: customers.email
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    severity: Fail
+
+  # 2.7 Update multiple fields
+  - id: "aaaaaaaa-1111-1111-1111-111111111117"
+    name: "Email null rate — tightened"
+    type: library
+    metric: nullValues
+    mustBeLessOrEqualTo: 1.0
+    unit: percent
+    element: customers.email
+    suiteId: "aaaaaaaa-0000-0000-0000-000000000001"
+    severity: Fail
