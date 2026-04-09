@@ -45,7 +45,10 @@ def _yaml_doc() -> dict:
                         "required": True,
                         "criticalDataElement": True,
                         "description": "Order total",
-                        "logicalTypeOptions": {"minimum": 0, "maximum": 99999},
+                        "customProperties": [
+                            {"property": "testgen.minimum", "value": 0},
+                            {"property": "testgen.maximum", "value": 99999},
+                        ],
                     }
                 ],
             }
@@ -180,13 +183,15 @@ class Test_BulkDeleteYamlMutation:
         doc = _yaml_doc()
         patched, err = _delete_term_yaml_patch("Min Value", "profiling", "orders", "amount", "", doc)
         assert patched is True, err
-        assert "minimum" not in _prop(doc).get("logicalTypeOptions", {})
+        cp_keys = {cp["property"] for cp in _prop(doc).get("customProperties", [])}
+        assert "testgen.minimum" not in cp_keys
 
     def test_profiling_max_value_removed(self):
         doc = _yaml_doc()
         patched, err = _delete_term_yaml_patch("Max Value", "profiling", "orders", "amount", "", doc)
         assert patched is True, err
-        assert "maximum" not in _prop(doc).get("logicalTypeOptions", {})
+        cp_keys = {cp["property"] for cp in _prop(doc).get("customProperties", [])}
+        assert "testgen.maximum" not in cp_keys
 
     def test_governance_yaml_cde_removed(self):
         doc = _yaml_doc()

@@ -79,6 +79,28 @@ _VALID_TESTGEN_TYPES: frozenset[str] = frozenset({
 # Valid TestGen severity values
 _VALID_SEVERITIES: frozenset[str] = frozenset({"Log", "Warning", "Fail", "Error"})
 
+# Governance columns in data_column_chars that may be written by YAML import
+_ALLOWED_GOVERNANCE_COLS: frozenset[str] = frozenset({
+    "description", "pii_flag", "critical_data_element",
+    "data_source", "source_system", "source_process",
+    "business_domain", "stakeholder_group", "transform_level",
+    "aggregation_level", "data_product",
+})
+
+# ODCS classification value → TestGen pii_flag (canonical reverse mapping)
+_CLASSIFICATION_TO_PII: dict[str, str] = {
+    "confidential": "A/Confidential",
+    "internal":     "I/Internal",
+    "restricted":   "R/Restricted",
+}
+
+
+def _classification_to_pii_flag(classification: str | None) -> str | None:
+    """Reverse of export_data_contract._pii_flag_to_classification."""
+    if not classification or classification.lower() == "public":
+        return None
+    return _CLASSIFICATION_TO_PII.get(classification.lower())
+
 # ---------------------------------------------------------------------------
 # Data structures
 # ---------------------------------------------------------------------------
@@ -111,6 +133,8 @@ class ContractDiff:
     test_updates: list[dict[str, Any]] = field(default_factory=list)
     test_inserts: list[dict[str, Any]] = field(default_factory=list)   # new tests
     orphaned_ids: list[str] = field(default_factory=list)              # in DB, not in YAML
+    # Governance field updates — each entry: {table, col, updates: {db_col: value}}
+    governance_updates: list[dict[str, Any]] = field(default_factory=list)
     # Maps quality-list index → new test UUID (populated after apply)
     new_id_by_index: dict[int, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
@@ -123,7 +147,8 @@ class ContractDiff:
     @property
     def total_changes(self) -> int:
         return (len(self.contract_updates) + len(self.table_group_updates)
-                + len(self.test_updates) + len(self.test_inserts))
+                + len(self.test_updates) + len(self.test_inserts)
+                + len(self.governance_updates))
 
     def summary(self) -> str:
         parts = []
@@ -699,6 +724,77 @@ def compute_import_diff(doc: dict, table_group_id: str, schema: str) -> Contract
                 "is in the table group but not in YAML — not deleted."
             )
 
+    # --- schema governance round-trip ---
+    # Read current data_column_chars values for comparison so we only write actual changes.
+    if doc.get("schema"):
+        gov_rows = fetch_dict_from_db(
+            f"""
+            SELECT table_name, column_name,
+                   description, pii_flag, critical_data_element,
+                   data_source, source_system, source_process,
+                   business_domain, stakeholder_group, transform_level,
+                   aggregation_level, data_product
+            FROM {schema}.data_column_chars
+            WHERE table_groups_id = :tg_id
+            """,
+            params={"tg_id": table_group_id},
+        )
+        current_gov: dict[tuple[str, str], dict[str, Any]] = {
+            (str(r["table_name"]), str(r["column_name"])): dict(r)
+            for r in gov_rows
+        }
+
+        for schema_entry in doc["schema"]:
+            table_name = schema_entry.get("name") or ""
+            for prop in (schema_entry.get("properties") or []):
+                col_name = prop.get("name") or ""
+                if not table_name or not col_name:
+                    continue
+                cur = current_gov.get((table_name, col_name), {})
+                updates: dict[str, Any] = {}
+
+                # Standard ODCS governance fields
+                if "description" in prop and prop["description"] != cur.get("description"):
+                    updates["description"] = prop["description"]
+
+                if "criticalDataElement" in prop:
+                    new_val = bool(prop["criticalDataElement"])
+                    if new_val != bool(cur.get("critical_data_element")):
+                        updates["critical_data_element"] = new_val
+
+                if "classification" in prop:
+                    # Prefer testgen.pii_flag from customProperties for exact round-trip
+                    pii_val = None
+                    for cp in (prop.get("customProperties") or []):
+                        if cp.get("property") == "testgen.pii_flag":
+                            pii_val = cp.get("value")
+                            break
+                    if pii_val is None:
+                        pii_val = _classification_to_pii_flag(prop["classification"])
+                    if pii_val != cur.get("pii_flag"):
+                        updates["pii_flag"] = pii_val
+
+                # TestGen customProperties — testgen.* tags and profiling metadata
+                for cp in (prop.get("customProperties") or []):
+                    key = cp.get("property") or ""
+                    if not key.startswith("testgen."):
+                        continue
+                    db_col = key[len("testgen."):]
+                    if db_col not in _ALLOWED_GOVERNANCE_COLS:
+                        continue
+                    if db_col in ("pii_flag", "critical_data_element"):
+                        continue  # already handled above
+                    new_val = cp.get("value")
+                    if new_val != cur.get(db_col):
+                        updates[db_col] = new_val
+
+                if updates:
+                    diff.governance_updates.append({
+                        "table": table_name,
+                        "col":   col_name,
+                        "updates": updates,
+                    })
+
     return diff
 
 
@@ -803,6 +899,30 @@ def apply_import_diff(
 
     if db_queries:
         execute_db_queries(db_queries)
+
+    # Governance updates → data_column_chars
+    for gov in diff.governance_updates:
+        upd = {k: v for k, v in gov.get("updates", {}).items() if k in _ALLOWED_GOVERNANCE_COLS}
+        if not upd:
+            continue
+        params_gov: dict[str, Any] = {
+            "tg_id": table_group_id,
+            "tbl":   gov["table"],
+            "col":   gov["col"],
+        }
+        set_parts_gov = []
+        for col_name, val in upd.items():
+            pname = f"p_{col_name}"
+            set_parts_gov.append(f"{col_name} = :{pname}")
+            params_gov[pname] = val
+        execute_db_queries([(
+            f"UPDATE {schema}.data_column_chars "
+            f"SET {', '.join(set_parts_gov)} "
+            f"WHERE table_groups_id = CAST(:tg_id AS uuid) "
+            f"AND table_name = :tbl AND column_name = :col",
+            params_gov,
+        )])
+
 
     # Write-back: mutate YAML file with new test IDs
     if yaml_path and diff.new_id_by_index:

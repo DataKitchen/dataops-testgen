@@ -37,20 +37,20 @@ def _doc() -> dict:
                         "physicalType": "bigint",
                         "required": True,
                         "nullable": False,
-                        "logicalTypeOptions": {
-                            "primaryKey": True,
-                            # Profiling terms
-                            "minimum": 1,
-                            "maximum": 999999,
-                            "minLength": 1,
-                            "maxLength": 20,
-                            "format": "numeric",
-                        },
                         "logicalType": "integer",
                         # Governance terms
                         "classification": "internal",
                         "criticalDataElement": True,
                         "description": "Unique order identifier",
+                        # Profiling + DDL constraint terms (customProperties)
+                        "customProperties": [
+                            {"property": "testgen.primaryKey", "value": True},
+                            {"property": "testgen.minimum", "value": 1},
+                            {"property": "testgen.maximum", "value": 999999},
+                            {"property": "testgen.minLength", "value": 1},
+                            {"property": "testgen.maxLength", "value": 20},
+                            {"property": "testgen.format", "value": "numeric"},
+                        ],
                     }
                 ],
             }
@@ -60,6 +60,11 @@ def _doc() -> dict:
             {"from": "orders.order_id", "to": "customers.id"},
         ],
     }
+
+
+def _cp_keys(prop: dict) -> set[str]:
+    """Return the set of customProperty keys in a property dict."""
+    return {cp["property"] for cp in prop.get("customProperties", [])}
 
 
 def _prop(doc: dict) -> dict:
@@ -84,31 +89,31 @@ class Test_ProfilingTermDeletion:
         doc = _doc()
         patched, err = _delete(doc, "Min Value", "profiling")
         assert patched is True, err
-        assert "minimum" not in _prop(doc).get("logicalTypeOptions", {})
+        assert "testgen.minimum" not in _cp_keys(_prop(doc))
 
     def test_max_value_is_removed(self):
         doc = _doc()
         patched, err = _delete(doc, "Max Value", "profiling")
         assert patched is True, err
-        assert "maximum" not in _prop(doc).get("logicalTypeOptions", {})
+        assert "testgen.maximum" not in _cp_keys(_prop(doc))
 
     def test_min_length_is_removed(self):
         doc = _doc()
         patched, err = _delete(doc, "Min Length", "profiling")
         assert patched is True, err
-        assert "minLength" not in _prop(doc).get("logicalTypeOptions", {})
+        assert "testgen.minLength" not in _cp_keys(_prop(doc))
 
     def test_max_length_is_removed(self):
         doc = _doc()
         patched, err = _delete(doc, "Max Length", "profiling")
         assert patched is True, err
-        assert "maxLength" not in _prop(doc).get("logicalTypeOptions", {})
+        assert "testgen.maxLength" not in _cp_keys(_prop(doc))
 
     def test_format_is_removed(self):
         doc = _doc()
         patched, err = _delete(doc, "Format", "profiling")
         assert patched is True, err
-        assert "format" not in _prop(doc).get("logicalTypeOptions", {})
+        assert "testgen.format" not in _cp_keys(_prop(doc))
 
     def test_logical_type_is_removed(self):
         doc = _doc()
@@ -116,17 +121,17 @@ class Test_ProfilingTermDeletion:
         assert patched is True, err
         assert "logicalType" not in _prop(doc)
 
-    def test_empty_opts_dict_cleaned_up_after_all_profiling_terms_deleted(self):
-        """logicalTypeOptions should be removed entirely once all keys are gone."""
+    def test_customProperties_cleaned_up_after_all_terms_deleted(self):
+        """customProperties should be removed entirely once all keys are gone."""
         doc = _doc()
-        # Remove all profiling opt keys (leave primaryKey, which is DDL)
+        # Remove all profiling keys (leave primaryKey, which is DDL)
         for term in ("Min Value", "Max Value", "Min Length", "Max Length", "Format"):
             _delete(doc, term, "profiling")
-        # primaryKey is still in opts, so dict should still exist
-        assert "logicalTypeOptions" in _prop(doc)
+        # primaryKey is still in customProperties
+        assert "testgen.primaryKey" in _cp_keys(_prop(doc))
         # Remove the last key
         _delete(doc, "Primary Key", "ddl")
-        assert "logicalTypeOptions" not in _prop(doc)
+        assert "customProperties" not in _prop(doc)
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +157,7 @@ class Test_DDLTermDeletion:
         doc = _doc()
         patched, err = _delete(doc, "Primary Key", "ddl")
         assert patched is True, err
-        assert "primaryKey" not in _prop(doc).get("logicalTypeOptions", {})
+        assert "testgen.primaryKey" not in _cp_keys(_prop(doc))
 
     def test_foreign_key_is_removed_from_references(self):
         doc = _doc()
@@ -239,8 +244,10 @@ class Test_DeletionErrorCases:
     def test_deleting_absent_profiling_term_still_returns_true(self):
         """Popping a missing key is a no-op but still considered patched (column found)."""
         doc = _doc()
-        # Remove minimum first
-        _prop(doc)["logicalTypeOptions"].pop("minimum")
+        # Remove testgen.minimum from customProperties first
+        prop = _prop(doc)
+        prop["customProperties"] = [cp for cp in prop.get("customProperties", [])
+                                     if cp["property"] != "testgen.minimum"]
         patched, err = _delete(doc, "Min Value", "profiling")
         assert patched is True, err
 

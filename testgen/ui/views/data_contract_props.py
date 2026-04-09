@@ -98,6 +98,26 @@ _GOV_FIELDS: list[tuple[str, str]] = [
 
 
 # ---------------------------------------------------------------------------
+# YAML compat helper — reads profiling/constraint opts from either format
+# ---------------------------------------------------------------------------
+
+def _prop_opts(prop: dict) -> dict:
+    """Return a flat dict of profiling/constraint option values for a YAML property.
+
+    Supports both the legacy ``logicalTypeOptions`` dict (pre-ODCS migration) and
+    the current ``customProperties`` list (ODCS-compliant, ``testgen.*`` keys).
+    The returned keys are always the short form (e.g. ``"minimum"``, ``"primaryKey"``).
+    """
+    if "customProperties" in prop:
+        return {
+            cp["property"].removeprefix("testgen."): cp["value"]
+            for cp in (prop["customProperties"] or [])
+            if isinstance(cp.get("property"), str) and cp["property"].startswith("testgen.")
+        }
+    return prop.get("logicalTypeOptions") or {}
+
+
+# ---------------------------------------------------------------------------
 # Coverage tier helpers
 # ---------------------------------------------------------------------------
 
@@ -105,7 +125,7 @@ def _column_coverage_tiers(prop: dict, all_quality_rules: list[dict]) -> list[st
     physical       = (prop.get("physicalType") or "").strip()
     physical_lower = physical.lower()
     base           = physical_lower.split("(")[0].strip()
-    opts           = prop.get("logicalTypeOptions") or {}
+    opts           = _prop_opts(prop)
     col_name       = prop.get("name", "")
     tiers: list[str] = []
 
@@ -162,7 +182,7 @@ def _is_covered(prop: dict, col_rules: list[dict]) -> bool:
         prop.get("classification")
         or prop.get("criticalDataElement")
         or prop.get("description")
-        or (prop.get("logicalTypeOptions") or {}).get("format")
+        or _prop_opts(prop).get("format")
         or col_rules
     )
 
@@ -179,7 +199,7 @@ def _has_meaningful_ddl_constraint(prop: dict, col_refs: list[dict] | None = Non
     """
     if prop.get("required") or prop.get("nullable") is False:
         return True
-    opts = prop.get("logicalTypeOptions") or {}
+    opts = _prop_opts(prop)
     if opts.get("primaryKey"):
         return True
     if col_refs:
@@ -193,7 +213,7 @@ def _has_meaningful_ddl_constraint(prop: dict, col_refs: list[dict] | None = Non
 
 def _has_unenforced_terms(prop: dict, gov_col: dict | None = None) -> bool:
     """True when the column has observed stats or declared metadata (but no tests/DDL)."""
-    opts = prop.get("logicalTypeOptions") or {}
+    opts = _prop_opts(prop)
     gov = gov_col or {}
     return bool(
         prop.get("classification")
@@ -309,7 +329,7 @@ def _extract_column_terms(
     When provided it replaces the YAML-derived governance fields.
     """
     terms: list[dict] = []
-    opts           = prop.get("logicalTypeOptions") or {}
+    opts           = _prop_opts(prop)
     physical       = (prop.get("physicalType") or "").strip()
     physical_lower = physical.lower()
     base           = physical_lower.split("(")[0].strip()
@@ -572,7 +592,7 @@ def _build_contract_props(
         for prop in (table.get("properties") or []):
             col_name    = prop.get("name", "")
             col_key     = f"{table_name}.{col_name}"
-            opts        = prop.get("logicalTypeOptions") or {}
+            opts        = _prop_opts(prop)
             col_rules   = rules_by_element_full.get(col_key, []) + rules_by_element_full.get(col_name, [])
             col_anomalies = anomalies_by_col.get((table_name, col_name), [])
             col_refs    = refs_by_col.get(col_key, []) + refs_by_col.get(col_name, [])
@@ -649,7 +669,7 @@ def _build_contract_props(
             col_name  = prop.get("name", "")
             col_key   = f"{table_name}.{col_name}"
             col_rules = rules_by_element_full.get(col_key, []) + rules_by_element_full.get(col_name, [])
-            opts      = prop.get("logicalTypeOptions") or {}
+            opts      = _prop_opts(prop)
             if col_rules:
                 table_has_tests = True
             cls = (prop.get("classification") or "").lower()
@@ -724,7 +744,7 @@ def _build_contract_props(
             cols_data.append({
                 "name":         col_name,
                 "type":         prop.get("physicalType") or "",
-                "is_pk":        bool((prop.get("logicalTypeOptions") or {}).get("primaryKey")),
+                "is_pk":        bool(_prop_opts(prop).get("primaryKey")),
                 "is_fk":        bool(col_refs),
                 "column_id":    column_id,
                 "covered":      is_cov,

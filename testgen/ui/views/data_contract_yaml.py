@@ -6,7 +6,6 @@ dicts or on the pending-edit dict stored in session state.
 """
 from __future__ import annotations
 
-
 # ---------------------------------------------------------------------------
 # YAML patch helpers
 # ---------------------------------------------------------------------------
@@ -46,11 +45,19 @@ def _delete_term_yaml_patch(
             if prop.get("name") != col_name:
                 continue
 
-            opts: dict = prop.setdefault("logicalTypeOptions", {})
+            def _pop_custom(cp_key: str) -> None:
+                """Remove a testgen.* entry from customProperties; drop the list if empty."""
+                existing = prop.get("customProperties") or []
+                updated = [cp for cp in existing if cp.get("property") != cp_key]
+                if updated:
+                    prop["customProperties"] = updated
+                else:
+                    prop.pop("customProperties", None)
 
             if source == "governance":
                 if term_name in ("Classification", "PII"):
                     prop.pop("classification", None)
+                    _pop_custom("testgen.pii_flag")
                 elif term_name in ("CDE", "Critical Data Element"):
                     prop.pop("criticalDataElement", None)
                 elif term_name == "Description":
@@ -58,15 +65,15 @@ def _delete_term_yaml_patch(
 
             elif source == "profiling":
                 if term_name == "Min Value":
-                    opts.pop("minimum", None)
+                    _pop_custom("testgen.minimum")
                 elif term_name == "Max Value":
-                    opts.pop("maximum", None)
+                    _pop_custom("testgen.maximum")
                 elif term_name == "Min Length":
-                    opts.pop("minLength", None)
+                    _pop_custom("testgen.minLength")
                 elif term_name == "Max Length":
-                    opts.pop("maxLength", None)
+                    _pop_custom("testgen.maxLength")
                 elif term_name == "Format":
-                    opts.pop("format", None)
+                    _pop_custom("testgen.format")
                 elif term_name == "Logical Type":
                     prop.pop("logicalType", None)
 
@@ -77,11 +84,7 @@ def _delete_term_yaml_patch(
                     prop.pop("required", None)
                     prop.pop("nullable", None)
                 elif term_name == "Primary Key":
-                    opts.pop("primaryKey", None)
-
-            # Remove empty opts dict to keep YAML tidy
-            if not opts:
-                prop.pop("logicalTypeOptions", None)
+                    _pop_custom("testgen.primaryKey")
 
             return True, ""
 

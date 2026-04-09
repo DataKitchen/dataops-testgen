@@ -17,8 +17,10 @@ import pytest
 # data_catalog imports testgen.ui.components.widgets which registers custom
 # Streamlit components that require a running app + pyproject.toml asset_dir.
 # ---------------------------------------------------------------------------
+import streamlit.components.v2 as _sv2
+_sv2.component = MagicMock(return_value=MagicMock())
+
 for _mod in [
-    "testgen.ui.components.widgets",
     "testgen.ui.components.widgets.testgen_component",
     "testgen.ui.components.widgets.download_dialog",
     "testgen.ui.components.widgets.button",

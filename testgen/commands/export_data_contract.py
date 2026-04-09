@@ -19,6 +19,13 @@ from testgen.common.models import with_database_session
 
 LOG = logging.getLogger("testgen")
 
+# Column-level governance tag fields in data_column_chars — exported as testgen.* customProperties
+_TAG_FIELDS: tuple[str, ...] = (
+    "data_source", "source_system", "source_process",
+    "business_domain", "stakeholder_group", "transform_level",
+    "aggregation_level", "data_product",
+)
+
 # ---------------------------------------------------------------------------
 # Mapping tables
 # ---------------------------------------------------------------------------
@@ -296,6 +303,14 @@ def _fetch_columns(table_group_id: str, schema: str) -> list[dict]:
             col.description,
             col.pii_flag,
             col.critical_data_element,
+            col.data_source,
+            col.source_system,
+            col.source_process,
+            col.business_domain,
+            col.stakeholder_group,
+            col.transform_level,
+            col.aggregation_level,
+            col.data_product,
             pr.null_value_ct,
             pr.record_ct,
             pr.distinct_value_ct,
@@ -462,23 +477,31 @@ def _build_schema(columns: list[dict]) -> list[dict]:
                 or bool(col.get("all_values_unique") and col.get("record_ct") and col.get("null_value_ct") == 0)
             )
 
-            # logicalTypeOptions — only include when we have something useful
-            opts: dict[str, Any] = {}
+            # customProperties — TestGen-specific extensions, not part of the ODCS standard.
+            # Prefixed with "testgen." so consumers know they are not portable.
+            custom_props: list[dict[str, Any]] = []
             if is_pk:
-                opts["primaryKey"] = True
+                custom_props.append({"property": "testgen.primaryKey", "value": True})
             if col.get("min_length") is not None:
-                opts["minLength"] = col["min_length"]
+                custom_props.append({"property": "testgen.minLength", "value": col["min_length"]})
             if col.get("max_length") is not None:
-                opts["maxLength"] = col["max_length"]
+                custom_props.append({"property": "testgen.maxLength", "value": col["max_length"]})
             if col.get("min_value") is not None:
-                opts["minimum"] = _safe_float(col["min_value"])
+                custom_props.append({"property": "testgen.minimum", "value": _safe_float(col["min_value"])})
             if col.get("max_value") is not None:
-                opts["maximum"] = _safe_float(col["max_value"])
+                custom_props.append({"property": "testgen.maximum", "value": _safe_float(col["max_value"])})
             fmt = _PATTERN_TO_FORMAT.get(col.get("std_pattern_match") or "")
             if fmt:
-                opts["format"] = fmt
-            if opts:
-                prop["logicalTypeOptions"] = opts
+                custom_props.append({"property": "testgen.format", "value": fmt})
+            # Store the raw pii_flag so it round-trips exactly on import
+            if col.get("pii_flag"):
+                custom_props.append({"property": "testgen.pii_flag", "value": col["pii_flag"]})
+            # Column-level governance tags
+            for _tag in _TAG_FIELDS:
+                if col.get(_tag):
+                    custom_props.append({"property": f"testgen.{_tag}", "value": col[_tag]})
+            if custom_props:
+                prop["customProperties"] = custom_props
 
             # examples from top_freq_values — omitted for PII columns to avoid leaking sensitive data
             # DB format: "| value | count\n| value | count\n..." — value is at index 1 after split on "|"

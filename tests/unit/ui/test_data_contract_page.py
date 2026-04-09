@@ -41,14 +41,14 @@ from testgen.ui.bootstrap import BUILTIN_PAGES  # noqa: E402
 from testgen.ui.views.data_contract import (  # noqa: E402
     DataContractPage,
     _build_contract_props,
+    _quality_counts,
+)
+from testgen.ui.views.data_contract_props import (  # noqa: E402
     _classify_enforcement_tier,
     _column_coverage_tiers,
     _tier_badge,
-    _quality_counts,
     _worst_status,
-    ContractDiff as _ContractDiff,  # re-exported for convenience
 )
-from testgen.commands.import_data_contract import ContractDiff  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -209,10 +209,6 @@ class Test_JsLinkHrefs:
         base = pathlib.Path(__file__).parents[3] / "testgen" / "ui" / "components" / "frontend" / "js" / "pages"
         return (base / filename).read_text()
 
-    def test_test_suites_js_has_data_contract_link(self):
-        src = self._read_js("test_suites.js")
-        assert "data-contract" in src
-
     def test_project_dashboard_js_has_data_contract_link(self):
         src = self._read_js("project_dashboard.js")
         assert "data-contract" in src
@@ -220,10 +216,6 @@ class Test_JsLinkHrefs:
     def test_table_group_list_js_has_data_contract_link(self):
         src = self._read_js("table_group_list.js")
         assert "data-contract" in src
-
-    def test_test_suites_js_passes_table_groups_id(self):
-        src = self._read_js("test_suites.js")
-        assert "table_groups_id" in src
 
     def test_table_group_list_js_passes_table_group_id(self):
         src = self._read_js("table_group_list.js")

@@ -176,13 +176,14 @@ class Test_BuildSchema:
 
     def test_email_pattern_sets_format(self):
         prop = _build_schema([self._col(std_pattern_match="EMAIL", functional_data_type="Email")])[0]["properties"][0]
-        assert prop.get("logicalTypeOptions", {}).get("format") == "email"
+        cp = {c["property"]: c["value"] for c in prop.get("customProperties", [])}
+        assert cp.get("testgen.format") == "email"
 
-    def test_min_max_length_in_logical_type_options(self):
+    def test_min_max_length_in_custom_properties(self):
         prop = _build_schema([self._col(min_length=1, max_length=50)])[0]["properties"][0]
-        opts = prop.get("logicalTypeOptions", {})
-        assert opts["minLength"] == 1
-        assert opts["maxLength"] == 50
+        cp = {c["property"]: c["value"] for c in prop.get("customProperties", [])}
+        assert cp["testgen.minLength"] == 1
+        assert cp["testgen.maxLength"] == 50
 
     def test_examples_from_top_freq_values(self):
         # DB format: "| value | count\n| value | count"

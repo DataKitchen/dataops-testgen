@@ -26,15 +26,13 @@ def _mock_streamlit() -> None:
 
 _mock_streamlit()
 
-from testgen.ui.views.data_contract import (  # noqa: E402
+from testgen.ui.views.data_contract_yaml import (  # noqa: E402
     _apply_pending_governance_edit,
     _apply_pending_test_edit,
-    _pending_edit_count,
-    _patch_yaml_governance,
-)
-from testgen.ui.views.data_contract_yaml import (  # noqa: E402
     _build_pending_governance_edit,
     _gov_field_to_db_col,
+    _patch_yaml_governance,
+    _pending_edit_count,
 )
 
 

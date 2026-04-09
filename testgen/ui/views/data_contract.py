@@ -38,29 +38,23 @@ from testgen.common.models.table_group import TableGroup
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.queries.data_contract_queries import (
+    _dismiss_hygiene_anomaly,
     _fetch_anomalies,
     _fetch_governance_data,
     _fetch_last_run_dates,
     _fetch_suite_scope,
     _fetch_test_statuses,
     _lookup_column_id,
-    _dismiss_hygiene_anomaly,
     _persist_governance_deletion,
 )
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 from testgen.ui.views.data_contract_props import (
     _build_contract_props,
-    _classify_enforcement_tier,
-    _column_coverage_tiers,
     _quality_counts,
-    _tier_badge,
-    _worst_status,
 )
 from testgen.ui.views.data_contract_yaml import (
-    _apply_pending_governance_edit,
     _apply_pending_test_edit,
-    _patch_yaml_governance,
     _pending_edit_count,
 )
 from testgen.ui.views.dialogs.data_contract_dialogs import (
@@ -730,11 +724,11 @@ class DataContractPage(Page):
                     st.session_state.pop(yaml_key, None)
                     st.session_state.pop(anomaly_key, None)
                     st.session_state.pop(version_key, None)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 st.session_state[import_key] = {"error": str(exc)}
             safe_rerun()
 
-        def on_bulk_delete_terms(payload: dict) -> None:  # noqa: C901
+        def on_bulk_delete_terms(payload: dict) -> None:
             if not is_latest:
                 return
             terms: list[dict] = payload.get("terms") or []
@@ -777,12 +771,12 @@ class DataContractPage(Page):
                 _SCHEMA_FIELD_MAP: dict[tuple[str, str], str] = {
                     ("ddl",        "Data Type"):              "physicalType",
                     ("ddl",        "Not Null"):               "required",
-                    ("ddl",        "Primary Key"):            "_logicalTypeOptions.primaryKey",
-                    ("profiling",  "Min Value"):              "_logicalTypeOptions.minimum",
-                    ("profiling",  "Max Value"):              "_logicalTypeOptions.maximum",
-                    ("profiling",  "Min Length"):             "_logicalTypeOptions.minLength",
-                    ("profiling",  "Max Length"):             "_logicalTypeOptions.maxLength",
-                    ("profiling",  "Format"):                 "_logicalTypeOptions.format",
+                    ("ddl",        "Primary Key"):            "_customProperties.testgen.primaryKey",
+                    ("profiling",  "Min Value"):              "_customProperties.testgen.minimum",
+                    ("profiling",  "Max Value"):              "_customProperties.testgen.maximum",
+                    ("profiling",  "Min Length"):             "_customProperties.testgen.minLength",
+                    ("profiling",  "Max Length"):             "_customProperties.testgen.maxLength",
+                    ("profiling",  "Format"):                 "_customProperties.testgen.format",
                     ("profiling",  "Logical Type"):           "logicalType",
                     ("governance", "Critical Data Element"):  "criticalDataElement",
                     ("governance", "Description"):            "description",
@@ -796,14 +790,14 @@ class DataContractPage(Page):
                             field = _SCHEMA_FIELD_MAP.get((rem.get("source", ""), rem.get("name", "")))
                             if not field:
                                 continue
-                            if field.startswith("_logicalTypeOptions."):
-                                subfield = field[len("_logicalTypeOptions."):]
-                                opts = prop.get("logicalTypeOptions") or {}
-                                opts.pop(subfield, None)
-                                if opts:
-                                    prop["logicalTypeOptions"] = opts
+                            if field.startswith("_customProperties."):
+                                cp_key = field[len("_customProperties."):]
+                                existing = prop.get("customProperties") or []
+                                updated_cp = [cp for cp in existing if cp.get("property") != cp_key]
+                                if updated_cp:
+                                    prop["customProperties"] = updated_cp
                                 else:
-                                    prop.pop("logicalTypeOptions", None)
+                                    prop.pop("customProperties", None)
                             else:
                                 prop.pop(field, None)
 
