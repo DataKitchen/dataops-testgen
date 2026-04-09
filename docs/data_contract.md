@@ -1959,14 +1959,15 @@ Some TestGen test types (e.g. `Avg_Shift`, `Distribution_Shift`, `Schema_Drift`,
 
 ---
 
-### 5. Governance Fields Writable on YAML Import
+### 5. ~~Governance Fields Writable on YAML Import~~ ✅ Implemented
 
-The YAML import currently skips the `schema` section entirely. Governance fields exported into `schema[].properties[]` — `description`, `criticalDataElement`, `pii`, and tag fields — cannot round-trip back to the DB when a user edits the YAML and uploads it. The schema section should support writes for governance fields on import, making the YAML a true two-way interface for governance metadata.
+The `schema` section now round-trips fully. `compute_import_diff` in `odcs_contract.py` reads governance fields from `schema[].properties[]` — both ODCS standard fields (`description`, `criticalDataElement`, `classification`) and `customProperties[testgen.*]` entries (`pii_flag`, `data_source`, `source_system`, etc.) — and adds them to `ContractDiff.governance_updates`. `apply_import_diff` writes those updates to `data_column_chars` through an allowlist-guarded UPDATE path.
 
-**Open questions:**
-- Which schema fields should be writable on import? (Governance only, or also `physicalType`, `required`?)
-- Should schema mutations be applied via `_persist_governance_deletion` / a new `_persist_governance_update`, or a dedicated import pathway?
-- What happens when a field present in the exported YAML is absent from the uploaded YAML — is that a deletion or a no-op?
+**ODCS compliance migration also shipped simultaneously:**
+- Export now writes profiling stats and DDL constraints as `customProperties` with `testgen.*` keys instead of `logicalTypeOptions`
+- Column-level tag fields (`data_source`, `source_system`, `source_process`, `business_domain`, `stakeholder_group`, `transform_level`, `aggregation_level`, `data_product`) are exported as `testgen.*` customProperties per column
+- `pii_flag` stored as both `classification` (ODCS standard, lossy) and `testgen.pii_flag` (exact value, lossless round-trip)
+- Display code (`data_contract_props.py`) reads from either format via `_prop_opts()` bridge helper for backward compatibility with existing contracts
 
 ---
 
