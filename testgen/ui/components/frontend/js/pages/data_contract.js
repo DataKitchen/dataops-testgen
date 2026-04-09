@@ -1,4 +1,4 @@
-// cache-bust: v2
+// cache-bust: v3
 /**
  * Data Contract page — VanJS component.
  *
@@ -65,7 +65,7 @@ import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
 import { Button } from '../components/button.js';
 
-const { div, span, h2, h3, pre, table, thead, tbody, tr, th, td, input, label, p, ul, li, code, hr, a } = van.tags;
+const { div, span, h2, h3, pre, table, colgroup, col, thead, tbody, tr, th, td, input, label, p, ul, li, code, hr, a } = van.tags;
 
 // ── Source → chip CSS class ──────────────────────────────────────────────────
 const SOURCE_CLASS = { ddl: 'ddl', profiling: 'prof', governance: 'gov', test: 'tst' };
@@ -1135,7 +1135,7 @@ const TermRow = (name, yamlPath, badge, note) => tr(
 );
 
 const TermCategory = (pill, pillCls, title, badgeCls, badgeLabel, rows, noteEl) => {
-    const open = van.state(pill === 'Governance' || pill === 'Quality Rules' || pill === 'Fundamentals');
+    const open = van.state(pill === 'Fundamentals');
     return div(
         { class: () => `upload-term-cat${open.val ? ' utc-open' : ''}` },
         div(
@@ -1152,6 +1152,12 @@ const TermCategory = (pill, pillCls, title, badgeCls, badgeLabel, rows, noteEl) 
             { class: 'utc-body' },
             table(
                 { class: 'upload-term-table' },
+                colgroup(
+                    col({ class: 'col-name' }),
+                    col({ class: 'col-yaml' }),
+                    col({ class: 'col-badge' }),
+                    col({ class: 'col-note' }),
+                ),
                 thead(tr(th('Term'), th('YAML field'), th('On import'), th('Notes'))),
                 tbody(...rows),
             ),
@@ -1267,17 +1273,17 @@ const UploadTab = () => {
         ]),
 
         TermCategory('Governance', 'utcp-gov', 'Column metadata & classifications', 'utcb-rw', '↕ Read & Write', [
-            TermRow('Description',       'schema[].properties[].description',              'written', 'Column description in the column catalog'),
-            TermRow('Critical Data Element','schema[].properties[].criticalDataElement',   'written', 'Boolean flag on the column'),
-            TermRow('PII / Classification','customProperties[testgen.pii_flag]',           'written', 'Exact PII flag value; classification is also read as a fallback'),
-            TermRow('Data Source',       'customProperties[testgen.data_source]',          'written', 'Tag field stored in the column catalog'),
-            TermRow('Source System',     'customProperties[testgen.source_system]',        'written', 'Tag field stored in the column catalog'),
-            TermRow('Source Process',    'customProperties[testgen.source_process]',       'written', 'Tag field stored in the column catalog'),
-            TermRow('Business Domain',   'customProperties[testgen.business_domain]',      'written', 'Tag field stored in the column catalog'),
-            TermRow('Stakeholder Group', 'customProperties[testgen.stakeholder_group]',    'written', 'Tag field stored in the column catalog'),
-            TermRow('Transform Level',   'customProperties[testgen.transform_level]',      'written', 'Tag field stored in the column catalog'),
-            TermRow('Aggregation Level', 'customProperties[testgen.aggregation_level]',    'written', 'Tag field stored in the column catalog'),
-            TermRow('Data Product',      'customProperties[testgen.data_product]',         'written', 'Tag field stored in the column catalog'),
+            TermRow('Description',         'schema[].properties[].description',         'written', 'Column description in the column catalog'),
+            TermRow('Critical Data Element','schema[].properties[].criticalDataElement','written', 'Boolean flag on the column'),
+            TermRow('PII / Classification', 'customProperties[testgen.pii_flag]',       'written', 'Exact PII flag value; classification is also read as a fallback'),
+            tr(
+                td({ class: 'utr-name' }, 'Tag fields (×8)'),
+                td({ class: 'utr-yaml' }, code('customProperties[testgen.*]')),
+                td({ class: 'utr-badge' }, span({ class: 'upload-badge ub-written' }, 'Written')),
+                td({ class: 'utr-note' },
+                    'Data source, source system, source process, business domain, stakeholder group, transform level, aggregation level, data product — all stored as column catalog tags',
+                ),
+            ),
         ]),
 
         TermCategory('Quality Rules', 'utcp-test', 'Tests & monitors', 'utcb-rw', '↕ Read & Write', [
@@ -2880,7 +2886,11 @@ stylesheet.replace(`
 .utc-open .utc-chevron { transform: rotate(180deg); }
 .utc-body { display: none; border-top: 1px solid var(--border-color); padding: 12px 14px 14px; background: var(--button-generic-background-color); }
 .utc-open .utc-body { display: block; }
-.upload-term-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.upload-term-table { width: 100%; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
+.upload-term-table .col-name  { width: 22%; }
+.upload-term-table .col-yaml  { width: 34%; }
+.upload-term-table .col-badge { width: 12%; }
+.upload-term-table .col-note  { width: 32%; }
 .upload-term-table th {
     text-align: left;
     font-size: 10px;
@@ -2891,10 +2901,10 @@ stylesheet.replace(`
     padding: 0 10px 6px 6px;
     border-bottom: 1px solid var(--border-color);
 }
-.upload-term-table td { padding: 6px 10px 6px 6px; vertical-align: top; border-bottom: 1px solid var(--border-color); color: var(--secondary-text-color); line-height: 1.5; }
+.upload-term-table td { padding: 6px 10px 6px 6px; vertical-align: top; border-bottom: 1px solid var(--border-color); color: var(--secondary-text-color); line-height: 1.5; overflow-wrap: break-word; word-break: break-word; }
 .upload-term-table tr:last-child td { border-bottom: none; }
-.utr-name { font-weight: 500; color: var(--primary-text-color); white-space: nowrap; }
-.utr-yaml code { font-family: monospace; font-size: 11px; color: var(--secondary-text-color); }
+.utr-name { font-weight: 500; color: var(--primary-text-color); }
+.utr-yaml code { font-family: monospace; font-size: 11px; color: var(--secondary-text-color); word-break: break-all; }
 .utr-badge { white-space: nowrap; }
 .upload-badge {
     display: inline-flex;
