@@ -135,6 +135,12 @@ class TestRun(Entity):
     )
 
     @classmethod
+    def get_by_id_or_job(cls, identifier: UUID) -> Self | None:
+        """Look up a test run by its own ID or by job_execution_id."""
+        query = select(cls).where((cls.id == identifier) | (cls.job_execution_id == identifier))
+        return get_current_session().scalars(query).first()
+
+    @classmethod
     @st.cache_data(show_spinner=False)
     def get_minimal(cls, run_id: str | UUID) -> TestRunMinimal | None:
         if not is_uuid4(run_id):

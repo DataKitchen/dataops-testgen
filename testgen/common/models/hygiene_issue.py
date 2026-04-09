@@ -17,6 +17,16 @@ PII_RISK_RE = re.compile(r"Risk: (MODERATE|HIGH),")
 
 
 @dataclass
+class IssueLikelihoodCounts:
+    """Counts of hygiene issues by likelihood category, with dismissed/inactive separated."""
+
+    definite: int = 0
+    likely: int = 0
+    possible: int = 0
+    dismissed: int = 0
+
+
+@dataclass
 class IssueCount:
     total: int = 0
     inactive: int = 0
@@ -98,6 +108,29 @@ class HygieneIssue(Entity):
         for p in ("Definite", "Likely", "Possible", "High", "Moderate"):
             result.setdefault(p, IssueCount())
         return result
+
+    @classmethod
+    def count_by_likelihood(cls, profile_run_id: UUID) -> IssueLikelihoodCounts:
+        """Count hygiene issues by likelihood category for a single profiling run."""
+        dismissed = func.coalesce(cls.disposition, "Confirmed").in_(("Dismissed", "Inactive"))
+
+        def _count_active(likelihood_values: tuple[str, ...]):
+            return func.sum(case((~dismissed & HygieneIssueType.likelihood.in_(likelihood_values), 1), else_=0))
+
+        query = (
+            select(
+                _count_active(("Definite",)).label("definite"),
+                _count_active(("Likely",)).label("likely"),
+                _count_active(("Possible", "Potential PII")).label("possible"),
+                func.sum(case((dismissed, 1), else_=0)).label("dismissed"),
+            )
+            .select_from(cls)
+            .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
+            .where(cls.profile_run_id == profile_run_id)
+        )
+
+        row = get_current_session().execute(query).first()
+        return IssueLikelihoodCounts(**{k: v for k, v in row._mapping.items() if v is not None})
 
     @classmethod
     def select_with_diff(

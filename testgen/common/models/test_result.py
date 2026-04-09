@@ -1,5 +1,6 @@
 import enum
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Self
 from uuid import UUID, uuid4
@@ -7,6 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, desc, func, or_, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
+from sqlalchemy.sql.expression import case
 
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
@@ -19,6 +21,18 @@ class TestResultStatus(enum.Enum):
     Passed = "Passed"
     Warning = "Warning"
     Failed = "Failed"
+
+
+@dataclass
+class ResultStatusCounts:
+    """Counts of test results by outcome status, with dismissed/inactive separated."""
+
+    passed: int = 0
+    failed: int = 0
+    warning: int = 0
+    error: int = 0
+    log: int = 0
+    dismissed: int = 0
 
 
 TestResultDiffType = tuple[TestResultStatus, TestResultStatus, list[UUID]]
@@ -115,6 +129,26 @@ class TestResult(Entity):
             )
         query = query.group_by(*group_cols).order_by(func.count().desc())
         return get_current_session().execute(query).all()
+
+    @classmethod
+    def count_by_status(cls, test_run_id: UUID) -> ResultStatusCounts:
+        """Count test results by outcome status for a single run."""
+        dismissed = func.coalesce(cls.disposition, "Confirmed").in_(("Dismissed", "Inactive"))
+
+        def _count_active(status: TestResultStatus):
+            return func.sum(case((~dismissed & (cls.status == status), 1), else_=0))
+
+        query = select(
+            _count_active(TestResultStatus.Passed).label("passed"),
+            _count_active(TestResultStatus.Failed).label("failed"),
+            _count_active(TestResultStatus.Warning).label("warning"),
+            _count_active(TestResultStatus.Error).label("error"),
+            _count_active(TestResultStatus.Log).label("log"),
+            func.sum(case((dismissed, 1), else_=0)).label("dismissed"),
+        ).where(cls.test_run_id == test_run_id)
+
+        row = get_current_session().execute(query).first()
+        return ResultStatusCounts(**{k: v for k, v in row._mapping.items() if v is not None})
 
     @classmethod
     def select_history(
