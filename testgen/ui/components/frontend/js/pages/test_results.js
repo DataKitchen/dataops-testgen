@@ -776,7 +776,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Status',
                 value: statusFilter.val,
                 options: STATUS_FILTER_OPTIONS,
-                testId: 'status-filter',
                 style: 'min-width: 160px',
                 onChange: onStatusFilterChange,
                 allowNull: true,
@@ -785,7 +784,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Table',
                 value: tableFilter.val,
                 options: tableOptions.val,
-                testId: 'table-filter',
                 style: 'min-width: 180px',
                 filterable: true,
                 onChange: onTableFilterChange,
@@ -795,7 +793,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Column',
                 value: columnFilter.val,
                 options: columnOptions.val,
-                testId: 'column-filter',
                 style: 'min-width: 180px',
                 filterable: true,
                 acceptNewOptions: true,
@@ -806,7 +803,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Test Type',
                 value: testTypeFilter.val,
                 options: testTypeOptions.val,
-                testId: 'test-type-filter',
                 style: 'min-width: 160px',
                 filterable: true,
                 onChange: onTestTypeFilterChange,
@@ -816,7 +812,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Action',
                 value: actionFilter.val,
                 options: ACTION_FILTER_OPTIONS,
-                testId: 'action-filter',
                 style: 'min-width: 140px',
                 onChange: onActionFilterChange,
                 allowNull: true,
@@ -825,7 +820,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Flagged',
                 value: flaggedFilter.val,
                 options: FLAGGED_FILTER_OPTIONS,
-                testId: 'flagged-filter',
                 style: 'min-width: 140px',
                 onChange: onFlaggedFilterChange,
                 allowNull: true,
@@ -901,7 +895,7 @@ const TestResults = (/** @type Properties */ props) => {
                             { class: 'flex-column fx-flex', style: 'min-width: 0' },
                             hasData
                                 ? Tabs(
-                                    { testId: 'test-result-detail' },
+                                    {},
                                     Tab(
                                         { label: 'History' },
                                         si.history?.length

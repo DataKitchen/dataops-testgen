@@ -400,7 +400,7 @@ const SamplingForm = (
     profileSampleMinCount,
 ) => {
     return ExpansionPanel(
-        { title: 'Sampling Parameters', testId: 'sampling-panel' },
+        { title: 'Sampling Parameters' },
         div(
             { class: 'flex-column fx-gap-3' },
             Checkbox({
@@ -454,7 +454,7 @@ const TaggingForm = (
     dataProduct,
 ) => {
     return ExpansionPanel(
-        { title: 'Table Group Tags', testId: 'tags-panel' },
+        { title: 'Table Group Tags' },
         Input({
             name: 'description',
             class: 'fx-flex mb-3',

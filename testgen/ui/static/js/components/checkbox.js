@@ -8,7 +8,6 @@
  * @property {boolean?} indeterminate
  * @property {function(boolean, Event)?} onChange
  * @property {number?} width
- * @property {string?} testId
  * @property {boolean?} disabled
  */
 import van from '../van.min.js';
@@ -31,7 +30,7 @@ const Checkbox = (/** @type Properties */ props) => {
     return label(
         {
             class: 'flex-row fx-gap-2 clickable',
-            'data-testid': props.testId ?? props.name ?? '',
+            'data-testid': 'checkbox',
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`,
         },
         input({

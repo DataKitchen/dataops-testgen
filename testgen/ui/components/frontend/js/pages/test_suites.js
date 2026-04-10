@@ -142,7 +142,6 @@ const TestSuites = (/** @type Properties */ props) => {
                             },
                         }),
                         () => Input({
-                            testId: 'test-suite-name-filter',
                             icon: 'search',
                             label: '',
                             placeholder: 'Search test suite names',

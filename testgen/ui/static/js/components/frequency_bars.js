@@ -36,6 +36,7 @@ const FrequencyBars = (/** @type Properties */ props) => {
     });
 
     return () => div(
+        { 'data-testid': 'frequency-bars' },
         div(
             { class: 'mb-2 text-secondary' },
             props.title,

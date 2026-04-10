@@ -421,7 +421,6 @@ const Paginatior = (
         span({class: 'mr-2'}, 'Rows per page:'),
         Select({
             triggerStyle: 'inline',
-            testId: 'items-per-page',
             value: itemsPerPage,
             options: sizeOptions,
             portalPosition: 'top',

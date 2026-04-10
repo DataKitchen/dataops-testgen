@@ -10,7 +10,6 @@ import { ColumnProfilingResults } from '../data_profiling/column_profiling_resul
  * @param {object} props.profilingColumn - reactive state: set to column data to open, null to close
  * @param {function} props.onClose - called when dialog is closed
  * @param {string} [props.width='52rem']
- * @param {string} [props.testId]
  */
 const ProfilingResultsDialog = (props) => {
     const emit = props.emit;
@@ -31,7 +30,7 @@ const ProfilingResultsDialog = (props) => {
     const columnJson = van.derive(() => columnData.val ? JSON.stringify(columnData.val) : null);
 
     return Dialog(
-        { title: 'Column Profiling Results', open, onClose, width: props.width || '52rem', testId: props.testId },
+        { title: 'Column Profiling Results', open, onClose, width: props.width || '52rem' },
         () => columnJson.val ? ColumnProfilingResults({ emit,  column: columnJson }) : '',
     );
 };

@@ -26,6 +26,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, em
                 () => {
                     const selectedCategory = getValue(category);
                     return Select({
+                        testId: 'groupby-selector',
                         label: '',
                         value: selectedCategory,
                         options:  Object.entries(CATEGORIES)
@@ -33,7 +34,6 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, em
                             .map(([value, label]) => ({ value, label })),
                         height: 32,
                         onChange: (value) => emit('CategoryChanged', { payload: value }),
-                        testId: 'groupby-selector',
                     });
                 },
                 span('for'),
@@ -45,12 +45,12 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, em
                         scoreTypeOptions.push('score');
                     }
                     return Select({
+                        testId: 'score-type-selector',
                         label: '',
                         value: selectedScoreType,
                         options: scoreTypeOptions.map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s })),
                         height: 32,
                         onChange: (value) => emit('ScoreTypeChanged', { payload: value }),
-                        testId: 'score-type-selector',
                     });
                 },
             ),

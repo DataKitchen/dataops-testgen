@@ -223,7 +223,6 @@ const LineChart = (
                         tooltipExtraStyle.val = '';
                         showTooltip.val = false;
                     },
-                    testId: lineId,
                 },
                 line,
             )

@@ -355,7 +355,6 @@ const Toolbar = (
                 options: getValue(props.table_group_options) ?? [],
                 allowNull: true,
                 style: 'font-size: 14px;',
-                testId: 'table-group-filter',
                 onChange: (value) => emit('FilterApplied', { payload: { table_group_id: value } }),
             }),
             () => Select({
@@ -364,7 +363,6 @@ const Toolbar = (
                 options: getValue(props.test_suite_options) ?? [],
                 allowNull: true,
                 style: 'font-size: 14px;',
-                testId: 'test-suite-filter',
                 onChange: (value) => emit('FilterApplied', { payload: { test_suite_id: value } }),
             }),
         ),
@@ -407,7 +405,6 @@ const Toolbar = (
                 tooltipPosition: 'left',
                 style: 'background: var(--button-generic-background-color);',
                 onclick: () => emit('RefreshData', {}),
-                testId: 'test-runs-refresh',
             }),
         ),
     );
@@ -433,7 +430,6 @@ const TestRunItem = (
                 Checkbox({
                     checked: selected,
                     onChange: (checked) => selected.val = checked,
-                    testId: 'select-test-run',
                 }),
             )
             : '',

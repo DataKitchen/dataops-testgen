@@ -7,7 +7,6 @@
  * @property {boolean?} border
  * @property {string?} id
  * @property {string?} class
- * @property {string?} testId
  */
 import { loadStylesheet, getValue } from '../utils.js';
 import van from '../van.min.js';
@@ -19,7 +18,7 @@ const Card = (/** @type Properties */ props) => {
     return div(
         {
             id: props.id ?? '',
-            'data-testid': props.testId ?? '',
+            'data-testid': 'card',
             class: () => {
                 const classes = ['tg-card'];
                 if (getValue(props.border)) {

@@ -25,6 +25,7 @@ const SummaryBar = (/** @type Properties */ props) => {
     const total = van.derive(() => getValue(props.items).reduce((sum, item) => sum + item.value, 0));
 
     return div(
+        { 'data-testid': 'summary-bar' },
         () => props.label ? div(
             { class: 'tg-summary-bar--label' },
             props.label,

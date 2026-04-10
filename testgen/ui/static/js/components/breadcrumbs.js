@@ -8,7 +8,6 @@
  * @typedef Properties
  * @type {object}
  * @property {Array.<Breadcrumb>} breadcrumbs
- * @property {string?} testId
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -18,10 +17,8 @@ const { a, div, span } = van.tags;
 const Breadcrumbs = (/** @type Properties */ props) => {
     loadStylesheet('breadcrumbs', stylesheet);
 
-    const testId = getValue(props.testId) ?? '';
-
     return div(
-        { class: 'tg-breadcrumbs-wrapper', 'data-testid': testId },
+        { class: 'tg-breadcrumbs-wrapper', 'data-testid': 'breadcrumbs' },
         () => {
             const breadcrumbs = getValue(props.breadcrumbs) || [];
 
@@ -30,7 +27,7 @@ const Breadcrumbs = (/** @type Properties */ props) => {
                 breadcrumbs.reduce((items, b, idx) => {
                     const isLastItem = idx === breadcrumbs.length - 1;
                     items.push(a({
-                        'data-testid': testId ? `${testId}-item-${idx}` : '',
+                        'data-testid': 'breadcrumb-item',
                         class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`,
                         onclick: (event) => {
                             event.preventDefault();

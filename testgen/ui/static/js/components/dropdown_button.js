@@ -45,7 +45,7 @@ const DropdownButton = (props) => {
             () => {
                 const items = typeof props.items === 'function' ? props.items() : props.items;
                 return div(
-                    { class: 'tg-dropdown-button--menu' },
+                    { class: 'tg-dropdown-button--menu', 'data-testid': 'dropdown-menu' },
                     ...items.map(item =>
                         div({
                             class: 'tg-dropdown-button--item',
