@@ -1,29 +1,3 @@
-
-from testgen.ui.components import widgets as testgen
-
-
-def table_create_script_dialog_widget(
-    table_name: str,
-    data: list[dict],
-    dialog: dict,
-    on_close: callable,
-) -> None:
-    script = generate_create_script(table_name, data)
-
-    def on_close_clicked(*_) -> None:
-        on_close()
-
-    testgen.table_create_script_dialog_widget(
-        key="table_create_script_dialog",
-        data={
-            "dialog": dialog,
-            "table_name": table_name,
-            "script": script,
-        },
-        on_CloseClicked_change=on_close_clicked,
-    )
-
-
 def generate_create_script(table_name: str, data: list[dict]) -> str | None:
     table_data = [col for col in data if col["table_name"] == table_name]
     if not table_data:

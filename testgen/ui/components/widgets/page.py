@@ -1,5 +1,6 @@
 import logging
 import os
+import typing
 from datetime import date
 
 import streamlit as st
@@ -8,15 +9,18 @@ from streamlit.delta_generator import DeltaGenerator
 import testgen.common.logs as logs
 from testgen import settings
 from testgen.common import version_service
-from testgen.ui.components.widgets.breadcrumbs import Breadcrumb
-from testgen.ui.components.widgets.breadcrumbs import breadcrumbs as tg_breadcrumbs
-from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
 UPGRADE_URL = "https://docs.datakitchen.io/testgen/administer/upgrade-testgen/"
 APP_LOGS_DIALOG_KEY = "app_logs:dialog"
+
+
+class Breadcrumb(typing.TypedDict):
+    path: str | None
+    params: dict
+    label: str
 
 
 def page_header(
@@ -32,7 +36,8 @@ def page_header(
             no_flex_gap()
             st.html(f'<h3 class="tg-header">{title}</h3>')
             if breadcrumbs:
-                tg_breadcrumbs(breadcrumbs=breadcrumbs)
+                from testgen.ui.components.widgets import breadcrumbs_widget
+                breadcrumbs_widget(key="breadcrumbs", data={"breadcrumbs": breadcrumbs})
 
         with links_column:
             help_menu(help_topic)
@@ -113,9 +118,10 @@ def help_menu(help_topic: str | None = None) -> None:
             flex_row_end()
             with st.popover("Help"):
                 css_class("tg-header--help-wrapper")
-                testgen_component(
-                    "help_menu",
-                    props={
+                from testgen.ui.components.widgets import help_menu_widget
+                help_menu_widget(
+                    key="help_menu",
+                    data={
                         "help_topic": help_topic,
                         "support_email": settings.SUPPORT_EMAIL,
                         "version": version.__dict__,
@@ -123,12 +129,8 @@ def help_menu(help_topic: str | None = None) -> None:
                             "can_edit": session.auth.user_has_permission("edit"),
                         },
                     },
-                    on_change_handlers={
-                        "AppLogsClicked": lambda _: open_app_logs(),
-                    },
-                    event_handlers={
-                        "ExternalLinkClicked": lambda _: close_help(rerun=True),
-                    },
+                    on_AppLogsClicked_change=lambda _: open_app_logs(),
+                    on_ExternalLinkClicked_change=lambda _: close_help(rerun=True),
                 )
 
 

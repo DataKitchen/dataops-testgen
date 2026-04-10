@@ -126,7 +126,7 @@ include-package-data = true
 "testgen.template" = ["*.sql", "*.yaml", "**/*.sql", "**/*.yaml"]
 "testgen.ui.static" = ["**/*.js", "**/*.css", "**/*.woff2"]
 "testgen.ui.assets" = ["*.svg", "*.png", "*.js", "*.css", "*.ico", "flavors/*.svg"]
-"testgen.ui.components.frontend" = ["*.html", "**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
+"testgen.ui.components.frontend" = ["**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
 
 [tool.setuptools.packages.find]
 # see the important note for why we glob. TL;DR: Otherwise you don't get submodules
@@ -376,4 +376,16 @@ asset_dir = "ui/components/frontend/js"
 
 [[tool.streamlit.component.components]]
 name = "application_logs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "help_menu"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "breadcrumbs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "sidebar"
 asset_dir = "ui/components/frontend/js"

@@ -2,13 +2,8 @@
 
 from streamlit.components import v2 as components_v2
 
-from testgen.ui.components.utils.component import component, component_v2_wrapped
-from testgen.ui.components.widgets.breadcrumbs import breadcrumbs
-from testgen.ui.components.widgets.button import button
+from testgen.ui.components.utils.component import component_v2_wrapped
 from testgen.ui.components.widgets.card import card
-from testgen.ui.components.widgets.empty_state import EmptyStateMessage, empty_state
-from testgen.ui.components.widgets.expander_toggle import expander_toggle
-from testgen.ui.components.widgets.link import link
 from testgen.ui.components.widgets.page import (
     caption,
     css_class,
@@ -22,13 +17,9 @@ from testgen.ui.components.widgets.page import (
     text,
     whitespace,
 )
-from testgen.ui.components.widgets.paginator import paginator
 from testgen.ui.components.widgets.select import select
 from testgen.ui.components.widgets.sidebar import sidebar
-from testgen.ui.components.widgets.sorting_selector import sorting_selector
 from testgen.ui.components.widgets.summary import summary_bar, summary_counts
-from testgen.ui.components.widgets.testgen_component import testgen_component
-from testgen.ui.components.widgets.wizard import WizardStep, wizard
 
 table_group_wizard = component_v2_wrapped(components_v2.component(
     name="dataops-testgen.table_group_wizard",
@@ -135,5 +126,23 @@ hygiene_issues_widget = component_v2_wrapped(components_v2.component(
 application_logs_widget = component_v2_wrapped(components_v2.component(
     name="dataops-testgen.application_logs",
     js="pages/application_logs.js",
+    isolate_styles=False,
+))
+
+help_menu_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.help_menu",
+    js="pages/help_menu.js",
+    isolate_styles=False,
+))
+
+breadcrumbs_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.breadcrumbs",
+    js="pages/breadcrumbs.js",
+    isolate_styles=False,
+))
+
+sidebar_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.sidebar",
+    js="pages/sidebar.js",
     isolate_styles=False,
 ))
