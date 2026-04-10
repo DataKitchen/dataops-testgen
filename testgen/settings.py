@@ -486,11 +486,6 @@ ANALYTICS_ENABLED: bool = os.getenv("TG_ANALYTICS", "yes").lower() in ("yes", "t
 Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
 """
 
-ANALYTICS_JOB_SOURCE: str = os.getenv("TG_JOB_SOURCE", "CLI")
-"""
-Identifies the job trigger for analytics purposes.
-"""
-
 JOB_POLL_INTERVAL: int = int(os.getenv("TG_JOB_POLL_INTERVAL", "5"))
 """
 Seconds between polls for pending job executions.

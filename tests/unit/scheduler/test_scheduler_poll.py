@@ -4,8 +4,9 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.commands.exec_job import JOB_DISPATCH
 from testgen.common.models.job_execution import JobExecution, JobStatus
-from testgen.scheduler.cli_scheduler import JOB_REGISTRY, CliScheduler
+from testgen.scheduler.cli_scheduler import CliScheduler
 
 pytestmark = pytest.mark.unit
 
@@ -31,18 +32,6 @@ def scheduler_instance():
 
 
 @pytest.fixture
-def cmd_mock():
-    opt_mock = Mock()
-    opt_mock.opts = ["--test-suite-id"]
-    opt_mock.name = "test_suite_id"
-
-    cmd = Mock()
-    cmd.params = [opt_mock]
-    cmd.name = "run-tests"
-    return cmd
-
-
-@pytest.fixture
 def job_exec():
     return JobExecution(
         id=uuid4(),
@@ -63,27 +52,20 @@ def _returning_row(job_exec, **overrides):
     return row
 
 
-def test_dispatch_spawns_process(scheduler_instance, cmd_mock, job_exec, mock_session):
-    mock_session.execute.return_value.first.return_value = _returning_row(job_exec, status="running")
+def test_dispatch_spawns_process(scheduler_instance, job_exec, mock_session):
     proc_mock = MagicMock()
 
     with (
-        patch.dict(JOB_REGISTRY, {"run-tests": cmd_mock}),
+        patch.dict(JOB_DISPATCH, {"run-tests": Mock()}, clear=False),
         patch(f"{SCHEDULER_MODULE}.subprocess.Popen", return_value=proc_mock) as popen_mock,
         patch(f"{SCHEDULER_MODULE}.threading.Thread") as thread_mock,
     ):
         scheduler_instance._dispatch(job_exec)
 
     call_args = popen_mock.call_args[0][0]
-    assert "run-tests" in call_args
-    assert "--test-suite-id" in call_args
-    assert "suite-123" in call_args
+    assert "exec-job" in call_args
+    assert str(job_exec.id) in call_args
 
-    env = popen_mock.call_args[1]["env"]
-    assert env["TG_JOB_EXECUTION_ID"] == str(job_exec.id)
-    assert env["TG_JOB_SOURCE"] == "SCHEDULER"
-
-    assert job_exec.status == "running"
     thread_mock.assert_called_once()
 
 
@@ -98,16 +80,16 @@ def test_dispatch_unknown_job_key(scheduler_instance, mock_session):
     )
     mock_session.execute.return_value.first.return_value = _returning_row(job_exec, status="error")
 
-    with patch.dict(JOB_REGISTRY, {}, clear=True):
+    with patch.dict(JOB_DISPATCH, {}, clear=True):
         scheduler_instance._dispatch(job_exec)
 
     # mark_interrupted tries error first (valid from claimed)
     assert job_exec.status == "error"
 
 
-def test_proc_wrapper_success(scheduler_instance, job_exec, mock_session):
+def test_proc_wrapper_success_is_noop(scheduler_instance, job_exec, mock_session):
+    """On exit code 0, the wrapper does nothing — exec_job already handled lifecycle."""
     job_exec.status = "running"
-    mock_session.execute.return_value.first.return_value = _returning_row(job_exec, status="completed")
     proc_mock = Mock()
     proc_mock.pid = 555
     proc_mock.wait.return_value = 0
@@ -120,7 +102,9 @@ def test_proc_wrapper_success(scheduler_instance, job_exec, mock_session):
         cond_mock.__exit__ = Mock(return_value=False)
         scheduler_instance._proc_wrapper(proc_mock, job_exec)
 
-    assert job_exec.status == "completed"
+    # Status unchanged — exec_job handles mark_completed, not the wrapper
+    assert job_exec.status == "running"
+    mock_session.execute.assert_not_called()
     dict_mock.__setitem__.assert_called_once()
     dict_mock.__delitem__.assert_called_once()
 

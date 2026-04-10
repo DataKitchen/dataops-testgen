@@ -140,11 +140,6 @@ class TestRun(Entity):
         query = select(cls).where((cls.id == identifier) | (cls.job_execution_id == identifier))
         return get_current_session().scalars(query).first()
 
-    @property
-    def project_code(self) -> str:
-        """Resolve project_code via the parent test suite."""
-        return get_current_session().scalar(select(TestSuite.project_code).where(TestSuite.id == self.test_suite_id))
-
     @classmethod
     def get_job_execution_ids(cls, test_run_ids: list[UUID]) -> dict[UUID, UUID | None]:
         """Map test_run PKs to their job_execution_ids (batch lookup)."""

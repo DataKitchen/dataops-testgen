@@ -172,7 +172,9 @@ class TestType(Entity):
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), server_default=text("gen_random_uuid()"), primary_key=True)
+    # default=uuid4: Python-side ID for ORM inserts (enables batch flush without per-row round-trips).
+    # server_default: fallback for raw SQL inserts in test generation templates that omit the id column.
+    id: UUID = Column(postgresql.UUID(as_uuid=True), default=uuid4, server_default=text("gen_random_uuid()"), primary_key=True)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True))
     profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     test_type: str = Column(String)

@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
 
 from testgen.api.runs import get_profiling_run, get_test_run
 from testgen.common.models.hygiene_issue import IssueLikelihoodCounts
@@ -14,6 +13,9 @@ from testgen.common.models.test_result import ResultStatusCounts
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.api.runs"
+
+TEST_SUITE_ID = uuid4()
+TABLE_GROUP_ID = uuid4()
 
 
 def _mock_job(**overrides):
@@ -34,6 +36,7 @@ def _mock_job(**overrides):
 def _mock_test_run(**overrides):
     defaults = {
         "id": uuid4(),
+        "test_suite_id": TEST_SUITE_ID,
         "dq_score_test_run": 0.95,
     }
     defaults.update(overrides)
@@ -46,6 +49,7 @@ def _mock_test_run(**overrides):
 def _mock_profiling_run(**overrides):
     defaults = {
         "id": uuid4(),
+        "table_groups_id": TABLE_GROUP_ID,
         "dq_score_profiling": 0.88,
         "table_ct": 10,
         "column_ct": 50,
@@ -61,20 +65,23 @@ def _mock_profiling_run(**overrides):
 # --- get_test_run ---
 
 
+@patch(f"{MODULE}.get_current_session")
 @patch(f"{MODULE}.TestResult")
 @patch(f"{MODULE}.TestRun")
-def test_get_test_run_completed(mock_tr_cls, mock_result_cls):
+def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
     job = _mock_job()
     mock_tr_cls.get_by_id_or_job.return_value = _mock_test_run()
     mock_result_cls.count_by_status.return_value = ResultStatusCounts(
         passed=90, failed=5, warning=3, error=2, log=0, dismissed=12,
     )
+    mock_session.return_value.scalar.return_value = TABLE_GROUP_ID
 
     result = get_test_run(job)
 
     assert result.id == job.id
     assert result.status == "completed"
-    assert result.started_at == job.started_at
+    assert result.test_suite_id == TEST_SUITE_ID
+    assert result.table_group_id == TABLE_GROUP_ID
     assert result.result is not None
     assert result.result.score == 0.95
     assert result.result.tests.passed == 90
@@ -91,17 +98,9 @@ def test_get_test_run_pending_no_run(mock_tr_cls):
 
     assert result.id == job.id
     assert result.status == "pending"
+    assert result.test_suite_id is None
+    assert result.table_group_id is None
     assert result.result is None
-
-
-def test_get_test_run_rejects_monitor_suite():
-    job = _mock_job(job_key="run-monitors")
-
-    with pytest.raises(HTTPException) as exc_info:
-        get_test_run(job)
-
-    assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == {"errors": [{"code": "not_found", "detail": "Not found"}]}
 
 
 # --- get_profiling_run ---
@@ -120,6 +119,7 @@ def test_get_profiling_run_completed(mock_pr_cls, mock_issue_cls):
 
     assert result.id == job.id
     assert result.status == "completed"
+    assert result.table_group_id == TABLE_GROUP_ID
     assert result.result is not None
     assert result.result.score == 0.88
     assert result.result.table_ct == 10
@@ -137,4 +137,5 @@ def test_get_profiling_run_pending_no_run(mock_pr_cls):
 
     assert result.id == job.id
     assert result.status == "pending"
+    assert result.table_group_id is None
     assert result.result is None

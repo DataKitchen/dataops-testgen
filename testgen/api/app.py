@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from testgen.api.deps import db_session
 from testgen.common import version_service
 
-router = APIRouter(prefix="/api/v1", tags=["api"], dependencies=[Depends(db_session)])
+router = APIRouter(prefix="/api/v1", tags=["API"], dependencies=[Depends(db_session)])
 
 
 @router.get("/health")
