@@ -7,11 +7,11 @@ import pandas as pd
 import streamlit as st
 from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 
-from testgen.commands.run_test_execution import run_test_execution_in_background
 from testgen.common import date_service
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
     TestDefinition,
@@ -54,6 +54,7 @@ TD_RUN_TESTS_DIALOG_KEY = "td:run_tests_dialog"
 TD_RUN_TESTS_RESULT_KEY = "td:run_tests_result"
 TD_VALIDATE_RESULT_KEY = "td:validate_result"
 TD_COPY_MOVE_COLLISION_KEY = "td:copy_move_collision"
+TD_COPY_MOVE_OVERWRITE_KEY = "td:copy_move_overwrite"
 TD_NOTES_DIALOG_KEY = "td:notes_dialog"
 
 
@@ -292,6 +293,7 @@ class TestDefinitionsPage(Page):
             # selected contains minimal row dicts (id, table_name, column_name, test_type, lock_refresh)
             st.session_state[TD_COPY_MOVE_DIALOG_KEY] = selected
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
         def on_add_dialog_closed(*_) -> None:
             st.session_state.pop(TD_ADD_DIALOG_KEY, None)
@@ -310,6 +312,7 @@ class TestDefinitionsPage(Page):
         def on_copy_move_dialog_closed(*_) -> None:
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
@@ -367,11 +370,15 @@ class TestDefinitionsPage(Page):
             target_ts_id = payload["target_test_suite_id"]
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
+            overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
+            if overwrite_ids:
+                TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
             TestDefinition.copy(ids, target_tg_id, target_ts_id, target_table, target_col)
             st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
         @with_database_session
         def on_move_confirmed(payload: dict) -> None:
@@ -380,24 +387,35 @@ class TestDefinitionsPage(Page):
             target_ts_id = payload["target_test_suite_id"]
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
+            overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
+            if overwrite_ids:
+                TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
             TestDefinition.move(ids, target_tg_id, target_ts_id, target_table, target_col)
             st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
         @with_database_session
         def on_copy_move_target_changed(payload: dict) -> None:
             selected = payload["selected"]
             target_tg_id = payload["target_table_group_id"]
             target_ts_id = payload["target_test_suite_id"]
-            collision_df = get_test_definitions_collision(selected, target_tg_id, target_ts_id)
+            target_table = payload.get("target_table_name")
+            target_col = payload.get("target_column_name")
+            collision_df = get_test_definitions_collision(selected, target_tg_id, target_ts_id, target_table, target_col)
+            overwrite_ids = []
             if collision_df.empty:
                 st.session_state[TD_COPY_MOVE_COLLISION_KEY] = []
             else:
+                unlocked = collision_df[collision_df["lock_refresh"] == False]
+                selected_ids = {str(item["id"]) for item in selected}
+                overwrite_ids = [id_ for id_ in unlocked["id"].tolist() if str(id_) not in selected_ids]
                 # Only send the fields JS needs (lock_refresh, table_name, column_name, test_type)
                 cols = ["table_name", "column_name", "test_type", "lock_refresh"]
                 st.session_state[TD_COPY_MOVE_COLLISION_KEY] = collision_df[cols].to_dict("records")
+            st.session_state[TD_COPY_MOVE_OVERWRITE_KEY] = overwrite_ids
 
         @with_database_session
         def on_validate_test(test_def: dict) -> None:
@@ -421,7 +439,12 @@ class TestDefinitionsPage(Page):
             message = f"Test run started for test suite '{selected_name}'."
             show_link = session.current_page != "test-runs"
             try:
-                run_test_execution_in_background(selected_id)
+                JobExecution.submit(
+                    job_key="run-tests",
+                    kwargs={"test_suite_id": str(selected_id)},
+                    source="ui",
+                    project_code=project_code,
+                )
             except Exception as error:
                 success = False
                 message = f"Test run could not be started: {error!s}."
@@ -437,6 +460,7 @@ class TestDefinitionsPage(Page):
             st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None)
 
         def on_go_to_test_runs(payload: dict) -> None:
+            st.session_state.pop(TD_RUN_TESTS_DIALOG_KEY, None)
             st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None)
             Router().queue_navigation(to="test-runs", with_args=payload)
 
@@ -855,14 +879,16 @@ def get_test_definitions_collision(
     test_definitions: list[dict],
     target_table_group_id: str,
     target_test_suite_id: str,
+    target_table_name: str | None = None,
+    target_column_name: str | None = None,
 ) -> pd.DataFrame:
     table_tests = [
-        (item["table_name"], item["test_type"])
+        (target_table_name or item["table_name"], item["test_type"])
         for item in test_definitions
         if item["column_name"] is None and item["table_name"] is not None
     ]
     column_tests = [
-        (item["table_name"], item["column_name"], item["test_type"])
+        (target_table_name or item["table_name"], target_column_name or item["column_name"], item["test_type"])
         for item in test_definitions
         if item["column_name"] is not None
     ]

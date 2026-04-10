@@ -3,8 +3,9 @@ import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Table } from '/app/static/js/components/table.js';
 import { Code } from '/app/static/js/components/code.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
-const { div, span, h4, p, small } = van.tags;
+const { div, h4, small } = van.tags;
 
 /**
  * Shared dialog for displaying source data (used by test_results and hygiene_issues).
@@ -49,12 +50,12 @@ const SourceDataDialog = (props) => {
 
             // Status-based content
             if (d.status === 'ND' || d.status === 'NA') {
-                children.push(div({ class: 'tg-sd--info-msg' }, d.message));
+                children.push(Alert({ type: 'info', class: 'tg-sd--msg' }, d.message));
             } else if (d.status === 'ERR') {
-                children.push(div({ class: 'tg-sd--error-msg' }, d.message));
+                children.push(Alert({ type: 'error', class: 'tg-sd--msg' }, d.message));
             } else if (d.rows?.length) {
                 if (d.message) {
-                    children.push(div({ class: 'tg-sd--info-msg mb-2' }, d.message));
+                    children.push(Alert({ type: 'info', class: 'tg-sd--msg' }, d.message));
                 }
                 if (d.truncated) {
                     children.push(small({ class: 'text-caption', style: 'text-align: right; display: block; margin-bottom: 4px' }, '* Top 500 records displayed'));
@@ -73,13 +74,13 @@ const SourceDataDialog = (props) => {
                     ),
                 );
             } else if (!d.message) {
-                children.push(div({ class: 'tg-sd--error-msg' }, 'An unknown error was encountered.'));
+                children.push(Alert({ type: 'error', class: 'tg-sd--msg' }, 'An unknown error was encountered.'));
             }
 
             if (d.sql_query) {
                 children.push(
                     h4({ style: 'margin: 12px 0 4px' }, 'SQL Query'),
-                    Code({ language: 'sql' }, d.sql_query),
+                    Code({ language: 'sql', class: 'tg-sg--sql-query-code' }, d.sql_query),
                 );
             }
 
@@ -90,19 +91,12 @@ const SourceDataDialog = (props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-sd--info-msg {
-    padding: 8px 12px;
-    background: var(--blue-light, #e3f2fd);
-    border-radius: 4px;
-    color: var(--primary-text-color);
-    font-size: 14px;
+.tg-sd--msg {
+    font-size: 14px !important;
 }
-.tg-sd--error-msg {
-    padding: 8px 12px;
-    background: var(--red-light, #ffebee);
-    border-radius: 4px;
-    color: var(--red, #c62828);
-    font-size: 14px;
+
+.tg-sg--sql-query-code {
+    max-height: 300px;
 }
 `);
 

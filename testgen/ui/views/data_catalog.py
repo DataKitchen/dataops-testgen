@@ -10,13 +10,19 @@ import streamlit as st
 from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
-from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.common.database.database_service import get_flavor_service
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
+from testgen.common.pii_masking import (
+    PII_REDACTED,
+    get_pii_columns,
+    mask_hygiene_detail,
+    mask_profiling_pii,
+    mask_source_data_pii,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -133,7 +139,13 @@ class DataCatalogPage(Page):
             message = f"Profiling run started for table group '{table_group['table_groups_name']}'."
             show_link = session.current_page != "profiling-runs"
             try:
-                run_profiling_in_background(table_group["id"])
+                with database_session():
+                    JobExecution.submit(
+                        job_key="run-profile",
+                        kwargs={"table_group_id": str(table_group["id"])},
+                        source="ui",
+                        project_code=project_code,
+                    )
             except Exception as error:
                 success = False
                 message = f"Profiling run could not be started: {error!s}."
@@ -145,6 +157,7 @@ class DataCatalogPage(Page):
                 st.session_state.pop(DC_RUN_PROFILING_RESULT_KEY, None)
 
         def on_go_to_profiling_runs_clicked(tg_id: str) -> None:
+            st.session_state.pop(DC_RUN_PROFILING_DIALOG_KEY, None)
             st.session_state.pop(DC_RUN_PROFILING_RESULT_KEY, None)
             Router().queue_navigation(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
 
@@ -233,6 +246,12 @@ class DataCatalogPage(Page):
                 item["table_name"],
                 item.get("column_name"),
             )
+            if preview_data.get("rows") and not session.auth.user_has_permission("view_pii"):
+                pii_columns = get_pii_columns(item["table_group_id"], item["schema_name"], item["table_name"])
+                if pii_columns:
+                    df = pd.DataFrame(preview_data["rows"], columns=preview_data["columns"])
+                    mask_source_data_pii(df, pii_columns)
+                    preview_data["rows"] = make_json_safe(df.values.tolist())
             st.session_state[DC_DATA_PREVIEW_DIALOG_KEY] = preview_data
 
         def on_data_preview_dialog_closed(*_) -> None:
@@ -260,6 +279,9 @@ class DataCatalogPage(Page):
                     history_data["table_name"],
                     history_data["column_name"],
                 )
+                if column and not session.auth.user_has_permission("view_pii"):
+                    pii_columns = get_pii_columns(history_data["table_group_id"], table_name=history_data["table_name"])
+                    mask_profiling_pii(column, pii_columns)
                 history_data["selected_item"] = column
                 st.session_state[DC_HISTORY_DIALOG_KEY] = history_data
 
@@ -460,7 +482,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
         data[key] = data[key].apply(
-            lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
+            lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
         )
 
     for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
@@ -478,13 +500,13 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
     )
     data["top_freq_values"] = data["top_freq_values"].apply(
         lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
-        if not pd.isna(val)
-        else None
+        if not pd.isna(val) and val != PII_REDACTED
+        else val
     )
     data["top_patterns"] = data["top_patterns"].apply(
         lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
-        if not pd.isna(val)
-        else None
+        if not pd.isna(val) and val != PII_REDACTED
+        else val
     )
 
     file_columns = {
@@ -822,7 +844,12 @@ def _build_history_dialog_data(
     first_run_id = profiling_runs_data[0]["run_id"]
     selected_item = _get_history_run_column(first_run_id, schema_name, table_name, column_name)
 
+    if selected_item and not session.auth.user_has_permission("view_pii"):
+        pii_columns = get_pii_columns(table_group_id, table_name=table_name)
+        mask_profiling_pii(selected_item, pii_columns)
+
     return make_json_safe({
+        "table_group_id": table_group_id,
         "table_name": table_name,
         "column_name": column_name,
         "schema_name": schema_name,

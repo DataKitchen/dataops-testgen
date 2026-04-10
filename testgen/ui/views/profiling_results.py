@@ -9,7 +9,7 @@ from testgen.common import date_service
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
+from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -281,7 +281,7 @@ def get_excel_report_data(
 
     for key in ["min_date", "max_date"]:
         data[key] = data[key].apply(
-            lambda val: parse_fuzzy_date(val) if not pd.isna(val) and val != "NaT" else None
+            lambda val: parse_fuzzy_date(val) if not pd.isna(val) and val != "NaT" and val != PII_REDACTED else val
         )
 
     data["hygiene_issues"] = data["hygiene_issues"].apply(lambda val: "Yes" if val else None)
@@ -291,13 +291,13 @@ def get_excel_report_data(
 
     data["top_freq_values"] = data["top_freq_values"].apply(
         lambda val: "\n".join([ f"{part.split(' | ')[1]} | {part.split(' | ')[0]}" for part in val[2:].split("\n| ") ])
-        if val
-        else None
+        if val and val != PII_REDACTED
+        else val
     )
     data["top_patterns"] = data["top_patterns"].apply(
         lambda val: "".join([ f"{part}{chr(10) if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
-        if val
-        else None
+        if val and val != PII_REDACTED
+        else val
     )
 
     columns = {

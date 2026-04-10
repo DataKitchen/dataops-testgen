@@ -23,7 +23,7 @@ from testgen.common.models.scores import (
     ScoreTypes,
     SelectedIssue,
 )
-from testgen.common.pii_masking import mask_hygiene_detail
+from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
@@ -139,6 +139,9 @@ class ScoreDetailsPage(Page):
         def on_column_profiling_clicked(payload: dict) -> None:
             column = get_column_by_name(payload["column_name"], payload["table_name"], payload["table_group_id"])
             if column:
+                if not session.auth.user_has_permission("view_pii"):
+                    pii_columns = get_pii_columns(payload["table_group_id"], table_name=payload["table_name"])
+                    mask_profiling_pii(column, pii_columns)
                 st.session_state[SD_COLUMN_PROFILING_DIALOG_KEY] = make_json_safe(column)
 
         def on_profiling_results_dialog_closed(*_) -> None:
@@ -166,7 +169,7 @@ class ScoreDetailsPage(Page):
             on_CategoryChanged_change=select_category,
             on_ScoreTypeChanged_change=select_score_type,
             on_IssueReportsExported_change=export_issue_reports,
-            on_ColumnProflingClicked_change=on_column_profiling_clicked,
+            on_ColumnProfilingClicked_change=on_column_profiling_clicked,
             on_RecalculateHistory_change=recalculate_score_history,
             on_ProfilingResultsDialogClosed_change=on_profiling_results_dialog_closed,
             # NotificationSettings events
@@ -213,15 +216,20 @@ def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
 
 
 def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
+    mask_pii = not session.auth.user_has_permission("view_pii")
+    if mask_pii:
+        issue = {**issue}
+        mask_hygiene_detail([issue])
+
     with BytesIO() as buffer:
         if issue["issue_type"] == "hygiene":
             issue_id = issue["id"][:8]
             timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
-            hygiene_issue_report.create_report(buffer, issue)
+            hygiene_issue_report.create_report(buffer, issue, mask_pii=mask_pii)
         else:
             issue_id = issue["test_result_id"][:8]
             timestamp = pd.Timestamp(issue["test_date"]).strftime("%Y%m%d_%H%M%S")
-            test_result_report.create_report(buffer, issue)
+            test_result_report.create_report(buffer, issue, mask_pii=mask_pii)
 
         update_progress(1.0)
         buffer.seek(0)

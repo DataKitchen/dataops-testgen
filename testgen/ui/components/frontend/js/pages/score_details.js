@@ -106,7 +106,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     props.score_type,
                     (project_code, name, score_type, category, drilldown) => emit(
                         'LinkClicked',
-                        { href: 'quality-dashboard:score-details', params: { definition_id: getValue(props.score).id, project_code, score_type, category, drilldown }
+                        { href: 'quality-dashboard:score-details', params: { definition_id: getValue(props.score).id, project_code, score_type, category, drilldown: drilldown ?? '' }
                     }),
                     emit,
                 )

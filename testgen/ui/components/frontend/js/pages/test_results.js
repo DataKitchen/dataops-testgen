@@ -58,6 +58,7 @@ import { TestResultsChart } from './test_results_chart.js';
 import { TestDefinitionSummary } from './test_definition_summary.js';
 import { EditDialogComponent } from './test_definitions.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
 
 const { button: btn, div, i: icon, span, h3, h4, p, small } = van.tags;
 
@@ -71,7 +72,7 @@ const STATUS_COLORS = {
 
 /** Composite icon button: flag with a diagonal strikethrough (pen_size_1 rotated). */
 const ClearFlagButton = ({ disabled, onclick }) => {
-    return btn(
+    return withTooltip(btn(
         {
             class: 'tg-button tg-icon-button tg-basic-button',
             tooltip: 'Clear flag',
@@ -85,7 +86,7 @@ const ClearFlagButton = ({ disabled, onclick }) => {
             icon({ class: 'material-symbols-rounded', style: 'font-size: 20px;' }, 'flag'),
             icon({ class: 'material-symbols-rounded', style: 'font-size: 24px; position: absolute; top: -3px; left: -3px; transform: rotate(90deg);' }, 'pen_size_1'),
         ),
-    );
+    ), { text: 'Clear flag' });
 };
 
 const FLAGGED_FILTER_OPTIONS = [
@@ -404,7 +405,7 @@ const TestResults = (/** @type Properties */ props) => {
             const row = buildTableRow(item);
             if (isMulti) {
                 const checked = getCheckboxState(item.test_result_id);
-                row._checkbox = Checkbox({ label: '', checked, style: 'pointer-events: none' });
+                row._checkbox = () => Checkbox({ label: '', checked, style: 'pointer-events: none' });
             }
             return row;
         });
@@ -526,24 +527,6 @@ const TestResults = (/** @type Properties */ props) => {
         return selectedRowId.rawVal ? [selectedRowId.rawVal] : [];
     };
 
-    const allSelectedArePassed = van.derive(() => {
-        if (multiSelect.val) {
-            if (selectAll.val) {
-                // If filtering to only Passed, all are passed
-                return statusFilter.val === 'Passed';
-            }
-            const count = selectedIdsCount.val; // reactive dependency on selection changes
-            if (count === 0) return true;
-            const currentItems = items.val;
-            const idSet = new Set(selectedIds);
-            return currentItems
-                .filter(r => idSet.has(r.test_result_id))
-                .every(r => r.result_status === 'Passed');
-        }
-        const row = selectedRow.val;
-        return !row || row.result_status === 'Passed';
-    });
-
     const onDisposition = (status) => {
         if (selectAll.rawVal) {
             emit('DispositionAll', { payload: { filters: getCurrentFilters(), status } });
@@ -578,28 +561,13 @@ const TestResults = (/** @type Properties */ props) => {
         div({ class: 'fx-flex' }),
         () => {
             if (!permissions.val.can_disposition) return '';
-            // Compute disabled state directly from reactive values (not via
-            // an intermediate derive) so VanJS always re-renders this binding
-            // when the selection changes — matches the test_definitions pattern.
             const isAll = selectAll.val;
             const count = selectedIdsCount.val;
-            let disabled;
-            if (multiSelect.val) {
-                if (isAll) {
-                    disabled = statusFilter.val === 'Passed';
-                } else if (count === 0) {
-                    disabled = true;
-                } else {
-                    const currentItems = items.val;
-                    const idSet = new Set(selectedIds);
-                    disabled = currentItems
-                        .filter(r => idSet.has(r.test_result_id))
-                        .every(r => r.result_status === 'Passed');
-                }
-            } else {
-                const row = selectedRow.val;
-                disabled = !row || row.result_status === 'Passed';
-            }
+            // In multi-select mode, just check if there's a selection — we can't
+            // reliably determine item status across pages with server-side pagination.
+            const disabled = multiSelect.val
+                ? !isAll && count === 0
+                : (() => { const row = selectedRow.val; return !row || row.result_status === 'Passed'; })();
             return div(
                 { class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Confirm selected as relevant', disabled, onclick: () => onDisposition('Confirmed') }),
@@ -614,26 +582,32 @@ const TestResults = (/** @type Properties */ props) => {
             const isAll = selectAll.val;
             const count = selectedIdsCount.val;
             const noSelection = !isAll && count === 0 && !selectedRow.val;
-            const selected = (() => {
-                if (isAll) return items.val;
-                if (count > 0) {
-                    const idSet = new Set(selectedIds);
-                    return items.val.filter(r => idSet.has(r.test_result_id));
+
+            const onFlag = (value) => {
+                if (isAll) {
+                    emit('FlagAll', { payload: { filters: getCurrentFilters(), value } });
+                } else if (count > 0) {
+                    // Multi-select: send result IDs — backend resolves to definition IDs
+                    emit('FlagChanged', { payload: { test_result_ids: getSelectedResultIds(), value } });
+                } else {
+                    // Single-select: send definition ID directly
+                    const row = selectedRow.rawVal;
+                    if (row?.test_definition_id) {
+                        emit('FlagChanged', { payload: { test_definition_ids: [row.test_definition_id], value } });
+                    }
                 }
-                const row = selectedRow.val;
-                return row ? [row] : [];
-            })();
-            const getTestDefinitionIds = () => [...new Set(selected.filter(r => r.test_definition_id).map(r => r.test_definition_id))];
+            };
+
             return div(
                 { class: 'flex-row fx-gap-1' },
                 span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
                 Button({
-                    type: 'icon', icon: 'flag', tooltip: 'Flag selected', disabled: noSelection || selected.every(r => r.flagged),
-                    onclick: () => emit('FlagChanged', { payload: { test_definition_ids: getTestDefinitionIds(), value: true } }),
+                    type: 'icon', icon: 'flag', tooltip: 'Flag selected', disabled: noSelection,
+                    onclick: () => onFlag(true),
                 }),
                 ClearFlagButton({
-                    disabled: noSelection || selected.every(r => !r.flagged),
-                    onclick: () => emit('FlagChanged', { payload: { test_definition_ids: getTestDefinitionIds(), value: false } }),
+                    disabled: noSelection,
+                    onclick: () => onFlag(false),
                 }),
             );
         },

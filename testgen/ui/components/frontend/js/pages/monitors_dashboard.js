@@ -304,6 +304,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             span({ class: `has-monitors dot text-disabled ${option.has_monitors ? '' : 'invisible'}` }),
                             option.label,
                         ),
+                        rawLabel: option.label,
                     })),
                     allowNull: false,
                     style: 'font-size: 14px;',

@@ -322,6 +322,53 @@ def get_test_result_ids(
     return df["test_result_id"].tolist()
 
 
+def get_test_definition_ids_for_results(test_result_ids: list[str]) -> list[str]:
+    """Resolve test result IDs to their distinct test definition IDs."""
+    if not test_result_ids:
+        return []
+    query = """
+    SELECT DISTINCT r.test_definition_id::VARCHAR
+    FROM test_results r
+    WHERE r.id = ANY(CAST(:ids AS UUID[]))
+    AND r.test_definition_id IS NOT NULL;
+    """
+    df = fetch_df_from_db(query, {"ids": test_result_ids})
+    return df["test_definition_id"].tolist()
+
+
+def get_test_definition_ids_for_run(
+    run_id: str,
+    test_statuses: list[str] | None = None,
+    test_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+    flagged: bool | None = None,
+) -> list[str]:
+    """Get distinct test definition IDs for all results matching the given filters."""
+    where_clause = _build_where_clause(test_statuses, test_type_id, table_name, column_name, action)
+    flagged_join = ""
+    flagged_clause = ""
+    if flagged is not None:
+        flagged_join = "INNER JOIN test_definitions td ON (r.test_definition_id = td.id)"
+        flagged_clause = "AND td.flagged = :flagged"
+    query = f"""
+    SELECT DISTINCT r.test_definition_id::VARCHAR
+    FROM test_results r
+    {flagged_join}
+    WHERE
+        r.test_run_id = :run_id
+        AND r.test_definition_id IS NOT NULL
+        {where_clause}
+        {flagged_clause};
+    """
+    params = _build_params(run_id, test_statuses, test_type_id, table_name, column_name, action)
+    if flagged is not None:
+        params["flagged"] = flagged
+    df = fetch_df_from_db(query, params)
+    return df["test_definition_id"].tolist()
+
+
 @st.cache_data(show_spinner=False)
 def get_filter_options(run_id: str) -> dict:
     query = """

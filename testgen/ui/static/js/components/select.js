@@ -5,6 +5,7 @@
  * @property {string} value
  * @property {string?} icon
  * @property {string?} caption
+ * @property {string?} rawLabel
  *
  * @typedef Properties
  * @type {object}
@@ -65,11 +66,11 @@ const Select = (/** @type {Properties} */ props) => {
             const filteredOptions_ = [];
             for (let i = 0; i < allOptions.length; i++) {
                 const option = allOptions[i];
-                if (option.label === filterTerm) {
+                if ((option.rawLabel ?? option.label) === filterTerm) {
                     return allOptions;
                 }
 
-                if (option.label.toLowerCase().includes(filterTerm.toLowerCase())) {
+                if ((option.rawLabel ?? option.label).toLowerCase().includes(filterTerm.toLowerCase())) {
                     filteredOptions_.push(option);
                 }
             }
@@ -83,7 +84,7 @@ const Select = (/** @type {Properties} */ props) => {
     const initialCustomLabel = getValue(props.acceptNewOptions) && !initialSelection && typeof value.val === 'string'
         ? value.val.replace(/^%|%$/g, '')
         : '';
-    const valueLabel = van.state(initialSelection?.label ?? initialCustomLabel);
+    const valueLabel = van.state(initialSelection?.rawLabel ?? initialSelection?.label ?? initialCustomLabel);
     const valueIcon = van.state(initialSelection?.icon ?? undefined);
 
     const changeSelection = (/** @type SelectOption */ option) => {
@@ -104,7 +105,7 @@ const Select = (/** @type {Properties} */ props) => {
                 changeSelection({ value: null, label: '' });
                 return;
             }
-            const match = getValue(options).find(op => op.label?.toLowerCase() === typed.toLowerCase());
+            const match = getValue(options).find(op => (op.rawLabel ?? op.label)?.toLowerCase() === typed.toLowerCase());
             if (match) {
                 changeSelection(match);
             } else if (getValue(props.acceptNewOptions)) {
@@ -173,10 +174,10 @@ const Select = (/** @type {Properties} */ props) => {
         }
 
         if (!isEqual(currentValue, previousValue)) {
-            valueLabel.val = selectedOption?.label ?? '';
+            valueLabel.val = selectedOption?.rawLabel ?? selectedOption?.label ?? '';
             valueIcon.val = selectedOption?.icon ?? undefined;
             if (inputEl) {
-                inputEl.value = selectedOption?.label ?? '';
+                inputEl.value = selectedOption?.rawLabel ?? selectedOption?.label ?? '';
             }
 
             props.onChange?.(currentValue, { valid: !!currentValue || !getValue(props.required) });
@@ -258,7 +259,7 @@ const Select = (/** @type {Properties} */ props) => {
                         div(
                             {class: 'flex-row fx-gap-2'}, 
                             option.icon ? Icon({}, option.icon) : '',
-                            span(option.label),
+                            option.label ? span(option.label) : span(option.rawLabel),
                         ),
                         option.caption ? span({class: 'text-small text-secondary'}, option.caption) : '',
                     )

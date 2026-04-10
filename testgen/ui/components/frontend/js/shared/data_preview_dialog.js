@@ -2,6 +2,7 @@ import van from '/app/static/js/van.min.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Table } from '/app/static/js/components/table.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const { div, span } = van.tags;
 
@@ -39,10 +40,10 @@ const DataPreviewDialog = (props) => {
             if (!d) return '';
 
             if (d.status === 'ND' || d.status === 'NA') {
-                return div({ class: 'tg-dp--info-msg' }, d.message);
+                return Alert({ type: 'info', class: 'tg-sd--msg' }, d.message);
             }
             if (d.status === 'ERR') {
-                return div({ class: 'tg-dp--error-msg' }, d.message);
+                return Alert({ type: 'error', class: 'tg-sd--msg' }, d.message);
             }
 
             if (d.rows?.length) {
@@ -67,27 +68,13 @@ const DataPreviewDialog = (props) => {
                 );
             }
 
-            return div({ class: 'tg-dp--info-msg' }, 'No data available.');
+            return Alert({ type: 'info', class: 'tg-sd--msg' }, 'No data available.');
         },
     );
 };
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
-.tg-dp--info-msg {
-    padding: 8px 12px;
-    background: var(--blue-light, #e3f2fd);
-    border-radius: 4px;
-    color: var(--primary-text-color);
-    font-size: 14px;
-}
-.tg-dp--error-msg {
-    padding: 8px 12px;
-    background: var(--red-light, #ffebee);
-    border-radius: 4px;
-    color: var(--red, #c62828);
-    font-size: 14px;
-}
 .tg-dp--null,
 .tg-dp--empty {
     color: var(--disabled-text-color);

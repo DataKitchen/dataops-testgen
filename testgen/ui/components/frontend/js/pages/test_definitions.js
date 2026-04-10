@@ -309,7 +309,7 @@ const TestDefinitions = (/** @type object */ props) => {
             };
             if (isMulti) {
                 const checked = getCheckboxState(item.id);
-                row._checkbox = Checkbox({ label: '', checked, style: 'pointer-events: none' });
+                row._checkbox = () => Checkbox({ label: '', checked, style: 'pointer-events: none' });
             }
             return row;
         });
@@ -419,7 +419,8 @@ const TestDefinitions = (/** @type object */ props) => {
             if (!canEdit.val) return '';
             const selected = selectedRows.val;
             const isAll = selectAll.val;
-            const hasSelection = isAll || selected.length > 0;
+            const count = selectedIdsCount.val;
+            const hasSelection = isAll || (multiSelectMode.val ? count > 0 : selected.length > 0);
             const isSingle = !isAll && selected.length === 1;
             // Only send minimal fields to avoid serialization issues
             const minimalSelected = () => selected.map(r => ({
@@ -444,11 +445,14 @@ const TestDefinitions = (/** @type object */ props) => {
             if (!canDisposition.val) return '';
             const selected = selectedRows.val;
             const isAll = selectAll.val;
-            const noSelection = !isAll && !selected.length;
-            const allActive = !isAll && selected.length > 0 && selected.every(r => r.test_active_display === 'Yes');
-            const allInactive = !isAll && selected.length > 0 && selected.every(r => r.test_active_display === 'No');
-            const allLocked = !isAll && selected.length > 0 && selected.every(r => r.lock_refresh_display === 'Yes');
-            const allUnlocked = !isAll && selected.length > 0 && selected.every(r => r.lock_refresh_display === 'No');
+            const count = selectedIdsCount.val;
+            // Use cross-page count in multi-select; current-page items in single-select
+            const noSelection = multiSelectMode.val ? !isAll && count === 0 : !selected.length;
+            // Skip per-item attribute checks in multi-select (can't see all pages)
+            const allActive = !multiSelectMode.val && selected.length > 0 && selected.every(r => r.test_active_display === 'Yes');
+            const allInactive = !multiSelectMode.val && selected.length > 0 && selected.every(r => r.test_active_display === 'No');
+            const allLocked = !multiSelectMode.val && selected.length > 0 && selected.every(r => r.lock_refresh_display === 'Yes');
+            const allUnlocked = !multiSelectMode.val && selected.length > 0 && selected.every(r => r.lock_refresh_display === 'No');
             const emitAttribute = (attribute, value) => {
                 if (isAll) {
                     emit('UpdateAttributeAll', { payload: { attribute, value } });
@@ -470,11 +474,12 @@ const TestDefinitions = (/** @type object */ props) => {
                 }) : '',
                 canEdit.val ? div({ class: 'td-header-separator' }) : '',
                 Button({
-                    type: 'icon', icon: 'flag', tooltip: 'Flag selected', disabled: noSelection || selected.every(r => r.flagged),
+                    type: 'icon', icon: 'flag', tooltip: 'Flag selected',
+                    disabled: noSelection || (!multiSelectMode.val && selected.length > 0 && selected.every(r => r.flagged)),
                     onclick: () => emitAttribute('flagged', true),
                 }),
                 ClearFlagButton({
-                    disabled: noSelection || selected.every(r => !r.flagged),
+                    disabled: noSelection || (!multiSelectMode.val && selected.length > 0 && selected.every(r => !r.flagged)),
                     onclick: () => emitAttribute('flagged', false),
                 }),
             );
@@ -1322,6 +1327,8 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
     van.derive(() => {
         const tgId = targetTgId.val;
         const tsId = targetTsId.val;
+        const tableName = targetTableName.val;
+        const colName = targetColumnName.val;
         const di = dialogInfo.val;
         if (tgId && tsId && di?.selected) {
             emit('CopyMoveTargetChanged', {
@@ -1329,6 +1336,8 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
                     selected: di.selected,
                     target_table_group_id: tgId,
                     target_test_suite_id: tsId,
+                    target_table_name: tableName || null,
+                    target_column_name: colName || null,
                 },
             });
         }
@@ -1435,6 +1444,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
                     type: 'stroked',
                     color: 'basic',
                     label: 'Copy',
+                    width: 'auto',
                     disabled: !movableIds.val.length || !targetTsId.val,
                     onclick: () => emit('CopyConfirmed', { payload: buildPayload() }),
                 }),
@@ -1442,6 +1452,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
                     type: 'flat',
                     color: 'primary',
                     label: 'Move',
+                    width: 'auto',
                     disabled: !movableIds.val.length || !targetTsId.val,
                     onclick: () => emit('MoveConfirmed', { payload: buildPayload() }),
                 }),

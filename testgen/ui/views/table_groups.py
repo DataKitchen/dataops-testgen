@@ -11,6 +11,7 @@ from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import ProfilingRunNotificationSettings
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_run import TestRun
@@ -125,12 +126,18 @@ class TableGroupsPage(Page):
             notifications_data = ns_obj.build_data()
             notifications_data["open"] = True
 
+        @with_database_session
         def on_run_profiling_confirmed(table_group: dict) -> None:
             success = True
             message = f"Profiling run started for table group '{table_group['table_groups_name']}'."
             show_link = session.current_page != "profiling-runs"
             try:
-                run_profiling_in_background(table_group["id"])
+                JobExecution.submit(
+                    job_key="run-profile",
+                    kwargs={"table_group_id": str(table_group["id"])},
+                    source="ui",
+                    project_code=project_code,
+                )
             except Exception as error:
                 success = False
                 message = f"Profiling run could not be started: {error!s}."
@@ -142,6 +149,7 @@ class TableGroupsPage(Page):
                 st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
 
         def on_go_to_profiling_runs_clicked(tg_id: str) -> None:
+            st.session_state.pop(TG_RUN_PROFILING_DIALOG_KEY, None)
             st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
             Router().queue_navigation(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
 

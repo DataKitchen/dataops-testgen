@@ -7,8 +7,7 @@ from typing import Any
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
-from testgen.commands.run_test_execution import run_test_execution_in_background
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
@@ -119,7 +118,13 @@ class TestRunsPage(Page):
             message = f"Test run started for test suite '{selected_name}'."
             show_link = session.current_page != "test-runs"
             try:
-                run_test_execution_in_background(selected_id)
+                with database_session():
+                    JobExecution.submit(
+                        job_key="run-tests",
+                        kwargs={"test_suite_id": str(selected_id)},
+                        source="ui",
+                        project_code=project_code,
+                    )
             except Exception as error:
                 success = False
                 message = f"Test run could not be started: {error!s}."

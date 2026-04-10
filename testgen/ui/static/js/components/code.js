@@ -63,6 +63,7 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-code {
     position: relative;
+    overflow-y: auto;
 }
 .tg-code pre {
     margin: 0;

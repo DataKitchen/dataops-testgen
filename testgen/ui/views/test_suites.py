@@ -3,9 +3,9 @@ import typing
 import streamlit as st
 
 from testgen.commands.run_observability_exporter import export_test_results
-from testgen.commands.run_test_execution import run_test_execution_in_background
 from testgen.commands.test_generation import run_test_generation
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import TestRunNotificationSettings
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
@@ -169,7 +169,13 @@ class TestSuitesPage(Page):
             message = f"Test run started for test suite '{selected_name}'."
             show_link = session.current_page != "test-runs"
             try:
-                run_test_execution_in_background(selected_id)
+                with database_session():
+                    JobExecution.submit(
+                        job_key="run-tests",
+                        kwargs={"test_suite_id": str(selected_id)},
+                        source="ui",
+                        project_code=project_code,
+                    )
             except Exception as error:
                 success = False
                 message = f"Test run could not be started: {error!s}."
@@ -362,6 +368,7 @@ def execute_ts_delete(test_suite_id: str) -> None:
         TestSuite.cascade_delete([test_suite_id])
         st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": f"Test Suite {test_suite_name} has been deleted."}
     st.session_state.pop("ts_delete_dialog", None)
+    get_test_suite_summaries.clear()
 
 
 @with_database_session

@@ -11,7 +11,7 @@ from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.pii_masking import mask_hygiene_detail
+from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -303,6 +303,7 @@ class HygieneIssuesPage(Page):
                 lookup["column_name"], lookup["table_name"], lookup["table_groups_id"],
             )
             if column:
+                mask_profiling_pii(column, get_pii_columns(lookup["table_groups_id"], table_name=lookup["table_name"]))
                 st.session_state[PROFILING_KEY] = make_json_safe(column)
 
         def on_profiling_closed(*_) -> None:

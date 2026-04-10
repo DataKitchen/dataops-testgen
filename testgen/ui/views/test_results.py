@@ -15,6 +15,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestDefinitionSummary
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
+from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -297,10 +298,37 @@ class TestResultsPage(Page):
 
         @with_database_session
         def on_flag_changed(payload: dict) -> None:
-            test_definition_ids = payload.get("test_definition_ids", [])
             value = payload.get("value", False)
+            test_definition_ids = payload.get("test_definition_ids", [])
+            if not test_definition_ids:
+                # Multi-select: resolve test_result_ids to definition IDs
+                test_result_ids = payload.get("test_result_ids", [])
+                test_definition_ids = test_result_queries.get_test_definition_ids_for_results(test_result_ids)
             if test_definition_ids:
                 TestDefinition.set_status_attribute("flagged", test_definition_ids, value)
+                st.cache_data.clear()
+
+        @with_database_session
+        def on_flag_all(payload: dict) -> None:
+            value = payload.get("value", False)
+            filters = payload.get("filters", {})
+            filter_status = filters.get("status")
+            filter_test_statuses = _parse_status_filter(filter_status)
+            filter_action = _map_action_filter(filters.get("action"))
+            filter_flagged_str = filters.get("flagged")
+            filter_flagged = True if filter_flagged_str == "Flagged" else False if filter_flagged_str == "Not Flagged" else None
+
+            all_def_ids = test_result_queries.get_test_definition_ids_for_run(
+                run_id,
+                test_statuses=filter_test_statuses,
+                test_type_id=filters.get("test_type"),
+                table_name=filters.get("table_name"),
+                column_name=filters.get("column_name"),
+                action=filter_action,
+                flagged=filter_flagged,
+            )
+            if all_def_ids:
+                TestDefinition.set_status_attribute("flagged", all_def_ids, value)
                 st.cache_data.clear()
 
         def on_notes_clicked(payload: dict) -> None:
@@ -349,6 +377,7 @@ class TestResultsPage(Page):
                 lookup["column_names"], lookup["table_name"], lookup["table_groups_id"],
             )
             if column:
+                mask_profiling_pii(column, get_pii_columns(lookup["table_groups_id"], table_name=lookup["table_name"]))
                 st.session_state[PROFILING_KEY] = make_json_safe(column)
 
         def on_profiling_closed(*_) -> None:
@@ -487,6 +516,7 @@ class TestResultsPage(Page):
             on_DispositionChanged_change=on_disposition_changed,
             on_DispositionAll_change=on_disposition_all,
             on_FlagChanged_change=on_flag_changed,
+            on_FlagAll_change=on_flag_all,
             on_NotesClicked_change=on_notes_clicked,
             on_NoteAdded_change=on_note_added,
             on_NoteUpdated_change=on_note_updated,

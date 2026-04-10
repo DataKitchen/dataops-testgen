@@ -50,6 +50,7 @@
  * @property {boolean} is_new
  * @property {Permissions} permissions
  * @property {object?} column_selector_dialog
+ * @property {object?} profiling_column
  */
 import van from '/app/static/js/van.min.js';
 import { createEmitter, debounce, getValue, loadStylesheet, afterMount, getRandomId, isEqual } from '/app/static/js/utils.js';
@@ -64,6 +65,7 @@ import { IssuesTable } from '/app/static/js/components/score_issues.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
 import { ColumnFilter } from '/app/static/js/components/explorer_column_selector.js';
 import { ColumnSelectorDialog } from '/app/static/js/components/column_selector_dialog.js';
+import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 
 const { div, i, span } = van.tags;
 
@@ -156,6 +158,10 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
             dialog: van.derive(() => ({ title: getValue(props.column_selector_dialog)?.title ?? 'Select Columns', open: columnSelectorDialogOpen })),
             columns: van.derive(() => getValue(props.column_selector_dialog)?.columns ?? []),
             onClose: () => emit('ColumnSelectorDialogClosed', {}),
+        }),
+        ProfilingResultsDialog({ emit,
+            profilingColumn: props.profiling_column,
+            onClose: () => emit('ProfilingResultsDialogClosed', {}),
         }),
     );
 };

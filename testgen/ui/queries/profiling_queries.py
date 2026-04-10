@@ -289,7 +289,8 @@ def get_column_by_id(
 
     condition = "WHERE column_chars.column_id = :column_id"
     params = {"column_id": column_id}
-    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
+    results = get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    return results[0] if results else None
 
 
 @st.cache_data(show_spinner="Loading data ...")
@@ -312,7 +313,8 @@ def get_column_by_name(
         "table_name": table_name,
         "table_group_id": table_group_id,
     }
-    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
+    results = get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    return results[0] if results else None
 
 
 def get_columns_by_id(

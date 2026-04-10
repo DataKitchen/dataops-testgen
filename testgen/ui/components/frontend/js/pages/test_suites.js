@@ -38,6 +38,7 @@ import { Toggle } from '/app/static/js/components/toggle.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Input } from '/app/static/js/components/input.js';
 import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
+import { required } from '/app/static/js/form_validators.js';
 
 const { b, div, h4, pre, small, span, i } = van.tags;
 
@@ -83,6 +84,12 @@ const TestSuites = (/** @type Properties */ props) => {
         componentName: van.state(''),
     };
 
+    const formValidity = {
+        testSuiteName: van.state(false),
+        tableGroupId: van.state(false),
+    };
+    const saveDisabled = van.derive(() => !formValidity.testSuiteName.val || !formValidity.tableGroupId.val);
+
     van.derive(() => {
         const info = formDialogInfo.val;
         if (!info?.open) return;
@@ -96,6 +103,8 @@ const TestSuites = (/** @type Properties */ props) => {
         formState.componentKey.val = v.component_key ?? '';
         formState.componentType.val = v.component_type ?? 'dataset';
         formState.componentName.val = v.component_name ?? '';
+        formValidity.testSuiteName.val = !!v.test_suite;
+        formValidity.tableGroupId.val = !!v.table_groups_id;
     });
 
     const closeFormDialog = () => {
@@ -149,7 +158,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 width: 300,
                                 clearable: true,
                                 value: testSuiteNameFilter,
-                                onChange: (value) => testSuiteNameFilter.val = value || null,
+                                onChange: (value) => testSuiteNameFilter.val = value || '',
                             }),
                         ),
                         div(
@@ -382,16 +391,24 @@ const TestSuites = (/** @type Properties */ props) => {
                             value: formState.testSuiteName,
                             disabled: isEdit,
                             style: 'flex: 1;',
-                            onChange: (value) => { formState.testSuiteName.val = value; },
+                            validators: [required],
+                            onChange: (value, validity) => {
+                                formState.testSuiteName.val = value;
+                                formValidity.testSuiteName.val = validity.valid;
+                            },
                         }),
                         Select({
                             label: 'Table Group',
                             value: formState.tableGroupId,
                             options: tableGroups,
                             allowNull: false,
+                            required: true,
                             disabled: isEdit,
                             style: 'flex: 1;',
-                            onChange: (value) => { formState.tableGroupId.val = value; },
+                            onChange: (value) => {
+                                formState.tableGroupId.val = value;
+                                formValidity.tableGroupId.val = !!value;
+                            },
                             portalClass: 'ts-form--select',
                         }),
                     ),
@@ -471,6 +488,7 @@ const TestSuites = (/** @type Properties */ props) => {
                             label: isEdit ? 'Save' : 'Add',
                             width: 'auto',
                             style: 'width: auto;',
+                            disabled: saveDisabled,
                             onclick: () => emit('SaveTestSuiteForm', {
                                 payload: {
                                     mode: info.mode,

@@ -23,12 +23,13 @@ from testgen.common.models.scores import (
     SelectedIssue,
 )
 from testgen.common.models.test_run import TestRun
-from testgen.common.pii_masking import mask_hygiene_detail
+from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
+from testgen.ui.queries.profiling_queries import get_column_by_name
 from testgen.ui.queries.scoring_queries import (
     get_all_score_cards,
     get_column_filters,
@@ -36,11 +37,18 @@ from testgen.ui.queries.scoring_queries import (
     get_score_category_values,
 )
 from testgen.ui.session import session
-from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, try_json
+from testgen.utils import (
+    format_score_card,
+    format_score_card_breakdown,
+    format_score_card_issues,
+    make_json_safe,
+    try_json,
+)
 
 PAGE_PATH = "quality-dashboard:explorer"
 
 SE_COLUMN_SELECTOR_DIALOG_KEY = "se:column_selector_open"
+SE_COLUMN_PROFILING_DIALOG_KEY = "se:column_profiling_payload"
 
 class ScoreExplorerPage(Page):
     path = PAGE_PATH
@@ -199,6 +207,20 @@ class ScoreExplorerPage(Page):
         def on_column_selector_dialog_closed(*_) -> None:
             st.session_state.pop(SE_COLUMN_SELECTOR_DIALOG_KEY, None)
 
+        @with_database_session
+        def on_column_profiling_clicked(payload: dict) -> None:
+            column = get_column_by_name(payload["column_name"], payload["table_name"], payload["table_group_id"])
+            if column:
+                if not session.auth.user_has_permission("view_pii"):
+                    pii_columns = get_pii_columns(payload["table_group_id"], table_name=payload["table_name"])
+                    mask_profiling_pii(column, pii_columns)
+                st.session_state[SE_COLUMN_PROFILING_DIALOG_KEY] = make_json_safe(column)
+
+        def on_profiling_results_dialog_closed(*_) -> None:
+            st.session_state.pop(SE_COLUMN_PROFILING_DIALOG_KEY, None)
+
+        profiling_column = st.session_state.get(SE_COLUMN_PROFILING_DIALOG_KEY)
+
         testgen.score_explorer_widget(
             key="score_explorer",
             data={
@@ -215,6 +237,7 @@ class ScoreExplorerPage(Page):
                     "can_edit": user_can_edit,
                 },
                 "column_selector_dialog": column_selector_data,
+                "profiling_column": profiling_column,
             },
             on_ScoreUpdated_change=set_score_definition,
             on_CategoryChanged_change=set_breakdown_category,
@@ -224,6 +247,8 @@ class ScoreExplorerPage(Page):
             on_ScoreDefinitionSaved_change=save_score_definition,
             on_ColumnSelectorOpened_change=on_column_selector_opened,
             on_FilterModeChanged_change=change_score_definition_filter_mode,
+            on_ColumnProfilingClicked_change=on_column_profiling_clicked,
+            on_ProfilingResultsDialogClosed_change=on_profiling_results_dialog_closed,
             # ColumnSelectorDialog events
             on_ColumnFiltersUpdated_change=on_column_filters_updated,
             on_ColumnSelectorDialogClosed_change=on_column_selector_dialog_closed,
@@ -282,15 +307,20 @@ def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
 
 
 def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
+    mask_pii = not session.auth.user_has_permission("view_pii")
+    if mask_pii:
+        issue = {**issue}
+        mask_hygiene_detail([issue])
+
     with BytesIO() as buffer:
         if issue["issue_type"] == "hygiene":
             issue_id = issue["id"][:8]
             timestamp = pd.Timestamp(issue["profiling_starttime"]).strftime("%Y%m%d_%H%M%S")
-            hygiene_issue_report.create_report(buffer, issue)
+            hygiene_issue_report.create_report(buffer, issue, mask_pii=mask_pii)
         else:
             issue_id = issue["test_result_id"][:8]
             timestamp = pd.Timestamp(issue["test_date"]).strftime("%Y%m%d_%H%M%S")
-            test_result_report.create_report(buffer, issue)
+            test_result_report.create_report(buffer, issue, mask_pii=mask_pii)
 
         update_progress(1.0)
         buffer.seek(0)

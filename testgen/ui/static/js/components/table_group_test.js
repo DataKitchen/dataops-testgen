@@ -35,23 +35,37 @@ const { div, span } = van.tags;
  * @returns {HTMLElement}
  */
 const TableGroupTest = (preview, options) => {
+    const verifyingAccess = van.state(false);
+    van.derive(() => {
+        const p = getValue(preview);
+        if (p && Object.values(p.tables ?? {}).some(({ can_access }) => can_access != null)) {
+            verifyingAccess.val = false;
+        }
+    });
+
     return div(
         { class: 'flex-column fx-gap-2' },
         div(
             { class: 'flex-row fx-justify-space-between fx-align-flex-end' },
             span({ class: 'text-caption text-right' }, '* Approximate row counts based on server statistics'),
-            options.onVerifyAcess
-                ? div(
+            () => {
+                const p = getValue(preview);
+                if (!options.onVerifyAcess || !p) return '';
+                return div(
                     { class: 'flex-row' },
                     span({ class: 'fx-flex' }),
                     Button({
                         label: 'Verify Access',
                         width: 'fit-content',
                         type: 'stroked',
-                        onclick: options.onVerifyAcess,
+                        loading: verifyingAccess,
+                        onclick: () => {
+                            verifyingAccess.val = true;
+                            options.onVerifyAcess();
+                        },
                     }),
-                )
-                : '',
+                );
+            },
         ),
         () => getValue(preview)
             ? TableGroupStats({ hideWarning: true, hideApproxCaption: true }, getValue(preview).stats)

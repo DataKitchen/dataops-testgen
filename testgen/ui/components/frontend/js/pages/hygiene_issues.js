@@ -314,7 +314,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
             const row = buildTableRow(item);
             if (isMulti) {
                 const checked = getCheckboxState(item.id);
-                row._checkbox = Checkbox({ label: '', checked, style: 'pointer-events: none' });
+                row._checkbox = () => Checkbox({ label: '', checked, style: 'pointer-events: none' });
             }
             return row;
         });
