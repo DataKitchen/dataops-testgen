@@ -16,7 +16,7 @@ import { SummaryBar } from '/app/static/js/components/summary_bar.js';
 import { PercentBar } from '/app/static/js/components/percent_bar.js';
 import { FrequencyBars } from '/app/static/js/components/frequency_bars.js';
 import { BoxPlot } from '/app/static/js/components/box_plot.js';
-import { loadStylesheet, emitEvent, friendlyPercent, getValue } from '/app/static/js/utils.js';
+import { loadStylesheet, friendlyPercent, getValue } from '/app/static/js/utils.js';
 import { formatNumber, formatTimestamp, PII_REDACTED } from '/app/static/js/display_utils.js';
 
 const { div, span } = van.tags;
@@ -34,6 +34,7 @@ const summaryHeight = 10;
 const boxPlotWidth = 800;
 
 const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column */ item) => {
+    const emit = props.emit;
     loadStylesheet('column-distribution', stylesheet);
     const displayType = item.profile_run_id && item.record_ct !== 0 ? item.general_type : 'X'
     const columnFunction = columnTypeFunctionMap[displayType];
@@ -52,7 +53,7 @@ const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column 
                             label: 'Data Preview',
                             icon: 'pageview',
                             width: 'auto',
-                            onclick: () => emitEvent('DataPreviewClicked', { payload: item }),
+                            onclick: () => emit('DataPreviewClicked', { payload: item }),
                         })
                         : null,
                     getValue(props.history)
@@ -61,7 +62,7 @@ const ColumnDistributionCard = (/** @type Properties */ props, /** @type Column 
                             label: 'History',
                             icon: 'history',
                             width: 'auto',
-                            onclick: () => emitEvent('HistoryClicked', { payload: item }),
+                            onclick: () => emit('HistoryClicked', { payload: item }),
                         })
                         : null,
                 ])

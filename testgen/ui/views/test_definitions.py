@@ -13,7 +13,12 @@ from testgen.common.database.database_service import get_flavor_service, replace
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionMinimal, TestDefinitionSummary
+from testgen.common.models.test_definition import (
+    TestDefinition,
+    TestDefinitionMinimal,
+    TestDefinitionNote,
+    TestDefinitionSummary,
+)
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -49,6 +54,7 @@ TD_RUN_TESTS_DIALOG_KEY = "td:run_tests_dialog"
 TD_RUN_TESTS_RESULT_KEY = "td:run_tests_result"
 TD_VALIDATE_RESULT_KEY = "td:validate_result"
 TD_COPY_MOVE_COLLISION_KEY = "td:copy_move_collision"
+TD_NOTES_DIALOG_KEY = "td:notes_dialog"
 
 
 def _parse_sort_param(sort: str | None) -> tuple[list | None, list[dict]]:
@@ -82,7 +88,6 @@ class TestDefinitionsPage(Page):
         lambda: "test_suite_id" in st.query_params or "test-suites",
     ]
 
-    @with_database_session
     def render(
         self,
         test_suite_id: str,
@@ -170,6 +175,8 @@ class TestDefinitionsPage(Page):
         }
 
         # Build dialog states
+        validate_result = st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
+
         add_dialog = None
         if st.session_state.get(TD_ADD_DIALOG_KEY):
             add_dialog = {
@@ -179,7 +186,6 @@ class TestDefinitionsPage(Page):
                 "table_groups_id": str(table_group.id),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
-                "validate_result": st.session_state.pop(TD_VALIDATE_RESULT_KEY, None),
             }
 
         edit_dialog = None
@@ -191,7 +197,6 @@ class TestDefinitionsPage(Page):
                 "table_columns": table_columns,
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
-                "validate_result": st.session_state.pop(TD_VALIDATE_RESULT_KEY, None),
             }
 
         delete_dialog = None
@@ -229,6 +234,10 @@ class TestDefinitionsPage(Page):
                 "default_test_suite_id": str(test_suite.id),
                 "result": st.session_state.get(TD_RUN_TESTS_RESULT_KEY),
             }
+
+        notes_dialog = None
+        if notes_state := st.session_state.get(TD_NOTES_DIALOG_KEY):
+            notes_dialog = _load_notes_dialog_data(notes_state.get("id") or notes_state, df)
 
         # --- Event handlers ---
 
@@ -270,7 +279,16 @@ class TestDefinitionsPage(Page):
             all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
             st.session_state[TD_UNLOCK_DIALOG_KEY] = [{"id": id_} for id_ in all_ids]
 
-        def on_copy_move_dialog_opened(selected: list) -> None:
+        @with_database_session
+        def on_copy_move_dialog_opened(selected) -> None:
+            if selected == "all":
+                all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
+                results = TestDefinition.select_where(TestDefinition.id.in_(all_ids))
+                selected = [
+                    {"id": str(r.id), "table_name": r.table_name, "column_name": r.column_name,
+                     "test_type": r.test_type, "lock_refresh": r.lock_refresh}
+                    for r in results
+                ]
             # selected contains minimal row dicts (id, table_name, column_name, test_type, lock_refresh)
             st.session_state[TD_COPY_MOVE_DIALOG_KEY] = selected
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
@@ -296,16 +314,18 @@ class TestDefinitionsPage(Page):
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
-            TestDefinition(**test_def).save()
-            get_test_suite_columns.clear()
+            td_columns = set(TestDefinition.__table__.columns.keys())
+            TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
+            st.cache_data.clear()
             st.session_state.pop(TD_ADD_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
         @with_database_session
         def on_edit_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
-            TestDefinition(**test_def).save()
-            get_test_suite_columns.clear()
+            td_columns = set(TestDefinition.__table__.columns.keys())
+            TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
+            st.cache_data.clear()
             st.session_state.pop(TD_EDIT_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
@@ -313,12 +333,14 @@ class TestDefinitionsPage(Page):
         def on_delete_confirmed(payload: dict) -> None:
             ids = payload.get("ids", [])
             TestDefinition.delete_where(TestDefinition.id.in_(ids))
+            st.cache_data.clear()
             st.session_state.pop(TD_DELETE_DIALOG_KEY, None)
 
         @with_database_session
         def on_unlock_confirmed(payload: dict) -> None:
             ids = payload.get("ids", [])
             TestDefinition.set_status_attribute("lock_refresh", ids, False)
+            st.cache_data.clear()
             st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
 
         @with_database_session
@@ -327,6 +349,7 @@ class TestDefinitionsPage(Page):
             ids = payload["ids"]
             value = payload["value"]
             TestDefinition.set_status_attribute(attribute, ids, value)
+            st.cache_data.clear()
 
         @with_database_session
         def on_update_attribute_all(payload: dict) -> None:
@@ -335,6 +358,7 @@ class TestDefinitionsPage(Page):
             all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
             if all_ids:
                 TestDefinition.set_status_attribute(attribute, all_ids, value)
+                st.cache_data.clear()
 
         @with_database_session
         def on_copy_confirmed(payload: dict) -> None:
@@ -344,6 +368,7 @@ class TestDefinitionsPage(Page):
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
             TestDefinition.copy(ids, target_tg_id, target_ts_id, target_table, target_col)
+            st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
@@ -356,6 +381,7 @@ class TestDefinitionsPage(Page):
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
             TestDefinition.move(ids, target_tg_id, target_ts_id, target_table, target_col)
+            st.cache_data.clear()
             get_test_suite_columns.clear()
             st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
@@ -412,7 +438,34 @@ class TestDefinitionsPage(Page):
 
         def on_go_to_test_runs(payload: dict) -> None:
             st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None)
-            Router().navigate(to="test-runs", with_args=payload)
+            Router().queue_navigation(to="test-runs", with_args=payload)
+
+        def on_notes_clicked(payload: dict) -> None:
+            st.session_state[TD_NOTES_DIALOG_KEY] = payload
+
+        @with_database_session
+        def on_note_added(payload: dict) -> None:
+            td_id = payload["test_definition_id"]
+            current_user = session.auth.user.username if session.auth.user else "unknown"
+            TestDefinitionNote.add_note(td_id, payload["text"], current_user)
+            st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+            st.cache_data.clear()
+
+        @with_database_session
+        def on_note_updated(payload: dict) -> None:
+            TestDefinitionNote.update_note(payload["id"], payload["text"])
+            td_id = payload["test_definition_id"]
+            st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+
+        @with_database_session
+        def on_note_deleted(payload: dict) -> None:
+            TestDefinitionNote.delete_note(payload["id"])
+            td_id = payload["test_definition_id"]
+            st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+            st.cache_data.clear()
+
+        def on_notes_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_NOTES_DIALOG_KEY, None)
 
         def on_export_all(*_) -> None:
             download_dialog(
@@ -428,6 +481,18 @@ class TestDefinitionsPage(Page):
                 file_content_func=get_excel_report_data,
                 args=(test_suite, table_group.table_group_schema, pd.DataFrame(records)),
             )
+
+        @with_database_session
+        def on_export_selected(payload: dict) -> None:
+            ids = payload.get("ids", [])
+            if ids:
+                data = get_test_definitions(test_suite)
+                data = data[data["id"].isin(ids)]
+                download_dialog(
+                    dialog_title="Download Excel Report",
+                    file_content_func=get_excel_report_data,
+                    args=(test_suite, table_group.table_group_schema, data),
+                )
 
         def on_filter_changed(filters: dict) -> None:
             Router().set_query_params({**filters, "page": "0"})
@@ -478,12 +543,14 @@ class TestDefinitionsPage(Page):
                     "can_edit": user_can_edit,
                     "can_disposition": user_can_disposition,
                 },
+                "validate_result": validate_result,
                 "add_dialog": add_dialog,
                 "edit_dialog": edit_dialog,
                 "delete_dialog": delete_dialog,
                 "unlock_dialog": unlock_dialog,
                 "copy_move_dialog": copy_move_dialog,
                 "run_tests_dialog": run_tests_data,
+                "notes_dialog": notes_dialog,
             },
             on_AddDialogOpened_change=on_add_dialog_opened,
             on_EditDialogOpened_change=on_edit_dialog_opened,
@@ -513,12 +580,44 @@ class TestDefinitionsPage(Page):
             on_GoToTestRunsClicked_change=on_go_to_test_runs,
             on_ExportAll_change=on_export_all,
             on_ExportFiltered_change=on_export_filtered,
+            on_ExportSelected_change=on_export_selected,
+            on_NotesClicked_change=on_notes_clicked,
+            on_NoteAdded_change=on_note_added,
+            on_NoteUpdated_change=on_note_updated,
+            on_NoteDeleted_change=on_note_deleted,
+            on_NotesDialogClosed_change=on_notes_dialog_closed,
             on_FilterChanged_change=on_filter_changed,
             on_PageChanged_change=on_page_changed,
             on_SortChanged_change=on_sort_changed,
         )
 
 
+def _load_notes_dialog_data(td_id_or_state, df: pd.DataFrame) -> dict:
+    """Build notes dialog data from a test definition ID or existing state dict."""
+    if isinstance(td_id_or_state, dict):
+        td_id = td_id_or_state.get("id")
+        test_label = {
+            "table": td_id_or_state.get("table_name", ""),
+            "column": td_id_or_state.get("column_name", ""),
+            "test": td_id_or_state.get("test_name_short", ""),
+        }
+    else:
+        td_id = td_id_or_state
+        row_df = df[df["id"] == str(td_id)]
+        if row_df.empty:
+            test_label = {"table": "", "column": "", "test": ""}
+        else:
+            row = row_df.iloc[0]
+            test_label = {"table": row["table_name"], "column": row["column_name"], "test": row["test_name_short"]}
+
+    current_user = session.auth.user.username if session.auth.user else "unknown"
+    notes = TestDefinitionNote.get_notes(td_id)
+    return {
+        "id": str(td_id),
+        "test_label": test_label,
+        "notes": notes,
+        "current_user": current_user,
+    }
 
 
 @with_database_session
@@ -572,7 +671,7 @@ def get_excel_report_data(
 def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
     query = f"""
     SELECT
-        tt.id, tt.test_type, tt.id as cat_test_id,
+        tt.id, tt.test_type,
         tt.test_name_short, tt.test_name_long, tt.test_description,
         tt.measure_uom, COALESCE(tt.measure_uom_description, '') as measure_uom_description,
         tt.default_parm_columns, tt.default_severity,
@@ -675,6 +774,12 @@ def get_test_definitions(
     df["test_active_display"] = df["test_active"].apply(lambda value: "Yes" if value else "No")
     df["lock_refresh_display"] = df["lock_refresh"].apply(lambda value: "Yes" if value else "No")
     df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+    if not df.empty:
+        notes_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in df["id"]])
+        df["notes_count"] = df["id"].map(notes_counts).fillna(0).astype(int)
+    else:
+        df["notes_count"] = pd.Series(dtype=int)
+
     df["urgency"] = df.apply(lambda row: row["severity"] or test_suite.severity or row["default_severity"], axis=1)
     df["final_test_description"] = df.apply(
         lambda row: row["test_description"] or row["default_test_description"], axis=1

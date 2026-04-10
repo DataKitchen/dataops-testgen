@@ -30,7 +30,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary
+from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
@@ -89,7 +89,7 @@ class DataProfilingPage(Page):
         # Build run profiling dialog data
         run_profiling_data = None
         if st.session_state.get(RUN_PROFILING_DIALOG_KEY):
-            table_groups_stats = TableGroup.select_stats(project_code=project_code)
+            table_groups_stats = get_table_group_stats(project_code=project_code)
             run_profiling_data = {
                 "open": st.session_state[RUN_PROFILING_DIALOG_OPEN_COUNT_KEY],
                 "title": "Run Profiling",
@@ -132,13 +132,13 @@ class DataProfilingPage(Page):
                 show_link = False
             st.session_state[RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
             if success and not show_link:
-                ProfilingRun.select_summary.clear()
+                get_profiling_run_summaries.clear()
                 st.session_state.pop(RUN_PROFILING_DIALOG_KEY, None)
                 st.session_state.pop(RUN_PROFILING_RESULT_KEY, None)
 
         def on_go_to_profiling_runs_clicked(tg_id: str) -> None:
             st.session_state.pop(RUN_PROFILING_RESULT_KEY, None)
-            Router().navigate(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
+            Router().queue_navigation(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
 
         def on_run_profiling_dialog_closed(*_) -> None:
             st.session_state.pop(RUN_PROFILING_DIALOG_KEY, None)

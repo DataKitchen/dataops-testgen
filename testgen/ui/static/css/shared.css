@@ -87,6 +87,7 @@ body {
 
     --table-hover-color: #ecf0f1;
     --table-selection-color: rgba(0,145,234,.28);
+    --table-header-background: var(--dk-card-background);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -132,6 +133,10 @@ body {
         --select-hover-background: rgb(38, 39, 48);
 
         --app-background-color: rgb(14, 17, 23);
+
+        --table-hover-color: rgb(38, 39, 48);
+        --table-selection-color: rgba(0,145,234,.28);
+        --table-header-background: var(--dk-card-background);
     }
 }
 
@@ -759,6 +764,10 @@ input::-ms-clear {
 
 .notifications--empty.tg-empty-state {
     margin-top: 0;
+}
+
+.display-table-cell {
+    display: table-cell !important;
 }
 
 /* Base Styles - Using standard system fonts for that Material feel */

@@ -13,8 +13,7 @@
  * @property {Array<Score>} scores
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { Input } from '/app/static/js/components/input.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Link } from '/app/static/js/components/link.js';
@@ -27,6 +26,7 @@ import { caseInsensitiveSort, caseInsensitiveIncludes } from '/app/static/js/dis
 const { div, span } = van.tags;
 
 const QualityDashboard = (/** @type {Properties} */ props) => {
+    const { emit } = props;
     loadStylesheet('quality-dashboard', stylesheet);
 
     const domId = 'score-dashboard-page';
@@ -65,13 +65,14 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                     filterTerm,
                     sortedBy,
                     getValue(props.project_summary),
+                    emit,
                 ),
                 () => getValue(scores).length
                     ? div(
                         { class: 'flex-row fx-flex-wrap fx-gap-4' },
                         getValue(scores).map(score => ScoreCard(
                             score,
-                            Link({
+                            Link({ emit, 
                                 label: 'View details',
                                 right_icon: 'chevron_right',
                                 href: 'quality-dashboard:score-details',
@@ -85,7 +86,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                         { class: 'mt-7 text-secondary', style: 'text-align: center;' },
                         'No scorecards found matching filters',
                     ),
-            ) : ConditionalEmptyState(getValue(props.project_summary)),
+            ) : ConditionalEmptyState(getValue(props.project_summary), emit),
     );
 };
 
@@ -93,7 +94,8 @@ const Toolbar = (
     options,
     /** @type {string} */ filterBy,
     /** @type {string} */ sortedBy,
-    /** @type ProjectSummary */ projectSummary
+    /** @type ProjectSummary */ projectSummary,
+    emit,
 ) => {
     const sortOptions = [
         { label: "Scorecard Name", value: "name" },
@@ -127,7 +129,7 @@ const Toolbar = (
             label: 'Score Explorer',
             color: 'primary',
             style: 'background: var(--button-generic-background-color); width: unset;',
-            onclick: () => emitEvent('LinkClicked', {
+            onclick: () => emit('LinkClicked', {
                 href: 'quality-dashboard:explorer',
                 params: { project_code: projectSummary.project_code },
                 testId: 'scorecards-goto-explorer',
@@ -139,13 +141,13 @@ const Toolbar = (
             tooltip: 'Refresh page data',
             tooltipPosition: 'left',
             style: 'background: var(--button-generic-background-color);',
-            onclick: () => emitEvent('RefreshData', {}),
+            onclick: () => emit('RefreshData', {}),
             testId: 'scorecards-refresh',
         }),
     );
 };
 
-const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
+const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary, emit) => {
     let args = {
         message: EMPTY_STATE_MESSAGE.score,
         link: {
@@ -175,7 +177,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
         };
     }
 
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'readiness_score',
         label: 'No scores yet',
         ...args,
@@ -190,8 +192,6 @@ export { QualityDashboard };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -199,6 +199,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, QualityDashboard(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

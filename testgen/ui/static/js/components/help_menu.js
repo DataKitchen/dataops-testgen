@@ -4,20 +4,20 @@
  * @property {string} edition
  * @property {string} current
  * @property {string} latest
- * 
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {string} page_help
  * @property {string} support_email
  * @property {Version} version
  * @property {Permissions} permissions
-*/
+ */
 import van from '../van.min.js';
-import { emitEvent, getRandomId, getValue, loadStylesheet } from '../utils.js';
+import { getRandomId, getValue, loadStylesheet } from '../utils.js';
 import { Icon } from './icon.js';
 
 const { a, div, span } = van.tags;
@@ -32,21 +32,40 @@ const trainingUrl = 'https://info.datakitchen.io/data-quality-training-and-certi
 const HelpMenu = (/** @type Properties */ props) => {
     loadStylesheet('help-menu', stylesheet);
 
+    const { emit } = props;
     const domId = `help-menu-${getRandomId()}`;
     const version = getValue(props.version) ?? {};
+
+    const HelpLink = (
+        /** @type string */ url,
+        /** @type string */ label,
+        /** @type string? */ icon,
+        /** @type string */ classes = 'help-item',
+    ) => {
+        return a(
+            {
+                class: classes,
+                href: url,
+                target: '_blank',
+                onclick: () => emit('ExternalLinkClicked'),
+            },
+            icon ? Icon({ classes: 'help-item-icon' }, icon) : null,
+            label,
+        );
+    };
 
     return div(
         { id: domId },
         div(
             { class: 'flex-column pt-3' },
-            getValue(props.help_topic) 
+            getValue(props.help_topic)
                 ? HelpLink(`${baseHelpUrl}${getValue(props.help_topic)}`, 'Help for this Page', 'description')
                 : null,
             HelpLink(baseHelpUrl, 'TestGen Help', 'help'),
             HelpLink(trainingUrl, 'Training Portal', 'school'),
             getValue(props.permissions)?.can_edit
                 ? div(
-                    { class: 'help-item', onclick: () => emitEvent('AppLogsClicked') },
+                    { class: 'help-item', onclick: () => emit('AppLogsClicked') },
                     Icon({ classes: 'help-item-icon' }, 'browse_activity'),
                     'Application Logs',
                 )
@@ -69,7 +88,7 @@ const HelpMenu = (/** @type Properties */ props) => {
                     version.current
                         ? HelpLink(`${baseHelpUrl}${releaseNotesTopic}`, `${version.edition} ${version.current}`, null, null)
                         : null,
-                    version.latest !== version.current 
+                    version.latest !== version.current
                         ? HelpLink(
                             `${baseHelpUrl}${upgradeTopic}`,
                             `New version available! ${version.latest}`,
@@ -80,24 +99,6 @@ const HelpMenu = (/** @type Properties */ props) => {
                 )
                 : null,
         ),
-    );
-}
-
-const HelpLink = (
-    /** @type string */ url,
-    /** @type string */ label,
-    /** @type string? */ icon,
-    /** @type string */ classes = 'help-item',
-) => {
-    return a(
-        {
-            class: classes,
-            href: url,
-            target: '_blank',
-            onclick: () => emitEvent('ExternalLinkClicked'),
-        },
-        icon ? Icon({ classes: 'help-item-icon' }, icon) : null,
-        label,
     );
 };
 

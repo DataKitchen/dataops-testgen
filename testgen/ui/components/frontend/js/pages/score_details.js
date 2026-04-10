@@ -27,8 +27,7 @@
  * @property {object?} notifications_dialog
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { ScoreCard } from '/app/static/js/components/score_card.js';
 import { ScoreHistory } from '/app/static/js/components/score_history.js';
 import { ScoreLegend } from '/app/static/js/components/score_legend.js';
@@ -42,6 +41,7 @@ import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 const { b, div, i } = van.tags;
 
 const ScoreDetails = (/** @type {Properties} */ props) => {
+    const { emit } = props;
     loadStylesheet('score-details', stylesheet);
 
     const deleteDialogOpen = van.state(false);
@@ -71,8 +71,8 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     const score = getValue(props.score);
                     return getValue(props.permissions)?.can_edit ?? false ? div(
                         { class: 'flex-row tg-test-suites--card-actions' },
-                        Button({ type: 'icon', icon: 'notifications', tooltip: 'Configure Notifications', onclick: () => emitEvent('EditNotifications', {}) }),
-                        Button({ type: 'icon', icon: 'edit', tooltip: 'Edit Scorecard', onclick: () => emitEvent('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id, project_code: score.project_code } }) }),
+                        Button({ type: 'icon', icon: 'notifications', tooltip: 'Configure Notifications', onclick: () => emit('EditNotifications', {}) }),
+                        Button({ type: 'icon', icon: 'edit', tooltip: 'Edit Scorecard', onclick: () => emit('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id, project_code: score.project_code } }) }),
                         Button({ type: 'icon', icon: 'delete', tooltip: 'Delete Scorecard', onclick: () => { deleteDialogOpen.val = true; } }),
                     ) : '';
                 },
@@ -81,7 +81,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 const score = getValue(props.score);
                 const history = getValue(props.score).history;
                 return history?.length > 0
-                    ? ScoreHistory({style: 'min-height: 216px; flex: 610px 0 1;', showRefresh: getValue(props.permissions)?.can_edit ?? false, score}, ...history)
+                    ? ScoreHistory({ emit, style: 'min-height: 216px; flex: 610px 0 1;', showRefresh: getValue(props.permissions)?.can_edit ?? false, score}, ...history)
                     : null;
             },
         ),
@@ -96,17 +96,19 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                     getValue(props.score_type),
                     getValue(props.category),
                     getValue(props.drilldown),
-                    (project_code, name, score_type, category) => emitEvent('LinkClicked', { href: 'quality-dashboard:score-details', params: { definition_id: getValue(props.score).id, project_code, score_type, category } }),
+                    (project_code, name, score_type, category) => emit('LinkClicked', { href: 'quality-dashboard:score-details', params: { definition_id: getValue(props.score).id, project_code, score_type, category } }),
+                    emit,
                 )
                 : ScoreBreakdown(
                     props.score,
                     props.breakdown,
                     props.category,
                     props.score_type,
-                    (project_code, name, score_type, category, drilldown) => emitEvent(
+                    (project_code, name, score_type, category, drilldown) => emit(
                         'LinkClicked',
                         { href: 'quality-dashboard:score-details', params: { definition_id: getValue(props.score).id, project_code, score_type, category, drilldown }
                     }),
+                    emit,
                 )
             );
         },
@@ -124,8 +126,10 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                         label: 'Delete',
                         color: 'warn',
                         type: 'flat',
+                        width: 'auto',
+                        style: 'margin-left: auto;',
                         onclick: () => {
-                            emitEvent('DeleteScoreConfirmed', { payload: getValue(props.score).id });
+                            emit('DeleteScoreConfirmed', { payload: getValue(props.score).id });
                             deleteDialogOpen.val = false;
                         },
                     }),
@@ -138,11 +142,11 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 open: notificationsDialogOpen,
                 onClose: () => {
                     notificationsDialogOpen.val = false;
-                    emitEvent('NotificationsDialogClosed', {})
+                    emit('NotificationsDialogClosed', {})
                 },
                 width: '65rem',
             },
-            NotificationSettings({
+            NotificationSettings({ emit, 
                 smtp_configured: smtpConfigured,
                 event: event,
                 items: items,
@@ -155,9 +159,9 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 result: result,
             }),
         ),
-        ProfilingResultsDialog({
+        ProfilingResultsDialog({ emit,
             profilingColumn: props.profiling_column,
-            onClose: () => emitEvent('ProfilingResultsDialogClosed', {}),
+            onClose: () => emit('ProfilingResultsDialogClosed', {}),
         }),
     );
 };
@@ -174,8 +178,6 @@ export { ScoreDetails };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -183,6 +185,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, ScoreDetails(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -194,6 +197,5 @@ export default (component) => {
 
     return () => {
         parentElement.state = null;
-        Streamlit.disableV2(setTriggerValue);
     };
 };

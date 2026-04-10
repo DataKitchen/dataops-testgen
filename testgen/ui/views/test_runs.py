@@ -131,8 +131,10 @@ class TestRunsPage(Page):
                 st.session_state.pop(TR_RUN_TESTS_RESULT_KEY, None)
 
         def on_go_to_test_runs(payload: dict) -> None:
+            st.session_state.pop(TR_RUN_TESTS_DIALOG_KEY, None)
             st.session_state.pop(TR_RUN_TESTS_RESULT_KEY, None)
-            Router().navigate(to="test-runs", with_args=payload)
+            st.cache_data.clear()
+            Router().queue_navigation(to="test-runs", with_args=payload)
 
         def on_run_tests_dialog_closed(*_) -> None:
             st.session_state.pop(TR_RUN_TESTS_DIALOG_KEY, None)

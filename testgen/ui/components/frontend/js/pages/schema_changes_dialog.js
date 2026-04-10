@@ -9,11 +9,12 @@
 import van from '/app/static/js/van.min.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { SchemaChangesList } from '/app/static/js/components/schema_changes_list.js';
-import { emitEvent, getValue } from '/app/static/js/utils.js';
+import { getValue } from '/app/static/js/utils.js';
 
 const { div } = van.tags;
 
 const SchemaChangesDialog = (/** @type Properties */ props) => {
+    const emit = props.emit;
     const dialogOpen = van.state(false);
     van.derive(() => {
         const d = getValue(props.dialog);
@@ -42,7 +43,7 @@ const SchemaChangesDialog = (/** @type Properties */ props) => {
         {
             title: dialogTitle,
             open: dialogOpen,
-            onClose: () => { dialogOpen.val = false; emitEvent('CloseSchemaChangesDialog', {}); },
+            onClose: () => { dialogOpen.val = false; emit('CloseSchemaChangesDialog', {}); },
             width: '30rem',
         },
         contentContainer,

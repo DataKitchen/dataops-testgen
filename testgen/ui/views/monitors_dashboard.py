@@ -8,7 +8,7 @@ import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
@@ -25,6 +25,7 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 from testgen.ui.services.query_cache import get_project_summary, get_test_type_summaries
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
@@ -649,10 +650,12 @@ def build_edit_monitor_settings_data(
             updated_table_group = TableGroup.get(table_group.id)
             updated_table_group.monitor_test_suite_id = monitor_suite.id
             updated_table_group.save()
+            # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+            get_current_session().commit()
             run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
 
         st.session_state.pop(EDIT_MONITOR_SETTINGS_DIALOG_KEY, None)
-        st.rerun()
+        safe_rerun()
 
     data = {
         "table_group": table_group.to_dict(json_safe=True),
@@ -1083,10 +1086,10 @@ def build_edit_table_monitors_data(
 
         if should_close():
             st.session_state.pop(EDIT_TABLE_MONITORS_DIALOG_KEY, None)
-            st.rerun()
+            safe_rerun()
 
         set_result({"success": True, "timestamp": datetime.now(UTC).isoformat()})
-        st.rerun()
+        safe_rerun()
 
     metric_test_types = get_test_type_summaries(test_type="Metric_Trend")
     metric_test_type = metric_test_types[0] if metric_test_types else None

@@ -28,11 +28,12 @@ import { Alert } from '/app/static/js/components/alert.js';
 import { Code } from '/app/static/js/components/code.js';
 import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { Select } from '/app/static/js/components/select.js';
-import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 
 const { div, span, strong } = van.tags;
 
 const GenerateTestsDialog = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('generate-tests-dialog', stylesheet);
 
     const dialogProp = getValue(props.dialog);
@@ -46,7 +47,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const handleClose = () => {
         dialogOpen.val = false;
         if (typeof props.onClose === 'function') props.onClose();
-        else emitEvent('CloseClicked', {});
+        else emit('CloseClicked', {});
     };
 
     const testSuiteId = getValue(props.test_suite_id);
@@ -96,7 +97,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                                     type: 'stroked',
                                     label: 'Lock Edited Tests',
                                     width: 'auto',
-                                    onclick: () => emitEvent('LockEditedTests', {}),
+                                    onclick: () => emit('LockEditedTests', {}),
                                 });
                         },
                     )
@@ -130,7 +131,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     color: 'primary',
                     width: 'auto',
                     style: 'width: auto;',
-                    onclick: () => emitEvent('GenerateTestsConfirmed', {
+                    onclick: () => emit('GenerateTestsConfirmed', {
                         payload: {
                             test_suite_id: testSuiteId,
                             generation_set: selectedSet.val,

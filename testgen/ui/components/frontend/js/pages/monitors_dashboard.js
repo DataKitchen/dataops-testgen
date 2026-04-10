@@ -81,8 +81,7 @@
  * @property {object?} schema_changes_dialog
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { formatDuration, formatTimestamp, humanReadableDuration, formatNumber, viewPortUnitsToPixels } from '/app/static/js/display_utils.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Select } from '/app/static/js/components/select.js';
@@ -104,6 +103,7 @@ const { div, i, span, b } = van.tags;
 const SHOW_CHANGES_COLUMNS_KEY = 'testgen__monitors__showchanges';
 
 const MonitorsDashboard = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('monitors-dashboard', stylesheet);
 
     let renderTime = new Date();
@@ -115,7 +115,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         return {
             field: sort?.sort_field,
             order: sort?.sort_order,
-            onSortChange: (sort) => emitEvent('SetParamValues', { payload: { sort_field: sort.field ?? null, sort_order: sort.order ?? null } }),
+            onSortChange: (sort) => emit('SetParamValues', { payload: { sort_field: sort.field ?? null, sort_order: sort.order ?? null } }),
         };
     });
     const showChangesColumns = van.state(Boolean(window.localStorage?.getItem(SHOW_CHANGES_COLUMNS_KEY) === '1'));
@@ -129,7 +129,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             currentPageIdx: result.current_page,
             itemsPerPage: result.items_per_page,
             totalItems: result.total_count,
-            onPageChange: (page, pageSize) => emitEvent('SetParamValues', { payload: { current_page: page, items_per_page: pageSize } }),
+            onPageChange: (page, pageSize) => emit('SetParamValues', { payload: { current_page: page, items_per_page: pageSize } }),
             leftContent: div(
                 { class: 'ml-2' },
                 Checkbox({
@@ -143,10 +143,10 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
     });
     const autoOpenTable = getValue(props.auto_open_table);
     if (autoOpenTable) {
-        setTimeout(() => emitEvent('OpenMonitoringTrends', { payload: { table_name: autoOpenTable } }), 0);
+        setTimeout(() => emit('OpenMonitoringTrends', { payload: { table_name: autoOpenTable } }), 0);
     }
 
-    const openChartsDialog = (monitor) => emitEvent('OpenMonitoringTrends', { payload: { table_name: monitor.table_name }});
+    const openChartsDialog = (monitor) => emit('OpenMonitoringTrends', { payload: { table_name: monitor.table_name }});
 
     const deleteDialogOpen = van.state(false);
     const deleteConfirmed = van.state(false);
@@ -213,7 +213,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 class: 'flex-row fx-gap-1 schema-changes',
                                 onclick: () => {
                                     const summary = getValue(props.summary);
-                                    emitEvent('OpenSchemaChanges', { payload: { 
+                                    emit('OpenSchemaChanges', { payload: { 
                                         table_name: monitor.table_name,
                                         start_time: summary?.lookback_start,
                                         end_time: summary?.lookback_end,
@@ -278,7 +278,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             tooltip: 'Edit table monitors',
                             tooltipPosition: 'top-left',
                             style: 'color: var(--secondary-text-color);',
-                            onclick: () => emitEvent('EditTableMonitors', { payload: { table_name: monitor.table_name }}),
+                            onclick: () => emit('EditTableMonitors', { payload: { table_name: monitor.table_name }}),
                         })
                         : null,
                 ),
@@ -308,17 +308,17 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     allowNull: false,
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
-                    onChange: (value) => emitEvent('SetParamValues', {payload: {table_group_id: value, table_name: null}}),
+                    onChange: (value) => emit('SetParamValues', {payload: {table_group_id: value, table_name: null}}),
                 }),
                 () => getValue(props.has_monitor_test_suite)
                     ? AnomaliesSummary(getValue(props.summary), 'Total anomalies', {
                         onTagClick: (type) => {
                             const current = anomalyTypeFilterValue.val;
                             const newFilter = current.length === 1 && current[0] === type ? null : type;
-                            emitEvent('SetParamValues', { payload: { anomaly_type_filter: newFilter, current_page: 0 } });
+                            emit('SetParamValues', { payload: { anomaly_type_filter: newFilter, current_page: 0 } });
                         },
                         activeTypes: anomalyTypeFilterValue,
-                    })
+                    }, emit)
                     : '',
                 () => getValue(props.has_monitor_test_suite) && userCanEdit
                     ? div(
@@ -330,7 +330,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             color: 'basic',
                             type: 'stroked',
                             style: 'background: var(--button-generic-background-color);', 
-                            onclick: () => emitEvent('EditNotifications', {}),
+                            onclick: () => emit('EditNotifications', {}),
                         }),
                         Button({
                             icon: 'settings',
@@ -339,7 +339,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             color: 'basic',
                             type: 'stroked',
                             style: 'background: var(--button-generic-background-color);', 
-                            onclick: () => emitEvent('EditMonitorSettings', {}),
+                            onclick: () => emit('EditMonitorSettings', {}),
                         }),
                         Button({
                             icon: 'delete',
@@ -358,6 +358,8 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             ),
             () => getValue(props.has_monitor_test_suite) ? Table(
                 {
+                    emit,
+                    class: 'monitors-table',
                     header: () => div(
                         {class: 'flex-row fx-align-flex-end fx-gap-3 p-4 pt-2 pb-2'},
                         Input({
@@ -370,7 +372,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             icon: 'search',
                             testId: 'search-tables',
                             value: tableNameFilterValue,
-                            onChange: (value, state) => emitEvent('SetParamValues', {payload: {table_name_filter: value, current_page: 0}}),
+                            onChange: (value, state) => emit('SetParamValues', {payload: {table_name_filter: value, current_page: 0}}),
                         }),
                         Select({
                             label: 'Anomaly type',
@@ -383,7 +385,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             ],
                             multiSelect: true,
                             width: 200,
-                            onChange: (values) => emitEvent('SetParamValues', {
+                            onChange: (values) => emit('SetParamValues', {
                                 payload: { anomaly_type_filter: values.length ? values.join(',') : null, current_page: 0 },
                             }),
                         }),
@@ -475,7 +477,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                 },
                 tableRows,
             )
-            : ConditionalEmptyState(projectSummary, userCanEdit),
+            : ConditionalEmptyState(projectSummary, userCanEdit, emit),
             Dialog(
                 { title: 'Delete Monitors', open: deleteDialogOpen, onClose: () => { deleteDialogOpen.val = false; } },
                 div(
@@ -491,18 +493,20 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         { class: 'flex-row fx-justify-flex-end' },
                         () => Button({
                             label: 'Delete',
-                            color: 'warn',
-                            type: 'flat',
+                            color: deleteConfirmed.val ? 'warn' : 'basic',
+                            type: deleteConfirmed.val ? 'flat' : 'stroked',
+                            width: 'auto',
+                            style: 'margin-left: auto;',
                             disabled: !deleteConfirmed.val,
                             onclick: () => {
-                                emitEvent('DeleteMonitorSuiteConfirmed', {});
+                                emit('DeleteMonitorSuiteConfirmed', {});
                                 deleteDialogOpen.val = false;
                             },
                         }),
                     ),
                 ),
             ),
-        NotificationSettings({
+        NotificationSettings({ emit,
             dialog: van.derive(() => ({ title: getValue(props.notifications_dialog)?.title ?? 'Notifications', open: notificationsDialogOpen })),
             smtp_configured: van.derive(() => getValue(props.notifications_dialog)?.smtp_configured ?? false),
             event: van.derive(() => getValue(props.notifications_dialog)?.event),
@@ -512,16 +516,16 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             scope_options: van.derive(() => getValue(props.notifications_dialog)?.scope_options ?? []),
             trigger_options: van.derive(() => getValue(props.notifications_dialog)?.trigger_options ?? []),
             result: van.derive(() => getValue(props.notifications_dialog)?.result),
-            onClose: () => emitEvent('NotificationsDialogClosed', {}),
+            onClose: () => emit('NotificationsDialogClosed', {}),
         }),
-        EditMonitorSettings({
+        EditMonitorSettings({ emit, 
             table_group: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.table_group),
             schedule: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.schedule),
             monitor_suite: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.monitor_suite),
             cron_sample: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.cron_sample),
             dialog: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.dialog),
         }),
-        TableMonitoringTrend({
+        TableMonitoringTrend({ emit, 
             freshness_events: van.derive(() => getValue(props.trends_dialog)?.freshness_events ?? []),
             volume_events: van.derive(() => getValue(props.trends_dialog)?.volume_events ?? []),
             schema_events: van.derive(() => getValue(props.trends_dialog)?.schema_events ?? []),
@@ -531,21 +535,21 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             extended_history: van.derive(() => getValue(props.trends_dialog)?.extended_history),
             dialog: van.derive(() => getValue(props.trends_dialog)?.dialog),
         }),
-        EditTableMonitors({
+        EditTableMonitors({ emit, 
             table_name: van.derive(() => getValue(props.edit_table_monitors_dialog)?.table_name),
             definitions: van.derive(() => getValue(props.edit_table_monitors_dialog)?.definitions ?? []),
             metric_test_type: van.derive(() => getValue(props.edit_table_monitors_dialog)?.metric_test_type),
             result: van.derive(() => getValue(props.edit_table_monitors_dialog)?.result),
             dialog: van.derive(() => getValue(props.edit_table_monitors_dialog)?.dialog),
         }),
-        SchemaChangesDialog({
+        SchemaChangesDialog({ emit, 
             window_start: van.derive(() => getValue(props.schema_changes_dialog)?.window_start),
             window_end: van.derive(() => getValue(props.schema_changes_dialog)?.window_end),
             data_structure_logs: van.derive(() => getValue(props.schema_changes_dialog)?.data_structure_logs),
             dialog: van.derive(() => getValue(props.schema_changes_dialog)?.dialog),
         }),
         )
-        : ConditionalEmptyState(projectSummary, userCanEdit);
+        : ConditionalEmptyState(projectSummary, userCanEdit, emit);
 }
 
 /**
@@ -605,7 +609,7 @@ const AnomalyTag = (anomalies, errorMessage = null, isTraining = false, isPendin
  * @param {ProjectSummary} projectSummary
  * @param {boolean} userCanEdit
  */
-const ConditionalEmptyState = (projectSummary, userCanEdit) => {
+const ConditionalEmptyState = (projectSummary, userCanEdit, emit) => {
     let args = {
         label: 'No monitors yet for table group',
         message: EMPTY_STATE_MESSAGE.monitors,
@@ -616,7 +620,7 @@ const ConditionalEmptyState = (projectSummary, userCanEdit) => {
             color: 'primary',
             style: 'width: unset;',
             disabled: !userCanEdit,
-            onclick: () => emitEvent('EditMonitorSettings', {}),
+            onclick: () => emit('EditMonitorSettings', {}),
         }),
     }
     if (projectSummary.connection_count <= 0) {
@@ -644,7 +648,7 @@ const ConditionalEmptyState = (projectSummary, userCanEdit) => {
         };
     }
     
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'apps_outage',
         ...args,
     });
@@ -664,30 +668,30 @@ stylesheet.replace(`
     display: none;
 }
 
-th.tg-table-column.action span {
+.monitors-table th.tg-table-column.action span {
     white-space: pre-line;
     text-transform: none;
 }
 
-.tg-table-column.table_name,
-.tg-table-column.freshness_anomalies,
-.tg-table-column.latest_update,
-.tg-table-cell.table_name,
-.tg-table-cell.freshness_anomalies,
-.tg-table-cell.latest_update {
+.monitors-table .tg-table-column.table_name,
+.monitors-table .tg-table-column.freshness_anomalies,
+.monitors-table .tg-table-column.latest_update,
+.monitors-table .tg-table-cell.table_name,
+.monitors-table .tg-table-cell.freshness_anomalies,
+.monitors-table .tg-table-cell.latest_update {
     padding-left: 16px !important;
 }
 
-.tg-table-column.table_name,
-.tg-table-column.metric_anomalies,
-.tg-table-column.schema_changes,
-.tg-table-cell.table_name,
-.tg-table-cell.metric_anomalies,
-.tg-table-cell.schema_changes {
+.monitors-table .tg-table-column.table_name,
+.monitors-table .tg-table-column.metric_anomalies,
+.monitors-table .tg-table-column.schema_changes,
+.monitors-table .tg-table-cell.table_name,
+.monitors-table .tg-table-cell.metric_anomalies,
+.monitors-table .tg-table-cell.schema_changes {
     border-right: 1px dashed var(--border-color);
 }
 
-.tg-table-cell.schema_changes {
+.monitors-table .tg-table-cell.schema_changes {
     padding-right: 0;
     padding-left: 0;
 }
@@ -727,8 +731,6 @@ export { MonitorsDashboard };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -736,6 +738,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, MonitorsDashboard(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

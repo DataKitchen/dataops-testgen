@@ -88,16 +88,18 @@ const ApplicationLogsDialog = (props) => {
                             oninput: (e) => { filterText.val = e.target.value; },
                         }),
                     ),
-                    Button({
-                        label: 'Refresh',
-                        type: 'stroked',
-                        onclick: () => props.onRefresh?.(),
-                    }),
+                    div(
+                        Button({
+                            label: 'Refresh',
+                            type: 'stroked',
+                            onclick: () => props.onRefresh?.(),
+                        }),
+                    ),
                 ),
                 small({ class: 'text-caption' }, () => `Log File: ${d.log_file_name || 'N/A'}`),
                 pre({ class: 'tg-logs--content' }, () => filteredContent.val || 'No log data available.'),
                 div(
-                    { class: 'flex-row fx-justify-flex-end' },
+                    { style: 'margin-left: auto' },
                     Button({
                         label: 'Download',
                         icon: 'download',
@@ -117,11 +119,11 @@ stylesheet.replace(`
     border: 1px solid var(--border-color);
     border-radius: 4px;
     font-size: 14px;
-    background: var(--surface-color, #fff);
+    background: var(--dk-card-background);
     color: var(--primary-text-color);
 }
 .tg-logs--content {
-    background: var(--surface-variant-color, #f5f5f5);
+    background: var(--app-background-color);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     padding: 12px;

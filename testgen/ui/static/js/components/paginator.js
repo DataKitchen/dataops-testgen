@@ -9,11 +9,12 @@
  */
 
 import van from '../van.min.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, span, i, button } = van.tags;
 
 const Paginator = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('paginator', stylesheet);
 
     const { count, pageSize } = props;
@@ -76,7 +77,7 @@ const Paginator = (/** @type Properties */ props) => {
 };
 
 function changePage(/** @type number */ page_index) {
-    emitEvent('PageChanged', { page_index })
+    emit('PageChanged', { page_index })
 }
 
 const stylesheet = new CSSStyleSheet();

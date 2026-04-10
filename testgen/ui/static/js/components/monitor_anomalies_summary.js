@@ -27,7 +27,7 @@
  * @property {function(string)?} onTagClick
  * @property {object?} activeTypes
  */
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import { formatDuration, humanReadableDuration } from '../display_utils.js';
 import { withTooltip } from './tooltip.js';
 import van from '../van.min.js';
@@ -39,7 +39,7 @@ const { a, div, i, span } = van.tags;
  * @param {string?} label
  * @param {SummaryOptions?} options
  */
-const AnomaliesSummary = (summary, label = 'Anomalies', options = {}) => {
+const AnomaliesSummary = (summary, label = 'Anomalies', options = {}, emit) => {
     loadStylesheet('anomalies-summary', summaryStylesheet);
 
     if (!summary.lookback) {
@@ -104,7 +104,7 @@ const AnomaliesSummary = (summary, label = 'Anomalies', options = {}) => {
                 onclick: summary.table_group_id ? (event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    emitEvent('LinkClicked', { href: 'monitors', params: {project_code: summary.project_code, table_group_id: summary.table_group_id} });
+                    emit('LinkClicked', { href: 'monitors', params: {project_code: summary.project_code, table_group_id: summary.table_group_id} });
                 }: null,
             },
             labelElement,

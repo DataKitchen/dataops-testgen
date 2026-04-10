@@ -24,8 +24,7 @@
  * @property {TestDefinition} test_definition
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
 
@@ -36,6 +35,7 @@ const { div, strong } = van.tags;
  * @returns 
  */
 const TestDefinitionSummary = (props) => {
+    const { emit } = props;
     loadStylesheet('test-definition-summary', stylesheet)
 
     const wrapperId = 'test-definition-summary';
@@ -139,8 +139,6 @@ export { TestDefinitionSummary };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -148,6 +146,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TestDefinitionSummary(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

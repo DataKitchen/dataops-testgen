@@ -19,8 +19,7 @@
  * @property {object?} notifications_dialog
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { formatTimestamp, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -36,12 +35,14 @@ import { ScheduleList } from '/app/static/js/components/schedule_list.js';
 import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Toggle } from '/app/static/js/components/toggle.js';
+import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Input } from '/app/static/js/components/input.js';
 import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 
 const { b, div, h4, pre, small, span, i } = van.tags;
 
 const TestSuites = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('testsuites', stylesheet);
 
     const userCanEdit = getValue(props.permissions).can_edit;
@@ -56,12 +57,14 @@ const TestSuites = (/** @type Properties */ props) => {
     const closeDeleteDialog = () => {
         deleteDialogOpen.val = false;
         confirmCascadeDelete.val = false;
-        emitEvent('DeleteDialogDismissed', {});
+        emit('DeleteDialogDismissed', {});
     };
 
     // Observability export dialog state (pure JS, no Python round-trip needed)
     const exportDialogOpen = van.state(false);
     const exportTestSuite = van.state(null);
+    let runTestsNode = null;
+    const runTestsResult = van.state(null);
 
     // Add/Edit test suite form dialog state (driven by Python prop)
     const formDialogInfo = van.derive(() => getValue(props.form_dialog) ?? null);
@@ -97,7 +100,7 @@ const TestSuites = (/** @type Properties */ props) => {
 
     const closeFormDialog = () => {
         formDialogOpen.val = false;
-        emitEvent('FormDialogClosed', {});
+        emit('FormDialogClosed', {});
     };
 
     const scheduleDialogOpen = van.state(false);
@@ -106,17 +109,8 @@ const TestSuites = (/** @type Properties */ props) => {
     const notificationsDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.notifications_dialog)?.open === true) notificationsDialogOpen.val = true; });
 
-    // Page-level result message (replaces st.toast)
-    const pageResult = van.derive(() => getValue(props.page_result) ?? null);
-
     return div(
         { id: wrapperId, 'data-testid': 'test-suites', style: 'overflow-y: auto;' },
-        () => {
-            const result = pageResult.val;
-            return result
-                ? Alert({ type: result.success ? 'success' : 'error', style: 'margin-bottom: 16px;' }, result.message)
-                : '';
-        },
         () => {
             const projectSummary = getValue(props.project_summary);
             return projectSummary.test_suite_count > 0
@@ -130,7 +124,7 @@ const TestSuites = (/** @type Properties */ props) => {
 
                     van.derive(() => {
                         if (selectedTableGroup.val !== initialTableGroup || testSuiteNameFilter.val !== initialTestSuiteName) {
-                            emitEvent('FilterApplied', { payload: { table_group_id: selectedTableGroup.val, test_suite_name: testSuiteNameFilter.val } });
+                            emit('FilterApplied', { payload: { table_group_id: selectedTableGroup.val, test_suite_name: testSuiteNameFilter.val } });
                         }
                     });
 
@@ -168,7 +162,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 tooltipPosition: 'bottom',
                                 width: 'fit-content',
                                 style: 'background: var(--button-generic-background-color);',
-                                onclick: () => emitEvent('RunNotificationsClicked', {}),
+                                onclick: () => emit('RunNotificationsClicked', {}),
                             }),
                             Button({
                                 icon: 'today',
@@ -178,7 +172,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 tooltipPosition: 'bottom',
                                 width: 'fit-content',
                                 style: 'background: var(--button-generic-background-color);',
-                                onclick: () => emitEvent('RunSchedulesClicked', {}),
+                                onclick: () => emit('RunSchedulesClicked', {}),
                             }),
                             userCanEdit
                                 ? Button({
@@ -187,7 +181,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                     label: 'Add Test Suite',
                                     width: 'fit-content',
                                     style: 'background: var(--button-generic-background-color);',
-                                    onclick: () => emitEvent('AddTestSuiteClicked', {}),
+                                    onclick: () => emit('AddTestSuiteClicked', {}),
                                 })
                                 : '',
                         ),
@@ -227,14 +221,14 @@ const TestSuites = (/** @type Properties */ props) => {
                                         type: 'icon',
                                         icon: 'edit',
                                         tooltip: 'Edit test suite',
-                                        onclick: () => emitEvent('EditActionClicked', {payload: testSuite.id}),
+                                        onclick: () => emit('EditActionClicked', {payload: testSuite.id}),
                                     }),
                                     Button({
                                         type: 'icon',
                                         icon: 'delete',
                                         tooltip: 'Delete test suite',
                                         tooltipPosition: 'left',
-                                        onclick: () => emitEvent('DeleteActionClicked', {payload: testSuite.id}),
+                                        onclick: () => emit('DeleteActionClicked', {payload: testSuite.id}),
                                     }),
                                 ]
                                 : ''
@@ -243,7 +237,7 @@ const TestSuites = (/** @type Properties */ props) => {
                             { class: 'flex-row fx-justify-space-between fx-flex-align-content' },
                             div(
                                 { class: 'flex-column' },
-                                Link({
+                                Link({ emit, 
                                     href: 'test-suites:definitions',
                                     params: { test_suite_id: testSuite.id, project_code: projectSummary.project_code },
                                     label: `View ${testSuite.test_ct ?? 0} test definitions`,
@@ -259,7 +253,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                 Caption({ content: 'Latest Run', style: 'margin-bottom: 2px;' }),
                                 testSuite.latest_run_start
                                     ? [
-                                        Link({
+                                        Link({ emit, 
                                             href: 'test-runs:results',
                                             params: { run_id: testSuite.latest_run_id, project_code: projectSummary.project_code },
                                             label: formatTimestamp(testSuite.latest_run_start),
@@ -290,7 +284,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         type: 'stroked',
                                         style: 'min-width: 180px;',
                                         disabled: !parseInt(testSuite.test_ct),
-                                        onclick: () => emitEvent('RunTestsClicked', {payload: testSuite.id}),
+                                        onclick: () => emit('RunTestsClicked', {payload: testSuite.id}),
                                     }),
                                     Button({
                                         label: parseInt(testSuite.test_ct) ? 'Regenerate Tests' : 'Generate Tests',
@@ -298,7 +292,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         type: 'stroked',
                                         style: 'margin-top: 16px; min-width: 180px;',
                                         disabled: !testSuite.last_complete_profile_run_id,
-                                        onclick: () => emitEvent('GenerateTestsClicked', {payload: testSuite.id}),
+                                        onclick: () => emit('GenerateTestsClicked', {payload: testSuite.id}),
                                     }),
                                 ]
                                 : ''
@@ -311,7 +305,7 @@ const TestSuites = (/** @type Properties */ props) => {
                     'No test suites found matching filters',
                 ),
             )
-            : ConditionalEmptyState(projectSummary, userCanEdit);
+            : ConditionalEmptyState(projectSummary, userCanEdit, emit);
         },
         // Delete test suite dialog (driven by Python prop for is_in_use data)
         () => {
@@ -346,10 +340,11 @@ const TestSuites = (/** @type Properties */ props) => {
                             type: deleteDisabled.val ? 'stroked' : 'flat',
                             color: deleteDisabled.val ? 'basic' : 'warn',
                             label: 'Delete',
-                            style: 'width: auto;',
+                            width: 'auto',
+                            style: 'margin-left: auto;',
                             disabled: deleteDisabled,
                             onclick: () => {
-                                emitEvent('DeleteTestSuiteConfirmed', { payload: info.test_suite_id });
+                                emit('DeleteTestSuiteConfirmed', { payload: info.test_suite_id });
                                 closeDeleteDialog();
                             },
                         }),
@@ -420,13 +415,13 @@ const TestSuites = (/** @type Properties */ props) => {
                     ),
                     div(
                         { class: 'flex-row fx-gap-4' },
-                        Toggle({
+                        Checkbox({
                             name: 'export-to-observability',
                             label: 'Export to Observability',
                             checked: formState.exportToObservability,
                             onChange: (value) => { formState.exportToObservability.val = value; },
                         }),
-                        Toggle({
+                        Checkbox({
                             name: 'dq-score-exclude',
                             label: 'Exclude from quality scoring',
                             checked: formState.dqScoreExclude,
@@ -471,12 +466,12 @@ const TestSuites = (/** @type Properties */ props) => {
                     div(
                         { class: 'flex-row fx-justify-content-flex-end' },
                         Button({
-                            type: 'stroked',
+                            type: 'flat',
                             color: 'primary',
                             label: isEdit ? 'Save' : 'Add',
                             width: 'auto',
                             style: 'width: auto;',
-                            onclick: () => emitEvent('SaveTestSuiteForm', {
+                            onclick: () => emit('SaveTestSuiteForm', {
                                 payload: {
                                     mode: info.mode,
                                     test_suite_id: info.test_suite_id ?? null,
@@ -526,7 +521,7 @@ const TestSuites = (/** @type Properties */ props) => {
                             label: 'Start',
                             style: 'width: auto;',
                             onclick: () => {
-                                emitEvent('ExportActionClicked', { payload: ts.id });
+                                emit('ExportActionClicked', { payload: ts.id });
                                 exportDialogOpen.val = false;
                             },
                         }),
@@ -536,32 +531,59 @@ const TestSuites = (/** @type Properties */ props) => {
         },
         () => {
             const info = getValue(props.run_tests_dialog);
-            if (!info) return div();
-            return RunTestsDialog({
+            if (!info) { runTestsNode = null; runTestsResult.val = null; return div(); }
+            runTestsResult.val = info.result ?? null;
+            return (runTestsNode ??= RunTestsDialog({ emit,
                 dialog: { title: info.title ?? 'Run Tests', open: true },
                 project_code: info.project_code,
                 test_suites: info.test_suites ?? [],
                 default_test_suite_id: info.default_test_suite_id,
-                result: info.result,
-                onClose: () => emitEvent('RunTestsDialogClosed', {}),
-            });
+                result: runTestsResult,
+                onClose: () => emit('RunTestsDialogClosed', {}),
+            }));
         },
-        () => {
-            const info = getValue(props.generate_tests_dialog);
-            if (!info) return div();
-            return GenerateTestsDialog({
-                dialog: { title: info.title ?? 'Generate Tests', open: true },
-                test_suite_id: info.test_suite_id,
-                test_suite_name: info.test_suite_name,
-                generation_sets: info.generation_sets ?? [],
-                default_generation_set: info.default_generation_set,
-                refresh_warning: info.refresh_warning,
-                lock_result: info.lock_result,
-                result: info.result,
-                onClose: () => emitEvent('GenerateTestsDialogClosed', {}),
-            });
-        },
-        ScheduleList({
+        // Cache the dialog element so Streamlit reruns don't recreate it
+        // and reset user selections (e.g. generation set dropdown).
+        (() => {
+            let _dialog = null;
+            let _dialogId = null;
+            const _dialogProps = {
+                refresh_warning: van.state(null),
+                lock_result: van.state(null),
+                result: van.state(null),
+            };
+            return () => {
+                const info = getValue(props.generate_tests_dialog);
+                if (!info) { _dialog = null; _dialogId = null; return div(); }
+
+                // Rebuild only when the dialog is for a different test suite
+                if (!_dialog || _dialogId !== info.test_suite_id) {
+                    _dialogId = info.test_suite_id;
+                    _dialogProps.refresh_warning.val = info.refresh_warning;
+                    _dialogProps.lock_result.val = info.lock_result;
+                    _dialogProps.result.val = info.result;
+                    _dialog = GenerateTestsDialog({ emit,
+                        dialog: { title: info.title ?? 'Generate Tests', open: true },
+                        test_suite_id: info.test_suite_id,
+                        test_suite_name: info.test_suite_name,
+                        generation_sets: info.generation_sets ?? [],
+                        default_generation_set: info.default_generation_set,
+                        refresh_warning: _dialogProps.refresh_warning,
+                        lock_result: _dialogProps.lock_result,
+                        result: _dialogProps.result,
+                        onClose: () => emit('GenerateTestsDialogClosed', {}),
+                    });
+                } else {
+                    // Update dynamic props without recreating the dialog
+                    _dialogProps.refresh_warning.val = info.refresh_warning;
+                    _dialogProps.lock_result.val = info.lock_result;
+                    _dialogProps.result.val = info.result;
+                }
+
+                return _dialog;
+            };
+        })(),
+        ScheduleList({ emit,
             dialog: van.derive(() => ({
                 title: getValue(props.schedule_dialog)?.title ?? 'Schedules',
                 open: scheduleDialogOpen,
@@ -572,9 +594,9 @@ const TestSuites = (/** @type Properties */ props) => {
             arg_values: van.derive(() => getValue(props.schedule_dialog)?.arg_values ?? []),
             sample: van.derive(() => getValue(props.schedule_dialog)?.sample),
             results: van.derive(() => getValue(props.schedule_dialog)?.results),
-            onClose: () => emitEvent('ScheduleDialogClosed', {}),
+            onClose: () => emit('ScheduleDialogClosed', {}),
         }),
-        NotificationSettings({
+        NotificationSettings({ emit,
             dialog: van.derive(() => ({
                 title: getValue(props.notifications_dialog)?.title ?? 'Notifications',
                 open: notificationsDialogOpen,
@@ -589,7 +611,7 @@ const TestSuites = (/** @type Properties */ props) => {
             cde_enabled: van.derive(() => getValue(props.notifications_dialog)?.cde_enabled ?? false),
             total_enabled: van.derive(() => getValue(props.notifications_dialog)?.total_enabled ?? false),
             result: van.derive(() => getValue(props.notifications_dialog)?.result),
-            onClose: () => emitEvent('NotificationsDialogClosed', {}),
+            onClose: () => emit('NotificationsDialogClosed', {}),
         }),
     );
 };
@@ -597,6 +619,7 @@ const TestSuites = (/** @type Properties */ props) => {
 const ConditionalEmptyState = (
     /** @type ProjectSummary */ projectSummary,
     /** @type boolean */ userCanEdit,
+    emit,
 ) => {
     let args = {
         message: EMPTY_STATE_MESSAGE.testSuite,
@@ -610,7 +633,7 @@ const ConditionalEmptyState = (
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',
-            onclick: () => emitEvent('AddTestSuiteClicked', {}),
+            onclick: () => emit('AddTestSuiteClicked', {}),
         }),
     };
 
@@ -634,7 +657,7 @@ const ConditionalEmptyState = (
         };
     }
 
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'rule',
         label: 'No test suites yet',
         ...args,
@@ -676,8 +699,6 @@ export { TestSuites };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -685,6 +706,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TestSuites(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

@@ -250,9 +250,10 @@ class HygieneIssuesPage(Page):
 
         @with_database_session
         def on_view_source_data(row_id: str) -> None:
-            row = next((item for item in items if item["id"] == row_id), None)
-            if not row:
+            anomaly_df = profiling_queries.get_profiling_anomalies_by_ids([row_id])
+            if anomaly_df.empty:
                 return
+            row = make_json_safe(anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")[0])
 
             MixpanelService().send_event(
                 "view-source-data",
@@ -293,15 +294,14 @@ class HygieneIssuesPage(Page):
             st.session_state.pop(SOURCE_DATA_KEY, None)
 
         @with_database_session
-        def on_view_profiling(payload: dict) -> None:
-            column_name = payload.get("column_name")
-            table_name_ = payload.get("table_name")
-            table_groups_id = payload.get("table_groups_id")
-
-            if not column_name or not table_name_ or not table_groups_id:
+        def on_view_profiling(anomaly_id: str) -> None:
+            lookup = profiling_queries.get_profiling_anomaly_lookup(anomaly_id)
+            if not lookup:
                 return
 
-            column = profiling_queries.get_column_by_name(column_name, table_name_, table_groups_id)
+            column = profiling_queries.get_column_by_name(
+                lookup["column_name"], lookup["table_name"], lookup["table_groups_id"],
+            )
             if column:
                 st.session_state[PROFILING_KEY] = make_json_safe(column)
 
@@ -320,10 +320,16 @@ class HygieneIssuesPage(Page):
         @with_database_session
         def on_download_report(payload: dict) -> None:
             ids = payload.get("ids", [])
-            selected_items = [item for item in items if item["id"] in ids]
-
-            if not selected_items:
+            if not ids:
                 return
+
+            anomaly_df = profiling_queries.get_profiling_anomalies_by_ids(ids)
+            if anomaly_df.empty:
+                return
+            selected_items = [
+                make_json_safe(record)
+                for record in anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")
+            ]
 
             MixpanelService().send_event(
                 "download-issue-report",

@@ -23,16 +23,16 @@
 import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Code } from '/app/static/js/components/code.js';
 import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { Select } from '/app/static/js/components/select.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 
 const { div, span, strong } = van.tags;
 
 const GenerateTestsDialog = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('generate-tests-dialog', stylesheet);
 
     const dialogProp = getValue(props.dialog);
@@ -85,7 +85,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                                     type: 'stroked',
                                     label: 'Lock Edited Tests',
                                     width: 'auto',
-                                    onclick: () => emitEvent('LockEditedTests', {}),
+                                    onclick: () => emit('LockEditedTests', {}),
                                 });
                         },
                     )
@@ -119,7 +119,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     color: 'primary',
                     width: 'auto',
                     style: 'width: auto;',
-                    onclick: () => emitEvent('GenerateTestsConfirmed', {
+                    onclick: () => emit('GenerateTestsConfirmed', {
                         payload: {
                             test_suite_id: testSuiteId,
                             generation_set: selectedSet.val,
@@ -136,7 +136,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
             {
                 title: dialogTitle,
                 open: dialogOpen,
-                onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                onClose: () => { dialogOpen.val = false; emit('CloseClicked', {}); },
                 width: '36rem',
             },
             content,
@@ -161,8 +161,6 @@ export { GenerateTestsDialog };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -170,6 +168,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, GenerateTestsDialog(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

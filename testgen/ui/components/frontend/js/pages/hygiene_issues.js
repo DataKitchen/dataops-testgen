@@ -54,8 +54,7 @@ import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { SummaryCounts } from '/app/static/js/components/summary_counts.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
 import { Icon } from '/app/static/js/components/icon.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 import { SourceDataDialog } from '../shared/source_data_dialog.js';
 
@@ -126,16 +125,17 @@ const HygieneSourceDataHeader = (d) => {
     );
 };
 
-const ExportMenu = (likelihoodFilter, tableFilter, columnFilter, issueTypeFilter, actionFilter, hasSelection, getSelectedIds) => {
+const ExportMenu = (likelihoodFilter, tableFilter, columnFilter, issueTypeFilter, actionFilter, hasSelection, getSelectedIds, emit) => {
     return DropdownButton({
         icon: 'download',
         label: 'Export',
+        buttonSize: 'small',
         items: () => {
             const items = [
-                { label: 'All issues', onclick: () => emitEvent('ExportAll', {}) },
+                { label: 'All issues', onclick: () => emit('ExportAll', {}) },
                 {
                     label: 'Filtered issues',
-                    onclick: () => emitEvent('ExportFiltered', {
+                    onclick: () => emit('ExportFiltered', {
                         payload: {
                             likelihood: likelihoodFilter.rawVal,
                             table_name: tableFilter.rawVal,
@@ -149,7 +149,7 @@ const ExportMenu = (likelihoodFilter, tableFilter, columnFilter, issueTypeFilter
             if (hasSelection()) {
                 items.push({
                     label: 'Selected issues',
-                    onclick: () => emitEvent('ExportSelected', { payload: { ids: getSelectedIds() } }),
+                    onclick: () => emit('ExportSelected', { payload: { ids: getSelectedIds() } }),
                 });
             }
             return items;
@@ -180,6 +180,7 @@ const DetailPanel = (selectedRow) => {
 };
 
 const HygieneIssues = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('hygiene-issues', stylesheet);
 
     const items = van.derive(() => getValue(props.items) ?? []);
@@ -247,6 +248,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
     const clearAllCheckboxStates = () => {
         for (const state of checkboxStates.values()) state.val = false;
         selectAll.val = false;
+        selectedIdsCount.val = 0;
     };
 
     let selectedIds = [];
@@ -254,29 +256,33 @@ const HygieneIssues = (/** @type Properties */ props) => {
     const selectedIdSetForRestore = new Set();
 
     const onSelectAllToggle = (checked) => {
-        selectAll.val = checked;
         if (checked) {
+            selectAll.val = true;
             for (const item of items.rawVal) {
                 const state = getCheckboxState(item.id);
                 state.val = true;
                 selectedIdSetForRestore.add(item.id);
             }
-            selectedIds = items.rawVal.map(r => r.id);
+            selectedIds = [...selectedIdSetForRestore];
             selectedIdsCount.val = selectedIds.length;
         } else {
             clearAllCheckboxStates();
             selectedIds = [];
-            selectedIdsCount.val = 0;
             selectedIdSetForRestore.clear();
         }
     };
 
-    const selectAllCheckbox = Checkbox({
-        label: '',
-        checked: () => selectAll.val,
-        onChange: onSelectAllToggle,
-    });
-    const checkboxColumn = { name: '_checkbox', label: selectAllCheckbox, width: 32, align: 'center' };
+    const checkboxColumn = {
+        name: '_checkbox',
+        label: () => Checkbox({
+            label: '',
+            checked: selectAll.val,
+            indeterminate: !selectAll.val && selectedIdsCount.val > 0,
+            onChange: onSelectAllToggle,
+        }),
+        width: 32,
+        align: 'center',
+    };
     const tableColumns = van.derive(() => multiSelect.val ? [checkboxColumn, ...BASE_TABLE_COLUMNS] : BASE_TABLE_COLUMNS);
 
     van.derive(() => {
@@ -295,16 +301,13 @@ const HygieneIssues = (/** @type Properties */ props) => {
         const currentItems = items.val;
 
         if (isMulti && isSelectAll) {
-            selectedIdSetForRestore.clear();
-            const newIds = [];
             for (const item of currentItems) {
                 const state = getCheckboxState(item.id);
                 state.val = true;
                 selectedIdSetForRestore.add(item.id);
-                newIds.push(item.id);
             }
-            selectedIds = newIds;
-            selectedIdsCount.val = newIds.length;
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
         }
 
         return currentItems.map(item => {
@@ -319,7 +322,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
 
     const onSortChange = (newColumns) => {
         sortColumns.val = newColumns;
-        emitEvent('SortChanged', { payload: { columns: newColumns } });
+        emit('SortChanged', { payload: { columns: newColumns } });
     };
 
     const tableSortOptions = van.derive(() => ({
@@ -334,32 +337,41 @@ const HygieneIssues = (/** @type Properties */ props) => {
 
     const onRowsSelected = (idxs) => {
         if (multiSelect.rawVal) {
-            const newIds = [];
+            const currentPageItemIds = new Set(items.rawVal.map(r => r.id));
             const activeSet = new Set();
             for (const i of idxs) {
                 const item = items.rawVal[i];
-                if (item) {
-                    newIds.push(item.id);
-                    activeSet.add(item.id);
+                if (item) activeSet.add(item.id);
+            }
+            // Update restore set: only modify entries for current page items
+            for (const id of currentPageItemIds) {
+                if (activeSet.has(id)) {
+                    selectedIdSetForRestore.add(id);
+                } else {
+                    selectedIdSetForRestore.delete(id);
                 }
             }
-            selectedIdSetForRestore.clear();
-            for (const id of activeSet) selectedIdSetForRestore.add(id);
             for (const [id, state] of checkboxStates) {
-                state.val = activeSet.has(id);
+                if (currentPageItemIds.has(id)) {
+                    state.val = activeSet.has(id);
+                }
             }
-            selectedIds = newIds;
-            selectedIdsCount.val = newIds.length;
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
             // If user deselected rows while selectAll was on, turn selectAll off
-            if (selectAll.rawVal && newIds.length < items.rawVal.length) {
+            if (selectAll.rawVal && activeSet.size < currentPageItemIds.size) {
                 selectAll.val = false;
+            }
+            // Auto-enable selectAll when all items are individually selected
+            if (!selectAll.rawVal && totalCount.rawVal > 0 && selectedIds.length >= totalCount.rawVal) {
+                selectAll.val = true;
             }
         } else {
             if (idxs.length > 0) {
                 const row = items.rawVal[idxs[0]];
                 if (row && row.id !== selectedRowId.rawVal) {
                     selectedRowId.val = row.id;
-                    emitEvent('RowSelected', { payload: row.id });
+                    emit('RowSelected', { payload: row.id });
                 }
             }
         }
@@ -374,7 +386,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
     });
 
     const emitFilterChanged = () => {
-        emitEvent('FilterChanged', { payload: getCurrentFilters() });
+        emit('FilterChanged', { payload: getCurrentFilters() });
     };
 
     const onLikelihoodChange = (value) => {
@@ -391,8 +403,8 @@ const HygieneIssues = (/** @type Properties */ props) => {
         emitFilterChanged();
     };
 
-    const onColumnChange = (value) => {
-        columnFilter.val = value;
+    const onColumnChange = (value, meta) => {
+        columnFilter.val = meta?.isCustom ? `%${value}%` : value;
         selectedRowId.val = null;
         emitFilterChanged();
     };
@@ -410,8 +422,8 @@ const HygieneIssues = (/** @type Properties */ props) => {
     };
 
     const getSelectedIds = () => {
-        if (multiSelect.val && selectedIds.length > 0) {
-            return [...selectedIds];
+        if (multiSelect.val && selectedIdSetForRestore.size > 0) {
+            return [...selectedIdSetForRestore];
         }
         return selectedRowId.rawVal ? [selectedRowId.rawVal] : [];
     };
@@ -427,12 +439,12 @@ const HygieneIssues = (/** @type Properties */ props) => {
 
     const onDisposition = (status) => {
         if (selectAll.rawVal) {
-            emitEvent('DispositionAll', { payload: { filters: getCurrentFilters(), status } });
+            emit('DispositionAll', { payload: { filters: getCurrentFilters(), status } });
             return;
         }
         const ids = getSelectedIds();
         if (ids.length > 0) {
-            emitEvent('DispositionChanged', { payload: { ids, status } });
+            emit('DispositionChanged', { payload: { ids, status } });
         }
     };
 
@@ -448,13 +460,22 @@ const HygieneIssues = (/** @type Properties */ props) => {
     const tableHeader = div(
         { class: 'flex-row fx-align-center fx-gap-2 p-2' },
         Toggle({
-            label: 'Multi-Select',
+            label: () => {
+                return div(
+                    { class: 'flex-column' },
+                    span('Multi-Select'),
+                    () => {
+                        if (!multiSelect.val) return '';
+                        if (selectAll.val) return span({ class: 'text-caption' }, () => `All ${totalCount.val} matching issues selected`);
+                        const count = selectedIdsCount.val;
+                        if (count > 0) return span({ class: 'text-caption' }, `${count} issue${count !== 1 ? 's' : ''} selected`);
+                        return '';
+                    },
+                );
+            },
             checked: () => multiSelect.val,
             onChange: (checked) => { multiSelect.val = checked; },
         }),
-        () => multiSelect.val && selectAll.val
-            ? span({ class: 'text-caption' }, () => `All ${totalCount.val} matching issues selected`)
-            : '',
         div({ class: 'fx-flex' }),
         () => {
             if (!permissions.val.can_disposition) return '';
@@ -467,10 +488,26 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 Button({ type: 'icon', icon: 'restart_alt', tooltip: 'Clear action on selected', disabled, onclick: () => onDisposition('No Decision') }),
             );
         },
+        span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
+        () => {
+            const hasAnySelection = selectedIdsCount.val > 0 || !!selectedRow.val;
+            if (!hasAnySelection) return '';
+
+            return Button({
+                type: 'stroked',
+                icon: 'download',
+                label: 'Issue Report',
+                width: 'auto',
+                size: 'small',
+                style: 'background: var(--button-generic-background-color)',
+                onclick: () => emit('DownloadReport', { payload: { ids: getSelectedIds() } }),
+            });
+        },
         ExportMenu(
             likelihoodFilter, tableFilter, columnFilter, issueTypeFilter, actionFilter,
             () => selectedRowId.val || selectedIdsCount.val > 0,
             getSelectedIds,
+            emit,
         ),
     );
 
@@ -480,11 +517,16 @@ const HygieneIssues = (/** @type Properties */ props) => {
         itemsPerPage: pageSize.val,
         pageSizeOptions: [100, 500, 1000],
         onPageChange: (pageIdx, newPerPage) => {
-            if (!selectAll.rawVal) clearAllCheckboxStates();
             if (newPerPage !== pageSize.rawVal) {
-                emitEvent('PageChanged', { payload: { page: 0, page_size: newPerPage } });
+                if (!selectAll.rawVal) {
+                    clearAllCheckboxStates();
+                    selectedIds = [];
+                    selectedIdsCount.val = 0;
+                    selectedIdSetForRestore.clear();
+                }
+                emit('PageChanged', { payload: { page: 0, page_size: newPerPage } });
             } else {
-                emitEvent('PageChanged', { payload: { page: pageIdx } });
+                emit('PageChanged', { payload: { page: pageIdx } });
             }
         },
     }));
@@ -492,6 +534,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
     // Build the main table once
     const dataTable = Table(
         {
+            emit,
             columns: tableColumns,
             header: tableHeader,
             highDensity: true,
@@ -516,15 +559,15 @@ const HygieneIssues = (/** @type Properties */ props) => {
         { 'data-testid': 'hygiene-issues', class: 'flex-column' },
 
         // Dialogs (mounted once at top, driven by props from Python)
-        ProfilingResultsDialog({
+        ProfilingResultsDialog({ emit,
             profilingColumn: van.derive(() => getValue(props.profiling_column) ?? null),
-            onClose: () => emitEvent('ProfilingClosed', {}),
+            onClose: () => emit('ProfilingClosed', {}),
             width: '50rem',
             testId: 'profiling-dialog',
         }),
-        SourceDataDialog({
+        SourceDataDialog({ emit,
             sourceData: van.derive(() => getValue(props.source_data) ?? null),
-            onClose: () => emitEvent('SourceDataClosed', {}),
+            onClose: () => emit('SourceDataClosed', {}),
             renderHeader: HygieneSourceDataHeader,
             width: '60rem',
             testId: 'source-data-dialog',
@@ -561,7 +604,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
                     iconSize: 22,
                     style: 'color: var(--secondary-text-color)',
                     tooltip: () => `Recalculate scores for run ${isLatestRun.val ? 'and table group' : ''}`,
-                    onclick: () => emitEvent('RefreshScore', {}),
+                    onclick: () => emit('RefreshScore', {}),
                 }),
             ),
         ),
@@ -584,6 +627,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 options: tableOptions.val,
                 testId: 'table-filter',
                 style: 'min-width: 160px',
+                filterable: true,
                 onChange: onTableChange,
                 allowNull: true,
             }),
@@ -593,6 +637,8 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 options: columnOptions.val,
                 testId: 'column-filter',
                 style: 'min-width: 160px',
+                filterable: true,
+                acceptNewOptions: true,
                 onChange: onColumnChange,
                 allowNull: true,
             }),
@@ -602,6 +648,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 options: issueTypeOptions.val,
                 testId: 'issue-type-filter',
                 style: 'min-width: 200px',
+                filterable: true,
                 onChange: onIssueTypeChange,
                 allowNull: true,
                 disabled: likelihoodFilter.val === 'Potential PII',
@@ -627,53 +674,21 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 const sel = selectedRow.val;
                 if (!sel) return '';
 
-                const canViewProfiling = sel.column_name
-                    && sel.column_name !== '(multi-column)'
-                    && sel.column_name !== 'N/A'
-                    && sel.table_name
-                    && sel.table_name !== '(multi-table)';
-
                 return div(
                     { class: 'tg-hi--detail flex-column fx-gap-4' },
-
-                    // Action buttons row
                     div(
-                        { class: 'flex-row fx-flex-wrap fx-gap-1 fx-justify-content-flex-end' },
-                        canViewProfiling
-                            ? Button({
-                                type: 'stroked',
-                                icon: 'query_stats',
-                                label: 'Profiling',
-                                width: 'auto',
-                                style: 'background: var(--button-generic-background-color)',
-                                onclick: () => emitEvent('ViewProfiling', {
-                                    payload: {
-                                        column_name: sel.column_name,
-                                        table_name: sel.table_name,
-                                        table_groups_id: sel.table_groups_id,
-                                    },
-                                }),
-                            })
-                            : '',
+                        { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
                         Button({
-                            type: 'stroked',
-                            icon: 'visibility',
-                            label: 'Source Data',
-                            width: 'auto',
+                            type: 'stroked', icon: 'query_stats', label: 'Profiling', width: 'auto',
                             style: 'background: var(--button-generic-background-color)',
-                            onclick: () => emitEvent('ViewSourceData', { payload: sel.id }),
+                            onclick: () => emit('ViewProfiling', { payload: sel.id }),
                         }),
                         Button({
-                            type: 'stroked',
-                            icon: 'download',
-                            label: 'Issue Report',
-                            width: 'auto',
+                            type: 'stroked', icon: 'visibility', label: 'Source Data', width: 'auto',
                             style: 'background: var(--button-generic-background-color)',
-                            onclick: () => emitEvent('DownloadReport', { payload: { ids: getSelectedIds() } }),
+                            onclick: () => emit('ViewSourceData', { payload: sel.id }),
                         }),
                     ),
-
-                    // Detail content
                     DetailPanel(sel),
                 );
             },
@@ -684,7 +699,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-hi--detail {
-    border-top: 1px solid var(--border-color, #dddfe2);
+    border-top: 1px dashed var(--border-color, #dddfe2);
     padding-top: 16px;
 }
 
@@ -701,8 +716,6 @@ export { HygieneIssues };
 export default (component) => {
     const { data, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -710,6 +723,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, HygieneIssues(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

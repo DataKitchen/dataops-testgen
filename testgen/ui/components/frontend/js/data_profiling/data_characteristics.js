@@ -14,12 +14,13 @@ import { Attribute } from '/app/static/js/components/attribute.js';
 import { Button } from '/app/static/js/components/button.js';
 import { ScoreMetric } from '/app/static/js/components/score_metric.js';
 import { formatTimestamp } from '/app/static/js/display_utils.js';
-import { emitEvent, loadStylesheet } from '/app/static/js/utils.js';
+import { loadStylesheet } from '/app/static/js/utils.js';
 import { getColumnIcon } from './data_profiling_utils.js';
 
 const { b, div, span, i } = van.tags;
 
 const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column | Table */ item) => {
+    const emit = props.emit;
     loadStylesheet('data-characteristics', stylesheet);
     const removeDialogOpen = van.state(false);
 
@@ -122,8 +123,10 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
                         label: 'Remove',
                         color: 'warn',
                         type: 'flat',
+                        width: 'auto',
+                        style: 'margin-left: auto;',
                         onclick: () => {
-                            emitEvent('RemoveTableConfirmed', { payload: item });
+                            emit('RemoveTableConfirmed', { payload: item });
                             removeDialogOpen.val = false;
                         },
                     }),

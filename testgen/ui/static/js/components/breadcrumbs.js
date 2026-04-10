@@ -4,21 +4,19 @@
  * @property {string} path
  * @property {object} params
  * @property {string} label
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {Array.<Breadcrumb>} breadcrumbs
  * @property {string?} testId
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { a, div, span } = van.tags;
 
 const Breadcrumbs = (/** @type Properties */ props) => {
     loadStylesheet('breadcrumbs', stylesheet);
-    Streamlit.setFrameHeight(24);
 
     const testId = getValue(props.testId) ?? '';
 
@@ -37,7 +35,7 @@ const Breadcrumbs = (/** @type Properties */ props) => {
                         onclick: (event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            emitEvent('LinkClicked', { href: b.path, params: b.params });
+                            props.emit('LinkClicked', { href: b.path, params: b.params });
                         }},
                         b.label,
                     ));

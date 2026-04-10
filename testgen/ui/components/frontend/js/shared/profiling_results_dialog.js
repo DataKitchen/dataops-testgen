@@ -13,6 +13,7 @@ import { ColumnProfilingResults } from '../data_profiling/column_profiling_resul
  * @param {string} [props.testId]
  */
 const ProfilingResultsDialog = (props) => {
+    const emit = props.emit;
     const open = van.state(false);
     const columnData = van.state(null);
 
@@ -31,7 +32,7 @@ const ProfilingResultsDialog = (props) => {
 
     return Dialog(
         { title: 'Column Profiling Results', open, onClose, width: props.width || '52rem', testId: props.testId },
-        () => columnJson.val ? ColumnProfilingResults({ column: columnJson }) : '',
+        () => columnJson.val ? ColumnProfilingResults({ emit,  column: columnJson }) : '',
     );
 };
 

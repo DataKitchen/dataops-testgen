@@ -1,4 +1,3 @@
-import { Streamlit } from './streamlit.js';
 import van from './van.min.js';
 
 /**
@@ -26,13 +25,6 @@ function loadStylesheet(
         document.adoptedStyleSheets.push(stylesheet);
         window.testgen.loadedStylesheets[key] = true;
     }
-}
-
-function emitEvent(
-    /** @type string */event,
-    /** @type object */data = {},
-) {
-    Streamlit.sendData({ event, ...data, _id: Math.random() }) // Identify the event so its handler is called once
 }
 
 // Replacement for van.val()
@@ -222,4 +214,18 @@ function parseDate(value) {
     return value;
 }
 
-export { afterMount, debounce, emitEvent, fillViewportHeight, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };
+/**
+ * Create a component-scoped emit function bound to a specific V2 component's
+ * setTriggerValue.  Use this instead of the global Streamlit singleton so that
+ * events always route to the correct widget.
+ *
+ * @param {Function} setTriggerValue - The setTriggerValue provided by Streamlit to the V2 component
+ * @returns {Function}
+ */
+function createEmitter(setTriggerValue) {
+    return (event, data = {}) => {
+        setTriggerValue(event, { ...data, _id: Math.random() });
+    };
+}
+
+export { afterMount, createEmitter, debounce, fillViewportHeight, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };

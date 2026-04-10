@@ -7,12 +7,12 @@
 import van from '/app/static/js/van.min.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Code } from '/app/static/js/components/code.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual } from '/app/static/js/utils.js';
 
 const { div, span } = van.tags;
 
 const TableCreateScriptDialog = (/** @type Properties */ props) => {
+    const { emit } = props;
     const dialogProp = getValue(props.dialog);
     const dialogOpen = van.state(dialogProp?.open === true);
 
@@ -31,7 +31,7 @@ const TableCreateScriptDialog = (/** @type Properties */ props) => {
             {
                 title: dialogTitle,
                 open: dialogOpen,
-                onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                onClose: () => { dialogOpen.val = false; emit('CloseClicked', {}); },
                 width: '55rem',
             },
             content,
@@ -45,8 +45,6 @@ export { TableCreateScriptDialog };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -54,6 +52,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TableCreateScriptDialog(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

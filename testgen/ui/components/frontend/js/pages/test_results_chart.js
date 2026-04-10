@@ -1,6 +1,5 @@
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { getValue, isEqual, loadStylesheet, parseDate } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet, parseDate } from '/app/static/js/utils.js';
 import { ChartCanvas } from '/app/static/js/components/chart_canvas.js';
 import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
 import { ThresholdChart } from '/app/static/js/components/threshold_chart.js';
@@ -21,6 +20,7 @@ const staleColorByStatus = {
 };
 
 const TestResultsChart = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('testResultsChart', stylesheet);
 
     const width = van.state(0);
@@ -319,8 +319,6 @@ export { TestResultsChart };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -328,6 +326,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TestResultsChart(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

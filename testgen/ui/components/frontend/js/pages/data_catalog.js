@@ -60,6 +60,8 @@
  * @property {Permissions} permissions
  * @property {AutoflagSettings} autoflag_settings
  * @property {object?} run_profiling_dialog
+ * @property {object?} import_metadata_dialog
+ * @property {object?} create_script_dialog
  */
 import van from '/app/static/js/van.min.js';
 import { Tree } from '/app/static/js/components/tree.js';
@@ -68,8 +70,7 @@ import { Attribute } from '/app/static/js/components/attribute.js';
 import { Input } from '/app/static/js/components/input.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, fillViewportHeight, getRandomId, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, fillViewportHeight, getRandomId, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
 import { HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
@@ -86,9 +87,12 @@ import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TableCreateScriptCard } from '../data_profiling/table_create_script.js';
 import { MetadataTagsCard, MetadataTagsMultiEdit, TAG_KEYS } from '../data_profiling/metadata_tags.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
 import { RunProfilingDialog } from '/app/static/js/components/run_profiling_dialog.js';
+import { ImportMetadataDialog } from './import_metadata_dialog.js';
 import { ColumnHistoryDialog } from '../shared/column_history_dialog.js';
 import { DataPreviewDialog } from '../shared/data_preview_dialog.js';
+import { TableCreateScriptDialog } from '/app/static/js/components/table_create_script_dialog.js';
 
 const { div, h2, span } = van.tags;
 
@@ -98,7 +102,12 @@ EMPTY_IMAGE.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAA
 
 
 const DataCatalog = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('data-catalog', stylesheet);
+
+    // Import dialog: persistent local state + one-time sync from Python prop
+    const importDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.import_metadata_dialog)) importDialogOpen.val = true; });
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
@@ -212,7 +221,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     options: getValue(props.table_group_filter_options) ?? [],
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
-                    onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
+                    onChange: (value) => emit('TableGroupSelected', {payload: value}),
                 }),
                 div(
                     { class: 'flex-row fx-gap-2' },
@@ -225,10 +234,10 @@ const DataCatalog = (/** @type Properties */ props) => {
                             tooltipPosition: 'left',
                             width: 'fit-content',
                             style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emitEvent('ImportClicked', {}),
+                            onclick: () => emit('ImportClicked', {}),
                         })
                         : null,
-                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit),
+                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit, emit),
                 ),
             ),
             () => treeNodes.val.length
@@ -239,12 +248,13 @@ const DataCatalog = (/** @type Properties */ props) => {
                     },
                     Tree(
                         {
+                            emit,
                             id: treeDomId,
                             classes: 'tg-dh--tree',
                             nodes: treeNodes,
                             // Use .rawVal, so only initial value from query params is passed to tree
                             selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
-                            onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
+                            onSelect: (/** @type string */ selected) => emit('ItemSelected', { payload: selected }),
                             multiSelect: multiEditMode,
                             multiSelectToggle: userCanEdit,
                             multiSelectToggleLabel: 'Edit multiple',
@@ -358,6 +368,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                             () => multiSelectedItems.val?.length
                                 ? MetadataTagsMultiEdit(
                                     {
+                                        emit,
                                         tagOptions: getValue(props.tag_values),
                                         piiEditable: userCanViewPii,
                                         autoflagSettings: getValue(props.autoflag_settings) ?? {},
@@ -372,33 +383,70 @@ const DataCatalog = (/** @type Properties */ props) => {
                         )
                         : SelectedDetails(props, selectedItem.val),
                 )
-                : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate),
+                : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate, emit),
             () => {
                 const info = getValue(props.run_profiling_dialog);
                 if (!info) return div();
-                return RunProfilingDialog({
+                return RunProfilingDialog({ emit,
                     dialog: { title: info.title ?? 'Run Profiling', open: true },
                     table_groups: info.table_groups ?? [],
                     allow_selection: info.allow_selection ?? false,
                     selected_id: info.selected_id,
                     result: info.result,
-                    onClose: () => emitEvent('RunProfilingDialogClosed', {}),
+                    onClose: () => emit('RunProfilingDialogClosed', {}),
                 });
             },
-            ColumnHistoryDialog({
+            ColumnHistoryDialog({ emit,
                 historyData: props.history_dialog,
-                onClose: () => emitEvent('HistoryDialogClosed', {}),
-                onRunSelected: (runId) => emitEvent('HistoryRunSelected', { payload: runId }),
+                onClose: () => emit('HistoryDialogClosed', {}),
+                onRunSelected: (runId) => emit('HistoryRunSelected', { payload: runId }),
             }),
-            DataPreviewDialog({
+            DataPreviewDialog({ emit,
                 previewData: props.data_preview_dialog,
-                onClose: () => emitEvent('DataPreviewDialogClosed', {}),
+                onClose: () => emit('DataPreviewDialogClosed', {}),
             }),
+            () => {
+                const data = getValue(props.create_script_dialog);
+                if (!data) return div();
+                return TableCreateScriptDialog({ emit,
+                    dialog: { open: true, title: data.title },
+                    table_name: data.table_name,
+                    script: data.script,
+                    onClose: () => emit('CreateScriptDialogClosed', {}),
+                });
+            },
+            Dialog(
+                {
+                    title: 'Import Metadata',
+                    open: importDialogOpen,
+                    onClose: () => {
+                        importDialogOpen.val = false;
+                        emit('ImportDialogClosed', {});
+                    },
+                    width: '50rem',
+                },
+                () => {
+                    const data = getValue(props.import_metadata_dialog);
+                    if (!data) return span();
+                    return ImportMetadataDialog({ emit,
+                        preview: data.preview,
+                        result: data.result,
+                        onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
+                        onFileCleared: () => emit('ImportFileCleared', {}),
+                        onImportConfirmed: () => emit('ImportConfirmed', {}),
+                        onAutoClose: () => {
+                            importDialogOpen.val = false;
+                            emit('ImportDialogClosed', {});
+                        },
+                    });
+                },
+            ),
         )
-        : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
+        : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate, emit);
 };
 
-const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes) => {
+
+const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes, _userCanEdit, emit) => {
     return DropdownButton({
         icon: 'download',
         label: 'Export',
@@ -406,7 +454,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
             const items = [
                 {
                     label: 'All columns',
-                    onclick: () => emitEvent('ExportClicked', { payload: null }),
+                    onclick: () => emit('ExportClicked', { payload: null }),
                 },
                 {
                     label: 'Filtered columns',
@@ -425,7 +473,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                             }
                             return array;
                         }, []);
-                        emitEvent('ExportClicked', { payload });
+                        emit('ExportClicked', { payload });
                     },
                 },
             ];
@@ -444,14 +492,14 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
 
                             return array;
                         }, []);
-                        emitEvent('ExportClicked', { payload });
+                        emit('ExportClicked', { payload });
                     },
                 });
             }
             items.push({
                 label: 'Metadata CSV',
                 separator: true,
-                onclick: () => emitEvent('ExportCsvClicked', {}),
+                onclick: () => emit('ExportCsvClicked', {}),
             });
             return items;
         },
@@ -459,6 +507,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
 };
 
 const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const emit = props.emit;
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
     const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
     const userCanViewPii = getValue(props.permissions)?.can_view_pii ?? false;
@@ -478,14 +527,14 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
                         item.column_name,
                     ] : item.table_name,
                 ),
-                LatestProfilingTime({ noLinks: !userCanNavigate }, item),
+                LatestProfilingTime({ emit, noLinks: !userCanNavigate }, item),
             ),
-            DataCharacteristicsCard({ scores: true, allowRemove: true }, item),
+            DataCharacteristicsCard({ emit,  scores: true, allowRemove: true }, item),
             item.type === 'column'
-                ? ColumnDistributionCard({ dataPreview: true, history: true }, item)
-                : TableSizeCard({}, item),
+                ? ColumnDistributionCard({ emit,  dataPreview: true, history: true }, item)
+                : TableSizeCard({ emit,}, item),
             MetadataTagsCard(
-                {
+                { emit,
                     tagOptions: getValue(props.tag_values),
                     editable: userCanEdit,
                     piiEditable: userCanViewPii,
@@ -493,11 +542,11 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
                 },
                 item,
             ),
-            HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
-            TestIssuesCard({ noLinks: !userCanNavigate }, item),
-            TestSuitesCard({ noLinks: !userCanNavigate }, item),
+            HygieneIssuesCard({ emit,  noLinks: !userCanNavigate }, item),
+            TestIssuesCard({ emit, noLinks: !userCanNavigate }, item),
+            TestSuitesCard({ emit, noLinks: !userCanNavigate }, item),
             item.type === 'table'
-                ? TableCreateScriptCard({}, item)
+                ? TableCreateScriptCard({ emit,}, item)
                 : null,
         )
         : ItemEmptyState(
@@ -507,6 +556,7 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
 };
 
 const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const emit = props.emit;
     return Card({
         title: 'Related Test Suites',
         content: div(
@@ -515,7 +565,7 @@ const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column 
                 { class: 'flex-row fx-gap-1' },
                 props.noLinks
                     ? span(name)
-                    : Link({
+                    : Link({ emit, 
                         href: 'test-suites:definitions',
                         params: {
                             test_suite_id: id,
@@ -538,7 +588,7 @@ const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column 
                 `No test definitions yet for ${item.type}.`,
                 props.noLinks
                     ? null
-                    : Link({
+                    : Link({ emit, 
                         href: 'test-suites',
                         params: {
                             project_code: item.project_code,
@@ -553,6 +603,7 @@ const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column 
 };
 
 const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedItems, /** @type Object */ multiEditMode) => {
+    const emit = props.emit;
     const hasSelection = van.derive(() => selectedItems.val?.length);
     const columnCount = van.derive(() => selectedItems.val?.reduce((count, { children }) => count + children.length, 0));
 
@@ -650,7 +701,7 @@ const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedIt
                                     return object;
                                 }, {});
 
-                                emitEvent('TagsChanged', { payload: { items, tags } });
+                                emit('TagsChanged', { payload: { items, tags } });
                                 // Don't set multiEditMode to false here
                                 // Otherwise this event gets superseded by the ItemSelected event
                                 // Let the Streamlit rerun handle the state reset with 'last_saved_timestamp'
@@ -678,6 +729,7 @@ const ConditionalEmptyState = (
     /** @type ProjectSummary */ projectSummary,
     /** @type boolean */ userCanEdit,
     /** @type boolean */ userCanNavigate,
+    emit,
 ) => {
     let args = {
         label: 'No profiling data yet',
@@ -692,7 +744,7 @@ const ConditionalEmptyState = (
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',
-            onclick: () => emitEvent('RunProfilingClicked', {}),
+            onclick: () => emit('RunProfilingClicked', {}),
         }),
     }
     if (projectSummary.connection_count <= 0) {
@@ -722,7 +774,7 @@ const ConditionalEmptyState = (
         };
     }
     
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'dataset',
         ...args,
     });
@@ -800,8 +852,6 @@ export { DataCatalog };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -809,6 +859,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, DataCatalog(componentState));
         parentElement._cleanup = fillViewportHeight(parentElement);
     } else {

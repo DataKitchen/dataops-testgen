@@ -20,17 +20,17 @@
 import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Code } from '/app/static/js/components/code.js';
 import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { Select } from '/app/static/js/components/select.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 
 const { div, span, strong } = van.tags;
 
 const RunTestsDialog = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('run-tests-dialog', stylesheet);
 
     const dialogProp = getValue(props.dialog);
@@ -86,7 +86,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
                     width: 'auto',
                     style: 'width: auto;',
                     disabled: van.derive(() => !selectedTestSuite.val),
-                    onclick: () => emitEvent('RunTestsConfirmed', {
+                    onclick: () => emit('RunTestsConfirmed', {
                         payload: {
                             test_suite_id: selectedTestSuite.val?.value,
                             test_suite_name: selectedTestSuite.val?.label,
@@ -102,7 +102,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
                 label: 'Go to Test Runs',
                 style: 'width: auto; margin-left: auto; margin-top: 12px;',
                 icon: 'chevron_right',
-                onclick: () => emitEvent('GoToTestRunsClicked', {
+                onclick: () => emit('GoToTestRunsClicked', {
                     payload: {
                         project_code: getValue(props.project_code),
                         test_suite_id: selectedTestSuite.val?.value,
@@ -118,7 +118,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
             {
                 title: dialogTitle,
                 open: dialogOpen,
-                onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                onClose: () => { dialogOpen.val = false; emit('CloseClicked', {}); },
                 width: '32rem',
             },
             content,
@@ -143,8 +143,6 @@ export { RunTestsDialog };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -152,6 +150,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, RunTestsDialog(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

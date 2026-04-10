@@ -13,6 +13,7 @@ import { ColumnProfilingHistory } from '../data_profiling/column_profiling_histo
  * @param {function} props.onRunSelected - called when a profiling run is selected
  */
 const ColumnHistoryDialog = (props) => {
+    const emit = props.emit;
     const open = van.state(false);
     const data = van.state(null);
 
@@ -36,13 +37,11 @@ const ColumnHistoryDialog = (props) => {
 
     return Dialog(
         { title, open, onClose, width: '60rem' },
-        () => data.val
-            ? ColumnProfilingHistory({
-                profiling_runs: profilingRuns,
-                selected_item: selectedItem,
-                onRunSelected: props.onRunSelected,
-            })
-            : '',
+        ColumnProfilingHistory({ emit, 
+            profiling_runs: profilingRuns,
+            selected_item: selectedItem,
+            onRunSelected: props.onRunSelected,
+        }),
     );
 };
 

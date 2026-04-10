@@ -66,6 +66,7 @@ const EMPTY_STATE_MESSAGE = {
 };
 
 const EmptyState = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('empty-state', stylesheet);
 
     return Card({
@@ -80,7 +81,7 @@ const EmptyState = (/** @type Properties */ props) => {
                 getValue(props.button) ??
                 (
                     getValue(props.link)
-                    ? Link({
+                    ? Link({ emit, 
                         class: 'tg-empty-state--link',
                         right_icon: 'chevron_right',
                         ...(getValue(props.link)),

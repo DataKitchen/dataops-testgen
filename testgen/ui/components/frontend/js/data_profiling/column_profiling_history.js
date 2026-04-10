@@ -12,7 +12,7 @@
  * @property {Column} selected_item
  */
 import van from '/app/static/js/van.min.js';
-import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { formatTimestamp } from '/app/static/js/display_utils.js';
 import { ColumnDistributionCard } from './column_distribution.js';
 import { Card } from '/app/static/js/components/card.js';
@@ -20,9 +20,17 @@ import { Card } from '/app/static/js/components/card.js';
 const { div, span } = van.tags;
 
 const ColumnProfilingHistory = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('column-profiling-history', stylesheet);
 
     const selectedRunId = van.state(null);
+
+    van.derive(() => {
+        const runId = getValue(props.selected_item)?.profile_run_id ?? null;
+        if (runId) {
+            selectedRunId.val = runId;
+        }
+    });
 
     return div(
         { class: 'column-history flex-row fx-align-stretch' },
@@ -36,7 +44,7 @@ const ColumnProfilingHistory = (/** @type Properties */ props) => {
                         if (props.onRunSelected) {
                             props.onRunSelected(run_id);
                         } else {
-                            emitEvent('RunSelected', { payload: run_id });
+                            emit('RunSelected', { payload: run_id });
                         }
                     },
                 },
@@ -48,7 +56,7 @@ const ColumnProfilingHistory = (/** @type Properties */ props) => {
         () => getValue(props.selected_item)
             ? div(
                 { class: 'column-history--details' },
-                ColumnDistributionCard({}, getValue(props.selected_item)),
+                ColumnDistributionCard({ emit, }, getValue(props.selected_item)),
             )
             : Card({
                 class: 'column-history--empty',

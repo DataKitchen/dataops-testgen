@@ -9,11 +9,12 @@
 import van from '/app/static/js/van.min.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { SchemaChangesList } from '/app/static/js/components/schema_changes_list.js';
-import { emitEvent, getValue } from '/app/static/js/utils.js';
+import { getValue } from '/app/static/js/utils.js';
 
 const { div } = van.tags;
 
 const SchemaChangesDialog = (/** @type Properties */ props) => {
+    const emit = props.emit;
     const dialogProp = getValue(props.dialog);
     const externalOpen = dialogProp?.open;
     const isVanState = externalOpen != null && typeof externalOpen === 'object' && 'val' in externalOpen;
@@ -25,7 +26,7 @@ const SchemaChangesDialog = (/** @type Properties */ props) => {
     const handleClose = () => {
         dialogOpen.val = false;
         if (typeof props.onClose === 'function') props.onClose();
-        else emitEvent('CloseClicked', {});
+        else emit('CloseClicked', {});
     };
 
     const content = div(SchemaChangesList(props));

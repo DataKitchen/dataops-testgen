@@ -20,12 +20,11 @@
  * @property {object?} notifications_dialog
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Caption } from '/app/static/js/components/caption.js';
 import { Link } from '/app/static/js/components/link.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Icon } from '/app/static/js/components/icon.js';
@@ -48,6 +47,7 @@ const { div, h4, span, b } = van.tags;
  * @returns {HTMLElement}
  */
 const TableGroupList = (props) => {
+    const { emit } = props;
     loadStylesheet('tablegrouplist', stylesheet);
 
     const wrapperId = 'tablegroup-list-wrapper';
@@ -59,7 +59,7 @@ const TableGroupList = (props) => {
     const closeDeleteDialog = () => {
         deleteDialogOpen.val = false;
         confirmDeleteRelated.val = false;
-        emitEvent('DeleteDialogDismissed', {});
+        emit('DeleteDialogDismissed', {});
     };
 
     const scheduleDialogOpen = van.state(false);
@@ -84,7 +84,7 @@ const TableGroupList = (props) => {
         if (key !== wizardKey) {
             wizardContainer.innerHTML = '';
             wizardKey = key;
-            van.add(wizardContainer, TableGroupWizard({
+            van.add(wizardContainer, TableGroupWizard({ emit, 
                 project_code: van.derive(() => getValue(props.wizard)?.project_code),
                 connections: van.derive(() => getValue(props.wizard)?.connections),
                 table_group: van.derive(() => getValue(props.wizard)?.table_group),
@@ -115,7 +115,7 @@ const TableGroupList = (props) => {
         if (key !== editDialogKey) {
             editDialogContainer.innerHTML = '';
             editDialogKey = key;
-            van.add(editDialogContainer, TableGroupEditDialog({
+            van.add(editDialogContainer, TableGroupEditDialog({ emit, 
                 dialog: van.derive(() => getValue(props.edit_dialog)?.dialog),
                 connections: van.derive(() => getValue(props.edit_dialog)?.connections),
                 table_group: van.derive(() => getValue(props.edit_dialog)?.table_group),
@@ -137,7 +137,7 @@ const TableGroupList = (props) => {
             const projectSummary = getValue(props.project_summary);
 
             if (connections.length <= 0) {
-                return EmptyState({
+                return EmptyState({ emit, 
                     icon: 'table_view',
                     label: 'Your project is empty',
                     message: EMPTY_STATE_MESSAGE.connection,
@@ -152,7 +152,7 @@ const TableGroupList = (props) => {
 
             return projectSummary.table_group_count > 0
             ? div(
-                Toolbar(permissions, connections, connectionId, tableGroupNameFilter),
+                Toolbar(permissions, connections, connectionId, tableGroupNameFilter, emit),
                 tableGroups.length
                     ? div(
                         { class: 'flex-column fx-gap-4' },
@@ -175,7 +175,7 @@ const TableGroupList = (props) => {
                                 { class: 'flex-row fx-gap-3' },
                                 div(
                                     { class: 'flex-column fx-flex fx-gap-3' },
-                                    Link({
+                                    Link({ emit, 
                                         label: 'View test suites',
                                         href: 'test-suites',
                                         params: { 'project_code': projectSummary.project_code, 'table_group_id': tableGroup.id },
@@ -238,7 +238,7 @@ const TableGroupList = (props) => {
                                             type: 'stroked',
                                             color: 'primary',
                                             label: 'Run Profiling',
-                                            onclick: () => emitEvent('RunProfilingClicked', { payload: tableGroup.id }),
+                                            onclick: () => emit('RunProfilingClicked', { payload: tableGroup.id }),
                                         }),
                                     )
                                     : '',
@@ -254,7 +254,7 @@ const TableGroupList = (props) => {
                                     tooltip: 'Edit table group',
                                     tooltipPosition: 'left',
                                     color: 'basic',
-                                    onclick: () => emitEvent('EditTableGroupClicked', { payload: tableGroup.id }),
+                                    onclick: () => emit('EditTableGroupClicked', { payload: tableGroup.id }),
                                 }),
                                 Button({
                                     type: 'icon',
@@ -263,7 +263,7 @@ const TableGroupList = (props) => {
                                     tooltip: 'Delete table group',
                                     tooltipPosition: 'left',
                                     color: 'basic',
-                                    onclick: () => emitEvent('DeleteTableGroupClicked', { payload: tableGroup.id }),
+                                    onclick: () => emit('DeleteTableGroupClicked', { payload: tableGroup.id }),
                                 }),
                             )
                             : undefined,
@@ -274,7 +274,7 @@ const TableGroupList = (props) => {
                         'No table groups found matching filters',
                     ),
                 )
-            : EmptyState({
+            : EmptyState({ emit,
                 icon: 'table_view',
                 label: 'No table groups yet',
                 class: 'mt-4',
@@ -286,7 +286,7 @@ const TableGroupList = (props) => {
                     color: 'primary',
                     style: 'width: unset;',
                     disabled: !permissions.can_edit,
-                    onclick: () => emitEvent('AddTableGroupClicked', {}),
+                    onclick: () => emit('AddTableGroupClicked', {}),
                 }),
             });
         },
@@ -331,9 +331,10 @@ const TableGroupList = (props) => {
                             type: deleteDisabled.val ? 'stroked' : 'flat',
                             color: deleteDisabled.val ? 'basic' : 'warn',
                             label: 'Delete',
-                            style: 'width: auto;',
+                            width: 'auto',
+                            style: 'margin-left: auto;',
                             disabled: deleteDisabled,
-                            onclick: () => emitEvent('DeleteTableGroupConfirmed', { payload: tableGroup.id }),
+                            onclick: () => emit('DeleteTableGroupConfirmed', { payload: tableGroup.id }),
                         }),
                     ),
                 ),
@@ -342,16 +343,16 @@ const TableGroupList = (props) => {
     () => {
         const info = getValue(props.run_profiling_dialog);
         if (!info) return div();
-        return RunProfilingDialog({
+        return RunProfilingDialog({ emit,
             dialog: { title: info.title ?? 'Run Profiling', open: true },
             table_groups: info.table_groups ?? [],
             allow_selection: info.allow_selection ?? false,
             selected_id: info.selected_id,
             result: info.result,
-            onClose: () => emitEvent('RunProfilingDialogClosed', {}),
+            onClose: () => emit('RunProfilingDialogClosed', {}),
         });
     },
-    ScheduleList({
+    ScheduleList({ emit,
         dialog: van.derive(() => ({ title: getValue(props.schedule_dialog)?.title ?? 'Schedules', open: scheduleDialogOpen })),
         items: van.derive(() => getValue(props.schedule_dialog)?.items ?? []),
         permissions: van.derive(() => getValue(props.schedule_dialog)?.permissions ?? { can_edit: false }),
@@ -359,9 +360,9 @@ const TableGroupList = (props) => {
         arg_values: van.derive(() => getValue(props.schedule_dialog)?.arg_values ?? []),
         sample: van.derive(() => getValue(props.schedule_dialog)?.sample),
         results: van.derive(() => getValue(props.schedule_dialog)?.results),
-        onClose: () => emitEvent('ScheduleDialogClosed', {}),
+        onClose: () => emit('ScheduleDialogClosed', {}),
     }),
-    NotificationSettings({
+    NotificationSettings({ emit,
         dialog: van.derive(() => ({ title: getValue(props.notifications_dialog)?.title ?? 'Notifications', open: notificationsDialogOpen })),
         smtp_configured: van.derive(() => getValue(props.notifications_dialog)?.smtp_configured ?? false),
         event: van.derive(() => getValue(props.notifications_dialog)?.event),
@@ -371,7 +372,7 @@ const TableGroupList = (props) => {
         scope_options: van.derive(() => getValue(props.notifications_dialog)?.scope_options ?? []),
         trigger_options: van.derive(() => getValue(props.notifications_dialog)?.trigger_options ?? []),
         result: van.derive(() => getValue(props.notifications_dialog)?.result),
-        onClose: () => emitEvent('NotificationsDialogClosed', {}),
+        onClose: () => emit('NotificationsDialogClosed', {}),
     }),
     wizardContainer,
     editDialogContainer,
@@ -386,13 +387,13 @@ const TableGroupList = (props) => {
  * @param {string?} tableGroupNameFilter
  * @returns
  */
-const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFilter) => {
+const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFilter, emit) => {
     const connection = van.state(selectedConnection || null);
     const tableGroupFilter = van.state(tableGroupNameFilter || null);
 
     van.derive(() => {
         if (connection.val !== selectedConnection || tableGroupFilter.val !== tableGroupNameFilter) {
-            emitEvent('TableGroupsFiltered', { payload: { connection_id: connection.val || null, table_group_name: tableGroupFilter.val || null } });
+            emit('TableGroupsFiltered', { payload: { connection_id: connection.val || null, table_group_name: tableGroupFilter.val || null } });
         }
     });
 
@@ -434,7 +435,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RunNotificationsClicked', {}),
+                onclick: () => emit('RunNotificationsClicked', {}),
             }),
             Button({
                 icon: 'today',
@@ -444,7 +445,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RunSchedulesClicked', {}),
+                onclick: () => emit('RunSchedulesClicked', {}),
             }),
             permissions.can_edit
                 ? Button({
@@ -453,7 +454,7 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                     label: 'Add Table Group',
                     color: 'basic',
                     style: 'background: var(--button-generic-background-color); width: unset;',
-                    onclick: () => emitEvent('AddTableGroupClicked', {}),
+                    onclick: () => emit('AddTableGroupClicked', {}),
                 })
                 : '',
         )
@@ -484,8 +485,6 @@ export { TableGroupList };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -493,6 +492,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TableGroupList(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

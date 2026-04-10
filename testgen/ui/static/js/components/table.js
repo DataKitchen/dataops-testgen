@@ -49,6 +49,7 @@
  * @property {string?} width
  * @property {boolean?} highDensity
  * @property {boolean?} dynamicWidth
+ * @property {boolean?} uppercaseHeader
  * @property {SortOptions?} sort
  * @property {PaginatorOptions?} paginator
  * @property {SelectonOptions?} selection
@@ -175,7 +176,7 @@ const Table = (options, rows) => {
 
     return div(
         {
-            class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''} ${options.onRowsSelected ? 'tg-table-hoverable' : ''}`,
+            class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''} ${(getValue(options.uppercaseHeader) ?? true) ? 'tg-table-uppercase-header' : ''} ${options.selection?.onRowsSelected ? 'tg-table-hoverable' : ''}`,
             style: () => `height: ${getValue(options.height) ? getValue(options.height) : defaultHeight}; ${getValue(options.maxHeight) ? 'max-height: ' + getValue(options.maxHeight) + ';' : ''}`,
         },
         options.header,
@@ -238,7 +239,7 @@ const Table = (options, rows) => {
                                     class: () => `${selectedRows[idx].val ? 'selected' : ''} ${options.rowClass?.(row, idx) ?? ''}`,
                                     onclick: () => onRowSelected(idx),
                                 },
-                                ...getValue(dataColumns).map(column => TableCell(column, row, idx)),
+                                ...getValue(dataColumns).map(column => TableCell(column, row, idx, options.emit)),
                             )
                         ),
                     )
@@ -483,11 +484,15 @@ stylesheet.replace(`
     height: 100%;
 }
 
+.tg-table > .tg-table-scrollable > table > .tg-table-empty-state-body {
+    height: 100%;
+}
+
 .tg-table > .tg-table-scrollable > table > thead {
     border-bottom: var(--button-stroked-border);
     position: sticky;
     top: 0;
-    background: var(--dk-card-background); /* Ensure header background is solid when sticky */
+    background: var(--table-header-background, var(--dk-card-background));
     z-index: 1; /* Ensure header is above scrolling content */
 }
 
@@ -508,8 +513,11 @@ stylesheet.replace(`
 .tg-table > .tg-table-scrollable > table > thead th.tg-table-column {
     padding: 4px 8px;
     height: 32px;
-    text-transform: uppercase;
     position: relative; /* Needed for absolute positioning of resizer */
+}
+
+.tg-table.tg-table-uppercase-header > .tg-table-scrollable > table > thead th.tg-table-column {
+    text-transform: uppercase;
 }
 
 .tg-table > .tg-table-scrollable > table > thead th .tg-column-resizer {
@@ -575,6 +583,7 @@ stylesheet.replace(`
 
 .tg-table.tg-table-hoverable > .tg-table-scrollable > table > tbody tr:hover {
     background-color: var(--table-hover-color);
+    cursor: pointer;
 }
 `);
 

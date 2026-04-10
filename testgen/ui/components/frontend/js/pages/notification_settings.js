@@ -40,8 +40,7 @@
 import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { ExpansionPanel } from '/app/static/js/components/expansion_panel.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Alert } from '/app/static/js/components/alert.js';
@@ -56,13 +55,14 @@ const minHeight = 500;
 const { div, span, b } = van.tags;
 
 const NotificationSettings = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('notification-settings', stylesheet);
 
     const dialogProp = getValue(props.dialog);
     const dialogOpen = van.state(dialogProp?.open === true);
 
     if (!getValue(props.smtp_configured)) {
-        const emptyContent = EmptyState({
+        const emptyContent = EmptyState({ emit, 
             label: 'Email server not configured.',
             message: EMPTY_STATE_MESSAGE.notifications,
             class: 'notifications--empty',
@@ -78,7 +78,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                 {
                     title: dialogTitle,
                     open: dialogOpen,
-                    onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                    onClose: () => { dialogOpen.val = false; emit('CloseClicked', {}); },
                     width: '65rem',
                 },
                 emptyContent,
@@ -183,14 +183,14 @@ const NotificationSettings = (/** @type Properties */ props) => {
                                 icon: 'pause',
                                 tooltip: 'Pause notification',
                                 style: 'height: 32px;',
-                                onclick: () => emitEvent('PauseNotification', { payload: item }),
+                                onclick: () => emit('PauseNotification', { payload: item }),
                             })
                             : Button({
                                 type: 'stroked',
                                 icon: 'play_arrow',
                                 tooltip: 'Resume notification',
                                 style: 'height: 32px;',
-                                onclick: () => emitEvent('ResumeNotification', { payload: item }),
+                                onclick: () => emit('ResumeNotification', { payload: item }),
                             }),
                         Button({
                             type: 'stroked',
@@ -216,7 +216,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                             tooltip: 'Delete notification',
                             tooltipPosition: 'top-left',
                             style: 'height: 32px;',
-                            onclick: () => emitEvent('DeleteNotification', { payload: item }),
+                            onclick: () => emit('DeleteNotification', { payload: item }),
                         }),
                     ]) : null,
                 ),
@@ -329,7 +329,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                     type: 'stroked',
                     label: newNotificationItemForm.isEdit.val ? 'Save Changes' : 'Add Notification',
                     width: 'auto',
-                    onclick: () => emitEvent(
+                    onclick: () => emit(
                         newNotificationItemForm.isEdit.val ? 'UpdateNotification' : 'AddNotification',
                         {
                             payload: {
@@ -394,7 +394,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
             {
                 title: dialogTitle,
                 open: dialogOpen,
-                onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+                onClose: () => { dialogOpen.val = false; emit('CloseClicked', {}); },
                 width: '65rem',
             },
             content,
@@ -427,8 +427,6 @@ export { NotificationSettings };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -436,6 +434,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, NotificationSettings(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

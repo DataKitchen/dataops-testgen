@@ -168,6 +168,97 @@ def get_test_results(
     return df
 
 
+def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
+    """Fetch full test result rows by IDs, with all joins needed for source data and PDF reports."""
+    query = """
+    SELECT r.table_name,
+            p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
+            tt.dq_dimension, tt.test_scope,
+            r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
+            tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
+            c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
+            CASE
+                WHEN r.result_code = 0 THEN r.disposition
+                ELSE 'Passed'
+            END as disposition,
+            NULL::VARCHAR(1) as action,
+            r.input_parameters, r.result_message, CASE WHEN result_code = 0 THEN r.severity END as severity,
+            CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END as passed_ct,
+            CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END as exception_ct,
+            CASE
+                WHEN result_status = 'Warning' THEN 1
+            END::INTEGER as warning_ct,
+            CASE
+                WHEN result_status = 'Failed' THEN 1
+            END::INTEGER as failed_ct,
+            CASE
+                WHEN result_status = 'Log' THEN 1
+            END::INTEGER as log_ct,
+            CASE
+                WHEN result_status = 'Error' THEN 1
+            END as execution_error_ct,
+            p.project_code, r.table_groups_id::VARCHAR,
+            r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
+            c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
+            r.test_definition_id::VARCHAR,
+            r.auto_gen,
+            td.flagged,
+            (SELECT COUNT(*) FROM test_definition_notes tdn WHERE tdn.test_definition_id = td.id) as notes_count,
+            tt.threshold_description, tt.usage_notes, r.test_time,
+            dcc.description as column_description,
+            dcc.column_type as column_type,
+            COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+            dcc.pii_flag,
+            COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+            COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+            COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+            COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+            COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+            COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+            COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
+            COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+        FROM test_results r
+    INNER JOIN test_types tt
+        ON (r.test_type = tt.test_type)
+    INNER JOIN test_suites ts
+        ON r.test_suite_id = ts.id
+    INNER JOIN projects p
+        ON (ts.project_code = p.project_code)
+    INNER JOIN table_groups tg
+        ON (ts.table_groups_id = tg.id)
+    INNER JOIN connections cn
+        ON (tg.connection_id = cn.connection_id)
+    LEFT JOIN cat_test_conditions c
+        ON (cn.sql_flavor = c.sql_flavor
+        AND  r.test_type = c.test_type)
+    LEFT JOIN data_column_chars dcc
+        ON (tg.id = dcc.table_groups_id
+        AND  r.schema_name = dcc.schema_name
+        AND  r.table_name = dcc.table_name
+        AND  r.column_names = dcc.column_name)
+    LEFT JOIN data_table_chars dtc
+        ON dcc.table_id = dtc.table_id
+    LEFT JOIN test_definitions td
+        ON (r.test_definition_id = td.id)
+    WHERE r.id = ANY(CAST(:ids AS UUID[]));
+    """
+    df = fetch_df_from_db(query, {"ids": test_result_ids})
+    if not df.empty:
+        df["test_date"] = pd.to_datetime(df["test_date"])
+        df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
+    return df
+
+
+def get_test_result_lookup(test_result_id: str) -> dict | None:
+    """Return key fields for a single test result (for profiling/edit lookups)."""
+    query = """
+    SELECT r.column_names, r.table_name, r.table_groups_id::VARCHAR, r.test_definition_id::VARCHAR
+    FROM test_results r
+    WHERE r.id = :id;
+    """
+    return fetch_one_from_db(query, {"id": test_result_id})
+
+
 @st.cache_data(show_spinner=False)
 def get_test_results_count(
     run_id: str,

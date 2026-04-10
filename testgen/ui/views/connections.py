@@ -28,7 +28,6 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -179,6 +178,8 @@ class ConnectionsPage(Page):
             success = True
             try:
                 connection.save()
+                Connection.select_where.clear()
+                Connection.get.clear()
                 message = "Changes have been saved successfully."
             except Exception as error:
                 message = "Something went wrong while creating the connection."

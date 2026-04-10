@@ -32,7 +32,7 @@ import { Dialog } from './dialog.js';
 import { TableGroupForm } from './table_group_form.js';
 import { TableGroupTest } from './table_group_test.js';
 import { TableGroupStats } from './table_group_stats.js';
-import { emitEvent, getValue } from '../utils.js';
+import { getValue } from '../utils.js';
 import { Button } from './button.js';
 import { Alert } from './alert.js';
 import { Checkbox } from './checkbox.js';
@@ -60,6 +60,7 @@ const defaultSteps = [
  * @param {Properties} props
  */
 const TableGroupWizard = (props) => {
+    const emit = props.emit;
   const steps = getValue(props.steps) ?? defaultSteps;
   const defaultTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const stepsState = {
@@ -127,7 +128,7 @@ const TableGroupWizard = (props) => {
     ].filter(([stepKey,]) => steps.includes(stepKey)).map(([, eventKey, stepState]) => [eventKey, stepState]);
 
     const payload = Object.fromEntries(payloadEntries);
-    emitEvent('SaveTableGroupClicked', { payload });
+    emit('SaveTableGroupClicked', { payload });
   };
 
   const domId = 'table-group-wizard-wrapper';
@@ -190,9 +191,10 @@ const TableGroupWizard = (props) => {
           index: stepIndex,
           name: steps[stepIndex],
         },
+        (stepName) => setStep(steps.indexOf(stepName)),
       );
     },
-    WizardStep(0, currentStepIndex, step0Form),
+    WizardStep(0, currentStepIndex, step0Form, emit),
     WizardStep(1, currentStepIndex, () => {
       if (isComplete.val) {
         return '';
@@ -209,14 +211,14 @@ const TableGroupWizard = (props) => {
       });
 
       if (currentStepIndex.val === 1) {
-        emitEvent('PreviewTableGroupClicked', { payload: { table_group: tableGroup } });
+        emit('PreviewTableGroupClicked', { payload: { table_group: tableGroup } });
       }
 
       return TableGroupTest(
         tableGroupPreview,
         {
           onVerifyAcess: () => {
-            emitEvent('PreviewTableGroupClicked', {
+            emit('PreviewTableGroupClicked', {
               payload: {
                 table_group: stepsState.tableGroup.rawVal,
                 verify_access: true,
@@ -225,7 +227,7 @@ const TableGroupWizard = (props) => {
           }
         }
       );
-    }),
+    }, emit),
     () => {
       const runProfiling = van.state(stepsState.runProfiling.rawVal);
       van.derive(() => {
@@ -242,7 +244,7 @@ const TableGroupWizard = (props) => {
           runProfiling,
           tableGroupPreview,
         );
-      });
+      }, emit);
     },
     () => {
       const testSuiteState = stepsState.testSuite.rawVal;
@@ -253,7 +255,7 @@ const TableGroupWizard = (props) => {
       const testSuiteCronSample = van.state({});
       const testSuiteCrontabEditorValue = van.derive(() => {
         if (testSuiteSchedule.val && testSuiteScheduleTimezone.val) {
-            emitEvent('GetCronSampleAux', {payload: {cron_expr: testSuiteSchedule.val, tz: testSuiteScheduleTimezone.val}});
+            emit('GetCronSampleAux', {payload: {cron_expr: testSuiteSchedule.val, tz: testSuiteScheduleTimezone.val}});
         }
 
         return {
@@ -278,7 +280,7 @@ const TableGroupWizard = (props) => {
 
       return WizardStep(3, currentStepIndex, () => {
         if (currentStepIndex.val === 3) {
-          emitEvent('GetCronSampleAux', {payload: {cron_expr: testSuiteSchedule.val, tz: testSuiteScheduleTimezone.val}});
+          emit('GetCronSampleAux', {payload: {cron_expr: testSuiteSchedule.val, tz: testSuiteScheduleTimezone.val}});
         }
 
         if (isComplete.val) {
@@ -330,7 +332,7 @@ const TableGroupWizard = (props) => {
                         style: 'flex: 1',
                         onChange: (value) => testSuiteScheduleTimezone.val = value,
                     }),
-                    CrontabInput({
+                    CrontabInput({ emit, 
                       name: 'tg_test_suite_schedule',
                       value: testSuiteCrontabEditorValue,
                       modes: ['x_hours', 'x_days'],
@@ -353,7 +355,7 @@ const TableGroupWizard = (props) => {
             ),
           ),
         );
-      });
+      }, emit);
     },
     () => {
       const monitorSuiteState = stepsState.monitorSuite.rawVal;
@@ -406,7 +408,7 @@ const TableGroupWizard = (props) => {
             onChange: (value) => generateMonitorTests.val = value,
           }),
           () => generateMonitorTests.val
-            ? MonitorSettingsForm({
+            ? MonitorSettingsForm({ emit, 
               schedule: {
                 active: true,
                 cron_expr: monitorSuiteSchedule.rawVal,
@@ -444,7 +446,7 @@ const TableGroupWizard = (props) => {
             ),
           ),
         );
-      });
+      }, emit);
     },
     () => {
       if (!isComplete.val) {
@@ -480,7 +482,7 @@ const TableGroupWizard = (props) => {
               ? div(
                 { class: 'flex-row fx-gap-1' },
                 div('Profiling run started.'),
-                Link({
+                Link({ emit, 
                   open_new: true,
                   label: 'View progress',
                   href: 'profiling-runs',
@@ -494,7 +496,7 @@ const TableGroupWizard = (props) => {
                 div(
                   { class: 'text-caption flex-row fx-gap-1' },
                   'Run profiling or configure a schedule on the ',
-                  Link({
+                  Link({ emit, 
                     open_new: true,
                     label: 'Table Groups',
                     href: 'table-groups',
@@ -520,7 +522,7 @@ const TableGroupWizard = (props) => {
                 results.generate_test_suite
                   ? 'Manage test suites and schedules on the '
                   : 'Create test suites, generate and run tests, and configure schedules on the ',
-                Link({
+                Link({ emit, 
                   open_new: true,
                   label: 'Test Suites',
                   href: 'test-suites',
@@ -548,7 +550,7 @@ const TableGroupWizard = (props) => {
                 results.generate_monitor_suite
                   ? 'Manage monitors and view anomalies on the '
                   : 'Configure freshness, volume, and schema monitors on the ',
-                Link({
+                Link({ emit, 
                   open_new: true,
                   label: 'Monitors',
                   href: 'monitors',
@@ -568,7 +570,7 @@ const TableGroupWizard = (props) => {
             color: 'primary',
             label: 'Close',
             width: 'auto',
-            onclick: () => emitEvent('CloseClicked', {}),
+            onclick: () => emit('CloseClicked', {}),
           }),
         ),
       );
@@ -628,7 +630,7 @@ const TableGroupWizard = (props) => {
       {
         title: dialogTitle,
         open: dialogOpen,
-        onClose: () => { dialogOpen.val = false; emitEvent('CloseClicked', {}); },
+        onClose: () => { dialogOpen.val = false; emit('CloseClicked', {}); },
         width: '50rem',
       },
       wizardContent,

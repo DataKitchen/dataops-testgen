@@ -21,7 +21,7 @@ import van from '../van.min.js';
 import { Dialog } from './dialog.js';
 import { TableGroupForm } from './table_group_form.js';
 import { TableGroupTest } from './table_group_test.js';
-import { emitEvent, getValue } from '../utils.js';
+import { getValue } from '../utils.js';
 import { Button } from './button.js';
 import { Alert } from './alert.js';
 
@@ -34,6 +34,7 @@ const { div, span } = van.tags;
  * @param {Properties} props
  */
 const TableGroupEditDialog = (props) => {
+    const emit = props.emit;
     const dialogProp = getValue(props.dialog);
     const dialogOpen = van.state(dialogProp?.open === true);
     van.derive(() => { if (getValue(props.dialog)?.open) dialogOpen.val = true; });
@@ -68,12 +69,12 @@ const TableGroupEditDialog = (props) => {
 
     const onClose = () => {
         dialogOpen.val = false;
-        emitEvent('CloseEditClicked', {});
+        emit('CloseEditClicked', {});
     };
 
     const goToVerify = () => {
         phase.val = 'verify';
-        emitEvent('PreviewEditTableGroupClicked', {
+        emit('PreviewEditTableGroupClicked', {
             payload: { table_group: tableGroupState.val },
         });
     };
@@ -104,7 +105,7 @@ const TableGroupEditDialog = (props) => {
                 { style: () => phase.val === 'verify' ? '' : 'display:none' },
                 TableGroupTest(tableGroupPreview, {
                     onVerifyAcess: () => {
-                        emitEvent('PreviewEditTableGroupClicked', {
+                        emit('PreviewEditTableGroupClicked', {
                             payload: {
                                 table_group: tableGroupState.val,
                                 verify_access: true,
@@ -151,7 +152,7 @@ const TableGroupEditDialog = (props) => {
                         width: 'auto',
                         style: 'margin-left: auto;',
                         disabled: !verified.val,
-                        onclick: () => emitEvent('SaveEditTableGroupClicked', {
+                        onclick: () => emit('SaveEditTableGroupClicked', {
                             payload: { table_group: tableGroupState.val },
                         }),
                     }),

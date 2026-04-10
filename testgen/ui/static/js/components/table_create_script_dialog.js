@@ -8,11 +8,12 @@
 import van from '/app/static/js/van.min.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Code } from '/app/static/js/components/code.js';
-import { emitEvent, getValue } from '/app/static/js/utils.js';
+import { getValue } from '/app/static/js/utils.js';
 
 const { div, span } = van.tags;
 
 const TableCreateScriptDialog = (/** @type Properties */ props) => {
+    const emit = props.emit;
     const dialogProp = getValue(props.dialog);
     const externalOpen = dialogProp?.open;
     const isVanState = externalOpen != null && typeof externalOpen === 'object' && 'val' in externalOpen;
@@ -24,7 +25,7 @@ const TableCreateScriptDialog = (/** @type Properties */ props) => {
     const handleClose = () => {
         dialogOpen.val = false;
         if (typeof props.onClose === 'function') props.onClose();
-        else emitEvent('CloseClicked', {});
+        else emit('CloseClicked', {});
     };
 
     const content = div(
@@ -33,7 +34,7 @@ const TableCreateScriptDialog = (/** @type Properties */ props) => {
             span({ class: 'text-secondary text-caption' }, 'Table: '),
             span({ style: 'font-weight: 500;' }, () => getValue(props.table_name)),
         ),
-        () => Code({}, getValue(props.script) ?? ''),
+        () => Code({ language: 'sql' }, getValue(props.script) ?? ''),
     );
 
     if (dialogProp) {

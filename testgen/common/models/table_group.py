@@ -8,7 +8,7 @@ from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, 
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
-from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.common.models.scores import ScoreDefinition
@@ -161,7 +161,6 @@ class TableGroup(Entity):
         return [TableGroupMinimal(**row) for row in results]
 
     @classmethod
-    @with_database_session
     def select_stats(cls, project_code: str, table_group_id: str | UUID | None = None) -> Iterable[TableGroupStats]:
         query = f"""
         WITH stats AS (

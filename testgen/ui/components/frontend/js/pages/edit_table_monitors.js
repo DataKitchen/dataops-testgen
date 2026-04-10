@@ -11,7 +11,7 @@
  */
 
 import van from '/app/static/js/van.min.js';
-import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
@@ -26,6 +26,7 @@ const defaultMonitorOptions = [
 ];
 
 const EditTableMonitors = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('edit-table-monitors', stylesheet);
 
     const dialogOpen = van.state(false);
@@ -241,7 +242,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         new_metrics: Object.values(newMetrics.val),
                         deleted_metric_ids: deletedMetricIds.val,
                     };
-                    emitEvent('SaveTestDefinition', { payload });
+                    emit('SaveTestDefinition', { payload });
                 },
             }),
             Button({
@@ -257,7 +258,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         deleted_metric_ids: deletedMetricIds.val,
                         close: true,
                     };
-                    emitEvent('SaveTestDefinition', { payload });
+                    emit('SaveTestDefinition', { payload });
                 },
             }),
         ),
@@ -268,7 +269,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
         {
             title: dialogTitle,
             open: dialogOpen,
-            onClose: () => { dialogOpen.val = false; emitEvent('CloseEditMonitorsDialog', {}); },
+            onClose: () => { dialogOpen.val = false; emit('CloseEditMonitorsDialog', {}); },
             width: '55rem',
         },
         content,

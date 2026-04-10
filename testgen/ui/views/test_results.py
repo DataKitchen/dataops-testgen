@@ -12,7 +12,7 @@ from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestDefinitionSummary
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
@@ -46,7 +46,9 @@ EXPORT_FILTERS_KEY = "tr:export_filters"
 SOURCE_DATA_KEY = "tr:source_data"
 PROFILING_KEY = "tr:profiling"
 EDIT_TEST_KEY = "tr:edit_test"
+VALIDATE_RESULT_KEY = "tr:validate_result"
 ISSUE_REPORT_KEY = "tr:issue_report"
+NOTES_DIALOG_KEY = "tr:notes_dialog"
 
 DISPOSITION_MAP = {"Confirmed": "✓", "Dismissed": "✘", "Inactive": "🔇", "Passed": ""}
 
@@ -234,6 +236,10 @@ class TestResultsPage(Page):
         source_data = st.session_state.get(SOURCE_DATA_KEY)
         edit_test = st.session_state.get(EDIT_TEST_KEY)
 
+        notes_dialog = None
+        if notes_state := st.session_state.get(NOTES_DIALOG_KEY):
+            notes_dialog = _load_notes_dialog_data(notes_state.get("id") or notes_state, df)
+
         # Event handlers
         @with_database_session
         def on_row_selected(item_id: str) -> None:
@@ -297,20 +303,50 @@ class TestResultsPage(Page):
                 TestDefinition.set_status_attribute("flagged", test_definition_ids, value)
                 st.cache_data.clear()
 
+        def on_notes_clicked(payload: dict) -> None:
+            st.session_state[NOTES_DIALOG_KEY] = payload
+
+        @with_database_session
+        def on_note_added(payload: dict) -> None:
+            td_id = payload["test_definition_id"]
+            current_user = session.auth.user.username if session.auth.user else "unknown"
+            TestDefinitionNote.add_note(td_id, payload["text"], current_user)
+            st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+            st.cache_data.clear()
+
+        @with_database_session
+        def on_note_updated(payload: dict) -> None:
+            TestDefinitionNote.update_note(payload["id"], payload["text"])
+            td_id = payload["test_definition_id"]
+            st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+
+        @with_database_session
+        def on_note_deleted(payload: dict) -> None:
+            TestDefinitionNote.delete_note(payload["id"])
+            td_id = payload["test_definition_id"]
+            st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+            st.cache_data.clear()
+
+        def on_notes_dialog_closed(*_) -> None:
+            st.session_state.pop(NOTES_DIALOG_KEY, None)
+
         @with_database_session
         def on_source_data_clicked(item_id: str) -> None:
-            row_df = df[df["test_result_id"] == item_id]
-            if not row_df.empty:
-                row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+            result_df = test_result_queries.get_test_results_by_ids([item_id])
+            if not result_df.empty:
+                row = json.loads(result_df.to_json(orient="records", date_unit="s"))[0]
                 MixpanelService().send_event("view-source-data", page=PAGE_PATH, test_type=row.get("test_name_short"))
                 mask_pii = not session.auth.user_has_permission("view_pii")
                 st.session_state[SOURCE_DATA_KEY] = _build_source_data(row, mask_pii=mask_pii)
 
         @with_database_session
-        def on_profiling_clicked(payload: dict) -> None:
+        def on_profiling_clicked(test_result_id: str) -> None:
             import testgen.ui.queries.profiling_queries as profiling_queries
+            lookup = test_result_queries.get_test_result_lookup(test_result_id)
+            if not lookup:
+                return
             column = profiling_queries.get_column_by_name(
-                payload["column_names"], payload["table_name"], payload["table_groups_id"],
+                lookup["column_names"], lookup["table_name"], lookup["table_groups_id"],
             )
             if column:
                 st.session_state[PROFILING_KEY] = make_json_safe(column)
@@ -323,9 +359,13 @@ class TestResultsPage(Page):
 
         @with_database_session
         def on_edit_test_clicked(payload: dict) -> None:
-            st.session_state[EDIT_TEST_KEY] = _build_edit_test_dialog_data(
-                payload.get("test_definition_id"), test_suite,
-            )
+            test_result_id = payload.get("test_result_id")
+            if test_result_id:
+                lookup = test_result_queries.get_test_result_lookup(test_result_id)
+                td_id = lookup["test_definition_id"] if lookup else None
+            else:
+                td_id = payload.get("test_definition_id")
+            st.session_state[EDIT_TEST_KEY] = _build_edit_test_dialog_data(td_id, test_suite)
 
         @with_database_session
         def on_edit_test_saved(test_def: dict) -> None:
@@ -333,18 +373,38 @@ class TestResultsPage(Page):
             filtered = {k: v for k, v in test_def.items() if k in valid_columns}
             TestDefinition(**filtered).save()
             st.session_state.pop(EDIT_TEST_KEY, None)
+            st.session_state.pop(VALIDATE_RESULT_KEY, None)
             st.cache_data.clear()
+
+        @with_database_session
+        def on_validate_test(test_def: dict) -> None:
+            from testgen.ui.views.test_definitions import validate_test
+
+            table_group = TableGroup.get_minimal(test_suite.table_groups_id)
+            try:
+                validate_test(test_def, table_group)
+                st.session_state[VALIDATE_RESULT_KEY] = {"success": True, "message": "Validation is successful."}
+            except Exception as e:
+                st.session_state[VALIDATE_RESULT_KEY] = {
+                    "success": False,
+                    "message": f"Test validation failed with error: {e}",
+                }
 
         def on_edit_test_closed(*_) -> None:
             st.session_state.pop(EDIT_TEST_KEY, None)
+            st.session_state.pop(VALIDATE_RESULT_KEY, None)
 
         @with_database_session
-        def on_issue_report_clicked(item_id: str) -> None:
-            row_df = df[df["test_result_id"] == item_id]
-            if not row_df.empty:
-                row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
-                MixpanelService().send_event("download-issue-report", page=PAGE_PATH, issue_count=1)
-                st.session_state[ISSUE_REPORT_KEY] = [row]
+        def on_issue_report_clicked(payload: dict) -> None:
+            ids = payload.get("ids", [])
+            if not ids:
+                return
+            result_df = test_result_queries.get_test_results_by_ids(ids)
+            if result_df.empty:
+                return
+            rows = json.loads(result_df.to_json(orient="records", date_unit="s"))
+            MixpanelService().send_event("download-issue-report", page=PAGE_PATH, issue_count=len(rows))
+            st.session_state[ISSUE_REPORT_KEY] = rows
 
         @with_database_session
         def on_score_refresh(*_) -> None:
@@ -414,6 +474,8 @@ class TestResultsPage(Page):
                 "profiling_column": make_json_safe(profiling_column) if profiling_column else None,
                 "source_data": make_json_safe(source_data) if source_data else None,
                 "edit_test": make_json_safe(edit_test) if edit_test else None,
+                "validate_result": st.session_state.pop(VALIDATE_RESULT_KEY, None),
+                "notes_dialog": notes_dialog,
                 "page": current_page,
                 "total_count": total_count,
                 "page_size": current_page_size,
@@ -425,6 +487,11 @@ class TestResultsPage(Page):
             on_DispositionChanged_change=on_disposition_changed,
             on_DispositionAll_change=on_disposition_all,
             on_FlagChanged_change=on_flag_changed,
+            on_NotesClicked_change=on_notes_clicked,
+            on_NoteAdded_change=on_note_added,
+            on_NoteUpdated_change=on_note_updated,
+            on_NoteDeleted_change=on_note_deleted,
+            on_NotesDialogClosed_change=on_notes_dialog_closed,
             on_SourceDataClicked_change=on_source_data_clicked,
             on_ProfilingClicked_change=on_profiling_clicked,
             on_ProfilingClosed_change=on_profiling_closed,
@@ -432,6 +499,7 @@ class TestResultsPage(Page):
             on_EditTestClicked_change=on_edit_test_clicked,
             on_EditTestSaved_change=on_edit_test_saved,
             on_EditTestClosed_change=on_edit_test_closed,
+            on_ValidateTest_change=on_validate_test,
             on_IssueReportClicked_change=on_issue_report_clicked,
             on_ScoreRefreshClicked_change=on_score_refresh,
             on_ExportAll_change=on_export_all,
@@ -481,6 +549,34 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
         "table_columns": table_columns,
         "table_group_schema": table_group.table_group_schema,
         "test_suite": test_suite_info,
+    }
+
+
+def _load_notes_dialog_data(td_id_or_state: dict | str, df: pd.DataFrame) -> dict:
+    """Build notes dialog data from a test definition ID or existing state dict."""
+    if isinstance(td_id_or_state, dict):
+        td_id = td_id_or_state.get("id")
+        test_label = {
+            "table": td_id_or_state.get("table_name", ""),
+            "column": td_id_or_state.get("column_name", ""),
+            "test": td_id_or_state.get("test_name_short", ""),
+        }
+    else:
+        td_id = td_id_or_state
+        row_df = df[df["test_definition_id"] == str(td_id)]
+        if row_df.empty:
+            test_label = {"table": "", "column": "", "test": ""}
+        else:
+            row = row_df.iloc[0]
+            test_label = {"table": row["table_name"], "column": row["column_names"], "test": row["test_name_short"]}
+
+    current_user = session.auth.user.username if session.auth.user else "unknown"
+    notes = TestDefinitionNote.get_notes(td_id)
+    return {
+        "id": str(td_id),
+        "test_label": test_label,
+        "notes": notes,
+        "current_user": current_user,
     }
 
 

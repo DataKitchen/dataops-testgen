@@ -33,7 +33,7 @@
  * @property {(sch: Schedule, ts: MonitorSuite, state: FormState) => void} onChange
  */
 import van from '../van.min.js';
-import { getValue, isEqual, loadStylesheet, emitEvent } from '../utils.js';
+import { getValue, isEqual, loadStylesheet } from '../utils.js';
 import { Input } from './input.js';
 import { RadioGroup } from './radio_group.js';
 import { Caption } from './caption.js';
@@ -66,6 +66,7 @@ const predictLookbackConfig = {
  * @returns 
  */
 const MonitorSettingsForm = (props) => {
+    const emit = props.emit;
     loadStylesheet('monitor-settings-form', stylesheet);
 
     const schedule = getValue(props.schedule) ?? {};
@@ -134,6 +135,7 @@ const MonitorSettingsForm = (props) => {
             cronTimezone,
             cronExpression,
             scheduleActive,
+            emit,
         ),
         PredictionForm(
             { setValidity: setFieldValidity },
@@ -141,6 +143,7 @@ const MonitorSettingsForm = (props) => {
             predictMinLookback,
             predictExcludeWeekends,
             predictHolidayCodes,
+            emit,
         ),
     );
 };
@@ -211,10 +214,11 @@ const ScheduleForm = (
     cronTimezone,
     cronExpression,
     scheduleActive,
+    emit,
 ) => {
     const cronEditorValue = van.derive(() => {
         if (cronExpression.val && cronTimezone.val) {
-            emitEvent('GetCronSample', {payload: {cron_expr: cronExpression.val, tz: cronTimezone.val}});
+            emit('GetCronSample', {payload: {cron_expr: cronExpression.val, tz: cronTimezone.val}});
         }
         return {
             timezone: cronTimezone.val,
@@ -236,7 +240,7 @@ const ScheduleForm = (
                 onChange: (value) => cronTimezone.val = value,
                 portalClass: 'short-select-portal',
             }),
-            CrontabInput({
+            CrontabInput({ emit, 
                 name: 'monitor_settings_schedule',
                 sample: options.cronSample,
                 value: cronEditorValue,
@@ -275,6 +279,7 @@ const PredictionForm = (
     predictMinLookback,
     predictExcludeWeekends,
     predictHolidayCodes,
+    emit,
 ) => {
     const excludeHolidays = van.state(!!predictHolidayCodes.val);
     return div(
@@ -344,7 +349,7 @@ const PredictionForm = (
                 div(
                     { class: 'flex-row fx-gap-1 mt-1 text-caption' },
                     span({}, 'See supported'),
-                    Link({
+                    Link({ emit, 
                         open_new: true,
                         label: 'codes',
                         href: 'https://holidays.readthedocs.io/en/latest/#available-countries',

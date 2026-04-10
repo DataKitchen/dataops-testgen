@@ -49,25 +49,23 @@ import { Icon } from '/app/static/js/components/icon.js';
 import { Select } from '/app/static/js/components/select.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
-import { PotentialPIICard, HygieneIssuesCard } from '../data_profiling/data_issues.js';
+import { HygieneIssuesCard } from '../data_profiling/data_issues.js';
 
 const { div, span, h2 } = van.tags;
 
 const TYPE_ICONS = {
-    A: { icon: 'font_download', style: 'color: var(--blue)' },
-    B: { icon: 'toggle_on', style: 'color: var(--green)' },
-    D: { icon: 'calendar_month', style: 'color: var(--orange)' },
-    N: { icon: 'pin', style: 'color: var(--purple)' },
-    T: { icon: 'table_view', style: 'color: var(--secondary-text-color)' },
-    X: { icon: 'question_mark', style: 'color: var(--secondary-text-color)' },
+    A: { icon: 'abc', size: 24 },
+    B: { icon: 'toggle_off' },
+    D: { icon: 'calendar_clock' },
+    N: { icon: '123', size: 24 },
+    T: { icon: 'calendar_clock' },
+    X: { icon: 'question_mark' },
 };
-
 const TABLE_COLUMNS = [
-    { name: 'type_icon', label: '', width: 32, align: 'center' },
+    { name: 'type_icon', label: '', width: 40, align: 'center', overflow: 'hidden' },
     { name: 'table_name', label: 'Table', width: 180, sortable: true, overflow: 'hidden' },
     { name: 'column_name', label: 'Column', width: 180, sortable: true, overflow: 'hidden' },
     { name: 'db_data_type', label: 'Data Type', width: 130, sortable: true, overflow: 'hidden' },
@@ -77,10 +75,10 @@ const TABLE_COLUMNS = [
 ];
 
 const buildTableRow = (/** @type ProfilingItem */ item) => {
-    const iconInfo = TYPE_ICONS[item.general_type] ?? TYPE_ICONS['X'];
+    const iconData = TYPE_ICONS[item.general_type] || TYPE_ICONS.X;
     return {
         id: item.id,
-        type_icon: Icon({ style: `${iconInfo.style}; font-size: 18px` }, iconInfo.icon),
+        type_icon: Icon({ style: `color: #B0BEC5; font-size: ${iconData.size ?? 18}px; display: table-cell;` }, iconData.icon),
         table_name: item.table_name ?? '',
         column_name: item.column_name ?? '',
         db_data_type: item.db_data_type ?? '',
@@ -92,16 +90,17 @@ const buildTableRow = (/** @type ProfilingItem */ item) => {
     };
 };
 
-const ExportMenu = (tableFilter, columnFilter, selectedRowId) => {
+const ExportMenu = (tableFilter, columnFilter, selectedRowId, emit) => {
     return DropdownButton({
         icon: 'download',
         label: 'Export',
+        buttonSize: 'small',
         items: () => {
             const items = [
-                { label: 'All results', onclick: () => emitEvent('ExportAll', {}) },
+                { label: 'All results', onclick: () => emit('ExportAll', {}) },
                 {
                     label: 'Filtered results',
-                    onclick: () => emitEvent('ExportFiltered', {
+                    onclick: () => emit('ExportFiltered', {
                         payload: { table_name: tableFilter.rawVal, column_name: columnFilter.rawVal },
                     }),
                 },
@@ -109,7 +108,7 @@ const ExportMenu = (tableFilter, columnFilter, selectedRowId) => {
             if (selectedRowId.val) {
                 items.push({
                     label: 'Selected results',
-                    onclick: () => emitEvent('ExportSelected', { payload: selectedRowId.rawVal }),
+                    onclick: () => emit('ExportSelected', { payload: selectedRowId.rawVal }),
                 });
             }
             return items;
@@ -118,6 +117,7 @@ const ExportMenu = (tableFilter, columnFilter, selectedRowId) => {
 };
 
 const ProfilingResults = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('profiling-results', stylesheet);
 
     const items = van.derive(() => getValue(props.items) ?? []);
@@ -170,7 +170,7 @@ const ProfilingResults = (/** @type Properties */ props) => {
 
     const onSortChange = (newColumns) => {
         sortColumns.val = newColumns;
-        emitEvent('SortChanged', { payload: { columns: newColumns } });
+        emit('SortChanged', { payload: { columns: newColumns } });
     };
 
     const tableSortOptions = van.derive(() => ({
@@ -184,29 +184,29 @@ const ProfilingResults = (/** @type Properties */ props) => {
             const row = items.rawVal[idxs[0]];
             if (row && row.id !== selectedRowId.rawVal) {
                 selectedRowId.val = row.id;
-                emitEvent('RowSelected', { payload: row.id });
+                emit('RowSelected', { payload: row.id });
             }
         }
     };
 
-    const onTableFilterChange = (value) => {
-        tableFilter.val = value;
+    const onTableFilterChange = (value, meta) => {
+        tableFilter.val = meta?.isCustom ? `%${value}%` : value;
         columnFilter.val = null;
         selectedRowId.val = null;
-        emitEvent('FilterChanged', { payload: { table_name: value, column_name: null } });
+        emit('FilterChanged', { payload: { table_name: tableFilter.val, column_name: null } });
     };
 
-    const onColumnFilterChange = (value) => {
-        columnFilter.val = value;
+    const onColumnFilterChange = (value, meta) => {
+        columnFilter.val = meta?.isCustom ? `%${value}%` : value;
         selectedRowId.val = null;
-        emitEvent('FilterChanged', { payload: { table_name: tableFilter.rawVal, column_name: value } });
+        emit('FilterChanged', { payload: { table_name: tableFilter.rawVal, column_name: columnFilter.val } });
     };
 
     // Table header bar with export menu
     const tableHeader = div(
         { class: 'flex-row fx-align-center fx-gap-2 p-2' },
         div({ class: 'fx-flex' }),
-        ExportMenu(tableFilter, columnFilter, selectedRowId),
+        ExportMenu(tableFilter, columnFilter, selectedRowId, emit),
     );
 
     const paginatorOptions = van.derive(() => ({
@@ -216,9 +216,9 @@ const ProfilingResults = (/** @type Properties */ props) => {
         pageSizeOptions: [100, 500, 1000],
         onPageChange: (pageIdx, newPerPage) => {
             if (newPerPage !== pageSize.rawVal) {
-                emitEvent('PageChanged', { payload: { page: 0, page_size: newPerPage } });
+                emit('PageChanged', { payload: { page: 0, page_size: newPerPage } });
             } else {
-                emitEvent('PageChanged', { payload: { page: pageIdx } });
+                emit('PageChanged', { payload: { page: pageIdx } });
             }
         },
     }));
@@ -226,11 +226,12 @@ const ProfilingResults = (/** @type Properties */ props) => {
     // Pre-build the Table once
     const dataTable = Table(
         {
+            emit,
             columns: TABLE_COLUMNS,
             header: tableHeader,
             highDensity: true,
             dynamicWidth: true,
-            height: '40vh',
+            height: '50vh',
             emptyState: div(
                 { class: 'flex-row fx-justify-center empty-table-message' },
                 span({ class: 'text-secondary' }, 'No profiling results found matching filters'),
@@ -253,6 +254,8 @@ const ProfilingResults = (/** @type Properties */ props) => {
                 options: tableOptions.val,
                 testId: 'table-filter',
                 style: 'min-width: 200px',
+                filterable: true,
+                acceptNewOptions: true,
                 onChange: onTableFilterChange,
                 allowNull: true,
             }),
@@ -262,6 +265,8 @@ const ProfilingResults = (/** @type Properties */ props) => {
                 options: columnOptions.val,
                 testId: 'column-filter',
                 style: 'min-width: 200px',
+                filterable: true,
+                acceptNewOptions: true,
                 onChange: onColumnFilterChange,
                 allowNull: true,
             }),
@@ -281,16 +286,13 @@ const ProfilingResults = (/** @type Properties */ props) => {
                             selectedRow.val.column_name,
                         ),
                     ),
-                    DataCharacteristicsCard({ border: true }, selectedRow.val),
-                    ColumnDistributionCard({ border: true, dataPreview: false }, selectedRow.val),
+                    DataCharacteristicsCard({ emit,  border: true }, selectedRow.val),
+                    ColumnDistributionCard({ emit,  border: true, dataPreview: false }, selectedRow.val),
                     () => {
                         const si = selectedItemData.val;
                         if (!si || si.id !== selectedRowId.rawVal) return '';
                         if (!Array.isArray(si.hygiene_issues) || !si.hygiene_issues.length) return '';
-                        return div(
-                            PotentialPIICard({ border: true }, si),
-                            HygieneIssuesCard({ border: true }, si),
-                        );
+                        return HygieneIssuesCard({ emit,  border: true }, si);
                     },
                 )
                 : '',
@@ -307,7 +309,7 @@ stylesheet.replace(`
     font-weight: 400;
 }
 .tg-pr--detail {
-    border-top: 1px solid var(--border-color, #dddfe2);
+    border-top: 1px dashed var(--border-color, #dddfe2);
     padding-top: 16px;
 }
 `);
@@ -317,8 +319,6 @@ export { ProfilingResults };
 export default (component) => {
     const { data, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -326,6 +326,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, ProfilingResults(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

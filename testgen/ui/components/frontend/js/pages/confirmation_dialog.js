@@ -20,8 +20,7 @@
  */
 
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Toggle } from '/app/static/js/components/toggle.js';
 import { Alert } from '/app/static/js/components/alert.js';
@@ -33,6 +32,7 @@ const { div, span } = van.tags;
  * @returns 
  */
 const ConfirmationDialog = (props) => {
+    const { emit } = props;
     loadStylesheet('confirmation-dialog', stylesheet);
 
     const wrapperId = 'confirmation-dialog';
@@ -68,7 +68,7 @@ const ConfirmationDialog = (props) => {
                 label: buttonLabel,
                 style: 'width: auto;',
                 disabled: actionDisabled,
-                onclick: () => emitEvent('ActionConfirmed', {}),
+                onclick: () => emit('ActionConfirmed', {}),
             }),
         ),
         () => {
@@ -101,8 +101,6 @@ export { ConfirmationDialog };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -110,6 +108,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, ConfirmationDialog(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

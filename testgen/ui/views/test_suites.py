@@ -50,7 +50,6 @@ class TestSuitesPage(Page):
         order=2,
     )
 
-    @with_database_session
     def render(self, project_code: str, table_group_id: str | None = None, test_suite_name: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
@@ -126,7 +125,7 @@ class TestSuitesPage(Page):
             run_tests_data = {
                 "title": "Run Tests",
                 "project_code": project_code,
-                "test_suites": [{"value": str(ts.id), "label": ts.test_suite} for ts in test_suites],
+                "test_suites": [{"value": str(ts.id), "label": ts.test_suite} for ts in test_suites if str(ts.id) == str(run_tests_ts_id)],
                 "default_test_suite_id": str(run_tests_ts_id) if run_tests_ts_id else None,
                 "result": st.session_state.get(RUN_TESTS_RESULT_KEY),
             }
@@ -182,8 +181,10 @@ class TestSuitesPage(Page):
                 st.session_state.pop(RUN_TESTS_RESULT_KEY, None)
 
         def on_go_to_test_runs(payload: dict) -> None:
+            st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
             st.session_state.pop(RUN_TESTS_RESULT_KEY, None)
-            Router().navigate(to="test-runs", with_args=payload)
+            st.cache_data.clear()
+            Router().queue_navigation(to="test-runs", with_args=payload)
 
         def on_run_tests_dialog_closed(*_) -> None:
             st.session_state.pop(RUN_TESTS_DIALOG_KEY, None)
@@ -194,6 +195,7 @@ class TestSuitesPage(Page):
                 lock_edited_tests(ts_id)
             st.session_state[GENERATE_TESTS_LOCK_RESULT_KEY] = "Edited tests have been successfully locked."
 
+        @with_database_session
         def on_generate_tests_confirmed(data: dict) -> None:
             selected_id = data.get("test_suite_id")
             selected_set = data.get("generation_set", "")
@@ -287,8 +289,13 @@ class TestSuitesPage(Page):
         )
 
 
-def on_test_suites_filtered(table_group_id: str | None = None) -> None:
-    Router().set_query_params({ "table_group_id": table_group_id })
+class TestSuiteFilters(typing.TypedDict):
+    table_group_id: str
+    test_suite_name: str
+
+
+def on_test_suites_filtered(filters: TestSuiteFilters) -> None:
+    Router().set_query_params(filters)
 
 
 @with_database_session
@@ -311,7 +318,7 @@ def save_test_suite_form(data: dict) -> None:
         test_suite.save()
         st.session_state.pop("ts_form_dialog:result", None)
         st.session_state.pop(EDIT_DIALOG_KEY, None)
-        TestSuite.select_summary.clear()
+        get_test_suite_summaries.clear()
         st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "Changes have been saved successfully."}
     else:
         table_group = TableGroup.get(data.get("table_groups_id"))
@@ -330,7 +337,7 @@ def save_test_suite_form(data: dict) -> None:
         test_suite.save()
         st.session_state.pop("ts_form_dialog:result", None)
         st.session_state.pop(ADD_DIALOG_KEY, None)
-        TestSuite.select_summary.clear()
+        get_test_suite_summaries.clear()
         st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "New test suite added successfully."}
 
 

@@ -140,7 +140,7 @@ function hasFixedAncestor(el) {
 function hasStreamlitDialogAncestor(el) {
     let node = el.parentElement;
     while (node && node !== document.body) {
-        if (node.classList.contains(STREAMLIT_DIALOG_CLASS)) return true;
+        if (node.classList.contains(STREAMLIT_DIALOG_CLASS) || node.classList.contains('tg-dialog-overlay')) return true;
         node = node.parentElement;
     }
     return false;

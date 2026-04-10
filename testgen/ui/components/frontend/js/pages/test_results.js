@@ -41,8 +41,7 @@
  * @property {object} filter_options
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet, parseDate } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet, parseDate } from '/app/static/js/utils.js';
 import { Table } from '/app/static/js/components/table.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Tabs, Tab } from '/app/static/js/components/tabs.js';
@@ -58,8 +57,9 @@ import { SourceDataDialog } from '../shared/source_data_dialog.js';
 import { TestResultsChart } from './test_results_chart.js';
 import { TestDefinitionSummary } from './test_definition_summary.js';
 import { EditDialogComponent } from './test_definitions.js';
+import { TestDefinitionNotes } from './test_definition_notes.js';
 
-const { div, span, h3, h4, p, small } = van.tags;
+const { button: btn, div, i: icon, span, h3, h4, p, small } = van.tags;
 
 const STATUS_COLORS = {
     Passed: 'var(--green)',
@@ -69,6 +69,30 @@ const STATUS_COLORS = {
     Log: 'var(--blue)',
 };
 
+/** Composite icon button: flag with a diagonal strikethrough (pen_size_1 rotated). */
+const ClearFlagButton = ({ disabled, onclick }) => {
+    return btn(
+        {
+            class: 'tg-button tg-icon-button tg-basic-button',
+            tooltip: 'Clear flag',
+            disabled,
+            onclick,
+            style: 'width: 40px; position: relative;',
+        },
+        span({ class: 'tg-button-focus-state-indicator' }, ''),
+        div(
+            { style: 'position: relative; display: inline-flex; align-items: center; justify-content: center;' },
+            icon({ class: 'material-symbols-rounded', style: 'font-size: 20px;' }, 'flag'),
+            icon({ class: 'material-symbols-rounded', style: 'font-size: 24px; position: absolute; top: -3px; left: -3px; transform: rotate(90deg);' }, 'pen_size_1'),
+        ),
+    );
+};
+
+const FLAGGED_FILTER_OPTIONS = [
+    { label: 'Flagged', value: 'Flagged' },
+    { label: 'Not Flagged', value: 'Not Flagged' },
+];
+
 const DATA_COLUMNS = [
     { name: 'table_name', label: 'Table', width: 160, sortable: true, overflow: 'hidden' },
     { name: 'column_names', label: 'Columns/Focus', width: 150, sortable: true, overflow: 'hidden' },
@@ -77,6 +101,8 @@ const DATA_COLUMNS = [
     { name: 'measure_uom', label: 'Unit of Measure', width: 130, overflow: 'hidden' },
     { name: 'status_display', label: 'Status', width: 90, sortable: true },
     { name: 'action', label: 'Action', width: 70, align: 'center' },
+    { name: 'flagged_display', label: 'Flagged', width: 80, align: 'center' },
+    { name: 'notes_count', label: 'Notes', width: 70, align: 'center' },
     { name: 'result_message', label: 'Details', width: 200, overflow: 'hidden' },
 ];
 
@@ -134,25 +160,35 @@ const buildTableRow = (item) => ({
         : '',
     result_status: item.result_status ?? '',
     action: buildDispositionIcon(item.disposition),
+    flagged_display: item.flagged_display?.toLowerCase() === 'yes'
+        ? Icon({classes: 'text-error display-table-cell', filled: true}, 'flag')
+        : '',
+    notes_count: item.notes_count ? div(
+        {class: 'flex-row fx-justify-center'},
+        Icon({}, 'sticky_note_2'),
+        span(item.notes_count),
+    ) : '',
     result_message: item.result_message ?? '',
 });
 
-const ExportMenu = (statusFilter, tableFilter, columnFilter, testTypeFilter, actionFilter, hasSelection, getSelectedIds) => {
+const ExportMenu = (statusFilter, tableFilter, columnFilter, testTypeFilter, actionFilter, flaggedFilter, hasSelection, getSelectedIds, emit) => {
     return DropdownButton({
         icon: 'download',
         label: 'Export',
+        buttonSize: 'small',
         items: () => {
             const items = [
-                { label: 'All results', onclick: () => emitEvent('ExportAll', {}) },
+                { label: 'All results', onclick: () => emit('ExportAll', {}) },
                 {
                     label: 'Filtered results',
-                    onclick: () => emitEvent('ExportFiltered', {
+                    onclick: () => emit('ExportFiltered', {
                         payload: {
                             status: statusFilter.rawVal,
                             table_name: tableFilter.rawVal,
                             column_name: columnFilter.rawVal,
                             test_type: testTypeFilter.rawVal,
                             action: actionFilter.rawVal,
+                            flagged: flaggedFilter.rawVal,
                         },
                     }),
                 },
@@ -160,7 +196,7 @@ const ExportMenu = (statusFilter, tableFilter, columnFilter, testTypeFilter, act
             if (hasSelection()) {
                 items.push({
                     label: 'Selected results',
-                    onclick: () => emitEvent('ExportSelected', { payload: { ids: getSelectedIds() } }),
+                    onclick: () => emit('ExportSelected', { payload: { ids: getSelectedIds() } }),
                 });
             }
             return items;
@@ -199,6 +235,7 @@ const TestResultSourceDataHeader = (d) => {
 // ProfilingDialog and SourceDataDialog are now shared components from ../shared/
 
 const EditTestDialog = (props) => {
+    const emit = props.emit;
     const editDialogOpen = van.state(false);
     const editDialogInfo = van.derive(() => getValue(props.edit_test) ?? null);
 
@@ -207,14 +244,16 @@ const EditTestDialog = (props) => {
     return EditDialogComponent({
         open: editDialogOpen,
         info: editDialogInfo,
+        validateResult: props.validate_result,
         onClose: () => {
             editDialogOpen.val = false;
-            emitEvent('EditTestClosed', {});
+            emit('EditTestClosed', {});
         },
-    });
+    }, emit);
 };
 
 const TestResults = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('test-results', stylesheet);
 
     const items = van.derive(() => getValue(props.items) ?? []);
@@ -238,6 +277,11 @@ const TestResults = (/** @type Properties */ props) => {
     const columnFilter = van.state(initialFilters.column_name ?? null);
     const testTypeFilter = van.state(initialFilters.test_type ?? null);
     const actionFilter = van.state(initialFilters.action ?? null);
+    const flaggedFilter = van.state(initialFilters.flagged ?? null);
+
+    // Notes dialog: persistent local state + one-time sync from Python prop
+    const notesDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.notes_dialog)) notesDialogOpen.val = true; });
 
     // Sort state initialized from Python
     const initialSortState = getValue(props.sort_state) ?? [];
@@ -289,22 +333,25 @@ const TestResults = (/** @type Properties */ props) => {
     const clearAllCheckboxStates = () => {
         for (const state of checkboxStates.values()) state.val = false;
         selectAll.val = false;
+        selectedIdsCount.val = 0;
     };
 
     // Selection tracking (declared early — referenced by derives below)
     let selectedIds = [];
     const selectedIdSetForRestore = new Set();
+    const selectedIdsCount = van.state(0);
 
     // Select All handler (declared early — used by checkbox column)
     const onSelectAllToggle = (checked) => {
-        selectAll.val = checked;
         if (checked) {
+            selectAll.val = true;
             for (const item of items.rawVal) {
                 const state = getCheckboxState(item.test_result_id);
                 state.val = true;
                 selectedIdSetForRestore.add(item.test_result_id);
             }
-            selectedIds = items.rawVal.map(r => r.test_result_id);
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
         } else {
             clearAllCheckboxStates();
             selectedIds = [];
@@ -312,13 +359,18 @@ const TestResults = (/** @type Properties */ props) => {
         }
     };
 
-    // Columns: prepend checkbox when multi-select is on (header has select-all checkbox)
-    const selectAllCheckbox = Checkbox({
-        label: '',
-        checked: () => selectAll.val,
-        onChange: onSelectAllToggle,
-    });
-    const checkboxColumn = { name: '_checkbox', label: selectAllCheckbox, width: 32, align: 'center' };
+    // Columns: prepend checkbox when multi-select is on (header has reactive select-all checkbox)
+    const checkboxColumn = {
+        name: '_checkbox',
+        label: () => Checkbox({
+            label: '',
+            checked: selectAll.val,
+            indeterminate: !selectAll.val && selectedIdsCount.val > 0,
+            onChange: onSelectAllToggle,
+        }),
+        width: 32,
+        align: 'center',
+    };
     const tableColumns = van.derive(() => multiSelect.val ? [checkboxColumn, ...DATA_COLUMNS] : DATA_COLUMNS);
 
     // Clear checkbox states and selection when toggling multi-select off
@@ -339,15 +391,13 @@ const TestResults = (/** @type Properties */ props) => {
 
         // When selectAll is active, sync tracking state to current items
         if (isMulti && isSelectAll) {
-            selectedIdSetForRestore.clear();
-            const newIds = [];
             for (const item of currentItems) {
                 const state = getCheckboxState(item.test_result_id);
                 state.val = true;
                 selectedIdSetForRestore.add(item.test_result_id);
-                newIds.push(item.test_result_id);
             }
-            selectedIds = newIds;
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
         }
 
         return currentItems.map(item => {
@@ -362,7 +412,7 @@ const TestResults = (/** @type Properties */ props) => {
 
     const onSortChange = (newColumns) => {
         sortColumns.val = newColumns;
-        emitEvent('SortChanged', { payload: { columns: newColumns } });
+        emit('SortChanged', { payload: { columns: newColumns } });
     };
 
     const tableSortOptions = van.derive(() => ({
@@ -379,31 +429,41 @@ const TestResults = (/** @type Properties */ props) => {
     };
     const onRowsSelected = (idxs) => {
         if (multiSelect.rawVal) {
-            const newIds = [];
+            const currentPageItemIds = new Set(items.rawVal.map(r => r.test_result_id));
             const activeSet = new Set();
             for (const i of idxs) {
                 const item = items.rawVal[i];
-                if (item) {
-                    newIds.push(item.test_result_id);
-                    activeSet.add(item.test_result_id);
+                if (item) activeSet.add(item.test_result_id);
+            }
+            // Update restore set: only modify entries for current page items
+            for (const id of currentPageItemIds) {
+                if (activeSet.has(id)) {
+                    selectedIdSetForRestore.add(id);
+                } else {
+                    selectedIdSetForRestore.delete(id);
                 }
             }
-            selectedIdSetForRestore.clear();
-            for (const id of activeSet) selectedIdSetForRestore.add(id);
             for (const [id, state] of checkboxStates) {
-                state.val = activeSet.has(id);
+                if (currentPageItemIds.has(id)) {
+                    state.val = activeSet.has(id);
+                }
             }
-            selectedIds = newIds;
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
             // If user deselected rows while selectAll was on, turn selectAll off
-            if (selectAll.rawVal && newIds.length < items.rawVal.length) {
+            if (selectAll.rawVal && activeSet.size < currentPageItemIds.size) {
                 selectAll.val = false;
+            }
+            // Auto-enable selectAll when all items are individually selected
+            if (!selectAll.rawVal && totalCount.rawVal > 0 && selectedIds.length >= totalCount.rawVal) {
+                selectAll.val = true;
             }
         } else {
             if (idxs.length > 0) {
                 const row = items.rawVal[idxs[0]];
                 if (row && row.test_result_id !== selectedRowId.rawVal) {
                     selectedRowId.val = row.test_result_id;
-                    emitEvent('RowSelected', { payload: row.test_result_id });
+                    emit('RowSelected', { payload: row.test_result_id });
                 }
             }
         }
@@ -415,10 +475,11 @@ const TestResults = (/** @type Properties */ props) => {
         column_name: columnFilter.rawVal,
         test_type: testTypeFilter.rawVal,
         action: actionFilter.rawVal,
+        flagged: flaggedFilter.rawVal,
     });
 
     const emitFilterChanged = () => {
-        emitEvent('FilterChanged', { payload: getCurrentFilters() });
+        emit('FilterChanged', { payload: getCurrentFilters() });
     };
 
     const onStatusFilterChange = (value) => {
@@ -434,8 +495,8 @@ const TestResults = (/** @type Properties */ props) => {
         emitFilterChanged();
     };
 
-    const onColumnFilterChange = (value) => {
-        columnFilter.val = value;
+    const onColumnFilterChange = (value, meta) => {
+        columnFilter.val = meta?.isCustom ? `%${value}%` : value;
         selectedRowId.val = null;
         emitFilterChanged();
     };
@@ -452,9 +513,15 @@ const TestResults = (/** @type Properties */ props) => {
         emitFilterChanged();
     };
 
+    const onFlaggedFilterChange = (value) => {
+        flaggedFilter.val = value;
+        selectedRowId.val = null;
+        emitFilterChanged();
+    };
+
     const getSelectedResultIds = () => {
-        if (multiSelect.val && selectedIds.length > 0) {
-            return [...selectedIds];
+        if (multiSelect.val && selectedIdSetForRestore.size > 0) {
+            return [...selectedIdSetForRestore];
         }
         return selectedRowId.rawVal ? [selectedRowId.rawVal] : [];
     };
@@ -465,7 +532,8 @@ const TestResults = (/** @type Properties */ props) => {
                 // If filtering to only Passed, all are passed
                 return statusFilter.val === 'Passed';
             }
-            if (selectedIds.length === 0) return true;
+            const count = selectedIdsCount.val; // reactive dependency on selection changes
+            if (count === 0) return true;
             const currentItems = items.val;
             const idSet = new Set(selectedIds);
             return currentItems
@@ -478,12 +546,12 @@ const TestResults = (/** @type Properties */ props) => {
 
     const onDisposition = (status) => {
         if (selectAll.rawVal) {
-            emitEvent('DispositionAll', { payload: { filters: getCurrentFilters(), status } });
+            emit('DispositionAll', { payload: { filters: getCurrentFilters(), status } });
             return;
         }
         const ids = getSelectedResultIds();
         if (ids.length > 0) {
-            emitEvent('DispositionChanged', { payload: { test_result_ids: ids, status } });
+            emit('DispositionChanged', { payload: { test_result_ids: ids, status } });
         }
     };
 
@@ -491,17 +559,47 @@ const TestResults = (/** @type Properties */ props) => {
     const tableHeader = div(
         { class: 'flex-row fx-align-center fx-gap-2 p-2' },
         Toggle({
-            label: 'Multi-Select',
+            label: () => {
+                return div(
+                    { class: 'flex-column' },
+                    span('Multi-Select'),
+                    () => {
+                        if (!multiSelect.val) return '';
+                        if (selectAll.val) return span({ class: 'text-caption' }, () => `All ${totalCount.val} matching results selected`);
+                        const count = selectedIdsCount.val;
+                        if (count > 0) return span({ class: 'text-caption' }, `${count} result${count !== 1 ? 's' : ''} selected`);
+                        return '';
+                    },
+                );
+            },
             checked: () => multiSelect.val,
             onChange: (checked) => { multiSelect.val = checked; },
         }),
-        () => multiSelect.val && selectAll.val
-            ? span({ class: 'text-caption' }, () => `All ${totalCount.val} matching results selected`)
-            : '',
         div({ class: 'fx-flex' }),
         () => {
             if (!permissions.val.can_disposition) return '';
-            const disabled = allSelectedArePassed.val;
+            // Compute disabled state directly from reactive values (not via
+            // an intermediate derive) so VanJS always re-renders this binding
+            // when the selection changes — matches the test_definitions pattern.
+            const isAll = selectAll.val;
+            const count = selectedIdsCount.val;
+            let disabled;
+            if (multiSelect.val) {
+                if (isAll) {
+                    disabled = statusFilter.val === 'Passed';
+                } else if (count === 0) {
+                    disabled = true;
+                } else {
+                    const currentItems = items.val;
+                    const idSet = new Set(selectedIds);
+                    disabled = currentItems
+                        .filter(r => idSet.has(r.test_result_id))
+                        .every(r => r.result_status === 'Passed');
+                }
+            } else {
+                const row = selectedRow.val;
+                disabled = !row || row.result_status === 'Passed';
+            }
             return div(
                 { class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Confirm selected as relevant', disabled, onclick: () => onDisposition('Confirmed') }),
@@ -510,10 +608,51 @@ const TestResults = (/** @type Properties */ props) => {
                 Button({ type: 'icon', icon: 'restart_alt', tooltip: 'Clear action on selected', disabled, onclick: () => onDisposition('No Decision') }),
             );
         },
+        // Flag/unflag buttons
+        () => {
+            if (!permissions.val.can_disposition) return '';
+            const isAll = selectAll.val;
+            const count = selectedIdsCount.val;
+            const noSelection = !isAll && count === 0 && !selectedRow.val;
+            const selected = (() => {
+                if (isAll) return items.val;
+                if (count > 0) {
+                    const idSet = new Set(selectedIds);
+                    return items.val.filter(r => idSet.has(r.test_result_id));
+                }
+                const row = selectedRow.val;
+                return row ? [row] : [];
+            })();
+            const getTestDefinitionIds = () => [...new Set(selected.filter(r => r.test_definition_id).map(r => r.test_definition_id))];
+            return div(
+                { class: 'flex-row fx-gap-1' },
+                span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
+                Button({
+                    type: 'icon', icon: 'flag', tooltip: 'Flag selected', disabled: noSelection || selected.every(r => r.flagged),
+                    onclick: () => emit('FlagChanged', { payload: { test_definition_ids: getTestDefinitionIds(), value: true } }),
+                }),
+                ClearFlagButton({
+                    disabled: noSelection || selected.every(r => !r.flagged),
+                    onclick: () => emit('FlagChanged', { payload: { test_definition_ids: getTestDefinitionIds(), value: false } }),
+                }),
+            );
+        },
+        span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
+        () => {
+            const hasAnySelection = selectedIdsCount.val > 0 || !!selectedRow.val;
+            if (!hasAnySelection) return '';
+
+            return Button({
+                type: 'stroked', icon: 'download', label: 'Issue Report', width: 'auto',
+                size: 'small', style: 'background: var(--button-generic-background-color);',
+                onclick: () => emit('IssueReportClicked', { payload: { ids: getSelectedResultIds() } }),
+            });
+        },
         ExportMenu(
-            statusFilter, tableFilter, columnFilter, testTypeFilter, actionFilter,
+            statusFilter, tableFilter, columnFilter, testTypeFilter, actionFilter, flaggedFilter,
             () => selectedRowId.val || selectedIds.length > 0,
             getSelectedResultIds,
+            emit,
         ),
     );
 
@@ -523,11 +662,15 @@ const TestResults = (/** @type Properties */ props) => {
         itemsPerPage: pageSize.val,
         pageSizeOptions: [100, 500, 1000],
         onPageChange: (pageIdx, newPerPage) => {
-            if (!selectAll.rawVal) clearAllCheckboxStates();
             if (newPerPage !== pageSize.rawVal) {
-                emitEvent('PageChanged', { payload: { page: 0, page_size: newPerPage } });
+                if (!selectAll.rawVal) {
+                    clearAllCheckboxStates();
+                    selectedIds = [];
+                    selectedIdSetForRestore.clear();
+                }
+                emit('PageChanged', { payload: { page: 0, page_size: newPerPage } });
             } else {
-                emitEvent('PageChanged', { payload: { page: pageIdx } });
+                emit('PageChanged', { payload: { page: pageIdx } });
             }
         },
     }));
@@ -535,6 +678,7 @@ const TestResults = (/** @type Properties */ props) => {
     // Build the main table once
     const dataTable = Table(
         {
+            emit,
             columns: tableColumns,
             header: tableHeader,
             highDensity: true,
@@ -570,7 +714,7 @@ const TestResults = (/** @type Properties */ props) => {
     });
 
     const createHistoryTable = () => Table(
-        { columns: HISTORY_COLUMNS, highDensity: true, height: '250px' },
+        { emit, columns: HISTORY_COLUMNS, highDensity: true, height: '250px' },
         historyRows,
     );
 
@@ -593,16 +737,39 @@ const TestResults = (/** @type Properties */ props) => {
         { 'data-testid': 'test-results', class: 'flex-column' },
 
         // Dialogs (mounted once, driven by props from Python)
-        ProfilingResultsDialog({
+        ProfilingResultsDialog({ emit,
             profilingColumn: van.derive(() => getValue(props.profiling_column) ?? null),
-            onClose: () => emitEvent('ProfilingClosed', {}),
+            onClose: () => emit('ProfilingClosed', {}),
         }),
-        SourceDataDialog({
+        SourceDataDialog({ emit,
             sourceData: van.derive(() => getValue(props.source_data) ?? null),
-            onClose: () => emitEvent('SourceDataClosed', {}),
+            onClose: () => emit('SourceDataClosed', {}),
             renderHeader: TestResultSourceDataHeader,
         }),
         EditTestDialog(props),
+
+        // Notes dialog
+        Dialog(
+            {
+                title: 'Test Notes',
+                open: notesDialogOpen,
+                onClose: () => {
+                    notesDialogOpen.val = false;
+                    emit('NotesDialogClosed', {});
+                },
+                width: '36rem',
+            },
+            () => {
+                const data = getValue(props.notes_dialog);
+                if (!data) return span();
+                return TestDefinitionNotes({ emit,
+                    test_label: data.test_label,
+                    notes: data.notes,
+                    current_user: data.current_user,
+                    test_definition_id: data.id,
+                });
+            },
+        ),
 
         // Header row: summary bar + score
         div(
@@ -623,7 +790,7 @@ const TestResults = (/** @type Properties */ props) => {
                     icon: 'autorenew',
                     tooltip: 'Recalculate score',
                     style: 'color: var(--secondary-text-color)',
-                    onclick: () => emitEvent('ScoreRefreshClicked', {}),
+                    onclick: () => emit('ScoreRefreshClicked', {}),
                 }),
             ),
         ),
@@ -646,6 +813,7 @@ const TestResults = (/** @type Properties */ props) => {
                 options: tableOptions.val,
                 testId: 'table-filter',
                 style: 'min-width: 180px',
+                filterable: true,
                 onChange: onTableFilterChange,
                 allowNull: true,
             }),
@@ -655,6 +823,8 @@ const TestResults = (/** @type Properties */ props) => {
                 options: columnOptions.val,
                 testId: 'column-filter',
                 style: 'min-width: 180px',
+                filterable: true,
+                acceptNewOptions: true,
                 onChange: onColumnFilterChange,
                 allowNull: true,
             }),
@@ -664,6 +834,7 @@ const TestResults = (/** @type Properties */ props) => {
                 options: testTypeOptions.val,
                 testId: 'test-type-filter',
                 style: 'min-width: 160px',
+                filterable: true,
                 onChange: onTestTypeFilterChange,
                 allowNull: true,
             }),
@@ -674,6 +845,15 @@ const TestResults = (/** @type Properties */ props) => {
                 testId: 'action-filter',
                 style: 'min-width: 140px',
                 onChange: onActionFilterChange,
+                allowNull: true,
+            }),
+            () => Select({
+                label: 'Flagged',
+                value: flaggedFilter.val,
+                options: FLAGGED_FILTER_OPTIONS,
+                testId: 'flagged-filter',
+                style: 'min-width: 140px',
+                onChange: onFlaggedFilterChange,
                 allowNull: true,
             }),
         ),
@@ -694,49 +874,31 @@ const TestResults = (/** @type Properties */ props) => {
                 return div(
                     { class: 'tg-tr--detail flex-column fx-gap-4' },
 
-                    // Action buttons row (full width, above both columns)
+                    // Action buttons row
                     div(
-                        { class: 'flex-row fx-flex-wrap fx-gap-1 fx-justify-content-flex-end' },
-                        row.test_definition_id && permissions.val.can_edit
-                            ? Button({
-                                type: 'stroked',
-                                icon: 'edit',
-                                label: 'Edit Test',
-                                width: 'auto',
+                        { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
+                        ...[
+                            permissions.val.can_edit ? Button({
+                                type: 'stroked', icon: 'edit', label: 'Edit', width: 'auto',
                                 style: 'background: var(--button-generic-background-color);',
-                                onclick: () => emitEvent('EditTestClicked', {
-                                    payload: { test_suite_id: row.test_suite_id, test_definition_id: row.test_definition_id },
-                                }),
-                            })
-                            : '',
-                        row.test_scope === 'column'
-                            ? Button({
-                                type: 'stroked',
-                                icon: 'query_stats',
-                                label: 'Profiling',
-                                width: 'auto',
+                                onclick: () => emit('EditTestClicked', { payload: { test_result_id: row.test_result_id } }),
+                            }) : '',
+                            row.test_definition_id ? Button({
+                                type: 'stroked', icon: 'sticky_note_2', label: 'Notes', width: 'auto',
                                 style: 'background: var(--button-generic-background-color);',
-                                onclick: () => emitEvent('ProfilingClicked', {
-                                    payload: { column_names: row.column_names, table_name: row.table_name, table_groups_id: row.table_groups_id },
-                                }),
-                            })
-                            : '',
-                        Button({
-                            type: 'stroked',
-                            icon: 'visibility',
-                            label: 'Source Data',
-                            width: 'auto',
-                            style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emitEvent('SourceDataClicked', { payload: row.test_result_id }),
-                        }),
-                        Button({
-                            type: 'stroked',
-                            icon: 'download',
-                            label: 'Issue Report',
-                            width: 'auto',
-                            style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emitEvent('IssueReportClicked', { payload: row.test_result_id }),
-                        }),
+                                onclick: () => emit('NotesClicked', { payload: { id: row.test_definition_id, table_name: row.table_name, column_name: row.column_names, test_name_short: row.test_name_short } }),
+                            }) : '',
+                            Button({
+                                type: 'stroked', icon: 'query_stats', label: 'Profiling', width: 'auto',
+                                style: 'background: var(--button-generic-background-color);',
+                                onclick: () => emit('ProfilingClicked', { payload: row.test_result_id }),
+                            }),
+                            Button({
+                                type: 'stroked', icon: 'visibility', label: 'Source Data', width: 'auto',
+                                style: 'background: var(--button-generic-background-color);',
+                                onclick: () => emit('SourceDataClicked', { payload: row.test_result_id }),
+                            }),
+                        ].filter(Boolean),
                     ),
 
                     // Two-column content
@@ -768,13 +930,13 @@ const TestResults = (/** @type Properties */ props) => {
                                     Tab(
                                         { label: 'History' },
                                         si.history?.length
-                                            ? TestResultsChart({ data: chartDataState })
+                                            ? TestResultsChart({ emit, data: chartDataState })
                                             : div({ class: 'text-caption p-4' }, 'Test history not available.'),
                                     ),
                                     Tab(
                                         { label: 'Test Definition' },
                                         si.test_definition
-                                            ? TestDefinitionSummary({ test_definition: testDefState })
+                                            ? TestDefinitionSummary({ emit, test_definition: testDefState })
                                             : div({ class: 'text-caption p-4' }, 'Test definition not available.'),
                                     ),
                                 )
@@ -798,7 +960,7 @@ stylesheet.replace(`
     line-height: 1.2;
 }
 .tg-tr--detail {
-    border-top: 1px solid var(--border-color, #dddfe2);
+    border-top: 1px dashed var(--border-color, #dddfe2);
     padding-top: 16px;
 }
 .tg-tr--detail-title {
@@ -842,8 +1004,6 @@ export { TestResults };
 export default (component) => {
     let { data, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -851,6 +1011,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TestResults(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

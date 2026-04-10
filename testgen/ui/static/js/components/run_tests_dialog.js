@@ -26,11 +26,12 @@ import { Code } from '/app/static/js/components/code.js';
 import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { Select } from '/app/static/js/components/select.js';
-import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 
 const { div, span, strong } = van.tags;
 
 const RunTestsDialog = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('run-tests-dialog', stylesheet);
 
     const dialogProp = getValue(props.dialog);
@@ -44,7 +45,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
     const handleClose = () => {
         dialogOpen.val = false;
         if (typeof props.onClose === 'function') props.onClose();
-        else emitEvent('CloseClicked', {});
+        else emit('CloseClicked', {});
     };
 
     const testSuites = getValue(props.test_suites) ?? [];
@@ -68,6 +69,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
         () => selectedTestSuite.val
             ? div(
                 ExpanderToggle({
+                    default: showCLI,
                     expandLabel: 'Show CLI command',
                     collapseLabel: 'Collapse',
                     onExpand: () => showCLI.val = true,
@@ -100,7 +102,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
                     width: 'auto',
                     style: 'width: auto;',
                     disabled: van.derive(() => !selectedTestSuite.val),
-                    onclick: () => emitEvent('RunTestsConfirmed', {
+                    onclick: () => emit('RunTestsConfirmed', {
                         payload: {
                             test_suite_id: selectedTestSuite.val?.value,
                             test_suite_name: selectedTestSuite.val?.label,
@@ -116,7 +118,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
                 label: 'Go to Test Runs',
                 style: 'width: auto; margin-left: auto; margin-top: 12px;',
                 icon: 'chevron_right',
-                onclick: () => emitEvent('GoToTestRunsClicked', {
+                onclick: () => emit('GoToTestRunsClicked', {
                     payload: {
                         project_code: getValue(props.project_code),
                         test_suite_id: selectedTestSuite.val?.value,

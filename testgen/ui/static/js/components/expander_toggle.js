@@ -10,7 +10,6 @@
  * @property {Function?} onCollapse
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, span, i } = van.tags;
@@ -38,7 +37,7 @@ const ExpanderToggle = (/** @type Properties */ props) => {
             style: () => getValue(props.style) ?? '',
             onclick: () => {
                 expandedState.val = !expandedState.val;
-                const handler = (expandedState.val ? props.onExpand : props.onCollapse) ?? Streamlit.sendData;
+                const handler = expandedState.val ? props.onExpand : props.onCollapse;
                 handler(expandedState.val);
             }
         },

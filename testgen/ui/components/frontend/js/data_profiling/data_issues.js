@@ -36,6 +36,7 @@ const STATUS_COLORS = {
 };
 
 const HygieneIssuesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const emit = props.emit;
     const title = `Hygiene Issues ${item.is_latest_profile ? '*' : ''}`;
     const attributes = [
         { key: 'anomaly_name', width: 200, label: 'Issue' },
@@ -73,6 +74,7 @@ const HygieneIssuesCard = (/** @type Properties */ props, /** @type Table | Colu
 };
 
 const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const emit = props.emit;
     const attributes = [
         { key: 'test_name', width: 150, label: 'Test' },
         {
@@ -96,7 +98,7 @@ const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column 
                         { style: 'font-size: 12px; margin-top: 2px;' },
                         formatTimestamp(issue.test_run_date)
                     )
-                    : Link({
+                    : Link({ emit, 
                         href: 'test-runs:results',
                         params: {
                             run_id: issue.test_run_id,
@@ -126,7 +128,7 @@ const TestIssuesCard = (/** @type Properties */ props, /** @type Table | Column 
             noneContent = span(
                 { class: 'text-secondary flex-row fx-gap-1 fx-justify-content-flex-end' },
                 `No test results yet for ${item.type}.`,
-                props.noLinks ? null : Link({
+                props.noLinks ? null : Link({ emit, 
                     href: 'test-suites',
                     params: {
                         project_code: item.project_code,
@@ -151,6 +153,7 @@ const IssuesCard = (
     /** @type object? */ linkProps,
     /** @type (string | object)? */ noneContent,
 ) => {
+    const emit = props.emit;
     const gap = 8;
     const minWidth = attributes.reduce((sum, { width }) => sum + width, attributes.length * gap);
 
@@ -188,7 +191,7 @@ const IssuesCard = (
         );
 
         if (linkProps) {
-            actionContent = Link({
+            actionContent = Link({ emit, 
                 ...linkProps,
                 open_new: true,
                 label: 'View details',

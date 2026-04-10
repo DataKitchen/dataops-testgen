@@ -51,8 +51,7 @@ import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { SummaryCounts } from '/app/static/js/components/summary_counts.js';
 import { Link } from '/app/static/js/components/link.js';
 import { Button } from '/app/static/js/components/button.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { formatTimestamp, formatDuration, formatNumber, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Select } from '/app/static/js/components/select.js';
@@ -77,6 +76,7 @@ const progressStatusIcons = {
 };
 
 const ProfilingRuns = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('profilingRuns', stylesheet);
 
     const columns = ['5%', '20%', '15%', '20%', '30%', '10%'];
@@ -93,7 +93,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
         const paginated = profilingRuns.val.slice(PAGE_SIZE * pageIndex.val, PAGE_SIZE * (pageIndex.val + 1));
         const hasActiveRuns = paginated.some(({ status }) => status === 'Running');
         if (!refreshIntervalId && hasActiveRuns) {
-            refreshIntervalId = setInterval(() => emitEvent('RefreshData', {}), REFRESH_INTERVAL);
+            refreshIntervalId = setInterval(() => emit('RefreshData', {}), REFRESH_INTERVAL);
         } else if (refreshIntervalId && !hasActiveRuns) {
             clearInterval(refreshIntervalId);
         }
@@ -118,7 +118,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
     const closeDeleteDialog = () => {
         deleteDialogOpen.val = false;
         deleteConstraintChecked.val = false;
-        emitEvent('DeleteDialogClosed', {});
+        emit('DeleteDialogClosed', {});
     };
 
     const scheduleDialogOpen = van.state(false);
@@ -164,7 +164,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                     disabled: !someRunSelected,
                                     width: 'auto',
                                     onclick: () => {
-                                        emitEvent('DeleteRunsClicked', { payload: selectedItems.map(r => r.id) });
+                                        emit('DeleteRunsClicked', { payload: selectedItems.map(r => r.id) });
                                     },
                                 }),
                             );
@@ -215,10 +215,10 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                             ),
                         ),
                         div(
-                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.id], userCanEdit, projectSummary.project_code)),
+                            paginatedRuns.val.map(item => ProfilingRunItem(item, columns, selectedRuns[item.id], userCanEdit, projectSummary.project_code, emit)),
                         ),
                     ),
-                    Paginator({
+                    Paginator({ emit, 
                         pageIndex,
                         count: profilingRuns.val.length,
                         pageSize: PAGE_SIZE,
@@ -235,7 +235,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                     'No profiling runs found matching filters',
                 ),
             )
-            : ConditionalEmptyState(projectSummary, userCanEdit);
+            : ConditionalEmptyState(projectSummary, userCanEdit, emit);
         },
         Dialog(
             { title: 'Delete Profiling Runs', open: deleteDialogOpen, onClose: closeDeleteDialog },
@@ -269,13 +269,16 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                     () => {
                         const info = getValue(props.delete_dialog);
                         const hasActiveJob = info?.has_active_job ?? false;
+                        const isDisabled = hasActiveJob && !deleteConstraintChecked.val;
                         return Button({
                             label: 'Delete',
-                            color: 'warn',
-                            type: 'flat',
-                            disabled: hasActiveJob && !deleteConstraintChecked.val,
+                            color: isDisabled ? 'basic' : 'warn',
+                            type: isDisabled ? 'stroked' : 'flat',
+                            width: 'auto',
+                            style: 'margin-left: auto;',
+                            disabled: isDisabled,
                             onclick: () => {
-                                emitEvent('RunsDeleted', { payload: info?.run_ids ?? [] });
+                                emit('RunsDeleted', { payload: info?.run_ids ?? [] });
                                 closeDeleteDialog();
                             },
                         });
@@ -289,16 +292,16 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                 runProfilingDialogEl = null;
                 return div();
             }
-            return (runProfilingDialogEl ??= RunProfilingDialog({
+            return (runProfilingDialogEl ??= RunProfilingDialog({ emit,
                 dialog: { title: info.title ?? 'Run Profiling', open: true },
                 table_groups: info.table_groups ?? [],
                 allow_selection: info.allow_selection ?? false,
                 selected_id: info.selected_id,
                 result: van.derive(() => getValue(props.run_profiling_dialog)?.result),
-                onClose: () => emitEvent('RunProfilingDialogClosed', {}),
+                onClose: () => emit('RunProfilingDialogClosed', {}),
             }));
         },
-        ScheduleList({
+        ScheduleList({ emit,
             dialog: van.derive(() => ({
                 title: getValue(props.schedule_dialog)?.title ?? 'Schedules',
                 open: scheduleDialogOpen,
@@ -309,9 +312,9 @@ const ProfilingRuns = (/** @type Properties */ props) => {
             arg_values: van.derive(() => getValue(props.schedule_dialog)?.arg_values ?? []),
             sample: van.derive(() => getValue(props.schedule_dialog)?.sample),
             results: van.derive(() => getValue(props.schedule_dialog)?.results),
-            onClose: () => emitEvent('ScheduleDialogClosed', {}),
+            onClose: () => emit('ScheduleDialogClosed', {}),
         }),
-        NotificationSettings({
+        NotificationSettings({ emit,
             dialog: van.derive(() => ({
                 title: getValue(props.notifications_dialog)?.title ?? 'Notifications',
                 open: notificationsDialogOpen,
@@ -326,7 +329,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
             cde_enabled: van.derive(() => getValue(props.notifications_dialog)?.cde_enabled ?? false),
             total_enabled: van.derive(() => getValue(props.notifications_dialog)?.total_enabled ?? false),
             result: van.derive(() => getValue(props.notifications_dialog)?.result),
-            onClose: () => emitEvent('NotificationsDialogClosed', {}),
+            onClose: () => emit('NotificationsDialogClosed', {}),
         }),
     );
 };
@@ -335,6 +338,7 @@ const Toolbar = (
     /** @type Properties */ props,
     /** @type boolean */ userCanEdit,
 ) => {
+    const emit = props.emit;
     return div(
         { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4 fx-flex-wrap' },
         () => Select({
@@ -344,7 +348,7 @@ const Toolbar = (
             allowNull: true,
             style: 'font-size: 14px;',
             testId: 'table-group-filter',
-            onChange: (value) => emitEvent('FilterApplied', { payload: { table_group_id: value } }),
+            onChange: (value) => emit('FilterApplied', { payload: { table_group_id: value } }),
         }),
         div(
             { class: 'flex-row fx-gap-3' },
@@ -356,7 +360,7 @@ const Toolbar = (
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RunNotificationsClicked', {}),
+                onclick: () => emit('RunNotificationsClicked', {}),
             }),
             Button({
                 icon: 'today',
@@ -366,7 +370,7 @@ const Toolbar = (
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RunSchedulesClicked', {}),
+                onclick: () => emit('RunSchedulesClicked', {}),
             }),
             userCanEdit
                 ? Button({
@@ -375,7 +379,7 @@ const Toolbar = (
                     label: 'Run Profiling',
                     width: 'fit-content',
                     style: 'background: var(--button-generic-background-color);',
-                    onclick: () => emitEvent('RunProfilingClicked', {}),
+                    onclick: () => emit('RunProfilingClicked', {}),
                 })
                 : '',
             Button({
@@ -384,7 +388,7 @@ const Toolbar = (
                 tooltip: 'Refresh profiling runs list',
                 tooltipPosition: 'left',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RefreshData', {}),
+                onclick: () => emit('RefreshData', {}),
                 testId: 'profiling-runs-refresh',
             }),
         ),
@@ -397,6 +401,7 @@ const ProfilingRunItem = (
     /** @type boolean */ selected,
     /** @type boolean */ userCanEdit,
     /** @type string */ projectCode,
+    emit,
 ) => {
     const runningStep = item.progress?.find((item) => item.status === 'Running');
 
@@ -430,7 +435,7 @@ const ProfilingRunItem = (
                     label: 'Cancel',
                     style: 'width: 64px; height: 28px; color: var(--purple); margin-left: 12px;',
                     onclick: () => {
-                        emitEvent('RunCanceled', { payload: item });
+                        emit('RunCanceled', { payload: item });
                     },
                 }) : null,
             ),
@@ -479,7 +484,7 @@ const ProfilingRunItem = (
                     )
                     : null,
             ),
-            item.status === 'Complete' && item.column_ct ? Link({
+            item.status === 'Complete' && item.column_ct ? Link({ emit, 
                 label: 'View results',
                 href: 'profiling-runs:results',
                 params: { 'run_id': item.id, 'project_code': projectCode },
@@ -497,7 +502,7 @@ const ProfilingRunItem = (
                     { label: 'Dismissed', value: item.anomalies_dismissed_ct, color: 'grey' },
                 ],
             }) : '--',
-            item.anomaly_ct ? Link({
+            item.anomaly_ct ? Link({ emit, 
                 label: `View ${item.anomaly_ct} issues`,
                 href: 'profiling-runs:hygiene',
                 params: { 'run_id': item.id, 'project_code': projectCode },
@@ -571,6 +576,7 @@ const ProgressTooltip = (/** @type ProfilingRun */ item) => {
 const ConditionalEmptyState = (
     /** @type ProjectSummary */ projectSummary,
     /** @type boolean */ userCanEdit,
+    emit,
 ) => {
     let args = {
         message: EMPTY_STATE_MESSAGE.profiling,
@@ -584,7 +590,7 @@ const ConditionalEmptyState = (
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',
-            onclick: () => emitEvent('RunProfilingClicked', {}),
+            onclick: () => emit('RunProfilingClicked', {}),
         }),
     };
 
@@ -608,7 +614,7 @@ const ConditionalEmptyState = (
         };
     }
 
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'data_thresholding',
         label: 'No profiling runs yet',
         ...args,
@@ -631,8 +637,6 @@ export { ProfilingRuns };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -640,6 +644,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, ProfilingRuns(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

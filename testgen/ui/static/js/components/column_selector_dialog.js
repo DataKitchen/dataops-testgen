@@ -7,23 +7,24 @@
 import van from '/app/static/js/van.min.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { ColumnSelector } from '/app/static/js/components/explorer_column_selector.js';
-import { emitEvent, getValue } from '/app/static/js/utils.js';
+import { getValue } from '/app/static/js/utils.js';
 
 const { div } = van.tags;
 
 const ColumnSelectorDialog = (/** @type Properties */ props) => {
+    const emit = props.emit;
     const dialogProp = getValue(props.dialog);
     const externalOpen = dialogProp?.open;
     const isVanState = externalOpen != null && typeof externalOpen === 'object' && 'val' in externalOpen;
     const dialogOpen = isVanState ? externalOpen : van.state(dialogProp?.open === true);
     if (!isVanState) {
-        van.derive(() => { if (getValue(props.dialog)?.open === true) dialogOpen.val = true; });
+        van.derive(() => { dialogOpen.val = getValue(props.dialog)?.open === true; });
     }
 
     const handleClose = () => {
         dialogOpen.val = false;
         if (typeof props.onClose === 'function') props.onClose();
-        else emitEvent('CloseClicked', {});
+        else emit('CloseClicked', {});
     };
 
     const content = div({ style: 'height: 400px;' }, ColumnSelector(props));

@@ -40,7 +40,7 @@
 import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
-import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { ExpansionPanel } from '/app/static/js/components/expansion_panel.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Alert } from '/app/static/js/components/alert.js';
@@ -54,6 +54,7 @@ import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty
 const { div, span, b } = van.tags;
 
 const NotificationSettings = (/** @type Properties */ props) => {
+    const emit = props.emit;
   loadStylesheet('notification-settings', stylesheet);
 
   const dialogProp = getValue(props.dialog);
@@ -67,7 +68,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
   const handleClose = () => {
     dialogOpen.val = false;
     if (typeof props.onClose === 'function') props.onClose();
-    else emitEvent('CloseClicked', {});
+    else emit('CloseClicked', {});
   };
 
   const smtpConfigured = van.derive(() => getValue(props.smtp_configured));
@@ -165,14 +166,14 @@ const NotificationSettings = (/** @type Properties */ props) => {
                     icon: 'pause',
                     tooltip: 'Pause notification',
                     style: 'height: 32px;',
-                    onclick: () => emitEvent('PauseNotification', { payload: item }),
+                    onclick: () => emit('PauseNotification', { payload: item }),
                   })
                   : Button({
                     type: 'stroked',
                     icon: 'play_arrow',
                     tooltip: 'Resume notification',
                     style: 'height: 32px;',
-                    onclick: () => emitEvent('ResumeNotification', { payload: item }),
+                    onclick: () => emit('ResumeNotification', { payload: item }),
                   }),
                 Button({
                   type: 'stroked',
@@ -198,15 +199,15 @@ const NotificationSettings = (/** @type Properties */ props) => {
                   tooltip: 'Delete notification',
                   tooltipPosition: 'top-left',
                   style: 'height: 32px;',
-                  onclick: () => emitEvent('DeleteNotification', { payload: item }),
+                  onclick: () => emit('DeleteNotification', { payload: item }),
                 }),
               ]) : null,
         ),
       ),
       duplicatedMessage
         ? div(
-          { class: 'flex-row fx-gap-1 text-caption warning-text' },
-          Icon({ size: 12, classes: 'warning-text' }, 'warning'),
+          { class: 'flex-row fx-gap-1 text-caption text-warning' },
+          Icon({ size: 12, classes: 'text-warning' }, 'warning'),
           span({}, duplicatedMessage),
         )
         : '',
@@ -315,7 +316,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
           type: 'stroked',
           label: van.derive(() => newNotificationItemForm.isEdit.val ? 'Save Changes' : 'Add Notification'),
           width: 'auto',
-          onclick: () => emitEvent(
+          onclick: () => emit(
             newNotificationItemForm.isEdit.val ? 'UpdateNotification' : 'AddNotification',
             {
               payload: {
@@ -383,7 +384,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     div({ style: () => smtpConfigured.val ? '' : 'display: none' }, mainContent),
     () => smtpConfigured.val
       ? ''
-      : EmptyState({
+      : EmptyState({ emit, 
         label: 'Email server not configured.',
         message: EMPTY_STATE_MESSAGE.notifications,
         class: 'notifications--empty',

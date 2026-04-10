@@ -20,7 +20,7 @@ import { Alert } from '/app/static/js/components/alert.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { Icon } from '/app/static/js/components/icon.js';
-import { emitEvent, getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { Code } from '/app/static/js/components/code.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Select } from '/app/static/js/components/select.js';
@@ -32,6 +32,7 @@ const { div, span, strong } = van.tags;
  * @param {Properties} props
  */
 const RunProfilingDialog = (props) => {
+    const emit = props.emit;
     loadStylesheet('run-profiling', stylesheet);
 
     const dialogProp = getValue(props.dialog);
@@ -45,7 +46,7 @@ const RunProfilingDialog = (props) => {
     const handleClose = () => {
         dialogOpen.val = false;
         if (typeof props.onClose === 'function') props.onClose();
-        else emitEvent('CloseClicked', {});
+        else emit('CloseClicked', {});
     };
 
     const wrapperId = 'run-profiling-wrapper';
@@ -76,12 +77,16 @@ const RunProfilingDialog = (props) => {
                 ? div(
                     TableGroupStats({ class: 'mt-1 mb-3' }, selectedTableGroup.val),
                     ExpanderToggle({
+                        default: showCLICommand,
                         collapseLabel: 'Collapse',
                         expandLabel: 'Show CLI command',
                         onCollapse: () => showCLICommand.val = false,
                         onExpand: () => showCLICommand.val = true,
                     }),
-                    Code({ class: () => showCLICommand.val ? '' : 'hidden' }, `testgen run-profile --table-group-id ${selectedTableGroup.val.id}`),
+                    div(
+                        { style: () => showCLICommand.val ? '' : 'display: none' },
+                        Code({}, `testgen run-profile --table-group-id ${selectedTableGroup.val.id}`),
+                    ),
                 )
                 : div({ style: 'margin: auto;' }, 'Select a table group to profile.'),
             () => {
@@ -106,7 +111,7 @@ const RunProfilingDialog = (props) => {
                     width: 'auto',
                     style: 'width: auto;',
                     disabled: !selectedTableGroup.val,
-                    onclick: () => emitEvent('RunProfilingConfirmed', { payload: selectedTableGroup.val }),
+                    onclick: () => emit('RunProfilingConfirmed', { payload: selectedTableGroup.val }),
                 }),
             ) : '',
         () => getValue(props.result)?.show_link
@@ -116,7 +121,7 @@ const RunProfilingDialog = (props) => {
                 label: 'Go to Profiling Runs',
                 style: 'width: auto; margin-left: auto; margin-top: 12px;',
                 icon: 'chevron_right',
-                onclick: () => emitEvent('GoToProfilingRunsClicked', { payload: selectedTableGroup.val.id }),
+                onclick: () => emit('GoToProfilingRunsClicked', { payload: selectedTableGroup.val.id }),
             })
             : '',
     );
@@ -128,7 +133,7 @@ const RunProfilingDialog = (props) => {
                 title: dialogTitle,
                 open: dialogOpen,
                 onClose: handleClose,
-                width: '32rem',
+                width: '50rem',
             },
             content,
         );

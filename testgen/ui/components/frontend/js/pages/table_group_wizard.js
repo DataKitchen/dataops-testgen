@@ -1,14 +1,11 @@
 import van from '/app/static/js/van.min.js';
-import { isEqual } from '/app/static/js/utils.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
+import { createEmitter, isEqual } from '/app/static/js/utils.js';
 import { TableGroupWizard } from '/app/static/js/components/table_group_wizard.js';
 
 export { TableGroupWizard };
 
 export default (component) => {
   const { data, setStateValue, setTriggerValue, parentElement } = component;
-
-  Streamlit.enableV2(setTriggerValue);
 
   let componentState = parentElement.state;
   if (componentState === undefined) {
@@ -18,6 +15,7 @@ export default (component) => {
     }
 
     parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
     van.add(parentElement, TableGroupWizard(componentState));
   } else {
     for (const [ key, value ] of Object.entries(data)) {

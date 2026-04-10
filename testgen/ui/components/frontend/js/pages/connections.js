@@ -21,8 +21,7 @@
  * @property {Results?} results
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { ConnectionForm } from '/app/static/js/components/connection_form.js';
 import { TableGroupWizard } from '/app/static/js/components/table_group_wizard.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -37,6 +36,7 @@ const { div, span } = van.tags;
  * @returns 
  */
 const Connections = (props) => {
+    const { emit } = props;
     loadStylesheet('connections', stylesheet);
 
     const wrapperId = 'connections-list-wrapper';
@@ -52,7 +52,7 @@ const Connections = (props) => {
         div(
             { class: 'flex-row fx-justify-content-flex-end' },
             () => getValue(props.has_table_groups)
-                ? Link({
+                ? Link({ emit, 
                     href: 'table-groups',
                     params: {'project_code': projectCode, "connection_id": connectionId},
                     label: 'Manage Table Groups',
@@ -67,13 +67,14 @@ const Connections = (props) => {
                     width: 'auto',
                     disabled: !getValue(props.permissions).is_admin,
                     tooltip: 'You do not have permissions to perform this action. Contact your administrator.',
-                    onclick: () => emitEvent('SetupTableGroupClicked', {}),
+                    onclick: () => emit('SetupTableGroupClicked', {}),
                 }),
         ),
         div(
             { class: 'flex-column fx-gap-4 p-4' },
             ConnectionForm(
                 {
+                    emit,
                     connection: props.connection,
                     flavors: props.flavors,
                     disableFlavor: false,
@@ -97,7 +98,7 @@ const Connections = (props) => {
                         type: 'flat',
                         width: 'auto',
                         disabled: !canSave,
-                        onclick: () => emitEvent('SaveConnectionClicked', { payload: updatedConnection.val }),
+                        onclick: () => emit('SaveConnectionClicked', { payload: updatedConnection.val }),
                     });
                 },
             ),
@@ -111,7 +112,7 @@ const Connections = (props) => {
         () => {
             const wizardData = getValue(props.setup_wizard);
             if (!wizardData) return div();
-            return TableGroupWizard(wizardData);
+            return TableGroupWizard(wizardData, emit);
         },
     );
 }
@@ -133,8 +134,6 @@ export { Connections };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -142,6 +141,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, Connections(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

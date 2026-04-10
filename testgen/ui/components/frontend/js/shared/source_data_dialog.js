@@ -17,6 +17,7 @@ const { div, span, h4, p, small } = van.tags;
  * @param {string} [props.testId]
  */
 const SourceDataDialog = (props) => {
+    const emit = props.emit;
     loadStylesheet('source-data-dialog', stylesheet);
     const open = van.state(false);
     const data = van.state(null);
@@ -59,7 +60,7 @@ const SourceDataDialog = (props) => {
                     children.push(small({ class: 'text-caption', style: 'text-align: right; display: block; margin-bottom: 4px' }, '* Top 500 records displayed'));
                 }
 
-                const columns = d.columns.map(name => ({ name, label: name, overflow: 'hidden' }));
+                const columns = d.columns.map(name => ({ name, label: name, overflow: 'hidden', align: 'left' }));
                 const tableRows = van.state(d.rows.map(row => {
                     const obj = {};
                     d.columns.forEach((col, i) => { obj[col] = row[i] ?? ''; });
@@ -68,7 +69,7 @@ const SourceDataDialog = (props) => {
                 children.push(
                     div(
                         { style: 'margin-bottom: 12px' },
-                        Table({ columns, highDensity: true, height: '300px' }, tableRows),
+                        Table({ emit, columns, highDensity: true, height: 'auto', maxHeight: '300px' }, tableRows),
                     ),
                 );
             } else if (!d.message) {

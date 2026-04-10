@@ -11,11 +11,12 @@ import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { ColumnDistributionCard } from './column_distribution.js';
 import { DataCharacteristicsCard } from './data_characteristics.js';
 import { LatestProfilingTime } from './data_profiling_utils.js';
-import { PotentialPIICard, HygieneIssuesCard } from './data_issues.js';
+import { HygieneIssuesCard } from './data_issues.js';
 
 const { div, h2, span } = van.tags;
 
 const ColumnProfilingResults = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('column-profiling-results', stylesheet);
 
     const column = van.derive(() => {
@@ -43,14 +44,11 @@ const ColumnProfilingResults = (/** @type Properties */ props) => {
                         ),
                         column.val.column_name,
                     ),
-                    column.val.is_latest_profile ? LatestProfilingTime({}, column.val) : null,
+                    column.val.is_latest_profile ? LatestProfilingTime({ emit,}, column.val) : null,
                 ),
-                DataCharacteristicsCard({ border: true }, column.val),
-                ColumnDistributionCard({ border: true, dataPreview: !!props.data_preview?.val }, column.val),
-                column.val.hygiene_issues ? [
-                    PotentialPIICard({ border: true }, column.val),
-                    HygieneIssuesCard({ border: true }, column.val),
-                ] : null,
+                DataCharacteristicsCard({ emit,  border: true }, column.val),
+                ColumnDistributionCard({ emit,  border: true, dataPreview: !!props.data_preview?.val }, column.val),
+                column.val.hygiene_issues ? HygieneIssuesCard({ emit,  border: true }, column.val) : null,
             );
         },
     );

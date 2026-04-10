@@ -7,11 +7,10 @@ import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.test_generation import run_monitor_generation
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import ProfilingRunNotificationSettings
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_run import TestRun
@@ -21,7 +20,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import table_group_queries
-from testgen.ui.services.query_cache import get_project_summary
+from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
@@ -49,7 +48,6 @@ class TableGroupsPage(Page):
         order=0,
     )
 
-    @with_database_session
     def render(
         self,
         project_code: str,
@@ -105,7 +103,7 @@ class TableGroupsPage(Page):
 
         run_profiling_data = None
         if run_profiling_tg_id := st.session_state.get(TG_RUN_PROFILING_DIALOG_KEY):
-            table_groups_stats = TableGroup.select_stats(
+            table_groups_stats = get_table_group_stats(
                 project_code=project_code,
                 table_group_id=run_profiling_tg_id,
             )
@@ -139,13 +137,13 @@ class TableGroupsPage(Page):
                 show_link = False
             st.session_state[TG_RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
             if success and not show_link:
-                ProfilingRun.select_summary.clear()
+                get_profiling_run_summaries.clear()
                 st.session_state.pop(TG_RUN_PROFILING_DIALOG_KEY, None)
                 st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
 
         def on_go_to_profiling_runs_clicked(tg_id: str) -> None:
             st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
-            Router().navigate(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
+            Router().queue_navigation(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
 
         def on_run_profiling_dialog_closed(*_) -> None:
             st.session_state.pop(TG_RUN_PROFILING_DIALOG_KEY, None)
@@ -274,6 +272,7 @@ class TableGroupsPage(Page):
             set_run_profiling(run_profiling)
 
         def on_close_clicked(_params: dict) -> None:
+            TableGroup.select_minimal_where.clear()
             for key in ["tg_wizard_mode", "tg_wizard_connection_id", "tg_wizard_table_group_id"]:
                 st.session_state.pop(key, None)
 
@@ -418,6 +417,8 @@ class TableGroupsPage(Page):
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )
                         monitor_test_suite.save()
+                        # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
+                        get_current_session().commit()
                         run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
 
                         JobSchedule(
@@ -449,9 +450,14 @@ class TableGroupsPage(Page):
                             message = "Profiling run encountered errors"
                             LOG.exception(message)
 
-                except IntegrityError:
+                except IntegrityError as error:
+                    get_current_session().rollback()
                     success = False
-                    message = "A Table Group with the same name already exists."
+                    if "table_groups_name_unique" in str(error.orig):
+                        message = "A Table Group with the same name already exists."
+                    else:
+                        message = "Something went wrong while creating the table group."
+                        LOG.exception(message)
             else:
                 success = False
                 message = "Verify the table group before saving"
@@ -554,6 +560,7 @@ class TableGroupsPage(Page):
                             save_data_chars(table_group.id)
                         except Exception:
                             LOG.exception("Data characteristics refresh encountered errors")
+                    TableGroup.select_minimal_where.clear()
                     st.toast(f"Table group '{table_group.table_groups_name}' saved.", icon=":material/check:")
                     for key in ["tg_wizard_mode", "tg_wizard_table_group_id"]:
                         st.session_state.pop(key, None)
@@ -621,6 +628,7 @@ class TableGroupsPage(Page):
         table_group_name = st.session_state.get("tg_delete_dialog", {}).get("table_group", {}).get("table_groups_name", "")
         if not (ProfilingRun.has_active_job_for(TableGroup, table_group_id) or TestRun.has_active_job_for(TableGroup, table_group_id)):
             TableGroup.cascade_delete([table_group_id])
+            TableGroup.select_minimal_where.clear()
             st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
         else:
             st.toast("This Table Group is in use by a running process and cannot be deleted.", icon=":material/error:")

@@ -52,8 +52,7 @@
  * @property {object?} column_selector_dialog
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { debounce, emitEvent, getValue, loadStylesheet, afterMount, getRandomId, isEqual } from '/app/static/js/utils.js';
+import { createEmitter, debounce, getValue, loadStylesheet, afterMount, getRandomId, isEqual } from '/app/static/js/utils.js';
 import { Input } from '/app/static/js/components/input.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -83,6 +82,7 @@ const TRANSLATIONS = {
 };
 
 const ScoreExplorer = (/** @type {Properties} */ props) => {
+    const { emit } = props;
     loadStylesheet('score-explorer', stylesheet);
 
     const domId = 'score-explorer-page';
@@ -101,17 +101,17 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
     });
 
     const columnSelectorDialogOpen = van.state(false);
-    van.derive(() => { if (getValue(props.column_selector_dialog) != null) columnSelectorDialogOpen.val = true; });
+    van.derive(() => { columnSelectorDialogOpen.val = getValue(props.column_selector_dialog) != null; });
 
     return div(
         { id: domId, 'data-testid': 'score-explorer', class: 'score-explorer' },
-        Toolbar(props.filter_values, getValue(props.definition), props.is_new, userCanEdit, updateToolbarFilters),
+        Toolbar(props.filter_values, getValue(props.definition), props.is_new, userCanEdit, updateToolbarFilters, emit),
         span({ class: 'mb-4', style: 'display: block;' }),
         () => {
             const isEmpty = getValue(props.is_new) && getValue(props.definition)?.filters?.length <= 0;
 
             if (isEmpty) {
-                return EmptyState({
+                return EmptyState({ emit, 
                     class: 'explorer-empty-state',
                     label: 'No filters or columns selected yet',
                     icon: 'readiness_score',
@@ -136,23 +136,26 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
                             getValue(props.breakdown_score_type),
                             getValue(props.breakdown_category),
                             drilldown,
-                            () => emitEvent('DrilldownChanged', { payload: null }),
+                            () => emit('DrilldownChanged', { payload: null }),
+                            emit,
                         )
                         : ScoreBreakdown(
                             props.score_card,
                             props.breakdown,
                             props.breakdown_category,
                             props.breakdown_score_type,
-                            (project_code, name, score_type, category, drilldown) => emitEvent('DrilldownChanged', { payload: drilldown }),
+                            (project_code, name, score_type, category, drilldown) => emit('DrilldownChanged', { payload: drilldown }),
+                            emit,
                         )
                     );
                 },
             );
         },
         ColumnSelectorDialog({
+            emit,
             dialog: van.derive(() => ({ title: getValue(props.column_selector_dialog)?.title ?? 'Select Columns', open: columnSelectorDialogOpen })),
             columns: van.derive(() => getValue(props.column_selector_dialog)?.columns ?? []),
-            onClose: () => emitEvent('ColumnSelectorDialogClosed', {}),
+            onClose: () => emit('ColumnSelectorDialogClosed', {}),
         }),
     );
 };
@@ -163,6 +166,7 @@ const Toolbar = (
     /** @type boolean */ isNew,
     /** @type boolean */ userCanEdit,
     /** @type ... */ updates,
+    emit,
 ) => {
     const addFilterButtonId = 'score-explorer--add-filter-btn';
     const categories = [
@@ -214,7 +218,7 @@ const Toolbar = (
         filters.val[position].value.val = value
         filters.val = [ ...filters.val ];
     };
-    const refresh = debounce((payload) => emitEvent('ScoreUpdated', { payload }), 300);
+    const refresh = debounce((payload) => emit('ScoreUpdated', { payload }), 300);
 
     van.derive(() => {
         const previous = {
@@ -240,7 +244,7 @@ const Toolbar = (
 
         if (!isEqual(current, previous)) {
             if (current.filter_by_columns && !previous.filter_by_columns) {
-                emitEvent('ColumnSelectorOpened', {});
+                emit('ColumnSelectorOpened', {});
             } else if (!current.filter_by_columns && previous.filter_by_columns) {
                 filterSelectorOpened.val = true;
             } else {
@@ -295,7 +299,7 @@ const Toolbar = (
                                 renderedFilters[key] = renderedFilters[key] ?? (
                                     filterByColumns.val
                                         ? ColumnFilter({field, value, others})
-                                        : Filter(idx, field, value, filterValues_[field], setFilterValue, removeFilter, !isInitialized && !value.val)
+                                        : Filter(idx, field, value, filterValues_[field], setFilterValue, removeFilter, !isInitialized && !value.val, emit)
                                 );
                                 return renderedFilters[key];
                             }),
@@ -320,7 +324,7 @@ const Toolbar = (
                             type: 'basic',
                             color: 'primary',
                             style: 'width: auto;',
-                            onclick: () => emitEvent('ColumnSelectorOpened', {}),
+                            onclick: () => emit('ColumnSelectorOpened', {}),
                         });
                         const combinedTrigger = div(
                             {class: 'flex-row fx-gap-3'},
@@ -341,7 +345,7 @@ const Toolbar = (
                     },
                     Portal(
                         { target: addFilterButtonId, style: '',  opened: filterSelectorOpened},
-                        FilterFieldSelector(filterableFields, undefined, addEmptyFilter),
+                        FilterFieldSelector(filterableFields, undefined, addEmptyFilter, emit),
                     ),
                 )
             ),
@@ -357,14 +361,14 @@ const Toolbar = (
                         type: 'basic',
                         color: 'primary',
                         style: 'width: auto;',
-                        onclick: () => emitEvent('FilterModeChanged', {payload: true}),
+                        onclick: () => emit('FilterModeChanged', {payload: true}),
                     });
                     const switchToCategoryFilterTrigger = Button({
                         label: 'Switch to Category Filters',
                         type: 'basic',
                         color: 'primary',
                         style: 'width: auto;',
-                        onclick: () => emitEvent('FilterModeChanged', {payload: false}),
+                        onclick: () => emit('FilterModeChanged', {payload: false}),
                     });
 
                     if (filterByColumns.val) {
@@ -430,7 +434,7 @@ const Toolbar = (
                         color: 'primary',
                         style: 'width: auto;',
                         disabled: disableSave,
-                        onclick: () => emitEvent('ScoreDefinitionSaved', {}),
+                        onclick: () => emit('ScoreDefinitionSaved', {}),
                     });
                 },
                 () => {
@@ -447,7 +451,7 @@ const Toolbar = (
                         type: 'stroked',
                         color: 'warn',
                         style: 'width: auto;',
-                        onclick: () => emitEvent('LinkClicked', { href, params }),
+                        onclick: () => emit('LinkClicked', { href, params }),
                     });
                 },
             ) : '',
@@ -464,7 +468,7 @@ const Filter = (
     /** @type Function */ onChange,
     /** @type Function */ onRemove,
     /** @type boolean */ openOnRender = true,
-) => {
+emit) => {
     const id = `score-explorer-filter-${position}-${field}`;
     const opened = van.state(false);
     if (openOnRender) {
@@ -486,7 +490,7 @@ const Filter = (
         ),
         Portal(
             {target: id, opened: opened},
-            () => FilterFieldSelector(getValue(options), getValue(value), onValueSelected),
+            () => FilterFieldSelector(getValue(options), getValue(value), onValueSelected, emit),
         ),
         i(
             {
@@ -499,7 +503,7 @@ const Filter = (
     );
 };
 
-const FilterFieldSelector = (/** @type string[] */ options, /** @type string */ value, /** @type Function */ onSelect) => {
+const FilterFieldSelector = (/** @type string[] */ options, /** @type string */ value, /** @type Function */ onSelect, emit) => {
     return div(
         { class: 'flex-column score-explorer--selector mt-1', 'data-testid': 'explorer-filter-field-selector' },
         (options?.length ?? 0) > 0
@@ -574,8 +578,6 @@ export { ScoreExplorer };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -583,6 +585,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, ScoreExplorer(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

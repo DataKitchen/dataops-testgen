@@ -9,20 +9,20 @@
  * @property {AutoflagSettings} autoflagSettings
  * @property {(() => void)?} onCancel
  */
-import van from '../van.min.js';
-import { EditableCard } from '../components/editable_card.js';
-import { Attribute } from '../components/attribute.js';
-import { Input } from '../components/input.js';
-import { Icon } from '../components/icon.js';
-import { withTooltip } from '../components/tooltip.js';
-import { emitEvent, loadStylesheet } from '../utils.js';
-import { RadioGroup } from '../components/radio_group.js';
-import { Checkbox } from '../components/checkbox.js';
-import { capitalize } from '../display_utils.js';
-import { Card } from '../components/card.js';
-import { Dialog } from '../components/dialog.js';
-import { Button } from '../components/button.js';
-import { Alert } from '../components/alert.js';
+import van from '/app/static/js/van.min.js';
+import { EditableCard } from '/app/static/js/components/editable_card.js';
+import { Attribute } from '/app/static/js/components/attribute.js';
+import { Input } from '/app/static/js/components/input.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { loadStylesheet } from '/app/static/js/utils.js';
+import { RadioGroup } from '/app/static/js/components/radio_group.js';
+import { Checkbox } from '/app/static/js/components/checkbox.js';
+import { capitalize } from '/app/static/js/display_utils.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const { div, span } = van.tags;
 
@@ -79,6 +79,7 @@ const TAG_HELP = {
  * @returns
  */
 const MetadataTagsCard = (props, item) => {
+    const emit = props.emit;
     loadStylesheet('metadata-tags', stylesheet);
 
     const title = `${item.type} Tags `;
@@ -211,10 +212,10 @@ const MetadataTagsCard = (props, item) => {
                     if (warnPii.val) {
                         disableFlags.push('profile_flag_pii');
                     }
-                    pendingSaveAction.val = () => emitEvent('TagsChanged', { payload: { items, tags, disable_flags: disableFlags } });
+                    pendingSaveAction.val = () => emit('TagsChanged', { payload: { items, tags, disable_flags: disableFlags } });
                     warningDialogOpen.val = true;
                 } else {
-                    emitEvent('TagsChanged', { payload: { items, tags } })
+                    emit('TagsChanged', { payload: { items, tags } })
                 } 
             },
             // Reset states to original values on cancel
@@ -305,6 +306,7 @@ const PiiDisplay = (/** @type string|null */ value) => {
  * @returns
  */
 const MetadataTagsMultiEdit = (props, selectedItems) => {
+    const emit = props.emit;
     const columnCount = van.derive(() => selectedItems.val?.reduce((count, { children }) => count + children.length, 0));
 
     const attributes = [
@@ -410,10 +412,10 @@ const MetadataTagsMultiEdit = (props, selectedItems) => {
                                 if (warnPii.val) {
                                     disableFlags.push('profile_flag_pii');
                                 }
-                                pendingSaveAction.val = () => emitEvent('TagsChanged', { payload: { items, tags, disable_flags: disableFlags } });;
+                                pendingSaveAction.val = () => emit('TagsChanged', { payload: { items, tags, disable_flags: disableFlags } });;
                                 warningDialogOpen.val = true;
                             } else {
-                                emitEvent('TagsChanged', { payload: { items, tags } });
+                                emit('TagsChanged', { payload: { items, tags } });
                                 // Don't set multiEditMode to false here
                                 // Otherwise this event gets superseded by the ItemSelected event
                                 // Let the Streamlit rerun handle the state reset with 'last_saved_timestamp'

@@ -47,7 +47,7 @@ def run_tests_dialog_widget(
 
     def on_go_to_test_runs(payload: dict) -> None:
         st.session_state.pop(RESULT_KEY, None)
-        Router().navigate(to=LINK_HREF, with_args=payload)
+        Router().queue_navigation(to=LINK_HREF, with_args=payload)
 
     def on_close_clicked(*_) -> None:
         st.session_state.pop(RESULT_KEY, None)

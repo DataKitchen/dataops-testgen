@@ -20,12 +20,13 @@
  * @property {((event: any) => void)?} onClick
  * @property {string?} testId
  */
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 
 const { a, div, i, span } = van.tags;
 
 const Link = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('link', stylesheet);
 
     const href = getValue(props.href);
@@ -48,7 +49,7 @@ const Link = (/** @type Properties */ props) => {
             onclick: open_new ? null : (onClick ?? ((event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                emitEvent('LinkClicked', { href, params });
+                emit('LinkClicked', { href, params });
             })),
             onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
             onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,

@@ -1,6 +1,5 @@
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { getValue, isEqual, emitEvent, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { Table } from '/app/static/js/components/table.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -14,19 +13,24 @@ import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
 import { Textarea } from '/app/static/js/components/textarea.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
+import { TestDefinitionNotes } from './test_definition_notes.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { Icon } from '/app/static/js/components/icon.js';
 
-const { div, span, strong, input, label } = van.tags;
+const { button: btn, div, i: icon, span, strong, input, label } = van.tags;
 
 const TABLE_COLUMNS = [
     { name: 'table_name', label: 'Table', width: 180, sortable: true, overflow: 'hidden' },
     { name: 'column_name', label: 'Column / Focus', width: 180, sortable: true, overflow: 'hidden' },
     { name: 'test_name_short', label: 'Test Type', width: 160, sortable: true, overflow: 'hidden' },
-    { name: 'test_active_display', label: 'Active', width: 80 },
-    { name: 'lock_refresh_display', label: 'Locked', width: 80 },
+    { name: 'test_active_display', label: 'Active', width: 80, align: 'center' },
+    { name: 'lock_refresh_display', label: 'Locked', width: 80, align: 'center' },
     { name: 'urgency', label: 'Urgency', width: 100 },
-    { name: 'export_to_observability_display', label: 'Observability', width: 120 },
+    { name: 'flagged_display', label: 'Flagged', width: 80, align: 'center' },
+    { name: 'notes_count', label: 'Notes', width: 70, align: 'center' },
     { name: 'profiling_as_of_date', label: 'Based on Profiling', width: 160 },
     { name: 'last_manual_update', label: 'Last Manual Update', width: 160 },
+    { name: 'export_to_observability_display', label: 'Observability', width: 120 },
 ];
 
 const SEVERITY_OPTIONS = [
@@ -66,8 +70,31 @@ const BLANK_PARAM_FIELDS = {
     history_lookback: null,
 };
 
+/** Composite icon button: flag with a diagonal strikethrough (pen_size_1 rotated). */
+const ClearFlagButton = ({ disabled, onclick }) => {
+    return withTooltip(btn(
+        {
+            class: 'tg-button tg-icon-button tg-basic-button',
+            disabled,
+            onclick,
+            style: 'width: 40px; position: relative;',
+        },
+        span({ class: 'tg-button-focus-state-indicator' }, ''),
+        div(
+            { style: 'position: relative; display: inline-flex; align-items: center; justify-content: center;' },
+            icon({ class: 'material-symbols-rounded', style: 'font-size: 20px;' }, 'flag'),
+            icon({ class: 'material-symbols-rounded', style: 'font-size: 24px; position: absolute; top: -3px; left: -3px; transform: rotate(90deg);' }, 'pen_size_1'),
+        ),
+    ), { text: 'Clear flag' });
+};
+
 const TestDefinitions = (/** @type object */ props) => {
+    const { emit } = props;
     loadStylesheet('test-definitions', stylesheet);
+
+    // Notes dialog: persistent local state + one-time sync from Python prop
+    const notesDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.notes_dialog)) notesDialogOpen.val = true; });
 
     const permissions = van.derive(() => getValue(props.permissions) ?? {});
     const canEdit = van.derive(() => getValue(permissions).can_edit ?? false);
@@ -79,6 +106,7 @@ const TestDefinitions = (/** @type object */ props) => {
     const tableFilter = van.state(null);
     const columnFilter = van.state(null);
     const testTypeFilter = van.state(null);
+    const flaggedFilter = van.state(null);
 
     // Initialize filters from Python query params (runs once on mount)
     const filtersInitialized = van.state(false);
@@ -88,13 +116,22 @@ const TestDefinitions = (/** @type object */ props) => {
         tableFilter.val = cf.table_name ?? null;
         columnFilter.val = cf.column_name ?? null;
         testTypeFilter.val = cf.test_type ?? null;
+        flaggedFilter.val = cf.flagged ?? null;
         filtersInitialized.val = true;
     });
 
     const columnFilterOptions = van.derive(() => {
         const cols = filterOptions.val.columns ?? [];
         const table = tableFilter.val;
-        const filtered = table ? cols.filter(c => c.table_name === table) : cols;
+        let filtered;
+        if (!table) {
+            filtered = cols;
+        } else if (table.startsWith('%') && table.endsWith('%')) {
+            const partial = table.slice(1, -1).toLowerCase();
+            filtered = cols.filter(c => c.table_name.toLowerCase().includes(partial));
+        } else {
+            filtered = cols.filter(c => c.table_name === table);
+        }
         return [...new Map(filtered.map(c => [c.column_name, c])).values()]
             .sort((a, b) => (a.column_name ?? '').localeCompare(b.column_name ?? ''))
             .map(c => ({ label: c.column_name, value: c.column_name }));
@@ -108,11 +145,12 @@ const TestDefinitions = (/** @type object */ props) => {
         (filterOptions.val.test_types ?? []).map(tt => ({ label: tt.test_name_short, value: tt.test_type }))
     );
 
-    const onFilterChange = () => emitEvent('FilterChanged', {
+    const onFilterChange = () => emit('FilterChanged', {
         payload: {
             table_name: tableFilter.val || null,
             column_name: columnFilter.val || null,
             test_type: testTypeFilter.val || null,
+            flagged: flaggedFilter.val || null,
         },
     });
 
@@ -145,20 +183,29 @@ const TestDefinitions = (/** @type object */ props) => {
     const clearAllCheckboxStates = () => {
         for (const state of checkboxStates.values()) state.val = false;
         selectAll.val = false;
+        selectedIdsCount.val = 0;
     };
 
     let selectedIds = [];
     const selectedIdSetForRestore = new Set();
+    const getSelectedDefinitionIds = () => {
+        if (multiSelectMode.val) return [...selectedIdSetForRestore];
+        return selectedRowId.val ? [selectedRowId.val] : [];
+    };
+
+    // Reactive selection count for button enable/disable
+    const selectedIdsCount = van.state(0);
 
     const onSelectAllToggle = (checked) => {
-        selectAll.val = checked;
         if (checked) {
+            selectAll.val = true;
             for (const item of testDefinitions.rawVal) {
                 const state = getCheckboxState(item.id);
                 state.val = true;
                 selectedIdSetForRestore.add(item.id);
             }
-            selectedIds = testDefinitions.rawVal.map(r => r.id);
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
         } else {
             clearAllCheckboxStates();
             selectedIds = [];
@@ -166,25 +213,28 @@ const TestDefinitions = (/** @type object */ props) => {
         }
     };
 
-    const selectAllCheckbox = Checkbox({
-        label: '',
-        checked: () => selectAll.val,
-        onChange: onSelectAllToggle,
-    });
-    const checkboxColumn = { name: '_checkbox', label: selectAllCheckbox, width: 32, align: 'center' };
+    const checkboxColumn = {
+        name: '_checkbox',
+        label: () => Checkbox({
+            label: '',
+            checked: selectAll.val,
+            indeterminate: !selectAll.val && selectedIdsCount.val > 0,
+            onChange: onSelectAllToggle,
+        }),
+        width: 32,
+        align: 'center',
+    };
     const tableColumns = van.derive(() => multiSelectMode.val ? [checkboxColumn, ...TABLE_COLUMNS] : TABLE_COLUMNS);
 
-    // Clear checkbox states when toggling multi-select off
+    // Clear checkbox states and selection when toggling multi-select off
     van.derive(() => {
         if (!multiSelectMode.val) {
             clearAllCheckboxStates();
             selectedIds = [];
+            selectedIdsCount.val = 0;
             selectedIdSetForRestore.clear();
         }
     });
-
-    // Reactive selection count for button enable/disable
-    const selectedIdsCount = van.state(0);
 
     const selectedRows = van.derive(() => {
         const count = selectedIdsCount.val; // reactive dependency
@@ -213,11 +263,11 @@ const TestDefinitions = (/** @type object */ props) => {
     const unlockDialogInfo = van.derive(() => getValue(props.unlock_dialog) ?? null);
     const copyMoveDialogInfo = van.derive(() => getValue(props.copy_move_dialog) ?? null);
 
-    van.derive(() => { if (addDialogInfo.val?.open) addDialogOpen.val = true; });
-    van.derive(() => { if (editDialogInfo.val?.open) editDialogOpen.val = true; });
-    van.derive(() => { if (deleteDialogInfo.val?.open) deleteDialogOpen.val = true; });
-    van.derive(() => { if (unlockDialogInfo.val?.open) unlockDialogOpen.val = true; });
-    van.derive(() => { if (copyMoveDialogInfo.val?.open) copyMoveDialogOpen.val = true; });
+    van.derive(() => { addDialogOpen.val = !!addDialogInfo.val?.open; });
+    van.derive(() => { editDialogOpen.val = !!editDialogInfo.val?.open; });
+    van.derive(() => { deleteDialogOpen.val = !!deleteDialogInfo.val?.open; });
+    van.derive(() => { unlockDialogOpen.val = !!unlockDialogInfo.val?.open; });
+    van.derive(() => { copyMoveDialogOpen.val = !!copyMoveDialogInfo.val?.open; });
 
     const runTestsDialogData = van.derive(() => getValue(props.run_tests_dialog) ?? null);
 
@@ -229,20 +279,34 @@ const TestDefinitions = (/** @type object */ props) => {
 
         // When selectAll is active, sync tracking state to current page items
         if (isMulti && isSelectAll) {
-            selectedIdSetForRestore.clear();
-            const newIds = [];
             for (const item of currentItems) {
                 const state = getCheckboxState(item.id);
                 state.val = true;
                 selectedIdSetForRestore.add(item.id);
-                newIds.push(item.id);
             }
-            selectedIds = newIds;
-            selectedIdsCount.val = newIds.length;
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
         }
 
         return currentItems.map(item => {
-            const row = { ...item };
+            const row = {
+                ...item,
+                test_active: item.test_active_display?.toLowerCase() === 'yes', // flag to apply row style
+                test_active_display: item.test_active_display?.toLowerCase() === 'yes'
+                    ? Icon({classes: 'text-green display-table-cell'}, 'check_circle')
+                    : Icon({classes: 'text-disabled display-table-cell'}, 'notifications_off'),
+                lock_refresh_display: item.lock_refresh_display?.toLowerCase() === 'yes'
+                    ? Icon({classes: 'text-purple display-table-cell'}, 'lock')
+                    : '',
+                flagged_display: item.flagged_display?.toLowerCase() === 'yes'
+                    ? Icon({classes: 'text-error display-table-cell', filled: true}, 'flag')
+                    : '',
+                notes_count: item.notes_count ? div(
+                    {class: 'flex-row fx-justify-center'},
+                    Icon({}, 'sticky_note_2'),
+                    span(item.notes_count),
+                ) : '',
+            };
             if (isMulti) {
                 const checked = getCheckboxState(item.id);
                 row._checkbox = Checkbox({ label: '', checked, style: 'pointer-events: none' });
@@ -253,7 +317,7 @@ const TestDefinitions = (/** @type object */ props) => {
 
     const onSortChange = (newColumns) => {
         sortColumns.val = newColumns;
-        emitEvent('SortChanged', { payload: { columns: newColumns } });
+        emit('SortChanged', { payload: { columns: newColumns } });
     };
 
     const tableSortOptions = van.derive(() => ({
@@ -268,25 +332,34 @@ const TestDefinitions = (/** @type object */ props) => {
 
     const onRowsSelected = (idxs) => {
         if (multiSelectMode.rawVal) {
-            const newIds = [];
+            const currentPageItemIds = new Set(testDefinitions.rawVal.map(r => r.id));
             const activeSet = new Set();
             for (const i of idxs) {
                 const item = testDefinitions.rawVal[i];
-                if (item) {
-                    newIds.push(item.id);
-                    activeSet.add(item.id);
+                if (item) activeSet.add(item.id);
+            }
+            // Update restore set: only modify entries for current page items
+            for (const id of currentPageItemIds) {
+                if (activeSet.has(id)) {
+                    selectedIdSetForRestore.add(id);
+                } else {
+                    selectedIdSetForRestore.delete(id);
                 }
             }
-            selectedIdSetForRestore.clear();
-            for (const id of activeSet) selectedIdSetForRestore.add(id);
             for (const [id, state] of checkboxStates) {
-                state.val = activeSet.has(id);
+                if (currentPageItemIds.has(id)) {
+                    state.val = activeSet.has(id);
+                }
             }
-            selectedIds = newIds;
-            selectedIdsCount.val = newIds.length;
+            selectedIds = [...selectedIdSetForRestore];
+            selectedIdsCount.val = selectedIds.length;
             // If user deselected rows while selectAll was on, turn selectAll off
-            if (selectAll.rawVal && newIds.length < testDefinitions.rawVal.length) {
+            if (selectAll.rawVal && activeSet.size < currentPageItemIds.size) {
                 selectAll.val = false;
+            }
+            // Auto-enable selectAll when all items are individually selected
+            if (!selectAll.rawVal && totalCount.rawVal > 0 && selectedIds.length >= totalCount.rawVal) {
+                selectAll.val = true;
             }
         } else {
             if (idxs.length > 0) {
@@ -304,11 +377,16 @@ const TestDefinitions = (/** @type object */ props) => {
         itemsPerPage: pageSize.val,
         pageSizeOptions: [100, 500, 1000],
         onPageChange: (pageIdx, newPerPage) => {
-            if (!selectAll.rawVal) clearAllCheckboxStates();
             if (newPerPage !== pageSize.rawVal) {
-                emitEvent('PageChanged', { payload: { page: 0, page_size: newPerPage } });
+                if (!selectAll.rawVal) {
+                    clearAllCheckboxStates();
+                    selectedIds = [];
+                    selectedIdsCount.val = 0;
+                    selectedIdSetForRestore.clear();
+                }
+                emit('PageChanged', { payload: { page: 0, page_size: newPerPage } });
             } else {
-                emitEvent('PageChanged', { payload: { page: pageIdx } });
+                emit('PageChanged', { payload: { page: pageIdx } });
             }
         },
     }));
@@ -318,13 +396,22 @@ const TestDefinitions = (/** @type object */ props) => {
         { class: 'flex-row fx-align-center fx-gap-2 p-2 fx-flex-wrap' },
         () => canDisposition.val
             ? Toggle({
-                label: 'Multi-Select',
+                label: () => {
+                    return div(
+                        { class: 'flex-column' },
+                        span('Multi-Select'),
+                        () => {
+                            if (!multiSelectMode.val) return '';
+                            if (selectAll.val) return span({ class: 'text-caption' }, () => `All ${totalCount.val} matching definitions selected`);
+                            const count = selectedIdsCount.val;
+                            if (count > 0) return span({ class: 'text-caption' }, `${count} definition${count !== 1 ? 's' : ''} selected`);
+                            return '';
+                        },
+                    );
+                },
                 checked: () => multiSelectMode.val,
                 onChange: (v) => { multiSelectMode.val = v; },
             })
-            : '',
-        () => multiSelectMode.val && selectAll.val
-            ? span({ class: 'text-caption' }, () => `All ${totalCount.val} matching definitions selected`)
             : '',
         div({ class: 'fx-flex' }),
         // Edit buttons (left group)
@@ -341,13 +428,12 @@ const TestDefinitions = (/** @type object */ props) => {
             }));
             return div(
                 { class: 'flex-row fx-gap-1' },
-                Button({ type: 'icon', icon: 'edit', tooltip: 'Edit', disabled: !isSingle, onclick: () => emitEvent('EditDialogOpened', { payload: { id: selected[0]?.id } }) }),
-                Button({ type: 'icon', icon: 'file_copy', tooltip: 'Copy/Move', disabled: !isSingle, onclick: () => emitEvent('CopyMoveDialogOpened', { payload: minimalSelected() }) }),
+                Button({ type: 'icon', icon: 'file_copy', tooltip: 'Copy/Move', disabled: !hasSelection, onclick: () => emit('CopyMoveDialogOpened', { payload: isAll ? 'all' : minimalSelected() }) }),
                 Button({
                     type: 'icon', icon: 'delete', tooltip: 'Delete', disabled: !hasSelection,
                     onclick: () => isAll
-                        ? emitEvent('DeleteAllOpened', {})
-                        : emitEvent('DeleteDialogOpened', { payload: selected.map(r => ({ id: r.id })) }),
+                        ? emit('DeleteAllOpened', {})
+                        : emit('DeleteDialogOpened', { payload: getSelectedDefinitionIds().map(id => ({ id })) }),
                 }),
             );
         },
@@ -365,30 +451,46 @@ const TestDefinitions = (/** @type object */ props) => {
             const allUnlocked = !isAll && selected.length > 0 && selected.every(r => r.lock_refresh_display === 'No');
             const emitAttribute = (attribute, value) => {
                 if (isAll) {
-                    emitEvent('UpdateAttributeAll', { payload: { attribute, value } });
+                    emit('UpdateAttributeAll', { payload: { attribute, value } });
                 } else {
-                    emitEvent('UpdateAttribute', { payload: { attribute, ids: selected.map(r => r.id), value } });
+                    emit('UpdateAttribute', { payload: { attribute, ids: getSelectedDefinitionIds(), value } });
                 }
             };
             return div(
                 { class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Activate selected', disabled: noSelection || allActive, onclick: () => emitAttribute('test_active', true) }),
                 Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Deactivate selected', disabled: noSelection || allInactive, onclick: () => emitAttribute('test_active', false) }),
+                div({ class: 'td-header-separator' }),
                 canEdit.val ? Button({ type: 'icon', icon: 'lock', tooltip: 'Lock selected', disabled: noSelection || allLocked, onclick: () => emitAttribute('lock_refresh', true) }) : '',
                 canEdit.val ? Button({
                     type: 'icon', icon: 'lock_open', tooltip: 'Unlock selected', disabled: noSelection || allUnlocked,
                     onclick: () => isAll
-                        ? emitEvent('UnlockAllOpened', {})
-                        : emitEvent('UnlockDialogOpened', { payload: selected.map(r => ({ id: r.id })) }),
+                        ? emit('UnlockAllOpened', {})
+                        : emit('UnlockDialogOpened', { payload: getSelectedDefinitionIds().map(id => ({ id })) }),
                 }) : '',
+                canEdit.val ? div({ class: 'td-header-separator' }) : '',
+                Button({
+                    type: 'icon', icon: 'flag', tooltip: 'Flag selected', disabled: noSelection || selected.every(r => r.flagged),
+                    onclick: () => emitAttribute('flagged', true),
+                }),
+                ClearFlagButton({
+                    disabled: noSelection || selected.every(r => !r.flagged),
+                    onclick: () => emitAttribute('flagged', false),
+                }),
             );
         },
-        ExportMenu(props, testDefinitions),
+        ExportMenu(
+            props,
+            testDefinitions,
+            () => selectedRowId.val || selectedIdsCount.val > 0,
+            getSelectedDefinitionIds,
+        ),
     );
 
     // Build table once
     const dataTable = Table(
         {
+            emit,
             columns: tableColumns,
             header: tableHeader,
             highDensity: true,
@@ -405,6 +507,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 onRowsSelected,
                 isInitiallySelected,
             },
+            rowClass: (row, _) => !row.test_active ? 'text-disabled' : '',
         },
         tableRows,
     );
@@ -416,20 +519,22 @@ const TestDefinitions = (/** @type object */ props) => {
         AddDialogComponent({
             open: addDialogOpen,
             info: addDialogInfo,
+            validateResult: props.validate_result,
             onClose: () => {
                 addDialogOpen.val = false;
-                emitEvent('AddDialogClosed', {});
+                emit('AddDialogClosed', {});
             },
-        }),
+        }, emit),
 
         EditDialogComponent({
             open: editDialogOpen,
             info: editDialogInfo,
+            validateResult: props.validate_result,
             onClose: () => {
                 editDialogOpen.val = false;
-                emitEvent('EditDialogClosed', {});
+                emit('EditDialogClosed', {});
             },
-        }),
+        }, emit),
 
         // Delete dialog
         Dialog(
@@ -438,7 +543,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 open: deleteDialogOpen,
                 onClose: () => {
                     deleteDialogOpen.val = false;
-                    emitEvent('DeleteDialogClosed', {});
+                    emit('DeleteDialogClosed', {});
                 },
             },
             () => {
@@ -451,14 +556,16 @@ const TestDefinitions = (/** @type object */ props) => {
                         : span('Are you sure you want to delete the selected test definition?')
                     ),
                     div(
-                        { class: 'flex-row td-dialog-actions' },
+                        { class: 'flex-row fx-justify-flex-end fx-gap-2' },
                         Button({
                             type: 'flat',
                             color: 'warn',
                             label: 'Delete',
+                            width: 'auto',
+                            style: 'margin-left: auto;',
                             onclick: () => {
                                 deleteDialogOpen.val = false;
-                                emitEvent('DeleteConfirmed', { payload: { ids: info.ids } });
+                                emit('DeleteConfirmed', { payload: { ids: info.ids } });
                             },
                         }),
                     ),
@@ -473,7 +580,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 open: unlockDialogOpen,
                 onClose: () => {
                     unlockDialogOpen.val = false;
-                    emitEvent('UnlockDialogClosed', {});
+                    emit('UnlockDialogClosed', {});
                 },
             },
             () => {
@@ -487,14 +594,16 @@ const TestDefinitions = (/** @type object */ props) => {
                         : span('Are you sure you want to unlock the selected test definition?')
                     ),
                     div(
-                        { class: 'flex-row td-dialog-actions' },
+                        { class: 'flex-row fx-justify-flex-end fx-gap-2' },
                         Button({
                             type: 'stroked',
                             color: 'basic',
                             label: 'Unlock',
+                            width: 'auto',
+                            style: 'margin-left: auto;',
                             onclick: () => {
                                 unlockDialogOpen.val = false;
-                                emitEvent('UnlockConfirmed', { payload: { ids: info.ids } });
+                                emit('UnlockConfirmed', { payload: { ids: info.ids } });
                             },
                         }),
                     ),
@@ -507,23 +616,46 @@ const TestDefinitions = (/** @type object */ props) => {
             info: copyMoveDialogInfo,
             onClose: () => {
                 copyMoveDialogOpen.val = false;
-                emitEvent('CopyMoveDialogClosed', {});
+                emit('CopyMoveDialogClosed', {});
             },
-        }),
+        }, emit),
 
         // Run tests dialog
         () => {
             const info = runTestsDialogData.val;
             if (!info) return span();
-            return RunTestsDialog({
+            return RunTestsDialog({ emit,
                 dialog: { title: 'Run Tests', open: true },
                 project_code: info.project_code,
                 test_suites: info.test_suites ?? [],
                 default_test_suite_id: info.default_test_suite_id,
                 result: info.result,
-                onClose: () => emitEvent('RunTestsDialogClosed', {}),
+                onClose: () => emit('RunTestsDialogClosed', {}),
             });
         },
+
+        // Notes dialog
+        Dialog(
+            {
+                title: 'Test Notes',
+                open: notesDialogOpen,
+                onClose: () => {
+                    notesDialogOpen.val = false;
+                    emit('NotesDialogClosed', {});
+                },
+                width: '36rem',
+            },
+            () => {
+                const data = getValue(props.notes_dialog);
+                if (!data) return span();
+                return TestDefinitionNotes({ emit, 
+                    test_label: data.test_label,
+                    notes: data.notes,
+                    current_user: data.current_user,
+                    test_definition_id: data.id,
+                });
+            },
+        ),
 
         // --- Top bar: filters + Add + Run Tests ---
         div(
@@ -548,8 +680,9 @@ const TestDefinitions = (/** @type object */ props) => {
                 allowNull: true,
                 width: 200,
                 filterable: true,
-                onChange: (value) => {
-                    columnFilter.val = value;
+                acceptNewOptions: true,
+                onChange: (value, meta) => {
+                    columnFilter.val = meta?.isCustom ? `%${value}%` : value;
                     onFilterChange();
                 },
             }),
@@ -565,6 +698,19 @@ const TestDefinitions = (/** @type object */ props) => {
                     onFilterChange();
                 },
             }),
+            () => Select({
+                label: 'Flagged',
+                value: flaggedFilter.val,
+                options: [
+                    { label: 'Flagged', value: 'Flagged' },
+                    { label: 'Not Flagged', value: 'Not Flagged' },
+                ],
+                allowNull: true,
+                onChange: (value) => {
+                    flaggedFilter.val = value;
+                    onFilterChange();
+                },
+            }),
             div({ class: 'fx-flex' }),
             () => canEdit.val
                 ? Button({
@@ -574,7 +720,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     label: 'Add',
                     width: 'auto',
                     style: 'background: var(--button-generic-background-color);',
-                    onclick: () => emitEvent('AddDialogOpened', {}),
+                    onclick: () => emit('AddDialogOpened', {}),
                 })
                 : '',
             () => canEdit.val
@@ -585,7 +731,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     label: 'Run Tests',
                     width: 'auto',
                     style: 'background: var(--button-generic-background-color);',
-                    onclick: () => emitEvent('RunTestsClicked', {}),
+                    onclick: () => emit('RunTestsClicked', {}),
                 })
                 : '',
         ),
@@ -598,24 +744,52 @@ const TestDefinitions = (/** @type object */ props) => {
             { style: () => singleSelected.val && !multiSelectMode.val ? 'margin-top: 16px' : 'display: none' },
             () => {
                 const row = singleSelected.val;
-                return row ? div({ class: 'tg-td--detail' }, DetailPanel(row)) : '';
+                if (!row) return '';
+                return div(
+                    { class: 'tg-td--detail flex-column fx-gap-4' },
+                    canEdit.val ? div(
+                        { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
+                        Button({
+                            type: 'stroked', icon: 'edit', label: 'Edit', width: 'auto',
+                            style: 'background: var(--button-generic-background-color);',
+                            onclick: () => emit('EditDialogOpened', { payload: { id: row.id } }),
+                        }),
+                        Button({
+                            type: 'stroked', icon: 'sticky_note_2', label: 'Notes', width: 'auto',
+                            style: 'background: var(--button-generic-background-color);',
+                            onclick: () => emit('NotesClicked', { payload: { id: row.id, table_name: row.table_name, column_name: row.column_name, test_name_short: row.test_name_short } }),
+                        }),
+                    ) : '',
+                    DetailPanel(row),
+                );
             },
         ),
     );
 };
 
 // Export popover menu
-const ExportMenu = (props, testDefinitions) => {
+const ExportMenu = (props, testDefinitions, hasSelection, getSelectedIds) => {
+    const emit = props.emit;
     return DropdownButton({
         icon: 'download',
         label: 'Export',
-        items: [
-            { label: 'All tests', onclick: () => emitEvent('ExportAll', {}) },
-            {
-                label: 'Filtered tests',
-                onclick: () => emitEvent('ExportFiltered', { payload: { records: testDefinitions.val } }),
-            },
-        ],
+        buttonSize: 'small',
+        items: () => {
+            const items = [
+                { label: 'All tests', onclick: () => emit('ExportAll', {}) },
+                {
+                    label: 'Filtered tests',
+                    onclick: () => emit('ExportFiltered', { payload: { records: testDefinitions.val } }),
+                },
+            ];
+            if (hasSelection()) {
+                items.push({
+                    label: 'Selected tests',
+                    onclick: () => emit('ExportSelected', { payload: { ids: getSelectedIds() } }),
+                });
+            }
+            return items;
+        },
     });
 };
 
@@ -656,13 +830,13 @@ const DetailPanel = (row) => {
 };
 
 // Add dialog — mounted once, state persists across Python reruns
-const AddDialogComponent = ({ open, info, onClose }) => {
+const AddDialogComponent = ({ open, info, validateResult: validateResultProp, onClose }, emit) => {
     const testTypes = van.derive(() => getValue(info)?.test_types ?? []);
     const tableGroupSchema = van.derive(() => getValue(info)?.table_group_schema ?? '');
     const tableGroupsId = van.derive(() => getValue(info)?.table_groups_id ?? '');
     const testSuite = van.derive(() => getValue(info)?.test_suite ?? {});
     const tableColumns = van.derive(() => getValue(info)?.table_columns ?? []);
-    const validateResult = van.derive(() => getValue(info)?.validate_result ?? null);
+    const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const scopeFilter = {
         referential: van.state(true),
@@ -678,27 +852,25 @@ const AddDialogComponent = ({ open, info, onClose }) => {
     );
 
     const selectedTestType = van.state(null);
-    const selectedTestTypeRow = van.derive(() =>
-        selectedTestType.val ? testTypes.val.find(tt => tt.test_type === selectedTestType.val) ?? null : null
-    );
-
-    // Build blank form values when a test type is chosen
     const formValues = van.state(null);
-    van.derive(() => {
-        const tt = selectedTestTypeRow.val;
-        if (!tt) { formValues.val = null; return; }
-        formValues.val = {
+
+    const buildFormValues = (testType) => {
+        if (!testType) return null;
+        const tt = testTypes.rawVal.find(t => t.test_type === testType);
+        if (!tt) return null;
+        return {
             ...BLANK_PARAM_FIELDS,
             ...tt,
+            id: null,
             default_test_description: tt.test_description,
             test_description: null,
             test_active: true,
             lock_refresh: false,
             severity: null,
             export_to_observability: null,
-            schema_name: tableGroupSchema.val,
-            test_suite_id: testSuite.val.id,
-            table_groups_id: tableGroupsId.val,
+            schema_name: tableGroupSchema.rawVal,
+            test_suite_id: testSuite.rawVal.id,
+            table_groups_id: tableGroupsId.rawVal,
             table_name: null,
             column_name: null,
             skip_errors: 0,
@@ -707,14 +879,19 @@ const AddDialogComponent = ({ open, info, onClose }) => {
             profiling_as_of_date: null,
             profile_run_id: null,
         };
-    });
+    };
+
+    const selectTestType = (testType) => {
+        selectedTestType.val = testType;
+        formValues.val = buildFormValues(testType);
+    };
 
     // Reset form state when dialog opens (transitions from closed→open)
     const wasOpen = van.state(false);
     van.derive(() => {
         const isOpen = open.val;
         if (isOpen && !wasOpen.val) {
-            selectedTestType.val = null;
+            selectTestType(null);
             wasOpen.val = true;
         } else if (!isOpen) {
             wasOpen.val = false;
@@ -746,25 +923,32 @@ const AddDialogComponent = ({ open, info, onClose }) => {
                     options: filteredTestTypeOptions.val,
                     allowNull: true,
                     filterable: true,
-                    onChange: (value) => { selectedTestType.val = value; },
+                    onChange: (value) => { selectTestType(value); },
                 }),
             ),
 
-            // Form (shown after test type selected)
+            // Form (shown after test type selected) — imperative update
+            // because VanJS binding replacement doesn't work inside Dialog portals
             () => {
+                open.val;
+
+                selectedTestType.val;
                 const fv = formValues.val;
-                if (!fv) return span();
+                const vr = validateResult.val;
+
+                if (!fv) return '';
+
                 return TestDefFormContent({
                     formValues: fv,
-                    tableColumns: tableColumns.val,
-                    testSuite: testSuite.val,
-                    validateResult: validateResult.val,
+                    tableColumns: tableColumns.rawVal,
+                    testSuite: testSuite.rawVal,
+                    validateResult: vr,
                     mode: 'add',
                     onFormChange: (changes) => {
                         formValues.val = { ...formValues.rawVal, ...changes };
                     },
-                    onValidate: () => emitEvent('ValidateTest', { payload: formValues.rawVal }),
-                    onSave: () => emitEvent('AddTestSaved', { payload: formValues.rawVal }),
+                    onValidate: () => emit('ValidateTest', { payload: formValues.rawVal }),
+                    onSave: () => emit('AddTestSaved', { payload: formValues.rawVal }),
                     onCancel: onClose,
                 });
             },
@@ -773,17 +957,16 @@ const AddDialogComponent = ({ open, info, onClose }) => {
 };
 
 // Edit dialog — mounted once, state persists across Python reruns
-const EditDialogComponent = ({ open, info, onClose }) => {
+const EditDialogComponent = ({ open, info, validateResult: validateResultProp, onClose }, emit) => {
     const dialogInfo = van.derive(() => getValue(info) ?? null);
-    const testTypes = van.derive(() => dialogInfo.val?.test_types ?? []);
     const tableColumns = van.derive(() => dialogInfo.val?.table_columns ?? []);
     const testSuite = van.derive(() => dialogInfo.val?.test_suite ?? {});
-    const validateResult = van.derive(() => dialogInfo.val?.validate_result ?? null);
+    const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
-    // Build formValues when dialog info changes (new definition to edit)
     const formValues = van.state(null);
-    van.derive(() => {
-        const di = dialogInfo.val;
+
+    const initFormFromInfo = () => {
+        const di = dialogInfo.rawVal;
         if (!di?.test_definition) { formValues.val = null; return; }
         const def = di.test_definition;
         const ttRow = (di.test_types ?? []).find(tt => tt.test_type === def.test_type) ?? {};
@@ -793,26 +976,41 @@ const EditDialogComponent = ({ open, info, onClose }) => {
             column_name_prompt: ttRow.column_name_prompt ?? null,
             column_name_help: ttRow.column_name_help ?? null,
         };
+    };
+
+    // Reset form when dialog opens (closed→open), clear when it closes
+    const wasOpen = van.state(false);
+    van.derive(() => {
+        const isOpen = open.val;
+        if (isOpen && !wasOpen.val) {
+            initFormFromInfo();
+            wasOpen.val = true;
+        } else if (!isOpen) {
+            formValues.val = null;
+            wasOpen.val = false;
+        }
     });
 
     return Dialog(
         { title: 'Edit Test', open, onClose, width: '52rem' },
         () => {
+            open.val;
             const fv = formValues.val;
-            if (!fv) return span();
+            const vr = validateResult.val;
+            if (!fv) return '';
             return div(
                 { class: 'flex-column fx-gap-4 td-form-dialog' },
                 TestDefFormContent({
                     formValues: fv,
-                    tableColumns: tableColumns.val,
-                    testSuite: testSuite.val,
-                    validateResult: validateResult.val,
+                    tableColumns: tableColumns.rawVal,
+                    testSuite: testSuite.rawVal,
+                    validateResult: vr,
                     mode: 'edit',
                     onFormChange: (changes) => {
                         formValues.val = { ...formValues.rawVal, ...changes };
                     },
-                    onValidate: () => emitEvent('ValidateTest', { payload: formValues.rawVal }),
-                    onSave: () => emitEvent('EditTestSaved', { payload: formValues.rawVal }),
+                    onValidate: () => emit('ValidateTest', { payload: formValues.rawVal }),
+                    onSave: () => emit('EditTestSaved', { payload: formValues.rawVal }),
                     onCancel: onClose,
                 }),
             );
@@ -899,15 +1097,15 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             onChange: (value) => updateField('test_description', value || null),
         }),
 
-        // Toggles
+        // Checkboxes
         div(
             { class: 'flex-row fx-gap-4' },
-            Toggle({
+            Checkbox({
                 label: 'Test Active',
                 checked: () => fv.val.test_active ?? true,
                 onChange: (v) => updateField('test_active', v),
             }),
-            Toggle({
+            Checkbox({
                 label: 'Lock Refresh',
                 checked: () => fv.val.lock_refresh ?? false,
                 onChange: (v) => updateField('lock_refresh', v),
@@ -1004,8 +1202,9 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         div(
             { class: 'td-form-params-section' },
             TestDefinitionForm({
-                definition: () => fv.val,
+                definition: formValues,
                 onChange: (changes) => {
+                    if (Object.keys(changes).length === 0) return;
                     const updated = { ...fv.rawVal, ...changes };
                     fv.val = updated;
                     onFormChange(changes);
@@ -1032,35 +1231,39 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
 
         // Buttons
         div(
-            { class: 'flex-row fx-justify-space-between td-dialog-actions' },
+            { class: 'flex-row fx-justify-space-between fx-gap-2' },
             isValidatable
                 ? Button({
                     type: 'stroked',
                     color: 'basic',
                     label: 'Validate',
+                    width: 'auto',
                     onclick: onValidate,
                 })
-                : null,
-            Button({
-                type: 'stroked',
-                color: 'basic',
-                label: 'Cancel',
-                width: 'auto',
-                onclick: onCancel,
-            }),
-            Button({
-                type: 'flat',
-                color: 'primary',
-                label: 'Save',
-                width: 'auto',
-                onclick: onSave,
-            }),
+                : span(''),
+            div(
+                { class: 'flex-row fx-gap-2' },
+                Button({
+                    type: 'stroked',
+                    color: 'basic',
+                    label: 'Cancel',
+                    width: 'auto',
+                    onclick: onCancel,
+                }),
+                Button({
+                    type: 'flat',
+                    color: 'primary',
+                    label: 'Save',
+                    width: 'auto',
+                    onclick: onSave,
+                }),
+            ),
         ),
     );
 };
 
 // Copy/Move dialog — mounted once
-const CopyMoveDialogComponent = ({ open, info, onClose }) => {
+const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
     const dialogInfo = van.derive(() => getValue(info) ?? null);
     const collision = van.derive(() => dialogInfo.val?.collision ?? null);
 
@@ -1121,7 +1324,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }) => {
         const tsId = targetTsId.val;
         const di = dialogInfo.val;
         if (tgId && tsId && di?.selected) {
-            emitEvent('CopyMoveTargetChanged', {
+            emit('CopyMoveTargetChanged', {
                 payload: {
                     selected: di.selected,
                     target_table_group_id: tgId,
@@ -1227,20 +1430,20 @@ const CopyMoveDialogComponent = ({ open, info, onClose }) => {
             },
 
             div(
-                { class: 'flex-row fx-gap-2 td-dialog-actions' },
+                { class: 'flex-row fx-justify-flex-end fx-gap-2' },
                 () => Button({
                     type: 'stroked',
                     color: 'basic',
                     label: 'Copy',
                     disabled: !movableIds.val.length || !targetTsId.val,
-                    onclick: () => emitEvent('CopyConfirmed', { payload: buildPayload() }),
+                    onclick: () => emit('CopyConfirmed', { payload: buildPayload() }),
                 }),
                 () => Button({
                     type: 'flat',
                     color: 'primary',
                     label: 'Move',
                     disabled: !movableIds.val.length || !targetTsId.val,
-                    onclick: () => emitEvent('MoveConfirmed', { payload: buildPayload() }),
+                    onclick: () => emit('MoveConfirmed', { payload: buildPayload() }),
                 }),
             ),
         ),
@@ -1255,7 +1458,7 @@ stylesheet.replace(`
 }
 
 .tg-td--detail {
-    border-top: 1px solid var(--border-color, #dddfe2);
+    border-top: 1px dashed var(--border-color, #dddfe2);
     padding-top: 16px;
 }
 
@@ -1277,20 +1480,12 @@ stylesheet.replace(`
     padding-top: 12px;
     margin-top: 4px;
 }
-
-
-.td-dialog-actions {
-    justify-content: flex-end;
-    gap: 8px;
-}
 `);
 
 export { TestDefinitions, EditDialogComponent };
 
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
-
-    Streamlit.enableV2(setTriggerValue);
 
     let componentState = parentElement.state;
     if (componentState === undefined) {
@@ -1299,6 +1494,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TestDefinitions(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {

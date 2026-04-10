@@ -23,7 +23,7 @@ import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { MonitorSettingsForm } from '/app/static/js/components/monitor_settings_form.js';
-import { emitEvent, getValue } from '/app/static/js/utils.js';
+import { getValue } from '/app/static/js/utils.js';
 
 const { div, span } = van.tags;
 
@@ -33,6 +33,7 @@ const { div, span } = van.tags;
  * @returns
  */
 const EditMonitorSettings = (props) => {
+    const emit = props.emit;
     const dialogOpen = van.state(false);
     van.derive(() => {
         const d = getValue(props.dialog);
@@ -62,7 +63,7 @@ const EditMonitorSettings = (props) => {
                     span(tableGroup.table_groups_name),
                 ),
                 MonitorSettingsForm(
-                    {
+                    { emit,
                         schedule: props.schedule,
                         monitorSuite: props.monitor_suite,
                         cronSample: props.cron_sample,
@@ -98,7 +99,7 @@ const EditMonitorSettings = (props) => {
                                 schedule: updatedSchedule.val,
                                 monitor_suite: updatedMonitorSuite.val,
                             };
-                            emitEvent('SaveSettingsClicked', { payload });
+                            emit('SaveSettingsClicked', { payload });
                         },
                     }),
                 ),
@@ -114,7 +115,7 @@ const EditMonitorSettings = (props) => {
         {
             title: dialogTitle,
             open: dialogOpen,
-            onClose: () => { dialogOpen.val = false; emitEvent('CloseSettingsDialog', {}); },
+            onClose: () => { dialogOpen.val = false; emit('CloseSettingsDialog', {}); },
             width: '55rem',
         },
         formContainer,

@@ -3,37 +3,33 @@
  * @type {object}
  * @property {object|null} preview
  * @property {object|null} result
+ * @property {Function?} onAutoClose
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
-import { RadioGroup } from '../components/radio_group.js';
-import { FileInput } from '../components/file_input.js';
-import { Button } from '../components/button.js';
-import { Alert } from '../components/alert.js';
-import { Table } from '../components/table.js';
-import { capitalize } from '../display_utils.js';
-import { withTooltip } from '../components/tooltip.js';
-import { sizeLimit } from '../form_validators.js';
+import van from '/app/static/js/van.min.js';
+import { getValue, loadStylesheet} from '/app/static/js/utils.js';
+import { RadioGroup } from '/app/static/js/components/radio_group.js';
+import { FileInput } from '/app/static/js/components/file_input.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Alert } from '/app/static/js/components/alert.js';
+import { Table } from '/app/static/js/components/table.js';
+import { capitalize } from '/app/static/js/display_utils.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { sizeLimit } from '/app/static/js/form_validators.js';
 
 const CSV_SIZE_LIMIT = 2 * 1024 * 1024; // 2 MB
 
 const { div, i, span } = van.tags;
 
 const ImportMetadataDialog = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('import-metadata-dialog', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
-
-    const wrapperId = 'import-metadata-wrapper';
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     const blankBehavior = van.state('keep');
     const fileValue = van.state(null);
+    let autoCloseScheduled = false;
 
     return div(
-        { id: wrapperId, class: 'flex-column fx-gap-4' },
+        { class: 'flex-column fx-gap-4' },
         FileInput({
             name: 'csv_file',
             label: 'Upload metadata CSV file',
@@ -41,16 +37,21 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
             validators: [sizeLimit(CSV_SIZE_LIMIT)],
             value: fileValue,
             onChange: (value) => {
+                const hadFile = fileValue.val?.content;
                 fileValue.val = value;
                 if (value?.content) {
-                    emitEvent('FileUploaded', {
-                        payload: {
-                            content: value.content,
-                            blank_behavior: blankBehavior.val,
-                        },
-                    });
-                } else {
-                    emitEvent('FileCleared', {});
+                    const payload = { content: value.content, blank_behavior: blankBehavior.val };
+                    if (props.onFileUploaded) {
+                        props.onFileUploaded(payload);
+                    } else {
+                        emit('FileUploaded', { payload });
+                    }
+                } else if (hadFile) {
+                    if (props.onFileCleared) {
+                        props.onFileCleared();
+                    } else {
+                        emit('FileCleared', {});
+                    }
                 }
             },
         }),
@@ -68,6 +69,10 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
         () => {
             const result = getValue(props.result);
             if (result) {
+                if (result.success && props.onAutoClose && !autoCloseScheduled) {
+                    autoCloseScheduled = true;
+                    setTimeout(() => props.onAutoClose(), 2000);
+                }
                 return Alert(
                     { type: result.success ? 'success' : 'error', icon: result.success ? 'check_circle' : 'error' },
                     span(result.message),
@@ -106,7 +111,7 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                     ),
                 hasError
                     ? Alert({ type: 'error', icon: 'error' }, span(preview.error))
-                    : PreviewTable(preview),
+                    : PreviewTable(preview, emit),
                 preview.pii_skipped
                     ? Alert(
                         { type: 'info', icon: 'info' },
@@ -129,7 +134,7 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                         icon: 'upload',
                         width: 'auto',
                         disabled: !hasMatches,
-                        onclick: () => emitEvent('ImportConfirmed', {}),
+                        onclick: () => props.onImportConfirmed ? props.onImportConfirmed() : emit('ImportConfirmed', {}),
                     }),
                 ),
             );
@@ -150,18 +155,19 @@ const COLUMN_LABELS = {
     pii_flag: 'PII',
 };
 
-const PreviewTable = (preview) => {
+const PreviewTable = (preview, emit) => {
     const metadataColumns = preview.metadata_columns || [];
     const previewRows = preview.preview_rows || [];
 
     const columns = [
-        { name: '_status_icon', label: '', width: 32, overflow: 'visible' },
-        { name: 'table_name', label: 'Table', width: 150 },
-        { name: 'column_name', label: 'Column', width: 150 },
+        { name: '_status_icon', label: '', width: 32, overflow: 'visible', align: 'center' },
+        { name: 'table_name', label: 'Table', width: 150, align: 'left' },
+        { name: 'column_name', label: 'Column', width: 150, align: 'left' },
         ...metadataColumns.map(col => ({
             name: col,
             label: COLUMN_LABELS[col] ?? capitalize(col.replaceAll('_', ' ')),
             width: col === 'description' ? 200 : 120,
+            align: 'left',
         })),
     ];
 
@@ -200,8 +206,10 @@ const PreviewTable = (preview) => {
 
     return Table(
         {
+            emit,
             columns,
-            height: Math.min(300, 40 + rows.length * 40),
+            height: 'auto',
+            maxHeight: '300px',
             highDensity: true,
             rowClass: (row) => {
                 if (row._status === 'unmatched') return 'import-row-unmatched';

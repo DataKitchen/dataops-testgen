@@ -8,6 +8,7 @@
  * @type {object}
  * @property {string} icon
  * @property {string} label
+ * @property {('normal' | 'small')?} buttonSize
  * @property {DropdownItem[] | (() => DropdownItem[])} items
  */
 import van from '/app/static/js/van.min.js';
@@ -36,6 +37,7 @@ const DropdownButton = (props) => {
             label: props.label,
             width: 'fit-content',
             style: 'background-color: var(--button-generic-background-color);',
+            size: props.buttonSize,
             onclick: () => { menuOpen.val = !menuOpen.val; },
         }),
         Portal(
@@ -47,6 +49,7 @@ const DropdownButton = (props) => {
                     ...items.map(item =>
                         div({
                             class: 'tg-dropdown-button--item',
+                            style: item.separator ? 'border-top: var(--button-stroked-border);' : '',
                             onclick: () => { menuOpen.val = false; item.onclick(); },
                         }, item.label),
                     ),

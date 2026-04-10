@@ -15,8 +15,7 @@
  */
 
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Toggle } from '/app/static/js/components/toggle.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
@@ -29,6 +28,7 @@ const { div, h3, hr, span, b } = van.tags;
  * @returns 
  */
 const TableGroupDeleteConfirmation = (props) => {
+    const { emit } = props;
     loadStylesheet('tablegroup-delete-confirmation', stylesheet);
 
     const wrapperId = 'tablegroup-delete-wrapper';
@@ -88,7 +88,7 @@ const TableGroupDeleteConfirmation = (props) => {
                 label: 'Delete',
                 style: 'width: auto;',
                 disabled: deleteDisabled,
-                onclick: () => emitEvent('DeleteTableGroupConfirmed'),
+                onclick: () => emit('DeleteTableGroupConfirmed'),
             }),
         ),
         () => {
@@ -112,8 +112,6 @@ export { TableGroupDeleteConfirmation };
 export default (component) => {
     const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-    Streamlit.enableV2(setTriggerValue);
-
     let componentState = parentElement.state;
     if (componentState === undefined) {
         componentState = {};
@@ -121,6 +119,7 @@ export default (component) => {
             componentState[key] = van.state(value);
         }
         parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
         van.add(parentElement, TableGroupDeleteConfirmation(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
