@@ -4,7 +4,7 @@ from typing import Any, Self
 from uuid import UUID
 
 import streamlit as st
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
@@ -110,6 +110,31 @@ class Entity(Base):
         return get_current_session().execute(query).all()
 
     @classmethod
+    def _paginate(
+        cls,
+        query,
+        *,
+        page: int,
+        limit: int,
+        data_class: type | None = None,
+    ) -> tuple[list, int]:
+        """Count + paginate a pre-built query.
+
+        Returns (items, total). If *data_class* is given, each row is
+        unpacked into an instance of that class.
+        """
+        session = get_current_session()
+        total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        rows = session.execute(query.offset((page - 1) * limit).limit(limit)).all()
+        if data_class is not None:
+            return [data_class(**row) for row in rows], total
+        return list(rows), total
+
+    @classmethod
+    def has_running_process(cls, ids: list[str]) -> bool:
+        raise NotImplementedError
+
+    @classmethod
     def delete_where(cls, *clauses) -> None:
         query = delete(cls).where(*clauses)
         db_session = get_current_session()
@@ -126,7 +151,7 @@ class Entity(Base):
     @classmethod
     def columns(cls) -> list[str]:
         return list(cls.__annotations__.keys())
-    
+
     def refresh(self) -> None:
         db_session = get_current_session()
         db_session.refresh(self)

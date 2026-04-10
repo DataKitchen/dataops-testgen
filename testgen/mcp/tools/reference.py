@@ -1,5 +1,6 @@
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
+from testgen.mcp.tools.common import build_markdown_table
 
 
 @with_database_session
@@ -34,10 +35,34 @@ def get_test_type(test_type: str) -> str:
         lines.append(f"- **Scope:** {tt.test_scope}")
     if tt.except_message:
         lines.append(f"- **Exception Message:** {tt.except_message}")
+
+    # Parameters
+    _append_type_parameters(lines, tt)
+
     if tt.usage_notes:
-        lines.append(f"- **Usage Notes:** {tt.usage_notes}")
+        lines.append(f"\n## Usage Notes\n\n{tt.usage_notes}")
 
     return "\n".join(lines)
+
+
+def _append_type_parameters(lines: list[str], tt: TestType) -> None:
+    """Add parameter definitions section from test type metadata."""
+    parm_columns = [c.strip() for c in tt.default_parm_columns.split(",")] if tt.default_parm_columns else []
+    if not parm_columns:
+        return
+
+    parm_prompts = [p.strip() for p in tt.default_parm_prompts.split(",")] if tt.default_parm_prompts else []
+    parm_help = [h.strip() for h in tt.default_parm_help.split("|")] if tt.default_parm_help else []
+
+    headers = ["Parameter", "Field", "Description"]
+    rows = []
+    for i, field_name in enumerate(parm_columns):
+        label = parm_prompts[i] if i < len(parm_prompts) else field_name
+        help_text = parm_help[i] if i < len(parm_help) else None
+        rows.append([label, f"`{field_name}`", help_text])
+
+    lines.append("\n## Parameters\n")
+    lines.append(build_markdown_table(headers, rows))
 
 
 @with_database_session

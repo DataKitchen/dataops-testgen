@@ -224,7 +224,12 @@ class TestDefinition(Entity):
     flagged: bool = Column(Boolean, default=False, nullable=False)
     external_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
 
-    _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
+    _default_order_by = (
+        asc(func.lower(schema_name)),
+        asc(func.lower(table_name)),
+        asc(func.lower(column_name)),
+        asc(test_type),
+    )
     _summary_columns = (
         *TestDefinitionSummary.__annotations__.keys(),
         *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
@@ -262,6 +267,32 @@ class TestDefinition(Entity):
         return TestDefinitionSummary(**result) if result else None
 
     @classmethod
+    def get_for_project(
+        cls, identifier: UUID, project_codes: list[str] | None = None,
+    ) -> TestDefinitionSummary | None:
+        """Fetch a test definition with project-level access check.
+
+        Returns None if the definition doesn't exist or the user lacks access.
+        """
+        from testgen.common.models.test_suite import TestSuite
+
+        select_columns = [
+            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
+            for col in cls._summary_columns
+        ]
+        query = (
+            select(*select_columns)
+            .join(TestType, cls.test_type == TestType.test_type)
+            .where(cls.id == identifier)
+        )
+        if project_codes is not None:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        result = get_current_session().execute(query).first()
+        return TestDefinitionSummary(**result) if result else None
+
+    @classmethod
     @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
@@ -288,6 +319,42 @@ class TestDefinition(Entity):
             order_by=order_by,
         )
         return [TestDefinitionMinimal(**row) for row in results]
+
+    @classmethod
+    def list_for_suite(
+        cls,
+        test_suite_id: UUID,
+        project_codes: list[str] | None = None,
+        table_name: str | None = None,
+        test_type: str | None = None,
+        test_active: bool | None = None,
+        page: int = 1,
+        limit: int = 50,
+    ) -> tuple[list[TestDefinitionSummary], int]:
+        """Paginated test definitions for a suite with optional filters."""
+        select_columns = [
+            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
+            for col in cls._summary_columns
+        ]
+        query = (
+            select(*select_columns)
+            .join(TestType, cls.test_type == TestType.test_type)
+            .where(cls.test_suite_id == test_suite_id)
+        )
+        if project_codes is not None:
+            from testgen.common.models.test_suite import TestSuite
+
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
+                TestSuite.project_code.in_(project_codes)
+            )
+        if table_name:
+            query = query.where(cls.table_name == table_name)
+        if test_type:
+            query = query.where(cls.test_type == test_type)
+        if test_active is not None:
+            query = query.where(cls.test_active == test_active)
+        query = query.order_by(*cls._default_order_by)
+        return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
     _yn_columns: ClassVar = {"test_active", "lock_refresh"}
 
@@ -463,9 +530,7 @@ class TestDefinitionNote(Base):
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:
         db_session = get_current_session()
-        db_session.execute(
-            update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now())
-        )
+        db_session.execute(update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now()))
 
     @classmethod
     def delete_note(cls, note_id: str | UUID) -> None:
@@ -490,9 +555,13 @@ class TestDefinitionNote(Base):
     @classmethod
     def get_notes(cls, test_definition_id: str | UUID) -> list[dict]:
         db_session = get_current_session()
-        results = db_session.execute(
-            select(cls).where(cls.test_definition_id == test_definition_id).order_by(cls.created_at.desc())
-        ).scalars().all()
+        results = (
+            db_session.execute(
+                select(cls).where(cls.test_definition_id == test_definition_id).order_by(cls.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
         return [
             {
                 "id": str(note.id),
