@@ -214,7 +214,7 @@ def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, t
         message = "Are you sure you want to delete the selected test run?"
         constraint["confirmation"] = "Yes, cancel and delete the test run."
 
-    if not TestRun.has_running_process(test_run_ids):
+    if not TestRun.has_active_job_for(TestRun, *test_run_ids):
         constraint = None
 
     result = None

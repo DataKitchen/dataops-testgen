@@ -8,6 +8,7 @@ import streamlit as st
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.common.models import with_database_session
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -240,7 +241,7 @@ def delete_test_suite_dialog(test_suite_id: str) -> None:
             )
 
         if delete:
-            if TestSuite.has_running_process([test_suite_id]):
+            if TestRun.has_active_job_for(TestSuite, test_suite_id):
                 st.error("This Test Suite is in use by a running process and cannot be deleted.")
             else:
                 TestSuite.cascade_delete([test_suite_id])

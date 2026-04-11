@@ -11,7 +11,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
 from testgen.common.models import get_current_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
+from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus
@@ -162,27 +164,28 @@ class TestRun(Entity):
     @classmethod
     def get_latest_run(cls, project_code: str) -> LatestTestRun | None:
         query = (
-            select(TestRun.id, TestRun.test_starttime)
+            select(TestRun.id, JobExecution.started_at.label("run_time"))
+            .join(JobExecution, TestRun.job_execution_id == JobExecution.id)
             .join(TestSuite)
-            .where(TestSuite.project_code == project_code, TestRun.status == "Complete")
-            .order_by(desc(TestRun.test_starttime))
+            .where(TestSuite.project_code == project_code, JobExecution.status == JobStatus.COMPLETED)
+            .order_by(desc(JobExecution.started_at))
             .limit(1)
         )
         result = get_current_session().execute(query).first()
         if result:
-            return LatestTestRun(str(result["id"]), result["test_starttime"])
+            return LatestTestRun(str(result["id"]), result["run_time"])
         return None
 
     def get_previous(self) -> Self | None:
         query = (
             select(TestRun)
-            .join(TestSuite)
+            .join(JobExecution, TestRun.job_execution_id == JobExecution.id)
             .where(
                 TestRun.test_suite_id == self.test_suite_id,
-                TestRun.status == "Complete",
-                TestRun.test_starttime < self.test_starttime,
+                JobExecution.status == JobStatus.COMPLETED,
+                JobExecution.started_at < self.test_starttime,
             )
-            .order_by(desc(TestRun.test_starttime))
+            .order_by(desc(JobExecution.started_at))
             .limit(1)
         )
         return get_current_session().scalar(query)
@@ -260,17 +263,25 @@ class TestRun(Entity):
             GROUP BY test_run_id
         )
         SELECT test_runs.id AS test_run_id,
-            test_runs.test_starttime,
-            test_runs.test_endtime,
+            je.started_at AS test_starttime,
+            je.completed_at AS test_endtime,
             table_groups.table_groups_name,
             test_suites.test_suite,
             test_suites.project_code,
             projects.project_name,
-            test_runs.status,
+            CASE je.status
+                WHEN 'completed' THEN 'Complete'
+                WHEN 'error' THEN 'Error'
+                WHEN 'cancelled' THEN 'Cancelled'
+                WHEN 'cancel_requested' THEN 'Cancelled'
+                WHEN 'running' THEN 'Running'
+                WHEN 'pending' THEN 'Running'
+                WHEN 'claimed' THEN 'Running'
+            END AS status,
             test_runs.progress,
             test_runs.process_id,
             test_runs.job_execution_id,
-            test_runs.log_message,
+            je.error_message AS log_message,
             test_runs.test_ct,
             run_results.passed_ct,
             run_results.warning_ct,
@@ -280,6 +291,7 @@ class TestRun(Entity):
             run_results.dismissed_ct,
             test_runs.dq_score_test_run AS dq_score_testing
         FROM test_runs
+            LEFT JOIN job_executions je ON je.id = test_runs.job_execution_id
             LEFT JOIN run_results ON (test_runs.id = run_results.test_run_id)
             INNER JOIN test_suites ON (test_runs.test_suite_id = test_suites.id)
             INNER JOIN table_groups ON (test_suites.table_groups_id = table_groups.id)
@@ -289,7 +301,7 @@ class TestRun(Entity):
             {" AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND test_suites.id = :test_suite_id" if test_suite_id else ""}
             {" AND test_runs.id IN :test_run_ids" if test_run_ids else ""}
-        ORDER BY test_runs.test_starttime DESC;
+        ORDER BY je.started_at DESC;
         """
         params = {
             "project_code": project_code,
@@ -349,11 +361,29 @@ class TestRun(Entity):
 
         return TestRunMonitorSummary(**get_current_session().execute(query).first())
 
+    _ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)
+
     @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool:
-        query = select(func.count(cls.id)).where(cls.id.in_(ids), cls.status == "Running")
-        process_count = get_current_session().execute(query).scalar()
-        return process_count > 0
+    def has_active_job_for(cls, entity_cls: type[Entity], *entity_ids: str | int | UUID) -> bool:
+        """Check whether any active test run job exists for the given entity or entities."""
+        query = (
+            select(func.count(cls.id))
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .where(JobExecution.status.in_(cls._ACTIVE_JOB_STATUSES))
+        )
+        if entity_cls is cls:
+            query = query.where(cls.id.in_(entity_ids))
+        elif entity_cls is TestSuite:
+            query = query.where(cls.test_suite_id.in_(entity_ids))
+        elif entity_cls is TableGroup:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(TestSuite.table_groups_id.in_(entity_ids))
+        elif entity_cls is Connection:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(TestSuite.connection_id.in_(entity_ids))
+        elif entity_cls is Project:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(TestSuite.project_code.in_(entity_ids))
+        else:
+            raise ValueError(f"Unsupported entity: {entity_cls.__name__}")
+        return get_current_session().execute(query).scalar() > 0
 
     @classmethod
     def cancel_all_running(cls) -> list[UUID]:
