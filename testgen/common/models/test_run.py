@@ -264,7 +264,7 @@ class TestRun(Entity):
         )
         SELECT test_runs.id AS test_run_id,
             je.started_at AS test_starttime,
-            je.completed_at AS test_endtime,
+            COALESCE(je.completed_at, NOW()) AS test_endtime,
             table_groups.table_groups_name,
             test_suites.test_suite,
             test_suites.project_code,

@@ -207,7 +207,7 @@ class ProfilingRun(Entity):
         )
         SELECT profiling_runs.id,
             je.started_at AS profiling_starttime,
-            je.completed_at AS profiling_endtime,
+            COALESCE(je.completed_at, NOW()) AS profiling_endtime,
             table_groups.table_groups_name,
             CASE je.status
                 WHEN 'completed' THEN 'Complete'
