@@ -1,6 +1,6 @@
 # Data Contract Feature Reference
 
-The Data Contract feature surfaces TestGen test suites as a formal, exportable data contract mapped to ODCS v3.1.0 YAML. It provides a health dashboard with top-level coverage, diff, and compliance cards; a coverage matrix across all schema columns organized by enforcement tier; inline term editing via modals; YAML export and import; bulk multi-select term deletion; and (in progress) contract term difference tracking comparing the saved YAML snapshot against the current live TestGen state. Page entry point: `?table_group_id=<uuid>` on page key `data-contract`.
+The Data Contract feature surfaces TestGen test suites as a formal, exportable data contract mapped to ODCS v3.1.0 YAML. It provides a health dashboard with top-level coverage, diff, and compliance cards; a coverage matrix across all schema columns organized by enforcement tier; inline term editing via modals; YAML export and import; bulk multi-select term deletion; and contract term difference tracking comparing the saved YAML snapshot against the current live TestGen state. Page entry point: `?table_group_id=<uuid>` on page key `data-contract`.
 
 ---
 
