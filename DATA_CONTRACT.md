@@ -1,7 +1,7 @@
 # Data Contract — Requirements & Implementation Reference
 
 **Standard:** Open Data Contract Standard (ODCS) v3.1.0  
-**Status:** Core feature complete; 219 data-contract unit tests passing (663 total unit tests)
+**Status:** Core feature complete; 469 data-contract unit tests passing (1038 total unit tests)
 
 ---
 
@@ -59,7 +59,7 @@ A single table group maps to a single data contract. That table group can have m
 | File | Purpose |
 |---|---|
 | `testgen/commands/export_data_contract.py` | Full ODCS v3.1.0 YAML generator; 50+ test type mappings; respects `include_in_contract`; emits section-divider comments |
-| `testgen/commands/import_data_contract.py` | ODCS import, diff preview, and apply engine; `lock_refresh = 'Y'` on imported thresholds |
+| `testgen/commands/odcs_contract.py` | ODCS import, diff preview, and apply engine; `run_import_contract`; supports CREATE (new tests from YAML rules without `id`), UPDATE (existing tests), and WRITE-BACK (new UUIDs written back to YAML file); `lock_refresh = 'Y'` on imported thresholds |
 | `testgen/commands/contract_versions.py` | `save_contract_version`, `load_contract_version`, `list_contract_versions`, `has_any_version`, `mark_contract_stale`, `mark_contract_not_stale` |
 | `testgen/commands/contract_staleness.py` | `compute_staleness_diff` — computes `StaleDiff` (schema / quality / governance / suite scope diffs) between a saved YAML snapshot and current DB state |
 | `testgen/ui/views/data_contract.py` | **Controller** (588 lines): `DataContractPage`, `_render_health_dashboard`, `_render_staleness_banner`, `_check_contract_prerequisites`, `_render_first_time_flow`; imports from all sub-modules; re-exports test-compat symbols |
@@ -100,12 +100,16 @@ A single table group maps to a single data contract. That table group can have m
 
 | File | Count | Covers |
 |---|---|---|
-| `tests/unit/commands/test_data_contract_export.py` | 91 | Export mapping, anomaly criteria, YAML output |
-| `tests/unit/commands/test_data_contract_import.py` | 41 | Import validation, diff, apply, round-trip |
-| `tests/unit/ui/test_data_contract_page.py` | 39 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
-| `tests/unit/ui/test_contract_pending_edits.py` | 18 | Pending edit accumulation, YAML patching, persistence helpers |
+| `tests/unit/commands/test_data_contract_export.py` | 107 | Export mapping, anomaly criteria, YAML output |
+| `tests/unit/commands/test_odcs_contract.py` | 137 | Import validation, diff, apply, CREATE/UPDATE/WRITE-BACK round-trip |
+| `tests/unit/ui/test_data_contract_page.py` | 67 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
+| `tests/unit/ui/test_contract_pending_edits.py` | 29 | Pending edit accumulation, YAML patching, persistence helpers |
 | `tests/unit/ui/test_contract_term_deletion.py` | 23 | All 13 deletable term types across DDL (4), Profiling (6), Governance (3); error cases; sibling-column isolation |
-| `tests/unit/commands/test_contract_staleness.py` | Started | `compute_staleness_diff` — governance diff; schema/quality/scope diffs in progress |
+| `tests/unit/ui/test_bulk_delete_terms.py` | 20 | Multi-select bulk delete across governance, test, and hygiene term types |
+| `tests/unit/commands/test_contract_staleness.py` | 41 | `compute_staleness_diff` — schema, quality, governance, and suite scope diffs |
+| `tests/unit/commands/test_contract_versions.py` | 18 | `save_contract_version`, `load_contract_version`, `list_contract_versions`, staleness marking |
+| `tests/unit/commands/test_staleness_diff.py` | 22 | Threshold comparison helpers; range vs scalar; float/string normalization |
+| `tests/unit/commands/test_staleness_detection.py` | 5 | Staleness trigger integration |
 
 ---
 
@@ -289,7 +293,7 @@ Use `event_handlers` (not `on_change_handlers`) for any handler that calls `st.r
 
 ### Events (JS → Python)
 
-All four live events go through `event_handlers` (supports `st.rerun()`):
+All live events go through `event_handlers` (supports `st.rerun()`):
 
 | Event | Payload | Handler |
 |---|---|---|
@@ -297,8 +301,10 @@ All four live events go through `event_handlers` (supports `st.rerun()`):
 | `TermDetailClicked` | `{ term, tableName, colName }` | Open `@st.dialog` for governance or read-only term view |
 | `SuitePickerClicked` | — | Open `@st.dialog` suite picker (include/exclude suites) |
 | `GovernanceEditClicked` | `{ tableName, colName }` | Open `@st.dialog` for governance term edit |
+| `BulkDeleteTermsClicked` | `{ terms: [...] }` | Multi-select bulk delete; each term carries `{table, col, source, name, rule_id}` |
+| `ImportContractClicked` | `{ fileContent }` | Upload tab sends YAML text; Python calls `run_import_contract` and displays diff |
 
-The Upload tab handles import inline (no JS event): Python reads uploaded YAML via `st.file_uploader`, calls `run_import_data_contract`, and displays the diff result. Version navigation is handled via `st.query_params["version"]` with `safe_rerun()` — no JS event needed.
+The Upload tab renders a file input inside the VanJS component. When the user selects a file, JS reads it with `FileReader` and emits `ImportContractClicked` with the YAML content. Python then calls `run_import_contract` and renders the diff inline. Version navigation is handled via `st.query_params["version"]` with `safe_rerun()` — no JS event needed.
 
 ### Per-Column Props Shape
 
@@ -533,12 +539,12 @@ Both commands automatically respect the `include_in_contract` flag — no additi
 
 Python API:
 ```python
-from testgen.commands.import_data_contract import run_import_data_contract
+from testgen.commands.odcs_contract import run_import_contract
 
-diff = run_import_data_contract(yaml_content, table_group_id, dry_run=True)
+diff = run_import_contract(yaml_content, table_group_id, dry_run=True)
 print(diff.summary())
 
-diff = run_import_data_contract(yaml_content, table_group_id, dry_run=False)
+diff = run_import_contract(yaml_content, table_group_id, dry_run=False)
 ```
 
 ### Import Validation Rules
@@ -581,25 +587,37 @@ Import only applies quality-rule changes to suites with `include_in_contract = T
 | Version picker + historic view | Selectbox version picker; historic read-only banner; `?version=N` query param |
 | Old lifecycle artifacts removed | `_STATUS_COLOR` removed; old `contract_version`/`contract_status` writes removed from active code |
 | Frontend updates | Version display, staleness indicator, pending count badge, historic read-only mode |
-| Unit tests (export, import, page) | 219 data-contract tests (91 export, 41 import, 39 UI, 23 term-deletion, 18 pending-edits, 7 staleness) — all passing; 663 total unit tests |
+| Unit tests (export, import, page) | 469 data-contract tests (107 export, 137 odcs import/round-trip, 67 UI, 23 term-deletion, 29 pending-edits, 20 bulk-delete, 41 staleness, 18 versions, 22 staleness-diff, 5 staleness-detection) — all passing; 1038 total unit tests |
 
 ### Backlog / Partial
 
 | Item | Priority | Notes |
-|---|---|---|
-| Remaining unit tests | Medium | `test_contract_first_time_flow.py`, `test_contract_staleness_ui.py`, `test_contract_historic_view.py` |
-| Staleness hooks — test definition changes | Medium | `mark_contract_stale` not yet called from all test definition write paths |
+| --- | --- | --- |
+| `Column_Schema_Assert` test type | Medium | Per-column DDL assertion complementing table-group-level `Schema_Drift`; requires SQL templates for all 8 DB flavors — needs design spec before implementation |
+| Unified pending-changes save UI | Medium | Multi-select and single-select currently have separate save paths; unify into a single save control at the top of the page |
+| Contract snapshot test suite | High | On save-contract, create/update a combined executable test suite from copies of all in-scope tests; named `Contract v{N} — {table_group_name}`; updated incrementally on each save (add new, remove dropped, update changed); locked from normal test suite UI — only editable via the contract; edits to tests in the contract write through to matching copies in this suite |
 | YAML `dimension` field on quality rules | Low | Already mapped via `_DQ_DIMENSION_MAP`; verify rendering in downstream tools |
-| `Column_Schema_Assert` test type | Medium | Per-column DDL assertion complementing table-group-level `Schema_Drift` |
 | ODPS v4.1 adapter | Low | Wrap ODCS output inside `OpenDataProduct` envelope for data product catalog publishing |
 | Contract version history page | Low | YAML snapshot diff viewer across versions; currently only the latest snapshot is shown by default |
+
+### Recently Completed (this branch)
+
+| Item | Detail |
+| --- | --- |
+| Remaining unit tests | `test_contract_first_time_flow.py` (10), `test_contract_staleness_ui.py` (20), `test_contract_historic_view.py` (20) — all passing |
+| Staleness hooks — test definition changes | `mark_contract_stale` added to save, delete, `update_test_definition` (test_active only), and disposition-to-Inactive path in test_results; 15 unit tests in `test_contract_staleness_hooks.py` |
+| ODCS v3.1.0 YAML alignment | `customProperties` uses standard ODCS structure; column-level governance tags emitted as `testgen.*` custom properties; `x-testgen` extension block uses ODCS-compliant `x-` prefix |
+| Upload/download round-trip | Upload tab: JS reads file via `FileReader`, emits `ImportContractClicked`; Python calls `run_import_contract` (from `odcs_contract.py`) and renders diff inline; Download button in YAML tab uses `Blob`/`URL.createObjectURL` — no server round-trip |
+| Multi-select bulk delete | JS `BulkDeleteTermsClicked` event; `on_bulk_delete_terms` handler supports governance, test, and hygiene term types; covered by 20 unit tests in `test_bulk_delete_terms.py` |
+| Import engine expanded (odcs_contract.py) | Supports CREATE (new tests from YAML rules without `id`), UPDATE (existing tests), and WRITE-BACK (new UUIDs written back to YAML file); 137 unit tests in `test_odcs_contract.py` |
+| Code review cleanup | Threshold helpers promoted to module level; hygiene scope fix; referential test exclusion from staleness diff; accordion filter reactivity; float/string threshold normalization |
 
 ---
 
 ## Relationship to External Standards
 
 | Standard | Role |
-|---|---|
+| --- | --- |
 | **ODCS v3.1.0** (Bitol) | Target output format — the contract document itself |
 | **ODPS v4.1** (Linux Foundation) | Broader data product spec; TestGen's ODCS output feeds the `data_contract` section of an ODPS document |
 | **DataContract Specification** | Deprecated predecessor to ODCS — not implemented |

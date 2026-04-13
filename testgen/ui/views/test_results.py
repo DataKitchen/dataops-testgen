@@ -970,4 +970,8 @@ def update_result_disposition(
         },
     )
 
+    if disposition == "Inactive" and selected:
+        from testgen.commands.contract_versions import mark_contract_stale
+        mark_contract_stale(str(selected[0]["table_groups_id"]))
+
     return True

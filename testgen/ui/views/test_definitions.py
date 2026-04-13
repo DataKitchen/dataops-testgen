@@ -396,6 +396,9 @@ def delete_test_dialog(test_definitions: list[dict]):
 
     if delete_clicked():
         TestDefinition.delete_where(TestDefinition.id.in_([ item["id"] for item in test_definitions ]))
+        if test_definitions:
+            from testgen.commands.contract_versions import mark_contract_stale
+            mark_contract_stale(str(test_definitions[0]["table_groups_id"]))
         st.success("Test definitions have been deleted.")
         time.sleep(1)
         safe_rerun()
@@ -926,6 +929,8 @@ def show_test_form(
             if mode == "edit":
                 test_definition["id"] = selected_test_def["id"]
             TestDefinition(**test_definition).save()
+            from testgen.commands.contract_versions import mark_contract_stale
+            mark_contract_stale(str(table_groups_id))
             safe_rerun()
 
 
@@ -1127,6 +1132,9 @@ def update_test_definition(selected, attribute, value, message):
     result = None
     test_definition_ids = [row["id"] for row in selected if "id" in row]
     TestDefinition.set_status_attribute(attribute, test_definition_ids, value)
+    if attribute == "test_active" and selected:
+        from testgen.commands.contract_versions import mark_contract_stale
+        mark_contract_stale(str(selected[0]["table_groups_id"]))
     st.success(message)
     return result
 
