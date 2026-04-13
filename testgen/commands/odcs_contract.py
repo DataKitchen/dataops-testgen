@@ -811,6 +811,8 @@ _ALLOWED_TEST_UPDATE_COLS: frozenset[str] = frozenset({
     "test_description", "threshold_value", "lower_tolerance",
     "upper_tolerance", "severity", "custom_query", "skip_errors",
 })
+# Public alias for callers that use the legacy name (e.g. data_contract_queries)
+_ALLOWED_TEST_COLS: frozenset[str] = _ALLOWED_TEST_UPDATE_COLS
 
 _ALLOWED_TEST_INSERT_COLS: frozenset[str] = frozenset({
     "test_suite_id", "test_type", "schema_name", "table_name", "column_name",

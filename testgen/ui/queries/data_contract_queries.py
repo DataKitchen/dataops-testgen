@@ -372,20 +372,16 @@ def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
     Called when the user saves a new contract version so that the DB reflects
     every in-memory edit captured during the session.
     """
-    from testgen.commands.import_data_contract import _ALLOWED_TEST_COLS
+    from testgen.commands.odcs_contract import _ALLOWED_TEST_COLS
 
     schema = get_tg_schema()
 
     # 1. Governance edits → data_column_chars
-    field_map: dict[str, str] = {
-        "Classification": "pii_flag",
-        "Description":    "description",
-        "CDE":            "critical_data_element",
-    }
     for e in pending.get("governance", []):
-        db_col = field_map.get(e["field"])
-        if not db_col:
+        mapping = _GOVERNANCE_LABEL_TO_FIELD.get(e["field"])
+        if not mapping:
             continue
+        db_col, _ = mapping
         raw_val = e["value"]
         db_val: object = bool(raw_val) if db_col == "critical_data_element" else raw_val
         execute_db_queries([(

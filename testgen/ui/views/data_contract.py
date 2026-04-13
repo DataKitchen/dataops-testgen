@@ -45,7 +45,6 @@ from testgen.ui.queries.data_contract_queries import (
     _fetch_suite_scope,
     _fetch_test_statuses,
     _lookup_column_id,
-    _persist_governance_deletion,
 )
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
@@ -398,6 +397,9 @@ class DataContractPage(Page):
         pending_key    = f"dc_pending:{table_group_id}"
         anomaly_key    = f"dc_anomalies:{table_group_id}"
         import_key     = f"dc_import_result:{table_group_id}"
+        run_dates_key  = f"dc_run_dates:{table_group_id}"
+        gov_key        = f"dc_gov:{table_group_id}"
+        term_diff_key  = f"dc_term_diff:{table_group_id}"
 
         # ── Version picker ────────────────────────────────────────────────────
         versions = list_contract_versions(table_group_id)
@@ -513,6 +515,9 @@ class DataContractPage(Page):
                 st.session_state.pop(anomaly_key, None)
                 st.session_state.pop(version_key, None)
                 st.session_state.pop(pending_key, None)
+                st.session_state.pop(run_dates_key, None)
+                st.session_state.pop(gov_key, None)
+                st.session_state.pop(term_diff_key, None)
                 safe_rerun()
         if is_latest:
             with regen_col:
@@ -563,10 +568,16 @@ class DataContractPage(Page):
             st.session_state[anomaly_key] = _fetch_anomalies(table_group_id)
         anomalies: list[dict] = st.session_state[anomaly_key]
 
-        run_dates     = _fetch_last_run_dates(table_group_id)
+        if run_dates_key not in st.session_state:
+            st.session_state[run_dates_key] = _fetch_last_run_dates(table_group_id)
+        run_dates = st.session_state[run_dates_key]
+
         suite_scope   = _fetch_suite_scope(table_group_id)
-        test_statuses = _fetch_test_statuses(table_group_id)
-        gov_by_col    = _fetch_governance_data(table_group_id)
+        test_statuses = _fetch_test_statuses(table_group_id)  # always fresh per design
+
+        if gov_key not in st.session_state:
+            st.session_state[gov_key] = _fetch_governance_data(table_group_id)
+        gov_by_col = st.session_state[gov_key]
         props = _build_contract_props(
             table_group, doc, anomalies, contract_yaml,
             run_dates, suite_scope, test_statuses, gov_by_col,
@@ -598,7 +609,9 @@ class DataContractPage(Page):
         }
 
         # ── Term diff (Card 2 / Card 3 / Differences tab / Compliance tab) ──────
-        term_diff: TermDiffResult = compute_term_diff(table_group_id, contract_yaml, anomalies)
+        if term_diff_key not in st.session_state:
+            st.session_state[term_diff_key] = compute_term_diff(table_group_id, contract_yaml, anomalies)
+        term_diff: TermDiffResult = st.session_state[term_diff_key]
         same_ct    = sum(1 for e in term_diff.entries if e.status == "same")
         changed_ct = sum(1 for e in term_diff.entries if e.status == "changed")
         deleted_ct = sum(1 for e in term_diff.entries if e.status == "deleted")
@@ -720,10 +733,13 @@ class DataContractPage(Page):
                     "original_yaml": yaml_content,
                 }
                 if not diff.has_errors:
-                    # Bust YAML + anomaly caches so the page reflects the newly created tests
+                    # Bust YAML + anomaly + derived caches so the page reflects the newly created tests
                     st.session_state.pop(yaml_key, None)
                     st.session_state.pop(anomaly_key, None)
                     st.session_state.pop(version_key, None)
+                    st.session_state.pop(run_dates_key, None)
+                    st.session_state.pop(gov_key, None)
+                    st.session_state.pop(term_diff_key, None)
             except Exception as exc:
                 st.session_state[import_key] = {"error": str(exc)}
             safe_rerun()
@@ -803,22 +819,21 @@ class DataContractPage(Page):
 
             updated_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
-            # ── 3. Persist governance deletions directly to DB ─────────────
-            # Governance terms live in data_column_chars, not YAML.
-            # Write DB first; only commit YAML to session state if all writes succeed.
-            try:
-                for t in terms:
-                    if t.get("source") == "governance" and not t.get("rule_id"):
-                        _persist_governance_deletion(
-                            term_name=t.get("name", ""),
-                            table_group_id=table_group_id,
-                            table_name=t.get("table", ""),
-                            col_name=t.get("col", ""),
-                        )
-            except Exception:
-                LOG.exception("on_bulk_delete_terms: governance DB write failed — aborting YAML update")
-                st.error("Failed to delete governance terms — database write error. No changes were saved.")
-                return
+            # ── 3. Queue governance deletions as pending edits ─────────────
+            # Governance terms live in data_column_chars. Rather than writing to DB
+            # immediately (which can't be cancelled), queue them as pending edits so
+            # they are persisted atomically on Save Version and can be undone via Cancel.
+            pending = st.session_state.get(pending_key, {})
+            for t in terms:
+                if t.get("source") == "governance" and not t.get("rule_id"):
+                    snapshot = {"name": t.get("name", ""), "source": "governance", "verif": "declared"}
+                    pending.setdefault("governance", []).append({
+                        "field":    t.get("name", ""),
+                        "value":    None,
+                        "table":    t.get("table", ""),
+                        "col":      t.get("col", ""),
+                        "snapshot": snapshot,
+                    })
 
             # ── 4. Dismiss hygiene anomalies ───────────────────────────────
             for t in terms:
@@ -841,7 +856,7 @@ class DataContractPage(Page):
             st.session_state[yaml_key] = updated_yaml
 
             # ── 5. Update pending edits for rule deletions ─────────────────
-            pending = st.session_state.get(pending_key, {})
+            # `pending` is already populated with any governance deletions from step 3.
             for rid in rule_ids_to_delete:
                 element = element_by_id.get(rid, "")
                 parts = element.split(".", 1)
@@ -858,6 +873,7 @@ class DataContractPage(Page):
                     },
                 )
             st.session_state[pending_key] = pending
+            st.session_state.pop(term_diff_key, None)
             safe_rerun()
 
         testgen_component(

@@ -344,6 +344,15 @@ const _collectAllTermKeys = (filteredTables) => {
 };
 
 const TermsDetail = (tables, activeFilter) => {
+    // Reset module-level selection state so re-navigating to this page never inherits
+    // phantom selections or confirming-delete state from a previous visit.
+    _selectionMode.val = false;
+    _selectedIds.val = new Set();
+    _confirmingDelete.val = false;
+    _flashBtn.val = '';
+    _selectionHint.val = '';
+    _termInfoByKey.clear();
+
     const grandTotal = tables.reduce(
         (sum, t) => sum + t.columns.reduce(
             (s, col) => s + col.static_terms.length + col.live_terms.length, 0,

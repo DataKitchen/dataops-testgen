@@ -116,31 +116,33 @@ def save_contract_version(table_group_id: str, yaml_content: str, label: str | N
     """
     schema = get_tg_schema()
 
-    insert_sql = f"""
-        INSERT INTO {schema}.data_contracts (table_group_id, version, saved_at, label, contract_yaml)
-        SELECT :tg_id,
-               COALESCE(MAX(version), -1) + 1,
-               NOW(),
-               :label,
-               :yaml
-        FROM {schema}.data_contracts
-        WHERE table_group_id = :tg_id
-        RETURNING version
-    """
-    update_sql = f"""
-        UPDATE {schema}.table_groups
-        SET contract_stale = FALSE,
-            last_contract_save_date = NOW()
-        WHERE id = :tg_id
+    # Single statement: INSERT + UPDATE run atomically in one transaction via a CTE.
+    # The UPDATE only executes if the INSERT succeeds; the final SELECT returns the new version.
+    combined_sql = f"""
+        WITH ins AS (
+            INSERT INTO {schema}.data_contracts (table_group_id, version, saved_at, label, contract_yaml)
+            SELECT :tg_id,
+                   COALESCE(MAX(version), -1) + 1,
+                   NOW(),
+                   :label,
+                   :yaml
+            FROM {schema}.data_contracts
+            WHERE table_group_id = :tg_id
+            RETURNING version
+        ),
+        upd AS (
+            UPDATE {schema}.table_groups
+            SET contract_stale = FALSE,
+                last_contract_save_date = NOW()
+            WHERE id = :tg_id
+        )
+        SELECT version FROM ins
     """
 
-    # INSERT first — get version number. Only update table_groups after INSERT succeeds.
-    return_values, _row_counts = execute_db_queries(
-        [(insert_sql, {"tg_id": table_group_id, "label": label, "yaml": yaml_content})]
-    )
+    return_values, _row_counts = execute_db_queries([
+        (combined_sql, {"tg_id": table_group_id, "label": label, "yaml": yaml_content}),
+    ])
     new_version = int(return_values[0])
-
-    execute_db_queries([(update_sql, {"tg_id": table_group_id})])
     LOG.info("Contract version %d saved for table group %s", new_version, table_group_id)
     return new_version
 

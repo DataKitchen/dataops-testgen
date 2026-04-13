@@ -513,8 +513,9 @@ def _term_read_dialog(
         if dis_col.button("Delete term from contract", key="hygiene_dismiss", use_container_width=True):
             if anomaly_type:
                 _dismiss_hygiene_anomaly(table_group_id, table_name, col_name, anomaly_type)
-            # Clear the cached anomaly list so the dismissed chip disappears on next render
+            # Clear cached anomaly + derived lists so the dismissed chip disappears on next render
             st.session_state.pop(f"dc_anomalies:{table_group_id}", None)
+            st.session_state.pop(f"dc_term_diff:{table_group_id}", None)
             pending_key = f"dc_pending:{table_group_id}"
             st.session_state[pending_key] = _apply_pending_governance_edit(
                 st.session_state.get(pending_key, {}),
@@ -857,10 +858,13 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
         with st.spinner("Saving new version…"):
             new_version = save_contract_version(table_group_id, fresh_yaml, label or None)
         st.success(f"Saved as version {new_version}.")
-        pending_key = f"dc_pending:{table_group_id}"
-        yaml_key    = f"dc_yaml:{table_group_id}"
-        version_key = f"dc_version:{table_group_id}"
-        for k in (pending_key, yaml_key, version_key):
+        pending_key   = f"dc_pending:{table_group_id}"
+        yaml_key      = f"dc_yaml:{table_group_id}"
+        version_key   = f"dc_version:{table_group_id}"
+        run_dates_key = f"dc_run_dates:{table_group_id}"
+        gov_key       = f"dc_gov:{table_group_id}"
+        term_diff_key = f"dc_term_diff:{table_group_id}"
+        for k in (pending_key, yaml_key, version_key, run_dates_key, gov_key, term_diff_key):
             st.session_state.pop(k, None)
         safe_rerun()
     if cancel_col.button("Cancel", use_container_width=True):
@@ -909,10 +913,13 @@ def _save_version_dialog(
                 new_version = save_contract_version(table_group_id, current_yaml, label or None)
 
             st.success(f"Saved as version {new_version}.")
-            pending_key = f"dc_pending:{table_group_id}"
-            yaml_key    = f"dc_yaml:{table_group_id}"
-            version_key = f"dc_version:{table_group_id}"
-            for k in (pending_key, yaml_key, version_key):
+            pending_key   = f"dc_pending:{table_group_id}"
+            yaml_key      = f"dc_yaml:{table_group_id}"
+            version_key   = f"dc_version:{table_group_id}"
+            run_dates_key = f"dc_run_dates:{table_group_id}"
+            gov_key       = f"dc_gov:{table_group_id}"
+            term_diff_key = f"dc_term_diff:{table_group_id}"
+            for k in (pending_key, yaml_key, version_key, run_dates_key, gov_key, term_diff_key):
                 st.session_state.pop(k, None)
             safe_rerun()
 

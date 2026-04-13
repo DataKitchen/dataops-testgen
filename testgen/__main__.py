@@ -11,7 +11,7 @@ from click.core import Context
 
 from testgen import settings
 from testgen.commands.export_data_contract import run_export_data_contract
-from testgen.commands.import_data_contract import run_import_data_contract
+from testgen.commands.odcs_contract import run_import_contract as run_import_data_contract
 from testgen.commands.run_get_entities import (
     run_get_results,
     run_get_test_suite,

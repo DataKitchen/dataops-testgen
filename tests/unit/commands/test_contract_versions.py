@@ -165,16 +165,10 @@ class Test_SaveContractVersion:
     def _run_save(self, return_values, row_counts, label=None):
         from testgen.commands.contract_versions import save_contract_version
 
-        # execute_db_queries is called twice: first for INSERT (returns version),
-        # then for UPDATE (clears stale flag). Side-effect supplies return values
-        # for each call in order.
-        side_effects = [
-            (return_values, row_counts),
-            ([], [1]),
-        ]
+        # INSERT and UPDATE now run as a single execute_db_queries call via a CTE.
         with patch(
             "testgen.commands.contract_versions.execute_db_queries",
-            side_effect=side_effects,
+            return_value=(return_values, row_counts),
         ) as mock_exec:
             result = save_contract_version(TG_ID, "yaml-content", label=label)
             return result, mock_exec
@@ -187,32 +181,26 @@ class Test_SaveContractVersion:
         result, _ = self._run_save([1], [1])
         assert result == 1
 
-    def test_executes_two_queries(self):
-        """INSERT and UPDATE are now issued as two separate execute_db_queries calls."""
+    def test_executes_single_query(self):
+        """INSERT and UPDATE are now combined into one execute_db_queries call via a CTE."""
         _, mock_exec = self._run_save([0], [1])
-        assert mock_exec.call_count == 2
+        assert mock_exec.call_count == 1
 
-    def test_insert_query_contains_returning(self):
+    def test_combined_query_contains_insert_and_update(self):
         _, mock_exec = self._run_save([0], [1])
-        # First call is the INSERT
-        insert_queries = mock_exec.call_args_list[0][0][0]
-        insert_sql = insert_queries[0][0]
-        assert "RETURNING" in insert_sql.upper()
-
-    def test_update_clears_stale_flag(self):
-        _, mock_exec = self._run_save([0], [1])
-        # Second call is the UPDATE
-        update_queries = mock_exec.call_args_list[1][0][0]
-        update_sql = update_queries[0][0]
-        assert "contract_stale" in update_sql
-        assert "FALSE" in update_sql.upper()
+        queries = mock_exec.call_args_list[0][0][0]
+        sql = queries[0][0].upper()
+        assert "INSERT" in sql
+        assert "UPDATE" in sql
+        assert "contract_stale".upper() in sql
+        assert "FALSE" in sql
+        assert "RETURNING" in sql
 
     def test_label_passed_as_param(self):
         _, mock_exec = self._run_save([0], [1], label="my-label")
-        # First call is the INSERT
-        insert_queries = mock_exec.call_args_list[0][0][0]
-        insert_params = insert_queries[0][1]
-        assert insert_params.get("label") == "my-label"
+        queries = mock_exec.call_args_list[0][0][0]
+        params = queries[0][1]
+        assert params.get("label") == "my-label"
 
 
 # ---------------------------------------------------------------------------
