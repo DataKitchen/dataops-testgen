@@ -354,13 +354,13 @@ class Test_HistoricalVersionReadOnly:
         )
 
     def test_historical_version_has_no_regenerate_button(self):
-        """Viewing an older version must not show '⟳ Regenerate' button."""
+        """Viewing an older version must not show 'Regenerate' button."""
         at = _at_hist()
         at.run()
         assert not at.exception
         labels = _button_labels(at)
-        assert "⟳ Regenerate" not in labels, (
-            f"Expected no '⟳ Regenerate' on historical view. Buttons: {labels}"
+        assert "Regenerate" not in labels, (
+            f"Expected no 'Regenerate' on historical view. Buttons: {labels}"
         )
 
     def test_historical_version_info_mentions_version_number(self):
@@ -496,8 +496,8 @@ class Test_BulkDeleteClearsCache:
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "⟳ Regenerate" in _button_labels(at), (
-            f"Expected '⟳ Regenerate' button. Available: {_button_labels(at)}"
+        assert "Regenerate" in _button_labels(at), (
+            f"Expected 'Regenerate' button. Available: {_button_labels(at)}"
         )
 
 
@@ -559,32 +559,32 @@ def _at_term_deletion() -> AppTest:
 
 
 # ---------------------------------------------------------------------------
-# Test Group 1: Test_RegenerateDialog — ⟳ Regenerate button and dialog
+# Test Group 1: Test_RegenerateDialog — Regenerate button and dialog
 # ---------------------------------------------------------------------------
 
 class Test_RegenerateDialog:
 
     def test_regenerate_button_is_present(self):
-        """Latest saved version must show the ⟳ Regenerate button."""
+        """Latest saved version must show the Regenerate button."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "⟳ Regenerate" in _button_labels(at), (
-            f"Expected '⟳ Regenerate'. Available: {_button_labels(at)}"
+        assert "Regenerate" in _button_labels(at), (
+            f"Expected 'Regenerate'. Available: {_button_labels(at)}"
         )
 
     def test_regenerate_dialog_opens_without_exception(self):
-        """Clicking ⟳ Regenerate must open the dialog without raising an exception."""
+        """Clicking Regenerate must open the dialog without raising an exception."""
         at = _at_saved()
         at.run()
-        _click(at, "⟳ Regenerate")
+        _click(at, "Regenerate")
         assert not at.exception
 
     def test_regenerate_dialog_shows_next_version_number(self):
         """VERSION_1 has version=1, so the dialog header must say 'Version 2'."""
         at = _at_saved()
         at.run()
-        _click(at, "⟳ Regenerate")
+        _click(at, "Regenerate")
         assert not at.exception
         text = _all_text(at)
         assert "Version 2" in text, (
@@ -595,7 +595,7 @@ class Test_RegenerateDialog:
         """Dialog must display an info message describing the new snapshot suite."""
         at = _at_saved()
         at.run()
-        _click(at, "⟳ Regenerate")
+        _click(at, "Regenerate")
         assert not at.exception
         assert any(at.info), "Expected at least one st.info widget in the dialog"
 
@@ -603,7 +603,7 @@ class Test_RegenerateDialog:
         """Dialog must contain both 'Regenerate & Save' and 'Cancel' buttons."""
         at = _at_saved()
         at.run()
-        _click(at, "⟳ Regenerate")
+        _click(at, "Regenerate")
         assert not at.exception
         labels = _button_labels(at)
         assert "Regenerate & Save" in labels, (
