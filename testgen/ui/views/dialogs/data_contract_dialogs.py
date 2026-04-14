@@ -13,8 +13,22 @@ import logging
 import streamlit as st
 import yaml
 
+from testgen.commands.contract_snapshot_suite import (
+    create_contract_snapshot_suite,
+    delete_contract_version,
+    sync_import_to_snapshot_suite,
+)
 from testgen.commands.contract_staleness import StaleDiff
-from testgen.commands.contract_versions import save_contract_version
+from testgen.commands.contract_versions import (
+    list_contract_versions,
+    load_contract_version,
+    save_contract_version,
+    update_contract_version,
+)
+from testgen.common.credentials import get_tg_schema
+from testgen.common.database.database_service import fetch_dict_from_db
+from testgen.common.models.table_group import TableGroup
+from testgen.common.models import with_database_session
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.data_contract_queries import (
     _capture_yaml,
@@ -37,6 +51,15 @@ from testgen.ui.views.data_contract_yaml import (
 )
 
 LOG = logging.getLogger("testgen")
+
+_CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope")
+
+
+def _clear_contract_cache(table_group_id: str, *, also_anomalies: bool = False) -> None:
+    keys = _CONTRACT_CACHE_KEYS + ("dc_anomalies",) if also_anomalies else _CONTRACT_CACHE_KEYS
+    for key in keys:
+        st.session_state.pop(f"{key}:{table_group_id}", None)
+
 
 # ---------------------------------------------------------------------------
 # Dialog-local constants
@@ -666,7 +689,7 @@ def _term_edit_dialog(
 # ---------------------------------------------------------------------------
 
 @st.dialog("Edit Quality Rule", width="small")
-def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str) -> None:
+def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_suite_id: str | None = None) -> None:
     rule_id   = str(rule.get("id", ""))
     test_name = rule.get("name") or rule.get("type") or "Test"
     last      = rule.get("lastResult") or {}
@@ -819,6 +842,11 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str) -> None:
             rule_id,
             {"_removed": True},
         )
+        if snapshot_suite_id and rule_id:
+            try:
+                sync_import_to_snapshot_suite(snapshot_suite_id, [], [], [rule_id])
+            except Exception:
+                LOG.exception("_edit_rule_dialog: failed to sync deletion to snapshot suite %s", snapshot_suite_id)
         safe_rerun()
 
 
@@ -844,6 +872,19 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
             icon="⚠️",
         )
         confirmed = st.checkbox("I understand — discard my pending edits and regenerate")
+
+    # Show snapshot suite name that will be created
+    _tg_regen = TableGroup.get_minimal(table_group_id)
+    _tg_name_regen = getattr(_tg_regen, "table_groups_name", "") or table_group_id
+    _snapshot_suite_name_regen = f"[Contract v{next_ver}] {_tg_name_regen}"
+    st.info(
+        f"A new test suite will be created:\n\n"
+        f"**{_snapshot_suite_name_regen}**\n\n"
+        f"It will contain a copy of all tests currently in scope for this contract. "
+        f"Tests in this suite can only be managed from the Data Contract UI.",
+        icon="ℹ️",
+    )
+
     label = st.text_input("Label (optional)", placeholder="e.g. Regenerated with test descriptions")
     st.divider()
     go_col, cancel_col = st.columns(2)
@@ -857,16 +898,61 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
             return
         with st.spinner("Saving new version…"):
             new_version = save_contract_version(table_group_id, fresh_yaml, label or None)
+
+        # Create the snapshot test suite
+        try:
+            create_contract_snapshot_suite(table_group_id, new_version)
+        except ValueError as snap_err:
+            st.error(f"No in-scope tests found. Add tests to at least one contract suite before saving. ({snap_err})")
+            return
+
         st.success(f"Saved as version {new_version}.")
-        pending_key   = f"dc_pending:{table_group_id}"
-        yaml_key      = f"dc_yaml:{table_group_id}"
-        version_key   = f"dc_version:{table_group_id}"
-        run_dates_key = f"dc_run_dates:{table_group_id}"
-        gov_key       = f"dc_gov:{table_group_id}"
-        term_diff_key = f"dc_term_diff:{table_group_id}"
-        for k in (pending_key, yaml_key, version_key, run_dates_key, gov_key, term_diff_key):
-            st.session_state.pop(k, None)
+        _clear_contract_cache(table_group_id)
         safe_rerun()
+    if cancel_col.button("Cancel", use_container_width=True):
+        safe_rerun()
+
+
+# ---------------------------------------------------------------------------
+# Update version dialog (in-place, no version bump)
+# ---------------------------------------------------------------------------
+
+@st.dialog("Save Changes", width="small")
+def _update_version_dialog(
+    table_group_id: str,
+    pending: dict,
+    current_yaml: str,
+    current_version: int,
+) -> None:
+    gov_edits  = pending.get("governance", [])
+    test_edits = pending.get("tests", [])
+
+    st.markdown(f"**Save changes to Version {current_version}**")
+    st.caption("This updates the existing version in-place without creating a new one.")
+
+    if gov_edits or test_edits:
+        st.markdown("**Changes to save:**")
+        for e in gov_edits:
+            st.markdown(f"  · {e['table']}.{e['col']} — {e['field']}: {e['value']}")
+        for e in test_edits:
+            label = "deleted" if e.get("_removed") else "updated"
+            st.markdown(f"  · Test `{e['rule_id'][:8]}…` {label}")
+
+    st.divider()
+    save_col, cancel_col = st.columns(2)
+
+    if save_col.button("Save", type="primary", use_container_width=True):
+        try:
+            with st.spinner("Saving…"):
+                _persist_pending_edits(table_group_id, pending)
+                update_contract_version(table_group_id, current_version, current_yaml)
+
+            st.success(f"Version {current_version} updated.")
+            _clear_contract_cache(table_group_id)
+            safe_rerun()
+        except Exception as exc:
+            st.error(f"Save failed: {exc}")
+
     if cancel_col.button("Cancel", use_container_width=True):
         safe_rerun()
 
@@ -899,6 +985,18 @@ def _save_version_dialog(
     else:
         st.info("No edits pending — this will snapshot the current contract state without changes.", icon="ℹ️")
 
+    # Resolve table group name for snapshot suite warning
+    _tg = TableGroup.get_minimal(table_group_id)
+    _tg_name = getattr(_tg, "table_groups_name", "") or table_group_id
+    _snapshot_suite_name = f"[Contract v{next_ver}] {_tg_name}"
+    st.info(
+        f"A new test suite will be created:\n\n"
+        f"**{_snapshot_suite_name}**\n\n"
+        f"It will contain a copy of all tests currently in scope for this contract. "
+        f"Tests in this suite can only be managed from the Data Contract UI.",
+        icon="ℹ️",
+    )
+
     label = st.text_input("Label (optional)", placeholder="e.g. Added PII tests for orders table")
     st.divider()
     save_col, cancel_col = st.columns(2)
@@ -912,17 +1010,19 @@ def _save_version_dialog(
                 # 2. Save snapshot from the in-memory patched YAML (not a fresh export)
                 new_version = save_contract_version(table_group_id, current_yaml, label or None)
 
+            # 3. Create the snapshot test suite
+            try:
+                create_contract_snapshot_suite(table_group_id, new_version)
+            except ValueError as snap_err:
+                st.error(f"No in-scope tests found. Add tests to at least one contract suite before saving. ({snap_err})")
+                return
+
             st.success(f"Saved as version {new_version}.")
-            pending_key   = f"dc_pending:{table_group_id}"
-            yaml_key      = f"dc_yaml:{table_group_id}"
-            version_key   = f"dc_version:{table_group_id}"
-            run_dates_key = f"dc_run_dates:{table_group_id}"
-            gov_key       = f"dc_gov:{table_group_id}"
-            term_diff_key = f"dc_term_diff:{table_group_id}"
-            for k in (pending_key, yaml_key, version_key, run_dates_key, gov_key, term_diff_key):
-                st.session_state.pop(k, None)
+            _clear_contract_cache(table_group_id)
             safe_rerun()
 
+        except ValueError as exc:
+            st.error(str(exc))
         except Exception as exc:
             st.error(f"Save failed: {exc}")
 
@@ -1008,4 +1108,101 @@ def cancel_all_changes_dialog(
         st.session_state[f"dc_yaml:{table_group_id}"] = original_yaml
         safe_rerun()
     if back_col.button("Go back", use_container_width=True):
+        safe_rerun()
+
+
+# ---------------------------------------------------------------------------
+# Delete version dialog
+# ---------------------------------------------------------------------------
+
+@st.dialog("Delete Contract Version", width="small")
+@with_database_session
+def _delete_version_dialog(table_group_id: str, version: int) -> None:
+    """Confirm and delete a saved contract version and its snapshot suite."""
+    schema = get_tg_schema()
+
+    # Fetch version info and snapshot suite details
+    ver_rows = fetch_dict_from_db(
+        f"""
+        SELECT dc.snapshot_suite_id::text AS snapshot_suite_id,
+               dc.label,
+               dc.saved_at
+        FROM {schema}.data_contracts dc
+        WHERE dc.table_group_id = CAST(:tg_id AS uuid)
+          AND dc.version = :version
+        """,
+        params={"tg_id": table_group_id, "version": version},
+    )
+
+    if not ver_rows:
+        st.error(f"Contract version {version} not found.")
+        return
+
+    ver_info = dict(ver_rows[0])
+    snapshot_suite_id: str | None = ver_info.get("snapshot_suite_id") or None
+    label_str = ver_info.get("label") or "no label"
+    saved_at = ver_info.get("saved_at")
+    saved_str = saved_at.strftime("%b %d, %Y") if saved_at else "unknown date"
+
+    # Fetch snapshot suite test count if applicable
+    test_count = 0
+    suite_name = ""
+    if snapshot_suite_id:
+        count_rows = fetch_dict_from_db(
+            f"SELECT COUNT(*) AS ct FROM {schema}.test_definitions WHERE test_suite_id = CAST(:sid AS uuid)",
+            params={"sid": snapshot_suite_id},
+        )
+        test_count = int((count_rows[0]["ct"] or 0)) if count_rows else 0
+
+        suite_rows = fetch_dict_from_db(
+            f"SELECT test_suite FROM {schema}.test_suites WHERE id = CAST(:sid AS uuid)",
+            params={"sid": snapshot_suite_id},
+        )
+        suite_name = suite_rows[0]["test_suite"] if suite_rows else f"[Contract v{version}]"
+
+    # Check if this is the latest version
+    all_versions = list_contract_versions(table_group_id)
+    latest_version = all_versions[0]["version"] if all_versions else version
+    is_latest_version = (version == latest_version)
+    prev_version = all_versions[1]["version"] if len(all_versions) > 1 and is_latest_version else None
+
+    st.markdown(f"**Delete contract v{version}?**")
+    st.divider()
+
+    st.markdown(
+        f"This will permanently delete:\n\n"
+        f"- Contract version v{version} ({label_str}, saved {saved_str})"
+    )
+    if snapshot_suite_id:
+        st.markdown(f'- Test suite **"{suite_name}"** and all {test_count} tests in it')
+
+    st.markdown("\n**This action cannot be undone.**")
+
+    if is_latest_version and prev_version is not None:
+        st.warning(
+            f"This is the most recent saved version. After deletion, "
+            f"v{prev_version} will become the active contract.",
+            icon="⚠️",
+        )
+
+    st.divider()
+    confirm_input = st.text_input("Type DELETE to confirm", placeholder="DELETE")
+    is_confirmed = confirm_input == "DELETE"
+
+    confirm_col, cancel_col = st.columns(2)
+    if confirm_col.button("Delete", type="primary", use_container_width=True, disabled=not is_confirmed):
+        try:
+            delete_contract_version(table_group_id, version)
+            _clear_contract_cache(table_group_id, also_anomalies=True)
+            # Clear version query param if this was the viewed version
+            if "version" in st.query_params:
+                del st.query_params["version"]
+            safe_rerun()
+        except ValueError as exc:
+            st.error(str(exc))
+        except Exception as exc:
+            LOG.exception("_delete_version_dialog: failed to delete version %d", version)
+            st.error(f"Delete failed: {exc}")
+
+    if cancel_col.button("Cancel", use_container_width=True):
         safe_rerun()

@@ -16,6 +16,19 @@ from testgen.common.models import with_database_session
 
 LOG = logging.getLogger("testgen")
 
+_TYPE_ALIASES: dict[str, str] = {
+    "character varying": "varchar",
+    "character":         "char",
+    "integer":           "int",
+    "int4":              "int",
+    "int8":              "bigint",
+    "int2":              "smallint",
+    "float4":            "real",
+    "float8":            "double precision",
+    "bool":              "boolean",
+    "timestamptz":       "timestamp with time zone",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -263,6 +276,7 @@ def compute_term_diff(
         ) tr ON TRUE
         WHERE ts.table_groups_id         = :tg_id
           AND ts.include_in_contract     IS NOT FALSE
+          AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
           AND td.test_active             = 'Y'
           AND COALESCE(tt.test_scope, '') != 'referential'
         """,
@@ -363,7 +377,11 @@ def compute_term_diff(
 # ---------------------------------------------------------------------------
 
 @with_database_session
-def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
+def compute_staleness_diff(
+    table_group_id: str,
+    saved_yaml: str,
+    snapshot_suite_id: str | None = None,
+) -> StaleDiff:
     """
     Compare a saved ODCS contract YAML snapshot against the current database state
     and return a StaleDiff describing what has changed.
@@ -449,20 +467,6 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
                 "detail": "Column no longer present in profiled data",
             })
 
-    # Normalize SQL type aliases so equivalent types don't appear as changes.
-    _TYPE_ALIASES: dict[str, str] = {
-        "character varying": "varchar",
-        "character":         "char",
-        "integer":           "int",
-        "int4":              "int",
-        "int8":              "bigint",
-        "int2":              "smallint",
-        "float4":            "real",
-        "float8":            "double precision",
-        "bool":              "boolean",
-        "timestamptz":       "timestamp with time zone",
-    }
-
     def _norm_type(t: str) -> str:
         return _TYPE_ALIASES.get(t.lower().strip(), t.lower().strip())
 
@@ -484,84 +488,86 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
     # 3. Quality (test definitions) diff
     # ------------------------------------------------------------------
 
-    # Build snapshot quality index: rule_id → rule dict
-    snapshot_quality: dict[str, dict[str, Any]] = {}
-    for rule in snapshot.get("quality") or []:
-        if not isinstance(rule, dict):
-            continue
-        rule_id = rule.get("id")
-        if rule_id:
-            snapshot_quality[str(rule_id)] = rule
+    if not snapshot_suite_id:
+        # Build snapshot quality index: rule_id → rule dict
+        snapshot_quality: dict[str, dict[str, Any]] = {}
+        for rule in snapshot.get("quality") or []:
+            if not isinstance(rule, dict):
+                continue
+            rule_id = rule.get("id")
+            if rule_id:
+                snapshot_quality[str(rule_id)] = rule
 
-    # Query current active test definitions with last result (exclude referential — not in quality YAML)
-    test_rows = fetch_dict_from_db(
-        f"""
-        SELECT td.id::text, td.test_type, td.table_name, td.column_name,
-               td.threshold_value, td.lower_tolerance, td.upper_tolerance,
-               td.test_description,
-               tr.result_status AS last_result_status
-        FROM {schema}.test_definitions td
-        JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
-        JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
-        LEFT JOIN LATERAL (
-            SELECT result_status FROM {schema}.test_results
-            WHERE test_definition_id = td.id
-            ORDER BY test_time DESC LIMIT 1
-        ) tr ON TRUE
-        WHERE ts.table_groups_id = :tg_id
-          AND ts.include_in_contract IS NOT FALSE
-          AND ts.is_monitor IS NOT TRUE
-          AND td.test_active = 'Y'
-          AND COALESCE(tt.test_scope, '') != 'referential'
-        """,
-        params={"tg_id": table_group_id},
-    )
-    current_tests: dict[str, dict[str, Any]] = {str(r["id"]): dict(r) for r in test_rows}
+        # Query current active test definitions with last result (exclude referential — not in quality YAML)
+        test_rows = fetch_dict_from_db(
+            f"""
+            SELECT td.id::text, td.test_type, td.table_name, td.column_name,
+                   td.threshold_value, td.lower_tolerance, td.upper_tolerance,
+                   td.test_description,
+                   tr.result_status AS last_result_status
+            FROM {schema}.test_definitions td
+            JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
+            JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
+            LEFT JOIN LATERAL (
+                SELECT result_status FROM {schema}.test_results
+                WHERE test_definition_id = td.id
+                ORDER BY test_time DESC LIMIT 1
+            ) tr ON TRUE
+            WHERE ts.table_groups_id = :tg_id
+              AND ts.include_in_contract IS NOT FALSE
+              AND ts.is_monitor IS NOT TRUE
+              AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
+              AND td.test_active = 'Y'
+              AND COALESCE(tt.test_scope, '') != 'referential'
+            """,
+            params={"tg_id": table_group_id},
+        )
+        current_tests: dict[str, dict[str, Any]] = {str(r["id"]): dict(r) for r in test_rows}
 
-    def _element_label(row: dict[str, Any]) -> str:
-        col = (row.get("column_name") or "").strip()
-        tbl = (row.get("table_name") or "").strip()
-        return f"{tbl}.{col}" if col else tbl
+        def _element_label(row: dict[str, Any]) -> str:
+            col = (row.get("column_name") or "").strip()
+            tbl = (row.get("table_name") or "").strip()
+            return f"{tbl}.{col}" if col else tbl
 
-    # Added tests (in DB but not in snapshot)
-    for test_id, row in current_tests.items():
-        if test_id not in snapshot_quality:
-            diff.quality_changes.append({
-                "change":      "added",
-                "element":     _element_label(row),
-                "test_type":   row.get("test_type") or "",
-                "detail":      "New test definition added",
-                "last_result": row.get("last_result_status"),
-            })
+        # Added tests (in DB but not in snapshot)
+        for test_id, row in current_tests.items():
+            if test_id not in snapshot_quality:
+                diff.quality_changes.append({
+                    "change":      "added",
+                    "element":     _element_label(row),
+                    "test_type":   row.get("test_type") or "",
+                    "detail":      "New test definition added",
+                    "last_result": row.get("last_result_status"),
+                })
 
-    # Removed tests (in snapshot but not in DB)
-    for rule_id, rule in snapshot_quality.items():
-        if rule_id not in current_tests:
-            element = rule.get("element") or ""
-            diff.quality_changes.append({
-                "change":      "removed",
-                "element":     element,
-                "test_type":   "",
-                "detail":      "Test definition removed or deactivated",
-                "last_result": None,
-            })
+        # Removed tests (in snapshot but not in DB)
+        for rule_id, rule in snapshot_quality.items():
+            if rule_id not in current_tests:
+                element = rule.get("element") or ""
+                diff.quality_changes.append({
+                    "change":      "removed",
+                    "element":     element,
+                    "test_type":   "",
+                    "detail":      "Test definition removed or deactivated",
+                    "last_result": None,
+                })
 
-    # Changed tests (threshold value differs)
-    for rule_id, rule in snapshot_quality.items():
-        if rule_id not in current_tests:
-            continue
-        row = current_tests[rule_id]
-        snap_threshold   = _snap_threshold_from_rule(rule)
-        current_threshold = _cur_threshold_from_row(row)
+        # Changed tests (threshold value differs)
+        for rule_id, rule in snapshot_quality.items():
+            if rule_id not in current_tests:
+                continue
+            row = current_tests[rule_id]
+            snap_threshold    = _snap_threshold_from_rule(rule)
+            current_threshold = _cur_threshold_from_row(row)
 
-        if snap_threshold is not None and _thresholds_differ(snap_threshold, current_threshold):
-            diff.quality_changes.append({
-                "change":      "changed",
-                "element":     _element_label(row),
-                "test_type":   row.get("test_type") or "",
-                "detail":      f"Threshold changed from '{snap_threshold}' to '{current_threshold}'",
-                "last_result": row.get("last_result_status"),
-            })
+            if snap_threshold is not None and _thresholds_differ(snap_threshold, current_threshold):
+                diff.quality_changes.append({
+                    "change":      "changed",
+                    "element":     _element_label(row),
+                    "test_type":   row.get("test_type") or "",
+                    "detail":      f"Threshold changed from '{snap_threshold}' to '{current_threshold}'",
+                    "last_result": row.get("last_result_status"),
+                })
 
     # ------------------------------------------------------------------
     # 4. Governance diff
@@ -649,6 +655,7 @@ def compute_staleness_diff(table_group_id: str, saved_yaml: str) -> StaleDiff:
         WHERE table_groups_id = :tg_id
           AND include_in_contract IS NOT FALSE
           AND is_monitor IS NOT TRUE
+          AND is_contract_snapshot IS NOT TRUE
         """,
         params={"tg_id": table_group_id},
     )

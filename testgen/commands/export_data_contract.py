@@ -358,6 +358,7 @@ def _fetch_test_run_history(table_group_id: str, schema: str, limit: int = 5) ->
         JOIN {schema}.test_suites s ON s.id = tr.test_suite_id
         WHERE s.table_groups_id = :tg_id
           AND s.include_in_contract IS NOT FALSE  -- TRUE or NULL; column is NOT NULL DEFAULT TRUE so NULL only on pre-migration rows
+          AND COALESCE(s.is_contract_snapshot, FALSE) IS NOT TRUE
           AND tr.status = 'Complete'
         ORDER BY tr.test_starttime DESC
         LIMIT :limit
@@ -375,6 +376,7 @@ def _fetch_suite_scope(table_group_id: str, schema: str) -> dict:
         FROM {schema}.test_suites
         WHERE table_groups_id = :tg_id
           AND is_monitor IS NOT TRUE
+          AND COALESCE(is_contract_snapshot, FALSE) IS NOT TRUE
         ORDER BY LOWER(test_suite)
     """
     rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id})
@@ -440,6 +442,7 @@ def _fetch_tests(table_group_id: str, schema: str) -> list[dict]:
         ) tr ON TRUE
         WHERE s.table_groups_id = :tg_id
           AND s.include_in_contract IS NOT FALSE  -- TRUE or NULL; column is NOT NULL DEFAULT TRUE so NULL only on pre-migration rows
+          AND COALESCE(s.is_contract_snapshot, FALSE) IS NOT TRUE
           AND td.test_active    = 'Y'
         ORDER BY td.table_name, td.column_name, td.test_type
     """

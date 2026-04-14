@@ -108,6 +108,7 @@ def _fetch_suite_scope(table_group_id: str) -> dict:
         FROM {schema}.test_suites
         WHERE table_groups_id = :tg_id
           AND is_monitor IS NOT TRUE
+          AND is_contract_snapshot IS NOT TRUE
         ORDER BY LOWER(test_suite)
     """
     try:
@@ -239,6 +240,7 @@ def _fetch_test_statuses(table_group_id: str) -> dict[str, str]:
         WHERE s.table_groups_id        = :tg_id
           AND s.include_in_contract    IS NOT FALSE
           AND COALESCE(s.is_monitor, FALSE) = FALSE
+          AND COALESCE(s.is_contract_snapshot, FALSE) = FALSE
           AND td.test_active           = 'Y'
         ORDER BY td.id, tr.test_time DESC NULLS LAST
     """
@@ -282,6 +284,7 @@ def _fetch_last_run_dates(table_group_id: str) -> dict:
             JOIN {schema}.test_runs tr ON tr.test_suite_id = s.id
             WHERE s.table_groups_id = :tg_id
               AND s.include_in_contract IS NOT FALSE
+              AND COALESCE(s.is_contract_snapshot, FALSE) = FALSE
             ORDER BY s.id, tr.test_starttime DESC
         ) latest
         ORDER BY is_monitor ASC, run_start DESC

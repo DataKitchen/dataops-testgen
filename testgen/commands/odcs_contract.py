@@ -661,6 +661,7 @@ def compute_import_diff(doc: dict, table_group_id: str, schema: str) -> Contract
         JOIN {schema}.test_suites s ON s.id = td.test_suite_id
         WHERE s.table_groups_id = :tg_id
           AND COALESCE(s.include_in_contract, TRUE) IS NOT FALSE
+          AND COALESCE(s.is_contract_snapshot, FALSE) IS NOT TRUE
           AND td.test_active = 'Y'
         """,
         params={"tg_id": table_group_id},
@@ -676,6 +677,7 @@ def compute_import_diff(doc: dict, table_group_id: str, schema: str) -> Contract
         WHERE s.table_groups_id = :tg_id
           AND COALESCE(s.include_in_contract, TRUE) IS NOT FALSE
           AND COALESCE(s.is_monitor, FALSE) IS NOT TRUE
+          AND COALESCE(s.is_contract_snapshot, FALSE) IS NOT TRUE
         ORDER BY LOWER(s.test_suite)
         """,
         params={"tg_id": table_group_id},

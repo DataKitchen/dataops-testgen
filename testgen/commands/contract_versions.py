@@ -19,7 +19,7 @@ def has_any_version(table_group_id: str) -> bool:
     """Return True if at least one saved contract version exists for the table group."""
     schema = get_tg_schema()
     rows = fetch_dict_from_db(
-        f"SELECT 1 FROM {schema}.data_contracts WHERE table_group_id = :tg_id LIMIT 1",
+        f"SELECT 1 FROM {schema}.data_contracts WHERE table_group_id = CAST(:tg_id AS uuid) LIMIT 1",
         params={"tg_id": table_group_id},
     )
     return bool(rows)
@@ -42,7 +42,8 @@ def load_contract_version(table_group_id: str, version: int | None = None) -> di
 
     if version is None:
         sql = f"""
-            SELECT version, saved_at, label, contract_yaml
+            SELECT version, saved_at, label, contract_yaml,
+                   snapshot_suite_id::text AS snapshot_suite_id
             FROM {schema}.data_contracts
             WHERE table_group_id = :tg_id
             ORDER BY version DESC
@@ -51,7 +52,8 @@ def load_contract_version(table_group_id: str, version: int | None = None) -> di
         params: dict[str, Any] = {"tg_id": table_group_id}
     else:
         sql = f"""
-            SELECT version, saved_at, label, contract_yaml
+            SELECT version, saved_at, label, contract_yaml,
+                   snapshot_suite_id::text AS snapshot_suite_id
             FROM {schema}.data_contracts
             WHERE table_group_id = :tg_id
               AND version = :ver
@@ -64,10 +66,11 @@ def load_contract_version(table_group_id: str, version: int | None = None) -> di
 
     row = dict(rows[0])
     return {
-        "version":       int(row["version"]),
-        "saved_at":      row["saved_at"],
-        "label":         row.get("label"),
-        "contract_yaml": row["contract_yaml"],
+        "version":          int(row["version"]),
+        "saved_at":         row["saved_at"],
+        "label":            row.get("label"),
+        "contract_yaml":    row["contract_yaml"],
+        "snapshot_suite_id": row.get("snapshot_suite_id") or None,
     }
 
 
@@ -145,6 +148,21 @@ def save_contract_version(table_group_id: str, yaml_content: str, label: str | N
     new_version = int(return_values[0])
     LOG.info("Contract version %d saved for table group %s", new_version, table_group_id)
     return new_version
+
+
+@with_database_session
+def update_contract_version(table_group_id: str, version: int, yaml_content: str) -> None:
+    """
+    Update the YAML of an existing contract version in-place.
+    Does not bump the version number or create a new snapshot suite.
+    """
+    schema = get_tg_schema()
+    execute_db_queries([(
+        f"UPDATE {schema}.data_contracts SET contract_yaml = :yaml "
+        "WHERE table_group_id = CAST(:tg_id AS uuid) AND version = :version",
+        {"tg_id": table_group_id, "version": version, "yaml": yaml_content},
+    )])
+    LOG.info("Contract version %d updated in-place for table group %s", version, table_group_id)
 
 
 @with_database_session

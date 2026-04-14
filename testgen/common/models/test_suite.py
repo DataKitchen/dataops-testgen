@@ -51,6 +51,7 @@ class TestSuiteSummary(EntityMinimal):
     last_run_error_ct: int
     last_run_log_ct: int
     last_run_dismissed_ct: int
+    is_contract_snapshot: bool = False
 
 class TestSuite(Entity):
     __tablename__ = "test_suites"
@@ -70,6 +71,7 @@ class TestSuite(Entity):
     dq_score_exclude: bool = Column(Boolean, default=False)
     include_in_contract: bool = Column(Boolean, default=True)
     is_monitor: bool = Column(Boolean, default=False)
+    is_contract_snapshot: bool = Column(Boolean, default=False)
     monitor_lookback: int | None = Column(Integer)
     monitor_regenerate_freshness: bool = Column(Boolean, default=True)
     predict_sensitivity: PredictSensitivity | None = Column(Enum(PredictSensitivity))
@@ -187,7 +189,8 @@ class TestSuite(Entity):
             last_run.failed_ct AS last_run_failed_ct,
             last_run.error_ct AS last_run_error_ct,
             last_run.log_ct AS last_run_log_ct,
-            last_run.dismissed_ct AS last_run_dismissed_ct
+            last_run.dismissed_ct AS last_run_dismissed_ct,
+            COALESCE(suites.is_contract_snapshot, FALSE) AS is_contract_snapshot
         FROM test_suites AS suites
         LEFT JOIN last_run
             ON (suites.id = last_run.test_suite_id)
@@ -198,6 +201,7 @@ class TestSuite(Entity):
         LEFT JOIN table_groups AS groups
             ON (groups.id = suites.table_groups_id)
         WHERE suites.is_monitor IS NOT TRUE
+            AND COALESCE(suites.is_contract_snapshot, FALSE) IS NOT TRUE
             AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {"AND suites.test_suite ILIKE :test_suite_name" if test_suite_name else ""}

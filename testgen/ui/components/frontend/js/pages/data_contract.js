@@ -238,7 +238,22 @@ const GovernanceButton = (col, tableName) => {
 
 // ── Column row ────────────────────────────────────────────────────────────────
 
-const ColumnRow = (col, tableName) => {
+const AddTestButton = (col, tableName) => div(
+    {
+        class: 'gov-btn gov-btn--add-test',
+        title: 'Add a quality test to this column',
+        onclick: (e) => {
+            e.stopPropagation();
+            emitEvent('AddTestClicked', {
+                payload: { tableName, colName: col.name },
+            });
+        },
+    },
+    span({ class: 'material', style: 'font-size:13px;' }, 'add'),
+    ' Add test',
+);
+
+const ColumnRow = (col, tableName, showAddTest = false) => {
     const statusIndicator = col.status === 'failing' ? ' ❌' : col.status === 'warning' ? ' ⚠️' : '';
     return div(
         { class: 'col-row' },
@@ -249,6 +264,7 @@ const ColumnRow = (col, tableName) => {
             col.is_pk ? span({ class: 'key-badge' }, mat('key', 13), ' PK') : '',
             col.is_fk ? span({ class: 'key-badge' }, mat('call_made', 13), ' FK') : '',
             GovernanceButton(col, tableName),
+            showAddTest ? AddTestButton(col, tableName) : '',
         ),
         div(
             { class: 'terms-row' },
@@ -278,7 +294,7 @@ const TableTermsRow = (tableTerms, tableName) => {
 
 // ── Table section ─────────────────────────────────────────────────────────────
 
-const TableSection = (tableData, startOpen = false) => {
+const TableSection = (tableData, startOpen = false, showAddTest = false) => {
     const open = van.state(startOpen);
     const tblTermCount = (tableData.table_terms || []).length;
     const colTermCount = tableData.columns.reduce(
@@ -303,7 +319,7 @@ const TableSection = (tableData, startOpen = false) => {
         () => open.val
             ? div(
                 TableTermsRow(tableData.table_terms || [], tableData.name),
-                ...tableData.columns.map((col) => ColumnRow(col, tableData.name)),
+                ...tableData.columns.map((col) => ColumnRow(col, tableData.name, showAddTest)),
               )
             : '',
     );
@@ -343,7 +359,7 @@ const _collectAllTermKeys = (filteredTables) => {
     return keys;
 };
 
-const TermsDetail = (tables, activeFilter) => {
+const TermsDetail = (tables, activeFilter, showAddTest = false) => {
     // Reset module-level selection state so re-navigating to this page never inherits
     // phantom selections or confirming-delete state from a previous visit.
     _selectionMode.val = false;
@@ -600,7 +616,7 @@ const TermsDetail = (tables, activeFilter) => {
         () => {
             const filter = activeFilter.val;
             if (filter === 'all') {
-                return div(...tables.map((t, i) => TableSection(t, i === 0)));
+                return div(...tables.map((t, i) => TableSection(t, i === 0, showAddTest)));
             }
 
             const COVERED_VERIFS = new Set(['tested', 'monitored', 'declared']);
@@ -643,7 +659,7 @@ const TermsDetail = (tables, activeFilter) => {
             if (!filtered.length) {
                 return div({ class: 'dc-empty' }, 'No terms match the current filter.');
             }
-            return div(...filtered.map((t, i) => TableSection(t, i === 0)));
+            return div(...filtered.map((t, i) => TableSection(t, i === 0, showAddTest)));
         },
     );
 };
@@ -2012,8 +2028,10 @@ const DataContract = (props) => {
             const matrix     = getValue(props.coverage_matrix)  || [];
             const gaps       = getValue(props.gaps)             || {};
             const suiteScope = getValue(props.suite_scope)      || {};
-            const termDiff   = getValue(props.term_diff)        || null;
-            const versionNum = (getValue(props.version_info)    || {}).version || '';
+            const termDiff       = getValue(props.term_diff)        || null;
+            const versionInfo    = getValue(props.version_info)    || {};
+            const versionNum     = versionInfo.version || '';
+            const showAddTest    = !!(versionInfo.snapshot_suite_id && versionInfo.is_latest);
 
             return div(
                 PageHeader(tgName, meta, yaml, suiteScope),
@@ -2021,7 +2039,7 @@ const DataContract = (props) => {
                 TabBar(activeTab),
                 () => {
                     const tab = activeTab.val;
-                    if (tab === 'overview')    return TermsDetail(tables, activeFilter);
+                    if (tab === 'overview')    return TermsDetail(tables, activeFilter, showAddTest);
                     if (tab === 'matrix')      return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
                     if (tab === 'differences') return DifferencesTab(termDiff, diffFilter);
                     if (tab === 'compliance')  return ComplianceTab(termDiff, health);

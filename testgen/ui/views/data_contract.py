@@ -29,6 +29,7 @@ from testgen.commands.contract_versions import (
     load_contract_version,
     mark_contract_not_stale,
 )
+from testgen.commands.contract_snapshot_suite import sync_import_to_snapshot_suite
 from testgen.commands.odcs_contract import ContractDiff as OdcsContractDiff
 from testgen.commands.odcs_contract import get_updated_yaml, run_import_contract
 from testgen.common.credentials import get_tg_schema
@@ -57,6 +58,7 @@ from testgen.ui.views.data_contract_yaml import (
     _pending_edit_count,
 )
 from testgen.ui.views.dialogs.data_contract_dialogs import (
+    _delete_version_dialog,
     _edit_rule_dialog,
     _governance_edit_dialog,
     _monitor_term_dialog,
@@ -67,6 +69,7 @@ from testgen.ui.views.dialogs.data_contract_dialogs import (
     _term_edit_dialog,
     _term_read_dialog,
     _test_term_dialog,
+    _update_version_dialog,
     cancel_all_changes_dialog,
 )
 
@@ -392,14 +395,15 @@ class DataContractPage(Page):
             return
 
         # ── Session state keys ────────────────────────────────────────────────
-        yaml_key       = f"dc_yaml:{table_group_id}"
-        version_key    = f"dc_version:{table_group_id}"
-        pending_key    = f"dc_pending:{table_group_id}"
-        anomaly_key    = f"dc_anomalies:{table_group_id}"
-        import_key     = f"dc_import_result:{table_group_id}"
-        run_dates_key  = f"dc_run_dates:{table_group_id}"
-        gov_key        = f"dc_gov:{table_group_id}"
-        term_diff_key  = f"dc_term_diff:{table_group_id}"
+        yaml_key        = f"dc_yaml:{table_group_id}"
+        version_key     = f"dc_version:{table_group_id}"
+        pending_key     = f"dc_pending:{table_group_id}"
+        anomaly_key     = f"dc_anomalies:{table_group_id}"
+        import_key      = f"dc_import_result:{table_group_id}"
+        run_dates_key   = f"dc_run_dates:{table_group_id}"
+        gov_key         = f"dc_gov:{table_group_id}"
+        term_diff_key   = f"dc_term_diff:{table_group_id}"
+        suite_scope_key = f"dc_suite_scope:{table_group_id}"
 
         # ── Version picker ────────────────────────────────────────────────────
         versions = list_contract_versions(table_group_id)
@@ -449,7 +453,11 @@ class DataContractPage(Page):
             tg_full = TableGroup.get(table_group_id)
             is_stale = bool(getattr(tg_full, "contract_stale", False))
             if is_stale and not st.session_state.get(dismissed_key):
-                stale_diff = compute_staleness_diff(table_group_id, version_record["contract_yaml"])
+                stale_diff = compute_staleness_diff(
+                    table_group_id,
+                    version_record["contract_yaml"],
+                    snapshot_suite_id=version_record.get("snapshot_suite_id"),
+                )
                 if stale_diff.is_empty:
                     mark_contract_not_stale(table_group_id)
                     stale_diff = None
@@ -518,6 +526,7 @@ class DataContractPage(Page):
                 st.session_state.pop(run_dates_key, None)
                 st.session_state.pop(gov_key, None)
                 st.session_state.pop(term_diff_key, None)
+                st.session_state.pop(suite_scope_key, None)
                 safe_rerun()
         if is_latest:
             with regen_col:
@@ -525,9 +534,13 @@ class DataContractPage(Page):
                              help="Re-export from the current database state and save as a new version"):
                     _regenerate_dialog(table_group_id, version_record["version"], pending_ct)
             with save_col:
-                save_label = f"Save ● ({pending_ct})" if pending_ct > 0 else "Save version"
-                if st.button(save_label, type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
-                    _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+                if pending_ct > 0:
+                    save_label = f"Save ● ({pending_ct})"
+                    if st.button(save_label, type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
+                        _update_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+                else:
+                    if st.button("Save version", type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
+                        _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
 
         # ── Unsaved changes banner ────────────────────────────────────────────
         if is_latest and pending_ct > 0:
@@ -572,7 +585,9 @@ class DataContractPage(Page):
             st.session_state[run_dates_key] = _fetch_last_run_dates(table_group_id)
         run_dates = st.session_state[run_dates_key]
 
-        suite_scope   = _fetch_suite_scope(table_group_id)
+        if suite_scope_key not in st.session_state:
+            st.session_state[suite_scope_key] = _fetch_suite_scope(table_group_id)
+        suite_scope   = st.session_state[suite_scope_key]
         test_statuses = _fetch_test_statuses(table_group_id)  # always fresh per design
 
         if gov_key not in st.session_state:
@@ -600,12 +615,13 @@ class DataContractPage(Page):
                             col["pending_delete_terms"] = ghosts
 
         props["version_info"] = {
-            "version":       version_record["version"],
-            "saved_at":      version_record["saved_at"].isoformat() if version_record.get("saved_at") else None,
-            "label":         version_record.get("label"),
-            "is_latest":     is_latest,
-            "is_stale":      stale_diff is not None,
-            "pending_count": pending_ct,
+            "version":            version_record["version"],
+            "saved_at":           version_record["saved_at"].isoformat() if version_record.get("saved_at") else None,
+            "label":              version_record.get("label"),
+            "is_latest":          is_latest,
+            "is_stale":           stale_diff is not None,
+            "pending_count":      pending_ct,
+            "snapshot_suite_id":  version_record.get("snapshot_suite_id"),
         }
 
         # ── Term diff (Card 2 / Card 3 / Differences tab / Compliance tab) ──────
@@ -687,10 +703,15 @@ class DataContractPage(Page):
             source = term.get("source", "")
             verif  = term.get("verif", "")
             term_name = term.get("name", "")
+            snapshot_suite_id = version_record.get("snapshot_suite_id")
             if not is_latest:
                 _term_read_dialog(term, table_name, col_name, table_group_id, yaml_key)
             elif source == "monitor":
                 _monitor_term_dialog(term.get("rule", {}), term_name, table_name, col_name)
+            elif source == "test" and snapshot_suite_id:
+                # Snapshot-backed contract: edit directly in the snapshot suite
+                rule = term.get("rule") or term
+                _edit_rule_dialog(rule, table_group_id, yaml_key, snapshot_suite_id=snapshot_suite_id)
             elif source == "test":
                 _project_code = getattr(table_group, "project_code", "")
                 _test_term_dialog(term, table_name, col_name, _project_code, yaml_key, table_group_id)
@@ -718,7 +739,25 @@ class DataContractPage(Page):
                 None,
             )
             if rule:
-                _edit_rule_dialog(rule, table_group_id, yaml_key)
+                _edit_rule_dialog(rule, table_group_id, yaml_key, snapshot_suite_id=version_record.get("snapshot_suite_id"))
+
+        def on_add_test(payload: dict) -> None:
+            if not is_latest:
+                return
+            snapshot_suite_id = version_record.get("snapshot_suite_id")
+            if not snapshot_suite_id:
+                return
+            from testgen.common.models.test_suite import TestSuite
+            from testgen.ui.views.dialogs.test_definition_dialogs import add_test_dialog
+            _ts_minimal = TestSuite.get_minimal(snapshot_suite_id)
+            if table_group and _ts_minimal:
+                add_test_dialog(table_group, _ts_minimal, payload.get("tableName", ""), payload.get("colName", ""))
+
+        def on_delete_version(payload: dict) -> None:
+            _version_to_delete = payload.get("version")
+            if _version_to_delete is None:
+                return
+            _delete_version_dialog(table_group_id, int(_version_to_delete))
 
         def on_import_contract(payload: dict) -> None:
             if not is_latest:
@@ -733,6 +772,16 @@ class DataContractPage(Page):
                     "original_yaml": yaml_content,
                 }
                 if not diff.has_errors:
+                    # Sync created/updated tests to snapshot suite if one exists
+                    snap_id = version_record.get("snapshot_suite_id")
+                    if snap_id:
+                        created_ids = list(diff.new_id_by_index.values()) if diff.new_id_by_index else []
+                        updated_ids = [str(u["id"]) for u in (diff.test_updates or []) if u.get("id")]
+                        if created_ids or updated_ids:
+                            try:
+                                sync_import_to_snapshot_suite(snap_id, created_ids, updated_ids, [])
+                            except Exception:
+                                _log.exception("on_import_contract: failed to sync to snapshot suite %s", snap_id)
                     # Bust YAML + anomaly + derived caches so the page reflects the newly created tests
                     st.session_state.pop(yaml_key, None)
                     st.session_state.pop(anomaly_key, None)
@@ -740,6 +789,7 @@ class DataContractPage(Page):
                     st.session_state.pop(run_dates_key, None)
                     st.session_state.pop(gov_key, None)
                     st.session_state.pop(term_diff_key, None)
+                    st.session_state.pop(suite_scope_key, None)
             except Exception as exc:
                 st.session_state[import_key] = {"error": str(exc)}
             safe_rerun()
@@ -874,6 +924,15 @@ class DataContractPage(Page):
                 )
             st.session_state[pending_key] = pending
             st.session_state.pop(term_diff_key, None)
+
+            # ── 6. Sync deletions immediately to snapshot suite ────────────
+            snap_id = version_record.get("snapshot_suite_id")
+            if snap_id and rule_ids_to_delete:
+                try:
+                    sync_import_to_snapshot_suite(snap_id, [], [], list(rule_ids_to_delete))
+                except Exception:
+                    _log.exception("on_bulk_delete_terms: failed to sync to snapshot suite %s", snap_id)
+
             safe_rerun()
 
         testgen_component(
@@ -886,6 +945,8 @@ class DataContractPage(Page):
                 "GovernanceEditClicked":    on_governance_edit,
                 "ImportContractClicked":    on_import_contract,
                 "BulkDeleteTermsClicked":   on_bulk_delete_terms,
+                "AddTestClicked":           on_add_test,
+                "DeleteVersionClicked":     on_delete_version,
             },
         )
 

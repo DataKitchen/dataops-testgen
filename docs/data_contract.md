@@ -73,10 +73,12 @@ The Data Contract feature surfaces TestGen test suites as a formal, exportable d
 | Props | `testgen/ui/views/data_contract_props.py` | Props builder, `_classify_enforcement_tier`, coverage tiers |
 | YAML helpers | `testgen/ui/views/data_contract_yaml.py` | Mutation helpers, `_delete_term_yaml_patch` |
 | DB queries | `testgen/ui/queries/data_contract_queries.py` | `_fetch_test_statuses`, `_persist_governance_deletion`, `_GOVERNANCE_LABEL_TO_FIELD` |
+| Dialogs | `testgen/ui/views/dialogs/data_contract_dialogs.py` | All `@st.dialog` save/edit/delete dialogs; `_clear_contract_cache` helper |
 | Export | `testgen/commands/export_data_contract.py` | ODCS YAML generation |
 | Import | `testgen/commands/odcs_contract.py` | `run_import_contract`, `get_updated_yaml`, `ContractDiff` |
 | Staleness | `testgen/commands/contract_staleness.py` | `compute_staleness_diff`, `compute_term_diff` |
-| Versions | `testgen/commands/contract_versions.py` | Save/load contract version snapshots |
+| Versions | `testgen/commands/contract_versions.py` | `save_contract_version`, `load_contract_version`, `update_contract_version` |
+| Snapshot | `testgen/commands/contract_snapshot_suite.py` | `create_contract_snapshot_suite`, `sync_import_to_snapshot_suite`, `delete_contract_version` |
 
 **Modal pattern:** ALL modals use `emitEvent` → Python `event_handlers` → `@st.dialog`. No VanJS overlays inside the component iframe (iframes clip `position: fixed/absolute`).
 
@@ -92,8 +94,62 @@ The Data Contract feature surfaces TestGen test suites as a formal, exportable d
 |---|---|---|---|
 | `include_in_contract` | `test_suites` | `BOOLEAN NOT NULL DEFAULT TRUE` | Controls which suites are in scope for the contract |
 | `is_monitor` | `test_suites` | `BOOLEAN` | Monitor suites — excluded from contract test counts and suite picker |
+| `is_contract_snapshot` | `test_suites` | `BOOLEAN NOT NULL DEFAULT FALSE` | Marks a suite as a locked snapshot created at save time; excluded from all source-suite queries |
+| `snapshot_suite_id` | `data_contracts` | `UUID REFERENCES test_suites(id) ON DELETE SET NULL` | Links each saved contract version to its paired snapshot test suite |
+| `source_test_definition_id` | `test_definitions` | `UUID` | On snapshot suite rows, points back to the source test definition that was copied; no FK constraint |
 
-Migration: `testgen/template/dbupgrade/0183_incremental_upgrade.sql`
+Migrations: `testgen/template/dbupgrade/0183_incremental_upgrade.sql` (include_in_contract), `testgen/template/dbupgrade/0185_incremental_upgrade.sql` (snapshot columns)
+
+---
+
+## Contract Snapshot Suite
+
+When a contract version is saved, a **snapshot test suite** (`[Contract vN] {table_group_name}`) is created that captures the exact set of in-scope tests at that moment. Each saved version has its own snapshot suite linked via `data_contracts.snapshot_suite_id`.
+
+### Save behavior
+
+| Button | Condition | Action |
+|---|---|---|
+| **Save ● (n)** | Pending edits exist in session state | In-place update — `update_contract_version` rewrites YAML for the current version; no new snapshot suite, no version bump |
+| **Save version** | No pending edits | Creates a new version + new snapshot suite via `create_contract_snapshot_suite` |
+| **Regenerate** | Always | Regenerates YAML from live DB state, saves as a new version + new snapshot suite |
+
+### Snapshot suite filters
+
+All queries that operate on source suites must exclude snapshot suites with `AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE` (or `IS NOT TRUE`). This applies to:
+
+- `_fetch_suite_scope` (`data_contract_queries.py`)
+- `_fetch_test_statuses` (`data_contract_queries.py`)
+- `_fetch_last_run_dates` (`data_contract_queries.py`)
+- `_fetch_suite_scope` / `compute_term_diff` (`contract_staleness.py`)
+- `_fetch_tests` / `_fetch_test_run_history` (`export_data_contract.py`)
+
+### Sync on mutation
+
+All test mutations in the contract UI are immediately mirrored to the snapshot suite:
+
+- **Single-test delete** (`_edit_rule_dialog`): calls `sync_import_to_snapshot_suite(snap_id, [], [], [rule_id])`
+- **Bulk delete** (`on_bulk_delete_terms`): calls `sync_import_to_snapshot_suite(snap_id, [], [], deleted_ids)` after YAML patch
+- **YAML import** (`on_import_contract`): calls `sync_import_to_snapshot_suite(snap_id, created_ids, updated_ids, [])` for created/updated tests
+- **Add test** (`on_add_test`): opens `add_test_dialog` targeting the snapshot suite directly
+
+### Cache management
+
+`_clear_contract_cache(table_group_id, *, also_anomalies=False)` clears all 7 session state keys:
+
+```python
+_CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope")
+```
+
+Called on every save, import, refresh, and delete. The `also_anomalies=True` variant additionally clears `dc_anomalies` and is used only by the delete version dialog.
+
+### Add test button
+
+The `AddTestButton` component is rendered in each `ColumnRow` in `data_contract.js` when `showAddTest` is true. `showAddTest = !!(versionInfo.snapshot_suite_id && versionInfo.is_latest)` — only the latest snapshot-backed version shows the button. It emits `AddTestClicked` with `{ tableName, colName }`, which routes to `on_add_test` in `data_contract.py`.
+
+### Staleness diff — quality suppression
+
+`compute_staleness_diff` accepts `snapshot_suite_id: str | None`. When non-null, `quality_changes = []` (tests are locked to the snapshot suite and always in sync). Schema, governance, and suite-scope changes are still computed.
 
 ---
 
@@ -175,6 +231,8 @@ Accepts an ODCS v3.1.0 YAML file and applies changes back to TestGen.
 - Missing `type`, missing `metric`, missing `element`, missing threshold
 - `id` not found in DB or belongs to different table group
 - Attempt to change `metric` or `element` on an existing test (immutable)
+
+**Snapshot suite sync:** After a successful import, if the current version has a `snapshot_suite_id`, `sync_import_to_snapshot_suite` is called with the IDs of created and updated tests so the snapshot suite stays in sync.
 
 **Known gaps:**
 - Deleting a test via YAML (omitting a rule that exists in DB) is intentionally not supported — produces an orphan warning, not a delete.
