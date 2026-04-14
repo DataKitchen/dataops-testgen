@@ -1112,10 +1112,11 @@ def _delete_version_dialog(table_group_id: str, version: int) -> None:
     st.markdown("\n**This action cannot be undone.**")
 
     if is_latest_version and prev_version is not None:
-        st.warning(
-            f"This is the most recent saved version. After deletion, "
-            f"v{prev_version} will become the active contract.",
-            icon="⚠️",
+        st.error(
+            f"You are deleting the **latest** version. After deletion, "
+            f"v{prev_version} will become the active contract. "
+            f"All pending changes will be lost.",
+            icon=":material/dangerous:",
         )
 
     st.divider()

@@ -1,4 +1,4 @@
-// cache-bust: v5
+// cache-bust: v6
 /**
  * Data Contract page — VanJS component.
  *
@@ -72,12 +72,13 @@ const SOURCE_CLASS = { ddl: 'ddl', profiling: 'prof', governance: 'gov', test: '
 const SOURCE_LABEL = { ddl: 'DDL', profiling: 'Profiling', governance: 'Governance', test: 'Test' };
 
 // ── Verification badge labels / icons ────────────────────────────────────────
+// VERIF_META: icon is a Material Symbols ligature name used with .badge-icon span
 const VERIF_META = {
-    db_enforced: { icon: '🏛️', label: 'Enforced',  cls: 'badge-enforced' },
-    tested:      { icon: '⚡',  label: 'Tested',    cls: 'badge-tested'   },
-    monitored:   { icon: '📡', label: 'Monitored', cls: 'badge-mon'      },
-    observed:    { icon: '📸', label: 'Observed',  cls: 'badge-obs'      },
-    declared:    { icon: '🏷️', label: 'Declared',  cls: 'badge-decl'     },
+    db_enforced: { icon: 'account_balance', label: 'Enforced',  cls: 'badge-enforced' },
+    tested:      { icon: 'bolt',            label: 'Tested',    cls: 'badge-tested'   },
+    monitored:   { icon: 'sensors',         label: 'Monitored', cls: 'badge-mon'      },
+    observed:    { icon: 'photo_camera',    label: 'Observed',  cls: 'badge-obs'      },
+    declared:    { icon: 'label',           label: 'Declared',  cls: 'badge-decl'     },
 };
 
 const TIER_META = {
@@ -191,7 +192,7 @@ const TermChip = (term, tableName, colName) => {
         span({ class: 'term-chip__val' }, term.value),
         div(
             { class: 'dc-chip-footer' },
-            span({ class: `term-chip__badge ${verif.cls}` }, `${verif.icon} ${verif.label}`),
+            span({ class: `term-chip__badge ${verif.cls}` }, mat(verif.icon, 11, 'badge-icon'), ' ', verif.label),
             isLive && statusCls && statusCls !== 'none'
                 ? span({ class: `status-pill ${statusCls}` }, status)
                 : '',
@@ -204,7 +205,7 @@ const TermChip = (term, tableName, colName) => {
 const DeletedTermChip = (term) => {
     const srcCls = SOURCE_CLASS[term.source] || 'obs';
     const srcLabel = SOURCE_LABEL[term.source] || term.source;
-    const verif = VERIF_META[term.verif] || { icon: '', label: term.verif, cls: 'badge-obs' };
+    const verif = VERIF_META[term.verif] || { icon: 'label', label: term.verif, cls: 'badge-obs' };
     return div(
         { class: `term-chip ${srcCls} term-chip--deleted`, title: 'Pending deletion — will be removed when you save' },
         div(
@@ -214,7 +215,7 @@ const DeletedTermChip = (term) => {
         span({ class: 'term-chip__val' }, term.name),
         div(
             { class: 'dc-chip-footer' },
-            span({ class: `term-chip__badge ${verif.cls}` }, `${verif.icon} ${verif.label}`),
+            span({ class: `term-chip__badge ${verif.cls}` }, mat(verif.icon, 11, 'badge-icon'), ' ', verif.label),
             span({ class: 'term-chip__deleted-label' }, 'deleted'),
         ),
     );
@@ -258,12 +259,16 @@ const AddTestButton = (col, tableName) => div(
 );
 
 const ColumnRow = (col, tableName, showAddTest = false) => {
-    const statusIndicator = col.status === 'failing' ? ' ❌' : col.status === 'warning' ? ' ⚠️' : '';
+    const statusIcon = col.status === 'failing'
+        ? mat('cancel', 14, 'col-status-fail')
+        : col.status === 'warning'
+        ? mat('warning', 14, 'col-status-warn')
+        : '';
     return div(
         { class: 'col-row' },
         div(
             { class: 'col-header' },
-            span({ class: 'col-name-link' }, col.name + statusIndicator),
+            span({ class: 'col-name-link' }, col.name, statusIcon ? ' ' : '', statusIcon),
             span({ class: 'col-type' }, col.type || ''),
             col.is_pk ? span({ class: 'key-badge' }, mat('key', 13), ' PK') : '',
             col.is_fk ? span({ class: 'key-badge' }, mat('call_made', 13), ' FK') : '',
@@ -561,13 +566,13 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
                     'All',
                 ),
                 ...['db_enforced', 'tested', 'monitored', 'observed', 'declared'].map((verif) => {
-                    const meta = VERIF_META[verif] || { icon: '', label: verif, cls: 'badge-obs' };
+                    const meta = VERIF_META[verif] || { icon: 'label', label: verif, cls: 'badge-obs' };
                     return span(
                         {
                             class: () => `filter-pill filter-pill--verif filter-pill--${meta.cls} ${activeFilter.val === verif ? 'active' : ''}`,
                             onclick: () => { activeFilter.val = verif; },
                         },
-                        `${meta.icon} ${meta.label}`,
+                        mat(meta.icon, 12, 'filter-pill-icon'), ' ', meta.label,
                     );
                 }),
                 () => _selectionMode.val
@@ -687,20 +692,20 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
 
 // Tier definitions — order: most enforced first
 const COVERAGE_TIERS = [
-    { key: 'tg_enforced', label: '⚡ TestGen Enforced', color: '#22c55e', textColor: '#4ade80', tier: 'tg'  },
-    { key: 'db_enforced', label: '🏛 DB Enforced',        color: '#818cf8', textColor: '#a5b4fc', tier: 'db'  },
-    { key: 'unenforced',  label: '📋 Unenforced',         color: '#f59e0b', textColor: '#fbbf24', tier: 'unf' },
-    { key: 'uncovered',   label: '◯ Uncovered',          color: '#4b5563', textColor: '#6b7280', tier: 'none'},
+    { key: 'tg_enforced', label: 'TestGen Enforced', icon: 'bolt',            color: '#22c55e', textColor: '#4ade80', tier: 'tg'  },
+    { key: 'db_enforced', label: 'DB Enforced',      icon: 'account_balance', color: '#818cf8', textColor: '#a5b4fc', tier: 'db'  },
+    { key: 'unenforced',  label: 'Unenforced',        icon: 'list_alt',       color: '#f59e0b', textColor: '#fbbf24', tier: 'unf' },
+    { key: 'uncovered',   label: 'Uncovered',         icon: 'circle',         color: '#4b5563', textColor: '#6b7280', tier: 'none'},
 ];
 
 const TIER_DOT_COLOR = { tg: '#22c55e', db: '#818cf8', unf: '#f59e0b', none: '#374151' };
 
 // Sub-columns inside each enforcement group — determines matrix table columns
 const MATRIX_COLS = [
-    { key: 'tested', label: 'Tests',    group: 'tg',  groupLabel: '⚡ TestGen' },
+    { key: 'tested', label: 'Tests',    group: 'tg',  groupLabel: 'TestGen Enforced' },
     { key: 'mon',    label: 'Monitors', group: 'tg',  groupLabel: null },
-    { key: 'db',     label: 'DDL',      group: 'db',  groupLabel: '🏛 DB Enforced' },
-    { key: 'obs',    label: 'Observed', group: 'unf', groupLabel: '📋 Unenforced' },
+    { key: 'db',     label: 'DDL',      group: 'db',  groupLabel: 'DB Enforced' },
+    { key: 'obs',    label: 'Observed', group: 'unf', groupLabel: 'Unenforced' },
     { key: 'decl',   label: 'Declared', group: 'unf', groupLabel: null },
 ];
 
@@ -726,7 +731,7 @@ const CoverageTierBars = (health, activeFilter) => {
                         : null,
                     title: activeFilter ? `Filter to ${t.label}` : '',
                 },
-                span({ class: 'tier-bar-label', style: `color:${t.textColor}` }, t.label),
+                span({ class: 'tier-bar-label', style: `color:${t.textColor}` }, mat(t.icon, 12, 'tier-bar-icon'), ' ', t.label),
                 div({ class: 'tier-bar-track' },
                     div({ class: 'tier-bar-fill', style: `width:${pct}%;background:${t.color}` }),
                 ),
@@ -745,23 +750,23 @@ const MatrixTableSection = (tableName, rows, startOpen, totals, tierCounts, acti
         span({ class: 'ts-element-count' }, `${rows.length} elements:`),
         ...COVERAGE_TIERS.map((t) =>
             span({ class: 'tier-pill', style: `color:${t.textColor};border-color:${t.color}33` },
-                `${t.label} ${tierCounts[t.tier] || 0}`),
+                mat(t.icon, 11, 'tier-pill-icon'), ' ', t.label, ' ', String(tierCounts[t.tier] || 0)),
         ),
     );
 
     // Group headers row
     const GroupHeaderRow = () => {
         const groups = [
-            { label: '⚡ TestGen Enforced', span: 2, color: '#22c55e', bg: 'rgba(34,197,94,0.04)'   },
-            { label: '🏛 DB Enforced',      span: 1, color: '#818cf8', bg: 'rgba(129,140,248,0.04)' },
-            { label: '📋 Unenforced',        span: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.04)'  },
+            { icon: 'bolt',            label: 'TestGen Enforced', span: 2, color: '#22c55e', bg: 'rgba(34,197,94,0.04)'   },
+            { icon: 'account_balance', label: 'DB Enforced',      span: 1, color: '#818cf8', bg: 'rgba(129,140,248,0.04)' },
+            { icon: 'list_alt',        label: 'Unenforced',       span: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.04)'  },
         ];
         return tr(
             { class: 'matrix-group-header-row' },
             th({ class: 'col-col' }),
             ...groups.map((g) => th(
                 { class: 'matrix-group-header', colspan: g.span, style: `color:${g.color};background:${g.bg}` },
-                g.label,
+                mat(g.icon, 12, 'badge-icon'), ' ', g.label,
             )),
         );
     };
@@ -931,7 +936,7 @@ const CoverageMatrix = (matrix, suiteScope, tables, health, activeTab) => {
                     span({ class: 'ts-element-count' }, `${matrix.length} elements:`),
                     ...COVERAGE_TIERS.map((t) =>
                         span({ class: 'tier-pill', style: `color:${t.textColor};border-color:${t.color}33` },
-                            `${t.label} ${grandTier[t.tier] || 0}`),
+                            mat(t.icon, 11, 'tier-pill-icon'), ' ', t.label, ' ', String(grandTier[t.tier] || 0)),
                     ),
                 ),
             );
@@ -974,7 +979,7 @@ const TermCountsBar = (tables) => {
         if (!meta) return '';
         return div(
             { class: 'ccbar-card' },
-            div({ class: `ccbar-verif-badge ${meta.cls}` }, `${meta.icon} ${meta.label}`),
+            div({ class: `ccbar-verif-badge ${meta.cls}` }, mat(meta.icon, 11, 'badge-icon'), ' ', meta.label),
             div({ class: 'ccbar-count' }, byVerif[key]),
         );
     };
@@ -987,10 +992,10 @@ const TermCountsBar = (tables) => {
             div({ class: 'ccbar-group-label' }, 'By Source'),
             div(
                 { class: 'ccbar-cards' },
-                SrcCard('DDL',        bySrc.ddl,        'ccbar-chip--ddl',  '🏛️'),
-                SrcCard('Profiling',  bySrc.profiling,  'ccbar-chip--prof', '📊'),
-                SrcCard('Governance', bySrc.governance, 'ccbar-chip--gov',  '🏷️'),
-                SrcCard('Test',       bySrc.test,       'ccbar-chip--test', '⚡'),
+                SrcCard('DDL',        bySrc.ddl,        'ccbar-chip--ddl',  mat('account_balance', 11)),
+                SrcCard('Profiling',  bySrc.profiling,  'ccbar-chip--prof', mat('bar_chart', 11)),
+                SrcCard('Governance', bySrc.governance, 'ccbar-chip--gov',  mat('label', 11)),
+                SrcCard('Test',       bySrc.test,       'ccbar-chip--test', mat('bolt', 11)),
             ),
         ),
         div({ class: 'ccbar-divider' }),
@@ -1244,6 +1249,16 @@ const UploadTab = () => {
 
     return div(
         { class: 'upload-tab' },
+
+        // ── Destructive action warning ──
+        div({ class: 'upload-action-warning' },
+            mat('warning', 16, 'upload-action-warning__icon'),
+            div(
+                span({ style: 'font-weight:600' }, 'This action modifies your contract. '),
+                'Importing YAML will overwrite matching contract terms (governance metadata, rule thresholds, and descriptions). ',
+                'New quality rules without an ID will be created as tests. This cannot be undone.',
+            ),
+        ),
 
         // ── Description ──
         div({ class: 'upload-desc' },
@@ -1594,7 +1609,7 @@ const TABS = [
     { id: 'compliance', label: 'Contract Compliance' },
     { id: 'matrix',     label: 'Contract Coverage'  },
     { id: 'yaml',       label: 'YAML'               },
-    { id: 'upload',     label: 'Upload YAML'        },
+    { id: 'upload',     label: 'Import YAML', isAction: true },
 ];
 
 const TabBar = (activeTab) =>
@@ -1603,9 +1618,12 @@ const TabBar = (activeTab) =>
         ...TABS.map((t) =>
             div(
                 {
-                    class: () => `dc-tab${activeTab.val === t.id ? ' active' : ''}`,
+                    class: () => `dc-tab${t.isAction ? ' dc-tab--action' : ''}${activeTab.val === t.id ? ' active' : ''}`,
                     onclick: () => { activeTab.val = t.id; },
+                    title: t.isAction ? 'Import an ODCS YAML file to update contract terms — this modifies your contract' : '',
                 },
+                t.isAction ? mat('upload', 13, 'dc-tab-action-icon') : '',
+                t.isAction ? ' ' : '',
                 t.label,
             )
         ),
@@ -1633,10 +1651,10 @@ const TermsHelpPanel = () => {
             span({ class: 'help-desc' }, desc),
         );
 
-    const VerifRow = (icon, label, badgeCls, desc) =>
+    const VerifRow = (iconName, label, badgeCls, desc) =>
         div(
             { class: 'help-row' },
-            span({ class: `help-verif-badge ${badgeCls}` }, `${icon} ${label}`),
+            span({ class: `help-verif-badge ${badgeCls}` }, mat(iconName, 13, 'badge-icon'), ' ', label),
             span({ class: 'help-desc' }, desc),
         );
 
@@ -1665,13 +1683,13 @@ const TermsHelpPanel = () => {
                     span('Evidence Level'),
                     span('What it provides'),
                 ),
-                SourceRow('ddl',  'DDL',        '🏛️ DB Enforced',
+                SourceRow('ddl',  'DDL',        'DB Enforced',
                     'Column type, length, nullability, primary key, foreign key — declared in the CREATE TABLE schema.'),
-                SourceRow('prof', 'Profiling',  '📸 Observed',
+                SourceRow('prof', 'Profiling',  'Observed',
                     'Null %, max length, value distribution, semantic type detection — measured from actual data during profiling.'),
-                SourceRow('gov',  'Governance', '🏷️ Declared',
+                SourceRow('gov',  'Governance', 'Declared',
                     'PII classification, Critical Data Element flag, description, standard pattern (EMAIL, ZIP, SSN, etc.).'),
-                SourceRow('tst',  'Test',       '⚡ Tested',
+                SourceRow('tst',  'Test',       'Tested',
                     'Active quality rule — format check, LOV match, range bound, custom SQL assertion — executes on every test run.'),
             ),
 
@@ -1686,15 +1704,15 @@ const TermsHelpPanel = () => {
                     span('Level'),
                     span('What it means'),
                 ),
-                VerifRow('🏛️', 'DB Enforced', 'hbadge-db',
+                VerifRow('account_balance', 'DB Enforced', 'hbadge-db',
                     'A database constraint (PK, FK, NOT NULL, CHECK). The database itself rejects violations — the strongest guarantee.'),
-                VerifRow('⚡',  'Tested',      'hbadge-test',
+                VerifRow('bolt',            'Tested',      'hbadge-test',
                     'Actively tested by TestGen on every run. Results are tracked, scored, and can trigger alerts.'),
-                VerifRow('🔬', 'Monitored',   'hbadge-mon',
+                VerifRow('sensors',         'Monitored',   'hbadge-mon',
                     'Anomaly detection watches for deviation from observed norms. Alerts when thresholds are crossed.'),
-                VerifRow('📸', 'Observed',    'hbadge-obs',
+                VerifRow('photo_camera',    'Observed',    'hbadge-obs',
                     'Seen during profiling — evidence exists in the data but no active test enforces it yet.'),
-                VerifRow('🏷️', 'Declared',    'hbadge-decl',
+                VerifRow('label',           'Declared',    'hbadge-decl',
                     'Stated in governance metadata (description, classification). Informational — not yet verified at runtime.'),
             ),
         ),
@@ -1703,11 +1721,11 @@ const TermsHelpPanel = () => {
             { class: 'help-footer' },
             span({ class: 'help-em' }, 'Contract Completeness'),
             ' assigns each column and table-level element to its highest enforcement tier: ',
-            span({ class: 'help-em' }, '⚡ TestGen Enforced'),
+            span({ class: 'help-em' }, mat('bolt', 13), ' TestGen Enforced'),
             ' (active test or monitor), ',
-            span({ class: 'help-em' }, '🏛 DB Enforced'),
+            span({ class: 'help-em' }, mat('account_balance', 13), ' DB Enforced'),
             ' (NOT NULL, PK, FK, or constrained type — no active test), ',
-            span({ class: 'help-em' }, '📋 Unenforced'),
+            span({ class: 'help-em' }, mat('list_alt', 13), ' Unenforced'),
             ' (observed stats or declared metadata only), or ',
             span({ class: 'help-em' }, '○ Uncovered'),
             ' (bare data type with no additional constraints or metadata). ',
@@ -2141,6 +2159,29 @@ stylesheet.replace(`
 .dc-tab:hover { color: var(--secondary-text-color); }
 .dc-tab.active { color: var(--link-text-color); border-bottom-color: var(--link-text-color); }
 
+/* ── Import YAML tab — visually distinct as an action tab ── */
+.dc-tab--action {
+    color: #b45309;
+    border: 1px solid rgba(180,83,9,0.25);
+    border-bottom: 2px solid transparent;
+    border-radius: 6px 6px 0 0;
+    background: rgba(245,158,11,0.06);
+    margin-left: 4px;
+}
+.dc-tab--action:hover {
+    color: #92400e;
+    background: rgba(245,158,11,0.12);
+    border-color: rgba(180,83,9,0.45);
+    border-bottom-color: transparent;
+}
+.dc-tab--action.active {
+    color: #92400e;
+    border-color: rgba(180,83,9,0.5);
+    border-bottom-color: #b45309;
+    background: rgba(245,158,11,0.10);
+}
+.dc-tab-action-icon { color: inherit; vertical-align: middle; }
+
 /* ── Section header ── */
 .section-header {
     display: flex;
@@ -2265,6 +2306,8 @@ stylesheet.replace(`
     background: transparent;
 }
 .gov-btn:hover { color: var(--link-text-color); border-color: var(--link-text-color); background: rgba(79,142,247,0.06); }
+.col-status-fail { color: #ef4444; vertical-align: middle; }
+.col-status-warn { color: #f59e0b; vertical-align: middle; }
 .col-name-link {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 13px;
@@ -2337,6 +2380,10 @@ stylesheet.replace(`
     border-radius: 3px;
     font-weight: 600;
 }
+.badge-icon { vertical-align: middle; line-height: 1; }
+.filter-pill-icon { vertical-align: middle; line-height: 1; }
+.tier-bar-icon { vertical-align: middle; line-height: 1; }
+.tier-pill-icon { vertical-align: middle; line-height: 1; }
 .badge-enforced { background: rgba(129,140,248,0.2); color: #a78bfa; }
 .badge-tested   { background: rgba(34,197,94,0.2);   color: #22c55e; }
 .badge-mon      { background: rgba(249,115,22,0.2);  color: #f97316; }
@@ -2355,6 +2402,29 @@ stylesheet.replace(`
 /* ── Coverage matrix ── */
 .dc-matrix-wrap { overflow-x: auto; }
 .matrix-table-wrap { overflow-x: auto; margin-top: 4px; }
+@media (max-width: 768px) {
+    .dc-matrix-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        position: relative;
+    }
+    .dc-matrix-wrap::after {
+        content: 'Scroll right to see all coverage tiers \u2192';
+        display: block;
+        text-align: center;
+        font-size: 11px;
+        color: var(--caption-text-color);
+        padding: 8px 0 4px;
+        font-style: italic;
+    }
+    .matrix-table-wrap {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .tier-bar-row {
+        grid-template-columns: 110px 1fr 54px;
+    }
+}
 .matrix-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .matrix-table.matrix-table--tiers .col-col { min-width: 160px; }
 .matrix-table.matrix-table--tiers .tier-col { text-align: center; min-width: 110px; }
@@ -2674,6 +2744,21 @@ stylesheet.replace(`
 
 /* ── Upload tab ── */
 .upload-tab { max-width: 720px; }
+.upload-action-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 16px;
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.4);
+    border-left: 4px solid #f59e0b;
+    border-radius: 0 6px 6px 0;
+    font-size: 13px;
+    color: var(--secondary-text-color);
+    line-height: 1.5;
+    margin-bottom: 20px;
+}
+.upload-action-warning__icon { color: #b45309; flex-shrink: 0; margin-top: 1px; }
 .upload-desc { font-size: 13px; color: var(--secondary-text-color); margin-bottom: 20px; line-height: 1.6; }
 .upload-desc p { margin-bottom: 10px; }
 .upload-desc code { font-family: monospace; font-size: 12px; background: var(--button-generic-background-color); padding: 1px 5px; border-radius: 3px; }
@@ -3031,19 +3116,21 @@ stylesheet.replace(`
     gap: 5px;
     padding: 5px 14px;
     border-radius: 20px;
-    border: 1px solid rgba(239,68,68,0.4);
-    background: rgba(239,68,68,0.08);
+    border: 1.5px solid rgba(220,38,38,0.7);
+    background: rgba(239,68,68,0.1);
     color: #dc2626;
     cursor: pointer;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
     user-select: none;
     transition: all 0.15s;
+    box-shadow: 0 1px 3px rgba(220,38,38,0.15);
 }
 .select-mode-btn:hover {
-    background: rgba(239,68,68,0.15);
-    border-color: rgba(239,68,68,0.6);
+    background: rgba(239,68,68,0.18);
+    border-color: rgba(220,38,38,0.9);
     color: #b91c1c;
+    box-shadow: 0 2px 5px rgba(220,38,38,0.2);
 }
 .select-mode-btn .material { font-size: 15px; color: #dc2626; }
 .bulk-action-bar {

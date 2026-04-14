@@ -732,8 +732,7 @@ class DataContractPage(Page):
                     _regenerate_dialog(table_group_id, version_record["version"], pending_ct)
             with save_col:
                 if pending_ct > 0:
-                    save_label = f"Save ● ({pending_ct})"
-                    if st.button(save_label, type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
+                    if st.button(f"Save version ({pending_ct})", type="primary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
                         _update_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
                 else:
                     if st.button("Save version", type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
@@ -758,7 +757,7 @@ class DataContractPage(Page):
             noun = "change" if pending_ct == 1 else "changes"
             warn_col, cancel_col = st.columns([7, 1])
             with warn_col:
-                st.warning(f"{pending_ct} unsaved {noun}: {summary}", icon="⚠️")
+                st.warning(f"{pending_ct} unsaved {noun} — click **Save version ({pending_ct})** to commit: {summary}", icon="⚠️")
             with cancel_col:
                 st.markdown("<div style='margin-top:0.4rem'></div>", unsafe_allow_html=True)
                 if st.button("✕ Cancel all", key=f"dc_cancel_all:{table_group_id}", type="tertiary", use_container_width=True):
