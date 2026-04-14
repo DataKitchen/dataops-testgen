@@ -110,6 +110,10 @@ const _flashBtn = van.state('');              // 'visible' | 'context' | '' for 
 const _selectionHint = van.state('');         // brief status message shown in the bulk bar
 // Registry: termKey → full term info for delete payload (populated by TermChip on creation)
 const _termInfoByKey = new Map();
+// Term key pending selection from a modal "Delete term from contract" button click.
+// Set by a van.derive in DataContract when the select_term_key prop arrives; consumed
+// by TermsDetail on its next render so it can enter selection mode with that term pre-checked.
+let _pendingSelectKey = '';
 
 const TermChip = (term, tableName, colName) => {
     const srcCls = SOURCE_CLASS[term.source] || 'obs';
@@ -368,6 +372,21 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
     _flashBtn.val = '';
     _selectionHint.val = '';
     _termInfoByKey.clear();
+
+    // If a modal "Delete term from contract" button set a pending selection key (via
+    // the select_term_key prop → DataContract derive), apply it now: enter selection
+    // mode with that term pre-checked, then clear the pending key.
+    if (_pendingSelectKey) {
+        const keyToSelect = _pendingSelectKey;
+        _pendingSelectKey = '';
+        _selectionMode.val = true;
+        _selectedIds.val = new Set([keyToSelect]);
+        // Defer DOM sync until VanJS has rendered the chips.
+        setTimeout(() => {
+            document.querySelector('.terms-detail-wrap')?.classList.add('selection-mode-active');
+            _syncDomToState();
+        }, 0);
+    }
 
     const grandTotal = tables.reduce(
         (sum, t) => sum + t.columns.reduce(
@@ -870,6 +889,11 @@ const CoverageMatrix = (matrix, suiteScope, tables, health, activeTab) => {
     const tableEntries = [...tableMap.entries()];
     return div(
         { class: 'dc-matrix-wrap' },
+        p({ class: 'help-intro' },
+            'Contract coverage shows how completely each data element in the schema is validated. ' +
+            'Strong coverage — with database constraints, TestGen tests, or profiling observations — ' +
+            'reduces the risk of undetected data quality issues.',
+        ),
         completenessSection,
         scopeNote,
         health ? div({ class: 'matrix-section-label' }, 'Coverage by table') : '',
@@ -1094,6 +1118,11 @@ function _loadPrism(cb) {
     );
 }
 
+const ODCS_SPEC_URL = 'https://bitol-io.github.io/open-data-contract-standard/v3.1.0/';
+
+const odcsLink = (label = 'ODCS v3.1.0') =>
+    a({ href: ODCS_SPEC_URL, target: '_blank', rel: 'noopener', class: 'odcs-link' }, label);
+
 const YamlViewer = (yamlContent, tgName) => {
     const content = yamlContent || '# No contract data yet';
     const preEl = document.createElement('pre');
@@ -1140,17 +1169,19 @@ const YamlViewer = (yamlContent, tgName) => {
 
     return div(
         { class: 'yaml-wrap' },
+        p({ class: 'help-intro' },
+            'This YAML is based on the ',
+            odcsLink('Open Data Contract Standard (ODCS) v3.1.0'),
+            '. TestGen implements a subset of the standard and extends it with custom properties under ',
+            code('_customProperties.testgen.*'),
+            '. Some TestGen-specific constructs (such as test parameters and quality rule types) are not portable to other ODCS-compatible tools.',
+        ),
         div({ class: 'yaml-toolbar' }, copyBtn, downloadBtn),
         preEl,
     );
 };
 
 // ── Upload tab ────────────────────────────────────────────────────────────────
-
-const ODCS_SPEC_URL = 'https://bitol-io.github.io/open-data-contract-standard/v3.1.0/';
-
-const odcsLink = (label = 'ODCS v3.1.0') =>
-    a({ href: ODCS_SPEC_URL, target: '_blank', rel: 'noopener', class: 'odcs-link' }, label);
 
 const TermRow = (name, yamlPath, badge, note) => tr(
     td({ class: 'utr-name' }, name),
@@ -1582,7 +1613,37 @@ const SuiteScope = (suiteScope, meta) => {
 
 // ── Page header ───────────────────────────────────────────────────────────────
 
-const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
+const PageHeader = (tgName, meta, yamlContent, suiteScope, versionInfo) => {
+    const versionNum  = (versionInfo || {}).version || '';
+    const numVersions = (versionInfo || {}).num_versions || 0;
+    const canDelete   = versionNum !== '' && numVersions > 1;
+    const deleteBtn   = versionNum !== ''
+        ? div(
+            {
+                class: canDelete ? 'dc-delete-version-btn' : 'dc-delete-version-btn dc-delete-version-btn--disabled',
+                title: canDelete ? 'Delete this version' : 'Cannot delete the only saved version',
+                onclick: canDelete
+                    ? () => emitEvent('DeleteVersionClicked', { payload: { version: versionNum } })
+                    : null,
+            },
+            mat('delete', 16),
+        )
+        : '';
+    const testsCount   = (versionInfo || {}).tests_count;
+    const snapSuiteId  = (versionInfo || {}).snapshot_suite_id;
+    const testsChip    = (testsCount != null && snapSuiteId)
+        ? span(
+            {
+                class: 'snapshot-tests-chip',
+                title: 'View snapshot test definitions',
+                onclick: () => emitEvent('LinkClicked', {
+                    href: 'test-suites:definitions',
+                    params: { test_suite_id: snapSuiteId, project_code: meta.project_code },
+                }),
+            },
+            mat('task_alt', 13), ` ${testsCount} snapshot test${testsCount !== 1 ? 's' : ''}`,
+          )
+        : '';
     return div(
         { class: 'dc-page-header' },
         div(
@@ -1591,7 +1652,9 @@ const PageHeader = (tgName, meta, yamlContent, suiteScope) => {
                 ? p({ class: 'purpose-text' }, meta.description_purpose)
                 : '',
             suiteScope ? SuiteScope(suiteScope, meta) : '',
+            testsChip !== '' ? div({ class: 'dc-page-header__tests-chip' }, testsChip) : '',
         ),
+        deleteBtn !== '' ? div({ class: 'dc-page-header__right' }, deleteBtn) : '',
     );
 };
 
@@ -1603,7 +1666,7 @@ const TABS = [
     { id: 'differences', label: 'Contract Differences' },
     { id: 'compliance',  label: 'Contract Compliance'  },
     { id: 'yaml',        label: 'YAML'                 },
-    { id: 'upload',      label: 'Upload Changes'       },
+    { id: 'upload',      label: 'Upload YAML'          },
 ];
 
 const TabBar = (activeTab) =>
@@ -1846,6 +1909,12 @@ const DifferencesTab = (termDiff, diffFilter) => {
 
     return div(
         { class: 'dc-differences-tab' },
+        div(
+            { class: 'help-intro', style: 'margin-bottom: 16px;' },
+            'This tab compares your saved data contract against the current state of your data environment. ',
+            'It shows quality rule changes, schema drift, governance metadata updates, and changes to which test suites are in scope. ',
+            'Use this to understand what has changed since your contract was last saved and decide whether to regenerate or save a new version.',
+        ),
         DiffSummaryBar(),
         DiffAccordion('changed', 'Changed', grouped.changed, true),
         DiffAccordion('new',     'New',     grouped.new,     true),
@@ -1979,6 +2048,10 @@ const ComplianceTab = (termDiff, health) => {
 
     return div(
         { class: 'dc-compliance-tab' },
+        p({ class: 'help-intro' },
+            'Contract compliance shows the current test results for every quality rule in this contract version. ' +
+            'Each row represents a contract term and its most recent pass/fail status from the contract\'s dedicated test suite.',
+        ),
         ComplianceSummaryBar(),
         ComplianceAccordion('Monitors', monitorRows.map(ComplianceRow), [
             ['passed',  termDiff.tg_monitor_passed,  '#22c55e'],
@@ -2033,8 +2106,15 @@ const DataContract = (props) => {
             const versionNum     = versionInfo.version || '';
             const showAddTest    = !!(versionInfo.snapshot_suite_id && versionInfo.is_latest);
 
+            // If Python passed a select_term_key (from a modal "Delete" button), stage it
+            // for TermsDetail to pick up.  TermsDetail resets selection on each call, so
+            // we set _pendingSelectKey here (synchronously, before TermsDetail runs) and
+            // TermsDetail applies it after its reset.
+            const selectTermKey = getValue(props.select_term_key) || '';
+            if (selectTermKey) _pendingSelectKey = selectTermKey;
+
             return div(
-                PageHeader(tgName, meta, yaml, suiteScope),
+                PageHeader(tgName, meta, yaml, suiteScope, versionInfo),
                 HealthGrid(health, activeFilter, activeTab, termDiff, diffFilter, versionNum),
                 TabBar(activeTab),
                 () => {
@@ -2085,6 +2165,40 @@ stylesheet.replace(`
     flex-wrap: wrap;
 }
 .dc-page-header__left { flex: 1; min-width: 0; }
+.dc-page-header__right { display: flex; align-items: flex-start; flex-shrink: 0; }
+.dc-page-header__tests-chip { margin-top: 6px; }
+.snapshot-tests-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: #e0e7ff;
+    color: #4338ca;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+.snapshot-tests-chip:hover { background: #c7d2fe; color: #3730a3; }
+.snapshot-tests-chip .material { color: #4f46e5; }
+.dc-delete-version-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px;
+    border-radius: 5px;
+    border: 1px solid var(--border-color);
+    color: var(--caption-text-color);
+    background: transparent;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    user-select: none;
+}
+.dc-delete-version-btn:hover { color: #ef4444; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.06); }
+.dc-delete-version-btn--disabled { opacity: 0.4; cursor: default; pointer-events: none; }
 .status-chip {
     font-size: 11px;
     font-weight: 600;
@@ -2810,6 +2924,7 @@ stylesheet.replace(`
 .upload-desc { font-size: 13px; color: var(--secondary-text-color); margin-bottom: 20px; line-height: 1.6; }
 .upload-desc p { margin-bottom: 10px; }
 .upload-desc code { font-family: monospace; font-size: 12px; background: var(--button-generic-background-color); padding: 1px 5px; border-radius: 3px; }
+.help-intro code { font-family: monospace; font-size: 12px; background: var(--button-generic-background-color); padding: 1px 5px; border-radius: 3px; display: inline; }
 .upload-desc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-top: 4px; }
 .upload-desc-heading {
     margin: 0 0 6px;

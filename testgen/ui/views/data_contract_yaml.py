@@ -148,7 +148,11 @@ def _apply_pending_test_edit(
 
 def _pending_edit_count(pending: dict) -> int:
     """Total number of pending edits across all categories."""
-    return len(pending.get("governance", [])) + len(pending.get("tests", []))
+    return (
+        len(pending.get("governance", []))
+        + len(pending.get("tests", []))
+        + len(pending.get("deletions", []))
+    )
 
 
 # ---------------------------------------------------------------------------

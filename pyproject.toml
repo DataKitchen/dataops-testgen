@@ -143,6 +143,11 @@ minversion = "7.0"
 # -ra: show extra test data.
 addopts = "-ra --strict-markers --strict-config"
 
+testpaths = ["tests"]
+# Exclude MCP unit tests: the mcp module requires Pydantic v2 (isolated in mcp-env/)
+# but the main venv has Pydantic v1. See CLAUDE.md § MCP Server for details.
+norecursedirs = ["tests/unit/mcp", "testgen", "venv", ".venv", "mcp-env", "*.egg-info", ".git"]
+
 python_files = "test_*.py"
 python_classes = "Test_"
 python_functions = "test_*"

@@ -98,7 +98,7 @@ def _yaml_with_schema(*columns: dict) -> str:
 
 
 def _db_row(table="orders", column="id", data_type="varchar") -> dict:
-    return {"table_name": table, "column_name": column, "data_type": data_type, "general_type": "S"}
+    return {"table_name": table, "column_name": column, "db_data_type": data_type, "general_type": "S"}
 
 
 def _suite_row(name="suite_a") -> dict:

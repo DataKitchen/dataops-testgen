@@ -16,27 +16,23 @@ import yaml
 from testgen.commands.contract_snapshot_suite import (
     create_contract_snapshot_suite,
     delete_contract_version,
-    sync_import_to_snapshot_suite,
 )
 from testgen.commands.contract_staleness import StaleDiff
 from testgen.commands.contract_versions import (
     list_contract_versions,
-    load_contract_version,
+    rollback_contract_version,
     save_contract_version,
     update_contract_version,
 )
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import fetch_dict_from_db
-from testgen.common.models.table_group import TableGroup
 from testgen.common.models import with_database_session
+from testgen.common.models.table_group import TableGroup
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.data_contract_queries import (
     _capture_yaml,
-    _dismiss_hygiene_anomaly,
     _fetch_governance_data,
     _fetch_test_live_info,
-    _lookup_column_id,
-    _persist_governance_deletion,
     _persist_pending_edits,
     _save_governance_data,
 )
@@ -46,7 +42,6 @@ from testgen.ui.views.data_contract_props import _STATUS_ICON, _VERIF_META
 from testgen.ui.views.data_contract_yaml import (
     _apply_pending_governance_edit,
     _apply_pending_test_edit,
-    _delete_term_yaml_patch,
     _patch_yaml_governance,
 )
 
@@ -362,7 +357,7 @@ def _suite_picker_dialog(suite_runs: list[dict], project_code: str = "", table_g
 @st.dialog("Monitor Term Detail", width="small")
 def _monitor_term_dialog(rule: dict, term_name: str, table_name: str = "", col_name: str = "") -> None:  # noqa: ARG001
     test_type   = rule.get("testType", "")
-    icon        = _MONITOR_ICON.get(test_type, "📡")  # noqa: F841
+    icon        = _MONITOR_ICON.get(test_type, "📡")
     description = _MONITOR_DESCRIPTION.get(
         test_type, "A continuous monitor watches this element for anomalies over time."
     )
@@ -399,7 +394,7 @@ def _test_term_dialog(
     table_group_id: str = "",
 ) -> None:
     status      = term.get("status", "")
-    status_icon = _STATUS_ICON.get(status, "⏳")  # noqa: F841
+    status_icon = _STATUS_ICON.get(status, "⏳")
     test_name   = term.get("test_name") or "Test"
     dimension   = term.get("dimension", "")
     severity    = term.get("severity", "")
@@ -445,7 +440,7 @@ def _test_term_dialog(
         meta.append(("Severity", severity.title()))
 
     cols = st.columns(len(meta))
-    for col_st, (label, value) in zip(cols, meta):
+    for col_st, (label, value) in zip(cols, meta, strict=False):
         col_st.markdown(
             f'<div style="font-size:11px;color:var(--caption-text-color);font-weight:600;'
             f'text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;">{label}</div>'
@@ -468,35 +463,7 @@ def _test_term_dialog(
     if yaml_key and table_group_id and rule_id:
         st.divider()
         if st.button("Delete term from contract", key="test_term_delete", use_container_width=True):
-            current_yaml = st.session_state.get(yaml_key, "")
-            try:
-                _parsed = yaml.safe_load(current_yaml)
-                if not isinstance(_parsed, dict):
-                    st.error("Could not parse the contract YAML — unexpected format.")
-                    return
-                doc = _parsed
-            except yaml.YAMLError:
-                st.error("Could not parse current contract YAML.")
-                return
-            quality = doc.get("quality") or []
-            before = len(quality)
-            doc["quality"] = [q for q in quality if str(q.get("id", "")) != rule_id]
-            if len(doc["quality"]) == before:
-                st.warning(f"Rule `{rule_id[:8]}…` not found in contract YAML — no changes made.")
-                return
-            patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-            st.session_state[yaml_key] = patched_yaml
-            pending_key = f"dc_pending:{table_group_id}"
-            st.session_state[pending_key] = _apply_pending_test_edit(
-                st.session_state.get(pending_key, {}),
-                rule_id,
-                {
-                    "_removed": True,
-                    "_table": table_name,
-                    "_col": col_name,
-                    "_snapshot": {"name": test_name_short, "source": "test", "verif": "tested"},
-                },
-            )
+            st.session_state[f"dc_select_term:{table_group_id}"] = rule_id
             safe_rerun()
 
 
@@ -510,7 +477,7 @@ def _term_read_dialog(
     table_name: str,
     col_name: str,
     table_group_id: str,
-    yaml_key: str,
+    yaml_key: str,  # noqa: ARG001
 ) -> None:
     src        = term.get("source", "")
     verif      = term.get("verif", "")
@@ -534,18 +501,8 @@ def _term_read_dialog(
         st.caption("🔍 Hygiene findings are live data quality anomalies detected during profiling.")
         dis_col, close_col = st.columns(2)
         if dis_col.button("Delete term from contract", key="hygiene_dismiss", use_container_width=True):
-            if anomaly_type:
-                _dismiss_hygiene_anomaly(table_group_id, table_name, col_name, anomaly_type)
-            # Clear cached anomaly + derived lists so the dismissed chip disappears on next render
-            st.session_state.pop(f"dc_anomalies:{table_group_id}", None)
-            st.session_state.pop(f"dc_term_diff:{table_group_id}", None)
-            pending_key = f"dc_pending:{table_group_id}"
-            st.session_state[pending_key] = _apply_pending_governance_edit(
-                st.session_state.get(pending_key, {}),
-                table_name, col_name, f"Hygiene:{anomaly_type or term.get('value', '')}",
-                None,
-                snapshot={"name": "Hygiene", "source": "profiling", "verif": "observed"},
-            )
+            _hygiene_key = f"profiling|Hygiene|{term.get('value', '')}|{table_name}|{col_name}"
+            st.session_state[f"dc_select_term:{table_group_id}"] = _hygiene_key
             safe_rerun()
         if close_col.button("Close", key="hygiene_close", use_container_width=True):
             safe_rerun()
@@ -553,36 +510,8 @@ def _term_read_dialog(
     if can_delete:
         del_col, close_col = st.columns(2)
         if del_col.button("Delete term from contract", key="term_read_delete", use_container_width=True):
-            current_yaml = st.session_state.get(yaml_key, "")
-            try:
-                _parsed = yaml.safe_load(current_yaml)
-                if not isinstance(_parsed, dict):
-                    st.error("Could not parse the contract YAML — unexpected format.")
-                    return
-                doc = _parsed
-            except yaml.YAMLError:
-                st.error("Could not parse the contract YAML.")
-                return
-            patched, err = _delete_term_yaml_patch(
-                term_name, src, table_name, col_name, term.get("value", ""), doc
-            )
-            if not patched:
-                st.error(err or "Could not remove this term.")
-                return
-            patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-            pending_key = f"dc_pending:{table_group_id}"
-            if src == "governance":
-                _persist_governance_deletion(term_name, table_group_id, table_name, col_name)
-            else:
-                # Track profiling/DDL deletions in pending so the banner shows,
-                # pending_count changes (triggering VanJS re-render), and cancel can restore them.
-                # Store a snapshot so the JS can render a grayed-out "deleted" card.
-                st.session_state[pending_key] = _apply_pending_governance_edit(
-                    st.session_state.get(pending_key, {}),
-                    table_name, col_name, term_name, None,
-                    snapshot={"name": term_name, "source": src, "verif": verif},
-                )
-            st.session_state[yaml_key] = patched_yaml
+            _term_key = f"{src}|{term_name}|{term.get('value', '')}|{table_name}|{col_name}"
+            st.session_state[f"dc_select_term:{table_group_id}"] = _term_key
             safe_rerun()
         if close_col.button("Close", key="term_read_close", use_container_width=True):
             safe_rerun()
@@ -656,31 +585,8 @@ def _term_edit_dialog(
 
     st.divider()
     if st.button("Delete term from contract", key="term_edit_delete", use_container_width=True):
-        current_yaml = st.session_state.get(yaml_key, "")
-        try:
-            _parsed = yaml.safe_load(current_yaml)
-            if not isinstance(_parsed, dict):
-                st.error("Could not parse the contract YAML — unexpected format.")
-                return
-            doc = _parsed
-        except yaml.YAMLError:
-            st.error("Could not parse the contract YAML.")
-            return
-        patched, err = _delete_term_yaml_patch(
-            term_name, "governance", table_name, col_name, current_value, doc
-        )
-        if not patched:
-            st.error(err or "Could not remove this term.")
-            return
-        patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        st.session_state[yaml_key] = patched_yaml
-        _persist_governance_deletion(term_name, table_group_id, table_name, col_name)
-        pending_key = f"dc_pending:{table_group_id}"
-        st.session_state[pending_key] = _apply_pending_governance_edit(
-            st.session_state.get(pending_key, {}),
-            table_name, col_name, term_name, None,
-            snapshot={"name": term_name, "source": "governance", "verif": term.get("verif", "declared")},
-        )
+        _gov_key = f"governance|{term_name}|{current_value}|{table_name}|{col_name}"
+        st.session_state[f"dc_select_term:{table_group_id}"] = _gov_key
         safe_rerun()
 
 
@@ -689,7 +595,7 @@ def _term_edit_dialog(
 # ---------------------------------------------------------------------------
 
 @st.dialog("Edit Quality Rule", width="small")
-def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_suite_id: str | None = None) -> None:
+def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_suite_id: str | None = None) -> None:  # noqa: ARG001
     rule_id   = str(rule.get("id", ""))
     test_name = rule.get("name") or rule.get("type") or "Test"
     last      = rule.get("lastResult") or {}
@@ -815,38 +721,7 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_s
 
     st.divider()
     if st.button("Delete term from contract", key="rule_delete_btn", use_container_width=True):
-        current_yaml = st.session_state.get(yaml_key, "")
-        try:
-            _parsed = yaml.safe_load(current_yaml)
-            if not isinstance(_parsed, dict):
-                st.error("Could not parse the contract YAML — unexpected format.")
-                return
-            doc = _parsed
-        except yaml.YAMLError:
-            st.error("Could not parse current contract YAML.")
-            return
-
-        quality = doc.get("quality") or []
-        before  = len(quality)
-        doc["quality"] = [q for q in quality if str(q.get("id", "")) != rule_id]
-        if len(doc["quality"]) == before:
-            st.warning(f"Rule `{rule_id[:8]}…` not found in contract YAML — no changes made.")
-            return
-
-        patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        st.session_state[yaml_key] = patched_yaml
-        pending_key = f"dc_pending:{table_group_id}"
-        LOG.debug("Pending rule removal: rule_id=%s", rule_id)
-        st.session_state[pending_key] = _apply_pending_test_edit(
-            st.session_state.get(pending_key, {}),
-            rule_id,
-            {"_removed": True},
-        )
-        if snapshot_suite_id and rule_id:
-            try:
-                sync_import_to_snapshot_suite(snapshot_suite_id, [], [], [rule_id])
-            except Exception:
-                LOG.exception("_edit_rule_dialog: failed to sync deletion to snapshot suite %s", snapshot_suite_id)
+        st.session_state[f"dc_select_term:{table_group_id}"] = rule_id
         safe_rerun()
 
 
@@ -899,11 +774,19 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
         with st.spinner("Saving new version…"):
             new_version = save_contract_version(table_group_id, fresh_yaml, label or None)
 
-        # Create the snapshot test suite
+        # Create the snapshot test suite.  On ANY failure, roll back the just-saved
+        # version so the DB is not left with an orphaned row that has no snapshot suite.
         try:
             create_contract_snapshot_suite(table_group_id, new_version)
-        except ValueError as snap_err:
-            st.error(f"No in-scope tests found. Add tests to at least one contract suite before saving. ({snap_err})")
+        except Exception as snap_err:
+            try:
+                rollback_contract_version(table_group_id, new_version)
+            except Exception:
+                LOG.exception("Failed to roll back orphaned contract version %d", new_version)
+            if isinstance(snap_err, ValueError):
+                st.error(f"No in-scope tests found — add tests to at least one contract suite before saving. ({snap_err})")
+            else:
+                st.error(f"Snapshot suite creation failed: {snap_err}")
             return
 
         st.success(f"Saved as version {new_version}.")
@@ -926,17 +809,20 @@ def _update_version_dialog(
 ) -> None:
     gov_edits  = pending.get("governance", [])
     test_edits = pending.get("tests", [])
+    deletions  = pending.get("deletions", [])
 
     st.markdown(f"**Save changes to Version {current_version}**")
     st.caption("This updates the existing version in-place without creating a new one.")
 
-    if gov_edits or test_edits:
+    if gov_edits or test_edits or deletions:
         st.markdown("**Changes to save:**")
         for e in gov_edits:
             st.markdown(f"  · {e['table']}.{e['col']} — {e['field']}: {e['value']}")
         for e in test_edits:
             label = "deleted" if e.get("_removed") else "updated"
             st.markdown(f"  · Test `{e['rule_id'][:8]}…` {label}")
+        for e in deletions:
+            st.markdown(f"  · Deleted {e.get('table', '')}.{e.get('col', '')} — {e.get('name', '')}")
 
     st.divider()
     save_col, cancel_col = st.columns(2)
@@ -1010,11 +896,20 @@ def _save_version_dialog(
                 # 2. Save snapshot from the in-memory patched YAML (not a fresh export)
                 new_version = save_contract_version(table_group_id, current_yaml, label or None)
 
-            # 3. Create the snapshot test suite
+            # 3. Create the snapshot test suite.  On ANY failure, roll back the
+            # just-saved version so the DB is not left with an orphaned row that
+            # has no snapshot suite.
             try:
                 create_contract_snapshot_suite(table_group_id, new_version)
-            except ValueError as snap_err:
-                st.error(f"No in-scope tests found. Add tests to at least one contract suite before saving. ({snap_err})")
+            except Exception as snap_err:
+                try:
+                    rollback_contract_version(table_group_id, new_version)
+                except Exception:
+                    LOG.exception("Failed to roll back orphaned contract version %d", new_version)
+                if isinstance(snap_err, ValueError):
+                    st.error(f"No in-scope tests found — add tests to at least one contract suite before saving. ({snap_err})")
+                else:
+                    st.error(f"Snapshot suite creation failed: {snap_err}")
                 return
 
             st.success(f"Saved as version {new_version}.")
@@ -1152,7 +1047,7 @@ def _delete_version_dialog(table_group_id: str, version: int) -> None:
             f"SELECT COUNT(*) AS ct FROM {schema}.test_definitions WHERE test_suite_id = CAST(:sid AS uuid)",
             params={"sid": snapshot_suite_id},
         )
-        test_count = int((count_rows[0]["ct"] or 0)) if count_rows else 0
+        test_count = int(count_rows[0]["ct"] or 0) if count_rows else 0
 
         suite_rows = fetch_dict_from_db(
             f"SELECT test_suite FROM {schema}.test_suites WHERE id = CAST(:sid AS uuid)",

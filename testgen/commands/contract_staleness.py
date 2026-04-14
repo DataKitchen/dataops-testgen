@@ -211,11 +211,14 @@ def compute_term_diff(
     table_group_id: str,
     saved_yaml: str,
     anomalies: list[dict[str, Any]],
+    snapshot_suite_id: str | None = None,
 ) -> TermDiffResult:
     """
     Compare the saved contract YAML snapshot against the current active test definitions
-    (including monitors) and return a TermDiffResult with per-term diff entries and
-    compliance status counts.
+    and return a TermDiffResult with per-term diff entries and compliance status counts.
+
+    When *snapshot_suite_id* is provided the query is scoped exclusively to that suite,
+    which is the authoritative source of truth for a versioned contract snapshot.
 
     Key rule: terms absent from the saved YAML are surfaced as "new" (they exist in
     TestGen but were never in the contract). Terms in the saved YAML but gone from
@@ -247,41 +250,76 @@ def compute_term_diff(
     result.saved_count = len(saved_quality)
 
     # ------------------------------------------------------------------
-    # 2. Query current test definitions (monitors included)
+    # 2. Query current test definitions.
+    # When snapshot_suite_id is set, scope exclusively to that suite.
+    # Otherwise, query across all source suites (monitors excluded — monitor
+    # tests are regenerated with new IDs on each monitor run, so including
+    # them would produce spurious "deleted"/"new" counts in the thousands).
     # ------------------------------------------------------------------
-    test_rows = fetch_dict_from_db(
-        f"""
-        SELECT td.id::text AS id,
-               td.test_type,
-               td.table_name,
-               td.column_name,
-               td.threshold_value,
-               td.lower_tolerance,
-               td.upper_tolerance,
-               COALESCE(ts.is_monitor, FALSE) AS is_monitor,
-               CASE tr.result_status
-                   WHEN 'Passed'  THEN 'passed'
-                   WHEN 'Failed'  THEN 'failed'
-                   WHEN 'Warning' THEN 'warning'
-                   WHEN 'Error'   THEN 'error'
-                   ELSE NULL
-               END AS last_status
-        FROM {schema}.test_definitions td
-        JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
-        JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
-        LEFT JOIN LATERAL (
-            SELECT result_status FROM {schema}.test_results
-            WHERE  test_definition_id = td.id
-            ORDER  BY test_time DESC LIMIT 1
-        ) tr ON TRUE
-        WHERE ts.table_groups_id         = :tg_id
-          AND ts.include_in_contract     IS NOT FALSE
-          AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
-          AND td.test_active             = 'Y'
-          AND COALESCE(tt.test_scope, '') != 'referential'
-        """,
-        params={"tg_id": table_group_id},
-    )
+    if snapshot_suite_id:
+        test_rows = fetch_dict_from_db(
+            f"""
+            SELECT COALESCE(td.source_test_definition_id, td.id)::text AS id,
+                   td.test_type,
+                   td.table_name,
+                   td.column_name,
+                   td.threshold_value,
+                   td.lower_tolerance,
+                   td.upper_tolerance,
+                   CASE tr.result_status
+                       WHEN 'Passed'  THEN 'passed'
+                       WHEN 'Failed'  THEN 'failed'
+                       WHEN 'Warning' THEN 'warning'
+                       WHEN 'Error'   THEN 'error'
+                       ELSE NULL
+                   END AS last_status
+            FROM {schema}.test_definitions td
+            JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
+            LEFT JOIN LATERAL (
+                SELECT result_status FROM {schema}.test_results
+                WHERE  test_definition_id = td.id
+                ORDER  BY test_time DESC LIMIT 1
+            ) tr ON TRUE
+            WHERE td.test_suite_id             = CAST(:snapshot_suite_id AS uuid)
+              AND td.test_active               = 'Y'
+              AND COALESCE(tt.test_scope, '') != 'referential'
+            """,
+            params={"snapshot_suite_id": snapshot_suite_id},
+        )
+    else:
+        test_rows = fetch_dict_from_db(
+            f"""
+            SELECT td.id::text AS id,
+                   td.test_type,
+                   td.table_name,
+                   td.column_name,
+                   td.threshold_value,
+                   td.lower_tolerance,
+                   td.upper_tolerance,
+                   CASE tr.result_status
+                       WHEN 'Passed'  THEN 'passed'
+                       WHEN 'Failed'  THEN 'failed'
+                       WHEN 'Warning' THEN 'warning'
+                       WHEN 'Error'   THEN 'error'
+                       ELSE NULL
+                   END AS last_status
+            FROM {schema}.test_definitions td
+            JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
+            JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
+            LEFT JOIN LATERAL (
+                SELECT result_status FROM {schema}.test_results
+                WHERE  test_definition_id = td.id
+                ORDER  BY test_time DESC LIMIT 1
+            ) tr ON TRUE
+            WHERE ts.table_groups_id         = :tg_id
+              AND ts.include_in_contract     IS NOT FALSE
+              AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
+              AND COALESCE(ts.is_monitor, FALSE) = FALSE
+              AND td.test_active             = 'Y'
+              AND COALESCE(tt.test_scope, '') != 'referential'
+            """,
+            params={"tg_id": table_group_id},
+        )
     current_tests: dict[str, dict[str, Any]] = {str(r["id"]): dict(r) for r in test_rows}
     result.current_count = len(current_tests)
 
@@ -429,7 +467,7 @@ def compute_staleness_diff(
     # Query current columns from DB
     col_rows = fetch_dict_from_db(
         f"""
-        SELECT table_name, column_name, general_type, data_type
+        SELECT table_name, column_name, general_type, db_data_type
         FROM {schema}.data_column_chars
         WHERE table_groups_id = :tg_id
         ORDER BY table_name, ordinal_position
@@ -438,7 +476,7 @@ def compute_staleness_diff(
     )
     current_cols: dict[str, dict[str, Any]] = {
         f"{r['table_name']}.{r['column_name']}": {
-            "physical_type": r.get("data_type") or "",
+            "physical_type": r.get("db_data_type") or "",
             "table_name": r["table_name"],
             "column_name": r["column_name"],
         }

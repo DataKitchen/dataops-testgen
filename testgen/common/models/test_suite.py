@@ -52,6 +52,7 @@ class TestSuiteSummary(EntityMinimal):
     last_run_log_ct: int
     last_run_dismissed_ct: int
     is_contract_snapshot: bool = False
+    include_in_contract: bool = True
 
 class TestSuite(Entity):
     __tablename__ = "test_suites"
@@ -190,7 +191,8 @@ class TestSuite(Entity):
             last_run.error_ct AS last_run_error_ct,
             last_run.log_ct AS last_run_log_ct,
             last_run.dismissed_ct AS last_run_dismissed_ct,
-            COALESCE(suites.is_contract_snapshot, FALSE) AS is_contract_snapshot
+            COALESCE(suites.is_contract_snapshot, FALSE) AS is_contract_snapshot,
+            COALESCE(suites.include_in_contract, TRUE) AS include_in_contract
         FROM test_suites AS suites
         LEFT JOIN last_run
             ON (suites.id = last_run.test_suite_id)
@@ -201,7 +203,6 @@ class TestSuite(Entity):
         LEFT JOIN table_groups AS groups
             ON (groups.id = suites.table_groups_id)
         WHERE suites.is_monitor IS NOT TRUE
-            AND COALESCE(suites.is_contract_snapshot, FALSE) IS NOT TRUE
             AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {"AND suites.test_suite ILIKE :test_suite_name" if test_suite_name else ""}

@@ -29,6 +29,9 @@ import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
 
 const { div, h4, small, span, i } = van.tags;
 
+const mat = (name, size = 16) =>
+    span({ class: 'material', style: `font-size:${size}px` }, name);
+
 const TestSuites = (/** @type Properties */ props) => {
     loadStylesheet('testsuites', stylesheet);
     Streamlit.setFrameHeight(1);
@@ -127,12 +130,20 @@ const TestSuites = (/** @type Properties */ props) => {
                         testId: 'test-suite-card',
                         title: () => div(
                             { class: 'flex-column tg-test-suites--card-title', 'data-testid': 'test-suite-title' },
-                            h4(testSuite.test_suite),
+                            div(
+                                { class: 'flex-row fx-align-center', style: 'gap: 8px;' },
+                                h4(testSuite.test_suite),
+                                testSuite.is_contract_snapshot
+                                    ? span({ class: 'contract-snapshot-badge' }, mat('lock', 13), ' Contract snapshot')
+                                    : testSuite.include_in_contract
+                                    ? span({ class: 'in-contract-chip' }, mat('verified', 13), ' In contract')
+                                    : '',
+                            ),
                             small(`${testSuite.connection_name} > ${testSuite.table_groups_name}`),
                         ),
                         actionContent: () => div(
                             { class: 'flex-row fx-align-center', style: 'gap: 4px;' },
-                            userCanEdit
+                            userCanEdit && !testSuite.is_contract_snapshot
                                 ? [
                                     Button({
                                         type: 'icon',
@@ -205,7 +216,28 @@ const TestSuites = (/** @type Properties */ props) => {
                             ),
                             div(
                                 { class: 'flex-column' },
-                                userCanEdit
+                                testSuite.is_contract_snapshot
+                                ? [
+                                    userCanEdit ? Button({
+                                        label: 'Run Tests',
+                                        color: 'primary',
+                                        type: 'stroked',
+                                        style: 'min-width: 180px;',
+                                        disabled: !parseInt(testSuite.test_ct),
+                                        onclick: () => emitEvent('RunTestsClicked', {payload: testSuite.id}),
+                                    }) : '',
+                                    Button({
+                                        label: 'View Data Contract',
+                                        color: 'primary',
+                                        type: 'stroked',
+                                        style: 'margin-top: 16px; min-width: 180px;',
+                                        onclick: () => emitEvent('LinkClicked', {
+                                            href: 'data-contract',
+                                            params: { table_group_id: testSuite.table_groups_id },
+                                        }),
+                                    }),
+                                ]
+                                : userCanEdit
                                 ? [
                                     Button({
                                         label: 'Run Tests',
@@ -223,6 +255,16 @@ const TestSuites = (/** @type Properties */ props) => {
                                         disabled: !testSuite.last_complete_profile_run_id,
                                         onclick: () => emitEvent('GenerateTestsClicked', {payload: testSuite.id}),
                                     }),
+                                    testSuite.include_in_contract ? Button({
+                                        label: 'View Data Contract',
+                                        color: 'primary',
+                                        type: 'stroked',
+                                        style: 'margin-top: 16px; min-width: 180px;',
+                                        onclick: () => emitEvent('LinkClicked', {
+                                            href: 'data-contract',
+                                            params: { table_group_id: testSuite.table_groups_id },
+                                        }),
+                                    }) : '',
                                 ]
                                 : ''
                             ),
@@ -309,6 +351,58 @@ stylesheet.replace(`
     font-weight: 400;
     color: var(--caption-text-color);
     text-transform: initial;
+}
+
+.contract-snapshot-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: #e0e7ff;
+    color: #4338ca;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    text-transform: initial;
+}
+
+.contract-snapshot-badge .material {
+    color: #4338ca;
+}
+
+.in-contract-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid #6ee7b7;
+    background: #f0fdf4;
+    color: #065f46;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    text-transform: initial;
+}
+
+.in-contract-chip .material {
+    color: #059669;
+}
+
+.snapshot-suite-info-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8125rem;
+    color: var(--caption-text-color);
+    font-style: italic;
+    margin-bottom: 16px;
+}
+
+.snapshot-suite-info-note .material {
+    color: #6366f1;
+    flex-shrink: 0;
 }
 `);
 

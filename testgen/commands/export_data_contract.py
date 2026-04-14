@@ -449,6 +449,85 @@ def _fetch_tests(table_group_id: str, schema: str) -> list[dict]:
     return [dict(r) for r in fetch_dict_from_db(sql, params={"tg_id": table_group_id})]
 
 
+def _fetch_tests_from_suite(suite_id: str, schema: str) -> list[dict]:
+    """Fetch all active tests belonging to a specific suite, including snapshot suites."""
+    sql = f"""
+        SELECT
+            td.id,
+            s.id::text                        AS suite_id,
+            td.test_type,
+            td.schema_name,
+            td.table_name,
+            td.column_name,
+            tt.test_scope,
+            td.test_active,
+            td.test_description                   AS user_description,
+            td.severity,
+            td.threshold_value,
+            td.baseline_value,
+            td.baseline_ct,
+            td.lower_tolerance,
+            td.upper_tolerance,
+            td.subset_condition,
+            td.groupby_names,
+            td.having_condition,
+            td.window_date_column,
+            td.window_days,
+            td.match_schema_name,
+            td.match_table_name,
+            td.match_column_names,
+            td.custom_query,
+            td.skip_errors,
+            td.lock_refresh,
+            td.last_auto_gen_date,
+            td.last_manual_update,
+            tt.dq_dimension,
+            tt.test_name_short,
+            tt.test_description                   AS type_description,
+            tt.measure_uom,
+            tr.result_status,
+            tr.result_measure,
+            tr.threshold_value  AS result_threshold,
+            tr.result_message,
+            tr.test_time        AS result_time
+        FROM {schema}.test_definitions td
+        JOIN {schema}.test_types tt ON tt.test_type = td.test_type
+        JOIN {schema}.test_suites s ON s.id = td.test_suite_id
+        LEFT JOIN LATERAL (
+            SELECT result_status, result_measure, threshold_value, result_message, test_time
+            FROM   {schema}.test_results
+            WHERE  test_definition_id = td.id
+              AND  disposition != 'Inactive'
+            ORDER  BY test_time DESC
+            LIMIT  1
+        ) tr ON TRUE
+        WHERE s.id = CAST(:suite_id AS uuid)
+          AND td.test_active = 'Y'
+        ORDER BY td.table_name, td.column_name, td.test_type
+    """
+    return [dict(r) for r in fetch_dict_from_db(sql, params={"suite_id": suite_id})]
+
+
+@with_database_session
+def rebuild_quality_from_suite(base_yaml: str, suite_id: str) -> str:
+    """
+    Return a copy of base_yaml with its 'quality' section replaced by fresh data
+    fetched from the given suite (snapshot or live).
+    """
+    schema = get_tg_schema()
+    tests   = _fetch_tests_from_suite(suite_id, schema)
+    try:
+        doc: dict[str, Any] = yaml.safe_load(base_yaml) or {}
+    except yaml.YAMLError:
+        return base_yaml
+    quality = _build_quality(tests)
+    if quality:
+        doc["quality"] = quality
+    else:
+        doc.pop("quality", None)
+    return yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
 # ---------------------------------------------------------------------------
 # ODCS builders
 # ---------------------------------------------------------------------------

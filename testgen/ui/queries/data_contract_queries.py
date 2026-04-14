@@ -100,19 +100,33 @@ def _fetch_anomalies(table_group_id: str) -> list[dict]:
 
 
 @with_database_session
-def _fetch_suite_scope(table_group_id: str) -> dict:
-    """Return which test suites are included/excluded from the contract."""
-    schema = get_tg_schema()
-    sql = f"""
-        SELECT test_suite, COALESCE(include_in_contract, TRUE) AS include_in_contract
-        FROM {schema}.test_suites
-        WHERE table_groups_id = :tg_id
-          AND is_monitor IS NOT TRUE
-          AND is_contract_snapshot IS NOT TRUE
-        ORDER BY LOWER(test_suite)
+def _fetch_suite_scope(table_group_id: str, snapshot_suite_id: str | None = None) -> dict:
+    """Return which test suites are included/excluded from the contract.
+
+    When *snapshot_suite_id* is provided the result is scoped exclusively to
+    that snapshot suite, which is the authoritative source of truth for a
+    versioned contract snapshot.
     """
+    schema = get_tg_schema()
+    if snapshot_suite_id:
+        sql = f"""
+            SELECT test_suite, TRUE AS include_in_contract
+            FROM {schema}.test_suites
+            WHERE id = CAST(:snapshot_suite_id AS uuid)
+        """
+        params: dict = {"snapshot_suite_id": snapshot_suite_id}
+    else:
+        sql = f"""
+            SELECT test_suite, COALESCE(include_in_contract, TRUE) AS include_in_contract
+            FROM {schema}.test_suites
+            WHERE table_groups_id = :tg_id
+              AND is_monitor IS NOT TRUE
+              AND is_contract_snapshot IS NOT TRUE
+            ORDER BY LOWER(test_suite)
+        """
+        params = {"tg_id": table_group_id}
     try:
-        rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id})
+        rows = fetch_dict_from_db(sql, params=params)
         included = [r["test_suite"] for r in rows if r["include_in_contract"]]
         excluded = [r["test_suite"] for r in rows if not r["include_in_contract"]]
         return {"included": included, "excluded": excluded, "total": len(rows)}
@@ -220,32 +234,57 @@ def _fetch_test_live_info(test_def_id: str) -> dict:
 
 
 @with_database_session
-def _fetch_test_statuses(table_group_id: str) -> dict[str, str]:
-    """Return {test_def_id: odcs_status} for the latest result of every active test in the contract."""
-    schema = get_tg_schema()
-    sql = f"""
-        SELECT DISTINCT ON (td.id)
-            td.id::text                                                           AS test_def_id,
-            CASE tr.result_status
-                WHEN 'Passed'  THEN 'passing'
-                WHEN 'Failed'  THEN 'failing'
-                WHEN 'Warning' THEN 'warning'
-                WHEN 'Error'   THEN 'error'
-                ELSE NULL
-            END                                                                   AS status
-        FROM {schema}.test_definitions td
-        JOIN {schema}.test_suites s      ON s.id  = td.test_suite_id
-        LEFT JOIN {schema}.test_results tr ON tr.test_definition_id = td.id
-                                          AND tr.disposition IS DISTINCT FROM 'Inactive'
-        WHERE s.table_groups_id        = :tg_id
-          AND s.include_in_contract    IS NOT FALSE
-          AND COALESCE(s.is_monitor, FALSE) = FALSE
-          AND COALESCE(s.is_contract_snapshot, FALSE) = FALSE
-          AND td.test_active           = 'Y'
-        ORDER BY td.id, tr.test_time DESC NULLS LAST
+def _fetch_test_statuses(table_group_id: str, snapshot_suite_id: str | None = None) -> dict[str, str]:
+    """Return {test_def_id: odcs_status} for the latest result of every active test in the contract.
+
+    When *snapshot_suite_id* is provided the query is scoped exclusively to that suite,
+    which is the authoritative source of truth for a versioned contract snapshot.
     """
+    schema = get_tg_schema()
+    if snapshot_suite_id:
+        sql = f"""
+            SELECT DISTINCT ON (COALESCE(td.source_test_definition_id, td.id))
+                COALESCE(td.source_test_definition_id, td.id)::text                   AS test_def_id,
+                CASE tr.result_status
+                    WHEN 'Passed'  THEN 'passing'
+                    WHEN 'Failed'  THEN 'failing'
+                    WHEN 'Warning' THEN 'warning'
+                    WHEN 'Error'   THEN 'error'
+                    ELSE NULL
+                END                                                                   AS status
+            FROM {schema}.test_definitions td
+            LEFT JOIN {schema}.test_results tr ON tr.test_definition_id = td.id
+                                              AND tr.disposition IS DISTINCT FROM 'Inactive'
+            WHERE td.test_suite_id = CAST(:snapshot_suite_id AS uuid)
+              AND td.test_active   = 'Y'
+            ORDER BY COALESCE(td.source_test_definition_id, td.id), tr.test_time DESC NULLS LAST
+        """
+        params: dict = {"snapshot_suite_id": snapshot_suite_id}
+    else:
+        sql = f"""
+            SELECT DISTINCT ON (td.id)
+                td.id::text                                                           AS test_def_id,
+                CASE tr.result_status
+                    WHEN 'Passed'  THEN 'passing'
+                    WHEN 'Failed'  THEN 'failing'
+                    WHEN 'Warning' THEN 'warning'
+                    WHEN 'Error'   THEN 'error'
+                    ELSE NULL
+                END                                                                   AS status
+            FROM {schema}.test_definitions td
+            JOIN {schema}.test_suites s      ON s.id  = td.test_suite_id
+            LEFT JOIN {schema}.test_results tr ON tr.test_definition_id = td.id
+                                              AND tr.disposition IS DISTINCT FROM 'Inactive'
+            WHERE s.table_groups_id        = :tg_id
+              AND s.include_in_contract    IS NOT FALSE
+              AND COALESCE(s.is_monitor, FALSE) = FALSE
+              AND COALESCE(s.is_contract_snapshot, FALSE) = FALSE
+              AND td.test_active           = 'Y'
+            ORDER BY td.id, tr.test_time DESC NULLS LAST
+        """
+        params = {"tg_id": table_group_id}
     try:
-        rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id})
+        rows = fetch_dict_from_db(sql, params=params)
         return {r["test_def_id"]: r["status"] for r in (rows or []) if r["status"]}
     except Exception:
         _log.exception("_fetch_test_statuses failed for tg_id=%s", table_group_id)
@@ -253,42 +292,83 @@ def _fetch_test_statuses(table_group_id: str) -> dict[str, str]:
 
 
 @with_database_session
-def _fetch_last_run_dates(table_group_id: str) -> dict:
+def _fetch_last_run_dates(table_group_id: str, snapshot_suite_id: str | None = None) -> dict:
+    """Return last test run dates and per-suite run summaries.
+
+    When *snapshot_suite_id* is provided the query is scoped exclusively to
+    that snapshot suite, which is the authoritative source of truth for a
+    versioned contract snapshot.
+    """
     schema = get_tg_schema()
 
-    suite_sql = f"""
-        SELECT
-            suite_id,
-            suite_name,
-            is_monitor,
-            run_id,
-            run_start,
-            test_ct,
-            passed_ct,
-            warning_ct,
-            failed_ct,
-            error_ct
-        FROM (
-            SELECT DISTINCT ON (s.id)
-                s.id::text                    AS suite_id,
-                s.test_suite                  AS suite_name,
-                COALESCE(s.is_monitor, FALSE) AS is_monitor,
-                tr.id::text                   AS run_id,
-                tr.test_starttime             AS run_start,
-                COALESCE(tr.test_ct,    0)    AS test_ct,
-                COALESCE(tr.passed_ct,  0)    AS passed_ct,
-                COALESCE(tr.warning_ct, 0)    AS warning_ct,
-                COALESCE(tr.failed_ct,  0)    AS failed_ct,
-                COALESCE(tr.error_ct,   0)    AS error_ct
-            FROM {schema}.test_suites s
-            JOIN {schema}.test_runs tr ON tr.test_suite_id = s.id
-            WHERE s.table_groups_id = :tg_id
-              AND s.include_in_contract IS NOT FALSE
-              AND COALESCE(s.is_contract_snapshot, FALSE) = FALSE
-            ORDER BY s.id, tr.test_starttime DESC
-        ) latest
-        ORDER BY is_monitor ASC, run_start DESC
-    """
+    if snapshot_suite_id:
+        suite_sql = f"""
+            SELECT
+                suite_id,
+                suite_name,
+                is_monitor,
+                run_id,
+                run_start,
+                test_ct,
+                passed_ct,
+                warning_ct,
+                failed_ct,
+                error_ct
+            FROM (
+                SELECT DISTINCT ON (s.id)
+                    s.id::text                    AS suite_id,
+                    s.test_suite                  AS suite_name,
+                    COALESCE(s.is_monitor, FALSE) AS is_monitor,
+                    tr.id::text                   AS run_id,
+                    tr.test_starttime             AS run_start,
+                    COALESCE(tr.test_ct,    0)    AS test_ct,
+                    COALESCE(tr.passed_ct,  0)    AS passed_ct,
+                    COALESCE(tr.warning_ct, 0)    AS warning_ct,
+                    COALESCE(tr.failed_ct,  0)    AS failed_ct,
+                    COALESCE(tr.error_ct,   0)    AS error_ct
+                FROM {schema}.test_suites s
+                JOIN {schema}.test_runs tr ON tr.test_suite_id = s.id
+                WHERE s.id = CAST(:snapshot_suite_id AS uuid)
+                ORDER BY s.id, tr.test_starttime DESC
+            ) latest
+            ORDER BY is_monitor ASC, run_start DESC
+        """
+        suite_params: dict = {"snapshot_suite_id": snapshot_suite_id}
+    else:
+        suite_sql = f"""
+            SELECT
+                suite_id,
+                suite_name,
+                is_monitor,
+                run_id,
+                run_start,
+                test_ct,
+                passed_ct,
+                warning_ct,
+                failed_ct,
+                error_ct
+            FROM (
+                SELECT DISTINCT ON (s.id)
+                    s.id::text                    AS suite_id,
+                    s.test_suite                  AS suite_name,
+                    COALESCE(s.is_monitor, FALSE) AS is_monitor,
+                    tr.id::text                   AS run_id,
+                    tr.test_starttime             AS run_start,
+                    COALESCE(tr.test_ct,    0)    AS test_ct,
+                    COALESCE(tr.passed_ct,  0)    AS passed_ct,
+                    COALESCE(tr.warning_ct, 0)    AS warning_ct,
+                    COALESCE(tr.failed_ct,  0)    AS failed_ct,
+                    COALESCE(tr.error_ct,   0)    AS error_ct
+                FROM {schema}.test_suites s
+                JOIN {schema}.test_runs tr ON tr.test_suite_id = s.id
+                WHERE s.table_groups_id = :tg_id
+                  AND s.include_in_contract IS NOT FALSE
+                  AND COALESCE(s.is_contract_snapshot, FALSE) = FALSE
+                ORDER BY s.id, tr.test_starttime DESC
+            ) latest
+            ORDER BY is_monitor ASC, run_start DESC
+        """
+        suite_params = {"tg_id": table_group_id}
 
     profiling_sql = f"""
         SELECT id, profiling_starttime
@@ -300,7 +380,7 @@ def _fetch_last_run_dates(table_group_id: str) -> dict:
     """
 
     try:
-        suite_rows = fetch_dict_from_db(suite_sql, params={"tg_id": table_group_id})
+        suite_rows = fetch_dict_from_db(suite_sql, params=suite_params)
         pr_rows    = fetch_dict_from_db(profiling_sql, params={"tg_id": table_group_id})
     except Exception:
         _log.exception("_fetch_last_run_dates failed for tg_id=%s", table_group_id)

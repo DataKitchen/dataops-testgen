@@ -931,6 +931,26 @@ def show_test_form(
             TestDefinition(**test_definition).save()
             from testgen.commands.contract_versions import mark_contract_stale
             mark_contract_stale(str(table_groups_id))
+            _tg_id_str = str(table_groups_id)
+            # For snapshot suites, data_contract.py rebuilds quality from the suite
+            # on next render when dc_yaml is absent — just clear it.
+            # For live suites, re-export now so the YAML tab is immediately up to date.
+            if getattr(test_suite, "is_contract_snapshot", False):
+                st.session_state.pop(f"dc_yaml:{_tg_id_str}", None)
+            else:
+                import io as _io
+
+                from testgen.commands.export_data_contract import run_export_data_contract
+                _stream = _io.StringIO()
+                run_export_data_contract(_tg_id_str, output_stream=_stream)
+                st.session_state[f"dc_yaml:{_tg_id_str}"] = _stream.getvalue()
+            for _dc_key in (
+                f"dc_pending:{_tg_id_str}",
+                f"dc_term_diff:{_tg_id_str}",
+                f"dc_suite_scope:{_tg_id_str}",
+                f"dc_run_dates:{_tg_id_str}",
+            ):
+                st.session_state.pop(_dc_key, None)
             safe_rerun()
 
 

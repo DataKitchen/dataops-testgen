@@ -17,6 +17,7 @@ _log = logging.getLogger(__name__)
 import streamlit as st
 import yaml
 
+from testgen.commands.contract_snapshot_suite import sync_import_to_snapshot_suite
 from testgen.commands.contract_staleness import (
     StaleDiff,
     TermDiffResult,
@@ -29,12 +30,11 @@ from testgen.commands.contract_versions import (
     load_contract_version,
     mark_contract_not_stale,
 )
-from testgen.commands.contract_snapshot_suite import sync_import_to_snapshot_suite
 from testgen.commands.odcs_contract import ContractDiff as OdcsContractDiff
 from testgen.commands.odcs_contract import get_updated_yaml, run_import_contract
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import fetch_dict_from_db
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
@@ -51,6 +51,7 @@ from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 from testgen.ui.views.data_contract_props import (
     _build_contract_props,
+    _is_covered,
     _quality_counts,
 )
 from testgen.ui.views.data_contract_yaml import (
@@ -80,6 +81,15 @@ PAGE_ICON = "contract"
 ContractDiff = OdcsContractDiff
 
 
+def _get_snapshot_test_count(snapshot_suite_id: str) -> int:
+    schema = get_tg_schema()
+    rows = fetch_dict_from_db(
+        f"SELECT COUNT(*) AS cnt FROM {schema}.test_definitions WHERE test_suite_id = CAST(:sid AS uuid)",
+        params={"sid": snapshot_suite_id},
+    )
+    return int(rows[0]["cnt"]) if rows else 0
+
+
 def _format_pending_labels(pending: dict) -> list[str]:
     labels: list[str] = []
     for e in pending.get("governance", []):
@@ -95,6 +105,8 @@ def _format_pending_labels(pending: dict) -> list[str]:
         else:
             col_hint = e.get("col") or e.get("rule_id", "?")[:8]
             labels.append(f"edited {col_hint} rule")
+    for e in pending.get("deletions", []):
+        labels.append(f"deleted {e.get('table', '')}.{e.get('col', '')} {e.get('name', '')}")
     return labels
 
 
@@ -365,6 +377,189 @@ def _render_first_time_flow(table_group_id: str) -> None:
         if col2.button("Save as Version 0", type="primary"):
             _save_version_dialog(table_group_id, {}, preview_yaml, None)
 
+    st.divider()
+    with st.expander("Or import from YAML", expanded=False):
+        st.caption("Upload an existing ODCS v3.1.0 YAML file to create a new contract version.")
+        uploaded = st.file_uploader(
+            "Upload ODCS YAML",
+            type=["yaml", "yml"],
+            key=f"dc_yaml_upload:{table_group_id}",
+        )
+        if uploaded is not None:
+            from testgen.commands.create_data_contract import create_contract_from_yaml, validate_odcs_header
+            raw = uploaded.read().decode("utf-8")
+            errors = validate_odcs_header(raw)
+            if errors:
+                for err in errors:
+                    st.error(err)
+            else:
+                import_label = st.text_input("Version label (optional)", key=f"dc_yaml_upload_label:{table_group_id}")
+                if st.button("Save as Version 0", key=f"dc_yaml_upload_save:{table_group_id}", type="primary"):
+                    try:
+                        create_contract_from_yaml(table_group_id, raw, import_label or None)
+                        st.success("Contract version 0 saved.")
+                        safe_rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Shared term-deletion helper
+# ---------------------------------------------------------------------------
+
+def _apply_term_deletions(
+    terms: list[dict],
+    yaml_key: str,
+    pending_key: str,
+    table_group_id: str,
+    snapshot_suite_id: str | None = None,
+) -> None:
+    """Apply term deletions to YAML in session state and sync to snapshot suite.
+
+    Shared core of both the BulkDeleteTermsClicked event handler and the
+    individual modal "Delete term from contract" buttons.
+    """
+    current_yaml = st.session_state.get(yaml_key, "")
+    try:
+        parsed = yaml.safe_load(current_yaml)
+        if not isinstance(parsed, dict):
+            return
+        doc = parsed
+    except yaml.YAMLError:
+        return
+
+    # ── 1. Delete quality rules (test / monitor terms with rule_id) ──
+    rule_ids_to_delete: set[str] = {
+        t["rule_id"] for t in terms if t.get("rule_id")
+    }
+    element_by_id: dict[str, str] = {
+        str(q.get("id", "")): str(q.get("element", ""))
+        for q in (doc.get("quality") or [])
+    }
+    if rule_ids_to_delete:
+        doc["quality"] = [
+            q for q in (doc.get("quality") or [])
+            if str(q.get("id", "")) not in rule_ids_to_delete
+        ]
+
+    # ── 2. Delete schema terms (DDL / profiling / governance) ──────
+    schema_removals: dict[tuple[str, str], list[dict]] = {}
+    for t in terms:
+        if t.get("rule_id"):
+            continue  # handled above
+        key = (t.get("table", ""), t.get("col", ""))
+        schema_removals.setdefault(key, []).append(t)
+
+    if schema_removals:
+        _SCHEMA_FIELD_MAP: dict[tuple[str, str], str] = {
+            ("ddl",        "Data Type"):              "physicalType",
+            ("ddl",        "Not Null"):               "required",
+            ("ddl",        "Primary Key"):            "_customProperties.testgen.primaryKey",
+            ("profiling",  "Min Value"):              "_customProperties.testgen.minimum",
+            ("profiling",  "Max Value"):              "_customProperties.testgen.maximum",
+            ("profiling",  "Min Length"):             "_customProperties.testgen.minLength",
+            ("profiling",  "Max Length"):             "_customProperties.testgen.maxLength",
+            ("profiling",  "Format"):                 "_customProperties.testgen.format",
+            ("profiling",  "Logical Type"):           "logicalType",
+            ("governance", "Critical Data Element"):  "criticalDataElement",
+            ("governance", "Description"):            "description",
+        }
+        for schema_entry in (doc.get("schema") or []):
+            tbl_name = schema_entry.get("name", "")
+            for prop in (schema_entry.get("properties") or []):
+                col_name = prop.get("name", "")
+                removals = schema_removals.get((tbl_name, col_name), [])
+                for rem in removals:
+                    field = _SCHEMA_FIELD_MAP.get((rem.get("source", ""), rem.get("name", "")))
+                    if not field:
+                        continue
+                    if field.startswith("_customProperties."):
+                        cp_key = field[len("_customProperties."):]
+                        existing = prop.get("customProperties") or []
+                        updated_cp = [cp for cp in existing if cp.get("property") != cp_key]
+                        if updated_cp:
+                            prop["customProperties"] = updated_cp
+                        else:
+                            prop.pop("customProperties", None)
+                    else:
+                        prop.pop(field, None)
+
+    updated_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+    # ── 3. Queue governance + schema deletions as pending edits ────
+    pending = st.session_state.get(pending_key, {})
+    for t in terms:
+        if t.get("rule_id"):
+            continue
+        src = t.get("source", "")
+        if src == "governance":
+            snapshot = {"name": t.get("name", ""), "source": "governance", "verif": "declared"}
+            pending.setdefault("governance", []).append({
+                "field":    t.get("name", ""),
+                "value":    None,
+                "table":    t.get("table", ""),
+                "col":      t.get("col", ""),
+                "snapshot": snapshot,
+            })
+        elif src in ("ddl", "profiling"):
+            # Track schema field removals so pending_ct > 0 and save routes to update-in-place
+            pending.setdefault("deletions", []).append({
+                "source": src,
+                "name":   t.get("name", ""),
+                "table":  t.get("table", ""),
+                "col":    t.get("col", ""),
+            })
+
+    # ── 4. Dismiss hygiene anomalies ───────────────────────────────
+    for t in terms:
+        if (
+            t.get("source") == "profiling"
+            and t.get("name") == "Hygiene"
+            and not t.get("rule_id")
+            and t.get("anomaly_type")
+        ):
+            try:
+                _dismiss_hygiene_anomaly(
+                    table_group_id=table_group_id,
+                    table_name=t.get("table", ""),
+                    col_name=t.get("col", ""),
+                    anomaly_type=t.get("anomaly_type", ""),
+                )
+            except Exception:
+                _log.exception(
+                    "_apply_term_deletions: hygiene anomaly dismiss failed for %s/%s",
+                    t.get("table"), t.get("col"),
+                )
+
+    st.session_state[yaml_key] = updated_yaml
+
+    # ── 5. Update pending edits for rule deletions ─────────────────
+    for rid in rule_ids_to_delete:
+        element = element_by_id.get(rid, "")
+        parts = element.split(".", 1)
+        tbl = parts[0] if parts else ""
+        col = parts[1] if len(parts) > 1 else ""
+        pending = _apply_pending_test_edit(
+            pending,
+            rid,
+            {
+                "_removed": True,
+                "_table": tbl,
+                "_col": col,
+                "_snapshot": {"name": element or rid[:8], "source": "test", "verif": "tested"},
+            },
+        )
+    st.session_state[pending_key] = pending
+
+    # ── 6. Sync deletions immediately to snapshot suite ────────────
+    if snapshot_suite_id and rule_ids_to_delete:
+        try:
+            sync_import_to_snapshot_suite(snapshot_suite_id, [], [], list(rule_ids_to_delete))
+        except Exception:
+            _log.exception(
+                "_apply_term_deletions: failed to sync to snapshot suite %s", snapshot_suite_id
+            )
+
 
 # ---------------------------------------------------------------------------
 # Page
@@ -429,8 +624,14 @@ class DataContractPage(Page):
         is_latest = (version_record["version"] == versions[0]["version"]) if versions else True
         dismissed_key = f"dc_stale_dismissed:{table_group_id}:v{version_record['version']}"
 
+        _snapshot_suite_id: str | None = version_record.get("snapshot_suite_id")
+
         if yaml_key not in st.session_state:
-            st.session_state[yaml_key] = version_record["contract_yaml"]
+            base_yaml: str = version_record["contract_yaml"]
+            if _snapshot_suite_id:
+                from testgen.commands.export_data_contract import rebuild_quality_from_suite
+                base_yaml = rebuild_quality_from_suite(base_yaml, _snapshot_suite_id)
+            st.session_state[yaml_key] = base_yaml
 
         contract_yaml: str = st.session_state[yaml_key]
         pending: dict = st.session_state.get(pending_key, {})
@@ -465,9 +666,11 @@ class DataContractPage(Page):
         # ── Toolbar: Refresh · [version picker] · Save ────────────────────────
         pending_ct = _pending_edit_count(pending)
         if pending_ct > 0:
-            pending_items = [
-                f"{e['table']}.{e['col']} {e['field']}" for e in pending.get("governance", [])
-            ] + [f"test {e['rule_id'][:8]}…" for e in pending.get("tests", [])]
+            pending_items = (
+                [f"{e['table']}.{e['col']} {e['field']}" for e in pending.get("governance", [])]
+                + [f"test {e['rule_id'][:8]}…" for e in pending.get("tests", [])]
+                + [f"deleted {e.get('table', '')}.{e.get('col', '')} {e.get('name', '')}" for e in pending.get("deletions", [])]
+            )
             save_tip = f"{pending_ct} unsaved change(s): " + "; ".join(pending_items[:3])
         else:
             save_tip = "Snapshot the current contract state as a new version"
@@ -582,13 +785,17 @@ class DataContractPage(Page):
         anomalies: list[dict] = st.session_state[anomaly_key]
 
         if run_dates_key not in st.session_state:
-            st.session_state[run_dates_key] = _fetch_last_run_dates(table_group_id)
+            st.session_state[run_dates_key] = _fetch_last_run_dates(
+                table_group_id, snapshot_suite_id=_snapshot_suite_id
+            )
         run_dates = st.session_state[run_dates_key]
 
         if suite_scope_key not in st.session_state:
-            st.session_state[suite_scope_key] = _fetch_suite_scope(table_group_id)
+            st.session_state[suite_scope_key] = _fetch_suite_scope(
+                table_group_id, snapshot_suite_id=_snapshot_suite_id
+            )
         suite_scope   = st.session_state[suite_scope_key]
-        test_statuses = _fetch_test_statuses(table_group_id)  # always fresh per design
+        test_statuses = _fetch_test_statuses(table_group_id, snapshot_suite_id=_snapshot_suite_id)  # always fresh per design
 
         if gov_key not in st.session_state:
             st.session_state[gov_key] = _fetch_governance_data(table_group_id)
@@ -622,11 +829,15 @@ class DataContractPage(Page):
             "is_stale":           stale_diff is not None,
             "pending_count":      pending_ct,
             "snapshot_suite_id":  version_record.get("snapshot_suite_id"),
+            "num_versions":       len(versions),
+            "tests_count":        _get_snapshot_test_count(_snapshot_suite_id) if _snapshot_suite_id else None,
         }
 
         # ── Term diff (Card 2 / Card 3 / Differences tab / Compliance tab) ──────
         if term_diff_key not in st.session_state:
-            st.session_state[term_diff_key] = compute_term_diff(table_group_id, contract_yaml, anomalies)
+            st.session_state[term_diff_key] = compute_term_diff(
+                table_group_id, contract_yaml, anomalies, snapshot_suite_id=_snapshot_suite_id
+            )
         term_diff: TermDiffResult = st.session_state[term_diff_key]
         same_ct    = sum(1 for e in term_diff.entries if e.status == "same")
         changed_ct = sum(1 for e in term_diff.entries if e.status == "changed")
@@ -689,6 +900,13 @@ class DataContractPage(Page):
             "tg_hygiene_possible": term_diff.tg_hygiene_possible,
         }
 
+        # ── Select-term-from-modal handoff ────────────────────────────────────
+        # When a dialog's "Delete term from contract" button is clicked, it stores
+        # the term key here instead of immediately deleting.  We pass it to JS so
+        # the term card becomes selected in the multi-select UI.
+        _select_term_key = st.session_state.pop(f"dc_select_term:{table_group_id}", "") or ""
+        props["select_term_key"] = _select_term_key
+
         # ── Event handlers ────────────────────────────────────────────────────
         def on_suite_picker(_payload: object) -> None:
             suite_runs = props.get("health", {}).get("suite_runs", [])
@@ -708,13 +926,14 @@ class DataContractPage(Page):
                 _term_read_dialog(term, table_name, col_name, table_group_id, yaml_key)
             elif source == "monitor":
                 _monitor_term_dialog(term.get("rule", {}), term_name, table_name, col_name)
-            elif source == "test" and snapshot_suite_id:
-                # Snapshot-backed contract: edit directly in the snapshot suite
-                rule = term.get("rule") or term
-                _edit_rule_dialog(rule, table_group_id, yaml_key, snapshot_suite_id=snapshot_suite_id)
             elif source == "test":
-                _project_code = getattr(table_group, "project_code", "")
-                _test_term_dialog(term, table_name, col_name, _project_code, yaml_key, table_group_id)
+                rule_id = term.get("rule_id", "")
+                if rule_id:
+                    from testgen.ui.views.test_definitions import show_test_form_by_id
+                    show_test_form_by_id(rule_id)
+                else:
+                    _project_code = getattr(table_group, "project_code", "")
+                    _test_term_dialog(term, table_name, col_name, _project_code, yaml_key, table_group_id)
             elif source == "governance" and verif == "declared":
                 _term_edit_dialog(term, table_name, col_name, table_group_id, yaml_key)
             else:
@@ -747,11 +966,15 @@ class DataContractPage(Page):
             snapshot_suite_id = version_record.get("snapshot_suite_id")
             if not snapshot_suite_id:
                 return
+            from sqlalchemy import select
+
             from testgen.common.models.test_suite import TestSuite
-            from testgen.ui.views.dialogs.test_definition_dialogs import add_test_dialog
-            _ts_minimal = TestSuite.get_minimal(snapshot_suite_id)
-            if table_group and _ts_minimal:
-                add_test_dialog(table_group, _ts_minimal, payload.get("tableName", ""), payload.get("colName", ""))
+            from testgen.ui.views.test_definitions import add_test_dialog
+            _ts = get_current_session().scalars(
+                select(TestSuite).where(TestSuite.id == snapshot_suite_id)
+            ).first()
+            if table_group and _ts:
+                add_test_dialog(table_group, _ts, payload.get("tableName", ""), payload.get("colName", ""))
 
         def on_delete_version(payload: dict) -> None:
             _version_to_delete = payload.get("version")
@@ -772,14 +995,15 @@ class DataContractPage(Page):
                     "original_yaml": yaml_content,
                 }
                 if not diff.has_errors:
-                    # Sync created/updated tests to snapshot suite if one exists
+                    # Sync created/updated/deleted tests to snapshot suite if one exists
                     snap_id = version_record.get("snapshot_suite_id")
                     if snap_id:
                         created_ids = list(diff.new_id_by_index.values()) if diff.new_id_by_index else []
                         updated_ids = [str(u["id"]) for u in (diff.test_updates or []) if u.get("id")]
-                        if created_ids or updated_ids:
+                        deleted_ids = list(diff.orphaned_ids) if diff.orphaned_ids else []
+                        if created_ids or updated_ids or deleted_ids:
                             try:
-                                sync_import_to_snapshot_suite(snap_id, created_ids, updated_ids, [])
+                                sync_import_to_snapshot_suite(snap_id, created_ids, updated_ids, deleted_ids)
                             except Exception:
                                 _log.exception("on_import_contract: failed to sync to snapshot suite %s", snap_id)
                     # Bust YAML + anomaly + derived caches so the page reflects the newly created tests
@@ -800,139 +1024,11 @@ class DataContractPage(Page):
             terms: list[dict] = payload.get("terms") or []
             if not terms:
                 return
-
-            current_yaml = st.session_state.get(yaml_key, "")
-            try:
-                parsed = yaml.safe_load(current_yaml)
-                if not isinstance(parsed, dict):
-                    return
-                doc = parsed
-            except yaml.YAMLError:
-                return
-
-            # ── 1. Delete quality rules (test / monitor terms with rule_id) ──
-            rule_ids_to_delete: set[str] = {
-                t["rule_id"] for t in terms if t.get("rule_id")
-            }
-            element_by_id: dict[str, str] = {
-                str(q.get("id", "")): str(q.get("element", ""))
-                for q in (doc.get("quality") or [])
-            }
-            if rule_ids_to_delete:
-                doc["quality"] = [
-                    q for q in (doc.get("quality") or [])
-                    if str(q.get("id", "")) not in rule_ids_to_delete
-                ]
-
-            # ── 2. Delete schema terms (DDL / profiling / governance) ──────
-            # Map: (table_name, col_name) → list of {source, name} to remove
-            schema_removals: dict[tuple[str, str], list[dict]] = {}
-            for t in terms:
-                if t.get("rule_id"):
-                    continue  # handled above
-                key = (t.get("table", ""), t.get("col", ""))
-                schema_removals.setdefault(key, []).append(t)
-
-            if schema_removals:
-                _SCHEMA_FIELD_MAP: dict[tuple[str, str], str] = {
-                    ("ddl",        "Data Type"):              "physicalType",
-                    ("ddl",        "Not Null"):               "required",
-                    ("ddl",        "Primary Key"):            "_customProperties.testgen.primaryKey",
-                    ("profiling",  "Min Value"):              "_customProperties.testgen.minimum",
-                    ("profiling",  "Max Value"):              "_customProperties.testgen.maximum",
-                    ("profiling",  "Min Length"):             "_customProperties.testgen.minLength",
-                    ("profiling",  "Max Length"):             "_customProperties.testgen.maxLength",
-                    ("profiling",  "Format"):                 "_customProperties.testgen.format",
-                    ("profiling",  "Logical Type"):           "logicalType",
-                    ("governance", "Critical Data Element"):  "criticalDataElement",
-                    ("governance", "Description"):            "description",
-                }
-                for schema_entry in (doc.get("schema") or []):
-                    tbl_name = schema_entry.get("name", "")
-                    for prop in (schema_entry.get("properties") or []):
-                        col_name = prop.get("name", "")
-                        removals = schema_removals.get((tbl_name, col_name), [])
-                        for rem in removals:
-                            field = _SCHEMA_FIELD_MAP.get((rem.get("source", ""), rem.get("name", "")))
-                            if not field:
-                                continue
-                            if field.startswith("_customProperties."):
-                                cp_key = field[len("_customProperties."):]
-                                existing = prop.get("customProperties") or []
-                                updated_cp = [cp for cp in existing if cp.get("property") != cp_key]
-                                if updated_cp:
-                                    prop["customProperties"] = updated_cp
-                                else:
-                                    prop.pop("customProperties", None)
-                            else:
-                                prop.pop(field, None)
-
-            updated_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
-
-            # ── 3. Queue governance deletions as pending edits ─────────────
-            # Governance terms live in data_column_chars. Rather than writing to DB
-            # immediately (which can't be cancelled), queue them as pending edits so
-            # they are persisted atomically on Save Version and can be undone via Cancel.
-            pending = st.session_state.get(pending_key, {})
-            for t in terms:
-                if t.get("source") == "governance" and not t.get("rule_id"):
-                    snapshot = {"name": t.get("name", ""), "source": "governance", "verif": "declared"}
-                    pending.setdefault("governance", []).append({
-                        "field":    t.get("name", ""),
-                        "value":    None,
-                        "table":    t.get("table", ""),
-                        "col":      t.get("col", ""),
-                        "snapshot": snapshot,
-                    })
-
-            # ── 4. Dismiss hygiene anomalies ───────────────────────────────
-            for t in terms:
-                if (
-                    t.get("source") == "profiling"
-                    and t.get("name") == "Hygiene"
-                    and not t.get("rule_id")
-                    and t.get("anomaly_type")
-                ):
-                    try:
-                        _dismiss_hygiene_anomaly(
-                            table_group_id=table_group_id,
-                            table_name=t.get("table", ""),
-                            col_name=t.get("col", ""),
-                            anomaly_type=t.get("anomaly_type", ""),
-                        )
-                    except Exception:
-                        LOG.exception("on_bulk_delete_terms: hygiene anomaly dismiss failed for %s/%s", t.get("table"), t.get("col"))
-
-            st.session_state[yaml_key] = updated_yaml
-
-            # ── 5. Update pending edits for rule deletions ─────────────────
-            # `pending` is already populated with any governance deletions from step 3.
-            for rid in rule_ids_to_delete:
-                element = element_by_id.get(rid, "")
-                parts = element.split(".", 1)
-                tbl = parts[0] if parts else ""
-                col = parts[1] if len(parts) > 1 else ""
-                pending = _apply_pending_test_edit(
-                    pending,
-                    rid,
-                    {
-                        "_removed": True,
-                        "_table": tbl,
-                        "_col": col,
-                        "_snapshot": {"name": element or rid[:8], "source": "test", "verif": "tested"},
-                    },
-                )
-            st.session_state[pending_key] = pending
+            _apply_term_deletions(
+                terms, yaml_key, pending_key, table_group_id,
+                snapshot_suite_id=version_record.get("snapshot_suite_id"),
+            )
             st.session_state.pop(term_diff_key, None)
-
-            # ── 6. Sync deletions immediately to snapshot suite ────────────
-            snap_id = version_record.get("snapshot_suite_id")
-            if snap_id and rule_ids_to_delete:
-                try:
-                    sync_import_to_snapshot_suite(snap_id, [], [], list(rule_ids_to_delete))
-                except Exception:
-                    _log.exception("on_bulk_delete_terms: failed to sync to snapshot suite %s", snap_id)
-
             safe_rerun()
 
         testgen_component(
@@ -954,12 +1050,12 @@ class DataContractPage(Page):
         import_result = st.session_state.pop(import_key, None)
         if import_result:
             if "error" in import_result:
-                st.error(f"Import failed: {import_result['error']}", icon="✗")
+                st.error(f"Import failed: {import_result['error']}", icon="🚫")
             else:
                 diff_result: OdcsContractDiff = import_result["diff"]
                 if diff_result.has_errors:
                     for err in diff_result.errors:
-                        st.error(err, icon="✗")
+                        st.error(err, icon="🚫")
                 else:
                     created_ct = len(diff_result.test_inserts)
                     updated_ct = len(diff_result.test_updates)
@@ -968,9 +1064,9 @@ class DataContractPage(Page):
                         parts.append(f"{created_ct} test(s) created")
                     if updated_ct:
                         parts.append(f"{updated_ct} test(s) updated")
-                    st.success("Import complete — " + (", ".join(parts) or "no changes"), icon="✓")
+                    st.success("Import complete — " + (", ".join(parts) or "no changes"), icon="✅")
                     for warn in diff_result.warnings:
-                        st.warning(warn, icon="⚠")
+                        st.warning(warn, icon="⚠️")
                     # Offer updated YAML download if new test IDs were written back
                     if diff_result.new_id_by_index:
                         updated_yaml = get_updated_yaml(

@@ -714,6 +714,75 @@ def import_data_contract(table_group_id: str, input_path: str, dry_run: bool, ye
     click.secho(f"\nApplied {result.total_changes} change(s): {result.summary()}", fg="green", err=True)
 
 
+@cli.command("create-contract")
+@click.option("-tg", "--table-group-id", "table_group_id", required=True, help="UUID of the table group.")
+@click.option("-i", "--input", "input_path", required=True, type=click.Path(exists=True), help="Path to ODCS YAML file.")
+@click.option("--label", default=None, help="Optional version label.")
+def create_contract(table_group_id: str, input_path: str, label: str | None) -> None:
+    """Create a brand-new data contract for a table group from an ODCS YAML file."""
+    from pathlib import Path
+
+    from testgen.commands.create_data_contract import create_contract_from_yaml
+    yaml_content = Path(input_path).read_text(encoding="utf-8")
+    try:
+        version = create_contract_from_yaml(table_group_id, yaml_content, label)
+        click.echo(f"Contract version {version} created for table group {table_group_id}.")
+    except ValueError as exc:
+        click.echo(f"Error: {exc}", err=True)
+        raise SystemExit(1) from exc
+
+
+@cli.command("run-contract-tests", help="Runs all in-scope test suites for a table group's data contract.")
+@click.option("-tg", "--table-group-id", "table_group_id", required=True, help="UUID of the table group.")
+@with_database_session
+def run_contract_tests(table_group_id: str) -> None:
+    """Run tests for every in-scope (non-snapshot, non-monitor) suite in a table group's data contract.
+
+    Equivalent to calling run-tests once per included suite:
+
+        testgen run-contract-tests -tg <table-group-id>
+    """
+    from testgen.common.database.database_service import fetch_dict_from_db
+
+    schema = get_tg_schema()
+    rows = fetch_dict_from_db(
+        f"""
+        SELECT id::text AS suite_id, test_suite AS suite_name
+        FROM {schema}.test_suites
+        WHERE table_groups_id = CAST(:tg_id AS uuid)
+          AND COALESCE(include_in_contract, TRUE) IS TRUE
+          AND COALESCE(is_monitor, FALSE) IS NOT TRUE
+          AND COALESCE(is_contract_snapshot, FALSE) IS NOT TRUE
+        ORDER BY LOWER(test_suite)
+        """,
+        params={"tg_id": table_group_id},
+    )
+    if not rows:
+        click.echo("No in-scope test suites found for this table group.", err=True)
+        raise SystemExit(1)
+
+    click.echo(f"Running tests for {len(rows)} suite(s) in table group {table_group_id}:")
+    errors: list[str] = []
+    for row in rows:
+        suite_id = row["suite_id"]
+        suite_name = row["suite_name"]
+        click.echo(f"  · {suite_name} ({suite_id})")
+        try:
+            message = run_test_execution(suite_id)
+            click.echo(f"    {message.strip()}")
+        except Exception as exc:  # noqa: BLE001
+            err_msg = f"    FAILED: {exc}"
+            click.echo(err_msg, err=True)
+            errors.append(f"{suite_name}: {exc}")
+
+    if errors:
+        click.echo(f"\n{len(errors)} suite(s) failed:", err=True)
+        for e in errors:
+            click.echo(f"  · {e}", err=True)
+        raise SystemExit(1)
+    click.echo("\nAll suites completed successfully.")
+
+
 @click.option(
     "--path",
     help="Path to the templates folder. Defaults to path from project root.",

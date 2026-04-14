@@ -48,4 +48,6 @@
  * @property {number} last_run_log_ct
  * @property {number} last_run_dismissed_ct
  * @property {MonitorSummary?} monitoring_summary
+ * @property {boolean} is_contract_snapshot
+ * @property {boolean} include_in_contract
  */

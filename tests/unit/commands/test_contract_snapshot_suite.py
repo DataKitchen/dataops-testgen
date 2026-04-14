@@ -345,3 +345,71 @@ class Test_SyncImportToSnapshotSuite:
         assert "INSERT" in sql_types
         assert "UPDATE" in sql_types
         assert "DELETE" in sql_types
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for snapshot suite creation / rollback behaviour
+# ---------------------------------------------------------------------------
+
+class Test_CreateContractSnapshotSuiteRegression:
+    """Regression tests targeting the silent-failure bug where a non-ValueError
+    exception from create_contract_snapshot_suite was swallowed by the outer
+    try/except in the save/regenerate dialogs, leaving an orphaned contract
+    version with snapshot_suite_id = NULL."""
+
+    def test_create_contract_snapshot_suite_creates_suite(self):
+        """create_contract_snapshot_suite calls fetch_dict_from_db and
+        execute_db_queries with the expected parameters when in-scope tests exist."""
+        from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
+
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=_make_fetch_side_effect("Regression Group", source_count=3)) as mock_fetch, \
+             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
+                   return_value=([], [])) as mock_exec:
+            create_contract_snapshot_suite(TG_ID, version=1)
+
+        # fetch_dict_from_db must be called exactly 3 times (tg lookup, count, suite lookup)
+        assert mock_fetch.call_count == 3
+
+        # execute_db_queries must be called exactly once with 3 SQL statements
+        assert mock_exec.call_count == 1
+        queries = mock_exec.call_args[0][0]
+        assert len(queries) == 3
+
+        # The shared params dict must contain the table group id and version
+        params = queries[0][1]
+        assert params["tg_id"] == TG_ID
+        assert params["version"] == 1
+        assert params["suite_name"] == "[Contract v1] Regression Group"
+        assert params["new_suite_id"] == NEW_SUITE_ID
+
+    def test_create_contract_snapshot_suite_raises_when_no_tests(self):
+        """create_contract_snapshot_suite raises ValueError (not silently returns)
+        when the count of in-scope test definitions is zero."""
+        from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
+
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=_make_fetch_side_effect(source_count=0)), \
+             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
+                   return_value=([], [])) as mock_exec:
+            with pytest.raises(ValueError, match="No in-scope tests"):
+                create_contract_snapshot_suite(TG_ID, version=0)
+
+        # execute_db_queries must NOT have been called — no partial inserts
+        mock_exec.assert_not_called()
+
+    def test_create_snapshot_suite_returns_suite_id(self):
+        """create_contract_snapshot_suite returns the new suite UUID as a string."""
+        import uuid as _uuid
+        from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
+
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=_make_fetch_side_effect(source_count=2)), \
+             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
+                   return_value=([], [])):
+            result = create_contract_snapshot_suite(TG_ID, version=5)
+
+        # The return value must be a valid UUID string
+        assert isinstance(result, str)
+        parsed = _uuid.UUID(result)  # raises ValueError if not valid UUID
+        assert str(parsed) == result

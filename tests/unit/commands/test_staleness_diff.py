@@ -200,8 +200,8 @@ class Test_SchemaDiff:
             tables=[_make_table_schema("orders", [{"name": "id", "physicalType": "INTEGER"}])]
         )
         db_rows = [
-            {"table_name": "orders", "column_name": "id",    "data_type": "INTEGER"},
-            {"table_name": "orders", "column_name": "email", "data_type": "VARCHAR"},
+            {"table_name": "orders", "column_name": "id",    "db_data_type": "INTEGER"},
+            {"table_name": "orders", "column_name": "email", "db_data_type": "VARCHAR"},
         ]
         diff = self._run(saved, db_rows)
         added = [c for c in diff.schema_changes if c["change"] == "added"]
@@ -217,7 +217,7 @@ class Test_SchemaDiff:
             ])]
         )
         db_rows = [
-            {"table_name": "orders", "column_name": "id", "data_type": "INTEGER"},
+            {"table_name": "orders", "column_name": "id", "db_data_type": "INTEGER"},
         ]
         diff = self._run(saved, db_rows)
         removed = [c for c in diff.schema_changes if c["change"] == "removed"]
@@ -230,7 +230,7 @@ class Test_SchemaDiff:
             tables=[_make_table_schema("orders", [{"name": "id", "physicalType": "INTEGER"}])]
         )
         db_rows = [
-            {"table_name": "orders", "column_name": "id", "data_type": "BIGINT"},
+            {"table_name": "orders", "column_name": "id", "db_data_type": "BIGINT"},
         ]
         diff = self._run(saved, db_rows)
         changed = [c for c in diff.schema_changes if c["change"] == "changed"]
@@ -242,7 +242,7 @@ class Test_SchemaDiff:
             tables=[_make_table_schema("orders", [{"name": "id", "physicalType": "INTEGER"}])]
         )
         db_rows = [
-            {"table_name": "orders", "column_name": "id", "data_type": "INTEGER"},
+            {"table_name": "orders", "column_name": "id", "db_data_type": "INTEGER"},
         ]
         diff = self._run(saved, db_rows)
         assert diff.schema_changes == []

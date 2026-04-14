@@ -199,3 +199,24 @@ def mark_contract_not_stale(table_group_id: str) -> None:
             )
         ]
     )
+
+
+@with_database_session
+def rollback_contract_version(table_group_id: str, version: int) -> None:
+    """
+    Delete a just-created contract version when the paired snapshot suite creation failed.
+
+    Unlike delete_contract_version (in contract_snapshot_suite.py), this function has no
+    minimum-version guard — it is only called immediately after save_contract_version to
+    undo an orphaned row when snapshot creation failed before snapshot_suite_id was set.
+    """
+    schema = get_tg_schema()
+    execute_db_queries([(
+        f"DELETE FROM {schema}.data_contracts "
+        "WHERE table_group_id = CAST(:tg_id AS uuid) AND version = :version",
+        {"tg_id": table_group_id, "version": version},
+    )])
+    LOG.info(
+        "Rolled back orphaned contract version %d for table group %s",
+        version, table_group_id,
+    )

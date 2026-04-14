@@ -1,6 +1,28 @@
+
+
+
+
 # Data Contract Feature Reference
 
 The Data Contract feature surfaces TestGen test suites as a formal, exportable data contract mapped to ODCS v3.1.0 YAML. It provides a health dashboard with top-level coverage, diff, and compliance cards; a coverage matrix across all schema columns organized by enforcement tier; inline term editing via modals; YAML export and import; bulk multi-select term deletion; and contract term difference tracking comparing the saved YAML snapshot against the current live TestGen state. Page entry point: `?table_group_id=<uuid>` on page key `data-contract`.
+
+---
+
+## Overview / Goals
+
+The primary goal of the Data Contract feature is to produce a **stable, versioned data contract** — a point-in-time snapshot of agreed-upon data quality terms. A saved contract version is intentionally static: it does not auto-update when the underlying test suites change. The snapshot test suite (`[Contract vN] <table_group_name>`) holds the frozen test definitions for that version and is the authoritative record of what was contracted at that moment.
+
+There are exactly three supported paths to creating or updating a contract:
+
+1. **Start from existing tests** — The user begins with existing TestGen test suites for a table group, edits contract terms in the UI (adding, modifying, or deleting terms via the term detail panel and modals), and then clicks **Save version**. Saving creates a new snapshot test suite that freezes the contract state at that point in time.
+
+2. **Upload YAML** — The user uploads an ODCS v3.1.0 YAML file directly. TestGen imports the rules, creates or updates test definitions, and syncs the snapshot suite. The resulting contract is static once imported; tests do not change unless the user uploads a revised YAML or edits terms in the UI.
+
+3. **Round-trip editing** — The user downloads the contract YAML, edits it externally (e.g., in an IDE or with a team to agree on thresholds and rules), and re-uploads the modified YAML. This is the preferred path for collaborative contract authoring. Each re-upload is applied against the current version's snapshot suite; the user then saves a new version when the round-trip is complete.
+
+In all three cases the output is the same artifact: a versioned, frozen snapshot backed by a dedicated `is_contract_snapshot = TRUE` test suite. The diff, staleness, and compliance views compare the live TestGen state against this frozen snapshot — not against a rolling live view.
+
+**Regenerate** creates a fresh version from the current live DB state (new snapshot suite, version bump). Use it when the user wants to re-baseline the contract from the current test suite state, not to apply targeted edits.
 
 ---
 
@@ -88,6 +110,43 @@ The Data Contract feature surfaces TestGen test suites as a formal, exportable d
 
 ---
 
+## UI Tests (AppTest)
+
+Streamlit's `AppTest` framework is used to exercise the Data Contract page without a running browser or live database.
+
+### Running the tests
+
+```bash
+pytest -m functional tests/functional/ui/test_data_contract_apptest.py
+```
+
+### App script
+
+`tests/functional/ui/apps/data_contract_first_time_flow.py`
+
+This standalone script is loaded by `AppTest.from_file()`. Because `AppTest` re-executes the script from the top on every `at.run()` call, all patches are applied fresh each time. The script:
+
+- Stubs `streamlit.components.v1.declare_component` and the `testgen.ui.components.utils.component` / `testgen.ui.components.widgets.testgen_component` modules before any TestGen imports, so custom JS components do not attempt to register in the sandboxed environment.
+- Sets `st.query_params["table_group_id"]` and `st.session_state["auth"]` to bypass authentication and supply the required page parameter.
+- Patches all external I/O: `TableGroup.get_minimal`, `_check_contract_prerequisites`, `_capture_yaml`, `_fetch_test_statuses`, `_fetch_anomalies`, and all save-dialog dependencies (`save_contract_version`, `create_contract_snapshot_suite`, `_persist_pending_edits`, `safe_rerun`).
+- Instantiates `DataContractPage` directly and calls `render(table_group_id=TG_ID)`.
+
+### Test classes
+
+| Class | Tests | What it covers |
+|---|---|---|
+| `Test_DataContractPageLoad` | 3 | Page renders without exception; table group name flows to save dialog info message; `table_group_id` query param is correctly set in AppTest |
+| `Test_FirstTimeFlow` | 4 | "No contract saved yet" heading appears; profiling and test-suite prerequisite rows show green; "Generate Contract Preview →" button is present and enabled when prerequisites pass |
+| `Test_GeneratePreview` | 4 | Clicking "Generate Contract Preview →" shows preview content including a Coverage card; "Save as Version 0" button appears after preview; "← Back" returns to the prerequisites screen |
+| `Test_SaveDialog` | 5 | Save dialog opens without exception; confirms "Version 0"; shows snapshot suite name `[Contract v0] Test Orders`; contains both "Save Version" and "Cancel" buttons |
+
+### AppTest limitations
+
+- **`st.html` not accessible** — the page header title is rendered via `st.html` which `AppTest` cannot inspect. Tests verify the table group name indirectly by checking that it appears in the save dialog info message.
+- **JS components not executable** — the VanJS frontend (`data_contract.js`) and custom component iframes do not run inside `AppTest`. Navigation from the project dashboard to the contract page (which uses a `ViewContractClicked` JS event) is simulated by setting `table_group_id` directly as a query parameter, matching exactly what the browser does after that click.
+
+---
+
 ## DB Schema
 
 | Column | Table | Type | Purpose |
@@ -112,7 +171,9 @@ When a contract version is saved, a **snapshot test suite** (`[Contract vN] {tab
 |---|---|---|
 | **Save ● (n)** | Pending edits exist in session state | In-place update — `update_contract_version` rewrites YAML for the current version; no new snapshot suite, no version bump |
 | **Save version** | No pending edits | Creates a new version + new snapshot suite via `create_contract_snapshot_suite` |
-| **Regenerate** | Always | Regenerates YAML from live DB state, saves as a new version + new snapshot suite |
+| **Regenerate** | Always | Re-baselines the contract from the current live DB state; saves as a new version + new snapshot suite. Not for targeted edits — use UI edits or YAML round-trip for those. |
+
+**Save ● (n)** is the only action that modifies an existing snapshot in place (YAML rewrite, no version bump). It only fires while uncommitted edits are held in session state, so the snapshot suite itself remains consistent with the YAML at all times. Once **Save version** is clicked, the resulting snapshot is fully frozen — no further in-place rewrites occur on that version.
 
 ### Snapshot suite filters
 
