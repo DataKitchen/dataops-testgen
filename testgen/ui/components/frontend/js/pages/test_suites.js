@@ -226,7 +226,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         disabled: !parseInt(testSuite.test_ct),
                                         onclick: () => emitEvent('RunTestsClicked', {payload: testSuite.id}),
                                     }) : '',
-                                    Button({
+                                    testSuite.has_contract ? Button({
                                         label: 'View Data Contract',
                                         color: 'primary',
                                         type: 'stroked',
@@ -238,7 +238,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                                 ...(testSuite.contract_version != null ? { version: testSuite.contract_version } : {}),
                                             },
                                         }),
-                                    }),
+                                    }) : '',
                                 ]
                                 : userCanEdit
                                 ? [
