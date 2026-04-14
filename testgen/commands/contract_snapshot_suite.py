@@ -30,7 +30,6 @@ def create_contract_snapshot_suite(table_group_id: str, version: int) -> str:
     """
     schema = get_tg_schema()
 
-    # 1. Look up table_group_name
     tg_rows = fetch_dict_from_db(
         f"SELECT table_groups_name FROM {schema}.table_groups WHERE id = CAST(:tg_id AS uuid)",
         params={"tg_id": table_group_id},
@@ -39,7 +38,6 @@ def create_contract_snapshot_suite(table_group_id: str, version: int) -> str:
         raise ValueError(f"Table group {table_group_id} not found")
     table_group_name: str = tg_rows[0]["table_groups_name"] or ""
 
-    # 2. Check that source test definitions exist in scope
     check_rows = fetch_dict_from_db(
         f"""
         SELECT COUNT(*) AS ct
@@ -58,7 +56,6 @@ def create_contract_snapshot_suite(table_group_id: str, version: int) -> str:
             "No in-scope tests found. Add tests to at least one contract suite before saving."
         )
 
-    # 3. Look up connection_id, project_code, severity from first source suite
     suite_rows = fetch_dict_from_db(
         f"""
         SELECT connection_id, project_code, severity
@@ -79,7 +76,6 @@ def create_contract_snapshot_suite(table_group_id: str, version: int) -> str:
     new_suite_id = str(uuid.uuid4())
     suite_name = f"[Contract v{version}] {table_group_name}"
 
-    # 4. Execute all three statements atomically
     insert_suite_sql = f"""
         INSERT INTO {schema}.test_suites (
             id, test_suite, project_code, connection_id, table_groups_id,
@@ -423,7 +419,6 @@ def delete_contract_version(table_group_id: str, version: int) -> None:
     """
     schema = get_tg_schema()
 
-    # 1. Check that more than one version exists
     count_rows = fetch_dict_from_db(
         f"SELECT COUNT(*) AS ct FROM {schema}.data_contracts WHERE table_group_id = CAST(:tg_id AS uuid)",
         params={"tg_id": table_group_id},
@@ -432,7 +427,6 @@ def delete_contract_version(table_group_id: str, version: int) -> None:
     if version_count <= 1:
         raise ValueError("Cannot delete the only saved version")
 
-    # 2. Fetch snapshot_suite_id for this version
     ver_rows = fetch_dict_from_db(
         f"""
         SELECT snapshot_suite_id::text AS snapshot_suite_id
@@ -446,7 +440,6 @@ def delete_contract_version(table_group_id: str, version: int) -> None:
     if ver_rows and ver_rows[0].get("snapshot_suite_id"):
         snapshot_suite_id = str(ver_rows[0]["snapshot_suite_id"])
 
-    # 3. Build deletion queries
     queries: list[tuple[str, dict]] = []
 
     if snapshot_suite_id:

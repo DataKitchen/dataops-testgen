@@ -18,10 +18,8 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-from testgen.ui.queries.data_contract_queries import (
-    _GOVERNANCE_ALLOWED_FIELDS,
-    _GOVERNANCE_LABEL_TO_FIELD,
-)
+from testgen.ui.queries.data_contract_queries import _GOVERNANCE_LABEL_TO_FIELD
+from testgen.ui.queries.profiling_queries import COLUMN_GOVERNANCE_FIELDS as _GOVERNANCE_ALLOWED_FIELDS
 from testgen.ui.views.data_contract_yaml import _delete_term_yaml_patch
 
 

@@ -31,7 +31,7 @@ _TAG_FIELDS: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 # TestGen functional_data_type → ODCS logicalType
-_FUNCTIONAL_TO_LOGICAL: dict[str, str] = {
+FUNCTIONAL_TYPE_TO_LOGICAL: dict[str, str] = {
     "Date Stamp": "date",
     "DateTime Stamp": "timestamp",
     "Process Date Stamp": "date",
@@ -84,8 +84,6 @@ _FUNCTIONAL_TO_LOGICAL: dict[str, str] = {
     "Attribute": "string",
     "Description": "string",
 }
-
-FUNCTIONAL_TYPE_TO_LOGICAL = _FUNCTIONAL_TO_LOGICAL
 
 # TestGen std_pattern_match → ODCS logicalTypeOptions.format
 _PATTERN_TO_FORMAT: dict[str, str] = {
@@ -542,7 +540,7 @@ def _build_schema(columns: list[dict]) -> list[dict]:
     for table_name, cols in tables.items():
         properties = []
         for col in cols:
-            logical_type = _FUNCTIONAL_TO_LOGICAL.get(col.get("functional_data_type") or "", "string")
+            logical_type = FUNCTIONAL_TYPE_TO_LOGICAL.get(col.get("functional_data_type") or "", "string")
             prop: dict[str, Any] = {
                 "name": col["column_name"],
                 "description": _nonempty(col.get("description")),

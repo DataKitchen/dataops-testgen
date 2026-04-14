@@ -17,10 +17,6 @@ from testgen.common.models import with_database_session
 from testgen.ui.queries.profiling_queries import COLUMN_GOVERNANCE_FIELDS, TAG_FIELDS
 
 _log = logging.getLogger(__name__)
-LOG  = logging.getLogger("testgen")
-
-# Allowlist for governance field writes — mirrors COLUMN_GOVERNANCE_FIELDS
-_GOVERNANCE_ALLOWED_FIELDS: frozenset[str] = COLUMN_GOVERNANCE_FIELDS
 
 # Complete label → (db_column, null/reset value) for all deletable governance terms.
 # Bool fields reset to False; string/enum fields reset to None.
@@ -95,7 +91,7 @@ def _fetch_anomalies(table_group_id: str) -> list[dict]:
     try:
         return [dict(row) for row in fetch_dict_from_db(sql, params={"tg_id": table_group_id})]
     except Exception:
-        LOG.warning("_fetch_anomalies failed for tg_id=%s", table_group_id, exc_info=True)
+        _log.warning("_fetch_anomalies failed for tg_id=%s", table_group_id, exc_info=True)
         return []
 
 
@@ -131,7 +127,7 @@ def _fetch_suite_scope(table_group_id: str, snapshot_suite_id: str | None = None
         excluded = [r["test_suite"] for r in rows if not r["include_in_contract"]]
         return {"included": included, "excluded": excluded, "total": len(rows)}
     except Exception:
-        LOG.warning("_fetch_suite_scope failed for tg_id=%s", table_group_id, exc_info=True)
+        _log.warning("_fetch_suite_scope failed for tg_id=%s", table_group_id, exc_info=True)
         return {"included": [], "excluded": [], "total": 0}
 
 
@@ -163,7 +159,7 @@ def _fetch_governance_data(table_group_id: str) -> dict[tuple[str, str], dict]:
         rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id})
         return {(r["table_name"], r["column_name"]): dict(r) for r in (rows or [])}
     except Exception:
-        LOG.warning("_fetch_governance_data failed for tg_id=%s", table_group_id, exc_info=True)
+        _log.warning("_fetch_governance_data failed for tg_id=%s", table_group_id, exc_info=True)
         return {}
 
 
@@ -183,7 +179,7 @@ def _lookup_column_id(table_group_id: str, table_name: str, col_name: str) -> st
         rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id, "tbl": table_name, "col": col_name})
         return (rows[0]["column_id"] or "") if rows else ""
     except Exception:
-        LOG.warning("_lookup_column_id failed", exc_info=True)
+        _log.warning("_lookup_column_id failed", exc_info=True)
         return ""
 
 
@@ -229,7 +225,7 @@ def _fetch_test_live_info(test_def_id: str) -> dict:
             "type_description": row.get("type_description") or "",
         }
     except Exception:
-        LOG.warning("_fetch_test_live_info failed for test_def_id=%s", test_def_id, exc_info=True)
+        _log.warning("_fetch_test_live_info failed for test_def_id=%s", test_def_id, exc_info=True)
         return {}
 
 
@@ -419,15 +415,15 @@ def _fetch_last_run_dates(table_group_id: str, snapshot_suite_id: str | None = N
 def _save_governance_data(column_id: str, updates: dict) -> None:
     """Persist governance field updates to data_column_chars."""
     if not column_id:
-        LOG.warning("_save_governance_data called with empty column_id — skipping")
+        _log.warning("_save_governance_data called with empty column_id — skipping")
         return
     schema     = get_tg_schema()
     set_clauses: list[str] = []
     params: dict = {"col_id": column_id}
     bool_fields  = {"critical_data_element", "excluded_data_element"}
     for key, val in updates.items():
-        if key not in _GOVERNANCE_ALLOWED_FIELDS:
-            LOG.warning("_save_governance_data: ignoring unknown field %r", key)
+        if key not in COLUMN_GOVERNANCE_FIELDS:
+            _log.warning("_save_governance_data: ignoring unknown field %r", key)
             continue
         if key in bool_fields:
             set_clauses.append(f"{key} = :{key}")
@@ -455,7 +451,7 @@ def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
     Called when the user saves a new contract version so that the DB reflects
     every in-memory edit captured during the session.
     """
-    from testgen.commands.odcs_contract import _ALLOWED_TEST_COLS
+    from testgen.commands.odcs_contract import _ALLOWED_TEST_UPDATE_COLS as _ALLOWED_TEST_COLS
 
     schema = get_tg_schema()
 
@@ -501,15 +497,15 @@ def _persist_governance_deletion(
 ) -> None:
     """Write a governance term deletion directly to data_column_chars so it survives the next export."""
     if not col_name:
-        LOG.warning("_persist_governance_deletion: col_name is empty for term %r — governance terms are column-scoped only", term_name)
+        _log.warning("_persist_governance_deletion: col_name is empty for term %r — governance terms are column-scoped only", term_name)
         return
     entry = _GOVERNANCE_LABEL_TO_FIELD.get(term_name)
     if not entry:
-        LOG.warning("_persist_governance_deletion: unknown governance term %r — skipping", term_name)
+        _log.warning("_persist_governance_deletion: unknown governance term %r — skipping", term_name)
         return
     db_col, db_val = entry
-    if db_col not in _GOVERNANCE_ALLOWED_FIELDS:
-        LOG.error("_persist_governance_deletion: column %r not in allowlist — aborting", db_col)
+    if db_col not in COLUMN_GOVERNANCE_FIELDS:
+        _log.error("_persist_governance_deletion: column %r not in allowlist — aborting", db_col)
         return
     schema = get_tg_schema()
     execute_db_queries([(

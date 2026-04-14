@@ -108,6 +108,44 @@ In all three cases the output is the same artifact: a versioned, frozen snapshot
 
 **YAML caching:** Contract YAML is cached in `st.session_state[yaml_key]`. Test run results are not cached — fetched fresh from DB on each render.
 
+### JS Events (JS → Python)
+
+All live events go through `event_handlers` (supports `st.rerun()`):
+
+| Event | Payload | Handler |
+|---|---|---|
+| `EditRuleClicked` | `{ rule_id }` | Open `@st.dialog` for test term edit |
+| `TermDetailClicked` | `{ term, tableName, colName }` | Open `@st.dialog` for governance or read-only term view |
+| `SuitePickerClicked` | — | Open `@st.dialog` suite picker (include/exclude suites) |
+| `GovernanceEditClicked` | `{ tableName, colName }` | Open `@st.dialog` for governance term edit |
+| `BulkDeleteTermsClicked` | `{ terms: [...] }` | Multi-select bulk delete; each term carries `{table, col, source, name, rule_id}` |
+| `ImportContractClicked` | `{ fileContent }` | Upload tab sends YAML text; Python calls `run_import_contract` and displays diff |
+| `AddTestClicked` | `{ tableName, colName }` | Opens `add_test_dialog` for creating new tests via the data contract UI |
+
+### Unit Tests
+
+**600 data-contract unit tests; 1125 total unit tests** (as of current branch state).
+
+| File | Lines | Covers |
+|---|---|---|
+| `tests/unit/commands/test_data_contract_export.py` | 107 | Export mapping, anomaly criteria, YAML output |
+| `tests/unit/commands/test_odcs_contract.py` | 137 | Import validation, diff, apply, CREATE/UPDATE/WRITE-BACK round-trip |
+| `tests/unit/ui/test_data_contract_page.py` | 67 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
+| `tests/unit/ui/test_contract_pending_edits.py` | 29 | Pending edit accumulation, YAML patching, persistence helpers |
+| `tests/unit/ui/test_contract_term_deletion.py` | 23 | All 13 deletable term types across DDL (4), Profiling (6), Governance (3); error cases; sibling-column isolation |
+| `tests/unit/ui/test_bulk_delete_terms.py` | 20 | Multi-select bulk delete across governance, test, and hygiene term types |
+| `tests/unit/commands/test_contract_staleness.py` | 41 | `compute_staleness_diff` — schema, quality, governance, and suite scope diffs |
+| `tests/unit/commands/test_contract_versions.py` | 18 | `save_contract_version`, `load_contract_version`, `list_contract_versions`, staleness marking |
+| `tests/unit/commands/test_staleness_diff.py` | 22 | Threshold comparison helpers; range vs scalar; float/string normalization |
+| `tests/unit/commands/test_staleness_detection.py` | 5 | Staleness trigger integration |
+| `tests/unit/commands/test_contract_snapshot_suite.py` | 415 | `create_contract_snapshot_suite`, `sync_import_to_snapshot_suite`, `delete_contract_version` |
+| `tests/unit/commands/test_delete_contract_version.py` | 118 | Delete contract version cleanup and cascade behavior |
+| `tests/unit/commands/test_data_contract_cli.py` | 264 | `create-contract` and `run-contract-tests` CLI commands |
+| `tests/unit/commands/test_staleness_diff_snapshot.py` | 170 | Staleness diff with snapshot suite quality suppression |
+| `tests/unit/ui/test_contract_on_term_detail_snapshot.py` | 127 | Term detail snapshot rendering |
+| `tests/unit/ui/test_contract_dialog_warnings.py` | 173 | Dialog warning states and confirmation flows |
+| `tests/unit/ui/test_contract_query_exclusions.py` | 96 | Snapshot suite filter exclusions in all DB queries |
+
 ---
 
 ## UI Tests (AppTest)
@@ -157,7 +195,7 @@ This standalone script is loaded by `AppTest.from_file()`. Because `AppTest` re-
 | `snapshot_suite_id` | `data_contracts` | `UUID REFERENCES test_suites(id) ON DELETE SET NULL` | Links each saved contract version to its paired snapshot test suite |
 | `source_test_definition_id` | `test_definitions` | `UUID` | On snapshot suite rows, points back to the source test definition that was copied; no FK constraint |
 
-Migrations: `testgen/template/dbupgrade/0183_incremental_upgrade.sql` (include_in_contract), `testgen/template/dbupgrade/0185_incremental_upgrade.sql` (snapshot columns)
+Migrations: `testgen/template/dbupgrade/0183_incremental_upgrade.sql` (include_in_contract), `testgen/template/dbupgrade/0185_incremental_upgrade.sql` (`is_contract_snapshot` on `test_suites`, `snapshot_suite_id` on `data_contracts`, `source_test_definition_id` on `test_definitions`)
 
 ---
 
@@ -211,6 +249,66 @@ The `AddTestButton` component is rendered in each `ColumnRow` in `data_contract.
 ### Staleness diff — quality suppression
 
 `compute_staleness_diff` accepts `snapshot_suite_id: str | None`. When non-null, `quality_changes = []` (tests are locked to the snapshot suite and always in sync). Schema, governance, and suite-scope changes are still computed.
+
+---
+
+## CLI Interface
+
+```bash
+# Export to stdout
+testgen export-data-contract -t <table-group-id>
+
+# Export to file
+testgen export-data-contract -t <table-group-id> -o orders_contract.yaml
+
+# Import from file
+testgen import-data-contract -t <table-group-id> -f orders_contract.yaml
+
+# Dry run — preview changes without applying
+testgen import-data-contract -t <table-group-id> -f orders_contract.yaml --dry-run
+
+# Create a brand-new contract for a table group from an ODCS YAML file
+testgen create-contract -tg <table-group-id> -i orders_contract.yaml [--label "v1 baseline"]
+
+# Run all in-scope (non-snapshot, non-monitor) test suites for a table group's contract
+testgen run-contract-tests -tg <table-group-id>
+```
+
+Both `export-data-contract` and `import-data-contract` automatically respect the `include_in_contract` flag — no additional arguments required.
+
+`run-contract-tests` queries `test_suites` where `include_in_contract IS TRUE AND is_monitor IS NOT TRUE AND is_contract_snapshot IS NOT TRUE`, runs each suite via `run_test_execution`, and exits non-zero if any suite fails.
+
+Python API:
+```python
+from testgen.commands.odcs_contract import run_import_contract
+
+diff = run_import_contract(yaml_content, table_group_id, dry_run=True)
+print(diff.summary())
+
+diff = run_import_contract(yaml_content, table_group_id, dry_run=False)
+```
+
+---
+
+## Implementation Notes
+
+### Shared Utilities
+
+`_pii_flag_to_classification(pii_flag: str) -> str` lives in `export_data_contract.py` and is imported by `contract_staleness.py`. Do not duplicate this mapping.
+
+### HTML Escaping
+
+All user-sourced strings rendered inside term cards (descriptions, classification values, test threshold expressions) must use `html.escape(value, quote=True)`. Never use manual `.replace("<", "&lt;")` chains — they miss `&`, `"`, and `'`.
+
+### SQL Safety
+
+Never f-string-interpolate UUIDs or user-supplied values into SQL. Use parameterized queries (`%s` placeholders with a parameters tuple). This applies to `_fetch_anomalies` and all other query helpers in `data_contract_queries.py`.
+
+Use `CAST(:x AS uuid)` — never `::uuid` — in SQLAlchemy queries (conflicts with `:param` binding syntax).
+
+### Logging
+
+Use `_log = logging.getLogger(__name__)` consistently throughout all data contract modules. Do not mix `_log` with the uppercase `LOG` pattern used elsewhere. Silent exception swallowing (`bare except: pass`) must log at `WARNING` level with `exc_info=True` before returning.
 
 ---
 
@@ -2034,6 +2132,16 @@ No new files. No DB schema changes.
 
 ---
 
+## Recently Completed
+
+### Contract Snapshot Suite
+
+When a contract version is saved, a frozen test suite (`[Contract vN] {table_group_name}`) is automatically created and linked to that version via `data_contracts.snapshot_suite_id`. All in-scope tests are copied into the snapshot suite with `source_test_definition_id` pointing back to the originals. Mutations (add/update/delete) applied through the contract UI are immediately mirrored to the snapshot suite. The snapshot suite has `is_contract_snapshot = TRUE` and is excluded from all source-suite queries. See the [Contract Snapshot Suite](#contract-snapshot-suite) section above for full details.
+
+Test coverage: `tests/unit/commands/test_contract_snapshot_suite.py` (415 lines), `tests/unit/commands/test_delete_contract_version.py` (118 lines).
+
+---
+
 ## Planned Work (To-Do)
 
 ### 1. Create New Contract Terms Directly from the UI
@@ -2056,18 +2164,7 @@ Users should be able to author a new quality test (e.g. `Missing_Pct`, `LOV_Matc
 
 ---
 
-### 3. Freeze a New Test Suite on Contract Save
-
-When the user saves a contract version snapshot, automatically create a new frozen test suite containing exactly the tests referenced by that contract version. This gives a stable, reproducible test run baseline tied to each contract version.
-
-**Open questions:**
-- Is the frozen suite read-only (no add/remove), or just a named snapshot that can be cloned?
-- Should `include_in_contract` be set to `FALSE` on frozen suites so they don't pollute the live contract view?
-- Naming convention: e.g. `<table_group_name>_contract_v<N>`?
-
----
-
-### 4. Flag TestGen-Only Tests Not Part of the ODCS Standard
+### 3. Flag TestGen-Only Tests Not Part of the ODCS Standard
 
 Some TestGen test types (e.g. `Avg_Shift`, `Distribution_Shift`, `Schema_Drift`, `Aggregate_Balance`) have no equivalent in the ODCS v3.1.0 `library` metric vocabulary. When saved to a contract or displayed in the contract view, these tests should be clearly labeled as "TestGen extension" so contract consumers understand they are not portable to other ODCS-compatible tools.
 
@@ -2078,7 +2175,7 @@ Some TestGen test types (e.g. `Avg_Shift`, `Distribution_Shift`, `Schema_Drift`,
 
 ---
 
-### 5. ~~Governance Fields Writable on YAML Import~~ ✅ Implemented
+### 4. ~~Governance Fields Writable on YAML Import~~ ✅ Implemented
 
 The `schema` section now round-trips fully. `compute_import_diff` in `odcs_contract.py` reads governance fields from `schema[].properties[]` — both ODCS standard fields (`description`, `criticalDataElement`, `classification`) and `customProperties[testgen.*]` entries (`pii_flag`, `data_source`, `source_system`, etc.) — and adds them to `ContractDiff.governance_updates`. `apply_import_diff` writes those updates to `data_column_chars` through an allowlist-guarded UPDATE path.
 
@@ -2090,7 +2187,7 @@ The `schema` section now round-trips fully. `compute_import_diff` in `odcs_contr
 
 ---
 
-### 6. Test Deletion via YAML Import
+### 5. Test Deletion via YAML Import
 
 Currently, omitting a rule from an uploaded YAML that exists in the DB produces an orphan warning and no action. For users treating the YAML as source of truth, there is no supported way to delete a test via the import path. This should be a deliberate opt-in (e.g. a `--allow-deletes` flag or a document-level `allowDeletions: true` field) to avoid accidental data loss.
 
@@ -2101,7 +2198,7 @@ Currently, omitting a rule from an uploaded YAML that exists in the DB produces 
 
 ---
 
-### 7. Version-to-Version Diff
+### 6. Version-to-Version Diff
 
 Today the Contract Term Differences tab always compares the selected saved version against the current live TestGen state. There is no way to compare two saved snapshots against each other (e.g. v3 vs. v7) to understand how the contract evolved over time. This would let users audit changes between releases or reviews.
 
@@ -2111,7 +2208,7 @@ Today the Contract Term Differences tab always compares the selected saved versi
 
 ---
 
-### 8. Bulk Governance Edit
+### 7. Bulk Governance Edit
 
 The multi-select delete feature allows bulk removal of terms. The symmetric operation — selecting multiple columns and setting a governance field value across all of them at once (e.g. marking 10 columns as CDE, or setting a shared business domain) — does not exist. It would reuse the existing selection mode infrastructure in `data_contract.js`.
 
@@ -2122,18 +2219,13 @@ The multi-select delete feature allows bulk removal of terms. The symmetric oper
 
 ---
 
-### 9. Run Contract Tests from the Contract Page
+### 8. ~~Run Contract Tests from the Contract Page~~ ✅ Implemented (CLI)
 
-There is no way to trigger a test run scoped to the contract's included suites from within the contract page. Users must navigate to the test suites view to kick off execution. A "Run Contract Tests" action that launches execution for all `include_in_contract = TRUE` suites for the table group would close the loop between viewing contract health and acting on it.
-
-**Open questions:**
-- Should the run be synchronous (show a spinner) or fire-and-forget with a status banner?
-- Should it run all included suites, or let the user pick which suites to run?
-- Reuse the existing `testgen run-tests` CLI path or add a contract-scoped wrapper?
+`testgen run-contract-tests -tg <table-group-id>` runs all in-scope suites. A UI trigger from within the contract page remains a potential future enhancement.
 
 ---
 
-### 10. Contract Compliance Notifications
+### 9. Contract Compliance Notifications
 
 When a saved contract's test results degrade — tests that were passing begin failing after a run — there is no alert. The email notification infrastructure already exists in `testgen/common/notifications/`. A contract-specific notification that fires when `tg_test_failed` or `tg_monitor_failed` goes above zero (relative to the saved version's last-known-good state) would be a low-cost addition.
 
@@ -2144,7 +2236,7 @@ When a saved contract's test results degrade — tests that were passing begin f
 
 ---
 
-### 11. YAML Session State Staleness Detection
+### 10. YAML Session State Staleness Detection
 
 The contract YAML cached in `st.session_state` can silently diverge from the DB if tests are edited from the test suites page in another browser tab during the same session. The existing staleness banner detects saved-version vs. current-TestGen drift, but not session-cache vs. DB drift. A lightweight DB fingerprint check (e.g. comparing the max `last_modified` timestamp of `test_definitions` for the table group against a value captured at page load) could detect this and prompt the user to reload.
 
@@ -2154,7 +2246,7 @@ The contract YAML cached in `st.session_state` can silently diverge from the DB 
 
 ---
 
-### 12. Coverage Quality Distinction
+### 11. Coverage Quality Distinction
 
 The Coverage card currently counts a column as "covered" if it has any non-schema term, including observed DDL terms like `physicalType`. A column with only a data type observed during profiling but no quality assertion is counted as covered. A finer breakdown — "has at least one quality test" vs. "has only schema/governance terms" — would make the coverage metric more meaningful for assessing actual test coverage.
 

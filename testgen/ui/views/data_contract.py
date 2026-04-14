@@ -77,9 +77,6 @@ from testgen.ui.views.dialogs.data_contract_dialogs import (
 PAGE_TITLE = "Data Contract"
 PAGE_ICON = "contract"
 
-# Re-exported for test compatibility (tests/unit/ui/test_data_contract_page.py imports this symbol)
-ContractDiff = OdcsContractDiff
-
 
 def _get_snapshot_test_count(snapshot_suite_id: str) -> int:
     schema = get_tg_schema()
@@ -597,8 +594,9 @@ class DataContractPage(Page):
         import_key      = f"dc_import_result:{table_group_id}"
         run_dates_key   = f"dc_run_dates:{table_group_id}"
         gov_key         = f"dc_gov:{table_group_id}"
-        term_diff_key   = f"dc_term_diff:{table_group_id}"
-        suite_scope_key = f"dc_suite_scope:{table_group_id}"
+        term_diff_key      = f"dc_term_diff:{table_group_id}"
+        suite_scope_key    = f"dc_suite_scope:{table_group_id}"
+        staleness_diff_key = f"dc_staleness_diff:{table_group_id}"
 
         # ── Version picker ────────────────────────────────────────────────────
         versions = list_contract_versions(table_group_id)
@@ -654,14 +652,17 @@ class DataContractPage(Page):
             tg_full = TableGroup.get(table_group_id)
             is_stale = bool(getattr(tg_full, "contract_stale", False))
             if is_stale and not st.session_state.get(dismissed_key):
-                stale_diff = compute_staleness_diff(
-                    table_group_id,
-                    version_record["contract_yaml"],
-                    snapshot_suite_id=version_record.get("snapshot_suite_id"),
-                )
-                if stale_diff.is_empty:
-                    mark_contract_not_stale(table_group_id)
-                    stale_diff = None
+                if staleness_diff_key not in st.session_state:
+                    computed = compute_staleness_diff(
+                        table_group_id,
+                        version_record["contract_yaml"],
+                        snapshot_suite_id=version_record.get("snapshot_suite_id"),
+                    )
+                    if computed.is_empty:
+                        mark_contract_not_stale(table_group_id)
+                    else:
+                        st.session_state[staleness_diff_key] = computed
+                stale_diff = st.session_state.get(staleness_diff_key)
 
         # ── Toolbar: Refresh · [version picker] · Save ────────────────────────
         pending_ct = _pending_edit_count(pending)
@@ -730,6 +731,7 @@ class DataContractPage(Page):
                 st.session_state.pop(gov_key, None)
                 st.session_state.pop(term_diff_key, None)
                 st.session_state.pop(suite_scope_key, None)
+                st.session_state.pop(staleness_diff_key, None)
                 safe_rerun()
         if is_latest:
             with regen_col:

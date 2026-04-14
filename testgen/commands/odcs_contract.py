@@ -81,7 +81,7 @@ _VALID_SEVERITIES: frozenset[str] = frozenset({"Log", "Warning", "Fail", "Error"
 
 # Governance columns in data_column_chars that may be written by YAML import
 _ALLOWED_GOVERNANCE_COLS: frozenset[str] = frozenset({
-    "description", "pii_flag", "critical_data_element",
+    "description", "pii_flag", "critical_data_element", "excluded_data_element",
     "data_source", "source_system", "source_process",
     "business_domain", "stakeholder_group", "transform_level",
     "aggregation_level", "data_product",
@@ -813,8 +813,6 @@ _ALLOWED_TEST_UPDATE_COLS: frozenset[str] = frozenset({
     "test_description", "threshold_value", "lower_tolerance",
     "upper_tolerance", "severity", "custom_query", "skip_errors",
 })
-# Public alias for callers that use the legacy name (e.g. data_contract_queries)
-_ALLOWED_TEST_COLS: frozenset[str] = _ALLOWED_TEST_UPDATE_COLS
 
 _ALLOWED_TEST_INSERT_COLS: frozenset[str] = frozenset({
     "test_suite_id", "test_type", "schema_name", "table_name", "column_name",

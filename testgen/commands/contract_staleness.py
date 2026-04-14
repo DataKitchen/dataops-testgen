@@ -198,6 +198,13 @@ def _thresholds_differ(snap: str, cur: str) -> bool:
 # Term diff helpers and main function
 # ---------------------------------------------------------------------------
 
+def _element_str(row: dict[str, Any]) -> str:
+    """Return 'table.column' or just 'table' from a test-definition row."""
+    col = (row.get("column_name") or "").strip()
+    tbl = (row.get("table_name") or "").strip()
+    return f"{tbl}.{col}" if col else tbl
+
+
 def _add_status_count(result: TermDiffResult, is_monitor: bool, last_status: str | None) -> None:
     """Increment the appropriate status counter on *result*."""
     s = last_status if last_status in ("passed", "failed", "warning", "error") else "not_run"
@@ -323,13 +330,6 @@ def compute_term_diff(
     current_tests: dict[str, dict[str, Any]] = {str(r["id"]): dict(r) for r in test_rows}
     result.current_count = len(current_tests)
 
-    def _element_of(row: dict[str, Any]) -> str:
-        col = (row.get("column_name") or "").strip()
-        tbl = (row.get("table_name")  or "").strip()
-        return f"{tbl}.{col}" if col else tbl
-
-    # Use module-level threshold helpers (shared with compute_staleness_diff)
-
     # ------------------------------------------------------------------
     # 3. Build entries: iterate saved YAML rules
     # ------------------------------------------------------------------
@@ -348,7 +348,7 @@ def compute_term_diff(
 
             if snap_thresh is not None and _thresholds_differ(snap_thresh, cur_thresh):
                 entry = TermDiffEntry(
-                    element=element or _element_of(row),
+                    element=element or _element_str(row),
                     test_type=row.get("test_type") or "",
                     status="changed",
                     detail=f"threshold: {snap_thresh} → {cur_thresh}",
@@ -357,7 +357,7 @@ def compute_term_diff(
                 )
             else:
                 entry = TermDiffEntry(
-                    element=element or _element_of(row),
+                    element=element or _element_str(row),
                     test_type=row.get("test_type") or "",
                     status="same",
                     detail=None,
@@ -382,7 +382,7 @@ def compute_term_diff(
     for test_id, row in current_tests.items():
         if test_id not in saved_quality:
             result.entries.append(TermDiffEntry(
-                element=_element_of(row),
+                element=_element_str(row),
                 test_type=row.get("test_type") or "",
                 status="new",
                 detail=None,
@@ -562,17 +562,12 @@ def compute_staleness_diff(
         )
         current_tests: dict[str, dict[str, Any]] = {str(r["id"]): dict(r) for r in test_rows}
 
-        def _element_label(row: dict[str, Any]) -> str:
-            col = (row.get("column_name") or "").strip()
-            tbl = (row.get("table_name") or "").strip()
-            return f"{tbl}.{col}" if col else tbl
-
         # Added tests (in DB but not in snapshot)
         for test_id, row in current_tests.items():
             if test_id not in snapshot_quality:
                 diff.quality_changes.append({
                     "change":      "added",
-                    "element":     _element_label(row),
+                    "element":     _element_str(row),
                     "test_type":   row.get("test_type") or "",
                     "detail":      "New test definition added",
                     "last_result": row.get("last_result_status"),
@@ -601,7 +596,7 @@ def compute_staleness_diff(
             if snap_threshold is not None and _thresholds_differ(snap_threshold, current_threshold):
                 diff.quality_changes.append({
                     "change":      "changed",
-                    "element":     _element_label(row),
+                    "element":     _element_str(row),
                     "test_type":   row.get("test_type") or "",
                     "detail":      f"Threshold changed from '{snap_threshold}' to '{current_threshold}'",
                     "last_result": row.get("last_result_status"),

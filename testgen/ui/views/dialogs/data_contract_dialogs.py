@@ -47,7 +47,7 @@ from testgen.ui.views.data_contract_yaml import (
 
 LOG = logging.getLogger("testgen")
 
-_CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope")
+_CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope", "dc_staleness_diff")
 
 
 def _clear_contract_cache(table_group_id: str, *, also_anomalies: bool = False) -> None:
