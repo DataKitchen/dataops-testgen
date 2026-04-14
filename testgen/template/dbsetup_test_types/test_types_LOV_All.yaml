@@ -41,7 +41,7 @@ test_types:
       STRING_AGG(DISTINCT CAST({COLUMN_NAME} AS STRING), '|' ORDER BY {COLUMN_NAME})
     test_operator: '!='
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '6013'
     test_type: LOV_All
     sql_flavor: databricks
@@ -49,7 +49,7 @@ test_types:
       STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '3013'
     test_type: LOV_All
     sql_flavor: mssql
@@ -57,15 +57,15 @@ test_types:
       STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '4013'
     test_type: LOV_All
     sql_flavor: postgresql
     measure: |-
-      STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+      STRING_AGG(DISTINCT {COLUMN_NAME}, '|' ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '1013'
     test_type: LOV_All
     sql_flavor: redshift
@@ -73,7 +73,7 @@ test_types:
       LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '7013'
     test_type: LOV_All
     sql_flavor: redshift_spectrum
@@ -81,7 +81,7 @@ test_types:
       LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '2013'
     test_type: LOV_All
     sql_flavor: snowflake
@@ -89,7 +89,7 @@ test_types:
       LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '5013'
     test_type: LOV_All
     sql_flavor: trino
@@ -97,7 +97,7 @@ test_types:
       LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '8013'
     test_type: LOV_All
     sql_flavor: oracle
@@ -105,7 +105,7 @@ test_types:
       LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   - id: '8013'
     test_type: LOV_All
     sql_flavor: sap_hana
@@ -113,7 +113,7 @@ test_types:
       LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
-      {THRESHOLD_VALUE}
+      '{THRESHOLD_VALUE}'
   target_data_lookups:
   - id: '1376'
     test_id: '1018'
