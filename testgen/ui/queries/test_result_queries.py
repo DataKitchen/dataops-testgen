@@ -34,7 +34,12 @@ def get_test_results(
             tt.dq_dimension, tt.test_scope,
             r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
             tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
-            c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
+            c.test_operator,
+            CASE WHEN r.threshold_value ~ E'^[-+]?([0-9]*[.])?[0-9]+([eE][-+]?[0-9]+)?$'
+                 THEN r.threshold_value::NUMERIC(16, 5) END AS threshold_value,
+            CASE WHEN r.result_measure ~ E'^[-+]?([0-9]*[.])?[0-9]+([eE][-+]?[0-9]+)?$'
+                 THEN r.result_measure::NUMERIC(16, 5) END AS result_measure,
+            r.result_status,
             CASE
                 WHEN r.result_code = 0 THEN r.disposition
                 ELSE 'Passed'
@@ -130,8 +135,10 @@ def get_test_result_history(tr_data, limit: int | None = None):
         tt.test_name_long,
         tt.measure_uom,
         c.test_operator,
-        r.threshold_value::NUMERIC(16, 5),
-        r.result_measure::NUMERIC(16, 5),
+        CASE WHEN r.threshold_value ~ E'^[-+]?([0-9]*[.])?[0-9]+([eE][-+]?[0-9]+)?$'
+             THEN r.threshold_value::NUMERIC(16, 5) END AS threshold_value,
+        CASE WHEN r.result_measure ~ E'^[-+]?([0-9]*[.])?[0-9]+([eE][-+]?[0-9]+)?$'
+             THEN r.result_measure::NUMERIC(16, 5) END AS result_measure,
         r.result_status,
         tt.result_visualization,
         tt.result_visualization_params

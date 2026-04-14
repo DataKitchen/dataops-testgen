@@ -1,4 +1,4 @@
-// cache-bust: v3
+// cache-bust: v5
 /**
  * Data Contract page — VanJS component.
  *
@@ -574,11 +574,11 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
                     ? ''
                     : span(
                         {
-                            class: 'filter-pill select-mode-btn',
+                            class: 'select-mode-btn',
                             title: 'Select multiple test terms to delete',
                             onclick: enterSelectionMode,
                         },
-                        mat('checklist', 13), ' Select',
+                        mat('checklist', 15), ' Select to delete',
                       ),
             ),
         ),
@@ -1385,7 +1385,7 @@ const UploadTab = () => {
 
 // ── Health grid ───────────────────────────────────────────────────────────────
 
-const HealthGrid = (health, activeFilter, activeTab, termDiff, diffFilter, versionNum) => {
+const HealthGrid = (health, activeFilter, activeTab, termDiff, versionNum, suiteScope, meta) => {
     const coverageCls = health.coverage_pct >= 80 ? 'good' : health.coverage_pct >= 50 ? 'warn' : 'bad';
 
     // Suite runs from the new backend field; fall back to legacy counts if absent.
@@ -1421,20 +1421,6 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, diffFilter, versi
             emitEvent('LinkClicked', { href: 'test-runs:results', params: { run_id: health.last_test_run_id } });
         }
     };
-
-    const DiffStatusRow = (count, statusKey, label) =>
-        div(
-            {
-                class: 'diff-status-row',
-                onclick: (e) => {
-                    e.stopPropagation();
-                    diffFilter.val = diffFilter.val === statusKey ? '' : statusKey;
-                    activeTab.val  = 'differences';
-                },
-            },
-            span({ class: 'diff-status-count' }, count),
-            span({ class: 'diff-status-label' }, label),
-        );
 
     const StatusCount = (color, label, count) =>
         count
@@ -1495,7 +1481,22 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, diffFilter, versi
 
     return div(
         { class: 'health-grid' },
-        // — Coverage card
+        // — Compliance card (first)
+        div(
+            {
+                class: 'health-card hygiene health-card--link',
+                onclick: () => { activeTab.val = 'compliance'; },
+                title: 'View Contract Term Compliance',
+            },
+            div({ class: 'health-card__label' },
+                mat('fact_check', 13), ` Version ${versionNum} Contract Term Compliance`,
+                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
+            ),
+            termDiff
+                ? ComplianceCardContent(health, termDiff)
+                : div({ class: 'health-card__sub' }, 'No saved version yet'),
+        ),
+        // — Coverage card (second)
         div(
             {
                 class: 'health-card coverage health-card--link',
@@ -1515,46 +1516,15 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, diffFilter, versi
                     ),
                   ],
         ),
-        // — Differences card
+        // — Test Suites card (third)
         div(
-            {
-                class: 'health-card tests health-card--link',
-                onclick: () => { activeTab.val = 'differences'; },
-                title: 'View Contract Term Differences',
-            },
+            { class: 'health-card suites' },
             div({ class: 'health-card__label' },
-                mat('compare', 13), ` Version ${versionNum} Contract Term Differences`,
-                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
+                mat('rule', 13), ' Contract Test Suites',
             ),
-            termDiff
-                ? [
-                    div({ class: 'health-card__sub' },
-                        `Saved: ${termDiff.saved_count}  ·  Current: ${termDiff.current_count}`,
-                    ),
-                    div(
-                        { class: 'diff-rows' },
-                        termDiff.same_count    ? DiffStatusRow(termDiff.same_count,    'same',    'same')    : '',
-                        termDiff.changed_count ? DiffStatusRow(termDiff.changed_count, 'changed', 'changed') : '',
-                        termDiff.deleted_count ? DiffStatusRow(termDiff.deleted_count, 'deleted', 'deleted') : '',
-                        termDiff.new_count     ? DiffStatusRow(termDiff.new_count,     'new',     'new')     : '',
-                    ),
-                  ]
-                : div({ class: 'health-card__sub' }, 'No saved version yet'),
-        ),
-        // — Compliance card
-        div(
-            {
-                class: 'health-card hygiene health-card--link',
-                onclick: () => { activeTab.val = 'compliance'; },
-                title: 'View Contract Term Compliance',
-            },
-            div({ class: 'health-card__label' },
-                mat('fact_check', 13), ` Version ${versionNum} Contract Term Compliance`,
-                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
-            ),
-            termDiff
-                ? ComplianceCardContent(health, termDiff)
-                : div({ class: 'health-card__sub' }, 'No saved version yet'),
+            suiteScope && suiteScope.total > 0
+                ? SuiteScope(suiteScope, meta)
+                : div({ class: 'health-card__sub' }, 'No suites in scope'),
         ),
     );
 };
@@ -1598,8 +1568,7 @@ const SuiteScope = (suiteScope, meta) => {
         );
 
     return div(
-        { class: 'suite-scope-bar' },
-        span({ class: 'suite-scope-label' }, mat('rule', 13), ' Contract Scope:'),
+        { class: 'suite-scope-chips-wrap' },
         div(
             { class: 'suite-scope-chips' },
             ...included.map((s) => SuiteChip(s, true)),
@@ -1613,60 +1582,19 @@ const SuiteScope = (suiteScope, meta) => {
 
 // ── Page header ───────────────────────────────────────────────────────────────
 
-const PageHeader = (tgName, meta, yamlContent, suiteScope, versionInfo) => {
-    const versionNum  = (versionInfo || {}).version || '';
-    const numVersions = (versionInfo || {}).num_versions || 0;
-    const canDelete   = versionNum !== '' && numVersions > 1;
-    const deleteBtn   = versionNum !== ''
-        ? div(
-            {
-                class: canDelete ? 'dc-delete-version-btn' : 'dc-delete-version-btn dc-delete-version-btn--disabled',
-                title: canDelete ? 'Delete this version' : 'Cannot delete the only saved version',
-                onclick: canDelete
-                    ? () => emitEvent('DeleteVersionClicked', { payload: { version: versionNum } })
-                    : null,
-            },
-            mat('delete', 16),
-        )
+const PageHeader = (meta) =>
+    meta.description_purpose
+        ? div({ class: 'dc-page-header' }, p({ class: 'purpose-text' }, meta.description_purpose))
         : '';
-    const testsCount   = (versionInfo || {}).tests_count;
-    const snapSuiteId  = (versionInfo || {}).snapshot_suite_id;
-    const testsChip    = (testsCount != null && snapSuiteId)
-        ? span(
-            {
-                class: 'snapshot-tests-chip',
-                title: 'View snapshot test definitions',
-                onclick: () => emitEvent('LinkClicked', {
-                    href: 'test-suites:definitions',
-                    params: { test_suite_id: snapSuiteId, project_code: meta.project_code },
-                }),
-            },
-            mat('task_alt', 13), ` ${testsCount} snapshot test${testsCount !== 1 ? 's' : ''}`,
-          )
-        : '';
-    return div(
-        { class: 'dc-page-header' },
-        div(
-            { class: 'dc-page-header__left' },
-            meta.description_purpose
-                ? p({ class: 'purpose-text' }, meta.description_purpose)
-                : '',
-            suiteScope ? SuiteScope(suiteScope, meta) : '',
-            testsChip !== '' ? div({ class: 'dc-page-header__tests-chip' }, testsChip) : '',
-        ),
-        deleteBtn !== '' ? div({ class: 'dc-page-header__right' }, deleteBtn) : '',
-    );
-};
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
 const TABS = [
-    { id: 'overview',    label: 'Contract Terms'      },
-    { id: 'matrix',      label: 'Contract Coverage'   },
-    { id: 'differences', label: 'Contract Differences' },
-    { id: 'compliance',  label: 'Contract Compliance'  },
-    { id: 'yaml',        label: 'YAML'                 },
-    { id: 'upload',      label: 'Upload YAML'          },
+    { id: 'overview',   label: 'Contract Terms'     },
+    { id: 'compliance', label: 'Contract Compliance' },
+    { id: 'matrix',     label: 'Contract Coverage'  },
+    { id: 'yaml',       label: 'YAML'               },
+    { id: 'upload',     label: 'Upload YAML'        },
 ];
 
 const TabBar = (activeTab) =>
@@ -1788,141 +1716,6 @@ const TermsHelpPanel = () => {
     );
 };
 
-// ── Differences tab ───────────────────────────────────────────────────────────
-
-const DifferencesTab = (termDiff, diffFilter) => {
-    if (!termDiff || termDiff.saved_count === 0) {
-        return div({ class: 'dc-empty-state' }, 'No saved contract version yet.');
-    }
-
-    const entries = termDiff.entries || [];
-    const grouped = {
-        changed: entries.filter(e => e.status === 'changed'),
-        new:     entries.filter(e => e.status === 'new'),
-        deleted: entries.filter(e => e.status === 'deleted'),
-        same:    entries.filter(e => e.status === 'same'),
-    };
-
-    const STATUS = {
-        changed: { color: '#f59e0b', label: 'changed' },
-        new:     { color: '#22c55e', label: 'new'     },
-        deleted: { color: '#ef4444', label: 'deleted' },
-        same:    { color: '#6b7280', label: 'same'    },
-    };
-
-    const DetailCell = (detail) => {
-        if (!detail) return td({ class: 'diff-detail-cell' }, '');
-        const idx = detail.indexOf(' → ');
-        if (idx !== -1) {
-            return td({ class: 'diff-detail-cell' },
-                span({ class: 'diff-detail-before' }, detail.slice(0, idx)),
-                span({ class: 'diff-detail-arrow' }, ' → '),
-                span({ class: 'diff-detail-after' },  detail.slice(idx + 3)),
-            );
-        }
-        return td({ class: 'diff-detail-cell' }, detail);
-    };
-
-    const DiffRow = (entry) => {
-        const col = (STATUS[entry.status] || {}).color || '#6b7280';
-        return tr(
-            { class: 'dc-term-row' },
-            td({ class: 'diff-element-cell', style: `box-shadow:inset 3px 0 0 ${col}` }, entry.element),
-            td({ class: 'diff-type-cell' },   entry.test_type || ''),
-            DetailCell(entry.detail),
-        );
-    };
-
-    const DiffTable = (items) =>
-        div({ class: 'dc-term-table-wrap' },
-            table({ class: 'dc-term-table' },
-                thead(tr(
-                    th({ class: 'diff-element-cell' }, 'Element'),
-                    th('Test Type'),
-                    th('Detail'),
-                )),
-                tbody(...items.map(DiffRow)),
-            ),
-        );
-
-    const DiffAccordion = (statusKey, label, items, defaultOpen) => {
-        if (items.length === 0) return '';
-        const s = STATUS[statusKey] || {};
-        const isOpen = van.state(diffFilter.val ? diffFilter.val === statusKey : defaultOpen);
-        // Re-sync when diffFilter changes while the tab is already active (no re-render of tab)
-        van.derive(() => { isOpen.val = diffFilter.val ? diffFilter.val === statusKey : defaultOpen; });
-        return div(
-            { class: 'diff-accordion' },
-            div(
-                {
-                    class: 'diff-accordion-header',
-                    style: `border-left: 3px solid ${s.color}`,
-                    onclick: () => { isOpen.val = !isOpen.val; },
-                },
-                () => mat(isOpen.val ? 'expand_more' : 'chevron_right', 14),
-                span({ class: 'diff-accordion-label' }, ` ${label}`),
-                span({
-                    class: 'diff-count-badge',
-                    style: `color:${s.color};background:${s.color}18;border-color:${s.color}40`,
-                }, items.length),
-            ),
-            () => isOpen.val ? DiffTable(items) : '',
-        );
-    };
-
-    const total = entries.length || 1;
-    const BarSeg = (color, count) =>
-        count > 0
-            ? div({ class: 'diff-bar-seg', style: `width:${(100 * count / total).toFixed(1)}%;background:${color}` })
-            : '';
-
-    const SummaryPill = (color, label, count) =>
-        count > 0
-            ? div({ class: 'diff-summary-pill', style: `color:${color};border-color:${color}40;background:${color}10` },
-                  span({ class: 'diff-summary-count' }, count),
-                  span({ class: 'diff-summary-label' }, label),
-              )
-            : '';
-
-    const DiffSummaryBar = () =>
-        div({ class: 'tab-summary-bar' },
-            div({ class: 'tab-summary-meta' },
-                span({ class: 'tab-summary-kv-label' }, 'Saved'),
-                span({ class: 'tab-summary-kv-num' }, termDiff.saved_count),
-                div({ class: 'tab-summary-vsep' }),
-                span({ class: 'tab-summary-kv-label' }, 'Current'),
-                span({ class: 'tab-summary-kv-num' }, termDiff.current_count),
-            ),
-            div({ class: 'diff-stacked-bar' },
-                BarSeg('#6b7280', grouped.same.length),
-                BarSeg('#f59e0b', grouped.changed.length),
-                BarSeg('#ef4444', grouped.deleted.length),
-                BarSeg('#22c55e', grouped.new.length),
-            ),
-            div({ class: 'diff-summary-pills' },
-                SummaryPill('#6b7280', 'same',    grouped.same.length),
-                SummaryPill('#f59e0b', 'changed', grouped.changed.length),
-                SummaryPill('#ef4444', 'deleted', grouped.deleted.length),
-                SummaryPill('#22c55e', 'new',     grouped.new.length),
-            ),
-        );
-
-    return div(
-        { class: 'dc-differences-tab' },
-        div(
-            { class: 'help-intro', style: 'margin-bottom: 16px;' },
-            'This tab compares your saved data contract against the current state of your data environment. ',
-            'It shows quality rule changes, schema drift, governance metadata updates, and changes to which test suites are in scope. ',
-            'Use this to understand what has changed since your contract was last saved and decide whether to regenerate or save a new version.',
-        ),
-        DiffSummaryBar(),
-        DiffAccordion('changed', 'Changed', grouped.changed, true),
-        DiffAccordion('new',     'New',     grouped.new,     true),
-        DiffAccordion('deleted', 'Deleted', grouped.deleted, true),
-        DiffAccordion('same',    'Same',    grouped.same,    false),
-    );
-};
-
 // ── Compliance tab ────────────────────────────────────────────────────────────
 
 const ComplianceTab = (termDiff, health) => {
@@ -1931,7 +1724,7 @@ const ComplianceTab = (termDiff, health) => {
     }
 
     const entries       = termDiff.entries || [];
-    const activeEntries = entries.filter(e => e.status === 'same' || e.status === 'changed');
+    const activeEntries = entries.filter(e => (e.status === 'same' || e.status === 'changed') && e.last_result);
     const monitorRows   = activeEntries.filter(e => e.is_monitor);
     const testRows      = activeEntries.filter(e => !e.is_monitor);
     const hygieneRows   = termDiff.hygiene_entries || [];
@@ -2046,13 +1839,19 @@ const ComplianceTab = (termDiff, health) => {
         );
     };
 
+    const hasAnyResult = testRows.length > 0 || monitorRows.length > 0 || hygieneRows.length > 0;
+
     return div(
         { class: 'dc-compliance-tab' },
         p({ class: 'help-intro' },
             'Contract compliance shows the current test results for every quality rule in this contract version. ' +
             'Each row represents a contract term and its most recent pass/fail status from the contract\'s dedicated test suite.',
         ),
-        ComplianceSummaryBar(),
+        hasAnyResult ? ComplianceSummaryBar() : '',
+        hasAnyResult ? '' : div(
+            { class: 'dc-empty-state' },
+            'No test results yet. Run the snapshot test suite to see compliance data.',
+        ),
         ComplianceAccordion('Monitors', monitorRows.map(ComplianceRow), [
             ['passed',  termDiff.tg_monitor_passed,  '#22c55e'],
             ['failed',  termDiff.tg_monitor_failed,  '#ef4444'],
@@ -2088,7 +1887,6 @@ const DataContract = (props) => {
 
     const activeTab    = van.state('overview');
     const activeFilter = van.state('all');
-    const diffFilter   = van.state('');
 
     return div(
         { id: wrapperId, class: 'dc-page' },
@@ -2114,15 +1912,14 @@ const DataContract = (props) => {
             if (selectTermKey) _pendingSelectKey = selectTermKey;
 
             return div(
-                PageHeader(tgName, meta, yaml, suiteScope, versionInfo),
-                HealthGrid(health, activeFilter, activeTab, termDiff, diffFilter, versionNum),
+                PageHeader(meta),
+                HealthGrid(health, activeFilter, activeTab, termDiff, versionNum, suiteScope, meta),
                 TabBar(activeTab),
                 () => {
                     const tab = activeTab.val;
-                    if (tab === 'overview')    return TermsDetail(tables, activeFilter, showAddTest);
-                    if (tab === 'matrix')      return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
-                    if (tab === 'differences') return DifferencesTab(termDiff, diffFilter);
-                    if (tab === 'compliance')  return ComplianceTab(termDiff, health);
+                    if (tab === 'overview')   return TermsDetail(tables, activeFilter, showAddTest);
+                    if (tab === 'matrix')     return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
+                    if (tab === 'compliance') return ComplianceTab(termDiff, health);
                     if (tab === 'yaml')        return YamlViewer(yaml, tgName);
                     if (tab === 'upload')      return UploadTab();
                     if (tab === 'help')        return TermsHelpPanel();
@@ -2154,51 +1951,7 @@ stylesheet.replace(`
 }
 
 /* ── Page header ── */
-.dc-page-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 20px;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--border-color);
-    gap: 16px;
-    flex-wrap: wrap;
-}
-.dc-page-header__left { flex: 1; min-width: 0; }
-.dc-page-header__right { display: flex; align-items: flex-start; flex-shrink: 0; }
-.dc-page-header__tests-chip { margin-top: 6px; }
-.snapshot-tests-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    border-radius: 12px;
-    background: #e0e7ff;
-    color: #4338ca;
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    user-select: none;
-    transition: background 0.15s, color 0.15s;
-    white-space: nowrap;
-}
-.snapshot-tests-chip:hover { background: #c7d2fe; color: #3730a3; }
-.snapshot-tests-chip .material { color: #4f46e5; }
-.dc-delete-version-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 5px;
-    border-radius: 5px;
-    border: 1px solid var(--border-color);
-    color: var(--caption-text-color);
-    background: transparent;
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s, background 0.15s;
-    user-select: none;
-}
-.dc-delete-version-btn:hover { color: #ef4444; border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.06); }
-.dc-delete-version-btn--disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+.dc-page-header { margin-bottom: 16px; }
 .status-chip {
     font-size: 11px;
     font-weight: 600;
@@ -2263,9 +2016,9 @@ stylesheet.replace(`
     top: 0; left: 0; right: 0;
     height: 3px;
 }
-.health-card.coverage::before { background: linear-gradient(90deg, #4f8ef7, #818cf8); }
-.health-card.tests::before    { background: linear-gradient(90deg, #22c55e, #10b981); }
 .health-card.hygiene::before  { background: linear-gradient(90deg, #f59e0b, #f97316); }
+.health-card.coverage::before { background: linear-gradient(90deg, #4f8ef7, #818cf8); }
+.health-card.suites::before   { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
 .health-card--link { cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
 .health-card--link:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.12); border-color: var(--primary-color, #4f8ef7); }
 .health-card__nav-icon { margin-left: 4px; opacity: 0.5; vertical-align: middle; }
@@ -3233,29 +2986,8 @@ stylesheet.replace(`
     border-radius: 6px;
 }
 
-/* ── Suite scope bar ── */
-.suite-scope-bar {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 10px;
-    padding: 8px 12px;
-    background: rgba(79,142,247,0.04);
-    border: 1px solid rgba(79,142,247,0.15);
-    border-radius: 8px;
-}
-.suite-scope-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--caption-text-color);
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    white-space: nowrap;
-}
+/* ── Suite scope card content ── */
+.suite-scope-chips-wrap { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
 .suite-scope-chips {
     display: flex;
     flex-wrap: wrap;
@@ -3292,8 +3024,28 @@ stylesheet.replace(`
 }
 
 /* ── Multi-select: select button & bulk action bar ── */
-.select-mode-btn { margin-left: 4px; display: inline-flex; align-items: center; gap: 3px; }
-.select-mode-btn .material { font-size: 13px; }
+.select-mode-btn {
+    margin-left: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(239,68,68,0.4);
+    background: rgba(239,68,68,0.08);
+    color: #dc2626;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    user-select: none;
+    transition: all 0.15s;
+}
+.select-mode-btn:hover {
+    background: rgba(239,68,68,0.15);
+    border-color: rgba(239,68,68,0.6);
+    color: #b91c1c;
+}
+.select-mode-btn .material { font-size: 15px; color: #dc2626; }
 .bulk-action-bar {
     display: flex;
     align-items: center;
@@ -3408,16 +3160,6 @@ stylesheet.replace(`
 .term-chip--clickable { cursor: pointer; }
 .term-chip--clickable:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 
-/* ── Differences card ── */
-.diff-rows { margin-top: 6px; }
-.diff-status-row {
-    display: flex; align-items: baseline; gap: 8px; padding: 2px 4px;
-    border-radius: 4px; cursor: pointer;
-}
-.diff-status-row:hover { background: var(--hover-background-color, rgba(128,128,128,0.06)); }
-.diff-status-count { font-size: 15px; font-weight: 700; min-width: 28px; text-align: right; color: var(--primary-text-color); }
-.diff-status-label { font-size: 12px; color: var(--caption-text-color); text-transform: lowercase; }
-
 /* ── Compliance card content ── */
 .ct-card-content { margin-top: 4px; }
 .ct-tier-row { display: flex; align-items: baseline; gap: 8px; padding: 1px 0; }
@@ -3428,9 +3170,8 @@ stylesheet.replace(`
 .ct-chips { display: flex; flex-wrap: wrap; gap: 2px 8px; }
 .ct-chip { font-size: 11px; white-space: nowrap; }
 
-/* ── Differences & Compliance tabs ── */
-.dc-differences-tab { padding: 16px 0; }
-.dc-compliance-tab  { padding: 16px 0; }
+/* ── Compliance tab ── */
+.dc-compliance-tab { padding: 16px 0; }
 .dc-empty-state { padding: 32px; text-align: center; color: var(--caption-text-color); font-size: 14px; }
 
 /* Accordions */
@@ -3478,10 +3219,6 @@ stylesheet.replace(`
     padding-left: 14px !important; /* space for the left-border stripe */
 }
 .diff-type-cell { color: var(--caption-text-color); font-size: 12px; white-space: nowrap; }
-.diff-detail-cell { font-size: 12px; }
-.diff-detail-before { color: var(--caption-text-color); }
-.diff-detail-arrow  { color: var(--caption-text-color); opacity: 0.5; }
-.diff-detail-after  { color: #f59e0b; font-weight: 600; }
 
 /* Compliance status chips — tinted border pills */
 .compliance-chip {
@@ -3497,29 +3234,6 @@ stylesheet.replace(`
     background: var(--card-background-color);
     border: 1px solid var(--border-color); border-radius: 6px;
 }
-.tab-summary-meta { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-.tab-summary-vsep { width: 1px; height: 18px; background: var(--border-color); }
-.tab-summary-kv-label { font-size: 11px; font-weight: 600; color: var(--caption-text-color); text-transform: uppercase; letter-spacing: 0.04em; }
-.tab-summary-kv-num   { font-size: 15px; font-weight: 700; color: var(--primary-text-color); }
-
-/* Stacked proportion bar */
-.diff-stacked-bar {
-    display: flex; height: 6px; border-radius: 3px; overflow: hidden;
-    flex: 1; min-width: 80px; max-width: 200px; gap: 1px;
-}
-.diff-bar-seg { height: 100%; border-radius: 1px; transition: width 0.3s; }
-
-/* Summary pills */
-.diff-summary-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.diff-summary-pill {
-    display: flex; align-items: center; gap: 5px;
-    border-radius: 10px; padding: 2px 9px; border: 1px solid;
-    cursor: pointer; transition: filter 0.15s;
-}
-.diff-summary-pill:hover { filter: brightness(1.1); }
-.diff-summary-count { font-size: 12px; font-weight: 700; }
-.diff-summary-label { font-size: 11px; font-weight: 500; }
-
 /* Compliance summary bar sections */
 .compliance-summary-section { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .compliance-summary-tier { font-size: 11px; font-weight: 700; color: var(--caption-text-color); text-transform: uppercase; letter-spacing: 0.04em; }

@@ -451,7 +451,7 @@ def _fetch_tests_from_suite(suite_id: str, schema: str) -> list[dict]:
     """Fetch all active tests belonging to a specific suite, including snapshot suites."""
     sql = f"""
         SELECT
-            td.id,
+            COALESCE(td.source_test_definition_id, td.id) AS id,
             s.id::text                        AS suite_id,
             td.test_type,
             td.schema_name,

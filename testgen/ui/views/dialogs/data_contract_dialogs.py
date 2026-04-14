@@ -34,7 +34,6 @@ from testgen.ui.queries.data_contract_queries import (
     _fetch_governance_data,
     _fetch_test_live_info,
     _persist_pending_edits,
-    _save_governance_data,
 )
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
@@ -282,15 +281,54 @@ def _governance_edit_dialog(
 
     st.divider()
     save_col, cancel_col = st.columns(2)
+    st.caption("ℹ Changes are held until you save a new contract version.")
+
     if save_col.button("Save", type="primary", use_container_width=True):
+        current_yaml = st.session_state.get(yaml_key, "")
         try:
-            _save_governance_data(effective_column_id, updates)
-        except Exception:
-            LOG.exception("_governance_edit_dialog: failed to save governance data")
-            st.error("Failed to save — check logs for details.")
+            doc = yaml.safe_load(current_yaml)
+            if not isinstance(doc, dict):
+                st.error("Could not parse the contract YAML — unexpected format.")
+                return
+        except yaml.YAMLError:
+            st.error("Could not parse the contract YAML.")
             return
-        st.session_state.pop(yaml_key, None)
+
+        _db_col_to_label: dict[str, str] = {
+            "critical_data_element": "Critical Data Element",
+            "excluded_data_element": "Excluded Data Element",
+            "pii_flag":              "PII",
+            "description":           "Description",
+            "data_source":           "Data Source",
+            "source_system":         "Source System",
+            "source_process":        "Source Process",
+            "business_domain":       "Business Domain",
+            "stakeholder_group":     "Stakeholder Group",
+            "transform_level":       "Transform Level",
+            "aggregation_level":     "Aggregation Level",
+            "data_product":          "Data Product",
+        }
+
+        pending_key = f"dc_pending:{table_group_id}"
+        pending = st.session_state.get(pending_key, {})
+
+        for db_col, new_val in updates.items():
+            old_val = gov.get(db_col)
+            norm_new = new_val if new_val != "" else None
+            norm_old = old_val if old_val != "" else None
+            if norm_new == norm_old:
+                continue
+            label = _db_col_to_label.get(db_col)
+            if not label:
+                continue
+            _patch_yaml_governance(doc, table_name, col_name, label, new_val)
+            pending = _apply_pending_governance_edit(pending, table_name, col_name, label, new_val)
+
+        patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        st.session_state[yaml_key] = patched_yaml
+        st.session_state[pending_key] = pending
         safe_rerun()
+
     if cancel_col.button("Cancel", use_container_width=True):
         safe_rerun()
 

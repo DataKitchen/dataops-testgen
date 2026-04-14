@@ -472,6 +472,12 @@ def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
     # 2. Test edits → test_definitions
     for e in pending.get("tests", []):
         rule_id = e["rule_id"]
+        if e.get("_removed"):
+            execute_db_queries([(
+                f"DELETE FROM {schema}.test_definitions WHERE id = CAST(:test_id AS uuid)",
+                {"test_id": rule_id},
+            )])
+            continue
         updates = {k: v for k, v in e.items() if k != "rule_id"}
         safe_updates = {k: v for k, v in updates.items() if k in _ALLOWED_TEST_COLS}
         if not safe_updates:

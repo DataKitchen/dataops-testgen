@@ -78,14 +78,6 @@ PAGE_TITLE = "Data Contract"
 PAGE_ICON = "contract"
 
 
-def _get_snapshot_test_count(snapshot_suite_id: str) -> int:
-    schema = get_tg_schema()
-    rows = fetch_dict_from_db(
-        f"SELECT COUNT(*) AS cnt FROM {schema}.test_definitions WHERE test_suite_id = CAST(:sid AS uuid)",
-        params={"sid": snapshot_suite_id},
-    )
-    return int(rows[0]["cnt"]) if rows else 0
-
 
 def _format_pending_labels(pending: dict) -> list[str]:
     labels: list[str] = []
@@ -690,7 +682,7 @@ class DataContractPage(Page):
             current_idx = next(
                 (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
             )
-            picker_col, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
+            picker_col, refresh_col, regen_col, save_col, delete_col = st.columns([4, 1, 1, 1, 1.3])
             with picker_col:
                 chosen_idx = st.selectbox(
                     "Contract version",
@@ -718,7 +710,7 @@ class DataContractPage(Page):
                     st.query_params["version"] = str(chosen_ver)
                     safe_rerun()
         else:
-            _, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
+            _, refresh_col, regen_col, save_col, delete_col = st.columns([4, 1, 1, 1, 1.3])
 
         with refresh_col:
             if st.button("↺ Refresh", key=f"dc_refresh_btn:{table_group_id}", use_container_width=True,
@@ -735,7 +727,7 @@ class DataContractPage(Page):
                 safe_rerun()
         if is_latest:
             with regen_col:
-                if st.button("⟳ Regenerate", key=f"dc_regen_btn:{table_group_id}", use_container_width=True,
+                if st.button("Regenerate", key=f"dc_regen_btn:{table_group_id}", use_container_width=True,
                              help="Re-export from the current database state and save as a new version"):
                     _regenerate_dialog(table_group_id, version_record["version"], pending_ct)
             with save_col:
@@ -746,6 +738,16 @@ class DataContractPage(Page):
                 else:
                     if st.button("Save version", type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
                         _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+        with delete_col:
+            can_delete = len(versions) > 1
+            if st.button(
+                "Delete contract",
+                key=f"dc_delete_btn:{table_group_id}",
+                use_container_width=True,
+                disabled=not can_delete,
+                help=None if can_delete else "Cannot delete the only saved version",
+            ):
+                _delete_version_dialog(table_group_id, version_record["version"])
 
         # ── Unsaved changes banner ────────────────────────────────────────────
         if is_latest and pending_ct > 0:
@@ -832,19 +834,15 @@ class DataContractPage(Page):
             "pending_count":      pending_ct,
             "snapshot_suite_id":  version_record.get("snapshot_suite_id"),
             "num_versions":       len(versions),
-            "tests_count":        _get_snapshot_test_count(_snapshot_suite_id) if _snapshot_suite_id else None,
+
         }
 
-        # ── Term diff (Card 2 / Card 3 / Differences tab / Compliance tab) ──────
+        # ── Term diff (Compliance card / Compliance tab) ──────────────────────
         if term_diff_key not in st.session_state:
             st.session_state[term_diff_key] = compute_term_diff(
                 table_group_id, contract_yaml, anomalies, snapshot_suite_id=_snapshot_suite_id
             )
         term_diff: TermDiffResult = st.session_state[term_diff_key]
-        same_ct    = sum(1 for e in term_diff.entries if e.status == "same")
-        changed_ct = sum(1 for e in term_diff.entries if e.status == "changed")
-        deleted_ct = sum(1 for e in term_diff.entries if e.status == "deleted")
-        new_ct     = sum(1 for e in term_diff.entries if e.status == "new")
 
         # Scope to saved-YAML elements only (same/changed/deleted) so hygiene_entries
         # matches the tg_hygiene_* counts computed in compute_term_diff.
@@ -869,12 +867,7 @@ class DataContractPage(Page):
         ]
 
         props["term_diff"] = {
-            "saved_count":   term_diff.saved_count,
-            "current_count": term_diff.current_count,
-            "same_count":    same_ct,
-            "changed_count": changed_ct,
-            "deleted_count": deleted_ct,
-            "new_count":     new_ct,
+            "saved_count": term_diff.saved_count,
             "entries": [
                 {
                     "element":     e.element,
@@ -978,12 +971,6 @@ class DataContractPage(Page):
             if table_group and _ts:
                 add_test_dialog(table_group, _ts, payload.get("tableName", ""), payload.get("colName", ""))
 
-        def on_delete_version(payload: dict) -> None:
-            _version_to_delete = payload.get("version")
-            if _version_to_delete is None:
-                return
-            _delete_version_dialog(table_group_id, int(_version_to_delete))
-
         def on_import_contract(payload: dict) -> None:
             if not is_latest:
                 return
@@ -1044,7 +1031,6 @@ class DataContractPage(Page):
                 "ImportContractClicked":    on_import_contract,
                 "BulkDeleteTermsClicked":   on_bulk_delete_terms,
                 "AddTestClicked":           on_add_test,
-                "DeleteVersionClicked":     on_delete_version,
             },
         )
 

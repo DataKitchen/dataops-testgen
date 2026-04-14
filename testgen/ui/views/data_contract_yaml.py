@@ -91,18 +91,50 @@ def _delete_term_yaml_patch(
     return False, f"Could not locate `{table_name}.{col_name}` in the contract."
 
 
+_GOVERNANCE_DIRECT_MAP: dict[str, str] = {
+    "Classification":        "classification",
+    "Description":           "description",
+    "CDE":                   "criticalDataElement",
+    "Critical Data Element": "criticalDataElement",
+}
+
+# Fields stored as ODCS customProperties (keyed by governance display label)
+_GOVERNANCE_CP_KEY: dict[str, str] = {
+    "PII":               "testgen.pii_flag",
+    "Data Source":       "testgen.data_source",
+    "Source System":     "testgen.source_system",
+    "Source Process":    "testgen.source_process",
+    "Business Domain":   "testgen.business_domain",
+    "Stakeholder Group": "testgen.stakeholder_group",
+    "Transform Level":   "testgen.transform_level",
+    "Aggregation Level": "testgen.aggregation_level",
+    "Data Product":      "testgen.data_product",
+}
+
+
 def _patch_yaml_governance(doc: dict, table_name: str, col_name: str, field: str, value: object) -> bool:
     """Patch a governance field in-place on the parsed YAML doc. Returns True if patched."""
-    field_map = {"Classification": "classification", "Description": "description", "CDE": "criticalDataElement"}
-    yaml_field = field_map.get(field, field)
+    yaml_field = _GOVERNANCE_DIRECT_MAP.get(field)
+    cp_key     = _GOVERNANCE_CP_KEY.get(field)
+
     for tbl in (doc.get("schema") or []):
         if tbl.get("name") == table_name:
             for prop in (tbl.get("properties") or []):
                 if prop.get("name") == col_name:
-                    if value is None or value == "" or value is False:
-                        prop.pop(yaml_field, None)
-                    else:
-                        prop[yaml_field] = value
+                    if cp_key:
+                        cps = [cp for cp in prop.get("customProperties", []) if cp.get("property") != cp_key]
+                        if value and value != "":
+                            cps.append({"property": cp_key, "value": value})
+                        if cps:
+                            prop["customProperties"] = cps
+                        else:
+                            prop.pop("customProperties", None)
+                    elif yaml_field:
+                        if value is None or value == "" or value is False:
+                            prop.pop(yaml_field, None)
+                        else:
+                            prop[yaml_field] = value
+                    # "Excluded Data Element" and unknowns have no YAML representation
                     return True
     return False
 

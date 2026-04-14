@@ -123,7 +123,6 @@ _patches = [
     patch("testgen.ui.views.data_contract._fetch_test_statuses", return_value={}),
     patch("testgen.ui.views.data_contract._fetch_anomalies", return_value=[]),
     patch("testgen.ui.views.data_contract._fetch_governance_data", return_value={}),
-    patch("testgen.ui.views.data_contract._get_snapshot_test_count", return_value=0),
     patch("testgen.ui.views.data_contract.mark_contract_not_stale", MagicMock()),
     patch("testgen.commands.export_data_contract.rebuild_quality_from_suite",
           side_effect=lambda base_yaml, _suite_id: base_yaml),

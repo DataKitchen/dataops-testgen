@@ -116,7 +116,6 @@ _patches = [
     patch("testgen.ui.views.data_contract._fetch_test_statuses", return_value={}),
     patch("testgen.ui.views.data_contract._fetch_anomalies", return_value=[]),
     patch("testgen.ui.views.data_contract._fetch_governance_data", return_value={}),
-    patch("testgen.ui.views.data_contract._get_snapshot_test_count", return_value=1),
     patch("testgen.ui.views.data_contract.mark_contract_not_stale", MagicMock()),
     # rebuild_quality_from_suite returns REBUILT_YAML that contains the new test rule
     patch("testgen.commands.export_data_contract.rebuild_quality_from_suite",

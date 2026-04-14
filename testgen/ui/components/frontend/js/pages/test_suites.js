@@ -135,8 +135,8 @@ const TestSuites = (/** @type Properties */ props) => {
                                 h4(testSuite.test_suite),
                                 testSuite.is_contract_snapshot
                                     ? span({ class: 'contract-snapshot-badge' }, mat('lock', 13), ' Contract snapshot')
-                                    : testSuite.include_in_contract
-                                    ? span({ class: 'in-contract-chip' }, mat('verified', 13), ' In contract')
+                                    : !testSuite.include_in_contract
+                                    ? span({ class: 'excluded-contract-chip' }, mat('remove_circle_outline', 13), ' Excluded from contract')
                                     : '',
                             ),
                             small(`${testSuite.connection_name} > ${testSuite.table_groups_name}`),
@@ -233,7 +233,10 @@ const TestSuites = (/** @type Properties */ props) => {
                                         style: 'margin-top: 16px; min-width: 180px;',
                                         onclick: () => emitEvent('LinkClicked', {
                                             href: 'data-contract',
-                                            params: { table_group_id: testSuite.table_groups_id },
+                                            params: {
+                                                table_group_id: testSuite.table_groups_id,
+                                                ...(testSuite.contract_version != null ? { version: testSuite.contract_version } : {}),
+                                            },
                                         }),
                                     }),
                                 ]
@@ -255,7 +258,7 @@ const TestSuites = (/** @type Properties */ props) => {
                                         disabled: !testSuite.last_complete_profile_run_id,
                                         onclick: () => emitEvent('GenerateTestsClicked', {payload: testSuite.id}),
                                     }),
-                                    testSuite.include_in_contract ? Button({
+                                    testSuite.include_in_contract && testSuite.has_contract ? Button({
                                         label: 'View Data Contract',
                                         color: 'primary',
                                         type: 'stroked',
@@ -388,6 +391,25 @@ stylesheet.replace(`
 
 .in-contract-chip .material {
     color: #059669;
+}
+
+.excluded-contract-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid #fca5a5;
+    background: #fef2f2;
+    color: #991b1b;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+    text-transform: initial;
+}
+
+.excluded-contract-chip .material {
+    color: #dc2626;
 }
 
 .snapshot-suite-info-note {

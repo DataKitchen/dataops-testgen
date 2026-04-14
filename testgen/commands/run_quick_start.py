@@ -8,6 +8,7 @@ import click
 
 from testgen import settings
 from testgen.commands.run_launch_db_config import get_app_db_params_mapping, run_launch_db_config
+from testgen.commands.run_upgrade_db_config import run_upgrade_db_config
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
@@ -185,6 +186,7 @@ def run_quick_start(delete_target_db: bool) -> None:
     click.echo(f"Running CLI command: {command}")
     delete_db = True
     run_launch_db_config(delete_db)
+    run_upgrade_db_config()
 
     click.echo("Seeding the application db")
     app_db_params = get_app_db_params_mapping()

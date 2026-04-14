@@ -50,4 +50,6 @@
  * @property {MonitorSummary?} monitoring_summary
  * @property {boolean} is_contract_snapshot
  * @property {boolean} include_in_contract
+ * @property {number?} contract_version
+ * @property {boolean} has_contract
  */

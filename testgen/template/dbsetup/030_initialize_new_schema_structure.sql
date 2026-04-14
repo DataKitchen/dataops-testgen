@@ -129,7 +129,11 @@ CREATE TABLE table_groups
     data_product             VARCHAR(40),
     last_complete_profile_run_id UUID,
     dq_score_profiling       FLOAT,
-    dq_score_testing         FLOAT
+    dq_score_testing         FLOAT,
+    contract_version         VARCHAR(20),
+    contract_status          VARCHAR(20) DEFAULT 'draft',
+    contract_stale           BOOLEAN     NOT NULL DEFAULT FALSE,
+    last_contract_save_date  TIMESTAMPTZ
 );
 
 CREATE TABLE profiling_runs (
@@ -174,6 +178,8 @@ CREATE TABLE test_suites (
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN DEFAULT FALSE,
    is_monitor              BOOLEAN DEFAULT FALSE,
+   include_in_contract     BOOLEAN NOT NULL DEFAULT TRUE,
+   is_contract_snapshot    BOOLEAN NOT NULL DEFAULT FALSE,
    monitor_lookback        INTEGER DEFAULT NULL,
    monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
    predict_sensitivity     VARCHAR(6),
@@ -187,6 +193,20 @@ CREATE TABLE test_suites (
 
 ALTER TABLE table_groups ADD CONSTRAINT table_groups_test_suites_monitor_test_suite_id_fk
     FOREIGN KEY (monitor_test_suite_id) REFERENCES test_suites ON DELETE SET NULL;
+
+CREATE TABLE data_contracts (
+    id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    table_group_id   UUID        NOT NULL REFERENCES table_groups(id) ON DELETE CASCADE,
+    version          INTEGER     NOT NULL,
+    saved_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    label            TEXT,
+    contract_yaml    TEXT        NOT NULL,
+    snapshot_suite_id UUID       REFERENCES test_suites(id) ON DELETE SET NULL,
+    UNIQUE (table_group_id, version)
+);
+
+CREATE INDEX idx_data_contracts_tg_version
+    ON data_contracts (table_group_id, version DESC);
 
 CREATE TABLE test_definitions (
    id                     UUID DEFAULT gen_random_uuid()
@@ -239,6 +259,7 @@ CREATE TABLE test_definitions (
    last_manual_update     TIMESTAMP DEFAULT NULL,
    export_to_observability VARCHAR(5),
    flagged                BOOLEAN DEFAULT FALSE NOT NULL,
+   source_test_definition_id UUID,
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
