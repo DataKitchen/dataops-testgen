@@ -196,7 +196,7 @@ def on_cancel_run(test_run: dict) -> None:
         TestRun.cancel_run(test_run["test_run_id"])
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
-        fm.reset_post_updates(str_message=":red[This run cannot be cancelled.]", as_toast=True)
+        fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
 
 
 @st.dialog(title="Delete Test Runs")

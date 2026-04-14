@@ -125,14 +125,14 @@ class CliScheduler(Scheduler):
     def _handle_cancellation(self, job_exec: JobExecution):
         proc = self._running_jobs.get(job_exec.id)
         if proc:
-            LOG.info("Terminating cancelled job %s (PID %d)", job_exec.id, proc.pid)
+            LOG.info("Terminating canceled job %s (PID %d)", job_exec.id, proc.pid)
             try:
                 proc.terminate()
             except OSError:
                 pass  # Process already exited — _proc_wrapper will finalize
         else:
             with database_session():
-                job_exec.mark_cancelled()
+                job_exec.mark_canceled()
 
     def _dispatch(self, job_exec: JobExecution):
         if job_exec.job_key not in JOB_DISPATCH:
@@ -227,7 +227,7 @@ def run_scheduler():
     with database_session():
         stale_count = JobExecution.cancel_all_stale()
         if stale_count:
-            LOG.info("Cancelled %d stale job execution(s) from previous session", stale_count)
+            LOG.info("Canceled %d stale job execution(s) from previous session", stale_count)
 
     scheduler = CliScheduler()
     scheduler.run()

@@ -24,7 +24,7 @@ BEGIN
         new_id := gen_random_uuid();
         mapped_status := CASE r.status
             WHEN 'Complete' THEN 'completed'
-            WHEN 'Cancelled' THEN 'cancelled'
+            WHEN 'Cancelled' THEN 'canceled'
             ELSE 'error'
         END;
 
@@ -66,7 +66,7 @@ BEGIN
         new_id := gen_random_uuid();
         mapped_status := CASE r.status
             WHEN 'Complete' THEN 'completed'
-            WHEN 'Cancelled' THEN 'cancelled'
+            WHEN 'Cancelled' THEN 'canceled'
             ELSE 'error'
         END;
 
