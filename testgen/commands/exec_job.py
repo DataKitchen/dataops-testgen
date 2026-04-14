@@ -16,7 +16,7 @@ from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
-TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELLED})
+TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED})
 POLL_INTERVAL = 2
 
 JOB_DISPATCH: dict[str, Callable] = {
@@ -46,7 +46,7 @@ def exec_job(job_execution_id: UUID) -> None:
                 return
 
             if not job_exec.mark_running():
-                LOG.info("Job %s could not transition to running (likely cancelled), skipping", job_execution_id)
+                LOG.info("Job %s could not transition to running (likely canceled), skipping", job_execution_id)
                 return
 
         try:
@@ -111,8 +111,8 @@ def submit_and_wait(
             _print_run_summary(job_id, job_key)
             click.echo(f"Job {job_id} failed: {job_exec.error_message}", err=True)
             sys.exit(1)
-        case JobStatus.CANCELLED:
-            click.echo(f"Job {job_id} was cancelled.", err=True)
+        case JobStatus.CANCELED:
+            click.echo(f"Job {job_id} was canceled.", err=True)
             sys.exit(1)
 
 

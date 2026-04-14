@@ -152,10 +152,10 @@ def test_mark_interrupted_error(mock_session):
     assert job.error_message == "Something went wrong"
 
 
-def test_mark_interrupted_cancelled(mock_session):
+def test_mark_interrupted_canceled(mock_session):
     job = JobExecution(id=uuid4(), status="cancel_requested")
-    mock_session.execute.return_value.first.return_value = _returning_row(job, status="cancelled")
+    mock_session.execute.return_value.first.return_value = _returning_row(job, status="canceled")
 
     job.mark_interrupted("Process exited with code -15")
 
-    assert job.status == "cancelled"
+    assert job.status == "canceled"

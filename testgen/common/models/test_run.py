@@ -141,6 +141,15 @@ class TestRun(Entity):
         return get_current_session().scalars(query).first()
 
     @classmethod
+    def get_job_execution_ids(cls, test_run_ids: list[UUID]) -> dict[UUID, UUID | None]:
+        """Map test_run PKs to their job_execution_ids (batch lookup)."""
+        if not test_run_ids:
+            return {}
+        query = select(cls.id, cls.job_execution_id).where(cls.id.in_(test_run_ids))
+        rows = get_current_session().execute(query).all()
+        return {row.id: row.job_execution_id for row in rows}
+
+    @classmethod
     @st.cache_data(show_spinner=False)
     def get_minimal(cls, run_id: str | UUID) -> TestRunMinimal | None:
         if not is_uuid4(run_id):
