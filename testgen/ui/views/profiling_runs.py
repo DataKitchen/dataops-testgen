@@ -176,7 +176,7 @@ def on_cancel_run(profiling_run: dict) -> None:
         ProfilingRun.cancel_run(profiling_run["id"])
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
-        fm.reset_post_updates(str_message=":red[This run cannot be cancelled.]", as_toast=True)
+        fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
 
 
 @st.dialog(title="Delete Profiling Runs")

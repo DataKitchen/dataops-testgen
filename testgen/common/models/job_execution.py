@@ -19,14 +19,14 @@ class JobStatus(StrEnum):
     COMPLETED = "completed"
     ERROR = "error"
     CANCEL_REQUESTED = "cancel_requested"
-    CANCELLED = "cancelled"
+    CANCELED = "canceled"
 
 
 _VALID_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED}),
     JobStatus.CLAIMED: frozenset({JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
     JobStatus.RUNNING: frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
-    JobStatus.CANCEL_REQUESTED: frozenset({JobStatus.CANCELLED}),
+    JobStatus.CANCEL_REQUESTED: frozenset({JobStatus.CANCELED}),
 }
 
 
@@ -106,9 +106,9 @@ class JobExecution(Base):
             update(cls)
             .where(cls.status.in_([JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED]))
             .values(
-                status=JobStatus.CANCELLED.value,
+                status=JobStatus.CANCELED.value,
                 completed_at=datetime.now(UTC),
-                error_message="Cancelled: stale job from previous scheduler session",
+                error_message="Canceled: stale job from previous scheduler session",
             )
         )
         return result.rowcount
@@ -178,8 +178,8 @@ class JobExecution(Base):
     def mark_running(self) -> bool:
         return self._transition(JobStatus.RUNNING, started_at=datetime.now(UTC))
 
-    def mark_cancelled(self) -> bool:
-        return self._transition(JobStatus.CANCELLED, completed_at=datetime.now(UTC))
+    def mark_canceled(self) -> bool:
+        return self._transition(JobStatus.CANCELED, completed_at=datetime.now(UTC))
 
     def request_cancel(self) -> bool:
         return self._transition(JobStatus.CANCEL_REQUESTED)
@@ -188,5 +188,5 @@ class JobExecution(Base):
         return self._transition(JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
     def mark_interrupted(self, error_message: str) -> bool:
-        """Mark as ERROR, or CANCELLED if a cancellation was requested concurrently."""
-        return self._transition(JobStatus.ERROR, JobStatus.CANCELLED, completed_at=datetime.now(UTC), error_message=error_message)
+        """Mark as ERROR, or CANCELED if a cancellation was requested concurrently."""
+        return self._transition(JobStatus.ERROR, JobStatus.CANCELED, completed_at=datetime.now(UTC), error_message=error_message)
