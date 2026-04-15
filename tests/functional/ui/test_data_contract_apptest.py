@@ -1038,7 +1038,7 @@ class Test_GovernanceEditDialog:
         assert not at.exception
         # The unsaved-changes warning banner must be present (pending_ct > 0)
         warning_texts = [w.value for w in at.warning]
-        assert any("unsaved" in t.lower() for t in warning_texts), (
+        assert any("staged" in t.lower() or "not yet saved" in t.lower() for t in warning_texts), (
             f"Expected unsaved-changes warning. Got: {warning_texts}"
         )
 
@@ -1537,7 +1537,7 @@ class Test_PendingEditsUX:
         at.run()
         assert not at.exception
         warning_texts = [w.value for w in at.warning]
-        assert any("unsaved" in t.lower() for t in warning_texts), (
+        assert any("staged" in t.lower() or "not yet saved" in t.lower() for t in warning_texts), (
             f"Expected unsaved-changes warning. Got: {warning_texts}"
         )
 
@@ -1547,7 +1547,7 @@ class Test_PendingEditsUX:
         at.run()
         assert not at.exception
         warning_texts = [w.value for w in at.warning]
-        assert not any("unsaved" in t.lower() for t in warning_texts), (
+        assert not any("staged" in t.lower() or "not yet saved" in t.lower() for t in warning_texts), (
             f"Unexpected unsaved warning without pending edits. Got: {warning_texts}"
         )
 
@@ -1664,6 +1664,6 @@ class Test_PendingEditsUX:
         at.run()
         assert not at.exception
         warning_texts = [w.value for w in at.warning]
-        assert not any("unsaved" in t.lower() for t in warning_texts), (
+        assert not any("staged" in t.lower() or "not yet saved" in t.lower() for t in warning_texts), (
             f"Historical version must not show unsaved-changes warning. Got: {warning_texts}"
         )

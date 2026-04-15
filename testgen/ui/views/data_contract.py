@@ -242,6 +242,7 @@ def _check_contract_prerequisites(table_group_id: str) -> dict:
         f"SELECT COUNT(*) AS ct FROM {schema}.test_suites ts "
         f"JOIN {schema}.test_definitions td ON td.test_suite_id = ts.id "
         f"WHERE ts.table_groups_id = :tg_id AND ts.is_monitor IS NOT TRUE "
+        f"AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE "
         f"AND td.test_active = 'Y'",
         params={"tg_id": table_group_id},
     )

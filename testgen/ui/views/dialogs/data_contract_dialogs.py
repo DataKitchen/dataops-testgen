@@ -412,7 +412,7 @@ def _monitor_term_dialog(rule: dict, term_name: str, table_name: str = "", col_n
     if last.get("measuredValue") is not None:
         st.markdown(f"**Last Measured** &nbsp; `{last['measuredValue']}`")
     if last.get("executedAt"):
-        st.markdown(f"**Last Run** &nbsp; {last['executedAt']}")
+        st.markdown(f"**Last Run** &nbsp; {html.escape(str(last['executedAt']))}")
     st.divider()
     st.caption("📡 Managed in TestGen Monitors. To configure or run it, go to Monitors.")
     st.caption("To delete the term from the contract go to the monitors page.")
@@ -638,14 +638,16 @@ def _term_edit_dialog(
 def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_suite_id: str | None = None) -> None:  # noqa: ARG001
     rule_id   = str(rule.get("id", ""))
     test_name = rule.get("name") or rule.get("type") or "Test"
-    last      = rule.get("lastResult") or {}
+
+    live_info   = _fetch_test_live_info(rule_id) if rule_id else {}
+    live_status = live_info.get("status", "")
 
     st.markdown(f"**{test_name}**")
     if rule.get("element"):
         st.caption(f"Element: `{rule['element']}`")
-    if last.get("status"):
-        icon = _STATUS_ICON.get(last["status"], "")
-        st.caption(f"Last result: {icon} {last['status']}")
+    if live_status:
+        icon = _STATUS_ICON.get(live_status, "")
+        st.caption(f"Last result: {icon} {live_status}")
 
     op_key = next(
         (k for k in ("mustBe", "mustBeGreaterThan", "mustBeGreaterOrEqualTo",
@@ -1240,10 +1242,9 @@ def _confirm_import_dialog(
             if not diff.has_errors and snapshot_suite_id:
                 created_ids = list(diff.new_id_by_index.values()) if diff.new_id_by_index else []
                 updated_ids = [str(u["id"]) for u in (diff.test_updates or []) if u.get("id")]
-                deleted_ids = list(diff.orphaned_ids) if diff.orphaned_ids else []
-                if created_ids or updated_ids or deleted_ids:
+                if created_ids or updated_ids:
                     try:
-                        sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, deleted_ids)
+                        sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, [])
                     except Exception:
                         LOG.exception("_confirm_import_dialog: failed to sync to snapshot suite %s", snapshot_suite_id)
             if not diff.has_errors:
@@ -1368,10 +1369,9 @@ def _import_yaml_dialog(
             if not diff.has_errors and snapshot_suite_id:
                 created_ids = list(diff.new_id_by_index.values()) if diff.new_id_by_index else []
                 updated_ids = [str(u["id"]) for u in (diff.test_updates or []) if u.get("id")]
-                deleted_ids = list(diff.orphaned_ids) if diff.orphaned_ids else []
-                if created_ids or updated_ids or deleted_ids:
+                if created_ids or updated_ids:
                     try:
-                        sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, deleted_ids)
+                        sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, [])
                     except Exception:
                         LOG.exception("_import_yaml_dialog: failed to sync to snapshot suite %s", snapshot_suite_id)
             if not diff.has_errors:

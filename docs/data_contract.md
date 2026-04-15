@@ -10,6 +10,56 @@ From a user's perspective: navigate to a table group, click **Data Contract**, a
 
 ---
 
+## Data Contract Use Cases
+
+### Use Case 1: Protect The Output (Hold Myself Accountable)
+
+**The problem:** A data engineer wants to prove that the data they produce meets a defined standard — a "green stamp of approval" that says the output is correct before it goes downstream.
+
+**Example:** An engineer exports 5 tables (300 columns) to an external partner. Before sending, they want to verify the export meets the contract. They set up a contract for those tables and add a test node in their pipeline that runs the contract tests against the tables before the export fires. They also generate an XLSX FIA (File Interchange Agreement) from the contract to send to the receiving party.
+
+**How TestGen supports this:**
+- A data engineer creates a contract in TestGen from existing test suites, then calls it via the CLI (`testgen run-tests`) or runs the paired snapshot test suite directly.
+- Passing test results, visible in the UI against the contract's paired suite, prove the output meets the contract requirements.
+- The contract can be exported as ODCS YAML or as a report to share with downstream consumers.
+
+---
+
+### Use Case 2: Protect The Input (Hold Suppliers Accountable)
+
+**The problem:** A data engineer receives data from a vendor and wants to verify it matches what was agreed upon — the FIA (File Interchange Agreement) or DIA (Data Interchange Agreement) the vendor provided.
+
+**Example:** An engineer receives a DIA spreadsheet from a data vendor. They use an AI tool to convert it to a standard ODCS YAML contract, import it into TestGen, and then run TestGen against each new delivery. The test results provide traceability back to specific contract line items, so discrepancies can be communicated directly to the vendor.
+
+**How TestGen supports this:**
+- A data engineer can use AI (e.g. Claude) to convert a vendor spec into an ODCS-standard YAML contract and import it into TestGen via **Import YAML**.
+- Alternatively, the engineer loads the vendor data into a table, profiles it, generates tests, and generates a contract from that profiling — letting the data itself define the baseline.
+- In both cases, the contract is editable in the TestGen UI and can be re-run on each new delivery to verify compliance.
+
+---
+
+### Use Case 3: Prove The Middle Is Awesome (Show Value of Data Work to Customers)
+
+**The problem:** A data engineer does significant transformation and quality work in an ETL pipeline, but that work is invisible to stakeholders. The contract becomes evidence of the work being done.
+
+**How TestGen supports this:**
+- A data engineer takes several test suites — one per transformation stage or table — and combines them into a versioned data contract for a table group.
+- The contract version history shows what was tested, when, and whether it passed, serving as an auditable record of data quality work.
+- The contract can be shared with customers or stakeholders as proof of the rigor applied to the data.
+
+---
+
+### Use Case 4: Contract As Shared Interface To Data Stewards and Business Owners
+
+**The problem:** Technical test definitions are too complex for business stakeholders to engage with directly. A data contract bridges that gap by surfacing quality terms in plain language.
+
+**How TestGen supports this:**
+- In any of the use cases above, the data contract UI becomes a shared communication layer between engineers, data stewards, and business owners.
+- Stakeholders can view the contract health dashboard, inspect terms by column, discuss definitions, and understand what the data guarantees — without needing to understand the underlying SQL tests.
+- The contract can be exported, versioned, and iterated on collaboratively through the UI.
+
+---
+
 ## Start Here: Key Concepts
 
 Before reading the rest of this document, internalize these five concepts. Everything else builds on them.
@@ -447,7 +497,7 @@ diff = run_import_contract(yaml_content, table_group_id, dry_run=False)
 
 ### Unit Tests
 
-600 data-contract unit tests across 17 files (1125 total unit tests on the branch).
+534 data-contract unit tests across 17 files. **All 534 passing as of 2026-04-15.**
 
 ```bash
 pytest -m unit tests/unit/
@@ -455,16 +505,16 @@ pytest -m unit tests/unit/
 
 | File | Lines | Covers |
 |---|---|---|
-| `tests/unit/commands/test_data_contract_export.py` | 107 | Export mapping, anomaly criteria, YAML output |
+| `tests/unit/commands/test_data_contract_export.py` | 827 | Export mapping, anomaly criteria, YAML output |
 | `tests/unit/commands/test_odcs_contract.py` | 1429 | Import validation, diff, apply, CREATE/UPDATE/WRITE-BACK round-trip; `Test_ContractDiffRuleCounters` |
-| `tests/unit/ui/test_data_contract_page.py` | 67 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
-| `tests/unit/ui/test_contract_pending_edits.py` | 29 | Pending edit accumulation, YAML patching, persistence helpers |
-| `tests/unit/ui/test_contract_term_deletion.py` | 23 | All 13 deletable term types across DDL (4), Profiling (6), Governance (3); error cases |
-| `tests/unit/ui/test_bulk_delete_terms.py` | 20 | Multi-select bulk delete across governance, test, and hygiene term types |
-| `tests/unit/commands/test_contract_staleness.py` | 41 | `compute_staleness_diff` — schema, quality, governance, and suite scope diffs |
-| `tests/unit/commands/test_contract_versions.py` | 18 | `save_contract_version`, `load_contract_version`, `list_contract_versions`, staleness marking |
-| `tests/unit/commands/test_staleness_diff.py` | 22 | Threshold comparison helpers; range vs scalar; float/string normalization |
-| `tests/unit/commands/test_staleness_detection.py` | 5 | Staleness trigger integration |
+| `tests/unit/ui/test_data_contract_page.py` | 815 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
+| `tests/unit/ui/test_contract_pending_edits.py` | 236 | Pending edit accumulation, YAML patching, persistence helpers |
+| `tests/unit/ui/test_contract_term_deletion.py` | 270 | All 13 deletable term types across DDL (4), Profiling (6), Governance (3); error cases |
+| `tests/unit/ui/test_bulk_delete_terms.py` | 285 | Multi-select bulk delete across governance, test, and hygiene term types |
+| `tests/unit/commands/test_contract_staleness.py` | 472 | `compute_staleness_diff` — schema, quality, governance, and suite scope diffs |
+| `tests/unit/commands/test_contract_versions.py` | 258 | `save_contract_version`, `load_contract_version`, `list_contract_versions`, staleness marking |
+| `tests/unit/commands/test_staleness_diff.py` | 449 | Threshold comparison helpers; range vs scalar; float/string normalization |
+| `tests/unit/commands/test_staleness_detection.py` | 117 | Staleness trigger integration |
 | `tests/unit/commands/test_contract_snapshot_suite.py` | 415 | `create_contract_snapshot_suite`, `sync_import_to_snapshot_suite`, `delete_contract_version` |
 | `tests/unit/commands/test_delete_contract_version.py` | 118 | Delete contract version cleanup and cascade behavior |
 | `tests/unit/commands/test_data_contract_cli.py` | 264 | `create-contract` and `run-contract-tests` CLI commands |
@@ -626,6 +676,18 @@ The Coverage card counts a column as "covered" if it has any non-schema term, in
 **Open questions:**
 - Two coverage percentages (schema vs. quality coverage), or replace the metric with the stricter definition?
 - Should the Coverage Matrix visually distinguish columns with only schema terms?
+
+---
+
+## Known Issues
+
+All critical and important issues from the 2026-04-15 code review have been fixed. 534/534 unit tests passing.
+
+### Minor (open)
+
+- **Inconsistent `is_contract_snapshot` filter idioms** — three variants in use: `COALESCE(ts.is_contract_snapshot, FALSE) = FALSE`, `is_contract_snapshot IS NOT TRUE`, and `COALESCE(...) IS NOT TRUE`. All are functionally equivalent given `NOT NULL DEFAULT FALSE`, but CLAUDE.md specifies the `COALESCE(...) = FALSE` form. Affected: `data_contract_queries.py:120`, `contract_staleness.py:696`, `export_data_contract.py:359/377/443`.
+
+- **Missing `CAST(:x AS uuid)` in many new queries** — `table_groups_id = :tg_id` is used throughout without `CAST`. Works in practice (PostgreSQL implicitly casts), but inconsistent with the project standard.
 
 ---
 
@@ -1259,4 +1321,5 @@ Expected: `lower_tolerance = NULL`, `upper_tolerance = NULL`, `threshold_value =
 
 - `suiteId` not found in table group → **WARN**
 - No `suiteId` and table group has no included suites → **WARN**
+
 - `rowCount` with `unit: percent` (undefined semantics) → **WARN**: use `unit: rows`
