@@ -39,6 +39,7 @@ def run_with_job_execution(
 ) -> None:
     """Wrap a run command with a synthetic JE so quick-start runs link to job_executions."""
     effective_date = run_date or datetime.now(UTC)
+    wall_start = datetime.now(UTC)
     with database_session():
         je = JobExecution(
             job_key=job_key,
@@ -47,7 +48,6 @@ def run_with_job_execution(
             project_code=settings.PROJECT_KEY,
             status=JobStatus.COMPLETED.value,
             started_at=effective_date,
-            completed_at=effective_date,
         )
         get_current_session().add(je)
         get_current_session().flush([je])
@@ -55,6 +55,10 @@ def run_with_job_execution(
 
     job_context.set(JobContext(job_id=je_id, source="QUICK-START"))
     handler(**handler_kwargs, run_date=run_date)
+
+    with database_session():
+        je = JobExecution.get(je_id)
+        je.completed_at = effective_date + (datetime.now(UTC) - wall_start)
 
 
 def _get_max_date(iteration: int):
