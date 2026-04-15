@@ -87,6 +87,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+standalone = [
+    "pixeltable-pgserver>=0.5.1",
+]
+
 dev = [
     "invoke==2.2.0",
     "ruff==0.4.1",

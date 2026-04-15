@@ -32,6 +32,7 @@ from testgen.common.database.flavor.flavor_service import (
     SQLFlavor,
     resolve_connection_params,
 )
+from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string, is_standalone_mode
 from testgen.common.read_file import get_template_files
 from testgen.utils import get_exception_message
 
@@ -370,16 +371,27 @@ def _init_app_db_connection(
         engine = engine_cache.app_db
 
     if not engine:
-        user = user_override if is_admin else get_tg_username()
-        password = password_override if (is_admin or password_override is not None) else get_tg_password()
+        if is_standalone_mode():
+            connection_string = get_standalone_connection_string(database_name)
+        else:
+            user = user_override if is_admin else get_tg_username()
+            password = password_override if (is_admin or password_override is not None) else get_tg_password()
 
-        # STANDARD FORMAT: flavor://username:password@host:port/database
-        connection_string = (
-            f"postgresql://{user}:{quote_plus(password)}@{get_tg_host()}:{get_tg_port()}/{database_name}"
-        )
+            # STANDARD FORMAT: flavor://username:password@host:port/database
+            connection_string = (
+                f"postgresql://{user}:{quote_plus(password)}@{get_tg_host()}:{get_tg_port()}/{database_name}"
+            )
         try:
-            engine: Engine = create_engine(connection_string, connect_args={"connect_timeout": 3600})
-            engine_cache.app_db = engine
+            engine: Engine = create_engine(
+                connection_string,
+                connect_args={
+                    "connect_timeout": 3600,
+                    # Force UTC so TIMESTAMP-without-tz inserts aren't silently shifted.
+                    "options": "-c TimeZone=UTC",
+                },
+            )
+            if user_type == "normal":
+                engine_cache.app_db = engine
 
         except SQLAlchemyError as e:
             raise ValueError(f"Failed to create engine for App database '{database_name}' (User type = {user_type})") from e

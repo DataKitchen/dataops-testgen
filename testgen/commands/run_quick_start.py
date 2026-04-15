@@ -8,6 +8,7 @@ import click
 
 from testgen import settings
 from testgen.commands.run_launch_db_config import get_app_db_params_mapping, run_launch_db_config
+from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
@@ -93,14 +94,22 @@ def _prepare_connection_to_target_database(params_mapping):
 
 
 def _get_settings_params_mapping() -> dict:
+    host = settings.PROJECT_DATABASE_HOST
+    admin_user = settings.DATABASE_ADMIN_USER
+    admin_password = settings.DATABASE_ADMIN_PASSWORD
+    if is_standalone_mode():
+        host = str(get_home_dir() / "pgdata")
+        admin_user = "postgres"
+        admin_password = ""
+
     return {
-        "TESTGEN_ADMIN_USER": settings.DATABASE_ADMIN_USER,
-        "TESTGEN_ADMIN_PASSWORD": settings.DATABASE_ADMIN_PASSWORD,
+        "TESTGEN_ADMIN_USER": admin_user,
+        "TESTGEN_ADMIN_PASSWORD": admin_password,
         "SCHEMA_NAME": get_tg_schema(),
         "PROJECT_DB": settings.PROJECT_DATABASE_NAME,
         "PROJECT_SCHEMA": settings.PROJECT_DATABASE_SCHEMA,
         "PROJECT_KEY": settings.PROJECT_KEY,
-        "PROJECT_DB_HOST": settings.PROJECT_DATABASE_HOST,
+        "PROJECT_DB_HOST": host,
         "PROJECT_DB_PORT": settings.PROJECT_DATABASE_PORT,
         "SQL_FLAVOR": settings.PROJECT_SQL_FLAVOR,
     }
