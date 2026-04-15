@@ -11,8 +11,10 @@ from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -430,7 +432,7 @@ class TableGroupsPage(Page):
 
         result = None
         if is_deletion_confirmed():
-            if not TableGroup.has_running_process([table_group_id]):
+            if not (ProfilingRun.has_active_job_for(TableGroup, table_group_id) or TestRun.has_active_job_for(TableGroup, table_group_id)):
                 TableGroup.cascade_delete([table_group_id])
                 message = f"Table Group {table_group.table_groups_name} has been deleted. "
                 safe_rerun()

@@ -355,27 +355,6 @@ class TableGroup(Entity):
         return [TableGroupSummary(**row) for row in results]
 
     @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool | None:
-        query = """
-        SELECT DISTINCT profiling_runs.id
-        FROM profiling_runs
-        INNER JOIN table_groups
-            ON table_groups.id = profiling_runs.table_groups_id
-        WHERE table_groups.id IN :table_group_ids
-            AND profiling_runs.status = 'Running';
-        """
-        params = {"table_group_ids": tuple(ids)}
-        process_count = get_current_session().execute(text(query), params).rowcount
-        if process_count:
-            return True
-
-        test_suites = TestSuite.select_minimal_where(TestSuite.table_groups_id.in_(ids))
-        if test_suites:
-            return TestSuite.has_running_process([item.id for item in test_suites])
-
-        return False
-
-    @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
         test_suites = TestSuite.select_minimal_where(TestSuite.table_groups_id.in_(ids))
         if test_suites:

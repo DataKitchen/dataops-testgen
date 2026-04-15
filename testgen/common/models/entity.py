@@ -110,10 +110,6 @@ class Entity(Base):
         return get_current_session().execute(query).all()
 
     @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool:
-        raise NotImplementedError
-
-    @classmethod
     def delete_where(cls, *clauses) -> None:
         query = delete(cls).where(*clauses)
         db_session = get_current_session()

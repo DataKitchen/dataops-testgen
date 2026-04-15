@@ -194,7 +194,7 @@ def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: li
         message = "Are you sure you want to delete the selected profiling run?"
         constraint["confirmation"] = "Yes, cancel and delete the profiling run."
 
-    if not ProfilingRun.has_running_process(profiling_run_ids):
+    if not ProfilingRun.has_active_job_for(ProfilingRun, *profiling_run_ids):
         constraint = None
 
     result, set_result = temp_value("profiling-runs:result-value", default=None)

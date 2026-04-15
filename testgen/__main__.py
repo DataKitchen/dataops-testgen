@@ -29,7 +29,12 @@ from testgen.commands.run_get_entities import (
 from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_observability_exporter import run_observability_exporter
 from testgen.commands.run_profiling import run_profiling
-from testgen.commands.run_quick_start import run_monitor_increment, run_quick_start, run_quick_start_increment
+from testgen.commands.run_quick_start import (
+    run_monitor_increment,
+    run_quick_start,
+    run_quick_start_increment,
+    run_with_job_execution,
+)
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
@@ -441,19 +446,19 @@ def quick_start(
     test_suite_id = "9df7489d-92b3-49f9-95ca-512160d7896f"
 
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    run_profiling(table_group_id, run_date=now_date + time_delta)
+    run_with_job_execution(run_profiling, "run-profile", now_date + time_delta, table_group_id=table_group_id)
 
     LOG.info(f"run-test-generation with test_suite_id: {test_suite_id}")
     with_database_session(run_test_generation)(test_suite_id, "Standard")
 
-    run_test_execution(test_suite_id, run_date=now_date + time_delta)
+    run_with_job_execution(run_test_execution, "run-tests", now_date + time_delta, test_suite_id=test_suite_id)
 
     total_iterations = 3
     for iteration in range(1, total_iterations + 1):
         click.echo(f"Running iteration: {iteration} / {total_iterations}")
         run_date = now_date + timedelta(days=-10 * (total_iterations - iteration)) # 10 day increments
         run_quick_start_increment(iteration)
-        run_test_execution(test_suite_id, run_date=run_date)
+        run_with_job_execution(run_test_execution, "run-tests", run_date, test_suite_id=test_suite_id)
 
     monitor_iterations = 68  # ~5 weeks
     monitor_interval = timedelta(hours=12)
@@ -468,7 +473,7 @@ def quick_start(
         if monitor_run_date.weekday() < 5 and monitor_run_date.hour < 12:
             weekday_morning_count += 1
         run_monitor_increment(monitor_run_date, iteration, weekday_morning_count)
-        run_test_execution(monitor_test_suite_id, run_date=monitor_run_date)
+        run_with_job_execution(run_test_execution, "run-monitors", monitor_run_date, test_suite_id=monitor_test_suite_id)
         monitor_run_date += monitor_interval
 
     click.echo("Quick start has successfully finished.")
