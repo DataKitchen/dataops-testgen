@@ -29,9 +29,9 @@ class QualityDashboardPage(Page):
         project_summary = get_project_summary(project_code)
 
         testgen.page_header(PAGE_TITLE, "quality-scores/")
-        testgen.testgen_component(
-            "quality_dashboard",
-            props={
+        testgen.quality_dashboard_widget(
+            key="quality_dashboard",
+            data={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "scores": [
                     format_score_card(score)
@@ -39,9 +39,7 @@ class QualityDashboardPage(Page):
                     if score.get("score") or score.get("cde_score") or score.get("categories")
                 ],
             },
-            on_change_handlers={
-                "RefreshData": refresh_data,
-            },
+            on_RefreshData_change=refresh_data,
         )
 
 

@@ -19,12 +19,11 @@
  * @property {string?} button_color
  */
 
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { Button } from '../components/button.js';
-import { Toggle } from '../components/toggle.js';
-import { Alert } from '../components/alert.js';
+import van from '/app/static/js/van.min.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Toggle } from '/app/static/js/components/toggle.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const { div, span } = van.tags;
 
@@ -33,9 +32,8 @@ const { div, span } = van.tags;
  * @returns 
  */
 const ConfirmationDialog = (props) => {
+    const { emit } = props;
     loadStylesheet('confirmation-dialog', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const wrapperId = 'confirmation-dialog';
     const confirmed = van.state(false);
@@ -44,27 +42,24 @@ const ConfirmationDialog = (props) => {
     const buttonColor = van.derive(() => (actionDisabled.val ? 'basic' : getValue(props.button_color)) ?? 'basic');
     const buttonType = van.derive(() => (actionDisabled.val ? 'stroked' : getValue(props.button_type)) ?? 'flat');
 
-    const message = getValue(props.message);
-    const constraint = getValue(props.constraint);
-
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
-
     return div(
         { id: wrapperId, class: 'flex-column' },
-        div({ class: 'flex-column fx-gap-4' }, message),
-        constraint
-            ? div(
-                { class: 'flex-column fx-gap-4 mt-4' },
-                Alert({ type: 'warn' }, span(constraint.warning)),
-                Toggle({
-                    name: 'confirm-action',
-                    label: span(constraint.confirmation),
-                    checked: confirmed,
-                    onChange: (value) => confirmed.val = value,
-                }),
-            )
-            : '',
+        div({ class: 'flex-column fx-gap-4' }, () => getValue(props.message)),
+        () => {
+            const constraint = getValue(props.constraint);
+            return constraint
+                ? div(
+                    { class: 'flex-column fx-gap-4 mt-4' },
+                    Alert({ type: 'warn' }, span(constraint.warning)),
+                    Toggle({
+                        name: 'confirm-action',
+                        label: span(constraint.confirmation),
+                        checked: confirmed,
+                        onChange: (value) => confirmed.val = value,
+                    }),
+                )
+                : '';
+        },
         div(
             { class: 'flex-row fx-justify-content-flex-end' },
             Button({
@@ -73,7 +68,7 @@ const ConfirmationDialog = (props) => {
                 label: buttonLabel,
                 style: 'width: auto;',
                 disabled: actionDisabled,
-                onclick: () => emitEvent('ActionConfirmed', {}),
+                onclick: () => emit('ActionConfirmed', {}),
             }),
         ),
         () => {
@@ -102,3 +97,26 @@ stylesheet.replace(`
 `);
 
 export { ConfirmationDialog };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
+        van.add(parentElement, ConfirmationDialog(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

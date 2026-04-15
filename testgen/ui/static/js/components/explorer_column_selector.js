@@ -20,8 +20,7 @@
  * @property {Array<Column>} columns
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, isEqual, loadStylesheet, slugify } from '../utils.js';
+import { getValue, isEqual, loadStylesheet, slugify } from '../utils.js';
 import { Tree } from './tree.js';
 import { Icon } from './icon.js';
 import { Button } from './button.js';
@@ -38,10 +37,8 @@ const TRANSLATIONS = {
 };
 
 const ColumnSelector = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('column-selector', stylesheet);
-
-    window.testgen.isPage = true;
-    Streamlit.setFrameHeight(400);
 
     const initialSelection = van.state([]);
     const selection = van.state([]);
@@ -66,7 +63,7 @@ const ColumnSelector = (/** @type Properties */ props) => {
         {class: 'flex-column fx-gap-2 column-selector-wrapper'},
         div(
             {class: 'flex-row column-selector'},
-            Tree({
+            Tree({ emit,
                 id: 'column-selector-tree',
                 classes: 'column-selector--tree',
                 multiSelect: true,
@@ -97,7 +94,7 @@ const ColumnSelector = (/** @type Properties */ props) => {
                 label: 'Apply',
                 width: 'auto',
                 disabled: van.derive(() => !changed.val),
-                onclick: () => emitEvent('ColumnFiltersUpdated', {payload: selection.val}),
+                onclick: () => emit('ColumnFiltersUpdated', {payload: selection.val}),
             }),
         )
     );

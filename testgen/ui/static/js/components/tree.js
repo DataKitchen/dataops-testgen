@@ -53,6 +53,7 @@ const { div, h3, span } = van.tags;
 const levelOffset = 14;
 
 const Tree = (/** @type Properties */ props, /** @type any? */ searchOptionsContent, /** @type any? */ filtersContent) => {
+    const emit = props.emit;
     loadStylesheet('tree', stylesheet);
 
     // Use only initial prop value as default and maintain internal state
@@ -90,7 +91,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ searchOptionsCont
             id: props.id,
             class: () => `flex-column ${getValue(props.classes)}`,
         },
-        Toolbar(treeNodes, multiSelect, props, searchOptionsContent, filtersContent),
+        Toolbar(treeNodes, multiSelect, props, searchOptionsContent, filtersContent, emit),
         div(
             { class: () => `tg-tree ${multiSelect.val ? 'multi-select' : ''}` },
             () => div(

@@ -140,7 +140,7 @@ function hasFixedAncestor(el) {
 function hasStreamlitDialogAncestor(el) {
     let node = el.parentElement;
     while (node && node !== document.body) {
-        if (node.classList.contains(STREAMLIT_DIALOG_CLASS)) return true;
+        if (node.classList.contains(STREAMLIT_DIALOG_CLASS) || node.classList.contains('tg-dialog-overlay')) return true;
         node = node.parentElement;
     }
     return false;
@@ -151,7 +151,7 @@ function calculateBottomPosition(anchor, align, fixed = false) {
     const top  = fixed ? r.bottom               : r.bottom + window.scrollY;
     const left = fixed ? r.left                 : r.left   + window.scrollX;
     const right = window.innerWidth - r.right;
-    const constrain = fixed ? `max-height: calc(100vh - ${r.bottom}px - 8px); overflow-y: auto;` : '';
+    const constrain = fixed ? `max-height: calc(100vh - ${r.bottom}px - 8px);` : '';
     return `min-width: ${r.width}px; top: ${top}px; ${constrain} ${align === 'left' ? `left: ${left}px;` : `right: ${right}px;`}`;
 }
 

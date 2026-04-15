@@ -24,28 +24,30 @@
  * @property {Schedule[]} items
  * @property {Permissions} permissions
  * @property {string} arg_label
- * @property {import('../components/select.js').Option[]} arg_values
+ * @property {import('/app/static/js/components/select.js').Option[]} arg_values
  * @property {CronSample?} sample
  * @property {Results?} results
  */
-import van from '../van.min.js';
-import { Button } from '../components/button.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
-import { withTooltip } from '../components/tooltip.js';
-import { ExpansionPanel } from '../components/expansion_panel.js';
-import { Select } from '../components/select.js';
-import { CrontabInput } from '../components/crontab_input.js';
-import { timezones } from '../values.js';
-import { Alert } from '../components/alert.js';
+import van from '/app/static/js/van.min.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { ExpansionPanel } from '/app/static/js/components/expansion_panel.js';
+import { Select } from '/app/static/js/components/select.js';
+import { CrontabInput } from '/app/static/js/components/crontab_input.js';
+import { timezones } from '/app/static/js/values.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const minHeight = 500;
 const { div, span, i } = van.tags;
 
 const ScheduleList = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('schedule-list', stylesheet);
 
-    window.testgen.isPage = true;
+    const dialogProp = getValue(props.dialog);
+    const dialogOpen = van.state(dialogProp?.open === true);
 
     const scheduleItems = van.derive(() => {
         let items = [];
@@ -54,7 +56,6 @@ const ScheduleList = (/** @type Properties */ props) => {
         } catch (e) {
             console.log(e)
         }
-        Streamlit.setFrameHeight(Math.max(minHeight, 100 * items.length || 150));
         return items;
     });
 
@@ -71,7 +72,7 @@ const ScheduleList = (/** @type Properties */ props) => {
     const columns = ['25%', '45%', '20%', '10%'];
     const domId = 'schedules-table';
 
-    return div(
+    const content = div(
         { id: domId, class: 'flex-column fx-gap-2', style: 'height: 100%; overflow-y: auto;' },
         ExpansionPanel(
             {title: span({ class: 'text-green' }, 'Add Schedule'), testId: 'scheduler-cron-editor'},
@@ -94,19 +95,19 @@ const ScheduleList = (/** @type Properties */ props) => {
                     onChange: (value) => {
                         newScheduleForm.timezone.val = value;
                         if (newScheduleForm.expression.val && newScheduleForm.timezone.val) {
-                            emitEvent('GetCronSample', {payload: {cron_expr: newScheduleForm.expression.val, tz: newScheduleForm.timezone.val}});
+                            emit('GetCronSample', {payload: {cron_expr: newScheduleForm.expression.val, tz: newScheduleForm.timezone.val}});
                         }
                     },
                     portalClass: 'short-select-portal',
                 }),
-                CrontabInput({
+                CrontabInput({ emit,
                     class: 'fx-flex',
                     sample: props.sample,
                     value: cronEditorValue,
                     onChange: (value) => {
                         newScheduleForm.expression.val = value;
                         if (newScheduleForm.expression.val && newScheduleForm.timezone.val) {
-                            emitEvent('GetCronSample', {payload: {cron_expr: newScheduleForm.expression.val, tz: newScheduleForm.timezone.val}});
+                            emit('GetCronSample', {payload: {cron_expr: newScheduleForm.expression.val, tz: newScheduleForm.timezone.val}});
                         }
                     },
                 }),
@@ -117,7 +118,7 @@ const ScheduleList = (/** @type Properties */ props) => {
                     type: 'stroked',
                     label: 'Add Schedule',
                     width: '150px',
-                    onclick: () => emitEvent('AddSchedule', {payload: {
+                    onclick: () => emit('AddSchedule', {payload: {
                         arg_value: newScheduleForm.argValue.val,
                         cron_expr: newScheduleForm.expression.val,
                         cron_tz: newScheduleForm.timezone.val,
@@ -166,17 +167,32 @@ const ScheduleList = (/** @type Properties */ props) => {
             ),
             () => scheduleItems.val?.length 
                 ? div(
-                    scheduleItems.val.map(item => ScheduleListItem(item, columns, getValue(props.permissions))),
+                    scheduleItems.val.map(item => ScheduleListItem(item, columns, getValue(props.permissions), emit)),
                 ) 
                 : div({ class: 'mt-5 mb-3 ml-3 text-secondary', style: 'text-align: center;' }, 'No schedules defined yet.'),
         ),
     );
+
+    if (dialogProp) {
+        const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+        return Dialog(
+            {
+                title: dialogTitle,
+                open: dialogOpen,
+                onClose: () => { dialogOpen.val = false; emit('CloseClicked', {}); },
+                width: '65rem',
+            },
+            content,
+        );
+    }
+    return content;
 }
 
 const ScheduleListItem = (
     /** @type Schedule */ item,
     /** @type string[] */ columns,
     /** @type Permissions */ permissions,
+    emit,
 ) => {
     return div(
         { class: 'table-row flex-row' },
@@ -240,21 +256,21 @@ const ScheduleListItem = (
                         icon: 'pause',
                         tooltip: 'Pause schedule',
                         style: 'height: 32px;',
-                        onclick: () => emitEvent('PauseSchedule', { payload: item }),
+                        onclick: () => emit('PauseSchedule', { payload: item }),
                     })
                     : Button({
                         type: 'stroked',
                         icon: 'play_arrow',
                         tooltip: 'Resume schedule',
                         style: 'height: 32px;',
-                        onclick: () => emitEvent('ResumeSchedule', { payload: item }),
+                        onclick: () => emit('ResumeSchedule', { payload: item }),
                     }),
                 Button({
                     type: 'stroked',
                     icon: 'delete',
                     tooltip: 'Delete schedule',
                     style: 'height: 32px;',
-                    onclick: () => emitEvent('DeleteSchedule', { payload: item }),
+                    onclick: () => emit('DeleteSchedule', { payload: item }),
                 }),
             ] : null,
         ),
@@ -270,3 +286,26 @@ stylesheet.replace(`
 `);
 
 export { ScheduleList };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
+        van.add(parentElement, ScheduleList(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

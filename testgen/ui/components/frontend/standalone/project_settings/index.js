@@ -2,13 +2,12 @@
  * @import {VanState} from '/app/static/js/van.min.js';
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
 import { Card } from '/app/static/js/components/card.js';
 import { Input } from '/app/static/js/components/input.js';
 import { Button } from '/app/static/js/components/button.js';
 import { required } from '/app/static/js/form_validators.js';
 import { Alert } from '/app/static/js/components/alert.js';
-import { emitEvent, getValue, isEqual } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual } from '/app/static/js/utils.js';
 
 const { div, span } = van.tags;
 
@@ -29,6 +28,7 @@ const { div, span } = van.tags;
  * @param {Properties} props
  */
 const ProjectSettings = (props) => {
+    const { emit } = props;
     const /** @type Properties */ form = {
         name: van.state(props.name.rawVal ?? ''),
         observability_api_key: van.state(props.observability_api_key.rawVal ?? ''),
@@ -96,7 +96,7 @@ const ProjectSettings = (props) => {
                             label: 'Test Observability Connection',
                             width: 'auto',
                             disabled: testObservabilityDisabled,
-                            onclick: () => emitEvent('TestObservabilityClicked', {
+                            onclick: () => emit('TestObservabilityClicked', {
                                 payload: {
                                     observability_api_url: form.observability_api_url.rawVal,
                                     observability_api_key: form.observability_api_key.rawVal,
@@ -128,7 +128,7 @@ const ProjectSettings = (props) => {
                 label: 'Save',
                 width: 'auto',
                 disabled: saveDisabled,
-                onclick: () => emitEvent('SaveClicked', {
+                onclick: () => emit('SaveClicked', {
                     payload: Object.fromEntries(Object.entries(form).map(([fieldName, value]) => [fieldName, value.rawVal]))
                 }),
             }),
@@ -139,8 +139,6 @@ const ProjectSettings = (props) => {
 export default (component) => {
   const { data, setStateValue, setTriggerValue, parentElement } = component;
 
-  Streamlit.enableV2(setTriggerValue);
-
   let componentState = parentElement.state;
   if (componentState === undefined) {
     componentState = {};
@@ -149,6 +147,7 @@ export default (component) => {
     }
 
     parentElement.state = componentState;
+    componentState.emit = createEmitter(setTriggerValue);
     van.add(parentElement, ProjectSettings(componentState));
   } else {
     for (const [ key, value ] of Object.entries(data)) {
@@ -159,7 +158,6 @@ export default (component) => {
   }
 
   return () => {
-    Streamlit.disableV2(setTriggerValue);
     parentElement.state = null;
   };
 };

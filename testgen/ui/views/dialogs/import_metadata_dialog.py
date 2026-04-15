@@ -1,19 +1,13 @@
 import base64
 import io
 import logging
-import time
-from datetime import datetime
 
 import pandas as pd
-import streamlit as st
 
-from testgen.common.models import with_database_session
 from testgen.common.models.table_group import TableGroup
-from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.queries.profiling_queries import TAG_FIELDS
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
-from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.session import session, temp_value
+from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
 
@@ -374,92 +368,7 @@ def _build_update_params(row: dict, metadata_columns: list[str], is_column: bool
     return set_clauses, params
 
 
-PREVIEW_SESSION_KEY = "import_metadata:preview"
-
-
-def open_import_metadata_dialog(table_group_id: str) -> None:
-    """Clear stale preview state before opening the dialog."""
-    st.session_state.pop(PREVIEW_SESSION_KEY, None)
-    import_metadata_dialog(table_group_id)
-
-
-@st.dialog(title="Import Metadata", width="large")
-@with_database_session
-def import_metadata_dialog(table_group_id: str) -> None:
-    should_import, set_should_import = temp_value("import_metadata:import")
-
-    def on_file_uploaded(payload: dict) -> None:
-        content = payload["content"]
-        blank_behavior = payload["blank_behavior"]
-        preview = parse_import_csv(content, table_group_id, blank_behavior)
-        st.session_state[PREVIEW_SESSION_KEY] = preview
-
-    def on_file_cleared(_payload: dict) -> None:
-        st.session_state.pop(PREVIEW_SESSION_KEY, None)
-
-    # Preview persists in session state (not temp_value) so it survives across reruns
-    preview = st.session_state.get(PREVIEW_SESSION_KEY)
-
-    result = None
-    if should_import() and preview and not preview.get("error"):
-        try:
-            apply_metadata_import(preview, table_group_id)
-
-            # Clear caches
-            from testgen.ui.queries.profiling_queries import get_column_by_id, get_table_by_id
-            from testgen.ui.views.data_catalog import get_table_group_columns, get_tag_values
-
-            for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values]:
-                func.clear()
-            st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
-
-            parts = []
-            if tc := preview.get("matched_tables", 0):
-                parts.append(f"{tc} {'table' if tc == 1 else 'tables'}")
-            if cc := preview.get("matched_columns", 0):
-                parts.append(f"{cc} {'column' if cc == 1 else 'columns'}")
-            summary = f"Metadata for {', '.join(parts)} imported." if parts else "No metadata was imported."
-
-            result = {
-                "success": True,
-                "message": summary,
-            }
-        except Exception:
-            LOG.exception("Metadata import failed")
-            result = {
-                "success": False,
-                "message": "Something went wrong while importing the metadata.",
-            }
-
-        st.session_state.pop(PREVIEW_SESSION_KEY, None)
-
-    # Build preview data for JS display
-    preview_props = None
-    if preview:
-        if preview.get("error"):
-            preview_props = {"error": preview["error"]}
-        else:
-            preview_props = _build_preview_props(preview)
-
-    testgen_component(
-        "import_metadata_dialog",
-        props={
-            "preview": preview_props,
-            "result": result,
-        },
-        on_change_handlers={
-            "FileUploaded": on_file_uploaded,
-            "FileCleared": on_file_cleared,
-            "ImportConfirmed": lambda _: set_should_import(True),
-        },
-    )
-
-    if result and result["success"]:
-        time.sleep(2)
-        safe_rerun()
-
-
-def _build_preview_props(preview: dict) -> dict:
+def build_import_preview_props(preview: dict) -> dict:
     formatted_rows = []
     metadata_columns = preview.get("metadata_columns", [])
 

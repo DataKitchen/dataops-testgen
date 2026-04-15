@@ -91,8 +91,8 @@ function scale(value, ranges, zero=0) {
  */
 function screenToSvgCoordinates(svg, event) {
     const pt = svg.createSVGPoint();
-    pt.x = event.offsetX;
-    pt.y = event.offsetY;
+    pt.x = event.clientX;
+    pt.y = event.clientY;
     const inverseCTM = svg.getScreenCTM().inverse();
     const svgPoint = pt.matrixTransform(inverseCTM);
     return svgPoint;

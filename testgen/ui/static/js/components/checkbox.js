@@ -21,6 +21,13 @@ const { input, label, span } = van.tags;
 const Checkbox = (/** @type Properties */ props) => {
     loadStylesheet('checkbox', stylesheet);
 
+    let onChange = null;
+    const onChangeHandler = (/** @type Event */ event) => onChange?.(event.target.checked, event);
+
+    van.derive(() => {
+        onChange = props.onChange?.val ?? props.onChange ?? null;
+    });
+
     return label(
         {
             class: 'flex-row fx-gap-2 clickable',
@@ -33,10 +40,7 @@ const Checkbox = (/** @type Properties */ props) => {
             class: 'tg-checkbox--input clickable',
             checked: props.checked,
             indeterminate: props.indeterminate,
-            onchange: van.derive(() => {
-                const onChange = props.onChange?.val ?? props.onChange;
-                return onChange ? (/** @type Event */ event) => onChange(event.target.checked, event) : null;
-            }),
+            onchange: onChangeHandler,
             disabled: props.disabled ?? false,
         }),
         span({'data-testid': 'checkbox-label'}, props.label),

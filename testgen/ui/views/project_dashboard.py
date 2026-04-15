@@ -38,9 +38,9 @@ class ProjectDashboardPage(Page):
 
         table_groups_sort = st.session_state.get("overview_table_groups_sort") or "latest_activity_date"
 
-        testgen.testgen_component(
-            "project_dashboard",
-            props={
+        testgen.project_dashboard_widget(
+            key="project_dashboard",
+            data={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "table_groups": [
                     {

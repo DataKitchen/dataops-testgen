@@ -12,12 +12,13 @@
  * @property {(string|null)} id
  * @property {(Function|null)} onclick
  * @property {(bool)} disabled
+ * @property {(bool)} loading
+ * @property {('normal' | 'small')?} size
  * @property {string?} style
  * @property {string?} testId
  */
-import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { withTooltip } from './tooltip.js';
 
 const { button, i, span } = van.tags;
@@ -36,43 +37,28 @@ const Button = (/** @type Properties */ props) => {
     const width = getValue(props.width);
     const isIconOnly = getValue(props.type) === BUTTON_TYPE.ICON || (getValue(props.icon) && !getValue(props.label));
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(40);
-        if (isIconOnly) { // Force a 40px width for the parent iframe & handle window resizing
-            enforceElementWidth(window.frameElement, 40);
-        }
+    const onClickHandler = props.onclick || (() => {});
+    const isDisabled = () => getValue(props.disabled) || getValue(props.loading);
 
-        if (width) {
-            enforceElementWidth(window.frameElement, width);
-        }
-        if (props.tooltip) {
-            window.frameElement.parentElement.setAttribute('data-tooltip', props.tooltip.val);
-            window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
-        }
-    }
-
-    const onClickHandler = props.onclick || (() => emitEvent('ButtonClicked'));
-
-    const buttonEl = button(
-        {
-            id: getValue(props.id) ?? undefined,
-            class: () => `tg-button tg-${getValue(props.type)}-button tg-${getValue(props.color) ?? 'basic'}-button ${getValue(props.type) !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
-            style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
-            onclick: onClickHandler,
-            disabled: props.disabled,
-            'data-testid': getValue(props.testId) ?? '',
-        },
-        span({class: 'tg-button-focus-state-indicator'}, ''),
-        props.icon ? i({
-            class: 'material-symbols-rounded',
-            style: () => `font-size: ${getValue(props.iconSize) ?? DEFAULT_ICON_SIZE}px;`
-        }, props.icon) : undefined,
-        !isIconOnly ? span(props.label) : undefined,
+    return withTooltip(
+        button(
+            {
+                id: getValue(props.id) ?? undefined,
+                class: () => `tg-button tg-${getValue(props.size ?? 'normal')}-button tg-${getValue(props.type)}-button tg-${getValue(props.color) ?? 'basic'}-button ${getValue(props.type) !== 'icon' && isIconOnly ? 'tg-icon-button' : ''}`,
+                style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
+                onclick: onClickHandler,
+                disabled: isDisabled,
+                'data-testid': getValue(props.testId) ?? '',
+            },
+            span({class: 'tg-button-focus-state-indicator'}, ''),
+            props.icon ? i({
+                class: 'material-symbols-rounded',
+                style: () => `font-size: ${getValue(props.iconSize) ?? DEFAULT_ICON_SIZE}px;`
+            }, props.icon) : undefined,
+            !isIconOnly ? span(props.label) : undefined,
+            () => getValue(props.loading) ? span({ class: 'tg-button-spinner' }) : '',
+        ), { text: props.tooltip, position: props.tooltipPosition },
     );
-
-    return getValue(props.tooltip)
-        ? withTooltip(buttonEl, { text: props.tooltip, position: props.tooltipPosition })
-        : buttonEl;
 };
 
 const stylesheet = new CSSStyleSheet();
@@ -95,6 +81,12 @@ button.tg-button {
     cursor: pointer;
 
     font-size: 14px;
+}
+
+button.tg-button.tg-small-button {
+    height: 32px;
+    padding-top: 4px;
+    padding-bottom: 4px;
 }
 
 button.tg-button .tg-button-focus-state-indicator {
@@ -206,6 +198,22 @@ button.tg-button.tg-warn-button.tg-stroked-button {
     background: var(--button-warn-stroked-background);
 }
 /* ... */
+
+/* Loading spinner */
+.tg-button-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: tg-spin 0.6s linear infinite;
+    margin-left: 8px;
+    flex-shrink: 0;
+}
+
+@keyframes tg-spin {
+    to { transform: rotate(360deg); }
+}
 `);
 
 export { Button };

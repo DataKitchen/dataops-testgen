@@ -1,5 +1,5 @@
 /**
- * @import { Connection, Flavor } from '../components/connection_form.js';
+ * @import { Connection, Flavor } from '/app/static/js/components/connection_form.js';
  * 
  * @typedef Results
  * @type {object}
@@ -20,13 +20,13 @@
  * @property {string?} generated_connection_url
  * @property {Results?} results
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, getValue, emitEvent } from '../utils.js';
-import { ConnectionForm } from '../components/connection_form.js';
-import { Button } from '../components/button.js';
-import { Link } from '../components/link.js';
-import { Alert } from '../components/alert.js';
+import van from '/app/static/js/van.min.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { ConnectionForm } from '/app/static/js/components/connection_form.js';
+import { TableGroupWizard } from '/app/static/js/components/table_group_wizard.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Link } from '/app/static/js/components/link.js';
+import { Alert } from '/app/static/js/components/alert.js';
 
 const { div, span } = van.tags;
 
@@ -36,9 +36,8 @@ const { div, span } = van.tags;
  * @returns 
  */
 const Connections = (props) => {
+    const { emit } = props;
     loadStylesheet('connections', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const wrapperId = 'connections-list-wrapper';
     const projectCode = getValue(props.project_code);
@@ -47,15 +46,13 @@ const Connections = (props) => {
     const updatedConnection = van.state(connection);
     const formState = van.state({dirty: false, valid: false});
 
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId, class: 'flex-column fx-gap-4' },
+        { id: wrapperId, 'data-testid': 'connections', class: 'flex-column fx-gap-4' },
         div(
             { class: 'flex-row fx-justify-content-flex-end' },
             () => getValue(props.has_table_groups)
-                ? Link({
+                ? Link({ emit, 
                     href: 'table-groups',
                     params: {'project_code': projectCode, "connection_id": connectionId},
                     label: 'Manage Table Groups',
@@ -70,13 +67,14 @@ const Connections = (props) => {
                     width: 'auto',
                     disabled: !getValue(props.permissions).is_admin,
                     tooltip: 'You do not have permissions to perform this action. Contact your administrator.',
-                    onclick: () => emitEvent('SetupTableGroupClicked', {}),
+                    onclick: () => emit('SetupTableGroupClicked', {}),
                 }),
         ),
         div(
             { class: 'flex-column fx-gap-4 p-4' },
             ConnectionForm(
                 {
+                    emit,
                     connection: props.connection,
                     flavors: props.flavors,
                     disableFlavor: false,
@@ -100,7 +98,7 @@ const Connections = (props) => {
                         type: 'flat',
                         width: 'auto',
                         disabled: !canSave,
-                        onclick: () => emitEvent('SaveConnectionClicked', { payload: updatedConnection.val }),
+                        onclick: () => emit('SaveConnectionClicked', { payload: updatedConnection.val }),
                     });
                 },
             ),
@@ -111,6 +109,11 @@ const Connections = (props) => {
                     : '';
             },
         ),
+        () => {
+            const wizardData = getValue(props.setup_wizard);
+            if (!wizardData) return div();
+            return TableGroupWizard(wizardData, emit);
+        },
     );
 }
 
@@ -127,3 +130,26 @@ stylesheet.replace(`
 `);
 
 export { Connections };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
+        van.add(parentElement, Connections(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};

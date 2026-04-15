@@ -1,5 +1,5 @@
 /**
- * @import { TestDefinition } from '../components/test_definition_form.js';
+ * @import { TestDefinition } from '/app/static/js/components/test_definition_form.js';
  *
  * @typedef Properties
  * @type {object}
@@ -7,15 +7,16 @@
  * @property {TestDefinition[]} definitions
  * @property {object} metric_test_type
  * @property {{ success: boolean, timestamp: string }?} result
+ * @property {{ open: boolean, title: string }?} dialog
  */
 
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, isEqual } from '../utils.js';
-import { Button } from '../components/button.js';
-import { Card } from '../components/card.js';
-import { Icon } from '../components/icon.js';
-import { TestDefinitionForm } from '../components/test_definition_form.js';
+import van from '/app/static/js/van.min.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { TestDefinitionForm } from '/app/static/js/components/test_definition_form.js';
 
 const { div, span } = van.tags;
 
@@ -25,10 +26,15 @@ const defaultMonitorOptions = [
 ];
 
 const EditTableMonitors = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('edit-table-monitors', stylesheet);
-    window.testgen.isPage = true;
 
-    const metricTestType = getValue(props.metric_test_type);
+    const dialogOpen = van.state(false);
+    van.derive(() => {
+        const d = getValue(props.dialog);
+        if (d?.open) dialogOpen.val = true;
+        else dialogOpen.val = false;
+    });
 
     const updatedDefinitions = van.state({}); // { [id]: changes } - only changes for existing definitions
     const newMetrics = van.state({}); // { [tempId]: metric }
@@ -67,7 +73,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
     });
     const selectedItem = van.state({ type: 'Freshness_Trend', id: null });
 
-    return div(
+    const content = div(
         div(
             { class: 'edit-monitors flex-row fx-align-stretch' },
             div(
@@ -94,6 +100,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         width: 'auto',
                         color: 'primary',
                         onclick: () => {
+                            const metricTestType = getValue(props.metric_test_type);
                             const tempId = `temp_${Date.now()}`;
                             const newMetric = {
                                 _tempId: tempId,
@@ -235,7 +242,7 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         new_metrics: Object.values(newMetrics.val),
                         deleted_metric_ids: deletedMetricIds.val,
                     };
-                    emitEvent('SaveTestDefinition', { payload });
+                    emit('SaveTestDefinition', { payload });
                 },
             }),
             Button({
@@ -251,10 +258,21 @@ const EditTableMonitors = (/** @type Properties */ props) => {
                         deleted_metric_ids: deletedMetricIds.val,
                         close: true,
                     };
-                    emitEvent('SaveTestDefinition', { payload });
+                    emit('SaveTestDefinition', { payload });
                 },
             }),
         ),
+    );
+
+    const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+    return Dialog(
+        {
+            title: dialogTitle,
+            open: dialogOpen,
+            onClose: () => { dialogOpen.val = false; emit('CloseEditMonitorsDialog', {}); },
+            width: '55rem',
+        },
+        content,
     );
 };
 
@@ -310,28 +328,3 @@ stylesheet.replace(`
 `);
 
 export { EditTableMonitors };
-
-export default (component) => {
-    const { data, setTriggerValue, parentElement } = component;
-    Streamlit.enableV2(setTriggerValue);
-
-    let componentState = parentElement.state;
-    if (componentState === undefined) {
-        componentState = {};
-        for (const [key, value] of Object.entries(data)) {
-            componentState[key] = van.state(value);
-        }
-        parentElement.state = componentState;
-        van.add(parentElement, EditTableMonitors(componentState));
-    } else {
-        for (const [key, value] of Object.entries(data)) {
-            if (!isEqual(componentState[key].val, value)) {
-                componentState[key].val = value;
-            }
-        }
-    }
-
-    return () => {
-        parentElement.state = null;
-    };
-};

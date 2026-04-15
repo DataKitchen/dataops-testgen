@@ -7,7 +7,7 @@ from typing import Any
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
@@ -18,21 +18,25 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets import testgen_component
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.services.query_cache import get_project_summary, get_test_run_summaries
-from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.session import session, temp_value
+from testgen.ui.session import session
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
-from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
 from testgen.utils import friendly_score
 
 PAGE_ICON = "labs"
 PAGE_TITLE = "Test Runs"
 LOG = logging.getLogger("testgen")
+
+TR_RUN_TESTS_DIALOG_KEY = "tr:run_tests_dialog"
+TR_RUN_SCHEDULES_DIALOG_KEY = "tr:run_schedules_dialog"
+TR_RUN_NOTIFICATIONS_DIALOG_KEY = "tr:run_notifications_dialog"
+TR_DELETE_DIALOG_KEY = "tr:delete_dialog"
+TR_RUN_TESTS_RESULT_KEY = "tr:run_tests_result"
+TR_DELETE_DIALOG_OPEN_COUNT_KEY = "tr:delete_dialog_open_count"
 
 
 class TestRunsPage(Page):
@@ -51,7 +55,7 @@ class TestRunsPage(Page):
     def render(self, project_code: str, table_group_id: str | None = None, test_suite_id: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "data-quality-testing/",
+            "data-quality-testing",
         )
 
         with st.spinner("Loading data ..."):
@@ -60,9 +64,101 @@ class TestRunsPage(Page):
             table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
             test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code, TestSuite.is_monitor.isnot(True))
 
-        testgen_component(
-            "test_runs",
-            props={
+        def on_run_tests_clicked(*_) -> None:
+            st.session_state[TR_RUN_TESTS_DIALOG_KEY] = True
+
+        def on_run_schedules_clicked(*_) -> None:
+            st.session_state[TR_RUN_SCHEDULES_DIALOG_KEY] = True
+
+        def on_run_notifications_clicked(*_) -> None:
+            st.session_state[TR_RUN_NOTIFICATIONS_DIALOG_KEY] = True
+
+        def on_delete_runs_clicked(test_run_ids: list[str]) -> None:
+            st.session_state[TR_DELETE_DIALOG_KEY] = test_run_ids
+            st.session_state[TR_DELETE_DIALOG_OPEN_COUNT_KEY] = st.session_state.get(TR_DELETE_DIALOG_OPEN_COUNT_KEY, 0) + 1
+
+        schedule_obj = TestRunScheduleDialog(project_code)
+        ns_obj = TestRunNotificationSettingsDialog(
+            TestRunNotificationSettings, {"project_code": project_code}
+        )
+
+        run_tests_data = None
+        if st.session_state.get(TR_RUN_TESTS_DIALOG_KEY):
+            run_tests_data = {
+                "title": "Run Tests",
+                "project_code": project_code,
+                "test_suites": [{"value": str(ts.id), "label": ts.test_suite} for ts in test_suites],
+                "default_test_suite_id": str(test_suite_id) if test_suite_id else None,
+                "result": st.session_state.get(TR_RUN_TESTS_RESULT_KEY),
+            }
+
+        schedule_data = None
+        if st.session_state.get(TR_RUN_SCHEDULES_DIALOG_KEY):
+            schedule_data = schedule_obj.build_data()
+            schedule_data["open"] = True
+
+        notifications_data = None
+        if st.session_state.get(TR_RUN_NOTIFICATIONS_DIALOG_KEY):
+            notifications_data = ns_obj.build_data()
+            notifications_data["open"] = True
+
+        # Build delete dialog data
+        delete_dialog_data = None
+        if run_ids := st.session_state.get(TR_DELETE_DIALOG_KEY):
+            delete_dialog_data = {
+                "open": st.session_state[TR_DELETE_DIALOG_OPEN_COUNT_KEY],
+                "run_ids": run_ids,
+                "has_active_job": TestRun.has_active_job_for(TestRun, *run_ids),
+            }
+
+        def on_run_tests_confirmed(data: dict) -> None:
+            selected_id = data.get("test_suite_id")
+            selected_name = data.get("test_suite_name")
+            success = True
+            message = f"Test run started for test suite '{selected_name}'."
+            show_link = session.current_page != "test-runs"
+            try:
+                with database_session():
+                    JobExecution.submit(
+                        job_key="run-tests",
+                        kwargs={"test_suite_id": str(selected_id)},
+                        source="ui",
+                        project_code=project_code,
+                    )
+            except Exception as error:
+                success = False
+                message = f"Test run could not be started: {error!s}."
+                show_link = False
+            st.session_state[TR_RUN_TESTS_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            if success and not show_link:
+                st.cache_data.clear()
+                st.session_state.pop(TR_RUN_TESTS_DIALOG_KEY, None)
+                st.session_state.pop(TR_RUN_TESTS_RESULT_KEY, None)
+
+        def on_go_to_test_runs(payload: dict) -> None:
+            st.session_state.pop(TR_RUN_TESTS_DIALOG_KEY, None)
+            st.session_state.pop(TR_RUN_TESTS_RESULT_KEY, None)
+            st.cache_data.clear()
+            Router().queue_navigation(to="test-runs", with_args=payload)
+
+        def on_run_tests_dialog_closed(*_) -> None:
+            st.session_state.pop(TR_RUN_TESTS_DIALOG_KEY, None)
+            st.session_state.pop(TR_RUN_TESTS_RESULT_KEY, None)
+
+        def on_schedule_dialog_closed(*_) -> None:
+            schedule_obj.clear_state()
+            st.session_state.pop(TR_RUN_SCHEDULES_DIALOG_KEY, None)
+
+        def on_notifications_dialog_closed(*_) -> None:
+            ns_obj.clear_state()
+            st.session_state.pop(TR_RUN_NOTIFICATIONS_DIALOG_KEY, None)
+
+        def on_delete_dialog_closed(*_) -> None:
+            st.session_state.pop(TR_DELETE_DIALOG_KEY, None)
+
+        testgen.test_runs_widget(
+            key="test_runs",
+            data={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "test_runs": [
                     {
@@ -88,18 +184,38 @@ class TestRunsPage(Page):
                 "permissions": {
                     "can_edit": session.auth.user_has_permission("edit"),
                 },
+                "run_tests_dialog": run_tests_data,
+                "schedule_dialog": schedule_data,
+                "notifications_dialog": notifications_data,
+                "delete_dialog": delete_dialog_data,
             },
-            on_change_handlers={
-                "FilterApplied": on_test_runs_filtered,
-                "RunSchedulesClicked": lambda *_: TestRunScheduleDialog().open(project_code),
-                "RunNotificationsClicked": manage_notifications(project_code),
-                "RunTestsClicked": lambda *_: run_tests_dialog(project_code, None, test_suite_id),
-                "RefreshData": refresh_data,
-                "RunsDeleted": partial(on_delete_runs, project_code, table_group_id, test_suite_id),
-            },
-            event_handlers={
-                "RunCanceled": on_cancel_run,
-            },
+            on_FilterApplied_change=on_test_runs_filtered,
+            on_RunSchedulesClicked_change=on_run_schedules_clicked,
+            on_RunNotificationsClicked_change=on_run_notifications_clicked,
+            on_RunTestsClicked_change=on_run_tests_clicked,
+            on_RefreshData_change=refresh_data,
+            on_DeleteRunsClicked_change=on_delete_runs_clicked,
+            on_RunsDeleted_change=partial(on_delete_runs, project_code, table_group_id, test_suite_id),
+            on_DeleteDialogClosed_change=on_delete_dialog_closed,
+            on_RunCanceled_change=on_cancel_run,
+            # RunTestsDialog events
+            on_RunTestsConfirmed_change=on_run_tests_confirmed,
+            on_GoToTestRunsClicked_change=on_go_to_test_runs,
+            on_RunTestsDialogClosed_change=on_run_tests_dialog_closed,
+            # ScheduleList events
+            on_PauseSchedule_change=schedule_obj.on_pause,
+            on_ResumeSchedule_change=schedule_obj.on_resume,
+            on_DeleteSchedule_change=schedule_obj.on_delete,
+            on_GetCronSample_change=schedule_obj.on_cron_sample,
+            on_AddSchedule_change=schedule_obj.on_add,
+            on_ScheduleDialogClosed_change=on_schedule_dialog_closed,
+            # NotificationSettings events
+            on_AddNotification_change=ns_obj.on_add_item,
+            on_UpdateNotification_change=ns_obj.on_update_item,
+            on_DeleteNotification_change=ns_obj.on_delete_item,
+            on_PauseNotification_change=ns_obj.on_pause_item,
+            on_ResumeNotification_change=ns_obj.on_resume_item,
+            on_NotificationsDialogClosed_change=on_notifications_dialog_closed,
         )
 
 
@@ -113,14 +229,6 @@ def on_test_runs_filtered(filters: TestRunFilters) -> None:
 
 def refresh_data(*_) -> None:
     get_test_run_summaries.clear()
-
-
-def manage_notifications(project_code):
-
-    def open_dialog(*_):
-        TestRunNotificationSettingsDialog(TestRunNotificationSettings, {"project_code": project_code}).open(),
-
-    return open_dialog
 
 
 class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
@@ -199,52 +307,18 @@ def on_cancel_run(test_run: dict) -> None:
         fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
 
 
-@st.dialog(title="Delete Test Runs")
 @with_database_session
 def on_delete_runs(project_code: str, table_group_id: str, test_suite_id: str, test_run_ids: list[str]) -> None:
-    def on_delete_confirmed(*_args) -> None:
-        set_delete_confirmed(True)
-
-    message = f"Are you sure you want to delete the {len(test_run_ids)} selected test runs?"
-    constraint = {
-        "warning": "Any running processes will be canceled.",
-        "confirmation": "Yes, cancel and delete the test runs.",
-    }
-    if len(test_run_ids) == 1:
-        message = "Are you sure you want to delete the selected test run?"
-        constraint["confirmation"] = "Yes, cancel and delete the test run."
-
-    if not TestRun.has_active_job_for(TestRun, *test_run_ids):
-        constraint = None
-
-    result = None
-    delete_confirmed, set_delete_confirmed = temp_value("test-runs:confirm-delete", default=False)
-    testgen.testgen_component(
-        "confirm_dialog",
-        props={
-            "message": message,
-            "constraint": constraint,
-            "button_label": "Delete",
-            "button_color": "warn",
-            "result": result,
-        },
-        on_change_handlers={
-            "ActionConfirmed": on_delete_confirmed,
-        },
-    )
-
-    if delete_confirmed():
-        try:
-            with st.spinner("Deleting runs ..."):
-                test_runs = get_test_run_summaries(project_code, table_group_id, test_suite_id, test_run_ids)
-                for test_run in test_runs:
-                    if test_run.status == "Running" and test_run.job_execution_id:
-                        job_exec = JobExecution.get(test_run.job_execution_id)
-                        if job_exec:
-                            job_exec.request_cancel()
-                TestRun.cascade_delete(test_run_ids)
-            safe_rerun()
-        except Exception:
-            LOG.exception("Failed to delete test run")
-            result = {"success": False, "message": "Something went wrong while deleting the test run."}
-            safe_rerun(scope="fragment")
+    try:
+        test_runs = get_test_run_summaries(project_code, table_group_id, test_suite_id, test_run_ids)
+        for test_run in test_runs:
+            if test_run.status == "Running" and test_run.job_execution_id:
+                job_exec = JobExecution.get(test_run.job_execution_id)
+                if job_exec:
+                    job_exec.request_cancel()
+        TestRun.cascade_delete(test_run_ids)
+        get_test_run_summaries.clear()
+        st.session_state.pop(TR_DELETE_DIALOG_KEY, None)
+    except Exception:
+        LOG.exception("Failed to delete test run")
+        st.toast("Something went wrong while deleting the test run.", icon=":material/error:")

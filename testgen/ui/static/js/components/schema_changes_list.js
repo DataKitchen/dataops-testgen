@@ -13,10 +13,9 @@
  * @property {(DataStructureLog[])?} data_structure_logs
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 import { Icon } from '../components/icon.js';
 import { formatTimestamp } from '../display_utils.js';
-import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { div, span } = van.tags;
 
@@ -25,20 +24,13 @@ const { div, span } = van.tags;
  */
 const SchemaChangesList = (props) => {
     loadStylesheet('schema-changes-list', stylesheet);
-    const domId = 'schema-changes-list';
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(1);
-        resizeFrameHeightToElement(domId);
-        resizeFrameHeightOnDOMChange(domId);
-    }
-    
     const dataStructureLogs = getValue(props.data_structure_logs) ?? [];
     const windowStart = getValue(props.window_start);
     const windowEnd = getValue(props.window_end);
 
     return div(
-        { id: domId, class: 'flex-column fx-gap-1 fx-flex schema-changes-list' },
+        { class: 'flex-column fx-gap-1 fx-flex schema-changes-list' },
         span({ style: 'font-size: 16px; font-weight: 500;' }, 'Schema Changes'),
         span(
           { class: 'mb-3 text-caption', style: 'min-width: 200px;' },

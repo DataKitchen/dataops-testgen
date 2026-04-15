@@ -18,27 +18,16 @@
  * @property {string?} tooltipPosition
  * @property {boolean?} disabled
  * @property {((event: any) => void)?} onClick
+ * @property {string?} testId
  */
-import { emitEvent, enforceElementWidth, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
 
 const { a, div, i, span } = van.tags;
 
 const Link = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('link', stylesheet);
-
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(getValue(props.height) || 24);
-        const width = getValue(props.width);
-        if (width) {
-            enforceElementWidth(window.frameElement, width);
-        }
-        if (props.tooltip) {
-            window.frameElement.parentElement.setAttribute('data-tooltip', props.tooltip.val);
-            window.frameElement.parentElement.setAttribute('data-tooltip-position', props.tooltipPosition.val);
-        }
-    }
 
     const href = getValue(props.href);
     const params = getValue(props.params) ?? {};
@@ -49,6 +38,7 @@ const Link = (/** @type Properties */ props) => {
 
     return a(
         {
+            'data-testid': getValue(props.testId) ?? '',
             class: `tg-link
                 ${getValue(props.underline) ? 'tg-link--underline' : ''}
                 ${getValue(props.disabled) ? 'disabled' : ''}
@@ -59,7 +49,7 @@ const Link = (/** @type Properties */ props) => {
             onclick: open_new ? null : (onClick ?? ((event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                emitEvent('LinkClicked', { href, params });
+                emit('LinkClicked', { href, params });
             })),
             onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
             onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,

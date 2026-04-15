@@ -6,14 +6,14 @@ from uuid import UUID
 
 import streamlit as st
 
-from testgen.common.models import database_session, with_database_session
+from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import NotificationSettings, NotificationSettingsValidationError
 from testgen.common.models.settings import PersistedSetting
-from testgen.ui.components import widgets
-from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.session import session, temp_value
+from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
+
+RESULT_KEY = "notification_settings_dialog:result"
 
 
 class NotificationSettingsDialogBase:
@@ -28,11 +28,7 @@ class NotificationSettingsDialogBase:
         self.ns_class = ns_class
         self.ns_attrs = ns_attrs or {}
         self.component_props = component_props or {}
-        self.get_result, self.set_result = temp_value("notification_settings_dialog:result")
         self._result_idx = iter(count())
-
-    def open(self) -> None:
-        return st.dialog(title=self.title)(self.render)()
 
     @staticmethod
     def event_handler(*, success_message=None, error_message="Something went wrong."):
@@ -42,8 +38,7 @@ class NotificationSettingsDialogBase:
             @wraps(method)
             def wrapper(self, *args, **kwargs):
                 try:
-                    with database_session():
-                        method(self, *args, **kwargs)
+                    with_database_session(method)(self, *args, **kwargs)
                 except NotificationSettingsValidationError as e:
                     success = False
                     message = str(e)
@@ -56,8 +51,7 @@ class NotificationSettingsDialogBase:
                     message = success_message
 
                 # The ever-changing "idx" is useful to force refreshing the component
-                self.set_result({"success": success, "message": message, "idx": next(self._result_idx)})
-                safe_rerun(scope="fragment")
+                st.session_state[RESULT_KEY] = {"success": success, "message": message, "idx": next(self._result_idx)}
 
             return wrapper
         return decorator
@@ -117,9 +111,9 @@ class NotificationSettingsDialogBase:
         return ns_json_list
 
     @with_database_session
-    def render(self) -> None:
+    def build_data(self) -> dict:
         user_can_edit = session.auth.user_has_permission("edit")
-        result = self.get_result()
+        result = st.session_state.get(RESULT_KEY)
 
         ns_json_list = []
         select_col = [  # noqa: RUF015
@@ -145,24 +139,18 @@ class NotificationSettingsDialogBase:
             self._mark_duplicates(ns_json_list),
             key=lambda item: "0" if not item.get("scope") else scope_options_labels.get(item["scope"], "ZZZ"),
         )
-        widgets.css_class("m-dialog")
-        widgets.testgen_component(
-            "notification_settings",
-            props={
-                "smtp_configured": PersistedSetting.get("SMTP_CONFIGURED"),
-                "items": ns_json_list,
-                "event": self.ns_class.__mapper_args__["polymorphic_identity"].value,
-                "permissions": {"can_edit": user_can_edit},
-                "result": result,
-                "scope_options": [],
-                "scope_label": None,
-                **component_props,
-            },
-            event_handlers={
-                "AddNotification": self.on_add_item,
-                "UpdateNotification": self.on_update_item,
-                "DeleteNotification": self.on_delete_item,
-                "PauseNotification": self.on_pause_item,
-                "ResumeNotification": self.on_resume_item,
-            },
-        )
+
+        return {
+            "title": self.title,
+            "smtp_configured": PersistedSetting.get("SMTP_CONFIGURED"),
+            "items": ns_json_list,
+            "event": self.ns_class.__mapper_args__["polymorphic_identity"].value,
+            "permissions": {"can_edit": user_can_edit},
+            "result": result,
+            "scope_options": [],
+            "scope_label": None,
+            **component_props,
+        }
+
+    def clear_state(self) -> None:
+        st.session_state.pop(RESULT_KEY, None)
