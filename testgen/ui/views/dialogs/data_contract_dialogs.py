@@ -16,7 +16,9 @@ import yaml
 from testgen.commands.contract_snapshot_suite import (
     create_contract_snapshot_suite,
     delete_contract_version,
+    sync_import_to_snapshot_suite,
 )
+from testgen.commands.odcs_contract import ContractDiff, get_updated_yaml, run_import_contract
 from testgen.commands.contract_staleness import StaleDiff
 from testgen.commands.contract_versions import (
     list_contract_versions,
@@ -849,8 +851,8 @@ def _update_version_dialog(
     test_edits = pending.get("tests", [])
     deletions  = pending.get("deletions", [])
 
-    st.markdown(f"**Save changes to Version {current_version}**")
-    st.caption("This updates the existing version in-place without creating a new one.")
+    st.markdown(f"**Update version {current_version} in place**")
+    st.info("These changes will be saved to the **current version** — no new version number will be created. To snapshot a new version, cancel and click **Save version** without pending edits.", icon=":material/edit_note:")
 
     if gov_edits or test_edits or deletions:
         st.markdown("**Changes to save:**")
@@ -896,9 +898,9 @@ def _save_version_dialog(
     test_edits = pending.get("tests", [])
     next_ver   = (current_version + 1) if current_version is not None else 0
 
-    st.markdown(f"**Save as Version {next_ver}**")
+    st.markdown(f"**Create new version {next_ver}**")
     if current_version is not None:
-        st.caption(f"Current latest: version {current_version}")
+        st.info(f"This creates a permanent, timestamped snapshot of the contract. Version {current_version} remains available as a historical record.", icon=":material/bookmark_add:")
 
     if gov_edits or test_edits:
         st.markdown("**Changes to include:**")
@@ -1137,6 +1139,234 @@ def _delete_version_dialog(table_group_id: str, version: int) -> None:
         except Exception as exc:
             LOG.exception("_delete_version_dialog: failed to delete version %d", version)
             st.error(f"Delete failed: {exc}")
+
+    if cancel_col.button("Cancel", use_container_width=True):
+        safe_rerun()
+
+
+# ---------------------------------------------------------------------------
+# Import YAML confirmation
+# ---------------------------------------------------------------------------
+
+@st.dialog("Import Contract from YAML", width="small")
+def _confirm_import_dialog(
+    preview: ContractDiff,
+    yaml_content: str,
+    table_group_id: str,
+    snapshot_suite_id: str | None,
+    import_key: str,
+) -> None:
+    """Show a preview of the import diff and ask the user to confirm."""
+    st.subheader("Import Contract from YAML")
+
+    if preview.has_errors:
+        for err in preview.errors:
+            st.error(err, icon=":material/dangerous:")
+        if st.button("Close", use_container_width=True):
+            safe_rerun()
+        return
+
+    # ── Quality rule summary ──────────────────────────────────────────────
+    total_rules = (
+        len(preview.test_inserts)
+        + len(preview.test_updates)
+        + preview.no_change_rules
+        + preview.skipped_rules
+    )
+    accepted = len(preview.test_inserts) + len(preview.test_updates) + preview.no_change_rules
+    rejected = preview.skipped_rules
+
+    st.markdown("**Quality Rules**")
+    col_acc, col_rej = st.columns(2)
+    col_acc.metric("Accepted", accepted, help="Rules that will create, update, or match an existing test")
+    col_rej.metric("Skipped", rejected, help="Rules with a missing/duplicate id or an immutable field change")
+
+    if total_rules > 0:
+        rows = []
+        if preview.test_inserts:
+            rows.append(f"- **{len(preview.test_inserts)}** new test(s) to create")
+        if preview.test_updates:
+            rows.append(f"- **{len(preview.test_updates)}** existing test(s) to update")
+        if preview.no_change_rules:
+            rows.append(f"- **{preview.no_change_rules}** test(s) unchanged")
+        if rejected:
+            rows.append(f"- **{rejected}** rule(s) skipped")
+        st.markdown("\n".join(rows))
+
+    # ── Other changes ─────────────────────────────────────────────────────
+    other_ct = len(preview.governance_updates) + len(preview.contract_updates) + len(preview.table_group_updates)
+    if other_ct:
+        st.divider()
+        st.markdown("**Other Changes**")
+        other_rows = []
+        if preview.governance_updates:
+            other_rows.append(f"- **{len(preview.governance_updates)}** column governance update(s)")
+        metadata_ct = len(preview.contract_updates) + len(preview.table_group_updates)
+        if metadata_ct:
+            other_rows.append(f"- **{metadata_ct}** contract metadata field(s)")
+        st.markdown("\n".join(other_rows))
+
+    # ── Warnings ─────────────────────────────────────────────────────────
+    rule_warnings = [w for w in preview.warnings if "not in YAML" not in w]
+    if rule_warnings:
+        st.divider()
+        with st.expander(f"⚠ {len(rule_warnings)} warning(s)", expanded=False):
+            for w in rule_warnings:
+                st.warning(w, icon="⚠️")
+
+    # ── Orphaned tests note ───────────────────────────────────────────────
+    if preview.orphaned_ids:
+        st.info(
+            f"{len(preview.orphaned_ids)} test(s) in the table group are not in this YAML and will not be affected.",
+            icon=":material/info:",
+        )
+
+    st.divider()
+    confirm_col, cancel_col = st.columns(2)
+
+    if confirm_col.button("Confirm Import", type="primary", use_container_width=True):
+        try:
+            diff = run_import_contract(yaml_content, table_group_id)
+            st.session_state[import_key] = {
+                "diff": diff,
+                "original_yaml": yaml_content,
+            }
+            if not diff.has_errors and snapshot_suite_id:
+                created_ids = list(diff.new_id_by_index.values()) if diff.new_id_by_index else []
+                updated_ids = [str(u["id"]) for u in (diff.test_updates or []) if u.get("id")]
+                deleted_ids = list(diff.orphaned_ids) if diff.orphaned_ids else []
+                if created_ids or updated_ids or deleted_ids:
+                    try:
+                        sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, deleted_ids)
+                    except Exception:
+                        LOG.exception("_confirm_import_dialog: failed to sync to snapshot suite %s", snapshot_suite_id)
+            if not diff.has_errors:
+                _clear_contract_cache(table_group_id, also_anomalies=True)
+        except Exception as exc:
+            st.session_state[import_key] = {"error": str(exc)}
+        safe_rerun()
+
+    if cancel_col.button("Cancel", use_container_width=True):
+        safe_rerun()
+
+
+@st.dialog("Import Contract from YAML", width="small")
+def _import_yaml_dialog(
+    table_group_id: str,
+    snapshot_suite_id: str | None,
+    import_key: str,
+) -> None:
+    """Toolbar-triggered import dialog: file upload + dry-run preview + confirm."""
+    uploaded = st.file_uploader(
+        "Upload ODCS YAML",
+        type=["yaml", "yml"],
+        key=f"dc_dlg_upload:{table_group_id}",
+    )
+
+    if uploaded is None:
+        st.caption("Select a YAML file to preview changes before importing.")
+        if st.button("Cancel", use_container_width=True):
+            safe_rerun()
+        return
+
+    yaml_content: str = uploaded.read().decode("utf-8")
+
+    # Compute dry-run preview
+    with st.spinner("Analysing YAML\u2026"):
+        try:
+            preview: ContractDiff = run_import_contract(yaml_content, table_group_id, dry_run=True)
+        except Exception as exc:
+            st.error(f"Could not parse YAML: {exc}", icon=":material/dangerous:")
+            if st.button("Close", use_container_width=True):
+                safe_rerun()
+            return
+
+    if preview.has_errors:
+        for err in preview.errors:
+            st.error(err, icon=":material/dangerous:")
+        if st.button("Close", use_container_width=True):
+            safe_rerun()
+        return
+
+    # ── Quality rule summary ──────────────────────────────────────────────
+    total_rules = (
+        len(preview.test_inserts)
+        + len(preview.test_updates)
+        + preview.no_change_rules
+        + preview.skipped_rules
+    )
+    accepted = len(preview.test_inserts) + len(preview.test_updates) + preview.no_change_rules
+    rejected = preview.skipped_rules
+
+    st.markdown("**Quality Rules**")
+    col_acc, col_rej = st.columns(2)
+    col_acc.metric("Accepted", accepted, help="Rules that will create, update, or match an existing test")
+    col_rej.metric("Skipped", rejected, help="Rules with a missing/duplicate id or an immutable field change")
+
+    if total_rules > 0:
+        rows = []
+        if preview.test_inserts:
+            rows.append(f"- **{len(preview.test_inserts)}** new test(s) to create")
+        if preview.test_updates:
+            rows.append(f"- **{len(preview.test_updates)}** existing test(s) to update")
+        if preview.no_change_rules:
+            rows.append(f"- **{preview.no_change_rules}** test(s) unchanged")
+        if rejected:
+            rows.append(f"- **{rejected}** rule(s) skipped")
+        st.markdown("\n".join(rows))
+
+    # ── Other changes ─────────────────────────────────────────────────────
+    other_ct = len(preview.governance_updates) + len(preview.contract_updates) + len(preview.table_group_updates)
+    if other_ct:
+        st.divider()
+        st.markdown("**Other Changes**")
+        other_rows = []
+        if preview.governance_updates:
+            other_rows.append(f"- **{len(preview.governance_updates)}** column governance update(s)")
+        metadata_ct = len(preview.contract_updates) + len(preview.table_group_updates)
+        if metadata_ct:
+            other_rows.append(f"- **{metadata_ct}** contract metadata field(s)")
+        st.markdown("\n".join(other_rows))
+
+    # ── Warnings ─────────────────────────────────────────────────────────
+    rule_warnings = [w for w in preview.warnings if "not in YAML" not in w]
+    if rule_warnings:
+        st.divider()
+        with st.expander(f"\u26a0 {len(rule_warnings)} warning(s)", expanded=False):
+            for w in rule_warnings:
+                st.warning(w, icon="\u26a0\ufe0f")
+
+    # ── Orphaned tests note ───────────────────────────────────────────────
+    if preview.orphaned_ids:
+        st.info(
+            f"{len(preview.orphaned_ids)} test(s) in the table group are not in this YAML and will not be affected.",
+            icon=":material/info:",
+        )
+
+    st.divider()
+    confirm_col, cancel_col = st.columns(2)
+
+    if confirm_col.button("Confirm Import", type="primary", use_container_width=True):
+        try:
+            diff = run_import_contract(yaml_content, table_group_id)
+            st.session_state[import_key] = {
+                "diff": diff,
+                "original_yaml": yaml_content,
+            }
+            if not diff.has_errors and snapshot_suite_id:
+                created_ids = list(diff.new_id_by_index.values()) if diff.new_id_by_index else []
+                updated_ids = [str(u["id"]) for u in (diff.test_updates or []) if u.get("id")]
+                deleted_ids = list(diff.orphaned_ids) if diff.orphaned_ids else []
+                if created_ids or updated_ids or deleted_ids:
+                    try:
+                        sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, deleted_ids)
+                    except Exception:
+                        LOG.exception("_import_yaml_dialog: failed to sync to snapshot suite %s", snapshot_suite_id)
+            if not diff.has_errors:
+                _clear_contract_cache(table_group_id, also_anomalies=True)
+        except Exception as exc:
+            st.session_state[import_key] = {"error": str(exc)}
+        safe_rerun()
 
     if cancel_col.button("Cancel", use_container_width=True):
         safe_rerun()

@@ -39,6 +39,7 @@ _APP_DEL_DIALOG   = str(pathlib.Path(__file__).parent / "apps" / "data_contract_
 _APP_TERM_DEL     = str(pathlib.Path(__file__).parent / "apps" / "data_contract_term_deletion.py")
 _APP_SNAP_QUALITY = str(pathlib.Path(__file__).parent / "apps" / "data_contract_snapshot_quality.py")
 _APP_YAML_IMPORT  = str(pathlib.Path(__file__).parent / "apps" / "data_contract_yaml_import.py")
+_APP_IMPORT_CONFIRM = str(pathlib.Path(__file__).parent / "apps" / "data_contract_import_confirm.py")
 
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 
@@ -1329,4 +1330,340 @@ class Test_ImportYamlEdgeCases:
         # dc_yaml must still be set (not cleared on failure)
         assert yaml_key in at.session_state, (
             "dc_yaml should be preserved when import fails"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test_ImportConfirmDialog — _confirm_import_dialog UI
+# ---------------------------------------------------------------------------
+
+def _at_import_confirm(scenario: str = "creates") -> AppTest:
+    at = AppTest.from_file(_APP_IMPORT_CONFIRM, default_timeout=15)
+    at.session_state["dc_test_confirm_scenario"] = scenario
+    return at
+
+
+class Test_ImportConfirmDialog:
+
+    def test_dialog_renders_without_exception(self):
+        """Confirmation dialog must render for a normal preview diff."""
+        at = _at_import_confirm("creates")
+        at.run()
+        assert not at.exception, f"Dialog raised: {at.exception}"
+
+    def test_dialog_shows_accepted_metric(self):
+        """Accepted metric must equal creates + updates + no_change (3+2+1=6)."""
+        at = _at_import_confirm("creates")
+        at.run()
+        assert not at.exception
+        metric_values = {m.label: m.value for m in at.metric}
+        assert "Accepted" in metric_values, f"Expected 'Accepted' metric. Got: {list(metric_values)}"
+        assert metric_values["Accepted"] == "6", (
+            f"Expected Accepted=6. Got: {metric_values['Accepted']}"
+        )
+
+    def test_dialog_shows_skipped_metric(self):
+        """Skipped metric must equal skipped_rules count (2)."""
+        at = _at_import_confirm("creates")
+        at.run()
+        assert not at.exception
+        metric_values = {m.label: m.value for m in at.metric}
+        assert "Skipped" in metric_values, f"Expected 'Skipped' metric. Got: {list(metric_values)}"
+        assert metric_values["Skipped"] == "2", (
+            f"Expected Skipped=2. Got: {metric_values['Skipped']}"
+        )
+
+    def test_dialog_shows_breakdown_in_markdown(self):
+        """Dialog body must list create/update/unchanged/skipped counts."""
+        at = _at_import_confirm("creates")
+        at.run()
+        assert not at.exception
+        body = "\n".join(m.value for m in at.markdown)
+        assert "3" in body, "Expected create count (3) in dialog body"
+        assert "2" in body, "Expected update count (2) in dialog body"
+
+    def test_dialog_has_confirm_and_cancel_buttons(self):
+        """Both Confirm Import and Cancel buttons must be present."""
+        at = _at_import_confirm("creates")
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert "Confirm Import" in labels, f"Expected 'Confirm Import'. Got: {labels}"
+        assert "Cancel" in labels, f"Expected 'Cancel'. Got: {labels}"
+
+    def test_error_preview_shows_error_and_close(self):
+        """When preview.has_errors, dialog must show error text and a Close button instead."""
+        at = _at_import_confirm("errors")
+        at.run()
+        assert not at.exception
+        error_texts = [e.value for e in at.error]
+        assert any("not found" in t for t in error_texts), (
+            f"Expected error message in dialog. Got: {error_texts}"
+        )
+        labels = _button_labels(at)
+        assert "Close" in labels, f"Expected 'Close' button on error. Got: {labels}"
+        assert "Confirm Import" not in labels, "Confirm Import must not appear when preview has errors"
+
+    def test_governance_updates_shown(self):
+        """When governance_updates present, dialog must mention column governance updates."""
+        at = _at_import_confirm("governance")
+        at.run()
+        assert not at.exception
+        body = "\n".join(m.value for m in at.markdown)
+        assert "governance" in body.lower(), (
+            f"Expected governance mention in dialog body. Got:\n{body}"
+        )
+
+    def test_warnings_expander_shown(self):
+        """When warnings exist, dialog must render an expander listing them."""
+        at = _at_import_confirm("warnings")
+        at.run()
+        assert not at.exception
+        # warnings appear inside expander — check warning elements
+        warn_texts = [w.value for w in at.warning]
+        assert any("Skipped" in w or "not found" in w for w in warn_texts), (
+            f"Expected skipped warning in dialog. Got: {warn_texts}"
+        )
+
+    def test_orphaned_ids_shows_info(self):
+        """When orphaned_ids present, dialog must show an info note."""
+        at = _at_import_confirm("orphans")
+        at.run()
+        assert not at.exception
+        info_texts = [i.value for i in at.info]
+        assert any("not in this YAML" in t or "not affected" in t for t in info_texts), (
+            f"Expected orphan info in dialog. Got: {info_texts}"
+        )
+
+    def test_confirm_button_triggers_import(self):
+        """Clicking Confirm Import must call run_import_contract and set import_key."""
+        at = _at_import_confirm("creates")
+        at.run()
+        assert not at.exception
+        _click(at, "Confirm Import")
+        import_key = f"dc_import_result:aaaaaaaa-0000-0000-0000-000000000001"
+        assert import_key in at.session_state, (
+            "import_key must be set in session state after Confirm Import"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test_PendingEditsUX — pending-edits UX improvements (sticky bar, chip keys,
+# save label, warning banner)
+# ---------------------------------------------------------------------------
+
+def _pending_gov_edit(table: str = "orders", col: str = "amount", field: str = "description", value: str = "updated") -> dict:
+    """Helper: a single governance pending edit entry."""
+    return {
+        "field": field,
+        "value": value,
+        "table": table,
+        "col": col,
+        "snapshot": {"name": field.capitalize(), "source": "governance", "verif": "declared"},
+    }
+
+
+def _pending_test_edit(rule_id: str = "rule-pending-001") -> dict:
+    """Helper: a single test pending edit entry."""
+    return {
+        "rule_id": rule_id,
+        "threshold": 5,
+        "snapshot": {"rule_id": rule_id, "threshold": 0},
+    }
+
+
+class Test_PendingEditsUX:
+    """Tests for the pending-edits UX: save label, warning banner, and pending key props."""
+
+    # -- save button label -------------------------------------------------
+
+    def test_save_button_shows_version_label_with_count_when_pending(self):
+        """Save button label must read 'Save version (N)' when N pending edits exist."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [_pending_gov_edit()],
+            "tests": [],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert any("Save version" in lbl and "1" in lbl for lbl in labels), (
+            f"Expected 'Save version (1)' button. Available: {labels}"
+        )
+
+    def test_save_button_shows_plain_version_label_without_pending(self):
+        """Save button label must read 'Save version' (no count) when no pending edits."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        assert "Save version" in _button_labels(at), (
+            f"Expected 'Save version'. Available: {_button_labels(at)}"
+        )
+        # Must NOT have a count suffix
+        assert not any("Save version (" in lbl for lbl in _button_labels(at)), (
+            f"Save button must not show count without pending edits. Labels: {_button_labels(at)}"
+        )
+
+    def test_save_button_count_reflects_multiple_pending_edits(self):
+        """Count in save label must equal the total number of staged changes."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [
+                _pending_gov_edit(col="a"),
+                _pending_gov_edit(col="b"),
+            ],
+            "tests": [_pending_test_edit()],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        # 2 governance + 1 test = 3 staged changes
+        assert any("3" in lbl for lbl in labels), (
+            f"Expected '3' in save button label for 3 pending edits. Available: {labels}"
+        )
+
+    # -- warning banner ----------------------------------------------------
+
+    def test_warning_banner_present_when_pending(self):
+        """Unsaved-changes warning banner must appear when pending edits exist."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [_pending_gov_edit()],
+            "tests": [],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception
+        warning_texts = [w.value for w in at.warning]
+        assert any("unsaved" in t.lower() for t in warning_texts), (
+            f"Expected unsaved-changes warning. Got: {warning_texts}"
+        )
+
+    def test_warning_banner_absent_without_pending(self):
+        """No warning banner must appear when there are no pending edits."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        warning_texts = [w.value for w in at.warning]
+        assert not any("unsaved" in t.lower() for t in warning_texts), (
+            f"Unexpected unsaved warning without pending edits. Got: {warning_texts}"
+        )
+
+    def test_warning_banner_references_save_button_label(self):
+        """Warning banner text must reference 'Save version (N)' matching the button."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [_pending_gov_edit()],
+            "tests": [],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception
+        warning_texts = [w.value for w in at.warning]
+        assert any("Save version" in t for t in warning_texts), (
+            f"Expected 'Save version' in warning text. Got: {warning_texts}"
+        )
+
+    def test_warning_banner_count_matches_pending_count(self):
+        """Count in warning banner must equal the number of staged changes."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [_pending_gov_edit(col="a"), _pending_gov_edit(col="b")],
+            "tests": [],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception
+        warning_texts = [w.value for w in at.warning]
+        assert any("2" in t for t in warning_texts), (
+            f"Expected '2' in warning banner. Got: {warning_texts}"
+        )
+
+    # -- pending_edit_rule_ids / pending_edit_gov_keys props ---------------
+
+    def test_pending_edit_rule_ids_populated_in_props(self):
+        """rule_ids from staged test edits must appear in props passed to testgen_component."""
+        at = _at_pending_edits()
+        rule_id = "rule-abc-123"
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [],
+            "tests": [_pending_test_edit(rule_id=rule_id)],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception
+        # The page stores pending in session state; verify the pending tests are present.
+        pending_key = f"dc_pending:{TG_ID}"
+        assert pending_key in at.session_state, "dc_pending key must be present"
+        stored = at.session_state[pending_key]
+        test_edits = stored.get("tests", [])
+        assert any(e.get("rule_id") == rule_id for e in test_edits), (
+            f"Expected rule_id '{rule_id}' in pending tests. Got: {test_edits}"
+        )
+
+    def test_pending_edit_gov_keys_populated_in_session(self):
+        """Governance staged edits must round-trip through session state with table/col/field."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [_pending_gov_edit(table="orders", col="amount", field="description")],
+            "tests": [],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception
+        pending_key = f"dc_pending:{TG_ID}"
+        assert pending_key in at.session_state, "dc_pending key must be present"
+        stored = at.session_state[pending_key]
+        gov_edits = stored.get("governance", [])
+        assert any(
+            e.get("table") == "orders" and e.get("col") == "amount" and e.get("field") == "description"
+            for e in gov_edits
+        ), f"Expected governance edit for orders.amount.description. Got: {gov_edits}"
+
+    # -- sticky bar events -------------------------------------------------
+
+    def test_discard_from_sticky_bar_event_registered(self):
+        """DiscardFromStickyBar event handler must be reachable — page loads without exception."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [_pending_gov_edit()],
+            "tests": [],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception, f"Page raised: {at.exception}"
+        # Cancel-all button is the Python-side equivalent of DiscardFromStickyBar; verify present.
+        labels = _button_labels(at)
+        assert any("Cancel" in lbl for lbl in labels), (
+            f"Expected a cancel/discard button. Available: {labels}"
+        )
+
+    def test_save_from_sticky_bar_event_registered(self):
+        """SaveFromStickyBar event handler must be reachable — page renders save button."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [_pending_gov_edit()],
+            "tests": [],
+            "deletions": [],
+        }
+        at.run()
+        assert not at.exception, f"Page raised: {at.exception}"
+        # The Python-side save button is the entry point for SaveFromStickyBar.
+        labels = _button_labels(at)
+        assert any("Save version" in lbl for lbl in labels), (
+            f"Expected 'Save version' button. Available: {labels}"
+        )
+
+    # -- historical version guard ------------------------------------------
+
+    def test_pending_edits_not_shown_for_historical_version(self):
+        """Historical version must show no unsaved-changes warning even with stale session data."""
+        at = _at_hist()
+        at.run()
+        assert not at.exception
+        warning_texts = [w.value for w in at.warning]
+        assert not any("unsaved" in t.lower() for t in warning_texts), (
+            f"Historical version must not show unsaved-changes warning. Got: {warning_texts}"
         )

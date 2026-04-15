@@ -139,6 +139,9 @@ class ContractDiff:
     new_id_by_index: dict[int, str] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    # Quality rule outcome counts (populated by compute_import_diff)
+    skipped_rules: int = 0    # rules skipped due to duplicate id, missing id, or immutable change
+    no_change_rules: int = 0  # rules that matched a test but had nothing to update
 
     @property
     def has_errors(self) -> bool:
@@ -697,6 +700,7 @@ def compute_import_diff(doc: dict, table_group_id: str, schema: str) -> Contract
                 diff.warnings.append(
                     f"Quality rule id '{rule_id}' appears more than once in YAML — duplicate skipped."
                 )
+                diff.skipped_rules += 1
                 continue
             seen_yaml_ids.add(rule_id)
             yaml_referenced_ids.add(rule_id)
@@ -704,6 +708,7 @@ def compute_import_diff(doc: dict, table_group_id: str, schema: str) -> Contract
                 diff.warnings.append(
                     f"Quality rule id '{rule_id}' not found in table group — may have been deleted. Skipped."
                 )
+                diff.skipped_rules += 1
                 continue
             result = _process_update_rule(rule, current_tests[rule_id], idx)
         else:
@@ -716,6 +721,10 @@ def compute_import_diff(doc: dict, table_group_id: str, schema: str) -> Contract
             diff.test_updates.append(result.updates)
         elif result.action == "create":
             diff.test_inserts.append({**result.insert, "_rule_index": idx})
+        elif result.action == "skip":
+            diff.skipped_rules += 1
+        elif result.action == "no_change":
+            diff.no_change_rules += 1
 
     # Orphan detection
     for test_id in current_tests:

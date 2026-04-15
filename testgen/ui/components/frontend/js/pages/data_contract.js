@@ -1,4 +1,4 @@
-// cache-bust: v6
+// cache-bust: v8
 /**
  * Data Contract page — VanJS component.
  *
@@ -115,6 +115,12 @@ const _termInfoByKey = new Map();
 // Set by a van.derive in DataContract when the select_term_key prop arrives; consumed
 // by TermsDetail on its next render so it can enter selection mode with that term pre-checked.
 let _pendingSelectKey = '';
+// Pending-edit keys — set of rule_ids + "table|col|field" keys for staged (unsaved) edits.
+// Updated by DataContract via van.derive when props change.
+const _pendingEditKeys = van.state(new Set());
+// beforeunload handler ref — managed by DataContract; warns user if they navigate away with edits.
+let _beforeunloadHandler = null;
+let _lastHasPending = false;
 
 const TermChip = (term, tableName, colName) => {
     const srcCls = SOURCE_CLASS[term.source] || 'obs';
@@ -195,6 +201,10 @@ const TermChip = (term, tableName, colName) => {
             span({ class: `term-chip__badge ${verif.cls}` }, mat(verif.icon, 11, 'badge-icon'), ' ', verif.label),
             isLive && statusCls && statusCls !== 'none'
                 ? span({ class: `status-pill ${statusCls}` }, status)
+                : '',
+            // "edited" dot — shown when this chip has a staged (unsaved) change
+            () => _pendingEditKeys.val.has(termKey)
+                ? span({ class: 'term-chip__edited-dot', title: 'Staged change — not yet saved' })
                 : '',
         ),
     );
@@ -849,7 +859,7 @@ const CoverageMatrix = (matrix, suiteScope, tables, health, activeTab) => {
     const activeMatrixTier = van.state('all');
     if (activeTab) {
         van.derive(() => {
-            if (activeTab.val !== 'matrix') activeMatrixTier.val = 'all';
+            if (activeTab.val !== 'matrix' && activeMatrixTier.val !== 'all') activeMatrixTier.val = 'all';
         });
     }
 
@@ -1096,31 +1106,22 @@ const GapAnalysis = (gaps, tables) => {
 
 // ── YAML viewer tab ───────────────────────────────────────────────────────────
 
-// Prism.js loaded once as classic scripts (not ESM — they set window.Prism).
-// We inject them the first time YamlViewer renders and highlight after load.
-let _prismReady = false;
-let _prismCallbacks = [];
+// js-yaml loaded once via CDN (MIT, ~6 KB gzip). Falls back to plain text on error.
+let _jsyamlReady = false;
+let _jsyamlCallbacks = [];
 
-function _loadPrism(cb) {
-    if (_prismReady) { cb(); return; }
-    _prismCallbacks.push(cb);
-    if (_prismCallbacks.length > 1) return; // already loading
-    // import.meta.url is the URL of this module file (…/js/pages/data_contract.js)
-    const base = new URL('..', import.meta.url).href;
-    const inject = (src, next) => {
-        const s = document.createElement('script');
-        s.src = src;
-        s.onload = next;
-        document.head.appendChild(s);
+function _loadJsYaml(cb) {
+    if (_jsyamlReady) { cb(); return; }
+    _jsyamlCallbacks.push(cb);
+    if (_jsyamlCallbacks.length > 1) return; // already loading
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/js-yaml@4.1.0/dist/js-yaml.min.js';
+    s.onload = s.onerror = () => {
+        _jsyamlReady = true;
+        _jsyamlCallbacks.forEach((f) => f());
+        _jsyamlCallbacks = [];
     };
-    inject(`${base}prism.min.js`, () =>
-        inject(`${base}prism-yaml.min.js`, () => {
-            _prismReady = true;
-            window.Prism.manual = true;
-            _prismCallbacks.forEach((f) => f());
-            _prismCallbacks = [];
-        }),
-    );
+    document.head.appendChild(s);
 }
 
 const ODCS_SPEC_URL = 'https://bitol-io.github.io/open-data-contract-standard/v3.1.0/';
@@ -1128,37 +1129,119 @@ const ODCS_SPEC_URL = 'https://bitol-io.github.io/open-data-contract-standard/v3
 const odcsLink = (label = 'ODCS v3.1.0') =>
     a({ href: ODCS_SPEC_URL, target: '_blank', rel: 'noopener', class: 'odcs-link' }, label);
 
-const YamlViewer = (yamlContent, tgName) => {
-    const content = yamlContent || '# No contract data yet';
-    const preEl = document.createElement('pre');
-    const codeEl = document.createElement('code');
-    codeEl.className = 'language-yaml';
-    codeEl.textContent = content;
-    preEl.className = 'yaml-block language-yaml';
-    preEl.appendChild(codeEl);
+// ── YAML collapsible tree ─────────────────────────────────────────────────────
 
-    // Highlight once Prism is ready (may be immediate on re-renders)
-    _loadPrism(() => window.Prism?.highlightElement(codeEl));
+// Render a typed scalar value with color
+const _ytScalar = (val) => {
+    if (val === null || val === undefined) return span({ class: 'yt-null' }, 'null');
+    if (typeof val === 'boolean') return span({ class: 'yt-bool' }, String(val));
+    if (typeof val === 'number') return span({ class: 'yt-num' }, String(val));
+    const s = String(val);
+    const display = s.length > 150 ? s.slice(0, 150) + '…' : s;
+    return span({ class: 'yt-str' }, `"${display}"`);
+};
+
+// Recursive key-value entry (handles nested objects/arrays + scalars)
+function _ytEntry(key, value, depth, isArrayItem) {
+    const hasChildren = value !== null && typeof value === 'object';
+    const childCount = hasChildren ? (Array.isArray(value) ? value.length : Object.keys(value).length) : 0;
+    const keyEl = isArrayItem
+        ? span({ class: 'yt-idx' }, `[${key}]`)
+        : span({ class: 'yt-key' }, `${key}:`);
+
+    if (hasChildren && childCount > 0) {
+        const isArr = Array.isArray(value);
+        const entries = isArr ? value.map((v, i) => [i, v]) : Object.entries(value);
+        const defaultOpen = depth <= 1 && childCount <= 20;
+        const open = van.state(defaultOpen);
+        const typeHint = isArr ? `[${childCount} items]` : `{${childCount} keys}`;
+
+        return div(
+            { class: 'yt-row' },
+            div(
+                {
+                    class: 'yt-toggle-row',
+                    onclick: () => { open.val = !open.val; },
+                },
+                span({ class: () => `yt-arrow${open.val ? ' open' : ''}` }),
+                keyEl,
+                () => open.val ? '' : span({ class: 'yt-hint' }, ` ${typeHint}`),
+            ),
+            () => open.val
+                ? div(
+                    { class: 'yt-children' },
+                    ...entries.map(([k, v]) => _ytEntry(k, v, depth + 1, isArr)),
+                )
+                : '',
+        );
+    }
+
+    // Leaf row (scalar or empty container)
+    return div(
+        { class: 'yt-row yt-leaf' },
+        span({ class: 'yt-leaf-pad' }),
+        keyEl,
+        ' ',
+        hasChildren ? span({ class: 'yt-null' }, isArrayItem ? '[]' : '{}') : _ytScalar(value),
+    );
+}
+
+// Build a full tree from a parsed YAML object
+function _ytTree(parsed) {
+    if (parsed === null || parsed === undefined) {
+        return div({ class: 'yt-empty' }, '(empty document)');
+    }
+    if (typeof parsed !== 'object') {
+        return div({ class: 'yt-leaf' }, _ytScalar(parsed));
+    }
+    const isArr = Array.isArray(parsed);
+    const entries = isArr ? parsed.map((v, i) => [i, v]) : Object.entries(parsed);
+    return div({ class: 'yt-root' }, ...entries.map(([k, v]) => _ytEntry(k, v, 0, isArr)));
+}
+
+const YamlViewer = (yamlContent, tgName, isLatest) => {
+    const content = yamlContent || '# No contract data yet';
+    const lineCount = content.split('\n').length;
+
+    // Tree container — populated once js-yaml loads (async CDN)
+    const treeWrap = div({ class: 'yt-wrap' });
+
+    _loadJsYaml(() => {
+        let parsed;
+        try { parsed = window.jsyaml?.load(content); } catch (_) { parsed = null; }
+        if (parsed !== null && parsed !== undefined && typeof parsed === 'object' && window.jsyaml) {
+            van.add(treeWrap, _ytTree(parsed));
+        } else {
+            // Fallback: plain monospace text when CDN unreachable or parse error
+            const pre = document.createElement('pre');
+            pre.className = 'yaml-block';
+            pre.textContent = content;
+            treeWrap.appendChild(pre);
+        }
+    });
 
     // Copy-to-clipboard button
     const copied = van.state(false);
     const copyBtn = div(
         {
-            class: 'yaml-copy-btn',
+            class: () => `yaml-copy-btn${copied.val ? ' yaml-copy-btn--success' : ''}`,
             onclick: () => {
                 navigator.clipboard?.writeText(content).then(() => {
                     copied.val = true;
-                    setTimeout(() => { copied.val = false; }, 1800);
+                    setTimeout(() => { copied.val = false; }, 2000);
                 });
             },
         },
-        () => copied.val ? span(mat('check', 14), ' Copied') : span(mat('content_copy', 14), ' Copy'),
+        () => copied.val
+            ? span(mat('check', 16), ` Copied · ${lineCount} lines`)
+            : span(mat('content_copy', 16), ' Copy YAML'),
     );
 
     // Download button
+    const downloaded = van.state(false);
     const downloadBtn = div(
         {
-            class: 'yaml-copy-btn',
+            class: () => `yaml-copy-btn${downloaded.val ? ' yaml-copy-btn--success' : ''}`,
             onclick: () => {
                 const blob = new Blob([content], { type: 'text/yaml' });
                 const url = URL.createObjectURL(blob);
@@ -1167,10 +1250,26 @@ const YamlViewer = (yamlContent, tgName) => {
                 a.download = `${tgName || 'contract'}_contract.yaml`;
                 a.click();
                 URL.revokeObjectURL(url);
+                downloaded.val = true;
+                setTimeout(() => { downloaded.val = false; }, 2000);
             },
         },
-        span(mat('download', 14), ' Download'),
+        () => downloaded.val
+            ? span(mat('check', 16), ` Downloaded · ${lineCount} lines`)
+            : span(mat('download', 16), ' Download YAML'),
     );
+
+    // Import button — only shown on the latest version
+    const importBtn = isLatest
+        ? div(
+            {
+                class: 'yaml-copy-btn yaml-import-btn',
+                onclick: () => emitEvent('ImportYamlClicked'),
+                title: 'Upload a modified ODCS YAML to sync changes back to this contract',
+            },
+            span(mat('upload', 16), ' Import YAML'),
+        )
+        : '';
 
     return div(
         { class: 'yaml-wrap' },
@@ -1181,220 +1280,8 @@ const YamlViewer = (yamlContent, tgName) => {
             code('_customProperties.testgen.*'),
             '. Some TestGen-specific constructs (such as test parameters and quality rule types) are not portable to other ODCS-compatible tools.',
         ),
-        div({ class: 'yaml-toolbar' }, copyBtn, downloadBtn),
-        preEl,
-    );
-};
-
-// ── Upload tab ────────────────────────────────────────────────────────────────
-
-const TermRow = (name, yamlPath, badge, note) => tr(
-    td({ class: 'utr-name' }, name),
-    td({ class: 'utr-yaml' }, code(yamlPath)),
-    td({ class: 'utr-badge' }, span({ class: `upload-badge ub-${badge}` }, badge === 'written' ? 'Written' : badge === 'created' ? 'Created' : badge === 'partial' ? 'Partial' : badge === 'export' ? 'Export only' : 'Ignored')),
-    td({ class: 'utr-note' }, note),
-);
-
-const TermCategory = (pill, pillCls, title, badgeCls, badgeLabel, rows, noteEl) => {
-    const open = van.state(pill === 'Fundamentals');
-    return div(
-        { class: () => `upload-term-cat${open.val ? ' utc-open' : ''}` },
-        div(
-            {
-                class: 'utc-header',
-                onclick: () => { open.val = !open.val; },
-            },
-            span({ class: `utc-pill ${pillCls}` }, pill),
-            span({ class: 'utc-title' }, title),
-            span({ class: `utc-badge ${badgeCls}` }, badgeLabel),
-            mat('expand_more', 18, 'utc-chevron'),
-        ),
-        div(
-            { class: 'utc-body' },
-            table(
-                { class: 'upload-term-table' },
-                colgroup(
-                    col({ class: 'col-name' }),
-                    col({ class: 'col-yaml' }),
-                    col({ class: 'col-badge' }),
-                    col({ class: 'col-note' }),
-                ),
-                thead(tr(th('Term'), th('YAML field'), th('On import'), th('Notes'))),
-                tbody(...rows),
-            ),
-            noteEl || '',
-        ),
-    );
-};
-
-const UploadTab = () => {
-    const fileContent = van.state(null);
-    const fileName = van.state('');
-    const importing = van.state(false);
-
-    const fileError = van.state('');
-    const onFileChange = (e) => {
-        const file = e.target.files[0];
-        if (!file) { fileContent.val = null; fileName.val = ''; fileError.val = ''; return; }
-        fileName.val = file.name;
-        fileError.val = '';
-        const reader = new FileReader();
-        reader.onload = (ev) => { fileContent.val = ev.target.result; };
-        reader.onerror = () => {
-            fileContent.val = null;
-            fileError.val = `Could not read "${file.name}". Please try again.`;
-        };
-        reader.readAsText(file);
-    };
-
-    return div(
-        { class: 'upload-tab' },
-
-        // ── Destructive action warning ──
-        div({ class: 'upload-action-warning' },
-            mat('warning', 16, 'upload-action-warning__icon'),
-            div(
-                span({ style: 'font-weight:600' }, 'This action modifies your contract. '),
-                'Importing YAML will overwrite matching contract terms (governance metadata, rule thresholds, and descriptions). ',
-                'New quality rules without an ID will be created as tests. This cannot be undone.',
-            ),
-        ),
-
-        // ── Description ──
-        div({ class: 'upload-desc' },
-            p({ style: 'margin: 0 0 10px;' },
-                'Upload a modified ', odcsLink(), ' YAML to sync changes back to TestGen. ',
-                'Only supported fields are applied — unrecognized or read-only fields are silently ignored. ',
-                'After import, download the updated YAML to capture any new test IDs.',
-            ),
-            p({ style: 'margin: 0 0 14px;' },
-                'Quality rules without an ', span({ style: 'display:inline;font-family:monospace;color:var(--primary-color,#4f8ef7)' }, 'id'), ' field are ', span({ style: 'font-weight:600' }, 'created'),
-                ' as new tests; rules with an ', span({ style: 'display:inline;font-family:monospace;color:var(--primary-color,#4f8ef7)' }, 'id'), ' field ', span({ style: 'font-weight:600' }, 'update'),
-                ' the matching test. Governance metadata in ', span({ style: 'display:inline;font-family:monospace;color:var(--primary-color,#4f8ef7)' }, 'schema[].properties[]'),
-                ' — descriptions, CDE flags, PII classification, and tag fields — is written directly to the column catalog.',
-            ),
-            div({ class: 'upload-desc-cols' },
-                div(
-                    p({ class: 'upload-desc-heading' },
-                        mat('check_circle', 14, 'udh-ok'), 'Applied on upload',
-                    ),
-                    ul(
-                        li('Contract version, status, and description'),
-                        li('Business domain and data product'),
-                        li('Latency SLA (profiling delay days)'),
-                        li('Quality rule thresholds, tolerances, severity, and description'),
-                        li(span({ style: 'font-weight:600' }, 'New quality rules'), ' — add rules without an ', span({ style: 'display:inline;font-family:monospace;color:var(--primary-color,#4f8ef7)' }, 'id'), ' to create tests'),
-                        li('Column governance — description, CDE, PII, and tag fields'),
-                    ),
-                ),
-                div(
-                    p({ class: 'upload-desc-heading' },
-                        mat('block', 14, 'udh-no'), 'Ignored — manage in TestGen',
-                    ),
-                    ul(
-                        li('Tables, columns, and data types (DDL)'),
-                        li('Profiling statistics (min/max, format)'),
-                        li('Test suite settings and connections'),
-                        li('Test type, target table, or column'),
-                        li(span({ style: 'display:inline;font-family:monospace;color:var(--primary-color,#4f8ef7)' }, 'servers'), ', ', span({ style: 'display:inline;font-family:monospace;color:var(--primary-color,#4f8ef7)' }, 'slaProperties'), ' beyond SLA delay'),
-                    ),
-                ),
-            ),
-        ),
-
-        // ── File drop ──
-        div(
-            { class: 'file-drop' },
-            mat('upload_file', 32),
-            label(
-                { class: 'file-label' },
-                input({ type: 'file', accept: '.yaml,.yml', style: 'display:none', onchange: onFileChange }),
-                'Choose YAML file',
-            ),
-            () => fileName.val
-                ? span({ class: 'file-name' }, mat('description', 14), ' ', fileName.val)
-                : span({ class: 'file-hint' }, odcsLink('Open Data Contract Standard'), ' (.yaml, .yml)'),
-        ),
-        () => fileError.val ? div({ class: 'upload-error' }, mat('error', 14), ' ', fileError.val) : '',
-        () => fileContent.val
-            ? Button({
-                type: 'stroked',
-                color: 'primary',
-                icon: 'upload',
-                label: importing.val ? 'Importing…' : 'Import Changes',
-                disabled: importing.val,
-                onclick: () => {
-                    importing.val = true;
-                    emitEvent('ImportContractClicked', { payload: fileContent.val });
-                },
-              })
-            : '',
-
-        // ── Contract term reference ──
-        div({ class: 'upload-term-ref-divider' }),
-        div({ class: 'upload-term-ref-heading' }, 'Contract Term Reference'),
-
-        TermCategory('Fundamentals', 'utcp-fund', 'Contract header fields', 'utcb-rw', '↕ Read & Write', [
-            TermRow('Version',        'version',                               'written', 'Semantic version string, e.g. 1.0.0'),
-            TermRow('Status',         'status',                                'written', 'draft, published, or deprecated'),
-            TermRow('Description',    'description',                           'written', 'Top-level contract description'),
-            TermRow('Business Domain','customProperties[testgen.business_domain]','written','Stored in table group metadata'),
-            TermRow('Data Product',   'customProperties[testgen.data_product]','written', 'Stored in table group metadata'),
-            TermRow('Latency SLA',    'slaProperties[n].value (profilingDelayDays)','written','Maps to profiling delay days on the table group'),
-        ]),
-
-        TermCategory('Governance', 'utcp-gov', 'Column metadata & classifications', 'utcb-rw', '↕ Read & Write', [
-            TermRow('Description',         'schema[].properties[].description',         'written', 'Column description in the column catalog'),
-            TermRow('Critical Data Element','schema[].properties[].criticalDataElement','written', 'Boolean flag on the column'),
-            TermRow('PII / Classification', 'customProperties[testgen.pii_flag]',       'written', 'Exact PII flag value; classification is also read as a fallback'),
-            tr(
-                td({ class: 'utr-name' }, 'Tag fields (×8)'),
-                td({ class: 'utr-yaml' }, code('customProperties[testgen.*]')),
-                td({ class: 'utr-badge' }, span({ class: 'upload-badge ub-written' }, 'Written')),
-                td({ class: 'utr-note' },
-                    'Data source, source system, source process, business domain, stakeholder group, transform level, aggregation level, data product — all stored as column catalog tags',
-                ),
-            ),
-        ]),
-
-        TermCategory('Quality Rules', 'utcp-test', 'Tests & monitors', 'utcb-rw', '↕ Read & Write', [
-            TermRow('Threshold',         'quality[].threshold_value',          'written', 'Numeric pass/fail threshold'),
-            TermRow('Tolerance',         'quality[].tolerance',                'written', 'Acceptable deviation before a test fails'),
-            TermRow('Severity',          'quality[].severity',                 'written', 'warning, error, or critical'),
-            TermRow('Rule description',  'quality[].description',              'written', 'Human-readable rule description'),
-            TermRow('New rule (no id)',   'quality[] — no id field',            'created', 'Creates a new test; download the updated YAML to get the assigned id'),
-            tr(
-                td({ class: 'utr-name' }, 'TestGen-only types'),
-                td({ class: 'utr-yaml' }, code('quality[].type: custom, vendor: testgen')),
-                td({ class: 'utr-badge' }, span({ class: 'upload-badge ub-partial' }, 'Partial')),
-                td({ class: 'utr-note' }, 'Types like Avg_Shift, Distribution_Shift, Schema_Drift round-trip but are not portable to other ', odcsLink('ODCS'), '-compatible tools'),
-            ),
-            TermRow('Test type',         'quality[].type / testType',          'ignored', 'Cannot change a test\'s type after creation'),
-            TermRow('Target element',    'quality[].element',                  'ignored', 'Cannot re-assign a test to a different table or column'),
-        ]),
-
-        TermCategory('DDL', 'utcp-ddl', 'Schema structure — data types, keys, nullability', 'utcb-ro', '↓ Export only', [
-            TermRow('Data Type',    'schema[].properties[].physicalType',         'ignored', 'Derived from the source database DDL'),
-            TermRow('Not Null',     'schema[].properties[].required / nullable',  'ignored', 'Reflects database schema, not editable via contract'),
-            TermRow('Primary Key',  'customProperties[testgen.primaryKey]',       'ignored', 'Detected during profiling'),
-            TermRow('Foreign Key',  'references[]',                               'ignored', 'Detected during profiling'),
-            TermRow('Logical Type', 'schema[].properties[].logicalType',          'ignored', 'Inferred from the column\'s functional data type'),
-        ], div({ class: 'utc-note' },
-            mat('info', 15, 'utc-note-icon'),
-            span('DDL terms reflect the source database. To change data types, nullability, or keys, alter your database schema and re-run profiling — the contract updates automatically.'),
-        )),
-
-        TermCategory('Profiling', 'utcp-prof', 'Observed statistics — min, max, length, format', 'utcb-ro', '↓ Export only', [
-            TermRow('Min Value',  'customProperties[testgen.minimum]',   'ignored', 'Computed by TestGen during a profiling run'),
-            TermRow('Max Value',  'customProperties[testgen.maximum]',   'ignored', 'Computed by TestGen during a profiling run'),
-            TermRow('Min Length', 'customProperties[testgen.minLength]', 'ignored', 'Computed by TestGen during a profiling run'),
-            TermRow('Max Length', 'customProperties[testgen.maxLength]', 'ignored', 'Computed by TestGen during a profiling run'),
-            TermRow('Format',     'customProperties[testgen.format]',    'ignored', 'Computed by TestGen during a profiling run'),
-            TermRow('Examples',   'schema[].properties[].examples',      'ignored', 'Sampled from top frequent values during profiling'),
-        ], div({ class: 'utc-note' },
-            mat('info', 15, 'utc-note-icon'),
-            span('Profiling statistics are read-only. Run profiling to refresh them.'),
-        )),
+        div({ class: 'yaml-toolbar' }, copyBtn, downloadBtn, importBtn),
+        treeWrap,
     );
 };
 
@@ -1608,8 +1495,7 @@ const TABS = [
     { id: 'overview',   label: 'Contract Terms'     },
     { id: 'compliance', label: 'Contract Compliance' },
     { id: 'matrix',     label: 'Contract Coverage'  },
-    { id: 'yaml',       label: 'YAML'               },
-    { id: 'upload',     label: 'Import YAML', isAction: true },
+    { id: 'yaml',       label: 'Contract YAML'      },
 ];
 
 const TabBar = (activeTab) =>
@@ -1894,6 +1780,37 @@ const ComplianceTab = (termDiff, health) => {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+// ── Sticky pending-edits bar ──────────────────────────────────────────────────
+// Stays pinned to the bottom of the iframe while the user scrolls through terms.
+// Emits SaveFromStickyBar / DiscardFromStickyBar events handled by Python.
+
+const StickyPendingBar = (versionInfo) => {
+    const n = versionInfo.pending_count || 0;
+    if (!n || !versionInfo.is_latest) return '';
+    const noun = n === 1 ? 'change' : 'changes';
+    return div(
+        { class: 'sticky-pending-bar' },
+        span({ class: 'spb-dot' }),
+        span({ class: 'spb-text' },
+            span({ style: 'font-weight:600' }, `${n} staged ${noun}`),
+            ' — not yet saved',
+        ),
+        div(
+            { class: 'spb-actions' },
+            span({
+                class: 'spb-btn spb-btn--discard',
+                onclick: () => emitEvent('DiscardFromStickyBar', {}),
+                title: 'Discard all staged changes',
+            }, 'Discard'),
+            span({
+                class: 'spb-btn spb-btn--save',
+                onclick: () => emitEvent('SaveFromStickyBar', {}),
+                title: 'Save staged changes to current version',
+            }, mat('save', 14), ` Save version (${n})`),
+        ),
+    );
+};
+
 const DataContract = (props) => {
     loadStylesheet('data-contract', stylesheet);
     Streamlit.setFrameHeight(1);
@@ -1905,6 +1822,31 @@ const DataContract = (props) => {
 
     const activeTab    = van.state('overview');
     const activeFilter = van.state('all');
+
+    // Sync pending-edit keys into module-level state so TermChip can react
+    van.derive(() => {
+        const ruleIds = getValue(props.pending_edit_rule_ids) || [];
+        const govKeys = getValue(props.pending_edit_gov_keys) || [];
+        const next = new Set([...ruleIds, ...govKeys]);
+        const cur = _pendingEditKeys.val;
+        if (next.size === cur.size && [...next].every(k => cur.has(k))) return;
+        _pendingEditKeys.val = next;
+    });
+
+    // Guard against accidental navigation when edits are staged
+    van.derive(() => {
+        const hasPending = (getValue(props.version_info)?.pending_count || 0) > 0;
+        if (hasPending === _lastHasPending) return;
+        _lastHasPending = hasPending;
+        if (_beforeunloadHandler) {
+            window.removeEventListener('beforeunload', _beforeunloadHandler);
+            _beforeunloadHandler = null;
+        }
+        if (hasPending) {
+            _beforeunloadHandler = (e) => { e.preventDefault(); e.returnValue = ''; };
+            window.addEventListener('beforeunload', _beforeunloadHandler);
+        }
+    });
 
     return div(
         { id: wrapperId, class: 'dc-page' },
@@ -1938,11 +1880,11 @@ const DataContract = (props) => {
                     if (tab === 'overview')   return TermsDetail(tables, activeFilter, showAddTest);
                     if (tab === 'matrix')     return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
                     if (tab === 'compliance') return ComplianceTab(termDiff, health);
-                    if (tab === 'yaml')        return YamlViewer(yaml, tgName);
-                    if (tab === 'upload')      return UploadTab();
+                    if (tab === 'yaml')        return YamlViewer(yaml, tgName, versionInfo.is_latest);
                     if (tab === 'help')        return TermsHelpPanel();
                     return '';
                 },
+                StickyPendingBar(versionInfo),
             );
         },
     );
@@ -2345,6 +2287,16 @@ stylesheet.replace(`
     color: #ef4444;
     margin-left: auto;
 }
+/* "edited" dot — amber pulsing dot on chips with staged changes */
+.term-chip__edited-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f59e0b;
+    margin-left: auto;
+    flex-shrink: 0;
+    animation: spbPulse 2s ease-in-out infinite;
+}
 .term-chip.ddl  { border-color: rgba(167,139,250,0.3); background: rgba(167,139,250,0.07); }
 .term-chip.prof { border-color: rgba(79,142,247,0.3);  background: rgba(79,142,247,0.07);  }
 .term-chip.tst  { border-color: rgba(34,197,94,0.3);   background: rgba(34,197,94,0.07);   }
@@ -2706,19 +2658,28 @@ stylesheet.replace(`
 .yaml-copy-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 3px 10px;
-    font-size: 11px;
+    gap: 5px;
+    padding: 5px 13px;
+    font-size: 13px;
     font-weight: 600;
-    color: var(--caption-text-color);
-    border: 1px solid var(--border-color);
+    color: var(--link-text-color);
+    border: 1px solid rgba(79,142,247,0.35);
     border-radius: 5px;
     cursor: pointer;
-    background: var(--card-background-color);
-    transition: color 0.15s, border-color 0.15s;
+    background: rgba(79,142,247,0.07);
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
     user-select: none;
 }
-.yaml-copy-btn:hover { color: var(--link-text-color); border-color: rgba(79,142,247,0.4); }
+.yaml-copy-btn:hover { background: rgba(79,142,247,0.14); border-color: rgba(79,142,247,0.55); }
+.yaml-copy-btn--success { color: #16a34a; border-color: #86efac; background: #f0fdf4; }
+.yaml-copy-btn--success:hover { color: #15803d; border-color: #4ade80; background: #dcfce7; }
+.yaml-import-btn {
+    color: #b45309;
+    border-color: rgba(180,83,9,0.35);
+    background: rgba(245,158,11,0.07);
+}
+.yaml-import-btn:hover { background: rgba(245,158,11,0.14); border-color: rgba(180,83,9,0.55); }
+/* Fallback for when js-yaml CDN is unreachable */
 .yaml-block {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 12px;
@@ -2732,15 +2693,52 @@ stylesheet.replace(`
     overflow-x: auto;
     margin: 0;
 }
-/* Prism YAML token colors — compatible with both light and dark themes */
-.token.key     { color: #4f8ef7; font-weight: 600; }
-.token.string  { color: #22c55e; }
-.token.number  { color: #f97316; }
-.token.boolean { color: #a78bfa; font-weight: 600; }
-.token.null.keyword { color: #94a3b8; font-style: italic; }
-.token.comment { color: var(--caption-text-color); font-style: italic; }
-.token.punctuation { color: var(--caption-text-color); }
-.token.important { color: #ef4444; font-weight: 600; }
+/* YAML collapsible tree */
+.yt-wrap {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 12px;
+    line-height: 1.7;
+    background: var(--card-background-color);
+    border-radius: 0 0 6px 6px;
+    padding: 12px 16px;
+    overflow-x: auto;
+    min-height: 40px;
+}
+.yt-root { padding: 0; }
+.yt-row { margin: 0; }
+.yt-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+    padding: 0 2px;
+    border-radius: 3px;
+    user-select: none;
+}
+.yt-toggle-row:hover { background: rgba(128,128,128,0.07); }
+.yt-arrow {
+    display: inline-block;
+    width: 14px;
+    text-align: center;
+    font-size: 8px;
+    color: var(--caption-text-color);
+    transform: rotate(0deg);
+    transition: transform 0.13s;
+    flex-shrink: 0;
+}
+.yt-arrow::before { content: '▶'; }
+.yt-arrow.open { transform: rotate(90deg); }
+.yt-children { padding-left: 18px; }
+.yt-leaf { display: flex; align-items: baseline; gap: 4px; padding: 0 2px; }
+.yt-leaf-pad { display: inline-block; width: 14px; flex-shrink: 0; }
+.yt-key  { color: #4f8ef7; font-weight: 600; }
+.yt-idx  { color: var(--caption-text-color); }
+.yt-hint { color: var(--caption-text-color); font-style: italic; font-size: 11px; margin-left: 2px; }
+.yt-str  { color: #22c55e; }
+.yt-num  { color: #f97316; }
+.yt-bool { color: #a78bfa; font-weight: 600; }
+.yt-null { color: #94a3b8; font-style: italic; }
+.yt-empty { color: var(--caption-text-color); padding: 8px 4px; }
 
 /* ── Upload tab ── */
 .upload-tab { max-width: 720px; }
@@ -3326,6 +3324,60 @@ stylesheet.replace(`
 .compliance-summary-tier { font-size: 11px; font-weight: 700; color: var(--caption-text-color); text-transform: uppercase; letter-spacing: 0.04em; }
 .compliance-summary-stat { font-size: 12px; font-weight: 600; }
 .compliance-summary-sep { width: 1px; height: 20px; background: var(--border-color); flex-shrink: 0; }
+
+/* ── Sticky pending-edits bar ── */
+@keyframes spbPulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+.sticky-pending-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #fefce8;
+    border-top: 2px solid #f59e0b;
+    font-size: 13px;
+    margin-top: 24px;
+}
+.spb-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #f59e0b;
+    flex-shrink: 0;
+    animation: spbPulse 1.8s ease-in-out infinite;
+}
+.spb-text { flex: 1; color: #78350f; }
+.spb-actions { display: flex; gap: 8px; align-items: center; }
+.spb-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    border-radius: 6px;
+    border: 1px solid;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition: all 0.15s;
+}
+.spb-btn--discard {
+    border-color: rgba(120,53,15,0.25);
+    background: transparent;
+    color: #92400e;
+}
+.spb-btn--discard:hover { background: rgba(245,158,11,0.12); }
+.spb-btn--save {
+    border-color: #d97706;
+    background: #f59e0b;
+    color: #fff;
+}
+.spb-btn--save:hover { background: #d97706; }
 `);
 
 export { DataContract };

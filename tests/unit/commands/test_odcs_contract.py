@@ -1265,3 +1265,165 @@ class Test_DuplicateYamlIds:
         assert len(diff.test_updates) == 1
         # Warning about the duplicate
         assert any("duplicate" in w.lower() for w in diff.warnings)
+        # skipped_rules must be incremented for the duplicate
+        assert diff.skipped_rules == 1, f"Expected skipped_rules=1. Got: {diff.skipped_rules}"
+
+
+# ---------------------------------------------------------------------------
+# ContractDiff rule counters (skipped_rules, no_change_rules)
+# ---------------------------------------------------------------------------
+
+class Test_ContractDiffRuleCounters:
+    """compute_import_diff must correctly populate skipped_rules and no_change_rules."""
+
+    _FAKE_GROUP = [{"id": "tg-1", "table_groups_name": "tg", "description": None,
+                    "contract_version": None, "contract_status": None,
+                    "business_domain": None, "data_product": None,
+                    "profiling_delay_days": None, "table_group_schema": "public"}]
+    _FAKE_SUITES = [{"suite_id": SUITE_ID, "test_suite": "default_suite", "schema_name": "public"}]
+
+    def _make_doc(self, rules: list[dict]) -> dict:
+        return {"apiVersion": "v3.1.0", "kind": "DataContract", "id": "test", "quality": rules}
+
+    def _fake_test(self, test_id: str, **kwargs) -> dict:
+        base = {
+            "id": test_id,
+            "test_type": "Missing_Pct",
+            "test_description": "desc",
+            "test_active": "Y",
+            "threshold_value": "5.0",
+            "lower_tolerance": None,
+            "upper_tolerance": None,
+            "custom_query": None,
+            "skip_errors": 0,
+            "severity": "Fail",
+            "table_name": "orders",
+            "column_name": "amount",
+        }
+        base.update(kwargs)
+        return base
+
+    def test_id_not_found_increments_skipped_rules(self):
+        """A rule whose id is not in the DB must increment skipped_rules."""
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+        missing_id = "missing-uuid-1234"
+        doc = self._make_doc([
+            {"id": missing_id, "name": "ghost", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": 5.0, "unit": "percent", "element": "orders.amount"},
+        ])
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, [], self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert diff.skipped_rules == 1
+        assert diff.no_change_rules == 0
+
+    def test_duplicate_id_increments_skipped_rules(self):
+        """A duplicate id in YAML must increment skipped_rules for the second occurrence."""
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+        dup_id = str(uuid4())
+        doc = self._make_doc([
+            {"id": dup_id, "name": "first", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": 5.0, "unit": "percent", "element": "orders.amount"},
+            {"id": dup_id, "name": "second", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": 2.0, "unit": "percent", "element": "orders.amount"},
+        ])
+        fake_test = self._fake_test(dup_id)
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, [fake_test], self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert diff.skipped_rules == 1
+        assert len(diff.test_updates) == 1 or len(diff.test_inserts) == 1  # first is processed
+
+    def test_no_change_rule_increments_no_change_rules(self):
+        """A rule whose id matches a test and has no field changes must increment no_change_rules."""
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+        test_id = str(uuid4())
+        doc = self._make_doc([
+            {"id": test_id, "name": "desc", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": "5.0", "unit": "percent", "element": "orders.amount"},
+        ])
+        # Current test exactly matches the YAML rule values
+        fake_test = self._fake_test(test_id,
+                                    test_description="desc",
+                                    threshold_value="5.0",
+                                    test_type="Missing_Pct")
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, [fake_test], self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert diff.no_change_rules == 1
+        assert diff.skipped_rules == 0
+        assert len(diff.test_updates) == 0
+
+    def test_immutable_change_increments_skipped_rules(self):
+        """A rule that tries to change an immutable field (element) must increment skipped_rules."""
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+        test_id = str(uuid4())
+        # DB test is on orders.amount, YAML rule changes element to orders.other_col
+        doc = self._make_doc([
+            {"id": test_id, "name": "changed_element", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": 5.0, "unit": "percent", "element": "orders.other_col"},
+        ])
+        fake_test = self._fake_test(test_id, table_name="orders", column_name="amount")
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, [fake_test], self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert diff.skipped_rules == 1
+        assert len(diff.test_updates) == 0
+
+    def test_create_with_missing_threshold_increments_skipped_rules(self):
+        """A new rule (no id) that fails validation must increment skipped_rules."""
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+        # Rule with no threshold/mustBe fields — create path should skip
+        doc = self._make_doc([
+            {"name": "bad_rule", "type": "library", "metric": "nullValues",
+             "unit": "percent", "element": "orders.amount"},  # no threshold
+        ])
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, [], self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert diff.skipped_rules == 1
+        assert len(diff.test_inserts) == 0
+
+    def test_mixed_rules_count_correctly(self):
+        """A doc with creates, updates, no-changes, and skips must set all counters correctly."""
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+        update_id = str(uuid4())
+        noop_id   = str(uuid4())
+        bad_id    = "does-not-exist"
+        doc = self._make_doc([
+            # will UPDATE (threshold change)
+            {"id": update_id, "name": "updated", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": 99.0, "unit": "percent", "element": "orders.amount"},
+            # will NO_CHANGE (exact match)
+            {"id": noop_id, "name": "noop_desc", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": "5.0", "unit": "percent", "element": "orders.amount"},
+            # will SKIP (id not in DB)
+            {"id": bad_id, "name": "ghost", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": 1.0, "unit": "percent", "element": "orders.amount"},
+            # will CREATE
+            {"name": "new_rule", "type": "library", "metric": "nullValues",
+             "mustBeLessOrEqualTo": 0, "unit": "percent", "element": "orders.amount"},
+        ])
+        tests = [
+            self._fake_test(update_id, threshold_value="5.0"),
+            self._fake_test(noop_id, test_description="noop_desc", threshold_value="5.0"),
+        ]
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, tests, self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert len(diff.test_updates) == 1,  f"Expected 1 update. Got: {len(diff.test_updates)}"
+        assert len(diff.test_inserts) == 1,  f"Expected 1 create. Got: {len(diff.test_inserts)}"
+        assert diff.no_change_rules == 1,    f"Expected no_change=1. Got: {diff.no_change_rules}"
+        assert diff.skipped_rules == 1,      f"Expected skipped=1. Got: {diff.skipped_rules}"

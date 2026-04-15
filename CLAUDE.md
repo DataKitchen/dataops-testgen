@@ -312,6 +312,37 @@ The Data Contract feature surfaces TestGen test suites as a formal data contract
 - `test_suites.include_in_contract` — `BOOLEAN NOT NULL DEFAULT TRUE` — controls which suites are in scope for the contract
 - `test_suites.is_monitor` — `BOOLEAN` — marks a suite as a monitor suite (excluded from contract test counts and suite picker)
 
+Add the contract lifecycle to the data contract.md file in docs as well### Contract Lifecycle
+
+A data contract passes through these lifecycle activities:
+
+1. **Bootstrap (Create)** — First-time flow generates the initial contract YAML from the current DB state (schema + profiling stats + active test definitions). Entry point: `_render_first_time_flow()`.
+
+2. **Inline edit** — Users edit governance terms (description, CDE, PII), test rule thresholds/tolerances/severity, and delete terms directly in the UI. Edits are staged as pending changes (`dc_pending:{tg_id}` session state) and committed via Save.
+
+3. **Save version** — Creates a named, timestamped snapshot of the current state. When pending edits exist, the user can update the current version in-place (`_update_version_dialog`) or promote to a new version number (`_save_version_dialog`).
+
+4. **Export YAML** — Download the current contract as an ODCS v3.1.0 YAML file (read-only; enables external editing).
+
+5. **Import YAML** — Upload a modified ODCS YAML to sync changes back to TestGen. Rules without an `id` field are created as new tests; rules with an `id` update the matching test. Entry point: `run_import_contract()`.
+
+6. **Regenerate** — Re-export from the current DB state and save as a new version, picking up schema changes, new/removed tests, and updated profiling stats. Entry point: `_regenerate_dialog()`.
+
+7. **Staleness detection + response** — Passive lifecycle event: the system detects when the DB has drifted from the saved contract (schema changes, test additions/removals) and shows a banner. The user reviews a diff (`compute_staleness_diff`) and can accept or dismiss. Distinct from Regenerate, which is user-initiated.
+
+8. **Version navigation** — Switch between historical read-only snapshots. The latest version is always editable; older versions are read-only.
+
+9. **Delete version** — Removes a specific saved version and its paired snapshot test suite. Deleting the latest version promotes the previous version to active. Entry point: `_delete_version_dialog()`.
+
+```
+Bootstrap → Edit → Save version ──────────────────────────────┐
+                 ↑ Import YAML (download → edit externally → upload)  │
+                 ↑ Regenerate (re-export from DB)              │
+                 ↑ Respond to staleness (DB drift detected)    │
+                                                               ↓
+                                               Delete version (any version)
+```
+
 ### Key Architectural Patterns
 - **Modals via `emitEvent` + `@st.dialog`** — Custom component iframes clip `position: fixed/absolute` elements. ALL modals must go through: JS emits event → Python `event_handlers` → `@st.dialog`. Do NOT use VanJS popups or positioned overlays inside the component iframe.
 - **`event_handlers` vs `on_change_handlers`** — Use `event_handlers` when the handler needs to call `st.rerun()` (required for dialogs). `on_change_handlers` does not support `st.rerun()`.

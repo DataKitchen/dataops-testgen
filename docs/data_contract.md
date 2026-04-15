@@ -26,6 +26,39 @@ In all three cases the output is the same artifact: a versioned, frozen snapshot
 
 ---
 
+## Contract Lifecycle
+
+A data contract passes through these lifecycle activities:
+
+1. **Bootstrap (Create)** — First-time flow generates the initial contract YAML from the current DB state (schema + profiling stats + active test definitions). Entry point: `_render_first_time_flow()`.
+
+2. **Inline edit** — Users edit governance terms (description, CDE, PII), test rule thresholds/tolerances/severity, and delete terms directly in the UI. Edits are staged as pending changes (`dc_pending:{tg_id}` session state) and committed via Save.
+
+3. **Save version** — Creates a named, timestamped snapshot of the current state. When pending edits exist, the user can update the current version in-place (`_update_version_dialog`) or promote to a new version number (`_save_version_dialog`).
+
+4. **Export YAML** — Download the current contract as an ODCS v3.1.0 YAML file (read-only; enables external editing).
+
+5. **Import YAML** — Upload a modified ODCS YAML to sync changes back to TestGen. Rules without an `id` field are created as new tests; rules with an `id` update the matching test. Entry point: `run_import_contract()`.
+
+6. **Regenerate** — Re-export from the current DB state and save as a new version, picking up schema changes, new/removed tests, and updated profiling stats. Entry point: `_regenerate_dialog()`.
+
+7. **Staleness detection + response** — Passive lifecycle event: the system detects when the DB has drifted from the saved contract (schema changes, test additions/removals) and shows a banner. The user reviews a diff (`compute_staleness_diff`) and can accept or dismiss. Distinct from Regenerate, which is user-initiated.
+
+8. **Version navigation** — Switch between historical read-only snapshots. The latest version is always editable; older versions are read-only.
+
+9. **Delete version** — Removes a specific saved version and its paired snapshot test suite. Deleting the latest version promotes the previous version to active. Entry point: `_delete_version_dialog()`.
+
+```
+Bootstrap → Edit → Save version ──────────────────────────────┐
+                 ↑ Import YAML (download → edit externally → upload)  │
+                 ↑ Regenerate (re-export from DB)              │
+                 ↑ Respond to staleness (DB drift detected)    │
+                                                               ↓
+                                               Delete version (any version)
+```
+
+---
+
 ## Requirements
 
 ### Health Dashboard
@@ -58,7 +91,11 @@ In all three cases the output is the same artifact: a versioned, frozen snapshot
 - Must not delete a test from the database when its rule is omitted from the YAML — must produce an orphan warning instead.
 - Must not allow changing `metric` or `element` on an existing test; these fields are immutable.
 - Must write new test UUIDs back into the uploaded YAML at the correct positions.
-- Must return a `ContractDiff` result object containing: `.test_inserts`, `.test_updates`, `.contract_updates`, `.table_group_updates`, `.warnings`, `.errors`, `.has_errors`, `.total_changes`.
+- Must return a `ContractDiff` result object containing: `.test_inserts`, `.test_updates`, `.contract_updates`, `.table_group_updates`, `.warnings`, `.errors`, `.has_errors`, `.total_changes`, `.skipped_rules`, `.no_change_rules`, `.orphaned_ids`, `.new_id_by_index`.
+- `.skipped_rules` counts rules that could not be applied: duplicate `id` in YAML, `id` not found in DB, unsupported action, or attempt to mutate an immutable field.
+- `.no_change_rules` counts rules that matched a test but required no updates.
+- Must show a confirmation dialog (dry-run preview) before applying the import. The dialog displays accepted/skipped counts, a create/update/no-change breakdown, governance update count, warnings, and orphaned test info. The user must click **Confirm Import** to proceed. **Cancel** aborts without writing to DB.
+- Must compute the dry-run preview without writing to DB (`dry_run=True`), store it in `import_preview_key` session state, then trigger `safe_rerun()`. The confirmation dialog is invoked from the main render loop on the next cycle.
 - Must bust YAML, anomaly, and version caches on successful import.
 
 ### Bulk Multi-Select Delete
@@ -119,7 +156,7 @@ All live events go through `event_handlers` (supports `st.rerun()`):
 | `SuitePickerClicked` | — | Open `@st.dialog` suite picker (include/exclude suites) |
 | `GovernanceEditClicked` | `{ tableName, colName }` | Open `@st.dialog` for governance term edit |
 | `BulkDeleteTermsClicked` | `{ terms: [...] }` | Multi-select bulk delete; each term carries `{table, col, source, name, rule_id}` |
-| `ImportContractClicked` | `{ fileContent }` | Upload tab sends YAML text; Python calls `run_import_contract` and displays diff |
+| `ImportContractClicked` | `{ payload: <yaml_string> }` | Upload tab sends YAML text; Python runs dry-run preview, stages result in `import_preview_key`, reruns; confirmation dialog shown on next cycle |
 | `AddTestClicked` | `{ tableName, colName }` | Opens `add_test_dialog` for creating new tests via the data contract UI |
 
 ### Unit Tests
@@ -129,7 +166,7 @@ All live events go through `event_handlers` (supports `st.rerun()`):
 | File | Lines | Covers |
 |---|---|---|
 | `tests/unit/commands/test_data_contract_export.py` | 107 | Export mapping, anomaly criteria, YAML output |
-| `tests/unit/commands/test_odcs_contract.py` | 137 | Import validation, diff, apply, CREATE/UPDATE/WRITE-BACK round-trip |
+| `tests/unit/commands/test_odcs_contract.py` | 1429 | Import validation, diff, apply, CREATE/UPDATE/WRITE-BACK round-trip; `Test_ContractDiffRuleCounters` (skipped_rules, no_change_rules) |
 | `tests/unit/ui/test_data_contract_page.py` | 67 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
 | `tests/unit/ui/test_contract_pending_edits.py` | 29 | Pending edit accumulation, YAML patching, persistence helpers |
 | `tests/unit/ui/test_contract_term_deletion.py` | 23 | All 13 deletable term types across DDL (4), Profiling (6), Governance (3); error cases; sibling-column isolation |
@@ -158,16 +195,20 @@ Streamlit's `AppTest` framework is used to exercise the Data Contract page witho
 pytest -m functional tests/functional/ui/test_data_contract_apptest.py
 ```
 
-### App script
+### App scripts
 
-`tests/functional/ui/apps/data_contract_first_time_flow.py`
+**`tests/functional/ui/apps/data_contract_first_time_flow.py`**
 
-This standalone script is loaded by `AppTest.from_file()`. Because `AppTest` re-executes the script from the top on every `at.run()` call, all patches are applied fresh each time. The script:
+Loaded by `AppTest.from_file()` for the main page tests. Because `AppTest` re-executes the script from the top on every `at.run()` call, all patches are applied fresh each time. The script:
 
 - Stubs `streamlit.components.v1.declare_component` and the `testgen.ui.components.utils.component` / `testgen.ui.components.widgets.testgen_component` modules before any TestGen imports, so custom JS components do not attempt to register in the sandboxed environment.
 - Sets `st.query_params["table_group_id"]` and `st.session_state["auth"]` to bypass authentication and supply the required page parameter.
 - Patches all external I/O: `TableGroup.get_minimal`, `_check_contract_prerequisites`, `_capture_yaml`, `_fetch_test_statuses`, `_fetch_anomalies`, and all save-dialog dependencies (`save_contract_version`, `create_contract_snapshot_suite`, `_persist_pending_edits`, `safe_rerun`).
 - Instantiates `DataContractPage` directly and calls `render(table_group_id=TG_ID)`.
+
+**`tests/functional/ui/apps/data_contract_import_confirm.py`**
+
+Standalone script for testing `_confirm_import_dialog` directly. Selects test scenarios via `dc_test_confirm_scenario` session state key (bypassing the JS event/session-state staging path). Scenarios: `creates` (3 creates, 2 updates, 1 no-change, 2 skipped), `errors`, `governance`, `warnings`, `orphans`. Patches `run_import_contract`, `sync_import_to_snapshot_suite`, `_clear_contract_cache`, and `safe_rerun`.
 
 ### Test classes
 
@@ -177,6 +218,7 @@ This standalone script is loaded by `AppTest.from_file()`. Because `AppTest` re-
 | `Test_FirstTimeFlow` | 4 | "No contract saved yet" heading appears; profiling and test-suite prerequisite rows show green; "Generate Contract Preview →" button is present and enabled when prerequisites pass |
 | `Test_GeneratePreview` | 4 | Clicking "Generate Contract Preview →" shows preview content including a Coverage card; "Save as Version 0" button appears after preview; "← Back" returns to the prerequisites screen |
 | `Test_SaveDialog` | 5 | Save dialog opens without exception; confirms "Version 0"; shows snapshot suite name `[Contract v0] Test Orders`; contains both "Save Version" and "Cancel" buttons |
+| `Test_ImportConfirmDialog` | 10 | Dialog renders; accepted/skipped metrics; create/update/no-change breakdown in markdown; Confirm and Cancel buttons present; error path shows error and Close; governance updates shown; warnings expander shown; orphaned IDs info message; Confirm button triggers `run_import_contract` |
 
 ### AppTest limitations
 

@@ -59,9 +59,11 @@ from testgen.ui.views.data_contract_yaml import (
     _pending_edit_count,
 )
 from testgen.ui.views.dialogs.data_contract_dialogs import (
+    _confirm_import_dialog,
     _delete_version_dialog,
     _edit_rule_dialog,
     _governance_edit_dialog,
+    _import_yaml_dialog,
     _monitor_term_dialog,
     _regenerate_dialog,
     _review_changes_panel,
@@ -584,6 +586,8 @@ class DataContractPage(Page):
         pending_key     = f"dc_pending:{table_group_id}"
         anomaly_key     = f"dc_anomalies:{table_group_id}"
         import_key      = f"dc_import_result:{table_group_id}"
+        import_preview_key = f"dc_import_preview:{table_group_id}"
+        import_open_key    = f"dc_import_open:{table_group_id}"
         run_dates_key   = f"dc_run_dates:{table_group_id}"
         gov_key         = f"dc_gov:{table_group_id}"
         term_diff_key      = f"dc_term_diff:{table_group_id}"
@@ -660,8 +664,8 @@ class DataContractPage(Page):
         pending_ct = _pending_edit_count(pending)
         if pending_ct > 0:
             pending_items = (
-                [f"{e['table']}.{e['col']} {e['field']}" for e in pending.get("governance", [])]
-                + [f"test {e['rule_id'][:8]}…" for e in pending.get("tests", [])]
+                [f"{e.get('table', '?')}.{e.get('col', '?')} {e.get('field', '?')}" for e in pending.get("governance", [])]
+                + [f"test {e.get('rule_id', '?')[:8]}…" for e in pending.get("tests", [])]
                 + [f"deleted {e.get('table', '')}.{e.get('col', '')} {e.get('name', '')}" for e in pending.get("deletions", [])]
             )
             save_tip = f"{pending_ct} unsaved change(s): " + "; ".join(pending_items[:3])
@@ -693,7 +697,7 @@ class DataContractPage(Page):
                 )
             if chosen_idx != current_idx:
                 chosen_ver = versions[chosen_idx]["version"]
-                if pending and _pending_edit_count(pending) > 0:
+                if pending_ct > 0:
                     st.warning("You have unsaved changes. Switch versions? Changes will be lost.")
                     c1, c2 = st.columns(2)
                     if c1.button("Switch anyway"):
@@ -901,6 +905,21 @@ class DataContractPage(Page):
         _select_term_key = st.session_state.pop(f"dc_select_term:{table_group_id}", "") or ""
         props["select_term_key"] = _select_term_key
 
+        # ── Pending edit keys — for "edited" chip indicators in JS ────────────
+        # Pass rule_ids of edited (non-removed) tests and "table|col|field" keys
+        # of edited governance terms so JS can mark those chips as dirty.
+        _pending_rule_ids: list[str] = [
+            e["rule_id"] for e in pending.get("tests", [])
+            if not e.get("_removed") and e.get("rule_id")
+        ]
+        _pending_gov_keys: list[str] = [
+            f"{e['table']}|{e['col']}|{e['field']}"
+            for e in pending.get("governance", [])
+            if e.get("value") is not None
+        ]
+        props["pending_edit_rule_ids"] = _pending_rule_ids
+        props["pending_edit_gov_keys"] = _pending_gov_keys
+
         # ── Event handlers ────────────────────────────────────────────────────
         def on_suite_picker(_payload: object) -> None:
             suite_runs = props.get("health", {}).get("suite_runs", [])
@@ -977,31 +996,12 @@ class DataContractPage(Page):
             if not yaml_content:
                 return
             try:
-                diff: OdcsContractDiff = run_import_contract(yaml_content, table_group_id)
-                st.session_state[import_key] = {
-                    "diff": diff,
-                    "original_yaml": yaml_content,
+                preview: OdcsContractDiff = run_import_contract(yaml_content, table_group_id, dry_run=True)
+                st.session_state[import_preview_key] = {
+                    "preview": preview,
+                    "yaml_content": yaml_content,
+                    "snapshot_suite_id": version_record.get("snapshot_suite_id"),
                 }
-                if not diff.has_errors:
-                    # Sync created/updated/deleted tests to snapshot suite if one exists
-                    snap_id = version_record.get("snapshot_suite_id")
-                    if snap_id:
-                        created_ids = list(diff.new_id_by_index.values()) if diff.new_id_by_index else []
-                        updated_ids = [str(u["id"]) for u in (diff.test_updates or []) if u.get("id")]
-                        deleted_ids = list(diff.orphaned_ids) if diff.orphaned_ids else []
-                        if created_ids or updated_ids or deleted_ids:
-                            try:
-                                sync_import_to_snapshot_suite(snap_id, created_ids, updated_ids, deleted_ids)
-                            except Exception:
-                                _log.exception("on_import_contract: failed to sync to snapshot suite %s", snap_id)
-                    # Bust YAML + anomaly + derived caches so the page reflects the newly created tests
-                    st.session_state.pop(yaml_key, None)
-                    st.session_state.pop(anomaly_key, None)
-                    st.session_state.pop(version_key, None)
-                    st.session_state.pop(run_dates_key, None)
-                    st.session_state.pop(gov_key, None)
-                    st.session_state.pop(term_diff_key, None)
-                    st.session_state.pop(suite_scope_key, None)
             except Exception as exc:
                 st.session_state[import_key] = {"error": str(exc)}
             safe_rerun()
@@ -1019,6 +1019,25 @@ class DataContractPage(Page):
             st.session_state.pop(term_diff_key, None)
             safe_rerun()
 
+        def on_save_from_sticky_bar(_payload: object) -> None:
+            if not is_latest:
+                return
+            if pending_ct > 0:
+                _update_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+            else:
+                _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+
+        def on_discard_from_sticky_bar(_payload: object) -> None:
+            if not is_latest:
+                return
+            cancel_all_changes_dialog(table_group_id, pending_ct, version_record["contract_yaml"])
+
+        def on_import_yaml(_payload: object) -> None:
+            if not is_latest:
+                return
+            st.session_state[import_open_key] = True
+            safe_rerun()
+
         testgen_component(
             "data_contract",
             props=props,
@@ -1028,10 +1047,32 @@ class DataContractPage(Page):
                 "SuitePickerClicked":       on_suite_picker,
                 "GovernanceEditClicked":    on_governance_edit,
                 "ImportContractClicked":    on_import_contract,
+                "ImportYamlClicked":        on_import_yaml,
                 "BulkDeleteTermsClicked":   on_bulk_delete_terms,
                 "AddTestClicked":           on_add_test,
+                "SaveFromStickyBar":        on_save_from_sticky_bar,
+                "DiscardFromStickyBar":     on_discard_from_sticky_bar,
             },
         )
+
+        # ── Import YAML dialog (toolbar button) ──────────────────────────────────
+        if st.session_state.pop(import_open_key, False):
+            _import_yaml_dialog(
+                table_group_id,
+                version_record.get("snapshot_suite_id"),
+                import_key,
+            )
+
+        # ── Import confirmation dialog (dry-run preview staged by on_import_contract) ────
+        _import_preview = st.session_state.pop(import_preview_key, None)
+        if _import_preview:
+            _confirm_import_dialog(
+                _import_preview["preview"],
+                _import_preview["yaml_content"],
+                table_group_id,
+                _import_preview["snapshot_suite_id"],
+                import_key,
+            )
 
         # ── Import result banner ──────────────────────────────────────────────
         import_result = st.session_state.pop(import_key, None)

@@ -258,16 +258,6 @@ const TestSuites = (/** @type Properties */ props) => {
                                         disabled: !testSuite.last_complete_profile_run_id,
                                         onclick: () => emitEvent('GenerateTestsClicked', {payload: testSuite.id}),
                                     }),
-                                    testSuite.include_in_contract && testSuite.has_contract ? Button({
-                                        label: 'View Data Contract',
-                                        color: 'primary',
-                                        type: 'stroked',
-                                        style: 'margin-top: 16px; min-width: 180px;',
-                                        onclick: () => emitEvent('LinkClicked', {
-                                            href: 'data-contract',
-                                            params: { table_group_id: testSuite.table_groups_id },
-                                        }),
-                                    }) : '',
                                 ]
                                 : ''
                             ),
