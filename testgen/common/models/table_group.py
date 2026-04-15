@@ -159,7 +159,7 @@ class TableGroup(Entity):
     ) -> Iterable[TableGroupMinimal]:
         results = cls._select_columns_where(cls._minimal_columns, *clauses, order_by=order_by)
         return [TableGroupMinimal(**row) for row in results]
-    
+
     @classmethod
     def select_stats(cls, project_code: str, table_group_id: str | UUID | None = None) -> Iterable[TableGroupStats]:
         query = f"""

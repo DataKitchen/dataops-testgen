@@ -1,25 +1,25 @@
+import json
 import logging
-import re
-import time
 import typing
 from datetime import UTC, datetime
-from functools import partial
 
 import pandas as pd
 import streamlit as st
 from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
-from sqlalchemy import select as sa_select
-from streamlit.delta_generator import DeltaGenerator
-from streamlit_extras.no_default_selectbox import selectbox
 
-import testgen.ui.services.form_service as fm
 from testgen.common import date_service
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionMinimal, TestDefinitionNote
-from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
+from testgen.common.models.test_definition import (
+    TestDefinition,
+    TestDefinitionMinimal,
+    TestDefinitionNote,
+    TestDefinitionSummary,
+)
+from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -27,18 +27,59 @@ from testgen.ui.components.widgets.download_dialog import (
     download_dialog,
     get_excel_file_data,
 )
-from testgen.ui.components.widgets.page import css_class, flex_row_end
 from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
-from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.services.string_service import empty_if_null, snake_case_to_title_case
-from testgen.ui.session import session, temp_value
-from testgen.ui.views.dialogs.profiling_results_dialog import view_profiling_button
-from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
-from testgen.ui.views.dialogs.test_definition_notes_dialog import test_definition_notes_dialog
+from testgen.ui.session import session
 from testgen.utils import to_dataframe
 
 LOG = logging.getLogger("testgen")
+
+PAGE_SIZE = 500
+
+# Maps JS column names to SQL ORDER BY expressions
+SORT_FIELD_MAP = {
+    "table_name": "table_name",
+    "column_name": "column_name",
+    "test_name_short": "test_name_short",
+    "flagged": "flagged",
+}
+
+TD_ADD_DIALOG_KEY = "td:add_dialog"
+TD_EDIT_DIALOG_KEY = "td:edit_dialog"
+TD_DELETE_DIALOG_KEY = "td:delete_dialog"
+TD_COPY_MOVE_DIALOG_KEY = "td:copy_move_dialog"
+TD_UNLOCK_DIALOG_KEY = "td:unlock_dialog"
+TD_RUN_TESTS_DIALOG_KEY = "td:run_tests_dialog"
+TD_RUN_TESTS_RESULT_KEY = "td:run_tests_result"
+TD_VALIDATE_RESULT_KEY = "td:validate_result"
+TD_COPY_MOVE_COLLISION_KEY = "td:copy_move_collision"
+TD_COPY_MOVE_OVERWRITE_KEY = "td:copy_move_overwrite"
+TD_NOTES_DIALOG_KEY = "td:notes_dialog"
+
+
+def _parse_sort_param(sort: str | None) -> tuple[list | None, list[dict]]:
+    if not sort:
+        return None, []
+
+    sorting_columns = []
+    sort_state = []
+    for part in sort.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        tokens = part.split(":")
+        field = tokens[0]
+        order = tokens[1] if len(tokens) > 1 else "asc"
+        if order not in ("asc", "desc"):
+            order = "asc"
+
+        sql_expr = SORT_FIELD_MAP.get(field)
+        if sql_expr:
+            sorting_columns.append((sql_expr, order.upper()))
+            sort_state.append({"field": field, "order": order})
+
+    return sorting_columns if sorting_columns else None, sort_state
 
 
 class TestDefinitionsPage(Page):
@@ -55,6 +96,9 @@ class TestDefinitionsPage(Page):
         column_name: str | None = None,
         test_type: str | None = None,
         flagged: str | None = None,
+        page: str | None = None,
+        page_size: str | None = None,
+        sort: str | None = None,
         **_kwargs,
     ) -> None:
         test_suite = TestSuite.get(test_suite_id)
@@ -63,6 +107,7 @@ class TestDefinitionsPage(Page):
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
                 "test-suites",
             )
+            return
 
         table_group = TableGroup.get_minimal(test_suite.table_groups_id)
         project_code = table_group.project_code
@@ -75,1055 +120,528 @@ class TestDefinitionsPage(Page):
             return
 
         session.set_sidebar_project(project_code)
-        user_can_edit = session.auth.user_has_permission("edit")
-        user_can_disposition = session.auth.user_has_permission("disposition")
-
         testgen.page_header(
             "Test Definitions",
-            "generate-tests/test-definitions/",
+            "test-definitions",
             breadcrumbs=[
-                { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
-                { "label": test_suite.test_suite },
+                {"label": "Test Suites", "path": "test-suites", "params": {"project_code": project_code}},
+                {"label": test_suite.test_suite},
             ],
         )
 
-        table_filter_column, column_filter_column, test_filter_column, flagged_filter_column, sort_column, table_actions_column = st.columns([.2, .2, .15, .1, .1, .25], vertical_alignment="bottom")
-        testgen.flex_row_end(table_actions_column)
+        # Parse pagination and sorting params
+        current_page = int(page) if page else 0
+        current_page_size = int(page_size) if page_size else PAGE_SIZE
+        sorting_columns, sort_state = _parse_sort_param(sort)
 
-        actions_column, disposition_column = st.columns([.5, .5])
-        testgen.flex_row_start(actions_column)
-        testgen.flex_row_end(disposition_column)
-
-        filters_changed = False
-        current_filters = (table_name, column_name, test_type, flagged)
-        if (query_filters := st.session_state.get("test_definitions:filters")) != current_filters:
-            if query_filters:
-                filters_changed = True
-            st.session_state["test_definitions:filters"] = current_filters
-
-        with table_filter_column:
-            columns_df = get_test_suite_columns(test_suite_id)
-            table_options = list(columns_df["table_name"].unique())
-            table_name = testgen.select(
-                options=table_options,
-                value_column="table_name",
-                default_value=table_name,
-                bind_to_query="table_name",
-                label="Table",
+        with st.spinner("Loading data ..."):
+            user_can_edit = session.auth.user_has_permission("edit")
+            user_can_disposition = session.auth.user_has_permission("disposition")
+            df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
+                                       page=current_page, page_size=current_page_size,
+                                       flagged_filter=flagged)
+            total_count = get_test_definitions_count(test_suite, table_name, column_name, test_type,
+                                                      flagged_filter=flagged)
+            test_types = run_test_type_lookup_query().to_dict("records")
+            table_columns = get_columns(str(table_group.id))
+            filter_columns_df = get_test_suite_columns(test_suite_id)
+            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+            all_test_suites = TestSuite.select_minimal_where(
+                TestSuite.table_groups_id.in_([str(tg.id) for tg in table_groups]),
+                TestSuite.is_monitor.isnot(True),
             )
-        with column_filter_column:
-            if table_name:
-                column_options = columns_df.loc[
-                    columns_df["table_name"] == table_name
-                    ]["column_name"].dropna().unique().tolist()
+
+        # Build filter options
+        table_options = sorted(filter_columns_df["table_name"].dropna().unique().tolist(), key=str.lower)
+        columns_raw = (
+            filter_columns_df[["table_name", "column_name"]]
+            .dropna(subset=["column_name"])
+            .drop_duplicates()
+            .to_dict("records")
+        )
+        test_type_options = (
+            filter_columns_df[["test_type", "test_name_short"]]
+            .dropna(subset=["test_type"])
+            .drop_duplicates(subset=["test_type"])
+            .sort_values("test_name_short")
+            .to_dict("records")
+        )
+
+        # Build test suite info dict
+        test_suite_info = {
+            "id": str(test_suite.id),
+            "test_suite": test_suite.test_suite,
+            "severity": test_suite.severity,
+            "export_to_observability": bool(test_suite.export_to_observability),
+        }
+
+        # Build dialog states
+        validate_result = st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
+
+        add_dialog = None
+        if st.session_state.get(TD_ADD_DIALOG_KEY):
+            add_dialog = {
+                "open": True,
+                "test_types": test_types,
+                "table_columns": table_columns,
+                "table_groups_id": str(table_group.id),
+                "table_group_schema": table_group.table_group_schema,
+                "test_suite": test_suite_info,
+            }
+
+        edit_dialog = None
+        if selected_def := st.session_state.get(TD_EDIT_DIALOG_KEY):
+            edit_dialog = {
+                "open": True,
+                "test_definition": selected_def,
+                "test_types": test_types,
+                "table_columns": table_columns,
+                "table_group_schema": table_group.table_group_schema,
+                "test_suite": test_suite_info,
+            }
+
+        delete_dialog = None
+        if selected := st.session_state.get(TD_DELETE_DIALOG_KEY):
+            delete_dialog = {"open": True, "count": len(selected), "ids": [s["id"] for s in selected]}
+
+        unlock_dialog = None
+        if selected := st.session_state.get(TD_UNLOCK_DIALOG_KEY):
+            unlock_dialog = {"open": True, "count": len(selected), "ids": [s["id"] for s in selected]}
+
+        copy_move_dialog = None
+        if selected := st.session_state.get(TD_COPY_MOVE_DIALOG_KEY):
+            suites_by_tg: dict[str, list] = {}
+            for ts in all_test_suites:
+                suites_by_tg.setdefault(str(ts.table_groups_id), []).append(
+                    {"id": str(ts.id), "test_suite": ts.test_suite}
+                )
+            copy_move_dialog = {
+                "open": True,
+                "selected": selected,
+                "table_groups": [{"id": str(tg.id), "table_groups_name": tg.table_groups_name} for tg in table_groups],
+                "current_table_group_id": str(table_group.id),
+                "current_test_suite_id": str(test_suite.id),
+                "test_suites_by_table_group": suites_by_tg,
+                "filter_columns": filter_columns_df[["table_name", "column_name"]].drop_duplicates().to_dict("records"),
+                "collision": st.session_state.get(TD_COPY_MOVE_COLLISION_KEY),
+            }
+
+        run_tests_data = None
+        if st.session_state.get(TD_RUN_TESTS_DIALOG_KEY):
+            run_tests_data = {
+                "open": True,
+                "project_code": project_code,
+                "test_suites": [{"value": str(test_suite.id), "label": test_suite.test_suite}],
+                "default_test_suite_id": str(test_suite.id),
+                "result": st.session_state.get(TD_RUN_TESTS_RESULT_KEY),
+            }
+
+        notes_dialog = None
+        if notes_state := st.session_state.get(TD_NOTES_DIALOG_KEY):
+            notes_dialog = _load_notes_dialog_data(notes_state.get("id") or notes_state, df)
+
+        # --- Event handlers ---
+
+        def on_add_dialog_opened(*_) -> None:
+            st.session_state[TD_ADD_DIALOG_KEY] = True
+
+        @with_database_session
+        def on_edit_dialog_opened(payload: dict) -> None:
+            # Payload is either the full row dict or just { id: ... }
+            test_def_id = payload.get("id") if isinstance(payload, dict) else None
+            if not test_def_id:
+                return
+            # Fetch fresh row from the current data
+            row_df = df[df["id"] == test_def_id]
+            if not row_df.empty:
+                test_def = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+                st.session_state[TD_EDIT_DIALOG_KEY] = test_def
+
+        def on_delete_dialog_opened(selected: list) -> None:
+            # Extract just ids from the payload
+            if selected and isinstance(selected[0], dict):
+                st.session_state[TD_DELETE_DIALOG_KEY] = [{"id": s["id"]} for s in selected]
             else:
-                column_options = columns_df.groupby("column_name").first().reset_index().sort_values("column_name", key=lambda x: x.str.lower())
-            column_name = testgen.select(
-                options=column_options,
-                default_value=column_name,
-                bind_to_query="column_name",
-                label="Column",
-                accept_new_options=True,
-            )
-        with test_filter_column:
-            test_options = columns_df.groupby("test_type").first().reset_index().sort_values("test_name_short")
-            test_type = testgen.select(
-                options=test_options,
-                value_column="test_type",
-                display_column="test_name_short",
-                default_value=test_type,
-                bind_to_query="test_type",
-                label="Test Type",
-            )
+                st.session_state[TD_DELETE_DIALOG_KEY] = selected
 
-        with flagged_filter_column:
-            flagged = testgen.select(
-                options=["Flagged", "Not Flagged"],
-                default_value=flagged,
-                bind_to_query="flagged",
-                label="Flagged",
-            )
+        @with_database_session
+        def on_delete_all_opened(*_) -> None:
+            all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
+            st.session_state[TD_DELETE_DIALOG_KEY] = [{"id": id_} for id_ in all_ids]
 
-        with sort_column:
-            sortable_columns = (
-                ("Flagged", "flagged"),
-                ("Has Notes", "notes_count"),
-                ("Table", "table_name"),
-                ("Column", "column_name"),
-                ("Test Type", "test_type"),
-            )
-            default = [(sortable_columns[i][1], "ASC") for i in (2, 3, 4)]
-            sorting_columns = testgen.sorting_selector(sortable_columns, default)
+        def on_unlock_dialog_opened(selected: list) -> None:
+            if selected and isinstance(selected[0], dict):
+                st.session_state[TD_UNLOCK_DIALOG_KEY] = [{"id": s["id"]} for s in selected]
+            else:
+                st.session_state[TD_UNLOCK_DIALOG_KEY] = selected
 
-        if user_can_disposition:
-            with disposition_column:
-                multi_select = st.toggle("Multi-Select", help="Toggle on to perform actions on multiple test definitions")
+        @with_database_session
+        def on_unlock_all_opened(*_) -> None:
+            all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
+            st.session_state[TD_UNLOCK_DIALOG_KEY] = [{"id": id_} for id_ in all_ids]
 
-        if user_can_edit:
-            if actions_column.button(
-                ":material/add: Add",
-                help="Add a new Test Definition",
-            ):
-                add_test_dialog(table_group, test_suite, table_name, column_name)
+        @with_database_session
+        def on_copy_move_dialog_opened(selected) -> None:
+            if selected == "all":
+                all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
+                results = TestDefinition.select_where(TestDefinition.id.in_(all_ids))
+                selected = [
+                    {"id": str(r.id), "table_name": r.table_name, "column_name": r.column_name,
+                     "test_type": r.test_type, "lock_refresh": r.lock_refresh}
+                    for r in results
+                ]
+            # selected contains minimal row dicts (id, table_name, column_name, test_type, lock_refresh)
+            st.session_state[TD_COPY_MOVE_DIALOG_KEY] = selected
+            st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
-            if table_actions_column.button(
-                ":material/play_arrow: Run Tests",
-                help="Run test suite's tests",
-            ):
-                run_tests_dialog(project_code, test_suite)
+        def on_add_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_ADD_DIALOG_KEY, None)
+            st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
-        with st.container():
-            with st.spinner("Loading data ..."):
-                df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns, flagged)
+        def on_edit_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_EDIT_DIALOG_KEY, None)
+            st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
-        if df.empty:
-            st.info("No test definitions found.")
-            return
+        def on_delete_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_DELETE_DIALOG_KEY, None)
 
-        selected, selected_test_def = render_grid(df, multi_select, filters_changed)
+        def on_unlock_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
 
-        popover_container = table_actions_column.empty()
+        def on_copy_move_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
-        def open_download_dialog(data: pd.DataFrame | None = None) -> None:
-            # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
-            with popover_container.container():
-                flex_row_end()
-                st.button(label="Export", icon=":material/download:", disabled=True)
+        @with_database_session
+        def on_add_test_saved(test_def: dict) -> None:
+            test_def["last_manual_update"] = datetime.now(UTC)
+            td_columns = set(TestDefinition.__table__.columns.keys())
+            TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
+            st.cache_data.clear()
+            st.session_state.pop(TD_ADD_DIALOG_KEY, None)
+            st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
+        @with_database_session
+        def on_edit_test_saved(test_def: dict) -> None:
+            test_def["last_manual_update"] = datetime.now(UTC)
+            td_columns = set(TestDefinition.__table__.columns.keys())
+            TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
+            st.cache_data.clear()
+            st.session_state.pop(TD_EDIT_DIALOG_KEY, None)
+            st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
+
+        @with_database_session
+        def on_delete_confirmed(payload: dict) -> None:
+            ids = payload.get("ids", [])
+            TestDefinition.delete_where(TestDefinition.id.in_(ids))
+            st.cache_data.clear()
+            st.session_state.pop(TD_DELETE_DIALOG_KEY, None)
+
+        @with_database_session
+        def on_unlock_confirmed(payload: dict) -> None:
+            ids = payload.get("ids", [])
+            TestDefinition.set_status_attribute("lock_refresh", ids, False)
+            st.cache_data.clear()
+            st.session_state.pop(TD_UNLOCK_DIALOG_KEY, None)
+
+        @with_database_session
+        def on_update_attribute(payload: dict) -> None:
+            attribute = payload["attribute"]
+            ids = payload["ids"]
+            value = payload["value"]
+            TestDefinition.set_status_attribute(attribute, ids, value)
+            st.cache_data.clear()
+
+        @with_database_session
+        def on_update_attribute_all(payload: dict) -> None:
+            attribute = payload["attribute"]
+            value = payload["value"]
+            all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
+            if all_ids:
+                TestDefinition.set_status_attribute(attribute, all_ids, value)
+                st.cache_data.clear()
+
+        @with_database_session
+        def on_copy_confirmed(payload: dict) -> None:
+            ids = payload["ids"]
+            target_tg_id = payload["target_table_group_id"]
+            target_ts_id = payload["target_test_suite_id"]
+            target_table = payload.get("target_table_name")
+            target_col = payload.get("target_column_name")
+            overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
+            if overwrite_ids:
+                TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
+            TestDefinition.copy(ids, target_tg_id, target_ts_id, target_table, target_col)
+            st.cache_data.clear()
+            get_test_suite_columns.clear()
+            st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
+
+        @with_database_session
+        def on_move_confirmed(payload: dict) -> None:
+            ids = payload["ids"]
+            target_tg_id = payload["target_table_group_id"]
+            target_ts_id = payload["target_test_suite_id"]
+            target_table = payload.get("target_table_name")
+            target_col = payload.get("target_column_name")
+            overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
+            if overwrite_ids:
+                TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
+            TestDefinition.move(ids, target_tg_id, target_ts_id, target_table, target_col)
+            st.cache_data.clear()
+            get_test_suite_columns.clear()
+            st.session_state.pop(TD_COPY_MOVE_DIALOG_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
+            st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
+
+        @with_database_session
+        def on_copy_move_target_changed(payload: dict) -> None:
+            selected = payload["selected"]
+            target_tg_id = payload["target_table_group_id"]
+            target_ts_id = payload["target_test_suite_id"]
+            target_table = payload.get("target_table_name")
+            target_col = payload.get("target_column_name")
+            collision_df = get_test_definitions_collision(selected, target_tg_id, target_ts_id, target_table, target_col)
+            overwrite_ids = []
+            if collision_df.empty:
+                st.session_state[TD_COPY_MOVE_COLLISION_KEY] = []
+            else:
+                unlocked = collision_df[collision_df["lock_refresh"] == False]
+                selected_ids = {str(item["id"]) for item in selected}
+                overwrite_ids = [id_ for id_ in unlocked["id"].tolist() if str(id_) not in selected_ids]
+                # Only send the fields JS needs (lock_refresh, table_name, column_name, test_type)
+                cols = ["table_name", "column_name", "test_type", "lock_refresh"]
+                st.session_state[TD_COPY_MOVE_COLLISION_KEY] = collision_df[cols].to_dict("records")
+            st.session_state[TD_COPY_MOVE_OVERWRITE_KEY] = overwrite_ids
+
+        @with_database_session
+        def on_validate_test(test_def: dict) -> None:
+            try:
+                validate_test(test_def, table_group)
+                st.session_state[TD_VALIDATE_RESULT_KEY] = {"success": True, "message": "Validation is successful."}
+            except Exception as e:
+                st.session_state[TD_VALIDATE_RESULT_KEY] = {
+                    "success": False,
+                    "message": f"Test validation failed with error: {e}",
+                }
+
+        def on_run_tests_clicked(*_) -> None:
+            st.session_state[TD_RUN_TESTS_DIALOG_KEY] = True
+
+        @with_database_session
+        def on_run_tests_confirmed(data: dict) -> None:
+            selected_id = data.get("test_suite_id")
+            selected_name = data.get("test_suite_name")
+            success = True
+            message = f"Test run started for test suite '{selected_name}'."
+            show_link = session.current_page != "test-runs"
+            try:
+                JobExecution.submit(
+                    job_key="run-tests",
+                    kwargs={"test_suite_id": str(selected_id)},
+                    source="ui",
+                    project_code=project_code,
+                )
+            except Exception as error:
+                success = False
+                message = f"Test run could not be started: {error!s}."
+                show_link = False
+            st.session_state[TD_RUN_TESTS_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            if success and not show_link:
+                st.cache_data.clear()
+                st.session_state.pop(TD_RUN_TESTS_DIALOG_KEY, None)
+                st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None)
+
+        def on_run_tests_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_RUN_TESTS_DIALOG_KEY, None)
+            st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None)
+
+        def on_go_to_test_runs(payload: dict) -> None:
+            st.session_state.pop(TD_RUN_TESTS_DIALOG_KEY, None)
+            st.session_state.pop(TD_RUN_TESTS_RESULT_KEY, None)
+            Router().queue_navigation(to="test-runs", with_args=payload)
+
+        def on_notes_clicked(payload: dict) -> None:
+            st.session_state[TD_NOTES_DIALOG_KEY] = payload
+
+        @with_database_session
+        def on_note_added(payload: dict) -> None:
+            td_id = payload["test_definition_id"]
+            current_user = session.auth.user.username if session.auth.user else "unknown"
+            TestDefinitionNote.add_note(td_id, payload["text"], current_user)
+            st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+            st.cache_data.clear()
+
+        @with_database_session
+        def on_note_updated(payload: dict) -> None:
+            TestDefinitionNote.update_note(payload["id"], payload["text"])
+            td_id = payload["test_definition_id"]
+            st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+
+        @with_database_session
+        def on_note_deleted(payload: dict) -> None:
+            TestDefinitionNote.delete_note(payload["id"])
+            td_id = payload["test_definition_id"]
+            st.session_state[TD_NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
+            st.cache_data.clear()
+
+        def on_notes_dialog_closed(*_) -> None:
+            st.session_state.pop(TD_NOTES_DIALOG_KEY, None)
+
+        def on_export_all(*_) -> None:
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(test_suite, table_group.table_group_schema, data),
+                args=(test_suite, table_group.table_group_schema),
             )
 
-        with popover_container.container(key="tg--export-popover"):
-            flex_row_end()
-            with st.popover(label="Export", icon=":material/download:", help="Download test definitions to Excel"):
-                css_class("tg--export-wrapper")
-                st.button(label="All tests", type="tertiary", on_click=open_download_dialog)
-                st.button(label="Filtered tests", type="tertiary", on_click=partial(open_download_dialog, df))
-                if selected:
-                    st.button(label="Selected tests", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
-
-        fm.render_refresh_button(table_actions_column)
-
-        if user_can_disposition:
-            disposition_actions = [
-                { "icon": "✓", "help": "Activate for future runs", "attribute": "test_active", "value": True, "message": "Activated" },
-                { "icon": "🔇", "help": "Deactivate Test for future runs", "attribute": "test_active", "value": False, "message": "Deactivated" },
-            ]
-
-            if user_can_edit:
-                disposition_actions.extend([
-                    { "icon": "🔒", "help": "Protect from future test generation", "attribute": "lock_refresh", "value": True, "message": "Locked" },
-                    { "icon": "🔐", "help": "Unlock for future test generation", "attribute": "lock_refresh", "value": False, "message": "Unlocked" },
-                ])
-
-            disposition_actions.extend([
-                { "icon": "🚩", "help": "Flag for attention", "attribute": "flagged", "value": True, "message": "Flagged" },
-                { "icon": "⌀", "help": "Clear flag", "attribute": "flagged", "value": False, "message": "Flag cleared" },
-            ])
-
-            for action in disposition_actions:
-                action_disabled = not selected or all(sel[action["attribute"]] == action["value"] for sel in selected)
-                action["button"] = disposition_column.button(action["icon"], help=action["help"], disabled=action_disabled)
-
-            # This has to be done as a second loop - otherwise, the rest of the buttons after the clicked one are not displayed briefly while refreshing
-            for action in disposition_actions:
-                if action["button"]:
-                    is_unlocking = action["attribute"] == "lock_refresh" and not action["value"]
-                    if is_unlocking:
-                        confirm_unlocking_test_definition(selected)
-                    else:
-                        fm.reset_post_updates(
-                            update_test_definition(selected, action["attribute"], action["value"], action["message"]),
-                            as_toast=True,
-                        )
-
-        if actions_column.button(
-            ":material/sticky_note_2: Notes",
-            disabled=not selected or len(selected) != 1,
-            help="View and add notes for this test definition",
-        ):
-            row = selected[0]
-            test_definition_notes_dialog(
-                str(row["id"]),
-                {"table": row["table_name"], "column": row["column_name"], "test": row["test_name_short"]},
+        def on_export_filtered(payload: dict) -> None:
+            records = payload.get("records", [])
+            download_dialog(
+                dialog_title="Download Excel Report",
+                file_content_func=get_excel_report_data,
+                args=(test_suite, table_group.table_group_schema, pd.DataFrame(records)),
             )
 
-        if user_can_edit:
-            if actions_column.button(
-                ":material/edit: Edit",
-                disabled=not selected,
-            ):
-                edit_test_dialog(table_group, test_suite, table_name, column_name, selected_test_def)
+        @with_database_session
+        def on_export_selected(payload: dict) -> None:
+            ids = payload.get("ids", [])
+            if ids:
+                data = get_test_definitions(test_suite)
+                data = data[data["id"].isin(ids)]
+                download_dialog(
+                    dialog_title="Download Excel Report",
+                    file_content_func=get_excel_report_data,
+                    args=(test_suite, table_group.table_group_schema, data),
+                )
 
-            if actions_column.button(
-                ":material/file_copy: Copy/Move",
-                disabled=not selected,
-            ):
-                copy_move_test_dialog(project_code, table_group, test_suite, selected)
+        def on_filter_changed(filters: dict) -> None:
+            Router().set_query_params({**filters, "page": "0"})
 
-            if actions_column.button(
-                ":material/delete: Delete",
-                disabled=not selected,
-            ):
-                delete_test_dialog(selected)
+        def on_page_changed(payload: dict) -> None:
+            new_page = payload.get("page", 0)
+            new_page_size = payload.get("page_size")
+            params: dict = {"page": str(new_page)}
+            if new_page_size is not None:
+                params["page_size"] = str(int(new_page_size))
+            Router().set_query_params(params)
 
-        if selected_test_def:
-            render_selected_details(selected_test_def, table_group)
+        def on_sort_changed(payload: dict) -> None:
+            columns = payload.get("columns", [])
+            sort_parts = []
+            for col in columns:
+                field = col.get("field", "")
+                order = col.get("order", "asc")
+                sort_parts.append(f"{field}:{order}")
+            sort_value = ",".join(sort_parts) if sort_parts else None
+            Router().set_query_params({"sort": sort_value, "page": "0"})
 
-
-def render_grid(df: pd.DataFrame, multi_select: bool, filters_changed: bool) -> list[dict]:
-    columns = [
-        "table_name",
-        "column_name",
-        "test_name_short",
-        "test_active_display",
-        "lock_refresh_display",
-        "flagged_display",
-        "notes_display",
-        "urgency",
-        "export_to_observability_display",
-        "profiling_as_of_date",
-        "last_manual_update",
-    ]
-    # Multiselect checkboxes do not display correctly if the dataframe column order does not start with the first displayed column -_-
-    df = df.reindex(columns=[columns[0]] + [ col for col in df.columns.to_list() if col != columns[0] ])
-
-    selected, selected_row = fm.render_grid_select(
-        df,
-        columns,
-        [
-            "Table",
-            "Columns / Focus",
-            "Test Type",
-            "Active",
-            "Locked",
-            "Flagged",
-            "Notes",
-            "Urgency",
-            "Export to Observabilty",
-            "Based on Profiling",
-            "Last Manual Update",
-        ],
-        id_column="id",
-        selection_mode="multiple" if multi_select else "single",
-        reset_pagination=filters_changed,
-        bind_to_query=True,
-        render_highlights=False,
-    )
-
-    return selected, selected_row
-
-
-def render_selected_details(selected_test: dict, table_group: TableGroupMinimal) -> None:
-    columns = [
-        "schema_name",
-        "table_name",
-        "column_name",
-        "test_type",
-        "test_active_display",
-        "test_definition_status",
-        "lock_refresh_display",
-        "flagged_display",
-        "urgency",
-        "export_to_observability",
-    ]
-
-    labels = [
-        "schema_name",
-        "table_name",
-        "column_name",
-        "test_type",
-        "test_active",
-        "test_definition_status",
-        "lock_refresh",
-        "flagged",
-        "urgency",
-        "export_to_observability",
-    ]
-
-    additional_columns = [val.strip() for val in selected_test["default_parm_columns"].split(",")] if selected_test["default_parm_columns"] else []
-    columns = columns + additional_columns
-    labels = labels + additional_columns
-    labels = list(map(snake_case_to_title_case, labels))
-
-    left_column, right_column = st.columns([0.5, 0.5])
-
-    with left_column:
-        fm.render_html_list(
-            selected_test,
-            columns,
-            "Test Definition Information",
-            int_data_width=700,
-            lst_labels=labels,
-        )
-
-    _, col_profile_button = right_column.columns([0.7, 0.3])
-    if selected_test["test_scope"] == "column" and selected_test["profile_run_id"]:
-        with col_profile_button:
-            view_profiling_button(
-                selected_test["column_name"],
-                selected_test["table_name"],
-                str(table_group.id),
-            )
-
-    with right_column:
-        st.write(generate_test_defs_help(selected_test["test_type"]))
-
-
-@st.dialog("Delete Tests")
-@with_database_session
-def delete_test_dialog(test_definitions: list[dict]):
-    delete_clicked, set_delete_clicked = temp_value("test-definitions:confirm-delete-tests-val")
-    st.html(f"""
-        Are you sure you want to delete
-        {f"<b>{len(test_definitions)}</b> selected test definitions?"
-        if len(test_definitions) > 1
-        else "the selected test definition?"}
-    """)
-
-    _, button_column = st.columns([.85, .15])
-    with button_column:
-        testgen.button(
-            label="Delete",
-            type_="flat",
-            color="warn",
-            key="test-definitions:confirm-delete-tests-btn",
-            on_click=lambda: set_delete_clicked(True),
-        )
-
-    if delete_clicked():
-        TestDefinition.delete_where(TestDefinition.id.in_([ item["id"] for item in test_definitions ]))
-        st.success("Test definitions have been deleted.")
-        time.sleep(1)
-        safe_rerun()
-
-
-def show_test_form_by_id(test_definition_id):
-    test_definition = TestDefinition.get(test_definition_id)
-    table_group = TableGroup.get_minimal(test_definition.table_groups_id)
-    test_suite = TestSuite.get(test_definition.test_suite_id)
-    if test_suite:
-        edit_test_dialog(
-            table_group,
-            test_suite,
-            test_definition.table_name,
-            test_definition.column_name,
-            test_definition.to_dict(),
+        testgen.test_definitions_widget(
+            key="test_definitions",
+            data={
+                "test_suite": {
+                    "id": str(test_suite.id),
+                    "test_suite": test_suite.test_suite,
+                    "project_code": project_code,
+                },
+                "test_definitions": json.loads(df.to_json(orient="records", date_unit="s")),
+                "filter_options": {
+                    "tables": table_options,
+                    "columns": columns_raw,
+                    "test_types": test_type_options,
+                },
+                "current_filters": {
+                    "table_name": table_name,
+                    "column_name": column_name,
+                    "test_type": test_type,
+                    "flagged": flagged,
+                },
+                "page": current_page,
+                "total_count": total_count,
+                "page_size": current_page_size,
+                "sort_state": sort_state,
+                "permissions": {
+                    "can_edit": user_can_edit,
+                    "can_disposition": user_can_disposition,
+                },
+                "validate_result": validate_result,
+                "add_dialog": add_dialog,
+                "edit_dialog": edit_dialog,
+                "delete_dialog": delete_dialog,
+                "unlock_dialog": unlock_dialog,
+                "copy_move_dialog": copy_move_dialog,
+                "run_tests_dialog": run_tests_data,
+                "notes_dialog": notes_dialog,
+            },
+            on_AddDialogOpened_change=on_add_dialog_opened,
+            on_EditDialogOpened_change=on_edit_dialog_opened,
+            on_DeleteDialogOpened_change=on_delete_dialog_opened,
+            on_DeleteAllOpened_change=on_delete_all_opened,
+            on_UnlockDialogOpened_change=on_unlock_dialog_opened,
+            on_UnlockAllOpened_change=on_unlock_all_opened,
+            on_CopyMoveDialogOpened_change=on_copy_move_dialog_opened,
+            on_AddDialogClosed_change=on_add_dialog_closed,
+            on_EditDialogClosed_change=on_edit_dialog_closed,
+            on_DeleteDialogClosed_change=on_delete_dialog_closed,
+            on_UnlockDialogClosed_change=on_unlock_dialog_closed,
+            on_CopyMoveDialogClosed_change=on_copy_move_dialog_closed,
+            on_AddTestSaved_change=on_add_test_saved,
+            on_EditTestSaved_change=on_edit_test_saved,
+            on_DeleteConfirmed_change=on_delete_confirmed,
+            on_UnlockConfirmed_change=on_unlock_confirmed,
+            on_UpdateAttribute_change=on_update_attribute,
+            on_UpdateAttributeAll_change=on_update_attribute_all,
+            on_CopyConfirmed_change=on_copy_confirmed,
+            on_MoveConfirmed_change=on_move_confirmed,
+            on_CopyMoveTargetChanged_change=on_copy_move_target_changed,
+            on_ValidateTest_change=on_validate_test,
+            on_RunTestsClicked_change=on_run_tests_clicked,
+            on_RunTestsConfirmed_change=on_run_tests_confirmed,
+            on_RunTestsDialogClosed_change=on_run_tests_dialog_closed,
+            on_GoToTestRunsClicked_change=on_go_to_test_runs,
+            on_ExportAll_change=on_export_all,
+            on_ExportFiltered_change=on_export_filtered,
+            on_ExportSelected_change=on_export_selected,
+            on_NotesClicked_change=on_notes_clicked,
+            on_NoteAdded_change=on_note_added,
+            on_NoteUpdated_change=on_note_updated,
+            on_NoteDeleted_change=on_note_deleted,
+            on_NotesDialogClosed_change=on_notes_dialog_closed,
+            on_FilterChanged_change=on_filter_changed,
+            on_PageChanged_change=on_page_changed,
+            on_SortChanged_change=on_sort_changed,
         )
 
 
-def show_test_form(
-    mode: typing.Literal["add", "edit"],
-    table_group: TableGroupMinimal,
-    test_suite: TestSuite,
-    table_name: str,
-    column_name: str,
-    selected_test_def: dict | None = None,
-):
-    # test_type logic
-    if mode == "add":
-        selected_test_type, selected_test_type_row = prompt_for_test_type()
-        test_type = selected_test_type
+def _load_notes_dialog_data(td_id_or_state, df: pd.DataFrame) -> dict:
+    """Build notes dialog data from a test definition ID or existing state dict."""
+    if isinstance(td_id_or_state, dict):
+        td_id = td_id_or_state.get("id")
+        test_label = {
+            "table": td_id_or_state.get("table_name", ""),
+            "column": td_id_or_state.get("column_name", ""),
+            "test": td_id_or_state.get("test_name_short", ""),
+        }
     else:
-        test_type = selected_test_def["test_type"]
-        df = run_test_type_lookup_query()
-        selected_test_type_row = df[df["test_type"] == test_type].iloc[0]
-        test_type_display = selected_test_type_row["test_name_short"]
+        td_id = td_id_or_state
+        row_df = df[df["id"] == str(td_id)]
+        if row_df.empty:
+            test_label = {"table": "", "column": "", "test": ""}
+        else:
+            row = row_df.iloc[0]
+            test_label = {"table": row["table_name"], "column": row["column_name"], "test": row["test_name_short"]}
 
-    if selected_test_type_row is None:
-        return
-
-    # run type
-    run_type = selected_test_type_row["run_type"]  # Can be "QUERY" or "CAT"
-    test_scope = selected_test_type_row["test_scope"]  # Can be "column", "table", "referential", "custom", "tablegroup"
-
-    # test_description
-    test_description = empty_if_null(selected_test_def["test_description"]) if mode == "edit" else ""
-    test_type_test_description = selected_test_type_row["test_description"]
-    test_description_help = (
-        "You may enter a description here to override the default description above for the Test Type."
-    )
-    test_description_placeholder = f"Inherited ({test_type_test_description})"
-
-    # severity
-    test_suite_severity = test_suite.severity
-    test_types_severity = selected_test_type_row["default_severity"]
-    inherited_severity = test_suite_severity if test_suite_severity else test_types_severity
-
-    severity_options = [
-        f"Inherited ({inherited_severity})",
-        "Log",
-        "Warning",
-        "Fail",
-    ]
-    if mode == "add" or selected_test_def["severity"] is None:
-        severity_index = 0
-    else:
-        severity_index = severity_options.index(selected_test_def["severity"])
-
-    # general value parsing
-    table_groups_id = selected_test_def["table_groups_id"] if mode == "edit" else table_group.id
-    test_suite_id = test_suite.id
-    schema_name = selected_test_def["schema_name"] if mode == "edit" else table_group.table_group_schema
-    table_name = empty_if_null(selected_test_def["table_name"]) if mode == "edit" else empty_if_null(table_name)
-    skip_errors = selected_test_def["skip_errors"] or 0 if mode == "edit" else 0
-    test_active = bool(selected_test_def["test_active"]) if mode == "edit" else True
-    lock_refresh = bool(selected_test_def["lock_refresh"]) if mode == "edit" else False
-    test_flagged = bool(selected_test_def["flagged"]) if mode == "edit" else False
-    test_definition_status = selected_test_def["test_definition_status"] if mode == "edit" else ""
-    column_name = empty_if_null(selected_test_def["column_name"]) if mode == "edit" else empty_if_null(column_name)
-    last_auto_gen_date = empty_if_null(selected_test_def["last_auto_gen_date"]) if mode == "edit" else ""
-    profiling_as_of_date = empty_if_null(selected_test_def["profiling_as_of_date"]) if mode == "edit" else ""
-    profile_run_id = empty_if_null(selected_test_def["profile_run_id"]) if mode == "edit" else ""
-
-
-    # dynamic attributes
-    custom_query = empty_if_null(selected_test_def["custom_query"]) if mode == "edit" else ""
-    baseline_ct = empty_if_null(selected_test_def["baseline_ct"]) if mode == "edit" else ""
-    baseline_unique_ct = empty_if_null(selected_test_def["baseline_unique_ct"]) if mode == "edit" else ""
-    baseline_value = empty_if_null(selected_test_def["baseline_value"]) if mode == "edit" else ""
-    baseline_value_ct = empty_if_null(selected_test_def["baseline_value_ct"]) if mode == "edit" else ""
-    threshold_value = empty_if_null(selected_test_def["threshold_value"]) if mode == "edit" else ""
-    baseline_sum = empty_if_null(selected_test_def["baseline_sum"]) if mode == "edit" else ""
-    baseline_avg = empty_if_null(selected_test_def["baseline_avg"]) if mode == "edit" else ""
-    baseline_sd = empty_if_null(selected_test_def["baseline_sd"]) if mode == "edit" else ""
-    lower_tolerance = empty_if_null(selected_test_def["lower_tolerance"]) if mode == "edit" else ""
-    upper_tolerance = empty_if_null(selected_test_def["upper_tolerance"]) if mode == "edit" else ""
-    subset_condition = empty_if_null(selected_test_def["subset_condition"]) if mode == "edit" else ""
-    groupby_names = empty_if_null(selected_test_def["groupby_names"]) if mode == "edit" else ""
-    having_condition = empty_if_null(selected_test_def["having_condition"]) if mode == "edit" else ""
-    window_date_column = empty_if_null(selected_test_def["window_date_column"]) if mode == "edit" else ""
-    match_schema_name = empty_if_null(selected_test_def["match_schema_name"]) if mode == "edit" else ""
-    match_table_name = empty_if_null(selected_test_def["match_table_name"]) if mode == "edit" else ""
-    match_column_names = empty_if_null(selected_test_def["match_column_names"]) if mode == "edit" else ""
-    match_subset_condition = empty_if_null(selected_test_def["match_subset_condition"]) if mode == "edit" else ""
-    match_groupby_names = empty_if_null(selected_test_def["match_groupby_names"]) if mode == "edit" else ""
-    match_having_condition = empty_if_null(selected_test_def["match_having_condition"]) if mode == "edit" else ""
-    window_days = empty_if_null(selected_test_def["window_days"]) if mode == "edit" else ""
-    history_calculation = empty_if_null(selected_test_def["history_calculation"]) if mode == "edit" else ""
-    history_calculation_upper = empty_if_null(selected_test_def["history_calculation_upper"]) if mode == "edit" else ""
-    history_lookback = empty_if_null(selected_test_def["history_lookback"]) if mode == "edit" else ""
-
-    # export_to_observability
-    inherited_export_to_observability = "Yes" if test_suite.export_to_observability else "No"
-    inherited_legend = f"Inherited ({inherited_export_to_observability})"
-    export_to_observability_options = [inherited_legend, "Yes", "No"]
-    if mode == "edit":
-        match selected_test_def["export_to_observability"]:
-            case False:
-                export_to_observability = "No"
-            case True:
-                export_to_observability = "Yes"
-            case _:
-                export_to_observability = inherited_legend
-    else:
-        export_to_observability = inherited_legend
-    export_to_observability_index = export_to_observability_options.index(export_to_observability)
-
-    # dynamic attributes
-    dynamic_attributes_raw = selected_test_type_row["default_parm_columns"] or ""
-    dynamic_attributes = dynamic_attributes_raw.split(",")
-
-    dynamic_attributes_labels_raw = selected_test_type_row["default_parm_prompts"]
-    dynamic_attributes_labels = ""
-    if dynamic_attributes_labels_raw:
-        dynamic_attributes_labels = dynamic_attributes_labels_raw.split(",")
-
-    # Split on pipe -- could contain commas
-    dynamic_attributes_help = (
-        selected_test_type_row["default_parm_help"].split("|")
-        if selected_test_type_row["default_parm_help"]
-        else None
-    )
-
-    if mode == "edit":
-        st.text_input(label="Test Type", value=test_type_display, disabled=True),
-
-    # Using the test_type, display the default description and usage_notes
-    if selected_test_type_row["test_description"]:
-        st.html(
-            f"""
-                <div style="border: 1px solid #e6e6e6; border-radius: 5px; padding: 10px;">
-                    {selected_test_type_row['test_description']}
-                </div><br/>
-            """
-        )
-
-    if selected_test_type_row["usage_notes"]:
-        st.info(f"**Usage Notes:**\n\n{selected_test_type_row['usage_notes']}")
-
-    left_column, right_column = st.columns([0.5, 0.5])
-    left_column.text_input(
-        label="Test Suite Name", max_chars=200, value=test_suite.test_suite, disabled=True
-    )
-
-    test_definition = {
-        "table_groups_id": table_groups_id,
-        "test_type": test_type,
-        "test_suite_id": test_suite_id,
-        "test_description": left_column.text_area(
-            label="Test Description Override",
-            max_chars=1000,
-            height=114,
-            placeholder=test_description_placeholder,
-            value=test_description,
-            help=test_description_help,
-        ),
-        "lock_refresh": left_column.toggle(
-            label="Lock Refresh",
-            value=lock_refresh,
-            help="Protects test parameters from being overwritten when tests in this Test Suite are regenerated.",
-        ),
-        "test_active": left_column.toggle(label="Test Active", value=test_active),
-        "flagged": left_column.toggle(label="Flagged", value=test_flagged, help="Flag this test for attention."),
-        "custom_query": custom_query,
-        "baseline_ct": baseline_ct,
-        "baseline_unique_ct": baseline_unique_ct,
-        "baseline_value": baseline_value,
-        "baseline_value_ct": baseline_value_ct,
-        "threshold_value": threshold_value,
-        "baseline_sum": baseline_sum,
-        "baseline_avg": baseline_avg,
-        "baseline_sd": baseline_sd,
-        "lower_tolerance": lower_tolerance,
-        "upper_tolerance": upper_tolerance,
-        "subset_condition": subset_condition,
-        "groupby_names": groupby_names,
-        "having_condition": having_condition,
-        "window_date_column": window_date_column,
-        "match_schema_name": match_schema_name,
-        "match_table_name": match_table_name,
-        "column_name": column_name,
-        "match_column_names": match_column_names,
-        "match_subset_condition": match_subset_condition,
-        "match_groupby_names": match_groupby_names,
-        "match_having_condition": match_having_condition,
-        "window_days": window_days,
-        "history_calculation": history_calculation,
-        "history_calculation_upper": history_calculation_upper,
-        "history_lookback": history_lookback,
+    current_user = session.auth.user.username if session.auth.user else "unknown"
+    notes = TestDefinitionNote.get_notes(td_id)
+    return {
+        "id": str(td_id),
+        "test_label": test_label,
+        "notes": notes,
+        "current_user": current_user,
     }
-
-    # test_definition_status
-    test_definition["test_definition_status"] = test_definition_status
-    if mode == "edit":
-        test_definition_status_display = test_definition_status if test_definition_status else "OK"
-        left_column.text_input(
-            label="Validation Status", max_chars=200, value=test_definition_status_display, disabled=True
-        )
-
-    # export_to_observability
-    export_to_observability_help = "Send results to DataKitchen Observability - overrides Test Suite toggle"
-    export_to_observability_select = right_column.selectbox(
-        label="Send to Observability - Override",
-        options=export_to_observability_options,
-        index=export_to_observability_index,
-        help=export_to_observability_help,
-    )
-    test_definition["export_to_observability"] = (
-        True if export_to_observability_select == "Yes" else (False if export_to_observability_select == "No" else None)
-    )
-
-    # severity
-    severity_help = "Urgency is defined by default for the Test Type, but can be overridden for all tests in the Test Suite, and ultimately here for each individual test."
-    severity_select = right_column.selectbox(
-        label="Urgency Override",
-        options=severity_options,
-        index=severity_index,
-        help=severity_help,
-    )
-    test_definition["severity"] = None if severity_select.startswith("Inherited") else severity_select
-
-    if mode == "edit":
-        columns = st.columns([0.5, 0.5])
-        if profiling_as_of_date and profile_run_id and (container := columns.pop()):
-            if isinstance(profiling_as_of_date, str):
-                formatted_time = datetime.strptime(profiling_as_of_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
-            else:
-                formatted_time = profiling_as_of_date.strftime("%b %d, %I:%M %p")
-            testgen.caption("Based on Profiling", container=container)
-            with container:
-                testgen.link(
-                    href="profiling-runs:results",
-                    params={"run_id": str(profile_run_id), "project_code": table_group.project_code},
-                    label=formatted_time,
-                    open_new=True,
-                )
-
-        if last_auto_gen_date and (container := columns.pop()):
-            if isinstance(last_auto_gen_date, str):
-                formatted_time = datetime.strptime(last_auto_gen_date, "%Y-%m-%d %H:%M:%S").strftime("%b %d, %I:%M %p")
-            else:
-                formatted_time = last_auto_gen_date.strftime("%b %d, %I:%M %p")
-            testgen.caption("Auto-generated at", container=container)
-            testgen.text(
-                formatted_time,
-                container=container,
-            )
-
-    st.divider()
-
-    has_match_attributes = "match_schema_name" in dynamic_attributes or "match_table_name" in dynamic_attributes
-    left_column, right_column = st.columns([0.5, 0.5]) if has_match_attributes else (st.container(), None)
-
-    test_definition["schema_name"] = left_column.text_input(
-            label="Schema", max_chars=100, value=schema_name, disabled=True
-        )
-
-    # table_name
-    table_column_list = get_columns(table_groups_id)
-    if test_scope == "tablegroup":
-        test_definition["table_name"] = None
-    elif test_scope == "custom":
-        test_definition["table_name"] = left_column.text_input(
-            label="Table", max_chars=100, value=table_name, disabled=False
-        )
-    else:
-        table_name_options = { item["table_name"] for item in table_column_list }
-        if table_name not in table_name_options:
-            table_name_options.add(table_name)
-        table_name_options = list(table_name_options)
-        table_name_options.sort(key=lambda x: x.lower())
-        test_definition["table_name"] = st.selectbox(
-            label="Table",
-            options=table_name_options,
-            index=table_name_options.index(table_name) if table_name else 0,
-            disabled=mode == "edit",
-            key="table-name-form",
-        )
-
-    column_name_label = None
-    if test_scope in ("table", "tablegroup"):
-        test_definition["column_name"] = None
-    elif test_scope in ("referential", "custom"):
-        column_name_label = selected_test_type_row["column_name_prompt"] if selected_test_type_row["column_name_prompt"] else "Test Focus"
-        test_definition["column_name"] = left_column.text_input(
-            label=column_name_label,
-            value=column_name,
-            max_chars=500,
-            help=selected_test_type_row["column_name_help"] if selected_test_type_row["column_name_help"] else None,
-        )
-    elif test_scope == "column":  # CAT column test
-        column_name_label = "Column"
-        column_name_options = { item["column_name"] for item in table_column_list if item["table_name"] == test_definition["table_name"]}
-        if column_name not in column_name_options:
-            column_name_options.add(column_name)
-        column_name_options = list(column_name_options)
-        column_name_options.sort(key=lambda x: x.lower())
-        test_definition["column_name"] = st.selectbox(
-            label=column_name_label,
-            options=column_name_options,
-            index=column_name_options.index(column_name) if column_name else 0,
-            key="column-name-form",
-        )
-
-    leftover_attributes = dynamic_attributes.copy()
-
-    def render_dynamic_attribute(attribute: str, container: DeltaGenerator):
-        if not attribute in dynamic_attributes or not attribute:
-            return
-
-        float_numeric_attributes = ["lower_tolerance", "upper_tolerance"]
-        if test_type != "LOV_All":
-            float_numeric_attributes.append("threshold_value")
-        int_numeric_attributes = ["history_lookback"]
-
-        default_value = 0 if attribute in [*float_numeric_attributes, *int_numeric_attributes] else ""
-        if attribute == "history_lookback":
-            default_value = 10
-        value = (
-            selected_test_def[attribute]
-            if mode == "edit" and selected_test_def[attribute] is not None
-            else default_value
-        )
-
-        index = dynamic_attributes.index(attribute)
-        leftover_attributes.remove(attribute)
-
-        label_text = (
-            dynamic_attributes_labels[index]
-            if dynamic_attributes_labels and len(dynamic_attributes_labels) > index
-            else snake_case_to_title_case(attribute)
-        )
-        help_text = (
-            dynamic_attributes_help[index]
-            if dynamic_attributes_help and len(dynamic_attributes_help) > index
-            else None
-        )
-
-        if attribute == "custom_query":
-            if test_type == "Volume_Trend":
-                test_definition[attribute] = "COUNT(CASE WHEN {SUBSET_CONDITION} THEN 1 END)"
-            else:
-                custom_query_placeholder = None
-                if test_type == "Condition_Flag":
-                    custom_query_placeholder = "EXAMPLE:  status = 'SHIPPED' and qty_shipped = 0"
-                elif test_type == "CUSTOM":
-                    custom_query_placeholder = "EXAMPLE:  SELECT product, SUM(qty_sold) as sum_sold, SUM(qty_shipped) as qty_shipped \n FROM {DATA_SCHEMA}.sales_history \n GROUP BY product \n HAVING SUM(qty_shipped) > SUM(qty_sold)"
-
-                test_definition[attribute] = container.text_area(
-                    label=label_text,
-                    value=custom_query,
-                    placeholder=custom_query_placeholder,
-                    height=150 if test_type == "CUSTOM" else 75,
-                    help=help_text,
-                )
-        elif attribute in float_numeric_attributes:
-            test_definition[attribute] = container.number_input(
-                label=label_text,
-                value=float(value),
-                step=1.0,
-                help=help_text,
-            )
-        elif attribute in int_numeric_attributes:
-            min_value = 0
-            placeholder = None
-            disabled = False
-            if attribute == "history_lookback":
-                min_value = 1
-                if test_definition.get("history_calculation") == "PREDICT":
-                    value = None
-                    placeholder = "Max"
-                    disabled = True
-
-                if test_definition.get("history_calculation") == "Value" and (
-                    "history_calculation_upper" not in dynamic_attributes
-                    or test_definition.get("history_calculation_upper") == "Value"
-                ):
-                    value = 1
-                    disabled = True
-
-            test_definition[attribute] = container.number_input(
-                label=label_text,
-                step=1,
-                value=int(value) if value is not None else None,
-                min_value=min_value,
-                placeholder=placeholder,
-                help=help_text,
-                disabled=disabled,
-            )
-        elif attribute in ["history_calculation", "history_calculation_upper"]:
-            predict_label = "Use Prediction Model"
-            options = ["Value", "Minimum", "Maximum", "Sum", "Average", "Expression"]
-            if attribute == "history_calculation":
-                options.append(predict_label)
-
-            default = value
-            disabled = False
-            match = re.search(r"^EXPR:\[(.+)\]$", value)
-            expression = None
-            if value and match:
-                default = "Expression"
-                expression = match.group(1)
-            elif value == "PREDICT":
-                default = predict_label
-
-            if attribute == "history_calculation_upper" and test_definition["history_calculation"] == "PREDICT":
-                default = None
-                disabled = True
-
-            with container:
-                selection = testgen.select(
-                    label_text,
-                    options=options,
-                    required=True,
-                    default_value=default,
-                    disabled=disabled,
-                )
-
-            if selection == "Expression":
-                expression = st.text_input(
-                    label=f"{label_text} Expression",
-                    max_chars=900,
-                    value=expression,
-                    # help="", // TODO
-                )
-                test_definition[attribute] = f"EXPR:[{expression}]"
-            elif selection == predict_label:
-                test_definition[attribute] = "PREDICT"
-            else:
-                test_definition[attribute] = selection
-        else:
-            test_definition[attribute] = container.text_input(
-                label=label_text,
-                max_chars=4000 if attribute in ["match_column_names", "match_groupby_names", "groupby_names"] else 1000,
-                value=value,
-                help=help_text,
-            )
-
-    if has_match_attributes:
-        for attribute in ["match_schema_name", "match_table_name", "match_column_names"]:
-            render_dynamic_attribute(attribute, right_column)
-
-    if test_scope != "tablegroup":
-        st.divider()
-
-    mid_container = st.container()
-    mid_left_column, mid_right_column = st.columns([0.5, 0.5])
-
-    if has_match_attributes:
-        for attribute in ["subset_condition", "groupby_names", "having_condition"]:
-            if attribute in dynamic_attributes and f"match_{attribute}" in dynamic_attributes:
-                render_dynamic_attribute(attribute, mid_left_column)
-                render_dynamic_attribute(f"match_{attribute}", mid_right_column)
-
-    if "custom_query" in dynamic_attributes:
-        render_dynamic_attribute("custom_query", mid_container)
-
-    total_length = len(leftover_attributes)
-    half_length = round(total_length / 2)
-    for index, attribute in enumerate(leftover_attributes.copy()):
-        render_dynamic_attribute(
-            attribute,
-            mid_left_column if index == 0 or index < half_length else mid_right_column,
-        )
-
-    # skip_errors
-    if run_type == "QUERY":
-        container = mid_right_column if total_length % 2 else mid_left_column
-        test_definition["skip_errors"] = container.number_input(
-            label="Threshold Error Count",
-            value=skip_errors,
-            step=1,
-        )
-    else:
-        test_definition["skip_errors"] = skip_errors
-
-    # submit logic
-    bottom_left_column, bottom_right_column = st.columns([0.5, 0.5])
-
-    # Add Validate button
-    if test_type in ("Condition_Flag", "CUSTOM"):
-        validate = bottom_left_column.button(
-            "Validate",
-        )
-        if validate:
-            try:
-                validate_test(test_definition, table_group)
-                bottom_right_column.success("Validation is successful.")
-            except Exception as e:
-                bottom_right_column.error(f"Test validation failed with error: {e}")
-        else:
-            # This is needed to fix a strange bug in Streamlit when using dialog + input fields + button
-            # If an input field is changed and the button is clicked immediately (without unfocusing the input first),
-            # two fragment reruns happen successively, one for unfocusing the input and the other for clicking the button
-            # Some or all (it seems random) of the input fields disappear when this happens
-            time.sleep(0.1)
-
-    submit = bottom_left_column.button("Save")
-
-    if submit:
-        if validate_form(test_scope, test_definition, column_name_label):
-            if mode == "edit":
-                test_definition["id"] = selected_test_def["id"]
-            test_definition["last_manual_update"] = datetime.now(UTC)
-            TestDefinition(**test_definition).save()
-            safe_rerun()
-
-
-@st.dialog(title="Add Test")
-@with_database_session
-def add_test_dialog(table_group, test_suite, str_table_name, str_column_name):
-    show_test_form("add", table_group, test_suite, str_table_name, str_column_name)
-
-
-@st.dialog(title="Edit Test")
-@with_database_session
-def edit_test_dialog(table_group, test_suite, str_table_name, str_column_name, selected_test_def):
-    show_test_form("edit", table_group, test_suite, str_table_name, str_column_name, selected_test_def)
-
-
-@st.dialog(title="Copy/Move Tests")
-@with_database_session
-def copy_move_test_dialog(
-    project_code: str,
-    origin_table_group: TableGroup,
-    origin_test_suite: TestSuite,
-    selected_test_definitions: list[dict],
-):
-    st.text(f"Selected tests: {len(selected_test_definitions)}")
-
-    group_filter_column, suite_filter_column, table_filter_column = st.columns([.33, .33, .33], vertical_alignment="bottom")
-
-    with group_filter_column:
-        table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-        table_groups_df = to_dataframe(table_groups, TableGroupMinimal.columns())
-        target_table_group_id = testgen.select(
-            options=table_groups_df,
-            value_column="id",
-            display_column="table_groups_name",
-            default_value=origin_table_group.id,
-            required=True,
-            label="Target Table Group",
-        )
-
-    with suite_filter_column:
-        test_suites = TestSuite.select_minimal_where(
-            TestSuite.table_groups_id == target_table_group_id,
-            TestSuite.is_monitor.isnot(True),
-        )
-        test_suites_df = to_dataframe(test_suites, TestSuiteMinimal.columns())
-        target_test_suite_id = testgen.select(
-            options=test_suites_df,
-            value_column="id",
-            display_column="test_suite",
-            default_value=None,
-            required=True,
-            label="Target Test Suite",
-        )
-
-    target_table_name = None
-    target_column_name = None
-    if target_test_suite_id == origin_test_suite.id:
-        with table_filter_column:
-            columns_df = get_test_suite_columns(origin_test_suite.id)
-            target_table_name = testgen.select(
-                options=list(columns_df["table_name"].unique()),
-                value_column="table_name",
-                default_value=None,
-                required=True,
-                label="Target Table Name",
-            )
-            column_options = list(columns_df.loc[columns_df["table_name"] == target_table_name]["column_name"].unique())
-            target_column_name = testgen.select(
-                options=column_options,
-                default_value=None,
-                required=True,
-                label="Column Name",
-                disabled=not target_table_name,
-            )
-
-    movable_test_definitions = []
-    if target_table_group_id and target_test_suite_id:
-        collision_test_definitions = get_test_definitions_collision(selected_test_definitions, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
-        overwrite_ids = []
-        if not collision_test_definitions.empty:
-            unlocked = collision_test_definitions[collision_test_definitions["lock_refresh"] == False]
-            locked = collision_test_definitions[collision_test_definitions["lock_refresh"] == True]
-            locked_tuples = [ (test["table_name"], test["column_name"], test["test_type"]) for test in locked.iterrows() ]
-            movable_test_definitions = [ test for test in selected_test_definitions if (test["table_name"], test["column_name"], test["test_type"]) not in locked_tuples ]
-            selected_ids = {str(item["id"]) for item in selected_test_definitions}
-            overwrite_ids = [id_ for id_ in unlocked["id"].tolist() if str(id_) not in selected_ids]
-
-            warning_message = f"""Auto-generated tests are present in the target test suite for the same column-test type combinations as the selected tests.
-            \nUnlocked tests that will be overwritten: {len(unlocked)}
-            \nLocked tests that will not be overwritten: {len(locked)}
-            """
-            st.warning(warning_message, icon=":material/warning:")
-        else:
-            movable_test_definitions = selected_test_definitions
-
-    testgen.whitespace(1)
-    _, copy_column, move_column = st.columns([.6, .2, .2])
-    copy = copy_column.button(
-        "Copy",
-        use_container_width=True,
-        disabled=not len(movable_test_definitions)>0,
-    )
-
-    move = move_column.button(
-        "Move",
-        disabled=not len(movable_test_definitions)>0,
-        use_container_width=True,
-    )
-
-    test_definition_ids = [item["id"] for item in movable_test_definitions]
-    if move:
-        if overwrite_ids:
-            TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-        TestDefinition.move(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
-        success_message = "Test Definitions have been moved."
-        st.success(success_message)
-        time.sleep(1)
-        safe_rerun()
-    elif copy:
-        if overwrite_ids:
-            TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
-        TestDefinition.copy(test_definition_ids, target_table_group_id, target_test_suite_id, target_table_name, target_column_name)
-        success_message = "Test Definitions have been copied."
-        st.success(success_message)
-        time.sleep(1)
-        safe_rerun()
-
-def validate_form(test_scope, test_definition, column_name_label):
-    if test_scope in ["column", "referential", "custom"] and not test_definition["column_name"]:
-        st.error(f"{column_name_label} is a required field.")
-        return False
-    return True
-
-
-def prompt_for_test_type():
-
-    col0, col1, col2, col3, col4 = st.columns([0.2, 0.2, 0.2, 0.2, 0.2])
-    col0.write("Show Types")
-
-    include_referential=col1.checkbox(":green[⧉] Referential", True)
-    include_table=col2.checkbox(":green[⊞] Table", True)
-    include_column=col3.checkbox(":green[≣] Column", True)
-    include_custom=col4.checkbox(":green[⛭] Custom", True)
-    # always exclude tablegroup scopes from showing
-    include_all = not any([include_referential, include_table, include_column, include_custom])
-
-    df = run_test_type_lookup_query(
-        include_referential=include_referential or include_all,
-        include_table=include_table or include_all,
-        include_column=include_column or include_all,
-        include_custom=include_custom or include_all,
-        include_tablegroup=False,
-    )
-    lst_choices = df["select_name"].tolist()
-
-    str_selected = selectbox("Test Type", lst_choices)
-    if str_selected:
-        row_selected = df[df["test_name_short"] == str_selected.split(":", 1)[0][2:]].iloc[0]
-        str_value = row_selected["test_type"]
-    else:
-        str_value = None
-        row_selected = None
-    return str_value, row_selected
-
-
-@st.dialog(title="Unlock Test Definition")
-@with_database_session
-def confirm_unlocking_test_definition(test_definitions: list[dict]):
-    unlock_confirmed, set_unlock_confirmed = temp_value("test-definitions:confirm-unlock-tests")
-
-    st.warning(
-        """Unlocked tests subject to auto-generation will be overwritten during the next test generation run."""
-    )
-
-    st.html(f"""
-        Are you sure you want to unlock
-        {f"<b>{len(test_definitions)}</b> selected test definitions?"
-        if len(test_definitions) > 1
-        else "the selected test definition?"}
-    """)
-
-    if unlock_confirmed():
-        update_test_definition(test_definitions, "lock_refresh", False, "Test definitions have been unlocked.")
-        time.sleep(1)
-        safe_rerun()
-
-    _, button_column = st.columns([.85, .15])
-    with button_column:
-        testgen.button(
-            label="Unlock",
-            type_="stroked",
-            color="basic",
-            key="test-definitions:confirm-unlock-tests-btn",
-            on_click=lambda: set_unlock_confirmed(True),
-        )
-
-
-def update_test_definition(selected, attribute, value, message):
-    result = None
-    test_definition_ids = [row["id"] for row in selected if "id" in row]
-    TestDefinition.set_status_attribute(attribute, test_definition_ids, value)
-    st.success(message)
-    return result
 
 
 @with_database_session
@@ -1133,6 +651,8 @@ def get_excel_report_data(
     schema: str,
     data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
+    from datetime import datetime
+
     if data is not None:
         data = data.copy()
     else:
@@ -1143,7 +663,9 @@ def get_excel_report_data(
 
     for key in ["profiling_as_of_date", "last_manual_update"]:
         data[key] = data[key].apply(
-            lambda val: datetime.strptime(val, "%Y-%m-%d %H:%M:%S").strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) else None
+            lambda val: datetime.strptime(val, "%Y-%m-%d %H:%M:%S").strftime("%b %-d %Y, %-I:%M %p")
+            if (val and not pd.isna(val) and val != "NaT")
+            else None
         )
 
     columns = {
@@ -1169,55 +691,11 @@ def get_excel_report_data(
     )
 
 
-def generate_test_defs_help(str_test_type):
-    df = run_test_type_lookup_query(str_test_type)
-    if not df.empty:
-        row = df.iloc[0]
-
-        str_help = f"""
-##### {row["test_name_short"]}
-{row["test_description"]}
-
-**Measure UOM:**  {row["measure_uom"]}
-
-{row["measure_uom_description"]}
-
-**Threshold:**  {row["threshold_description"]}
-
-**Default Test Severity:** {row["default_severity"]}
-
-**Test Run Type:** {row["test_scope"]}
- - COLUMN tests are consolidated into aggregate queries and execute faster.
- - TABLE, REFERENTIAL and CUSTOM tests are executed individually and may take longer to run.
-
-**Data Quality Dimension:** {row["dq_dimension"]}
-"""
-    else:
-        str_help = ""
-    return str_help
-
-
 @st.cache_data(show_spinner=False)
-def run_test_type_lookup_query(
-    test_type: str | None = None,
-    include_referential: bool = True,
-    include_table: bool = True,
-    include_column: bool = True,
-    include_custom: bool = True,
-    include_tablegroup: bool = True,
-) -> pd.DataFrame:
-    scope_map = {
-        "referential": include_referential,
-        "table": include_table,
-        "column": include_column,
-        "custom": include_custom,
-        "tablegroup": include_tablegroup,
-    }
-    scopes = [ key for key, include in scope_map.items() if include ]
-
+def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
     query = f"""
     SELECT
-        tt.id, tt.test_type, tt.id as cat_test_id,
+        tt.id, tt.test_type,
         tt.test_name_short, tt.test_name_long, tt.test_description,
         tt.measure_uom, COALESCE(tt.measure_uom_description, '') as measure_uom_description,
         tt.default_parm_columns, tt.default_severity,
@@ -1242,7 +720,6 @@ def run_test_type_lookup_query(
     FROM test_types tt
     WHERE tt.active = 'Y'
         {"AND tt.test_type = :test_type" if test_type else ""}
-        {"AND tt.test_scope in :scopes" if scopes else ""}
     ORDER BY
         CASE tt.test_scope
             WHEN 'referential' THEN 1
@@ -1254,18 +731,14 @@ def run_test_type_lookup_query(
         END,
         tt.test_name_short;
     """
-    params = {
-        "test_type": test_type,
-        "scopes": tuple(scopes),
-    }
-    return fetch_df_from_db(query, params)
+    return fetch_df_from_db(query, {"test_type": test_type})
 
 
 @st.cache_data(show_spinner=False)
 def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
     results = TestDefinition.select_minimal_where(
         TestDefinition.test_suite_id == test_suite_id,
-        order_by = (asc(func.lower(TestDefinition.table_name)), asc(func.lower(TestDefinition.column_name))),
+        order_by=(asc(func.lower(TestDefinition.table_name)), asc(func.lower(TestDefinition.column_name))),
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 
@@ -1275,7 +748,9 @@ def get_test_definitions(
     table_name: str | None = None,
     column_name: str | None = None,
     test_type: str | None = None,
-    sorting_columns: list[str] | None = None,
+    sorting_columns: list[tuple] | None = None,
+    page: int = 0,
+    page_size: int = 0,
     flagged_filter: str | None = None,
 ) -> pd.DataFrame:
     clauses = [TestDefinition.test_suite_id == test_suite.id]
@@ -1292,16 +767,8 @@ def get_test_definitions(
 
     sort_funcs = {"ASC": asc, "DESC": desc}
 
-    notes_count_expr = (
-        sa_select(func.count(TestDefinitionNote.id))
-        .where(TestDefinitionNote.test_definition_id == TestDefinition.id)
-        .correlate(TestDefinition)
-        .scalar_subquery()
-    )
-
     sort_expressions = {
         "flagged": lambda d: sort_funcs[d](case((TestDefinition.flagged == True, 0), else_=1)),
-        "notes_count": lambda d: sort_funcs[d](case((notes_count_expr > 0, 0), else_=1)),
     }
 
     order_by = []
@@ -1312,15 +779,18 @@ def get_test_definitions(
             else:
                 order_by.append(sort_funcs[direction](func.lower(getattr(TestDefinition, attribute))))
 
+    # For pagination, we need to bypass the base select_where which doesn't support offset/limit.
+    # We'll fetch all matching results and slice in Python.
     test_definitions = TestDefinition.select_where(
         *clauses,
         order_by=tuple(order_by) if order_by else None,
     )
 
-    df = to_dataframe(test_definitions)
-    if df.empty:
-        return df
+    if page_size > 0:
+        offset = page * page_size
+        test_definitions = list(test_definitions)[offset:offset + page_size]
 
+    df = to_dataframe(test_definitions, TestDefinitionSummary.columns())
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
     for key in ["id", "table_groups_id", "profile_run_id", "test_suite_id"]:
         df[key] = df[key].apply(lambda value: str(value))
@@ -1328,27 +798,81 @@ def get_test_definitions(
     df["test_active_display"] = df["test_active"].apply(lambda value: "Yes" if value else "No")
     df["lock_refresh_display"] = df["lock_refresh"].apply(lambda value: "Yes" if value else "No")
     df["flagged_display"] = df["flagged"].apply(lambda value: "Yes" if value else "No")
-
     if not df.empty:
         notes_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in df["id"]])
         df["notes_count"] = df["id"].map(notes_counts).fillna(0).astype(int)
     else:
         df["notes_count"] = pd.Series(dtype=int)
-    df["notes_display"] = df["notes_count"].apply(lambda x: f"📝 {x}" if x > 0 else "")
+
     df["urgency"] = df.apply(lambda row: row["severity"] or test_suite.severity or row["default_severity"], axis=1)
-    df["final_test_description"] = df.apply(lambda row: row["test_description"] or row["default_test_description"], axis=1)
+    df["final_test_description"] = df.apply(
+        lambda row: row["test_description"] or row["default_test_description"], axis=1
+    )
     df["export_uom"] = df.apply(lambda row: row["measure_uom_description"] or row["measure_uom"], axis=1)
 
     def get_export_to_observability_display(value: str) -> str:
         if value is not None:
             return "Yes" if value else "No"
         return f"Inherited ({'Yes' if test_suite.export_to_observability else 'No'})"
+
     df["export_to_observability_display"] = df["export_to_observability"].apply(get_export_to_observability_display)
 
     for col in df.select_dtypes(include=["datetime"]).columns:
         df[col] = df[col].astype(str).replace("NaT", "")
 
     return df
+
+
+def get_test_definitions_count(
+    test_suite: TestSuite,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    test_type: str | None = None,
+    flagged_filter: str | None = None,
+) -> int:
+    from testgen.ui.services.database_service import fetch_one_from_db
+
+    where_parts = ["test_suite_id = :test_suite_id"]
+    params: dict = {"test_suite_id": str(test_suite.id)}
+    if table_name:
+        where_parts.append("table_name = :table_name")
+        params["table_name"] = table_name
+    if column_name:
+        where_parts.append("column_name ILIKE :column_name")
+        params["column_name"] = column_name
+    if test_type:
+        where_parts.append("test_type = :test_type")
+        params["test_type"] = test_type
+    if flagged_filter == "Flagged":
+        where_parts.append("flagged = true")
+    elif flagged_filter == "Not Flagged":
+        where_parts.append("flagged = false")
+
+    query = f"SELECT COUNT(*) as cnt FROM test_definitions WHERE {' AND '.join(where_parts)};"
+    result = fetch_one_from_db(query, params)
+    return int(result["cnt"]) if result else 0
+
+
+def get_test_definition_ids(
+    test_suite: TestSuite,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    test_type: str | None = None,
+    flagged_filter: str | None = None,
+) -> list[str]:
+    clauses = [TestDefinition.test_suite_id == test_suite.id]
+    if table_name:
+        clauses.append(TestDefinition.table_name == table_name)
+    if column_name:
+        clauses.append(TestDefinition.column_name.ilike(column_name))
+    if test_type:
+        clauses.append(TestDefinition.test_type == test_type)
+    if flagged_filter == "Flagged":
+        clauses.append(TestDefinition.flagged == True)
+    elif flagged_filter == "Not Flagged":
+        clauses.append(TestDefinition.flagged == False)
+    results = TestDefinition.select_where(*clauses)
+    return [str(r.id) for r in results]
 
 
 def get_test_definitions_collision(
@@ -1358,16 +882,27 @@ def get_test_definitions_collision(
     target_table_name: str | None = None,
     target_column_name: str | None = None,
 ) -> pd.DataFrame:
-    table_tests = [(target_table_name or item["table_name"], item["test_type"]) for item in test_definitions if item["column_name"] is None and item["table_name"] is not None]
-    column_tests = [(target_table_name or item["table_name"], target_column_name or item["column_name"], item["test_type"]) for item in test_definitions if item["column_name"] is not None]
+    table_tests = [
+        (target_table_name or item["table_name"], item["test_type"])
+        for item in test_definitions
+        if item["column_name"] is None and item["table_name"] is not None
+    ]
+    column_tests = [
+        (target_table_name or item["table_name"], target_column_name or item["column_name"], item["test_type"])
+        for item in test_definitions
+        if item["column_name"] is not None
+    ]
     results = TestDefinition.select_minimal_where(
         TestDefinition.table_groups_id == target_table_group_id,
         TestDefinition.test_suite_id == target_test_suite_id,
         TestDefinition.last_auto_gen_date.isnot(None),
         or_(
             tuple_(TestDefinition.table_name, TestDefinition.column_name, TestDefinition.test_type).in_(column_tests),
-            and_(tuple_(TestDefinition.table_name, TestDefinition.test_type).in_(table_tests), TestDefinition.column_name.is_(None)),
-        )
+            and_(
+                tuple_(TestDefinition.table_name, TestDefinition.test_type).in_(table_tests),
+                TestDefinition.column_name.is_(None),
+            ),
+        ),
     )
     return to_dataframe(results, TestDefinitionMinimal.columns())
 
@@ -1380,14 +915,12 @@ def get_columns(table_groups_id: str) -> list[dict]:
         WHERE table_groups_id = :table_groups_id
             AND drop_date IS NULL
         """,
-        {
-            "table_groups_id": table_groups_id,
-        },
+        {"table_groups_id": table_groups_id},
     )
-    return [ dict(row) for row in results ]
+    return [dict(row) for row in results]
 
 
-def validate_test(test_definition, table_group: TableGroupMinimal):
+def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None:
     schema = test_definition["schema_name"]
     table_name = test_definition["table_name"]
     connection = Connection.get(table_group.connection_id)

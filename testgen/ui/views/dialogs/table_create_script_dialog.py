@@ -1,19 +1,8 @@
-import streamlit as st
-
-from testgen.ui.components import widgets as testgen
-
-
-@st.dialog(title="Table CREATE Script with Suggested Data Types")
-def table_create_script_dialog(table_name: str, data: list[dict]) -> None:
-    testgen.caption(f"Table: <b>{table_name}</b>")
-    st.code(generate_create_script(table_name, data), "sql")
-
-
 def generate_create_script(table_name: str, data: list[dict]) -> str | None:
     table_data = [col for col in data if col["table_name"] == table_name]
     if not table_data:
         return None
-    
+
     max_name = max(len(col["column_name"]) for col in table_data) + 3
     max_type = max(len(col["datatype_suggestion"] or "") for col in table_data) + 3
 

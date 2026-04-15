@@ -224,7 +224,7 @@ const AdminMenuItem = (
             onclick: (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                emitEvent({ path: item.page, params: {} });
+                emitEvent('Navigate', { payload: { path: item.page, params: {} } });
             },
         },
         i({class: 'menu--item--icon material-symbols-rounded'}, item.icon),
@@ -246,9 +246,9 @@ const AdminCTA = ({ style } = {}) => a(
     i({class: 'menu--admin-cta--icon material-symbols-rounded'}, 'open_in_new'),
 );
 
-function emitEvent(/** @type Object */ data) {
+function emitEvent(/** @type string */ event, /** @type Object */ data = {}) {
     if (Sidebar.StreamlitInstance) {
-        Sidebar.StreamlitInstance.sendData({ ...data, _id: Math.random() }); // Identify the event so its handler is called once
+        Sidebar.StreamlitInstance.sendData({ event, ...data, _id: Math.random() }); // Identify the event so its handler is called once
     }
 }
 
@@ -263,7 +263,7 @@ function navigate(
     // Prevent Streamlit from reacting to event
     event.stopPropagation();
 
-    emitEvent({ path, params });
+    emitEvent('Navigate', { payload: { path, params } });
 }
 
 function isCurrentPage(/** @type string */ itemPath, /** @type string */ currentPage) {
@@ -286,7 +286,7 @@ stylesheet.replace(`
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    height: calc(100% - 68px);
+    height: calc(100vh - 68px);
     font-size: 15px;
 }
 

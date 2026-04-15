@@ -4,26 +4,24 @@
  * @property {string} path
  * @property {object} params
  * @property {string} label
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {Array.<Breadcrumb>} breadcrumbs
+ * @property {string?} testId
  */
 import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 
 const { a, div, span } = van.tags;
 
 const Breadcrumbs = (/** @type Properties */ props) => {
     loadStylesheet('breadcrumbs', stylesheet);
 
-    if (!window.testgen.isPage) {
-        Streamlit.setFrameHeight(24);
-    }
+    const testId = getValue(props.testId) ?? '';
 
     return div(
-        {class: 'tg-breadcrumbs-wrapper'},
+        { class: 'tg-breadcrumbs-wrapper', 'data-testid': testId },
         () => {
             const breadcrumbs = getValue(props.breadcrumbs) || [];
 
@@ -32,11 +30,12 @@ const Breadcrumbs = (/** @type Properties */ props) => {
                 breadcrumbs.reduce((items, b, idx) => {
                     const isLastItem = idx === breadcrumbs.length - 1;
                     items.push(a({
+                        'data-testid': testId ? `${testId}-item-${idx}` : '',
                         class: `tg-breadcrumbs--${ isLastItem ? 'current' : 'active'}`,
                         onclick: (event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            emitEvent('LinkClicked', { href: b.path, params: b.params });
+                            props.emit('LinkClicked', { href: b.path, params: b.params });
                         }},
                         b.label,
                     ));

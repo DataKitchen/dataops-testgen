@@ -6,7 +6,7 @@
  * @property {string} time
  */
 import van from '../van.min.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import { colorMap } from '../display_utils.js';
 import { LineChart } from './line_chart.js'; 
 
@@ -25,6 +25,7 @@ const TRANSLATIONS = {
  * @returns {HTMLElment}
  */
 const ScoreHistory = (props, ...entries) => {
+    const emit = props.emit;
     loadStylesheet('score-trend', stylesheet);
 
     const lineColors = {
@@ -61,7 +62,7 @@ const ScoreHistory = (props, ...entries) => {
                         span(Intl.DateTimeFormat("en-US", {dateStyle: 'long', timeStyle: 'long'}).format(Date.parse(point.time))),
                     );
                 },
-                onRefreshClicked: getValue(props.showRefresh) ? () => emitEvent('RecalculateHistory', { payload: getValue(props.score).id }) : undefined,
+                onRefreshClicked: getValue(props.showRefresh) ? () => emit('RecalculateHistory', { payload: getValue(props.score).id }) : undefined,
             },
             ...entries,
         ),

@@ -1,5 +1,5 @@
 import json
-import time
+import logging
 import typing
 from collections import defaultdict
 from datetime import datetime
@@ -7,13 +7,23 @@ from functools import partial
 
 import pandas as pd
 import streamlit as st
+from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
-from testgen.common.models import with_database_session
+from testgen.common.database.database_service import get_flavor_service
+from testgen.common.models import database_session, with_database_session
+from testgen.common.models.connection import Connection
+from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
-from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
+from testgen.common.pii_masking import (
+    PII_REDACTED,
+    get_pii_columns,
+    mask_hygiene_detail,
+    mask_profiling_pii,
+    mask_source_data_pii,
+)
 from testgen.ui.components import widgets as testgen
-from testgen.ui.components.widgets import testgen_component
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
     PROGRESS_UPDATE_TYPE,
@@ -24,6 +34,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import (
+    COLUMN_PROFILING_FIELDS,
     TAG_FIELDS,
     get_column_by_id,
     get_columns_by_id,
@@ -33,19 +44,31 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_id,
     get_tables_by_table_group,
 )
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
-from testgen.ui.services.query_cache import get_project_summary
-from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.session import session, temp_value
-from testgen.ui.views.dialogs.column_history_dialog import column_history_dialog
-from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
-from testgen.ui.views.dialogs.import_metadata_dialog import open_import_metadata_dialog
-from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.ui.views.dialogs.table_create_script_dialog import table_create_script_dialog
+from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_from_target_db
+from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
+from testgen.ui.session import session
+from testgen.ui.views.dialogs.import_metadata_dialog import (
+    apply_metadata_import,
+    build_import_preview_props,
+    parse_import_csv,
+)
+from testgen.ui.views.dialogs.table_create_script_dialog import generate_create_script
 from testgen.utils import friendly_score, is_uuid4, make_json_safe, score
+
+LOG = logging.getLogger("testgen")
 
 PAGE_ICON = "dataset"
 PAGE_TITLE = "Data Catalog"
+
+DC_RUN_PROFILING_DIALOG_KEY = "dc:run_profiling_dialog"
+DC_RUN_PROFILING_RESULT_KEY = "dc:run_profiling_result"
+DC_EXPORT_DIALOG_KEY = "dc:export_dialog"
+DC_CREATE_SCRIPT_DIALOG_KEY = "dc:create_script_dialog"
+DC_DATA_PREVIEW_DIALOG_KEY = "dc:data_preview_dialog"
+DC_HISTORY_DIALOG_KEY = "dc:history_dialog"
+DC_IMPORT_DIALOG_KEY = "dc:import_dialog"
+DC_IMPORT_PREVIEW_KEY = "dc:import_preview"
+DC_IMPORT_RESULT_KEY = "dc:import_result"
 
 
 class DataCatalogPage(Page):
@@ -57,15 +80,13 @@ class DataCatalogPage(Page):
     ]
     menu_item = MenuItem(icon=PAGE_ICON, label=PAGE_TITLE, section="Data Profiling", order=0)
 
-    def render(
-        self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs
-    ) -> None:
+    def render(self, project_code: str, table_group_id: str | None = None, selected: str | None = None, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "data-catalog/",
+            "data-catalog",
         )
 
-        _, loading_column = st.columns([0.4, 0.6])
+        _, loading_column = st.columns([.4, .6])
         spinner_container = loading_column.container(key="data_catalog:spinner")
 
         with spinner_container:
@@ -79,7 +100,7 @@ class DataCatalogPage(Page):
                 user_can_navigate = session.auth.user_has_permission("view")
                 table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
-                if not table_group_id or table_group_id not in [str(item.id) for item in table_groups]:
+                if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
                     table_group_id = str(table_groups[0].id) if table_groups else None
                     on_table_group_selected(table_group_id)
 
@@ -94,18 +115,204 @@ class DataCatalogPage(Page):
             selected_item["connection_id"] = str(selected_table_group.connection_id)
         else:
             on_item_selected(None)
+        
+        def on_run_profiling_clicked(_) -> None:
+            if selected_table_group:
+                st.session_state[DC_RUN_PROFILING_DIALOG_KEY] = str(selected_table_group.id)
 
-        testgen_component(
-            "data_catalog",
-            props={
+        run_profiling_data = None
+        if run_profiling_tg_id := st.session_state.get(DC_RUN_PROFILING_DIALOG_KEY):
+            table_groups_stats = get_table_group_stats(
+                project_code=project_code,
+                table_group_id=run_profiling_tg_id,
+            )
+            run_profiling_data = {
+                "title": "Run Profiling",
+                "table_groups": [tg.to_dict(json_safe=True) for tg in table_groups_stats],
+                "selected_id": str(run_profiling_tg_id),
+                "allow_selection": False,
+                "result": st.session_state.get(DC_RUN_PROFILING_RESULT_KEY),
+            }
+
+        def on_run_profiling_confirmed(table_group: dict) -> None:
+            success = True
+            message = f"Profiling run started for table group '{table_group['table_groups_name']}'."
+            show_link = session.current_page != "profiling-runs"
+            try:
+                with database_session():
+                    JobExecution.submit(
+                        job_key="run-profile",
+                        kwargs={"table_group_id": str(table_group["id"])},
+                        source="ui",
+                        project_code=project_code,
+                    )
+            except Exception as error:
+                success = False
+                message = f"Profiling run could not be started: {error!s}."
+                show_link = False
+            st.session_state[DC_RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            if success and not show_link:
+                get_profiling_run_summaries.clear()
+                st.session_state.pop(DC_RUN_PROFILING_DIALOG_KEY, None)
+                st.session_state.pop(DC_RUN_PROFILING_RESULT_KEY, None)
+
+        def on_go_to_profiling_runs_clicked(tg_id: str) -> None:
+            st.session_state.pop(DC_RUN_PROFILING_DIALOG_KEY, None)
+            st.session_state.pop(DC_RUN_PROFILING_RESULT_KEY, None)
+            Router().queue_navigation(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
+
+        def on_run_profiling_dialog_closed(*_) -> None:
+            st.session_state.pop(DC_RUN_PROFILING_DIALOG_KEY, None)
+            st.session_state.pop(DC_RUN_PROFILING_RESULT_KEY, None)
+
+        def on_export_clicked(items) -> None:
+            st.session_state[DC_EXPORT_DIALOG_KEY] = items
+
+        def on_export_csv_clicked(_) -> None:
+            if selected_table_group:
+                export_metadata_csv(selected_table_group)
+
+        def on_import_clicked(_) -> None:
+            if selected_table_group:
+                st.session_state.pop(DC_IMPORT_PREVIEW_KEY, None)
+                st.session_state.pop(DC_IMPORT_RESULT_KEY, None)
+                st.session_state[DC_IMPORT_DIALOG_KEY] = str(selected_table_group.id)
+
+        @with_database_session
+        def on_import_file_uploaded(payload: dict) -> None:
+            tg_id = st.session_state.get(DC_IMPORT_DIALOG_KEY)
+            if tg_id:
+                try:
+                    preview = parse_import_csv(payload["content"], tg_id, payload["blank_behavior"])
+                except Exception:
+                    LOG.exception("Failed to parse import CSV")
+                    preview = {"error": "Something went wrong while parsing the file."}
+                st.session_state[DC_IMPORT_PREVIEW_KEY] = preview
+
+        def on_import_file_cleared(_) -> None:
+            st.session_state.pop(DC_IMPORT_PREVIEW_KEY, None)
+
+        @with_database_session
+        def on_import_confirmed(_) -> None:
+            tg_id = st.session_state.get(DC_IMPORT_DIALOG_KEY)
+            preview = st.session_state.get(DC_IMPORT_PREVIEW_KEY)
+            if not preview or preview.get("error"):
+                return
+            try:
+                apply_metadata_import(preview, tg_id)
+                from testgen.ui.queries.profiling_queries import get_column_by_id, get_table_by_id
+                for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, TableGroup.select_minimal_where]:
+                    func.clear()
+                st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
+                parts = []
+                if tc := preview.get("matched_tables", 0):
+                    parts.append(f"{tc} {'table' if tc == 1 else 'tables'}")
+                if cc := preview.get("matched_columns", 0):
+                    parts.append(f"{cc} {'column' if cc == 1 else 'columns'}")
+                summary = f"Metadata for {', '.join(parts)} imported." if parts else "No metadata was imported."
+                st.session_state[DC_IMPORT_RESULT_KEY] = {"success": True, "message": summary}
+            except Exception:
+                LOG.exception("Metadata import failed")
+                st.session_state[DC_IMPORT_RESULT_KEY] = {"success": False, "message": "Something went wrong while importing the metadata."}
+            st.session_state.pop(DC_IMPORT_PREVIEW_KEY, None)
+
+        def on_import_dialog_closed(_) -> None:
+            st.session_state.pop(DC_IMPORT_DIALOG_KEY, None)
+            st.session_state.pop(DC_IMPORT_PREVIEW_KEY, None)
+            st.session_state.pop(DC_IMPORT_RESULT_KEY, None)
+
+        import_dialog_data = None
+        if st.session_state.get(DC_IMPORT_DIALOG_KEY):
+            preview = st.session_state.get(DC_IMPORT_PREVIEW_KEY)
+            preview_props = None
+            if preview:
+                if preview.get("error"):
+                    preview_props = {"error": preview["error"]}
+                else:
+                    preview_props = build_import_preview_props(preview)
+            import_dialog_data = {
+                "preview": preview_props,
+                "result": st.session_state.get(DC_IMPORT_RESULT_KEY),
+            }
+
+        def on_create_script_clicked(item) -> None:
+            st.session_state[DC_CREATE_SCRIPT_DIALOG_KEY] = item
+
+        @with_database_session
+        def on_data_preview_clicked(item) -> None:
+            preview_data = get_preview_data(
+                item["table_group_id"],
+                item["schema_name"],
+                item["table_name"],
+                item.get("column_name"),
+            )
+            if preview_data.get("rows") and not session.auth.user_has_permission("view_pii"):
+                pii_columns = get_pii_columns(item["table_group_id"], item["schema_name"], item["table_name"])
+                if pii_columns:
+                    df = pd.DataFrame(preview_data["rows"], columns=preview_data["columns"])
+                    mask_source_data_pii(df, pii_columns)
+                    preview_data["rows"] = make_json_safe(df.values.tolist())
+            st.session_state[DC_DATA_PREVIEW_DIALOG_KEY] = preview_data
+
+        def on_data_preview_dialog_closed(*_) -> None:
+            st.session_state.pop(DC_DATA_PREVIEW_DIALOG_KEY, None)
+
+        @with_database_session
+        def on_history_clicked(item) -> None:
+            history_data = _build_history_dialog_data(
+                item["table_group_id"],
+                item["schema_name"],
+                item["table_name"],
+                item["column_name"],
+                item["add_date"],
+            )
+            if history_data:
+                st.session_state[DC_HISTORY_DIALOG_KEY] = history_data
+
+        @with_database_session
+        def on_history_run_selected(run_id: str) -> None:
+            history_data = st.session_state.get(DC_HISTORY_DIALOG_KEY)
+            if history_data:
+                column = _get_history_run_column(
+                    run_id,
+                    history_data["schema_name"],
+                    history_data["table_name"],
+                    history_data["column_name"],
+                )
+                if column and not session.auth.user_has_permission("view_pii"):
+                    pii_columns = get_pii_columns(history_data["table_group_id"], table_name=history_data["table_name"])
+                    mask_profiling_pii(column, pii_columns)
+                history_data["selected_item"] = column
+                st.session_state[DC_HISTORY_DIALOG_KEY] = history_data
+
+        def on_history_dialog_closed(*_) -> None:
+            st.session_state.pop(DC_HISTORY_DIALOG_KEY, None)
+
+        history_dialog_data = st.session_state.get(DC_HISTORY_DIALOG_KEY)
+        data_preview_dialog_data = st.session_state.get(DC_DATA_PREVIEW_DIALOG_KEY)
+
+        create_script_dialog_data = None
+        if create_script_item := st.session_state.get(DC_CREATE_SCRIPT_DIALOG_KEY):
+            script = generate_create_script(create_script_item["table_name"], columns)
+            create_script_dialog_data = {
+                "title": f"Table CREATE Script: {create_script_item['table_name']}",
+                "table_name": create_script_item["table_name"],
+                "script": script,
+            }
+
+        def on_create_script_dialog_closed(*_) -> None:
+            st.session_state.pop(DC_CREATE_SCRIPT_DIALOG_KEY, None)
+
+        testgen.data_catalog_widget(
+            key="data_catalog",
+            data={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "table_group_filter_options": [
                     {
                         "value": str(table_group.id),
                         "label": table_group.table_groups_name,
                         "selected": table_group_id == str(table_group.id),
-                    }
-                    for table_group in table_groups
+                    } for table_group in table_groups
                 ],
                 "columns": json.dumps(make_json_safe(columns)) if columns else None,
                 "selected_item": json.dumps(make_json_safe(selected_item)) if selected_item else None,
@@ -117,77 +324,132 @@ class DataCatalogPage(Page):
                     "can_view_pii": session.auth.user_has_permission("view_pii"),
                 },
                 "autoflag_settings": {
-                    "profile_flag_cdes": selected_table_group.profile_flag_cdes,
-                    "profile_flag_pii": selected_table_group.profile_flag_pii,
-                } if selected_table_group else None,
+                    "profile_flag_cdes": selected_table_group.profile_flag_cdes if selected_table_group else None,
+                    "profile_flag_pii": selected_table_group.profile_flag_pii if selected_table_group else None,
+                },
+                "run_profiling_dialog": run_profiling_data,
+                "history_dialog": history_dialog_data,
+                "data_preview_dialog": data_preview_dialog_data,
+                "import_metadata_dialog": import_dialog_data,
+                "create_script_dialog": create_script_dialog_data,
             },
-            on_change_handlers={
-                "RunProfilingClicked": lambda _: run_profiling_dialog(
-                    project_code=project_code,
-                    table_group_id=selected_table_group.id,
-                )
-                if selected_table_group
-                else None,
-                "TableGroupSelected": on_table_group_selected,
-                "ItemSelected": on_item_selected,
-                "ExportClicked": lambda items: download_dialog(
-                    dialog_title="Download Excel Report",
-                    file_content_func=get_excel_report_data,
-                    args=(selected_table_group, items),
-                ),
-                "RemoveTableClicked": remove_table_dialog,
-                "CreateScriptClicked": lambda item: table_create_script_dialog(
-                    item["table_name"],
-                    columns,
-                ),
-                "DataPreviewClicked": lambda item: data_preview_dialog(
-                    item["table_group_id"],
-                    item["schema_name"],
-                    item["table_name"],
-                    item.get("column_name"),
-                ),
-                "HistoryClicked": lambda item: column_history_dialog(
-                    item["table_group_id"],
-                    item["schema_name"],
-                    item["table_name"],
-                    item["column_name"],
-                    item["add_date"],
-                ),
-                "ImportClicked": lambda _: open_import_metadata_dialog(str(selected_table_group.id))
-                if selected_table_group
-                else None,
-                "ExportCsvClicked": lambda _: export_metadata_csv(selected_table_group)
-                if selected_table_group
-                else None,
-            },
-            event_handlers={"TagsChanged": partial(on_tags_changed, spinner_container, table_group_id)},
+            on_RunProfilingClicked_change=on_run_profiling_clicked,
+            on_TableGroupSelected_change=on_table_group_selected,
+            on_ItemSelected_change=on_item_selected,
+            on_ExportClicked_change=on_export_clicked,
+            on_ExportCsvClicked_change=on_export_csv_clicked,
+            on_ImportClicked_change=on_import_clicked,
+            on_RemoveTableConfirmed_change=remove_table_dialog,
+            on_CreateScriptClicked_change=on_create_script_clicked,
+            on_CreateScriptDialogClosed_change=on_create_script_dialog_closed,
+            on_DataPreviewClicked_change=on_data_preview_clicked,
+            on_HistoryClicked_change=on_history_clicked,
+            on_TagsChanged_change=partial(on_tags_changed, spinner_container),
+            # RunProfilingDialog events
+            on_RunProfilingConfirmed_change=on_run_profiling_confirmed,
+            on_GoToProfilingRunsClicked_change=on_go_to_profiling_runs_clicked,
+            on_RunProfilingDialogClosed_change=on_run_profiling_dialog_closed,
+            # HistoryDialog events
+            on_HistoryRunSelected_change=on_history_run_selected,
+            on_HistoryDialogClosed_change=on_history_dialog_closed,
+            # DataPreviewDialog events
+            on_DataPreviewDialogClosed_change=on_data_preview_dialog_closed,
+            # ImportMetadataDialog events
+            on_ImportFileUploaded_change=on_import_file_uploaded,
+            on_ImportFileCleared_change=on_import_file_cleared,
+            on_ImportConfirmed_change=on_import_confirmed,
+            on_ImportDialogClosed_change=on_import_dialog_closed,
         )
+
+        if DC_EXPORT_DIALOG_KEY in st.session_state:
+            export_items = st.session_state.pop(DC_EXPORT_DIALOG_KEY)
+            download_dialog(
+                dialog_title="Download Excel Report",
+                file_content_func=get_excel_report_data,
+                args=(selected_table_group, export_items),
+            )
+
+
+
+@with_database_session
+def export_metadata_csv(table_group: TableGroupMinimal) -> None:
+    def _get_csv_data(update_progress: PROGRESS_UPDATE_TYPE) -> FILE_DATA_TYPE:
+        table_data = fetch_all_from_db(
+            f"""
+            SELECT table_name, '' AS column_name,
+                description,
+                critical_data_element,
+                {", ".join(TAG_FIELDS)}
+            FROM data_table_chars
+            WHERE table_groups_id = :table_group_id
+            ORDER BY LOWER(table_name)
+            """,
+            {"table_group_id": str(table_group.id)},
+        )
+
+        column_data = fetch_all_from_db(
+            f"""
+            SELECT c.table_name, c.column_name,
+                c.description,
+                c.critical_data_element,
+                c.excluded_data_element,
+                c.pii_flag,
+                {", ".join([ f"c.{tag}" for tag in TAG_FIELDS ])}
+            FROM data_column_chars c
+                LEFT JOIN data_table_chars t ON (c.table_id = t.table_id)
+            WHERE c.table_groups_id = :table_group_id
+            ORDER BY LOWER(c.table_name), c.ordinal_position
+            """,
+            {"table_group_id": str(table_group.id)},
+        )
+
+        rows = []
+        for row in list(table_data) + list(column_data):
+            csv_row = {
+                "Table": row["table_name"],
+                "Column": row["column_name"],
+                "Description": row["description"] or "",
+                "Critical Data Element": "Yes" if row["critical_data_element"] is True else "No" if row["critical_data_element"] is False else "",
+                "PII": "Yes" if row.get("pii_flag") else "No",
+                "Excluded Data Element": "Yes" if row.get("excluded_data_element") else "No",
+            }
+            for tag in TAG_FIELDS:
+                header = tag.replace("_", " ").title()
+                csv_row[header] = row[tag] or ""
+            rows.append(csv_row)
+
+        df = pd.DataFrame(rows)
+        csv_content = df.to_csv(index=False)
+        update_progress(1.0)
+        return "Data Catalog Metadata.csv", "text/csv", csv_content
+
+    download_dialog(
+        dialog_title="Download Metadata CSV",
+        file_content_func=_get_csv_data,
+    )
 
 
 def on_table_group_selected(table_group_id: str | None) -> None:
-    Router().set_query_params({"table_group_id": table_group_id})
+    Router().set_query_params({ "table_group_id": table_group_id })
 
 
 def on_item_selected(item_id: str | None) -> None:
-    Router().set_query_params({"selected": item_id})
+    Router().set_query_params({ "selected": item_id })
 
 
 class ExportItem(typing.TypedDict):
     id: str
     type: typing.Literal["table", "column"]
 
-
-def get_excel_report_data(
-    update_progress: PROGRESS_UPDATE_TYPE, table_group: TableGroupMinimal, items: list[ExportItem] | None
-) -> None:
+def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: TableGroupMinimal, items: list[ExportItem] | None) -> None:
     if items:
         table_data = get_tables_by_id(
-            table_ids=[item["id"] for item in items if item["type"] == "table"],
+            table_ids=[ item["id"] for item in items if item["type"] == "table" ],
             include_tags=True,
             include_active_tests=True,
         )
         column_data = get_columns_by_id(
-            column_ids=[item["id"] for item in items if item["type"] == "column"],
+            column_ids=[ item["id"] for item in items if item["type"] == "column" ],
             include_tags=True,
             include_active_tests=True,
         )
@@ -202,6 +464,7 @@ def get_excel_report_data(
             include_tags=True,
             include_active_tests=True,
         )
+        
 
     data = pd.DataFrame(table_data + column_data)
 
@@ -209,11 +472,7 @@ def get_excel_report_data(
         pii_columns = get_pii_columns(str(table_group.id))
         mask_profiling_pii(data, pii_columns)
 
-    data = data.sort_values(
-        by=["table_name", "ordinal_position"],
-        na_position="first",
-        key=lambda x: x.str.lower() if x.dtype == "object" else x,
-    )
+    data = data.sort_values(by=["table_name", "ordinal_position"], na_position="first", key=lambda x: x.str.lower() if x.dtype == "object" else x)
 
     for key in ["datatype_suggestion"]:
         data[key] = data[key].apply(lambda val: val.lower() if not pd.isna(val) else None)
@@ -222,18 +481,11 @@ def get_excel_report_data(
         data[key] = data[key].apply(lambda val: round(val, 2) if not pd.isna(val) else None)
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
-        data[key] = data[key].apply(lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val)
+        data[key] = data[key].apply(
+            lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
+        )
 
-    for key in [
-        "data_source",
-        "source_system",
-        "source_process",
-        "business_domain",
-        "stakeholder_group",
-        "transform_level",
-        "aggregation_level",
-        "data_product",
-    ]:
+    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
         data[key] = data.apply(
             lambda row: row[key] or row[f"table_{key}"] or row.get(f"table_group_{key}"),
             axis=1,
@@ -243,20 +495,16 @@ def get_excel_report_data(
     data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
 
     data["critical_data_element"] = data.apply(
-        lambda row: "Yes"
-        if row["critical_data_element"] == True or row["table_critical_data_element"] == True
-        else None,
+        lambda row: "Yes" if row["critical_data_element"] == True or row["table_critical_data_element"] == True else None,
         axis=1,
     )
-    data["excluded_data_element"] = data["excluded_data_element"].apply(lambda val: "Yes" if val else None)
-    data["pii_flag"] = data["pii_flag"].apply(lambda val: "Yes" if val else None)
     data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join([f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ")])
+        lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )
     data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "".join([f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
+        lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )
@@ -265,9 +513,7 @@ def get_excel_report_data(
         "schema_name": {"header": "Schema"},
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
-        "critical_data_element": {"header": "Critical data element (CDE)"},
-        "pii_flag": {"header": "PII"},
-        "excluded_data_element": {"header": "Excluded data element (XDE)"},
+        "critical_data_element": {},
         "active_test_count": {"header": "Active tests"},
         "ordinal_position": {"header": "Position"},
         "general_type": {},
@@ -340,52 +586,44 @@ def get_excel_report_data(
     )
 
 
-@st.dialog(title="Remove Table from Catalog")
 @with_database_session
 def remove_table_dialog(item: dict) -> None:
-    remove_clicked, set_remove_clicked = temp_value("data-catalog:confirm-remove-table-val")
-    st.html(f"Are you sure you want to remove the table <b>{item['table_name']}</b> from the data catalog?")
-    st.warning("This action cannot be undone.")
-
-    _, button_column = st.columns([0.85, 0.15])
-    with button_column:
-        testgen.button(
-            label="Remove",
-            type_="flat",
-            color="warn",
-            key="data-catalog:confirm-remove-table-btn",
-            on_click=lambda: set_remove_clicked(True),
-        )
-
-    if remove_clicked():
-        execute_db_query(
-            "DELETE FROM data_column_chars WHERE table_id = :table_id;",
-            {"table_id": item["id"]},
-        )
-        execute_db_query(
-            "DELETE FROM data_table_chars WHERE table_id = :table_id;",
-            {"table_id": item["id"]},
-        )
-
-        st.success("Table has been removed.")
-        time.sleep(1)
-        st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
-        safe_rerun()
+    execute_db_query(
+        "DELETE FROM data_column_chars WHERE table_id = :table_id;",
+        {"table_id": item["id"]},
+    )
+    execute_db_query(
+        "DELETE FROM data_table_chars WHERE table_id = :table_id;",
+        {"table_id": item["id"]},
+    )
+    for func in [get_table_group_columns, get_tag_values]:
+        func.clear()
+    st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
 
 
-def on_tags_changed(spinner_container: DeltaGenerator, table_group_id: str, payload: dict) -> FILE_DATA_TYPE:
+@with_database_session
+def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DATA_TYPE:
     attributes = ["description"]
     attributes.extend(TAG_FIELDS)
 
     tags = payload["tags"]
-    set_attributes = [f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags]
-    params = {key: tags.get(key) or "" for key in attributes if key in tags}
+    set_attributes = [ f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags ]
+    params = { key: tags.get(key) or "" for key in attributes if key in tags }
     if "critical_data_element" in tags:
         set_attributes.append("critical_data_element = :critical_data_element")
-        params.update({"critical_data_element": tags.get("critical_data_element")})
+        params["critical_data_element"] = tags.get("critical_data_element")
 
-    params["table_ids"] = [item["id"] for item in payload["items"] if item["type"] == "table"]
-    params["column_ids"] = [item["id"] for item in payload["items"] if item["type"] == "column"]
+    # pii_flag and excluded_data_element are column-only fields (not in data_table_chars)
+    column_set_attributes = list(set_attributes)
+    if "pii_flag" in tags:
+        column_set_attributes.append("pii_flag = :pii_flag")
+        params["pii_flag"] = tags.get("pii_flag")
+    if "excluded_data_element" in tags:
+        column_set_attributes.append("excluded_data_element = :excluded_data_element")
+        params["excluded_data_element"] = tags.get("excluded_data_element")
+
+    params["table_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "table" ]
+    params["column_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "column" ]
 
     with spinner_container:
         with st.spinner("Saving tags"):
@@ -404,23 +642,14 @@ def on_tags_changed(spinner_container: DeltaGenerator, table_group_id: str, payl
                     params,
                 )
 
-            if params["column_ids"]:
-                if "excluded_data_element" in tags:
-                    set_attributes.append("excluded_data_element = :excluded_data_element")
-                    params.update({"excluded_data_element": tags.get("excluded_data_element")})
-
-                # Prevent user from editing PII flag if they cannot view PII
-                if "pii_flag" in tags and session.auth.user_has_permission("view_pii"):
-                    set_attributes.append("pii_flag = :pii_flag")
-                    params.update({"pii_flag": tags.get("pii_flag")})
-
+            if params["column_ids"] and column_set_attributes:
                 execute_db_query(
                     f"""
                     WITH selected as (
                         SELECT UNNEST(ARRAY [:column_ids]) AS column_id
                     )
                     UPDATE data_column_chars
-                    SET {', '.join(set_attributes)}
+                    SET {', '.join(column_set_attributes)}
                     FROM data_column_chars dcc
                         INNER JOIN selected ON (dcc.column_id = selected.column_id::UUID)
                     WHERE dcc.column_id = data_column_chars.column_id;
@@ -428,90 +657,32 @@ def on_tags_changed(spinner_container: DeltaGenerator, table_group_id: str, payl
                     params,
                 )
 
-    _disable_autoflags(table_group_id, payload.get("disable_flags"))
+            # Disable autodetection flags on table group if requested
+            disable_flags = payload.get("disable_flags", [])
+            if disable_flags:
+                table_group_id = st.query_params.get("table_group_id")
+                if table_group_id:
+                    table_group = TableGroup.get(table_group_id)
+                    changed = False
+                    if "profile_flag_cdes" in disable_flags and table_group.profile_flag_cdes:
+                        table_group.profile_flag_cdes = False
+                        changed = True
+                    if "profile_flag_pii" in disable_flags and table_group.profile_flag_pii:
+                        table_group.profile_flag_pii = False
+                        changed = True
+                    if changed:
+                        table_group.save()
 
+    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, TableGroup.select_minimal_where ]:
+        func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
-    safe_rerun()
-
-
-def _disable_autoflags(table_group_id: str, disable_flags: list[str] | None) -> None:
-    if not disable_flags or not (table_group := TableGroup.get(table_group_id)):
-        return
-
-    changed = False
-    if "profile_flag_cdes" in disable_flags:
-        table_group.profile_flag_cdes = False
-        changed = True
-    if "profile_flag_pii" in disable_flags:
-        table_group.profile_flag_pii = False
-        changed = True
-
-    if changed:
-        table_group.save()
-
-
-def export_metadata_csv(table_group: TableGroupMinimal) -> None:
-    def _get_csv_data(update_progress: PROGRESS_UPDATE_TYPE) -> FILE_DATA_TYPE:
-        table_data = fetch_all_from_db(
-            f"""
-            SELECT table_name, '' AS column_name,
-                description,
-                critical_data_element,
-                {", ".join(TAG_FIELDS)}
-            FROM data_table_chars
-            WHERE table_groups_id = :table_group_id
-            ORDER BY LOWER(table_name)
-            """,
-            {"table_group_id": str(table_group.id)},
-        )
-
-        column_data = fetch_all_from_db(
-            f"""
-            SELECT c.table_name, c.column_name,
-                c.description,
-                c.critical_data_element,
-                c.excluded_data_element,
-                c.pii_flag,
-                {", ".join([ f"c.{tag}" for tag in TAG_FIELDS ])}
-            FROM data_column_chars c
-                LEFT JOIN data_table_chars t ON (c.table_id = t.table_id)
-            WHERE c.table_groups_id = :table_group_id
-            ORDER BY LOWER(c.table_name), c.ordinal_position
-            """,
-            {"table_group_id": str(table_group.id)},
-        )
-
-        rows = []
-        for row in list(table_data) + list(column_data):
-            csv_row = {
-                "Table": row["table_name"],
-                "Column": row["column_name"],
-                "Description": row["description"] or "",
-                "Critical Data Element": "Yes" if row["critical_data_element"] is True else "No" if row["critical_data_element"] is False else "",
-                "PII": "Yes" if row.get("pii_flag") else "No",
-                "Excluded Data Element": "Yes" if row.get("excluded_data_element") else "No",
-            }
-            for tag in TAG_FIELDS:
-                header = tag.replace("_", " ").title()
-                csv_row[header] = row[tag] or ""
-            rows.append(csv_row)
-
-        df = pd.DataFrame(rows)
-        csv_content = df.to_csv(index=False)
-        update_progress(1.0)
-        return "Data Catalog Metadata.csv", "text/csv", csv_content
-
-    download_dialog(
-        dialog_title="Download Metadata CSV",
-        file_content_func=_get_csv_data,
-    )
 
 
 @st.cache_data(show_spinner=False)
 def get_table_group_columns(table_group_id: str) -> list[dict]:
     if not is_uuid4(table_group_id):
         return []
-
+    
     query = f"""
     SELECT CONCAT('column_', column_chars.column_id) AS column_id,
         CONCAT('table_', table_chars.table_id) AS table_id,
@@ -530,8 +701,8 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
         table_chars.drop_date AS table_drop_date,
         column_chars.critical_data_element,
         table_chars.critical_data_element AS table_critical_data_element,
-        column_chars.excluded_data_element,
         column_chars.pii_flag,
+        column_chars.excluded_data_element,
         {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
         {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])}
     FROM data_column_chars column_chars
@@ -549,7 +720,7 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
     params = {"table_group_id": table_group_id}
 
     results = fetch_all_from_db(query, params)
-    return [dict(row) for row in results]
+    return [ dict(row) for row in results ]
 
 
 def get_selected_item(selected: str, table_group_id: str) -> dict | None:
@@ -570,12 +741,8 @@ def get_selected_item(selected: str, table_group_id: str) -> dict | None:
         item["dq_score_profiling"] = friendly_score(item["dq_score_profiling"])
         item["dq_score_testing"] = friendly_score(item["dq_score_testing"])
         item["hygiene_issues"] = get_hygiene_issues(item["profile_run_id"], item["table_name"], item.get("column_name"))
-        item["test_issues"] = get_latest_test_issues(
-            item["table_group_id"], item["table_name"], item.get("column_name")
-        )
-        item["test_suites"] = get_related_test_suites(
-            item["table_group_id"], item["table_name"], item.get("column_name")
-        )
+        item["test_issues"] = get_latest_test_issues(item["table_group_id"], item["table_name"], item.get("column_name"))
+        item["test_suites"] = get_related_test_suites(item["table_group_id"], item["table_name"], item.get("column_name"))
         if not session.auth.user_has_permission("view_pii"):
             pii_columns = get_pii_columns(item["table_group_id"], table_name=item["table_name"])
             mask_profiling_pii(item, pii_columns)
@@ -605,6 +772,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
             test_results.test_type = test_types.test_type
         )
     WHERE test_suites.table_groups_id = :table_group_id
+        AND test_suites.is_monitor = false
         AND table_name = :table_name
         {"AND column_names = :column_name" if column_name else ""}
         AND result_status NOT IN ('Passed', 'Log')
@@ -624,7 +792,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
     }
 
     results = fetch_all_from_db(query, params)
-    return [dict(row) for row in results]
+    return [ dict(row) for row in results ]
 
 
 @st.cache_data(show_spinner=False)
@@ -639,6 +807,7 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
             test_definitions.test_suite_id = test_suites.id
         )
     WHERE test_suites.table_groups_id = :table_group_id
+        AND test_suites.is_monitor = false
         AND table_name = :table_name
         {"AND column_name = :column_name" if column_name else ""}
     GROUP BY test_suites.id
@@ -651,7 +820,110 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
     }
 
     results = fetch_all_from_db(query, params)
-    return [dict(row) for row in results]
+    return [ dict(row) for row in results ]
+
+
+def _build_history_dialog_data(
+    table_group_id: str,
+    schema_name: str,
+    table_name: str,
+    column_name: str,
+    add_date: int,
+) -> dict | None:
+    profiling_runs = ProfilingRun.select_minimal_where(
+        ProfilingRun.table_groups_id == table_group_id,
+        ProfilingRun.profiling_starttime >= sa_func.to_timestamp(add_date),
+    )
+    if not profiling_runs:
+        return None
+
+    profiling_runs_data = [
+        {"run_id": run.id, "run_date": run.profiling_starttime}
+        for run in profiling_runs
+    ]
+    first_run_id = profiling_runs_data[0]["run_id"]
+    selected_item = _get_history_run_column(first_run_id, schema_name, table_name, column_name)
+
+    if selected_item and not session.auth.user_has_permission("view_pii"):
+        pii_columns = get_pii_columns(table_group_id, table_name=table_name)
+        mask_profiling_pii(selected_item, pii_columns)
+
+    return make_json_safe({
+        "table_group_id": table_group_id,
+        "table_name": table_name,
+        "column_name": column_name,
+        "schema_name": schema_name,
+        "profiling_runs": profiling_runs_data,
+        "selected_item": selected_item,
+    })
+
+
+@st.cache_data(show_spinner=False)
+def _get_history_run_column(run_id: str, schema_name: str, table_name: str, column_name: str) -> dict | None:
+    query = f"""
+    SELECT
+        profile_run_id::VARCHAR,
+        general_type,
+        {COLUMN_PROFILING_FIELDS}
+    FROM profile_results
+    WHERE profile_run_id = :run_id
+        AND schema_name = :schema_name
+        AND table_name = :table_name
+        AND column_name = :column_name;
+    """
+    params = {
+        "run_id": run_id,
+        "schema_name": schema_name,
+        "table_name": table_name,
+        "column_name": column_name,
+    }
+    from testgen.ui.services.database_service import fetch_one_from_db
+    result = fetch_one_from_db(query, params)
+    return make_json_safe(dict(result)) if result else None
+
+
+def get_preview_data(
+    table_group_id: str,
+    schema_name: str,
+    table_name: str,
+    column_name: str | None = None,
+) -> dict:
+    title = (
+        f"Table > Column: {table_name} > {column_name}"
+        if column_name else
+        f"Table: {table_name}"
+    )
+    connection = Connection.get_by_table_group(table_group_id)
+    if not connection:
+        return {"title": title, "status": "ERR", "message": "Connection not found."}
+
+    flavor_service = get_flavor_service(connection.sql_flavor)
+    row_limiting = flavor_service.row_limiting_clause
+    quote = flavor_service.quote_character
+    query = f"""
+    SELECT DISTINCT
+        {"TOP 100" if row_limiting == "top" else ""}
+        {f"{quote}{column_name}{quote}" if column_name else "*"}
+    FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}
+    {"LIMIT 100" if row_limiting == "limit" else ""}
+    {"FETCH FIRST 100 ROWS ONLY" if row_limiting == "fetch" else ""}
+    """
+
+    try:
+        results = fetch_from_target_db(connection, query)
+    except Exception:
+        return {"title": title, "status": "ERR", "message": "The preview data could not be loaded."}
+
+    if not results:
+        return {"title": title, "status": "ND", "message": "No data found."}
+
+    columns_list = list(results[0]._mapping.keys())
+    rows = [list(row) for row in results]
+    return {
+        "title": title,
+        "columns": columns_list,
+        "rows": make_json_safe(rows),
+    }
 
 
 @st.cache_data(show_spinner=False)

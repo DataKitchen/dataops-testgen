@@ -109,11 +109,6 @@ section.stSidebar > [data-testid="stSidebarContent"] {
     overflow: visible;
 }
 
-[data-testid="stSidebarNav"],
-[data-testid="stSidebarUserContent"] {
-    display: none;
-}
-
 .stAppViewContainer:has(.tg-no-project) > .stSidebar {
     display: none;
 }

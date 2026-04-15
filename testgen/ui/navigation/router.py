@@ -108,6 +108,9 @@ class Router(Singleton):
                 if not session.current_page.startswith("quality-dashboard") and not to.startswith("quality-dashboard"):
                     st.cache_data.clear()
 
+                if is_different_page:
+                    st.session_state.pop("app_logs:dialog", None)
+
                 session.current_page = to
                 st.switch_page(route.streamlit_page)
 

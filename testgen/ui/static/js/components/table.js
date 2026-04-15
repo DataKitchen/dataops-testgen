@@ -20,6 +20,7 @@
  * @type {object}
  * @property {boolean?} multi
  * @property {((rowIndexes: number[]) => void)?} onRowsSelected
+ * @property {((row: any, idx: number) => boolean)?} isInitiallySelected
  * 
  * @typedef SortOptions
  * @type {object}
@@ -34,6 +35,7 @@
  * @property {number?} currentPageIdx
  * @property {((a: number, b: number) => void)?} onPageChange
  * @property {HTMLElement?} leftContent
+ * @property {number[]?} pageSizeOptions
  * 
  * @typedef Options
  * @type {object}
@@ -47,6 +49,7 @@
  * @property {string?} width
  * @property {boolean?} highDensity
  * @property {boolean?} dynamicWidth
+ * @property {boolean?} uppercaseHeader
  * @property {SortOptions?} sort
  * @property {PaginatorOptions?} paginator
  * @property {SelectonOptions?} selection
@@ -94,9 +97,10 @@ const Table = (options, rows) => {
     const selectedRows = [];
     van.derive(() => {
         const rows_ = getValue(rows);
-        rows_.forEach((_, idx) => {
-            selectedRows[idx] = selectedRows[idx] ?? van.state(false)
-            selectedRows[idx].val = false;
+        rows_.forEach((row, idx) => {
+            const isRowSelected = options.selection?.isInitiallySelected?.(row, idx) ?? false;
+            selectedRows[idx] = selectedRows[idx] ?? van.state(isRowSelected)
+            selectedRows[idx].val = isRowSelected;
         });
     });
     van.derive(() => {
@@ -131,6 +135,7 @@ const Table = (options, rows) => {
             currentPageIdx: p?.currentPageIdx ?? 0,
             onPageChange: p?.onPageChange,
             leftContent: p?.leftContent,
+            pageSizeOptions: p?.pageSizeOptions,
         };
     });
 
@@ -140,24 +145,38 @@ const Table = (options, rows) => {
         return {
             field: s?.field,
             order: s?.order,
+            columns: s?.columns,
             onSortChange: (columnName) => {
-                let newSortOrder = 'desc';
-                let columnNameOrClear = columnName;
-                if (s?.field === columnName && s?.order === 'desc') {
-                    newSortOrder = 'asc';
-                } else if (s?.field === columnName && s?.order === 'asc') {
-                    newSortOrder = null;
-                    columnNameOrClear = null;
+                const sortCols = s?.columns;
+                if (sortCols !== undefined) {
+                    const existing = sortCols.find(c => c.field === columnName);
+                    let newColumns;
+                    if (!existing) {
+                        newColumns = [...sortCols, { field: columnName, order: 'desc' }];
+                    } else if (existing.order === 'desc') {
+                        newColumns = sortCols.map(c => c.field === columnName ? { ...c, order: 'asc' } : c);
+                    } else {
+                        newColumns = sortCols.filter(c => c.field !== columnName);
+                    }
+                    s?.onSortChange?.(newColumns);
+                } else {
+                    let newSortOrder = 'desc';
+                    let columnNameOrClear = columnName;
+                    if (s?.field === columnName && s?.order === 'desc') {
+                        newSortOrder = 'asc';
+                    } else if (s?.field === columnName && s?.order === 'asc') {
+                        newSortOrder = null;
+                        columnNameOrClear = null;
+                    }
+                    s?.onSortChange?.({field: columnNameOrClear, order: newSortOrder});
                 }
-
-                s?.onSortChange?.({field: columnNameOrClear, order: newSortOrder});
             },
         };
     });
 
     return div(
         {
-            class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''} ${options.onRowsSelected ? 'tg-table-hoverable' : ''}`,
+            class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''} ${(getValue(options.uppercaseHeader) ?? true) ? 'tg-table-uppercase-header' : ''} ${options.selection?.onRowsSelected ? 'tg-table-hoverable' : ''}`,
             style: () => `height: ${getValue(options.height) ? getValue(options.height) : defaultHeight}; ${getValue(options.maxHeight) ? 'max-height: ' + getValue(options.maxHeight) + ';' : ''}`,
         },
         options.header,
@@ -168,11 +187,15 @@ const Table = (options, rows) => {
                     class: () => getValue(options.class) ?? '',
                     style: () => {
                         const dynamicWidth = getValue(options.dynamicWidth) ?? false;
-                        let widthNumber = getValue(options.width) ?? widthSum.val;
-                        if (widthNumber < window.innerWidth) {
-                            widthNumber = window.innerWidth;
+                        if (!dynamicWidth) {
+                            return `width: ${defaultWidth};`;
                         }
-                        return `width: ${(widthNumber && dynamicWidth) ? widthNumber + 'px' : defaultWidth}; ${dynamicWidth ? 'table-layout: fixed;' : ''}`;
+                        let currentSum = 0;
+                        for (let i = 0; i < columnWidths.length; i++) {
+                            currentSum += columnWidths[i]?.val ?? 0;
+                        }
+                        const widthNumber = getValue(options.width) ?? currentSum;
+                        return `width: ${widthNumber ? widthNumber + 'px' : defaultWidth}; table-layout: fixed;`;
                     },
                 },
                 () => colgroup(
@@ -216,7 +239,7 @@ const Table = (options, rows) => {
                                     class: () => `${selectedRows[idx].val ? 'selected' : ''} ${options.rowClass?.(row, idx) ?? ''}`,
                                     onclick: () => onRowSelected(idx),
                                 },
-                                ...getValue(dataColumns).map(column => TableCell(column, row, idx)),
+                                ...getValue(dataColumns).map(column => TableCell(column, row, idx, options.emit)),
                             )
                         ),
                     )
@@ -231,6 +254,7 @@ const Table = (options, rows) => {
                 getValue(options.highDensity),
                 getValue(paginatorOptions).onPageChange,
                 getValue(paginatorOptions).leftContent,
+                getValue(paginatorOptions).pageSizeOptions,
             )
             : undefined,
     );
@@ -260,9 +284,10 @@ const TableHeaderColumn = (
 ) => {
     let startX, startWidth;
 
+    const minWidth = Math.min(column.width ?? 50, 50);
     const doDrag = (e) => {
         const newWidth = startWidth + (e.clientX - startX);
-        if (newWidth > 50) {
+        if (newWidth > minWidth) {
             columnWidths[columnIndex].val = newWidth;
         }
     };
@@ -289,13 +314,24 @@ const TableHeaderColumn = (
         if (!isDataColumn || !column.sortable) {
             return null;
         }
-        
+
+        const sortCols = sortOptions.val.columns;
+        if (sortCols) {
+            const colSort = sortCols.find(c => c.field === column.name);
+            if (!colSort) {
+                return Icon({style: 'font-size: 13px; cursor: pointer; color: var(--disabled-text-color)'}, 'expand_all');
+            }
+            const isPrimary = sortCols[0]?.field === column.name;
+            return Icon(
+                {style: `font-size: 13px; cursor: pointer; color: var(${isPrimary ? '--primary-text-color' : '--secondary-text-color'})`},
+                colSort.order === 'desc' ? 'south' : 'north',
+            );
+        }
+
         const isSorted = sortOptions.val.field === column.name;
-        return (
-            Icon(
-                {style: `font-size: 13px; cursor: pointer; color: var(${isSorted ? '--primary-text-color' : '--disabled-text-color'})`},
-                isSorted ? (sortOptions.val.order === 'desc' ? 'south' : 'north') : 'expand_all',
-            )
+        return Icon(
+            {style: `font-size: 13px; cursor: pointer; color: var(${isSorted ? '--primary-text-color' : '--disabled-text-color'})`},
+            isSorted ? (sortOptions.val.order === 'desc' ? 'south' : 'north') : 'expand_all',
         );
     });
 
@@ -359,6 +395,8 @@ const TableCell = (column, row, index) => {
  * @param {HTMLElement?} leftContent
  * @returns {HTMLElement}
  */
+const defaultPageSizeOptions = [20, 50, 100];
+
 const Paginatior = (
     itemsPerPage,
     totalItems,
@@ -366,10 +404,13 @@ const Paginatior = (
     highDensity,
     onPageChange,
     leftContent = undefined,
+    pageSizeOptions = undefined,
 ) => {
     const pageStart = itemsPerPage * currentPageIdx + 1;
     const pageEnd = Math.min(pageStart + itemsPerPage - 1, totalItems);
     const lastPage = (Math.floor(totalItems / itemsPerPage) + (totalItems % itemsPerPage > 0) - 1);
+
+    const sizeOptions = (pageSizeOptions ?? defaultPageSizeOptions).map(n => ({ label: String(n), value: n }));
 
     return div(
         {class: `tg-table-paginator flex-row fx-justify-content-flex-end ${highDensity ? '' : 'p-1'} text-secondary`},
@@ -382,11 +423,7 @@ const Paginatior = (
             triggerStyle: 'inline',
             testId: 'items-per-page',
             value: itemsPerPage,
-            options: [
-                {label: '20', value: 20},
-                {label: '50', value: 50},
-                {label: '100', value: 100},
-            ],
+            options: sizeOptions,
             portalPosition: 'top',
             onChange: (value) => onPageChange(currentPageIdx, parseInt(value)),
         }),
@@ -447,11 +484,15 @@ stylesheet.replace(`
     height: 100%;
 }
 
+.tg-table > .tg-table-scrollable > table > .tg-table-empty-state-body {
+    height: 100%;
+}
+
 .tg-table > .tg-table-scrollable > table > thead {
     border-bottom: var(--button-stroked-border);
     position: sticky;
     top: 0;
-    background: var(--dk-card-background); /* Ensure header background is solid when sticky */
+    background: var(--table-header-background, var(--dk-card-background));
     z-index: 1; /* Ensure header is above scrolling content */
 }
 
@@ -472,8 +513,11 @@ stylesheet.replace(`
 .tg-table > .tg-table-scrollable > table > thead th.tg-table-column {
     padding: 4px 8px;
     height: 32px;
-    text-transform: uppercase;
     position: relative; /* Needed for absolute positioning of resizer */
+}
+
+.tg-table.tg-table-uppercase-header > .tg-table-scrollable > table > thead th.tg-table-column {
+    text-transform: uppercase;
 }
 
 .tg-table > .tg-table-scrollable > table > thead th .tg-column-resizer {
@@ -524,6 +568,10 @@ stylesheet.replace(`
     height: 27px;
 }
 
+.tg-table.tg-table-high-density > .tg-table-scrollable > table > tbody > tr {
+    height: 27px;
+}
+
 .tg-table.tg-table-dynamic-width > .tg-table-scrollable > table {
     table-layout: fixed;
 }
@@ -535,6 +583,7 @@ stylesheet.replace(`
 
 .tg-table.tg-table-hoverable > .tg-table-scrollable > table > tbody tr:hover {
     background-color: var(--table-hover-color);
+    cursor: pointer;
 }
 `);
 

@@ -360,9 +360,10 @@ class TestDefinition(Entity):
         target_table_name: str | None = None,
         target_column_name: str | None = None,
     ) -> None:
-        modified_columns = [cls.table_groups_id, cls.profile_run_id, cls.test_suite_id, cls.last_auto_gen_date]
+        modified_columns = [cls.id, cls.table_groups_id, cls.profile_run_id, cls.test_suite_id, cls.last_auto_gen_date]
 
         select_columns = [
+            func.gen_random_uuid().label("id"),
             literal(target_table_group_id).label("table_groups_id"),
             case(
                 (cls.table_groups_id == target_table_group_id, cls.profile_run_id),

@@ -71,7 +71,7 @@ def render(log_level: int = logging.INFO):
                         ],
                         current_project=None if is_global_context else session.sidebar_project,
                         menu=application.menu,
-                        current_page=session.current_page,
+                        current_page=current_page,
                         version=version_service.get_version(),
                         support_email=settings.SUPPORT_EMAIL,
                         global_context=is_global_context,

@@ -12,16 +12,15 @@
  * @property {{table: string, column: string, test: string}} test_label
  * @property {Array<Note>} notes
  * @property {string} current_user
+ * @property {string} test_definition_id
  */
-import van from '../van.min.js';
-import { Button } from '../components/button.js';
-import { Icon } from '../components/icon.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
-import { ExpansionPanel } from '../components/expansion_panel.js';
-import { formatTimestamp } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { ExpansionPanel } from '/app/static/js/components/expansion_panel.js';
+import { formatTimestamp } from '/app/static/js/display_utils.js';
 
-const minHeight = 400;
 const { div, span, textarea, p } = van.tags;
 
 /**
@@ -29,8 +28,8 @@ const { div, span, textarea, p } = van.tags;
  * @returns
  */
 const TestDefinitionNotes = (props) => {
+    const emit = props.emit;
     loadStylesheet('test-definition-notes', stylesheet);
-    window.testgen.isPage = true;
 
     // Form state: shared between add and edit modes
     const editNoteId = van.state(null);
@@ -80,7 +79,7 @@ const TestDefinitionNotes = (props) => {
                                     label: 'Yes',
                                     type: 'stroked',
                                     color: 'warn',
-                                    onclick: () => emitEvent('NoteDeleted', { payload: { id: note.id } }),
+                                    onclick: () => emit('NoteDeleted', { payload: { id: note.id, test_definition_id: getValue(props.test_definition_id) } }),
                                 }),
                                 Button({
                                     label: 'No',
@@ -100,6 +99,9 @@ const TestDefinitionNotes = (props) => {
                                     isEdit.val = true;
                                     editNoteId.val = note.id;
                                     noteText.val = note.detail;
+                                    // Force expand even if panelExpanded is already true
+                                    panelExpanded.val = false;
+                                    panelExpanded.val = true;
                                 },
                             }),
                             Button({
@@ -117,6 +119,8 @@ const TestDefinitionNotes = (props) => {
         );
     };
 
+    const panelExpanded = van.state(true);
+
     return div(
         { id: 'test-definition-notes', class: 'flex-column fx-gap-2', style: 'height: 100%; overflow-y: auto;' },
         () => {
@@ -130,12 +134,12 @@ const TestDefinitionNotes = (props) => {
                 span({ class: 'text-secondary' }, 'Test: '), span(label.test),
             );
         },
-        () => ExpansionPanel(
+        ExpansionPanel(
             {
-                title: isEdit.val
+                title: () => isEdit.val
                     ? span({ class: 'tdn-editing-indicator' }, 'Edit Note')
                     : span({ class: 'text-green' }, 'Add Note'),
-                expanded: isEdit.val || getValue(props.notes).length === 0,
+                expanded: panelExpanded,
             },
             div(
                 { class: 'flex-column' },
@@ -158,18 +162,19 @@ const TestDefinitionNotes = (props) => {
                         : '',
                     Button({
                         type: 'stroked',
-                        label: isEdit.val ? 'Save Changes' : 'Add Note',
+                        label: () => isEdit.val ? 'Save Changes' : 'Add Note',
                         width: 'auto',
                         disabled: () => !noteText.val.trim(),
                         onclick: () => {
                             const text = noteText.rawVal.trim();
+                            const tdId = getValue(props.test_definition_id);
                             if (isEdit.rawVal) {
                                 const id = editNoteId.rawVal;
                                 resetForm();
-                                emitEvent('NoteUpdated', { payload: { id, text } });
+                                emit('NoteUpdated', { payload: { id, text, test_definition_id: tdId } });
                             } else {
                                 resetForm();
-                                emitEvent('NoteAdded', { payload: { text } });
+                                emit('NoteAdded', { payload: { text, test_definition_id: tdId } });
                             }
                         },
                     }),
@@ -179,7 +184,6 @@ const TestDefinitionNotes = (props) => {
         () => {
             const notes = getValue(props.notes);
             const currentUser = getValue(props.current_user);
-            Streamlit.setFrameHeight(Math.max(minHeight, 80 * notes.length + 200));
 
             return notes.length > 0
                 ? div(

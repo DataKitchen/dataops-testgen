@@ -1,7 +1,6 @@
 import json
 import typing
 from datetime import datetime
-from functools import partial
 from io import BytesIO
 from typing import ClassVar
 
@@ -13,6 +12,7 @@ from testgen.commands.run_refresh_score_cards_results import (
     run_refresh_score_cards_results,
 )
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scores import (
     Categories,
@@ -23,24 +23,32 @@ from testgen.common.models.scores import (
     SelectedIssue,
 )
 from testgen.common.models.test_run import TestRun
-from testgen.common.pii_masking import mask_hygiene_detail
+from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.pdf import hygiene_issue_report, test_result_report
+from testgen.ui.queries.profiling_queries import get_column_by_name
 from testgen.ui.queries.scoring_queries import (
     get_all_score_cards,
     get_column_filters,
     get_score_card_issue_reports,
     get_score_category_values,
 )
-from testgen.ui.services.rerun_service import safe_rerun
-from testgen.ui.session import session, temp_value
-from testgen.ui.views.dialogs.profiling_results_dialog import profiling_results_dialog
-from testgen.utils import format_score_card, format_score_card_breakdown, format_score_card_issues, try_json
+from testgen.ui.session import session
+from testgen.utils import (
+    format_score_card,
+    format_score_card_breakdown,
+    format_score_card_issues,
+    make_json_safe,
+    try_json,
+)
 
 PAGE_PATH = "quality-dashboard:explorer"
+
+SE_COLUMN_SELECTOR_DIALOG_KEY = "se:column_selector_open"
+SE_COLUMN_PROFILING_DIALOG_KEY = "se:column_profiling_payload"
 
 class ScoreExplorerPage(Page):
     path = PAGE_PATH
@@ -88,7 +96,7 @@ class ScoreExplorerPage(Page):
             page_title = "Edit Scorecard"
             last_breadcrumb = original_score_definition.name
 
-        testgen.page_header(page_title, "quality-scores/explore-and-create-scorecards/", breadcrumbs=[
+        testgen.page_header(page_title, "explore-and-create-scorecards", breadcrumbs=[
             {"path": "quality-dashboard", "label": "Quality Dashboard", "params": {"project_code": project_code}},
             {"label": last_breadcrumb},
         ])
@@ -162,9 +170,60 @@ class ScoreExplorerPage(Page):
                 issues = format_score_card_issues(raw_issues, breakdown_category)
             score_definition_dict = score_definition.to_dict()
 
-        testgen.testgen_component(
-            "score_explorer",
-            props={
+        def on_column_selector_opened(*_) -> None:
+            st.session_state[SE_COLUMN_SELECTOR_DIALOG_KEY] = True
+
+        column_selector_data = None
+        if st.session_state.get(SE_COLUMN_SELECTOR_DIALOG_KEY):
+            column_filters = get_column_filters(project_code)
+            selected_filters = set()
+            if score_definition_dict.get("filter_by_columns"):
+                selected_filters = _get_selected_filters(score_definition_dict.get("filters", []))
+            for column in column_filters:
+                table_group_selected = (f"table_groups_name={column['table_group']}",) in selected_filters
+                table_selected = (
+                    f"table_groups_name={column['table_group']}",
+                    f"table_name={column['table']}",
+                ) in selected_filters
+                column_selected = (
+                    f"table_groups_name={column['table_group']}",
+                    f"table_name={column['table']}",
+                    f"column_name={column['name']}",
+                ) in selected_filters
+                column["selected"] = table_group_selected or table_selected or column_selected
+            column_selector_data = {
+                "title": "Select Columns for the Scorecard",
+                "columns": column_filters,
+            }
+
+        def on_column_filters_updated(filters: list[dict]) -> None:
+            set_score_definition({
+                **score_definition_dict,
+                "filters": filters,
+                "filter_by_columns": bool(filters),
+            })
+            st.session_state.pop(SE_COLUMN_SELECTOR_DIALOG_KEY, None)
+
+        def on_column_selector_dialog_closed(*_) -> None:
+            st.session_state.pop(SE_COLUMN_SELECTOR_DIALOG_KEY, None)
+
+        @with_database_session
+        def on_column_profiling_clicked(payload: dict) -> None:
+            column = get_column_by_name(payload["column_name"], payload["table_name"], payload["table_group_id"])
+            if column:
+                if not session.auth.user_has_permission("view_pii"):
+                    pii_columns = get_pii_columns(payload["table_group_id"], table_name=payload["table_name"])
+                    mask_profiling_pii(column, pii_columns)
+                st.session_state[SE_COLUMN_PROFILING_DIALOG_KEY] = make_json_safe(column)
+
+        def on_profiling_results_dialog_closed(*_) -> None:
+            st.session_state.pop(SE_COLUMN_PROFILING_DIALOG_KEY, None)
+
+        profiling_column = st.session_state.get(SE_COLUMN_PROFILING_DIALOG_KEY)
+
+        testgen.score_explorer_widget(
+            key="score_explorer",
+            data={
                 "filter_values": filter_values,
                 "definition": score_definition_dict,
                 "score_card": format_score_card(score_card),
@@ -177,22 +236,22 @@ class ScoreExplorerPage(Page):
                 "permissions": {
                     "can_edit": user_can_edit,
                 },
+                "column_selector_dialog": column_selector_data,
+                "profiling_column": profiling_column,
             },
-            on_change_handlers={
-                "ScoreUpdated": set_score_definition,
-                "CategoryChanged": set_breakdown_category,
-                "ScoreTypeChanged": set_breakdown_score_type,
-                "DrilldownChanged": set_breakdown_drilldown,
-                "IssueReportsExported": export_issue_reports,
-                "ColumnProfilingClicked": lambda payload: profiling_results_dialog(
-                    payload["column_name"],
-                    payload["table_name"],
-                    payload["table_group_id"],
-                ),
-                "ScoreDefinitionSaved": save_score_definition,
-                "ColumnSelectorOpened": partial(column_selector_dialog, project_code, score_definition_dict),
-                "FilterModeChanged": change_score_definition_filter_mode,
-            },
+            on_ScoreUpdated_change=set_score_definition,
+            on_CategoryChanged_change=set_breakdown_category,
+            on_ScoreTypeChanged_change=set_breakdown_score_type,
+            on_DrilldownChanged_change=set_breakdown_drilldown,
+            on_IssueReportsExported_change=export_issue_reports,
+            on_ScoreDefinitionSaved_change=save_score_definition,
+            on_ColumnSelectorOpened_change=on_column_selector_opened,
+            on_FilterModeChanged_change=change_score_definition_filter_mode,
+            on_ColumnProfilingClicked_change=on_column_profiling_clicked,
+            on_ProfilingResultsDialogClosed_change=on_profiling_results_dialog_closed,
+            # ColumnSelectorDialog events
+            on_ColumnFiltersUpdated_change=on_column_filters_updated,
+            on_ColumnSelectorDialogClosed_change=on_column_selector_dialog_closed,
         )
 
 
@@ -222,6 +281,7 @@ def set_breakdown_drilldown(drilldown: str | None) -> None:
     Router().set_query_params({"drilldown": drilldown})
 
 
+@with_database_session
 def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
     MixpanelService().send_event(
         "download-issue-report",
@@ -269,51 +329,6 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         return file_name, "application/pdf", buffer.read()
 
 
-def column_selector_dialog(project_code: str, score_definition_dict: dict, _) -> None:
-    is_column_selector_opened, set_column_selector_opened = temp_value("explorer-column-selector", default=False)
-
-    def dialog_content() -> None:
-        if not is_column_selector_opened():
-            safe_rerun()
-
-        selected_filters = set()
-        if score_definition_dict.get("filter_by_columns"):
-            selected_filters = _get_selected_filters(score_definition_dict.get("filters", []))
-
-        column_filters = get_column_filters(project_code)
-        for column in column_filters:
-            table_group_selected = (f"table_groups_name={column["table_group"]}",) in selected_filters
-            table_selected = (
-                f"table_groups_name={column["table_group"]}",
-                f"table_name={column["table"]}",
-            ) in selected_filters
-            column_selected = (
-                f"table_groups_name={column["table_group"]}",
-                f"table_name={column["table"]}",
-                f"column_name={column["name"]}",
-            ) in selected_filters
-            column["selected"] = table_group_selected or table_selected or column_selected
-
-        testgen.testgen_component(
-            "column_selector",
-            props={"columns": column_filters},
-            on_change_handlers={
-                "ColumnFiltersUpdated": set_score_definition_column_filters,
-            }
-        )
-
-    def set_score_definition_column_filters(filters: list[dict]) -> None:
-        set_score_definition({
-            **score_definition_dict,
-            "filters": filters,
-            "filter_by_columns": bool(filters),
-        })
-        set_column_selector_opened(False)
-
-    set_column_selector_opened(True)
-    return st.dialog(title="Select Columns for the Scorecard", width="small")(dialog_content)()
-
-
 def _get_selected_filters(filters: list[dict]) -> set[tuple[str]]:
     selected_filters = set()
     for filter_ in filters:
@@ -339,6 +354,7 @@ def change_score_definition_filter_mode(filter_by_columns: bool) -> None:
     })
 
 
+@with_database_session
 def save_score_definition(_) -> None:
     project_code = st.query_params.get("project_code")
     definition_id = st.query_params.get("definition_id")

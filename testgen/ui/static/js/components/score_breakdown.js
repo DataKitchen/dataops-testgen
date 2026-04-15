@@ -2,13 +2,13 @@ import van from '../van.min.js';
 import { dot } from '../components/dot.js';
 import { Caption } from '../components/caption.js';
 import { Select } from '../components/select.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import { caseInsensitiveSort } from '../display_utils.js';
 import { getScoreColor } from '../score_utils.js';
 
 const { div, i, span } = van.tags;
 
-const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) => {
+const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, emit) => {
     loadStylesheet('score-breakdown', stylesheet);
 
     return div(
@@ -27,7 +27,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                             .sort((A, B) => caseInsensitiveSort(A[1], B[1]))
                             .map(([value, label]) => ({ value, label })),
                         height: 32,
-                        onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
+                        onChange: (value) => emit('CategoryChanged', { payload: value }),
                         testId: 'groupby-selector',
                     });
                 },
@@ -44,7 +44,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         value: selectedScoreType,
                         options: scoreTypeOptions.map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s })),
                         height: 32,
-                        onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
+                        onChange: (value) => emit('ScoreTypeChanged', { payload: value }),
                         testId: 'score-type-selector',
                     });
                 },
@@ -67,7 +67,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
             return div(
                 breakdownValue?.items?.map((row) => div(
                     { class: 'table-row flex-row', 'data-testid': 'score-breakdown-row' },
-                    columns.map((columnName) => TableCell(row, columnName, scoreValue, categoryValue, scoreTypeValue, onViewDetails)),
+                    columns.map((columnName) => TableCell(row, columnName, scoreValue, categoryValue, scoreTypeValue, onViewDetails, emit)),
                 )),
             );
         },

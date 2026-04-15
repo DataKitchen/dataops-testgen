@@ -1,6 +1,6 @@
 /**
  * @import { MonitorSummary } from '../js/components/monitor_anomalies_summary.js';
- * 
+ *
  * @typedef FilterOption
  * @type {object}
  * @property {string} label

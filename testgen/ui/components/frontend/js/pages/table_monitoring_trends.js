@@ -1,8 +1,8 @@
 /**
- * @import {Point} from '../components/chart_canvas.js';
- * @import {FreshnessEvent} from '../components/freshness_chart.js';
- * @import {SchemaEvent} from '../components/schema_changes_chart.js';
- * @import {DataStructureLog} from '../components/schema_changes_list.js';
+ * @import {Point} from '/app/static/js/components/chart_canvas.js';
+ * @import {FreshnessEvent} from '/app/static/js/components/freshness_chart.js';
+ * @import {SchemaEvent} from '/app/static/js/components/schema_changes_chart.js';
+ * @import {DataStructureLog} from '/app/static/js/components/schema_changes_list.js';
  *
  * @typedef VolumeTrendEvent
  * @type {object}
@@ -52,10 +52,10 @@
  * @property {(DataStructureLog[])?} data_structure_logs
  * @property {Predictions?} predictions
  * @property {boolean} extended_history
+ * @property {{ open: boolean, title: string }?} dialog
  */
 import van from '/app/static/js/van.min.js';
-import { Streamlit } from '/app/static/js/streamlit.js';
-import { emitEvent, getValue, loadStylesheet, parseDate, isEqual } from '/app/static/js/utils.js';
+import { getValue, loadStylesheet, parseDate } from '/app/static/js/utils.js';
 import { FreshnessChart } from '/app/static/js/components/freshness_chart.js';
 import { colorMap, formatNumber } from '/app/static/js/display_utils.js';
 import { SchemaChangesChart } from '/app/static/js/components/schema_changes_chart.js';
@@ -64,6 +64,7 @@ import { getAdaptiveTimeTicksV2, scale } from '/app/static/js/axis_utils.js';
 import { Tooltip } from '/app/static/js/components/tooltip.js';
 import { DualPane } from '/app/static/js/components/dual_pane.js';
 import { Button } from '/app/static/js/components/button.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
 import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
 
 const { div, span } = van.tags;
@@ -90,129 +91,152 @@ const tickWidth = 90;
  * @param {Properties} props
  */
 const TableMonitoringTrend = (props) => {
-  window.testgen.isPage = true;
+    const emit = props.emit;
   loadStylesheet('table-monitoring-trends', stylesheet);
+
+  const dialogOpen = van.state(false);
+  van.derive(() => {
+    const d = getValue(props.dialog);
+    if (d?.open) dialogOpen.val = true;
+    else dialogOpen.val = false;
+  });
 
   const shouldShowSidebar = van.state(false);
   const schemaChartSelection = van.state(null);
   van.derive(() => shouldShowSidebar.val = (getValue(props.data_structure_logs)?.length ?? 0) > 0);
 
   const getDataStructureLogs = (/** @type {SchemaEvent} */ event) => {
-    emitEvent('ShowDataStructureLogs', { payload: { start_time: event.window_start, end_time: event.time } });
+    emit('ShowDataStructureLogs', { payload: { start_time: event.window_start, end_time: event.time } });
     shouldShowSidebar.val = true;
     schemaChartSelection.val = event;
   };
 
-  return DualPane(
-    {
-      id: 'monitoring-trends-container',
-      class: () => `table-monitoring-trend-wrapper ${shouldShowSidebar.val ? 'has-sidebar' : ''}`,
-      minSize: 150,
-      maxSize: 400,
-      resizablePanel: 'right',
-      resizablePanelDomId: 'data-structure-logs-sidebar',
-    },
-    div(
-      { class: '', style: 'width: 100%;' },
+  const content = div(
+    DualPane(
+      {
+        id: 'monitoring-trends-container',
+        class: () => `table-monitoring-trend-wrapper ${shouldShowSidebar.val ? 'has-sidebar' : ''}`,
+        minSize: 150,
+        maxSize: 400,
+        resizablePanel: 'right',
+        resizablePanelDomId: 'data-structure-logs-sidebar',
+      },
+      div(
+        { class: '', style: 'width: 100%;' },
+        () => {
+          const extendedHistory = getValue(props.extended_history) ?? false;
+          return div(
+            { class: 'extended-history-toggle' },
+            Button({
+              label: extendedHistory ? 'Show default view' : 'Show more history',
+              icon: extendedHistory ? 'history_toggle_off' : 'history',
+              width: 'auto',
+              onclick: () => emit('ToggleExtendedHistory', { payload: {} }),
+            }),
+          );
+        },
+        () => {
+          if (!getValue(props.dialog)?.open) return div();
+          return ChartsSection(props, { schemaChartSelection, getDataStructureLogs });
+        },
+      ),
+
       () => {
-        const extendedHistory = getValue(props.extended_history) ?? false;
+        const _shouldShowSidebar = shouldShowSidebar.val;
+        const selection = schemaChartSelection.val;
+        if (!_shouldShowSidebar || !selection) {
+          return span();
+        }
+
         return div(
-          { class: 'extended-history-toggle' },
+          { id: 'data-structure-logs-sidebar', class: 'flex-column data-structure-logs-sidebar' },
+          SchemaChangesList({
+            data_structure_logs: props.data_structure_logs,
+            window_start: selection.window_start,
+            window_end: selection.time,
+          }),
           Button({
-            label: extendedHistory ? 'Show default view' : 'Show more history',
-            icon: extendedHistory ? 'history_toggle_off' : 'history',
-            width: 'auto',
-            onclick: () => emitEvent('ToggleExtendedHistory', { payload: {} }),
+            label: 'Hide',
+            style: 'margin-top: 8px; width: auto; align-self: flex-end;',
+            icon: 'double_arrow',
+            onclick: () => {
+              shouldShowSidebar.val = false;
+              schemaChartSelection.val = null;
+            },
           }),
         );
       },
-      () => ChartsSection(props, { schemaChartSelection, getDataStructureLogs }),
-      ChartLegend({
-        '': {
-          items: [
-            { icon: svg({ width: 10, height: 10 },
-              path({ d: 'M 8 5 A 3 3 0 0 0 2 5', fill: 'none', stroke: colorMap.emptyDark, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
-              path({ d: 'M 2 5 A 3 3 0 0 0 8 5', fill: 'none', stroke: colorMap.blueLight, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
-              circle({ cx: 5, cy: 5, r: 3, fill: 'var(--dk-dialog-background)', stroke: 'none' })
-            ), label: 'Training' },
-            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 3, fill: colorMap.emptyDark, stroke: 'none' })), label: 'No change' },
-          ],
-        },
-        'Freshness': {
-          items: [
-            { icon: svg({ width: 10, height: 10 }, line({ x1: 4, y1: 0, x2: 4, y2: 10, stroke: colorMap.emptyDark, 'stroke-width': 2 })), label: 'Update' },
-            { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 4, fill: colorMap.limeGreen })), label: 'On Time' },
-            {
-              icon: svg(
-                { width: 10, height: 10, style: 'overflow: visible;' },
-                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
-              ),
-              label: 'Early/Late',
-            },
-          ],
-        },
-        'Volume/Metrics': {
-          items: [
-            {
-              icon: svg(
-                { width: 16, height: 10 },
-                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.blueLight, 'stroke-width': 2 }),
-                circle({ cx: 8, cy: 5, r: 3, fill: colorMap.blueLight })
-              ),
-              label: 'Actual',
-            },
-            {
-              icon: svg(
-                { width: 10, height: 10, style: 'overflow: visible;' },
-                rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
-              ),
-              label: 'Anomaly',
-            },
-            {
-              icon: svg(
-                { width: 16, height: 10 },
-                path({ d: 'M 0,4 L 16,2 L 16,8 L 0,6 Z', fill: colorMap.emptyDark, opacity: 0.4 }),
-                line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.grey, 'stroke-width': 2 })
-              ),
-              label: 'Prediction',
-            },
-          ],
-        },
-        'Schema': {
-          items: [
-            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.blue })), label: 'Additions' },
-            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.orange })), label: 'Deletions' },
-            { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
-          ],
-        },
-      }),
     ),
-
-    () => {
-      const _shouldShowSidebar = shouldShowSidebar.val;
-      const selection = schemaChartSelection.val;
-      if (!_shouldShowSidebar || !selection) {
-        return span();
-      }
-
-      return div(
-        { id: 'data-structure-logs-sidebar', class: 'flex-column data-structure-logs-sidebar' },
-        SchemaChangesList({
-          data_structure_logs: props.data_structure_logs,
-          window_start: selection.window_start,
-          window_end: selection.time,
-        }),
-        Button({
-          label: 'Hide',
-          style: 'margin-top: 8px; width: auto; align-self: flex-end;',
-          icon: 'double_arrow',
-          onclick: () => {
-            shouldShowSidebar.val = false;
-            schemaChartSelection.val = null;
+    ChartLegend({
+      '': {
+        items: [
+          { icon: svg({ width: 10, height: 10 },
+            path({ d: 'M 8 5 A 3 3 0 0 0 2 5', fill: 'none', stroke: colorMap.emptyDark, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
+            path({ d: 'M 2 5 A 3 3 0 0 0 8 5', fill: 'none', stroke: colorMap.blueLight, 'stroke-width': 3, transform: 'rotate(45, 5, 5)' }),
+            circle({ cx: 5, cy: 5, r: 3, fill: 'var(--dk-dialog-background)', stroke: 'none' })
+          ), label: 'Training' },
+          { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 3, fill: colorMap.emptyDark, stroke: 'none' })), label: 'No change' },
+        ],
+      },
+      'Freshness': {
+        items: [
+          { icon: svg({ width: 10, height: 10 }, line({ x1: 4, y1: 0, x2: 4, y2: 10, stroke: colorMap.emptyDark, 'stroke-width': 2 })), label: 'Update' },
+          { icon: svg({ width: 10, height: 10 }, circle({ cx: 5, cy: 5, r: 4, fill: colorMap.limeGreen })), label: 'On Time' },
+          {
+            icon: svg(
+              { width: 10, height: 10, style: 'overflow: visible;' },
+              rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
+            ),
+            label: 'Early/Late',
           },
-        }),
-      );
+        ],
+      },
+      'Volume/Metrics': {
+        items: [
+          {
+            icon: svg(
+              { width: 16, height: 10 },
+              line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.blueLight, 'stroke-width': 2 }),
+              circle({ cx: 8, cy: 5, r: 3, fill: colorMap.blueLight })
+            ),
+            label: 'Actual',
+          },
+          {
+            icon: svg(
+              { width: 10, height: 10, style: 'overflow: visible;' },
+              rect({ x: 1.5, y: 1.5, width: 7, height: 7, fill: colorMap.red, transform: 'rotate(45 5 5)' }),
+            ),
+            label: 'Anomaly',
+          },
+          {
+            icon: svg(
+              { width: 16, height: 10 },
+              path({ d: 'M 0,4 L 16,2 L 16,8 L 0,6 Z', fill: colorMap.emptyDark, opacity: 0.4 }),
+              line({ x1: 0, y1: 5, x2: 16, y2: 5, stroke: colorMap.grey, 'stroke-width': 2 })
+            ),
+            label: 'Prediction',
+          },
+        ],
+      },
+      'Schema': {
+        items: [
+          { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.blue })), label: 'Additions' },
+          { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.orange })), label: 'Deletions' },
+          { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
+        ],
+      },
+    }),
+  );
+
+  const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+  return Dialog(
+    {
+      title: dialogTitle,
+      open: dialogOpen,
+      onClose: () => { dialogOpen.val = false; emit('CloseTrendsDialog', {}); },
+      width: '75rem',
     },
+    content,
   );
 };
 
@@ -231,7 +255,7 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
     + metricEvents.length * ((spacing * 4) + metricTrendChartHeight)
   );
 
-  const predictions = getValue(props.predictions);
+  const predictions = getValue(props.predictions) ?? {};
   const freshnessWindow = predictions?.freshness_trend?.window;
   const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
     ...predictionTimes,
@@ -793,7 +817,6 @@ stylesheet.replace(`
   .table-monitoring-trend-wrapper {
     min-height: 200px;
     padding-top: 24px;
-    padding-right: 24px;
     position: relative;
   }
 
@@ -827,9 +850,13 @@ stylesheet.replace(`
     background: var(--dk-dialog-background);
     position: sticky;
     bottom: 0;
+    margin-top: 12px;
     margin-left: -24px;
-    margin-right: -48px;
-    margin-top: 24px;
+    margin-right: -24px;
+  }
+
+  .tg-dialog-content:has(.chart-legend) {
+    padding-bottom: 0;
   }
 
   .chart-legend-group {
@@ -857,30 +884,3 @@ stylesheet.replace(`
 `);
 
 export { TableMonitoringTrend };
-
-export default (component) => {
-  const { data, setStateValue, setTriggerValue, parentElement } = component;
-
-  Streamlit.enableV2(setTriggerValue);
-
-  let componentState = parentElement.state;
-  if (componentState === undefined) {
-    componentState = {};
-    for (const [ key, value ] of Object.entries(data)) {
-      componentState[key] = van.state(value);
-    }
-
-    parentElement.state = componentState;
-    van.add(parentElement, TableMonitoringTrend(componentState));
-  } else {
-    for (const [ key, value ] of Object.entries(data)) {
-      if (!isEqual(componentState[key].val, value)) {
-        componentState[key].val = value;
-      }
-    }
-  }
-
-  return () => {
-    parentElement.state = null;
-  };
-};

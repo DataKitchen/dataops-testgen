@@ -11,32 +11,41 @@
  * @property {ProfilingRun} profiling_runs
  * @property {Column} selected_item
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
-import { formatTimestamp } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
+import { formatTimestamp } from '/app/static/js/display_utils.js';
 import { ColumnDistributionCard } from './column_distribution.js';
-import { Card } from '../components/card.js';
+import { Card } from '/app/static/js/components/card.js';
 
 const { div, span } = van.tags;
 
 const ColumnProfilingHistory = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('column-profiling-history', stylesheet);
-    Streamlit.setFrameHeight(600);
-    window.testgen.isPage = true;
 
     const selectedRunId = van.state(null);
+
+    van.derive(() => {
+        const runId = getValue(props.selected_item)?.profile_run_id ?? null;
+        if (runId) {
+            selectedRunId.val = runId;
+        }
+    });
 
     return div(
         { class: 'column-history flex-row fx-align-stretch' },
         () => div(
             { class: 'column-history--list' },
             getValue(props.profiling_runs).map(({ run_id, run_date }, index) => div(
-                { 
+                {
                     class: () => `column-history--item clickable ${selectedRunId.val === run_id ? 'selected' : ''}`,
                     onclick: () => {
                         selectedRunId.val = run_id;
-                        emitEvent('RunSelected', { payload: run_id });
+                        if (props.onRunSelected) {
+                            props.onRunSelected(run_id);
+                        } else {
+                            emit('RunSelected', { payload: run_id });
+                        }
                     },
                 },
                 div(formatTimestamp(run_date)),
@@ -47,7 +56,7 @@ const ColumnProfilingHistory = (/** @type Properties */ props) => {
         () => getValue(props.selected_item)
             ? div(
                 { class: 'column-history--details' },
-                ColumnDistributionCard({}, getValue(props.selected_item)),
+                ColumnDistributionCard({ emit, }, getValue(props.selected_item)),
             )
             : Card({
                 class: 'column-history--empty',

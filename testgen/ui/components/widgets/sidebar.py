@@ -5,7 +5,6 @@ from collections.abc import Iterable
 from testgen.common.models import with_database_session
 from testgen.common.models.project import Project
 from testgen.common.version_service import Version
-from testgen.ui.components.utils.component import component
 from testgen.ui.navigation.menu import Menu
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
@@ -38,10 +37,12 @@ def sidebar(
     :param current_page: page address to highlight the selected item
     :param global_context: when True, renders admin-only sidebar (no project nav)
     """
-    component(
-        id_="sidebar",
-        props={
-            "projects": [ {"code": item.project_code, "name": item.project_name} for item in projects ],
+    from testgen.ui.components.widgets import sidebar_widget
+
+    sidebar_widget(
+        key=key,
+        data={
+            "projects": [{"code": item.project_code, "name": item.project_name} for item in projects],
             "current_project": current_project,
             "menu": menu.filter_for_current_user().sort_items().unflatten().asdict(),
             "current_page": current_page,
@@ -53,27 +54,16 @@ def sidebar(
             "global_context": global_context,
             "is_global_admin": is_global_admin,
         },
-        key=key,
-        on_change=on_change,
+        on_Navigate_change=_on_navigate,
     )
 
 
 @with_database_session
-def on_change():
-    # We cannot navigate directly here
-    # because st.switch_page uses st.rerun under the hood
-    # and we get a "Calling st.rerun() within a callback is a noop" error
-    # So we store the path and navigate on the next run
-
-    event_data = getattr(session, SIDEBAR_KEY)
-
-    # Prevent handling the same event multiple times
-    event_id = event_data.get("_id")
-    if event_id == session.sidebar_event_id:
+def _on_navigate(payload: dict | None) -> None:
+    if not payload:
         return
-    session.sidebar_event_id = event_id
 
-    if event_data.get("path") == LOGOUT_PATH:
+    if payload.get("path") == LOGOUT_PATH:
         session.auth.end_user_session()
         # This hack is needed because the auth cookie does not immediately get cleared
         # We don't want to try to load the session again on the next run
@@ -81,14 +71,14 @@ def on_change():
         # streamlit_authenticator sets authentication_status implicitly
         # So we need to clear it
         session.authentication_status = None
-        
+
         Router().queue_navigation(to="")
-        # Without the time.sleep, cookies sometimes don't get cleared on deployed instances 
+        # Without the time.sleep, cookies sometimes don't get cleared on deployed instances
         # (even though it works fine locally)
         time.sleep(0.3)
     else:
-        query_params = event_data.get("params", {})
+        query_params = payload.get("params", {})
         Router().queue_navigation(
-            to=event_data.get("path") or session.auth.get_default_page(project_code=query_params.get("project_code")),
+            to=payload.get("path") or session.auth.get_default_page(project_code=query_params.get("project_code")),
             with_args=query_params,
         )

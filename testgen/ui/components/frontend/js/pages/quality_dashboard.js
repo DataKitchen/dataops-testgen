@@ -1,5 +1,5 @@
 /**
- * @import { Score } from '../components/score_card.js';
+ * @import { Score } from '/app/static/js/components/score_card.js';
  * @import { ProjectSummary } from '../types.js';
  *
  * @typedef Category
@@ -12,29 +12,24 @@
  * @property {ProjectSummary} project_summary
  * @property {Array<Score>} scores
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { Input } from '../components/input.js';
-import { Select } from '../components/select.js';
-import { Link } from '../components/link.js';
-import { Button } from '../components/button.js';
-import { ScoreCard } from '../components/score_card.js';
-import { ScoreLegend } from '../components/score_legend.js';
-import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
-import { caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { Input } from '/app/static/js/components/input.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Link } from '/app/static/js/components/link.js';
+import { Button } from '/app/static/js/components/button.js';
+import { ScoreCard } from '/app/static/js/components/score_card.js';
+import { ScoreLegend } from '/app/static/js/components/score_legend.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
+import { caseInsensitiveSort, caseInsensitiveIncludes } from '/app/static/js/display_utils.js';
 
 const { div, span } = van.tags;
 
 const QualityDashboard = (/** @type {Properties} */ props) => {
-    window.testgen.isPage = true;
-
+    const { emit } = props;
     loadStylesheet('quality-dashboard', stylesheet);
-    Streamlit.setFrameHeight(1);
 
     const domId = 'score-dashboard-page';
-    resizeFrameHeightToElement(domId);
-    resizeFrameHeightOnDOMChange(domId);
 
     const sortedBy = van.state('name');
     const filterTerm = van.state('');
@@ -58,7 +53,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
     });
 
     return div(
-        { id: domId, style: 'overflow-y: auto;' },
+        { id: domId, 'data-testid': 'quality-dashboard', style: 'overflow-y: auto;' },
         () => getValue(props.scores).length > 0
             ? div(
                 ScoreLegend(),
@@ -70,13 +65,14 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                     filterTerm,
                     sortedBy,
                     getValue(props.project_summary),
+                    emit,
                 ),
                 () => getValue(scores).length
                     ? div(
                         { class: 'flex-row fx-flex-wrap fx-gap-4' },
                         getValue(scores).map(score => ScoreCard(
                             score,
-                            Link({
+                            Link({ emit, 
                                 label: 'View details',
                                 right_icon: 'chevron_right',
                                 href: 'quality-dashboard:score-details',
@@ -90,7 +86,7 @@ const QualityDashboard = (/** @type {Properties} */ props) => {
                         { class: 'mt-7 text-secondary', style: 'text-align: center;' },
                         'No scorecards found matching filters',
                     ),
-            ) : ConditionalEmptyState(getValue(props.project_summary)),
+            ) : ConditionalEmptyState(getValue(props.project_summary), emit),
     );
 };
 
@@ -98,7 +94,8 @@ const Toolbar = (
     options,
     /** @type {string} */ filterBy,
     /** @type {string} */ sortedBy,
-    /** @type ProjectSummary */ projectSummary
+    /** @type ProjectSummary */ projectSummary,
+    emit,
 ) => {
     const sortOptions = [
         { label: "Scorecard Name", value: "name" },
@@ -132,7 +129,7 @@ const Toolbar = (
             label: 'Score Explorer',
             color: 'primary',
             style: 'background: var(--button-generic-background-color); width: unset;',
-            onclick: () => emitEvent('LinkClicked', {
+            onclick: () => emit('LinkClicked', {
                 href: 'quality-dashboard:explorer',
                 params: { project_code: projectSummary.project_code },
                 testId: 'scorecards-goto-explorer',
@@ -144,13 +141,13 @@ const Toolbar = (
             tooltip: 'Refresh page data',
             tooltipPosition: 'left',
             style: 'background: var(--button-generic-background-color);',
-            onclick: () => emitEvent('RefreshData', {}),
+            onclick: () => emit('RefreshData', {}),
             testId: 'scorecards-refresh',
         }),
     );
 };
 
-const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
+const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary, emit) => {
     let args = {
         message: EMPTY_STATE_MESSAGE.score,
         link: {
@@ -180,7 +177,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ projectSummary) => {
         };
     }
 
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'readiness_score',
         label: 'No scores yet',
         ...args,
@@ -191,3 +188,26 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace('');
 
 export { QualityDashboard };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
+        van.add(parentElement, QualityDashboard(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => { parentElement.state = null; };
+};
