@@ -2295,3 +2295,33 @@ The Coverage card currently counts a column as "covered" if it has any non-schem
 **Open questions:**
 - Should the card show two coverage percentages (schema coverage vs. quality coverage), or replace the existing metric with the stricter definition?
 - Should the Coverage Matrix also visually distinguish columns with only schema terms from columns with quality tests?
+
+---
+
+## UI Polish To-Dos
+
+Remaining items from the UI design review (`docs/ui_design_review_data_contract.md`). Items are ordered by effort — quick wins first.
+
+### Quick Wins
+
+- **Delete button destructive styling** — The Delete version button in the toolbar (`data_contract.py:746`) uses the default secondary style. Apply a red/destructive color to signal risk. Also applies to the Delete button inside `_delete_version_dialog` when deleting the latest version.
+
+- **Suite picker legend** — `_suite_picker_dialog` in `data_contract_dialogs.py` shows colored left borders (green/amber/red) based on test status but provides no legend. Add a one-line caption explaining the color coding below the dialog intro text.
+
+- **Term Read-Only Detail — styled code block** — `_term_read_dialog` in `data_contract_dialogs.py` uses `st.write()` to display the term value. Replace with `st.code()` for consistent monospace rendering, especially for YAML/SQL values.
+
+### Partial — Needs Completion
+
+- **"Staged Changes" label in Python** — The JS sticky bar and chip tooltips already use "Staged changes — not yet saved". The Python-side warning banner (`data_contract.py:764`) still reads "unsaved". Align the copy to match JS.
+
+- **YAML tab — line numbers** — Guidance text and copy/download line-count feedback are done. Line numbers in the YAML viewer itself (`data_contract.js` `YamlViewer` / `pre.yaml-block`) are still missing.
+
+- **Test Term Detail — 2-column max metadata** — The metadata row uses `st.columns(len(meta))` which expands to 4 columns when all fields (Status, Last Run, Dimension, Severity) are present. Cap at 2 columns per row to avoid awkward wrapping.
+
+### Medium Effort
+
+- **Collapsible pending edits bar** — The flat `st.warning()` summary string in the Python toolbar (`data_contract.py:764`) and the JS sticky bar truncate long edit lists. Replace with a collapsible `st.expander` (Python) / expand toggle (JS) showing each staged edit as its own line.
+
+- **Dialog responsiveness** — Dialogs have no `@media (max-width: 600px)` breakpoints. Add narrow-screen CSS to `data_contract.js` to stack columns and reduce padding in the Governance Edit and Test Term Detail dialogs.
+
+- **Health card "last updated" timestamps** — The CSS class `.health-card__run-time` exists but is never rendered. Wire up a "Last updated: X ago" timestamp below each health card metric; for the Anomalies card, note "Live data" to clarify it reflects current state rather than the snapshot.

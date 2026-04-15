@@ -761,7 +761,7 @@ class DataContractPage(Page):
             noun = "change" if pending_ct == 1 else "changes"
             warn_col, cancel_col = st.columns([7, 1])
             with warn_col:
-                st.warning(f"{pending_ct} unsaved {noun} — click **Save version ({pending_ct})** to commit: {summary}", icon="⚠️")
+                st.warning(f"{pending_ct} staged {noun} — not yet saved. Click **Save version ({pending_ct})** to commit: {summary}", icon="⚠️")
             with cancel_col:
                 st.markdown("<div style='margin-top:0.4rem'></div>", unsafe_allow_html=True)
                 if st.button("✕ Cancel all", key=f"dc_cancel_all:{table_group_id}", type="tertiary", use_container_width=True):
