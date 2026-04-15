@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 import yaml
 
@@ -95,7 +96,11 @@ class StaleDiff:
 # Term diff data structures
 # ---------------------------------------------------------------------------
 
-TermStatus = Literal["same", "changed", "new", "deleted"]
+class TermStatus(StrEnum):
+    SAME    = "same"
+    CHANGED = "changed"
+    NEW     = "new"
+    DELETED = "deleted"
 
 
 @dataclass
@@ -350,7 +355,7 @@ def compute_term_diff(
                 entry = TermDiffEntry(
                     element=element or _element_str(row),
                     test_type=row.get("test_type") or "",
-                    status="changed",
+                    status=TermStatus.CHANGED,
                     detail=f"threshold: {snap_thresh} → {cur_thresh}",
                     last_result=last_result,
                     is_monitor=is_monitor,
@@ -359,7 +364,7 @@ def compute_term_diff(
                 entry = TermDiffEntry(
                     element=element or _element_str(row),
                     test_type=row.get("test_type") or "",
-                    status="same",
+                    status=TermStatus.SAME,
                     detail=None,
                     last_result=last_result,
                     is_monitor=is_monitor,
@@ -370,7 +375,7 @@ def compute_term_diff(
             result.entries.append(TermDiffEntry(
                 element=element,
                 test_type="",
-                status="deleted",
+                status=TermStatus.DELETED,
                 detail=None,
                 last_result=None,
                 is_monitor=False,
@@ -384,7 +389,7 @@ def compute_term_diff(
             result.entries.append(TermDiffEntry(
                 element=_element_str(row),
                 test_type=row.get("test_type") or "",
-                status="new",
+                status=TermStatus.NEW,
                 detail=None,
                 last_result=row.get("last_status"),
                 is_monitor=bool(row.get("is_monitor", False)),

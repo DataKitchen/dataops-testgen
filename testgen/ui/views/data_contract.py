@@ -188,7 +188,7 @@ def _render_health_dashboard(
                 st.markdown(f"**Test Health** &nbsp; {'  '.join(parts)}")
                 st.caption(f"{n_tests} tests total")
                 if failing > 0:
-                    label = "✕ Clear filter" if active == "failing" else f"View {failing} failure(s) →"
+                    label = "✕ Clear filter" if active == "failing" else f"View {failing} {'failure' if failing == 1 else 'failures'} →"
                     if st.button(label, key=f"dc_filter_fail:{table_group_id}", type="tertiary"):
                         st.session_state[filter_key] = None if active == "failing" else "failing"
                         safe_rerun()
@@ -668,7 +668,7 @@ class DataContractPage(Page):
                 + [f"test {e.get('rule_id', '?')[:8]}…" for e in pending.get("tests", [])]
                 + [f"deleted {e.get('table', '')}.{e.get('col', '')} {e.get('name', '')}" for e in pending.get("deletions", [])]
             )
-            save_tip = f"{pending_ct} unsaved change(s): " + "; ".join(pending_items[:3])
+            save_tip = f"{pending_ct} unsaved {'change' if pending_ct == 1 else 'changes'}: " + "; ".join(pending_items[:3])
         else:
             save_tip = "Snapshot the current contract state as a new version"
 
@@ -1089,9 +1089,9 @@ class DataContractPage(Page):
                     updated_ct = len(diff_result.test_updates)
                     parts = []
                     if created_ct:
-                        parts.append(f"{created_ct} test(s) created")
+                        parts.append(f"{created_ct} {'test' if created_ct == 1 else 'tests'} created")
                     if updated_ct:
-                        parts.append(f"{updated_ct} test(s) updated")
+                        parts.append(f"{updated_ct} {'test' if updated_ct == 1 else 'tests'} updated")
                     st.success("Import complete — " + (", ".join(parts) or "no changes"), icon="✅")
                     for warn in diff_result.warnings:
                         st.warning(warn, icon="⚠️")

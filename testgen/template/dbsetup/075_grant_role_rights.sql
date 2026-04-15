@@ -42,7 +42,8 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.job_schedules,
     {SCHEMA_NAME}.settings,
     {SCHEMA_NAME}.notification_settings,
-    {SCHEMA_NAME}.test_definition_notes
+    {SCHEMA_NAME}.test_definition_notes,
+    {SCHEMA_NAME}.data_contracts
     TO testgen_execute_role;
 
 

@@ -64,6 +64,7 @@ import van from '../van.min.js';
 import { Streamlit } from '../streamlit.js';
 import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
 import { Button } from '../components/button.js';
+import { withTooltip } from '../components/tooltip.js';
 
 const { div, span, h2, h3, pre, table, colgroup, col, thead, tbody, tr, th, td, input, label, p, ul, li, code, hr, a } = van.tags;
 
@@ -204,7 +205,7 @@ const TermChip = (term, tableName, colName) => {
                 : '',
             // "edited" dot — shown when this chip has a staged (unsaved) change
             () => _pendingEditKeys.val.has(termKey)
-                ? span({ class: 'term-chip__edited-dot', title: 'Staged change — not yet saved' })
+                ? withTooltip(span({ class: 'term-chip__edited-dot' }), { text: 'Staged change — not yet saved', position: 'top' })
                 : '',
         ),
     );
@@ -216,18 +217,21 @@ const DeletedTermChip = (term) => {
     const srcCls = SOURCE_CLASS[term.source] || 'obs';
     const srcLabel = SOURCE_LABEL[term.source] || term.source;
     const verif = VERIF_META[term.verif] || { icon: 'label', label: term.verif, cls: 'badge-obs' };
-    return div(
-        { class: `term-chip ${srcCls} term-chip--deleted`, title: 'Pending deletion — will be removed when you save' },
+    return withTooltip(
         div(
-            { class: 'term-chip__header' },
-            span({ class: 'term-chip__src' }, srcLabel),
+            { class: `term-chip ${srcCls} term-chip--deleted` },
+            div(
+                { class: 'term-chip__header' },
+                span({ class: 'term-chip__src' }, srcLabel),
+            ),
+            span({ class: 'term-chip__val' }, term.name),
+            div(
+                { class: 'dc-chip-footer' },
+                span({ class: `term-chip__badge ${verif.cls}` }, mat(verif.icon, 11, 'badge-icon'), ' ', verif.label),
+                span({ class: 'term-chip__deleted-label' }, 'deleted'),
+            ),
         ),
-        span({ class: 'term-chip__val' }, term.name),
-        div(
-            { class: 'dc-chip-footer' },
-            span({ class: `term-chip__badge ${verif.cls}` }, mat(verif.icon, 11, 'badge-icon'), ' ', verif.label),
-            span({ class: 'term-chip__deleted-label' }, 'deleted'),
-        ),
+        { text: 'Pending deletion — will be removed when you save', position: 'top' },
     );
 };
 
@@ -235,37 +239,41 @@ const DeletedTermChip = (term) => {
 
 const GovernanceButton = (col, tableName) => {
     const hasGov = [...col.static_terms, ...col.live_terms].some((c) => c.source === 'governance');
-    return div(
-        {
-            class: 'gov-btn',
-            title: hasGov ? 'Edit governance metadata' : 'Add governance metadata',
-            onclick: (e) => {
-                e.stopPropagation();
-                emitEvent('GovernanceEditClicked', {
-                    payload: { columnId: col.column_id, tableName, colName: col.name },
-                });
+    return withTooltip(
+        div(
+            {
+                class: 'gov-btn',
+                onclick: (e) => {
+                    e.stopPropagation();
+                    emitEvent('GovernanceEditClicked', {
+                        payload: { columnId: col.column_id, tableName, colName: col.name },
+                    });
+                },
             },
-        },
-        span({ class: 'material', style: 'font-size:13px;' }, hasGov ? 'edit' : 'add'),
-        hasGov ? ' Edit governance' : ' Add governance',
+            span({ class: 'material', style: 'font-size:13px;' }, hasGov ? 'edit' : 'add'),
+            hasGov ? ' Edit governance' : ' Add governance',
+        ),
+        { text: hasGov ? 'Edit governance metadata' : 'Add governance metadata', position: 'bottom' },
     );
 };
 
 // ── Column row ────────────────────────────────────────────────────────────────
 
-const AddTestButton = (col, tableName) => div(
-    {
-        class: 'gov-btn gov-btn--add-test',
-        title: 'Add a quality test to this column',
-        onclick: (e) => {
-            e.stopPropagation();
-            emitEvent('AddTestClicked', {
-                payload: { tableName, colName: col.name },
-            });
+const AddTestButton = (col, tableName) => withTooltip(
+    div(
+        {
+            class: 'gov-btn gov-btn--add-test',
+            onclick: (e) => {
+                e.stopPropagation();
+                emitEvent('AddTestClicked', {
+                    payload: { tableName, colName: col.name },
+                });
+            },
         },
-    },
-    span({ class: 'material', style: 'font-size:13px;' }, 'add'),
-    ' Add test',
+        span({ class: 'material', style: 'font-size:13px;' }, 'add'),
+        ' Add test',
+    ),
+    { text: 'Add a quality test to this column', position: 'bottom' },
 );
 
 const ColumnRow = (col, tableName, showAddTest = false) => {
@@ -587,13 +595,15 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
                 }),
                 () => _selectionMode.val
                     ? ''
-                    : span(
-                        {
-                            class: 'select-mode-btn',
-                            title: 'Select multiple test terms to delete',
-                            onclick: enterSelectionMode,
-                        },
-                        mat('checklist', 15), ' Select to delete',
+                    : withTooltip(
+                        span(
+                            {
+                                class: 'select-mode-btn',
+                                onclick: enterSelectionMode,
+                            },
+                            mat('checklist', 15), ' Select to delete',
+                        ),
+                        { text: 'Select multiple test terms to delete', position: 'top' },
                       ),
             ),
         ),
@@ -608,21 +618,25 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
                     ? span({ class: 'bulk-action-hint' }, mat('info', 13), ` ${_selectionHint.val}`)
                     : '',
                 // ── select-all buttons (hidden when confirming) ──
-                () => _confirmingDelete.val ? '' : span(
-                    {
-                        class: () => `bulk-action-btn${_flashBtn.val === 'visible' ? ' bulk-action-btn--flashing' : ''}`,
-                        onclick: selectAllVisible,
-                        title: 'Select terms currently visible in the viewport',
-                    },
-                    mat('select_all', 13), ' Select all visible',
+                () => _confirmingDelete.val ? '' : withTooltip(
+                    span(
+                        {
+                            class: () => `bulk-action-btn${_flashBtn.val === 'visible' ? ' bulk-action-btn--flashing' : ''}`,
+                            onclick: selectAllVisible,
+                        },
+                        mat('select_all', 13), ' Select all visible',
+                    ),
+                    { text: 'Select terms currently visible in the viewport', position: 'top' },
                 ),
-                () => _confirmingDelete.val ? '' : span(
-                    {
-                        class: () => `bulk-action-btn${_flashBtn.val === 'context' ? ' bulk-action-btn--flashing' : ''}`,
-                        onclick: selectAllInContext,
-                        title: 'Select all test terms matching the current filter across the entire contract',
-                    },
-                    mat('done_all', 13), ' Select all in context',
+                () => _confirmingDelete.val ? '' : withTooltip(
+                    span(
+                        {
+                            class: () => `bulk-action-btn${_flashBtn.val === 'context' ? ' bulk-action-btn--flashing' : ''}`,
+                            onclick: selectAllInContext,
+                        },
+                        mat('done_all', 13), ' Select all in context',
+                    ),
+                    { text: 'Select all test terms matching the current filter across the entire contract', position: 'top' },
                 ),
                 // ── delete / confirm buttons ──
                 () => !_confirmingDelete.val && _selectedIds.val.size > 0
@@ -702,13 +716,13 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
 
 // Tier definitions — order: most enforced first
 const COVERAGE_TIERS = [
-    { key: 'tg_enforced', label: 'TestGen Enforced', icon: 'bolt',            color: '#22c55e', textColor: '#4ade80', tier: 'tg'  },
-    { key: 'db_enforced', label: 'DB Enforced',      icon: 'account_balance', color: '#818cf8', textColor: '#a5b4fc', tier: 'db'  },
-    { key: 'unenforced',  label: 'Unenforced',        icon: 'list_alt',       color: '#f59e0b', textColor: '#fbbf24', tier: 'unf' },
-    { key: 'uncovered',   label: 'Uncovered',         icon: 'circle',         color: '#4b5563', textColor: '#6b7280', tier: 'none'},
+    { key: 'tg_enforced', label: 'TestGen Enforced', icon: 'bolt',            color: 'var(--dc-tier-tg)',   textColor: 'var(--dc-tier-tg-text)', tier: 'tg'  },
+    { key: 'db_enforced', label: 'DB Enforced',      icon: 'account_balance', color: 'var(--dc-tier-db)',   textColor: 'var(--dc-tier-db-text)', tier: 'db'  },
+    { key: 'unenforced',  label: 'Unenforced',        icon: 'list_alt',       color: 'var(--dc-tier-unf)',  textColor: 'var(--dc-tier-unf-text)', tier: 'unf' },
+    { key: 'uncovered',   label: 'Uncovered',         icon: 'circle',         color: 'var(--dc-tier-none)', textColor: 'var(--dc-tier-none-text)', tier: 'none'},
 ];
 
-const TIER_DOT_COLOR = { tg: '#22c55e', db: '#818cf8', unf: '#f59e0b', none: '#374151' };
+const TIER_DOT_COLOR = { tg: 'var(--dc-tier-tg)', db: 'var(--dc-tier-db)', unf: 'var(--dc-tier-unf)', none: 'var(--dc-tier-dot-none)' };
 
 // Sub-columns inside each enforcement group — determines matrix table columns
 const MATRIX_COLS = [
@@ -732,14 +746,13 @@ const CoverageTierBars = (health, activeFilter) => {
             const rowStyle = activeFilter
                 ? () => `opacity:${activeFilter.val === 'all' || activeFilter.val === t.tier ? 1 : 0.3};transition:opacity 0.15s`
                 : '';
-            return div(
+            const rowEl = div(
                 {
                     class: 'tier-bar-row',
                     style: rowStyle,
                     onclick: activeFilter
                         ? () => { activeFilter.val = activeFilter.val === t.tier ? 'all' : t.tier; }
                         : null,
-                    title: activeFilter ? `Filter to ${t.label}` : '',
                 },
                 span({ class: 'tier-bar-label', style: `color:${t.textColor}` }, mat(t.icon, 12, 'tier-bar-icon'), ' ', t.label),
                 div({ class: 'tier-bar-track' },
@@ -747,6 +760,9 @@ const CoverageTierBars = (health, activeFilter) => {
                 ),
                 span({ class: 'tier-bar-count', style: `color:${t.textColor}` }, `${count} / ${health.n_elements || 0}`),
             );
+            return activeFilter
+                ? withTooltip(rowEl, { text: `Filter to ${t.label}`, position: 'top' })
+                : rowEl;
         }),
     );
 };
@@ -767,9 +783,9 @@ const MatrixTableSection = (tableName, rows, startOpen, totals, tierCounts, acti
     // Group headers row
     const GroupHeaderRow = () => {
         const groups = [
-            { icon: 'bolt',            label: 'TestGen Enforced', span: 2, color: '#22c55e', bg: 'rgba(34,197,94,0.04)'   },
-            { icon: 'account_balance', label: 'DB Enforced',      span: 1, color: '#818cf8', bg: 'rgba(129,140,248,0.04)' },
-            { icon: 'list_alt',        label: 'Unenforced',       span: 2, color: '#f59e0b', bg: 'rgba(245,158,11,0.04)'  },
+            { icon: 'bolt',            label: 'TestGen Enforced', span: 2, color: 'var(--dc-tier-tg)',  bg: 'var(--dc-tier-tg-bg)'  },
+            { icon: 'account_balance', label: 'DB Enforced',      span: 1, color: 'var(--dc-tier-db)',  bg: 'var(--dc-tier-db-bg)'  },
+            { icon: 'list_alt',        label: 'Unenforced',       span: 2, color: 'var(--dc-tier-unf)', bg: 'var(--dc-tier-unf-bg)' },
         ];
         return tr(
             { class: 'matrix-group-header-row' },
@@ -802,8 +818,8 @@ const MatrixTableSection = (tableName, rows, startOpen, totals, tierCounts, acti
                         GroupHeaderRow(),
                         tr(
                             th({ class: 'col-col' }, 'Column / Table'),
-                            ...MATRIX_COLS.map((c) => th({ class: `tier-col tier-cell--${c.group}`, title: c.label }, c.label)),
-                            th({ class: 'unc-col', rowspan: '2', style: 'color:#ef4444;text-align:center;vertical-align:middle' }, 'Uncovered'),
+                            ...MATRIX_COLS.map((c) => withTooltip(th({ class: `tier-col tier-cell--${c.group}` }, c.label), { text: c.label, position: 'top' })),
+                            th({ class: 'unc-col', rowspan: '2', style: 'color:var(--dc-status-failed);text-align:center;vertical-align:middle' }, 'Uncovered'),
                         ),
                     ),
                     tbody(
@@ -821,7 +837,7 @@ const MatrixTableSection = (tableName, rows, startOpen, totals, tierCounts, acti
                                         : '',
                                 },
                                 td(
-                                    span({ class: 'tier-dot', style: `background:${TIER_DOT_COLOR[row.tier] || '#374151'};${row.tier === 'none' ? 'border:1px solid #6b7280' : ''}` }),
+                                    span({ class: 'tier-dot', style: `background:${TIER_DOT_COLOR[row.tier] || 'var(--dc-tier-dot-none)'};${row.tier === 'none' ? 'border:1px solid var(--dc-tier-none-text)' : ''}` }),
                                     span({
                                         class: isTableLevel ? 'col-name col-name--table-level' : 'col-name',
                                     }, row.column),
@@ -1261,13 +1277,15 @@ const YamlViewer = (yamlContent, tgName, isLatest) => {
 
     // Import button — only shown on the latest version
     const importBtn = isLatest
-        ? div(
-            {
-                class: 'yaml-copy-btn yaml-import-btn',
-                onclick: () => emitEvent('ImportYamlClicked'),
-                title: 'Upload a modified ODCS YAML to sync changes back to this contract',
-            },
-            span(mat('upload', 16), ' Import YAML'),
+        ? withTooltip(
+            div(
+                {
+                    class: 'yaml-copy-btn yaml-import-btn',
+                    onclick: () => emitEvent('ImportYamlClicked'),
+                },
+                span(mat('upload', 16), ' Import YAML'),
+            ),
+            { text: 'Upload a modified ODCS YAML to sync changes back to this contract', position: 'bottom' },
         )
         : '';
 
@@ -1352,30 +1370,30 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, versionNum, suite
 
         return div(
             { class: 'ct-card-content' },
-            TierRow(h.db_enforced || 0, 'database enforced', '#818cf8'),
-            TierRow(h.unenforced  || 0, 'unenforced',        '#f59e0b'),
-            TierRow(h.tg_enforced || 0, 'TestGen enforced',  '#22c55e'),
+            TierRow(h.db_enforced || 0, 'database enforced', 'var(--dc-tier-db)'),
+            TierRow(h.unenforced  || 0, 'unenforced',        'var(--dc-tier-unf)'),
+            TierRow(h.tg_enforced || 0, 'TestGen enforced',  'var(--dc-tier-tg)'),
             monitorTotal > 0
                 ? SubRow('Monitors', [
-                    S('#22c55e', 'passed',  tdf.tg_monitor_passed),
-                    S('#ef4444', 'failed',  tdf.tg_monitor_failed),
-                    S('#f59e0b', 'warning', tdf.tg_monitor_warning),
-                    S('#94a3b8', 'error',   tdf.tg_monitor_error),
-                    S('#6b7280', 'not run', tdf.tg_monitor_not_run),
+                    S('var(--dc-status-passed)',  'passed',  tdf.tg_monitor_passed),
+                    S('var(--dc-status-failed)',  'failed',  tdf.tg_monitor_failed),
+                    S('var(--dc-status-warning)', 'warning', tdf.tg_monitor_warning),
+                    S('var(--dc-status-error)',   'error',   tdf.tg_monitor_error),
+                    S('var(--dc-status-not-run)', 'not run', tdf.tg_monitor_not_run),
                   ])
                 : '',
             SubRow('Tests', [
-                S('#22c55e', 'passed',  tdf.tg_test_passed),
-                S('#ef4444', 'failed',  tdf.tg_test_failed),
-                S('#f59e0b', 'warning', tdf.tg_test_warning),
-                S('#94a3b8', 'error',   tdf.tg_test_error),
-                S('#6b7280', 'not run', tdf.tg_test_not_run),
+                S('var(--dc-status-passed)',  'passed',  tdf.tg_test_passed),
+                S('var(--dc-status-failed)',  'failed',  tdf.tg_test_failed),
+                S('var(--dc-status-warning)', 'warning', tdf.tg_test_warning),
+                S('var(--dc-status-error)',   'error',   tdf.tg_test_error),
+                S('var(--dc-status-not-run)', 'not run', tdf.tg_test_not_run),
             ]),
             tdf.tg_hygiene_definite + tdf.tg_hygiene_likely + tdf.tg_hygiene_possible > 0
                 ? SubRow('Hygiene', [
-                    S('#ef4444', 'definite', tdf.tg_hygiene_definite),
-                    S('#f59e0b', 'likely',   tdf.tg_hygiene_likely),
-                    S('#94a3b8', 'possible', tdf.tg_hygiene_possible),
+                    S('var(--dc-status-failed)',  'definite', tdf.tg_hygiene_definite),
+                    S('var(--dc-status-warning)', 'likely',   tdf.tg_hygiene_likely),
+                    S('var(--dc-status-error)',   'possible', tdf.tg_hygiene_possible),
                   ])
                 : '',
         );
@@ -1384,39 +1402,43 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, versionNum, suite
     return div(
         { class: 'health-grid' },
         // — Compliance card (first)
-        div(
-            {
-                class: 'health-card hygiene health-card--link',
-                onclick: () => { activeTab.val = 'compliance'; },
-                title: 'View Contract Term Compliance',
-            },
-            div({ class: 'health-card__label' },
-                mat('fact_check', 13), ` Version ${versionNum} Contract Term Compliance`,
-                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
+        withTooltip(
+            div(
+                {
+                    class: 'health-card hygiene health-card--link',
+                    onclick: () => { activeTab.val = 'compliance'; },
+                },
+                div({ class: 'health-card__label' },
+                    mat('fact_check', 13), ` Version ${versionNum} Contract Term Compliance`,
+                    span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
+                ),
+                termDiff
+                    ? ComplianceCardContent(health, termDiff)
+                    : div({ class: 'health-card__sub' }, 'No saved version yet'),
             ),
-            termDiff
-                ? ComplianceCardContent(health, termDiff)
-                : div({ class: 'health-card__sub' }, 'No saved version yet'),
+            { text: 'View Contract Term Compliance', position: 'bottom' },
         ),
         // — Coverage card (second)
-        div(
-            {
-                class: 'health-card coverage health-card--link',
-                onclick: () => { activeTab.val = 'matrix'; },
-                title: 'View Coverage Matrix',
-            },
-            div({ class: 'health-card__label' },
-                mat('verified', 13), ' Contract Term Coverage',
-                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
+        withTooltip(
+            div(
+                {
+                    class: 'health-card coverage health-card--link',
+                    onclick: () => { activeTab.val = 'matrix'; },
+                },
+                div({ class: 'health-card__label' },
+                    mat('verified', 13), ' Contract Term Coverage',
+                    span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
+                ),
+                health.n_elements != null
+                    ? CoverageTierBars(health, null)
+                    : [
+                        div({ class: `health-card__value ${coverageCls}` }, `${health.coverage_pct}%`),
+                        div({ class: 'progress-track' },
+                            div({ class: `progress-fill ${coverageCls}`, style: `width:${health.coverage_pct}%` }),
+                        ),
+                      ],
             ),
-            health.n_elements != null
-                ? CoverageTierBars(health, null)
-                : [
-                    div({ class: `health-card__value ${coverageCls}` }, `${health.coverage_pct}%`),
-                    div({ class: 'progress-track' },
-                        div({ class: `progress-fill ${coverageCls}`, style: `width:${health.coverage_pct}%` }),
-                    ),
-                  ],
+            { text: 'View Coverage Matrix', position: 'bottom' },
         ),
         // — Test Suites card (third)
         div(
@@ -1441,32 +1463,34 @@ const SuiteScope = (suiteScope, meta) => {
     if (total === 0) return '';
 
     const SuiteChip = (name, isIncluded) =>
-        span(
-            {
-                class: `suite-chip ${isIncluded ? 'suite-chip--in' : 'suite-chip--out'} suite-chip--clickable`,
-                role: 'link',
-                tabindex: '0',
-                title: `Go to ${name} in Test Suites`,
-                onclick: () => emitEvent('LinkClicked', {
-                    href: 'test-suites',
-                    params: {
-                        project_code: meta.project_code,
-                        table_group_id: meta.table_group_id,
-                        test_suite_name: name,
-                    },
-                }),
-                onkeydown: (e) => e.key === 'Enter' && emitEvent('LinkClicked', {
-                    href: 'test-suites',
-                    params: {
-                        project_code: meta.project_code,
-                        table_group_id: meta.table_group_id,
-                        test_suite_name: name,
-                    },
-                }),
-            },
-            span({ class: 'suite-chip__icon' }, isIncluded ? 'check' : 'remove'),
-            name,
-            span({ class: 'suite-chip__arrow' }, mat('arrow_forward', 14)),
+        withTooltip(
+            span(
+                {
+                    class: `suite-chip ${isIncluded ? 'suite-chip--in' : 'suite-chip--out'} suite-chip--clickable`,
+                    role: 'link',
+                    tabindex: '0',
+                    onclick: () => emitEvent('LinkClicked', {
+                        href: 'test-suites',
+                        params: {
+                            project_code: meta.project_code,
+                            table_group_id: meta.table_group_id,
+                            test_suite_name: name,
+                        },
+                    }),
+                    onkeydown: (e) => e.key === 'Enter' && emitEvent('LinkClicked', {
+                        href: 'test-suites',
+                        params: {
+                            project_code: meta.project_code,
+                            table_group_id: meta.table_group_id,
+                            test_suite_name: name,
+                        },
+                    }),
+                },
+                span({ class: 'suite-chip__icon' }, isIncluded ? 'check' : 'remove'),
+                name,
+                span({ class: 'suite-chip__arrow' }, mat('arrow_forward', 14)),
+            ),
+            { text: `Go to ${name} in Test Suites`, position: 'bottom' },
         );
 
     return div(
@@ -1501,18 +1525,20 @@ const TABS = [
 const TabBar = (activeTab) =>
     div(
         { class: 'dc-tabs' },
-        ...TABS.map((t) =>
-            div(
+        ...TABS.map((t) => {
+            const tabEl = div(
                 {
                     class: () => `dc-tab${t.isAction ? ' dc-tab--action' : ''}${activeTab.val === t.id ? ' active' : ''}`,
                     onclick: () => { activeTab.val = t.id; },
-                    title: t.isAction ? 'Import an ODCS YAML file to update contract terms — this modifies your contract' : '',
                 },
                 t.isAction ? mat('upload', 13, 'dc-tab-action-icon') : '',
                 t.isAction ? ' ' : '',
                 t.label,
-            )
-        ),
+            );
+            return t.isAction
+                ? withTooltip(tabEl, { text: 'Import an ODCS YAML file to update contract terms — this modifies your contract', position: 'bottom' })
+                : tabEl;
+        }),
         div({ class: 'dc-tabs-spacer' }),
         div(
             {
@@ -1634,10 +1660,10 @@ const ComplianceTab = (termDiff, health) => {
     const hygieneRows   = termDiff.hygiene_entries || [];
 
     const statusColor = {
-        passed: '#22c55e', failed: '#ef4444', warning: '#f59e0b',
-        error: '#94a3b8', not_run: '#6b7280',
+        passed: 'var(--dc-status-passed)', failed: 'var(--dc-status-failed)', warning: 'var(--dc-status-warning)',
+        error: 'var(--dc-status-error)', not_run: 'var(--dc-status-not-run)',
     };
-    const likelihoodColor = { Definite: '#ef4444', Likely: '#f59e0b', Possible: '#94a3b8' };
+    const likelihoodColor = { Definite: 'var(--dc-status-failed)', Likely: 'var(--dc-status-warning)', Possible: 'var(--dc-status-error)' };
 
     const Chip = (color, label) =>
         span({
@@ -1646,7 +1672,7 @@ const ComplianceTab = (termDiff, health) => {
         }, label);
 
     const ComplianceRow = (entry) => {
-        const col = statusColor[entry.last_result] || '#6b7280';
+        const col = statusColor[entry.last_result] || 'var(--dc-status-not-run)';
         return tr(
             { class: 'dc-term-row' },
             td({ class: 'diff-element-cell', style: `box-shadow:inset 3px 0 0 ${col}` }, entry.element),
@@ -1656,7 +1682,7 @@ const ComplianceTab = (termDiff, health) => {
     };
 
     const HygieneRow = (entry) => {
-        const col = likelihoodColor[entry.issue_likelihood] || '#94a3b8';
+        const col = likelihoodColor[entry.issue_likelihood] || 'var(--dc-status-error)';
         return tr(
             { class: 'dc-term-row' },
             td({ class: 'diff-element-cell', style: `box-shadow:inset 3px 0 0 ${col}` }, entry.element),
@@ -1718,27 +1744,27 @@ const ComplianceTab = (termDiff, health) => {
             { class: 'tab-summary-bar' },
             div({ class: 'compliance-summary-section' },
                 span({ class: 'compliance-summary-tier' }, 'Monitors:'),
-                complianceStat('#22c55e', h.tg_monitor_passed,  'passed'),
-                complianceStat('#ef4444', h.tg_monitor_failed,  'failed'),
-                complianceStat('#f59e0b', h.tg_monitor_warning, 'warning'),
-                complianceStat('#94a3b8', h.tg_monitor_error,   'error'),
-                complianceStat('#6b7280', h.tg_monitor_not_run, 'not run'),
+                complianceStat('var(--dc-status-passed)',  h.tg_monitor_passed,  'passed'),
+                complianceStat('var(--dc-status-failed)',  h.tg_monitor_failed,  'failed'),
+                complianceStat('var(--dc-status-warning)', h.tg_monitor_warning, 'warning'),
+                complianceStat('var(--dc-status-error)',   h.tg_monitor_error,   'error'),
+                complianceStat('var(--dc-status-not-run)', h.tg_monitor_not_run, 'not run'),
             ),
             div({ class: 'compliance-summary-sep' }),
             div({ class: 'compliance-summary-section' },
                 span({ class: 'compliance-summary-tier' }, 'Tests:'),
-                complianceStat('#22c55e', h.tg_test_passed,  'passed'),
-                complianceStat('#ef4444', h.tg_test_failed,  'failed'),
-                complianceStat('#f59e0b', h.tg_test_warning, 'warning'),
-                complianceStat('#94a3b8', h.tg_test_error,   'error'),
-                complianceStat('#6b7280', h.tg_test_not_run, 'not run'),
+                complianceStat('var(--dc-status-passed)',  h.tg_test_passed,  'passed'),
+                complianceStat('var(--dc-status-failed)',  h.tg_test_failed,  'failed'),
+                complianceStat('var(--dc-status-warning)', h.tg_test_warning, 'warning'),
+                complianceStat('var(--dc-status-error)',   h.tg_test_error,   'error'),
+                complianceStat('var(--dc-status-not-run)', h.tg_test_not_run, 'not run'),
             ),
             div({ class: 'compliance-summary-sep' }),
             div({ class: 'compliance-summary-section' },
                 span({ class: 'compliance-summary-tier' }, 'Hygiene:'),
-                complianceStat('#ef4444', h.tg_hygiene_definite, 'definite'),
-                complianceStat('#f59e0b', h.tg_hygiene_likely,   'likely'),
-                complianceStat('#94a3b8', h.tg_hygiene_possible, 'possible'),
+                complianceStat('var(--dc-status-failed)',  h.tg_hygiene_definite, 'definite'),
+                complianceStat('var(--dc-status-warning)', h.tg_hygiene_likely,   'likely'),
+                complianceStat('var(--dc-status-error)',   h.tg_hygiene_possible, 'possible'),
             ),
         );
     };
@@ -1757,23 +1783,23 @@ const ComplianceTab = (termDiff, health) => {
             'No test results yet. Run the snapshot test suite to see compliance data.',
         ),
         ComplianceAccordion('Monitors', monitorRows.map(ComplianceRow), [
-            ['passed',  termDiff.tg_monitor_passed,  '#22c55e'],
-            ['failed',  termDiff.tg_monitor_failed,  '#ef4444'],
-            ['warning', termDiff.tg_monitor_warning, '#f59e0b'],
-            ['error',   termDiff.tg_monitor_error,   '#94a3b8'],
-            ['not run', termDiff.tg_monitor_not_run, '#6b7280'],
+            ['passed',  termDiff.tg_monitor_passed,  'var(--dc-status-passed)'],
+            ['failed',  termDiff.tg_monitor_failed,  'var(--dc-status-failed)'],
+            ['warning', termDiff.tg_monitor_warning, 'var(--dc-status-warning)'],
+            ['error',   termDiff.tg_monitor_error,   'var(--dc-status-error)'],
+            ['not run', termDiff.tg_monitor_not_run, 'var(--dc-status-not-run)'],
         ], 'Test Type'),
         ComplianceAccordion('Tests', testRows.map(ComplianceRow), [
-            ['passed',  termDiff.tg_test_passed,  '#22c55e'],
-            ['failed',  termDiff.tg_test_failed,  '#ef4444'],
-            ['warning', termDiff.tg_test_warning, '#f59e0b'],
-            ['error',   termDiff.tg_test_error,   '#94a3b8'],
-            ['not run', termDiff.tg_test_not_run, '#6b7280'],
+            ['passed',  termDiff.tg_test_passed,  'var(--dc-status-passed)'],
+            ['failed',  termDiff.tg_test_failed,  'var(--dc-status-failed)'],
+            ['warning', termDiff.tg_test_warning, 'var(--dc-status-warning)'],
+            ['error',   termDiff.tg_test_error,   'var(--dc-status-error)'],
+            ['not run', termDiff.tg_test_not_run, 'var(--dc-status-not-run)'],
         ], 'Test Type'),
         ComplianceAccordion('Hygiene', hygieneRows.map(HygieneRow), [
-            ['definite', termDiff.tg_hygiene_definite, '#ef4444'],
-            ['likely',   termDiff.tg_hygiene_likely,   '#f59e0b'],
-            ['possible', termDiff.tg_hygiene_possible, '#94a3b8'],
+            ['definite', termDiff.tg_hygiene_definite, 'var(--dc-status-failed)'],
+            ['likely',   termDiff.tg_hygiene_likely,   'var(--dc-status-warning)'],
+            ['possible', termDiff.tg_hygiene_possible, 'var(--dc-status-error)'],
         ], 'Anomaly Type'),
     );
 };
@@ -1797,16 +1823,20 @@ const StickyPendingBar = (versionInfo) => {
         ),
         div(
             { class: 'spb-actions' },
-            span({
-                class: 'spb-btn spb-btn--discard',
-                onclick: () => emitEvent('DiscardFromStickyBar', {}),
-                title: 'Discard all staged changes',
-            }, 'Discard'),
-            span({
-                class: 'spb-btn spb-btn--save',
-                onclick: () => emitEvent('SaveFromStickyBar', {}),
-                title: 'Save staged changes to current version',
-            }, mat('save', 14), ` Save version (${n})`),
+            withTooltip(
+                span({
+                    class: 'spb-btn spb-btn--discard',
+                    onclick: () => emitEvent('DiscardFromStickyBar', {}),
+                }, 'Discard'),
+                { text: 'Discard all staged changes', position: 'top' },
+            ),
+            withTooltip(
+                span({
+                    class: 'spb-btn spb-btn--save',
+                    onclick: () => emitEvent('SaveFromStickyBar', {}),
+                }, mat('save', 14), ` Save version (${n})`),
+                { text: 'Save staged changes to current version', position: 'top' },
+            ),
         ),
     );
 };
@@ -1976,9 +2006,9 @@ stylesheet.replace(`
     top: 0; left: 0; right: 0;
     height: 3px;
 }
-.health-card.hygiene::before  { background: linear-gradient(90deg, #f59e0b, #f97316); }
-.health-card.coverage::before { background: linear-gradient(90deg, #4f8ef7, #818cf8); }
-.health-card.suites::before   { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+.health-card.hygiene::before  { background: var(--dc-card-hygiene-grad); }
+.health-card.coverage::before { background: var(--dc-card-coverage-grad); }
+.health-card.suites::before   { background: var(--dc-card-suites-grad); }
 .health-card--link { cursor: pointer; transition: box-shadow 0.15s, border-color 0.15s; }
 .health-card--link:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.12); border-color: var(--primary-color, #4f8ef7); }
 .health-card__nav-icon { margin-left: 4px; opacity: 0.5; vertical-align: middle; }
@@ -2011,9 +2041,9 @@ stylesheet.replace(`
     border-radius: 10px;
     white-space: nowrap;
 }
-.health-card__value.good    { color: #22c55e; }
-.health-card__value.warn    { color: #f59e0b; }
-.health-card__value.bad     { color: #ef4444; }
+.health-card__value.good    { color: var(--dc-tier-tg); }
+.health-card__value.warn    { color: var(--dc-tier-unf); }
+.health-card__value.bad     { color: var(--dc-status-failed); }
 .health-card__sub { font-size: 12px; color: var(--caption-text-color); margin-top: 4px; }
 .health-card__run-time {
     display: flex;
@@ -2039,9 +2069,9 @@ stylesheet.replace(`
     border-radius: 4px;
     transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
 }
-.progress-fill.good { background: #22c55e; }
-.progress-fill.warn { background: #f59e0b; }
-.progress-fill.bad  { background: #ef4444; }
+.progress-fill.good { background: var(--dc-tier-tg); }
+.progress-fill.warn { background: var(--dc-tier-unf); }
+.progress-fill.bad  { background: var(--dc-status-failed); }
 
 .summary-bar {
     display: flex;
@@ -2097,13 +2127,14 @@ stylesheet.replace(`
     margin-bottom: -1px;
     transition: all 0.15s;
     user-select: none;
+    position: relative;
 }
 .dc-tab:hover { color: var(--secondary-text-color); }
 .dc-tab.active { color: var(--link-text-color); border-bottom-color: var(--link-text-color); }
 
 /* ── Import YAML tab — visually distinct as an action tab ── */
 .dc-tab--action {
-    color: #b45309;
+    color: var(--dc-action-tab-color);
     border: 1px solid rgba(180,83,9,0.25);
     border-bottom: 2px solid transparent;
     border-radius: 6px 6px 0 0;
@@ -2111,15 +2142,15 @@ stylesheet.replace(`
     margin-left: 4px;
 }
 .dc-tab--action:hover {
-    color: #92400e;
+    color: var(--dc-action-tab-hover);
     background: rgba(245,158,11,0.12);
     border-color: rgba(180,83,9,0.45);
     border-bottom-color: transparent;
 }
 .dc-tab--action.active {
-    color: #92400e;
+    color: var(--dc-action-tab-hover);
     border-color: rgba(180,83,9,0.5);
-    border-bottom-color: #b45309;
+    border-bottom-color: var(--dc-action-tab-color);
     background: rgba(245,158,11,0.10);
 }
 .dc-tab-action-icon { color: inherit; vertical-align: middle; }
@@ -2246,10 +2277,11 @@ stylesheet.replace(`
     margin-top: 2px;
     font-weight: 500;
     background: transparent;
+    position: relative;
 }
 .gov-btn:hover { color: var(--link-text-color); border-color: var(--link-text-color); background: rgba(79,142,247,0.06); }
-.col-status-fail { color: #ef4444; vertical-align: middle; }
-.col-status-warn { color: #f59e0b; vertical-align: middle; }
+.col-status-fail { color: var(--dc-status-failed); vertical-align: middle; }
+.col-status-warn { color: var(--dc-status-warning); vertical-align: middle; }
 .col-name-link {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
     font-size: 13px;
@@ -2410,6 +2442,7 @@ stylesheet.replace(`
     align-items: center;
     gap: 8px;
     cursor: default;
+    position: relative;
 }
 .tier-bar-row[title] { cursor: pointer; }
 .tier-bar-label { font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2669,6 +2702,7 @@ stylesheet.replace(`
     background: rgba(79,142,247,0.07);
     transition: color 0.15s, border-color 0.15s, background 0.15s;
     user-select: none;
+    position: relative;
 }
 .yaml-copy-btn:hover { background: rgba(79,142,247,0.14); border-color: rgba(79,142,247,0.55); }
 .yaml-copy-btn--success { color: #16a34a; border-color: #86efac; background: #f0fdf4; }
@@ -3086,6 +3120,7 @@ stylesheet.replace(`
     padding: 3px 9px 3px 6px;
     border-radius: 20px;
     border: 1px solid;
+    position: relative;
 }
 .suite-chip__icon {
     font-family: 'Material Symbols Rounded', sans-serif;
@@ -3123,6 +3158,7 @@ stylesheet.replace(`
     user-select: none;
     transition: all 0.15s;
     box-shadow: 0 1px 3px rgba(220,38,38,0.15);
+    position: relative;
 }
 .select-mode-btn:hover {
     background: rgba(239,68,68,0.18);
@@ -3161,6 +3197,7 @@ stylesheet.replace(`
     font-size: 11px;
     transition: all 0.15s;
     user-select: none;
+    position: relative;
 }
 .bulk-action-btn:hover { color: var(--link-text-color); border-color: rgba(79,142,247,0.4); background: rgba(79,142,247,0.08); }
 .bulk-action-btn--delete { color: #ef4444; border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.07); }
@@ -3365,6 +3402,7 @@ stylesheet.replace(`
     cursor: pointer;
     user-select: none;
     transition: all 0.15s;
+    position: relative;
 }
 .spb-btn--discard {
     border-color: rgba(120,53,15,0.25);

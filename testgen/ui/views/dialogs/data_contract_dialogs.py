@@ -782,7 +782,7 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
     confirmed = True
     if pending_ct > 0:
         st.warning(
-            f"You have **{pending_ct} unsaved edit(s)** that will be discarded. "
+            f"You have **{pending_ct} unsaved {'edit' if pending_ct == 1 else 'edits'}** that will be discarded. "
             "Save a new version first if you want to keep them.",
             icon="⚠️",
         )
@@ -1184,13 +1184,16 @@ def _confirm_import_dialog(
     if total_rules > 0:
         rows = []
         if preview.test_inserts:
-            rows.append(f"- **{len(preview.test_inserts)}** new test(s) to create")
+            n = len(preview.test_inserts)
+            rows.append(f"- **{n}** new {'test' if n == 1 else 'tests'} to create")
         if preview.test_updates:
-            rows.append(f"- **{len(preview.test_updates)}** existing test(s) to update")
+            n = len(preview.test_updates)
+            rows.append(f"- **{n}** existing {'test' if n == 1 else 'tests'} to update")
         if preview.no_change_rules:
-            rows.append(f"- **{preview.no_change_rules}** test(s) unchanged")
+            n = preview.no_change_rules
+            rows.append(f"- **{n}** {'test' if n == 1 else 'tests'} unchanged")
         if rejected:
-            rows.append(f"- **{rejected}** rule(s) skipped")
+            rows.append(f"- **{rejected}** {'rule' if rejected == 1 else 'rules'} skipped")
         st.markdown("\n".join(rows))
 
     # ── Other changes ─────────────────────────────────────────────────────
@@ -1200,24 +1203,27 @@ def _confirm_import_dialog(
         st.markdown("**Other Changes**")
         other_rows = []
         if preview.governance_updates:
-            other_rows.append(f"- **{len(preview.governance_updates)}** column governance update(s)")
+            n = len(preview.governance_updates)
+            other_rows.append(f"- **{n}** column governance {'update' if n == 1 else 'updates'}")
         metadata_ct = len(preview.contract_updates) + len(preview.table_group_updates)
         if metadata_ct:
-            other_rows.append(f"- **{metadata_ct}** contract metadata field(s)")
+            other_rows.append(f"- **{metadata_ct}** contract metadata {'field' if metadata_ct == 1 else 'fields'}")
         st.markdown("\n".join(other_rows))
 
     # ── Warnings ─────────────────────────────────────────────────────────
     rule_warnings = [w for w in preview.warnings if "not in YAML" not in w]
     if rule_warnings:
         st.divider()
-        with st.expander(f"⚠ {len(rule_warnings)} warning(s)", expanded=False):
+        n = len(rule_warnings)
+        with st.expander(f"⚠ {n} {'warning' if n == 1 else 'warnings'}", expanded=False):
             for w in rule_warnings:
                 st.warning(w, icon="⚠️")
 
     # ── Orphaned tests note ───────────────────────────────────────────────
     if preview.orphaned_ids:
+        n = len(preview.orphaned_ids)
         st.info(
-            f"{len(preview.orphaned_ids)} test(s) in the table group are not in this YAML and will not be affected.",
+            f"{n} {'test' if n == 1 else 'tests'} in the table group are not in this YAML and will not be affected.",
             icon=":material/info:",
         )
 
@@ -1306,13 +1312,16 @@ def _import_yaml_dialog(
     if total_rules > 0:
         rows = []
         if preview.test_inserts:
-            rows.append(f"- **{len(preview.test_inserts)}** new test(s) to create")
+            n = len(preview.test_inserts)
+            rows.append(f"- **{n}** new {'test' if n == 1 else 'tests'} to create")
         if preview.test_updates:
-            rows.append(f"- **{len(preview.test_updates)}** existing test(s) to update")
+            n = len(preview.test_updates)
+            rows.append(f"- **{n}** existing {'test' if n == 1 else 'tests'} to update")
         if preview.no_change_rules:
-            rows.append(f"- **{preview.no_change_rules}** test(s) unchanged")
+            n = preview.no_change_rules
+            rows.append(f"- **{n}** {'test' if n == 1 else 'tests'} unchanged")
         if rejected:
-            rows.append(f"- **{rejected}** rule(s) skipped")
+            rows.append(f"- **{rejected}** {'rule' if rejected == 1 else 'rules'} skipped")
         st.markdown("\n".join(rows))
 
     # ── Other changes ─────────────────────────────────────────────────────
@@ -1322,24 +1331,27 @@ def _import_yaml_dialog(
         st.markdown("**Other Changes**")
         other_rows = []
         if preview.governance_updates:
-            other_rows.append(f"- **{len(preview.governance_updates)}** column governance update(s)")
+            n = len(preview.governance_updates)
+            other_rows.append(f"- **{n}** column governance {'update' if n == 1 else 'updates'}")
         metadata_ct = len(preview.contract_updates) + len(preview.table_group_updates)
         if metadata_ct:
-            other_rows.append(f"- **{metadata_ct}** contract metadata field(s)")
+            other_rows.append(f"- **{metadata_ct}** contract metadata {'field' if metadata_ct == 1 else 'fields'}")
         st.markdown("\n".join(other_rows))
 
     # ── Warnings ─────────────────────────────────────────────────────────
     rule_warnings = [w for w in preview.warnings if "not in YAML" not in w]
     if rule_warnings:
         st.divider()
-        with st.expander(f"\u26a0 {len(rule_warnings)} warning(s)", expanded=False):
+        n = len(rule_warnings)
+        with st.expander(f"\u26a0 {n} {'warning' if n == 1 else 'warnings'}", expanded=False):
             for w in rule_warnings:
                 st.warning(w, icon="\u26a0\ufe0f")
 
     # ── Orphaned tests note ───────────────────────────────────────────────
     if preview.orphaned_ids:
+        n = len(preview.orphaned_ids)
         st.info(
-            f"{len(preview.orphaned_ids)} test(s) in the table group are not in this YAML and will not be affected.",
+            f"{n} {'test' if n == 1 else 'tests'} in the table group are not in this YAML and will not be affected.",
             icon=":material/info:",
         )
 

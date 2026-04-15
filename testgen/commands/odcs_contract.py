@@ -18,7 +18,8 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from enum import StrEnum
+from typing import Any
 
 import yaml
 
@@ -113,11 +114,19 @@ class ThresholdData:
     test_operator: str | None
 
 
+class RuleAction(StrEnum):
+    CREATE    = "create"
+    UPDATE    = "update"
+    NO_CHANGE = "no_change"
+    SKIP      = "skip"
+    ERROR     = "error"
+
+
 @dataclass
 class RuleResult:
     """Outcome of processing a single ODCS quality rule."""
     rule_index: int
-    action: Literal["create", "update", "no_change", "skip", "error"]
+    action: RuleAction
     test_id: str | None = None          # existing id for update; new id after create
     test_type: str | None = None
     updates: dict[str, Any] = field(default_factory=dict)
@@ -420,7 +429,7 @@ def _process_update_rule(
     if inferred_type and inferred_type != current_type:
         return RuleResult(
             rule_index=rule_index,
-            action="skip",
+            action=RuleAction.SKIP,
             test_id=test_id,
             warning=(
                 f"Rule '{rule.get('name', test_id)}': changing metric/type would change test_type "
@@ -440,7 +449,7 @@ def _process_update_rule(
     if rule_element_normalized and current_element and rule_element_normalized != current_element:
         return RuleResult(
             rule_index=rule_index,
-            action="skip",
+            action=RuleAction.SKIP,
             test_id=test_id,
             warning=(
                 f"Rule '{rule.get('name', test_id)}': changing element from "
@@ -495,9 +504,9 @@ def _process_update_rule(
                 pass
 
     if len(updates) == 1:  # only the 'id' key
-        return RuleResult(rule_index=rule_index, action="no_change", test_id=test_id)
+        return RuleResult(rule_index=rule_index, action=RuleAction.NO_CHANGE, test_id=test_id)
 
-    return RuleResult(rule_index=rule_index, action="update", test_id=test_id, updates=updates)
+    return RuleResult(rule_index=rule_index, action=RuleAction.UPDATE, test_id=test_id, updates=updates)
 
 
 def _process_create_rule(
@@ -513,27 +522,27 @@ def _process_create_rule(
     # Resolve test type
     rule_type = rule.get("type")
     if rule_type == "text":
-        return RuleResult(rule_index=rule_index, action="skip")
+        return RuleResult(rule_index=rule_index, action=RuleAction.SKIP)
 
     test_type, type_err = resolve_testgen_type(rule)
     if type_err is not None:
-        return RuleResult(rule_index=rule_index, action="skip", warning=f"Rule '{rule_name}': {type_err}")
+        return RuleResult(rule_index=rule_index, action=RuleAction.SKIP, warning=f"Rule '{rule_name}': {type_err}")
     if test_type is None:
-        return RuleResult(rule_index=rule_index, action="skip")
+        return RuleResult(rule_index=rule_index, action=RuleAction.SKIP)
 
     # Extract threshold
     thresh, thresh_err = extract_threshold(rule)
     if thresh_err is not None:
-        return RuleResult(rule_index=rule_index, action="skip", warning=f"Rule '{rule_name}': {thresh_err}")
+        return RuleResult(rule_index=rule_index, action=RuleAction.SKIP, warning=f"Rule '{rule_name}': {thresh_err}")
     if thresh is None:
-        return RuleResult(rule_index=rule_index, action="skip", warning=f"Rule '{rule_name}': no threshold found.")
+        return RuleResult(rule_index=rule_index, action=RuleAction.SKIP, warning=f"Rule '{rule_name}': no threshold found.")
 
     # Validate CUSTOM (sql) rules have a non-empty query
     if test_type == "CUSTOM":
         query = rule.get("query") or ""
         if not query.strip():
             return RuleResult(
-                rule_index=rule_index, action="skip",
+                rule_index=rule_index, action=RuleAction.SKIP,
                 warning=f"Rule '{rule_name}': type:sql requires a non-empty 'query' field.",
             )
 
@@ -542,7 +551,7 @@ def _process_create_rule(
     table_name, column_name = parse_element(element)
     if not table_name and test_type != "CUSTOM":
         return RuleResult(
-            rule_index=rule_index, action="skip",
+            rule_index=rule_index, action=RuleAction.SKIP,
             warning=f"Rule '{rule_name}': CREATE requires an 'element' field to determine table/column.",
         )
 
@@ -551,7 +560,7 @@ def _process_create_rule(
     if suite_id_from_rule:
         if suite_id_from_rule not in suite_map:
             return RuleResult(
-                rule_index=rule_index, action="skip",
+                rule_index=rule_index, action=RuleAction.SKIP,
                 warning=f"Rule '{rule_name}': suiteId '{suite_id_from_rule}' not found in table group.",
             )
         suite_id = suite_id_from_rule
@@ -559,7 +568,7 @@ def _process_create_rule(
         suite_id = default_suite_id
     else:
         return RuleResult(
-            rule_index=rule_index, action="skip",
+            rule_index=rule_index, action=RuleAction.SKIP,
             warning=f"Rule '{rule_name}': no suiteId provided and no default suite available.",
         )
 
@@ -588,7 +597,7 @@ def _process_create_rule(
 
     return RuleResult(
         rule_index=rule_index,
-        action="create",
+        action=RuleAction.CREATE,
         test_type=test_type,
         insert=insert,
         warning=sev_warning,
@@ -717,13 +726,13 @@ def compute_import_diff(doc: dict, table_group_id: str, schema: str) -> Contract
         if result.warning:
             diff.warnings.append(result.warning)
 
-        if result.action == "update":
+        if result.action == RuleAction.UPDATE:
             diff.test_updates.append(result.updates)
-        elif result.action == "create":
+        elif result.action == RuleAction.CREATE:
             diff.test_inserts.append({**result.insert, "_rule_index": idx})
-        elif result.action == "skip":
+        elif result.action == RuleAction.SKIP:
             diff.skipped_rules += 1
-        elif result.action == "no_change":
+        elif result.action == RuleAction.NO_CHANGE:
             diff.no_change_rules += 1
 
     # Orphan detection

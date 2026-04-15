@@ -431,7 +431,7 @@ class Test_ImportResultBanner:
         at.run()
         assert not at.exception
         success_texts = [s.value for s in at.success]
-        assert any("2 test(s) created" in t for t in success_texts), (
+        assert any("2 tests created" in t for t in success_texts), (
             f"Expected test count in success banner. Got: {success_texts}"
         )
 

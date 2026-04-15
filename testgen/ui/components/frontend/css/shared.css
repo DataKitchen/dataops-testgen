@@ -87,6 +87,36 @@ body {
 
     --table-hover-color: #ecf0f1;
     --table-selection-color: rgba(0,145,234,.28);
+
+    /* Data contract tier/enforcement colors */
+    --dc-tier-tg: #22c55e;
+    --dc-tier-tg-text: #4ade80;
+    --dc-tier-tg-bg: rgba(34, 197, 94, 0.04);
+    --dc-tier-db: #818cf8;
+    --dc-tier-db-text: #a5b4fc;
+    --dc-tier-db-bg: rgba(129, 140, 248, 0.04);
+    --dc-tier-unf: #f59e0b;
+    --dc-tier-unf-text: #fbbf24;
+    --dc-tier-unf-bg: rgba(245, 158, 11, 0.04);
+    --dc-tier-none: #4b5563;
+    --dc-tier-none-text: #6b7280;
+    --dc-tier-dot-none: #374151;
+
+    /* Data contract result/status colors */
+    --dc-status-passed: #22c55e;
+    --dc-status-failed: #ef4444;
+    --dc-status-warning: #f59e0b;
+    --dc-status-error: #94a3b8;
+    --dc-status-not-run: #6b7280;
+
+    /* Data contract health card header gradients */
+    --dc-card-hygiene-grad: linear-gradient(90deg, #f59e0b, #f97316);
+    --dc-card-coverage-grad: linear-gradient(90deg, #4f8ef7, #818cf8);
+    --dc-card-suites-grad: linear-gradient(90deg, #6366f1, #8b5cf6);
+
+    /* Data contract action tab (Import YAML) */
+    --dc-action-tab-color: #b45309;
+    --dc-action-tab-hover: #92400e;
 }
 
 @media (prefers-color-scheme: dark) {
