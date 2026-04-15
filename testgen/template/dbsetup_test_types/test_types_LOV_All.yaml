@@ -54,7 +54,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: mssql
     measure: |-
-      STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+      (SELECT STRING_AGG(sub_val, '|') WITHIN GROUP (ORDER BY sub_val) FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WHERE {SUBSET_CONDITION}) AS sub_lov)
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -110,7 +110,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: sap_hana
     measure: |-
-      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+      (SELECT LISTAGG(sub_val, '|') WITHIN GROUP (ORDER BY sub_val) FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WHERE {SUBSET_CONDITION}))
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
