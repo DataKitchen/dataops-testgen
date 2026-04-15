@@ -110,7 +110,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: sap_hana
     measure: |-
-      (SELECT LISTAGG(sub_val, '|') WITHIN GROUP (ORDER BY sub_val) FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WHERE {SUBSET_CONDITION}))
+      (SELECT STRING_AGG(sub_val, '|' ORDER BY sub_val) FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WHERE {SUBSET_CONDITION}))
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -200,6 +200,6 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} LIMIT {LIMIT}
+      SELECT STRING_AGG("{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}") AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING STRING_AGG("{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []
