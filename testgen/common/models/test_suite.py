@@ -214,18 +214,6 @@ class TestSuite(Entity):
         return [TestSuiteSummary(**row) for row in results]
 
     @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool:
-        query = """
-        SELECT DISTINCT test_suite_id
-        FROM test_runs
-        WHERE test_suite_id IN :test_suite_ids
-            AND status = 'Running';
-        """
-        params = {"test_suite_ids": tuple(ids)}
-        process_count = get_current_session().execute(text(query), params).rowcount
-        return process_count > 0
-
-    @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
         query = """
         SELECT DISTINCT test_suite_id FROM test_definitions WHERE test_suite_id IN :test_suite_ids

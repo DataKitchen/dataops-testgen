@@ -91,13 +91,6 @@ class Connection(Entity):
         return [ConnectionMinimal(**row) for row in results]
 
     @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool:
-        table_groups = TableGroup.select_minimal_where(TableGroup.connection_id.in_(ids))
-        if table_groups:
-            return TableGroup.has_running_process([item.id for item in table_groups])
-        return False
-
-    @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
         table_groups = TableGroup.select_minimal_where(TableGroup.connection_id.in_(ids))
         return len(table_groups) > 0
