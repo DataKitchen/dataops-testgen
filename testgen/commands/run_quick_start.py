@@ -1,7 +1,8 @@
 import logging
 import math
 import random
-from datetime import datetime
+from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import click
@@ -17,7 +18,9 @@ from testgen.common.database.database_service import (
     set_target_db_params,
 )
 from testgen.common.database.flavor.flavor_service import ConnectionParams
-from testgen.common.models import with_database_session
+from testgen.common.job_context import JobContext, job_context
+from testgen.common.models import database_session, get_current_session, with_database_session
+from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
@@ -26,6 +29,33 @@ from testgen.common.read_file import read_template_sql_file
 
 LOG = logging.getLogger("testgen")
 random.seed(42)
+
+
+def run_with_job_execution(
+    handler: Callable,
+    job_key: str,
+    run_date: datetime | None = None,
+    **handler_kwargs: Any,
+) -> None:
+    """Wrap a run command with a synthetic JE so quick-start runs link to job_executions."""
+    effective_date = run_date or datetime.now(UTC)
+    with database_session():
+        je = JobExecution(
+            job_key=job_key,
+            kwargs={k: str(v) for k, v in handler_kwargs.items()},
+            source="quick-start",
+            project_code=settings.PROJECT_KEY,
+            status=JobStatus.COMPLETED.value,
+            started_at=effective_date,
+            completed_at=effective_date,
+        )
+        get_current_session().add(je)
+        get_current_session().flush([je])
+        je_id = je.id
+
+    job_context.set(JobContext(job_id=je_id, source="QUICK-START"))
+    handler(**handler_kwargs, run_date=run_date)
+
 
 def _get_max_date(iteration: int):
     if iteration == 0:

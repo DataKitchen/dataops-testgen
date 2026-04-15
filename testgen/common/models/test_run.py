@@ -272,7 +272,7 @@ class TestRun(Entity):
             CASE je.status
                 WHEN 'completed' THEN 'Complete'
                 WHEN 'error' THEN 'Error'
-                WHEN 'cancelled' THEN 'Cancelled'
+                WHEN 'canceled' THEN 'Cancelled'
                 WHEN 'cancel_requested' THEN 'Cancelled'
                 WHEN 'running' THEN 'Running'
                 WHEN 'pending' THEN 'Running'
