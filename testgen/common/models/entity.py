@@ -122,9 +122,13 @@ class Entity(Base):
 
         Returns (items, total). If *data_class* is given, each row is
         unpacked into an instance of that class.
+
+        The caller must supply ORDER BY on the query for stable pagination.
         """
+        if not query._order_by_clauses:
+            raise ValueError("Paginated queries require ORDER BY for stable page distribution.")
         session = get_current_session()
-        total = session.scalar(select(func.count()).select_from(query.subquery())) or 0
+        total = session.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
         rows = session.execute(query.offset((page - 1) * limit).limit(limit)).all()
         if data_class is not None:
             return [data_class(**row) for row in rows], total

@@ -9,12 +9,12 @@ from testgen.mcp.exceptions import MCPUserError
 
 
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
-@patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")
-def test_list_tests_basic(mock_td, mock_tt, mock_notes, db_session_mock):
+def test_list_tests_basic(mock_td, mock_notes, db_session_mock):
     suite_id = str(uuid4())
     item = MagicMock()
     item.test_type = "Alpha_Trunc"
+    item.test_name_short = "Alpha Truncation"
     item.table_name = "orders"
     item.column_name = "customer_name"
     item.test_active = True
@@ -27,11 +27,6 @@ def test_list_tests_basic(mock_td, mock_tt, mock_notes, db_session_mock):
     item.id = uuid4()
     mock_td.list_for_suite.return_value = ([item], 1)
     mock_notes.get_notes_count_by_ids.return_value = {str(item.id): 2}
-
-    tt = MagicMock()
-    tt.test_type = "Alpha_Trunc"
-    tt.test_name_short = "Alpha Truncation"
-    mock_tt.select_where.return_value = [tt]
 
     from testgen.mcp.tools.test_definitions import list_tests
 
@@ -134,14 +129,14 @@ def test_list_tests_passes_project_codes(mock_td, db_session_mock):
 
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
 @patch("testgen.mcp.tools.test_definitions.TestResult")
-@patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")
-def test_get_test_basic(mock_td, mock_tt, mock_tr, mock_notes, db_session_mock):
+def test_get_test_basic(mock_td, mock_tr, mock_notes, db_session_mock):
     td_id = uuid4()
-    context = {"project_code": "demo", "connection_id": uuid4(), "table_groups_id": uuid4()}
     td = MagicMock()
     td.id = td_id
     td.test_type = "Alpha_Trunc"
+    td.test_name_short = "Alpha Truncation"
+    td.dq_dimension = "Accuracy"
     td.table_name = "orders"
     td.column_name = "customer_name"
     td.schema_name = "public"
@@ -169,12 +164,6 @@ def test_get_test_basic(mock_td, mock_tt, mock_tr, mock_notes, db_session_mock):
     td.usage_notes = None
     mock_td.get_for_project.return_value = td
     mock_notes.get_notes.return_value = []
-
-    tt = MagicMock()
-    tt.test_type = "Alpha_Trunc"
-    tt.test_name_short = "Alpha Truncation"
-    tt.dq_dimension = "Accuracy"
-    mock_tt.select_where.return_value = [tt]
 
     mock_tr.select_history.return_value = []
 
@@ -205,14 +194,15 @@ def test_get_test_not_found(mock_td, db_session_mock):
 
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
 @patch("testgen.mcp.tools.test_definitions.TestResult")
-@patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")
-def test_get_test_with_last_result(mock_td, mock_tt, mock_tr, mock_notes, db_session_mock):
+def test_get_test_with_last_result(mock_td, mock_tr, mock_notes, db_session_mock):
     td_id = uuid4()
 
     td = MagicMock()
     td.id = td_id
     td.test_type = "Row_Ct"
+    td.test_name_short = "Row Count"
+    td.dq_dimension = "Completeness"
     td.table_name = "orders"
     td.column_name = None
     td.schema_name = "public"
@@ -241,12 +231,6 @@ def test_get_test_with_last_result(mock_td, mock_tt, mock_tr, mock_notes, db_ses
     mock_td.get_for_project.return_value = td
     mock_notes.get_notes.return_value = []
 
-    tt = MagicMock()
-    tt.test_type = "Row_Ct"
-    tt.test_name_short = "Row Count"
-    tt.dq_dimension = "Completeness"
-    mock_tt.select_where.return_value = [tt]
-
     last = MagicMock()
     last.test_time = "2026-04-01 12:00:00"
     last.status = MagicMock(value="Failed")
@@ -267,14 +251,15 @@ def test_get_test_with_last_result(mock_td, mock_tt, mock_tr, mock_notes, db_ses
 
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
 @patch("testgen.mcp.tools.test_definitions.TestResult")
-@patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")
-def test_get_test_with_parameters(mock_td, mock_tt, mock_tr, mock_notes, db_session_mock):
+def test_get_test_with_parameters(mock_td, mock_tr, mock_notes, db_session_mock):
     td_id = uuid4()
 
     td = MagicMock()
     td.id = td_id
     td.test_type = "Alpha_Trunc"
+    td.test_name_short = "Alpha Truncation"
+    td.dq_dimension = None
     td.table_name = "orders"
     td.column_name = "name"
     td.schema_name = "public"
@@ -307,12 +292,6 @@ def test_get_test_with_parameters(mock_td, mock_tt, mock_tr, mock_notes, db_sess
     mock_td.get_for_project.return_value = td
     mock_notes.get_notes.return_value = []
 
-    tt = MagicMock()
-    tt.test_type = "Alpha_Trunc"
-    tt.test_name_short = "Alpha Truncation"
-    tt.dq_dimension = None
-    mock_tt.select_where.return_value = [tt]
-
     mock_tr.select_history.return_value = []
 
     from testgen.mcp.tools.test_definitions import get_test
@@ -327,9 +306,8 @@ def test_get_test_with_parameters(mock_td, mock_tt, mock_tr, mock_notes, db_sess
 
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
 @patch("testgen.mcp.tools.test_definitions.TestResult")
-@patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")
-def test_get_test_flagged_with_notes(mock_td, mock_tt, mock_tr, mock_notes, db_session_mock):
+def test_get_test_flagged_with_notes(mock_td, mock_tr, mock_notes, db_session_mock):
     from datetime import datetime
 
     td_id = uuid4()
@@ -337,6 +315,8 @@ def test_get_test_flagged_with_notes(mock_td, mock_tt, mock_tr, mock_notes, db_s
     td = MagicMock()
     td.id = td_id
     td.test_type = "Alpha_Trunc"
+    td.test_name_short = "Alpha Truncation"
+    td.dq_dimension = None
     td.table_name = "orders"
     td.column_name = "name"
     td.schema_name = "public"
@@ -364,12 +344,6 @@ def test_get_test_flagged_with_notes(mock_td, mock_tt, mock_tr, mock_notes, db_s
     td.usage_notes = None
     mock_td.get_for_project.return_value = td
     mock_notes.get_notes.return_value = [{"id": "1", "detail": "needs review"}, {"id": "2", "detail": "checked"}]
-
-    tt = MagicMock()
-    tt.test_type = "Alpha_Trunc"
-    tt.test_name_short = "Alpha Truncation"
-    tt.dq_dimension = None
-    mock_tt.select_where.return_value = [tt]
 
     mock_tr.select_history.return_value = []
 
@@ -405,22 +379,17 @@ def test_get_test_passes_project_codes(mock_td, db_session_mock):
 # -- list_test_notes ----------------------------------------------------------
 
 
-@patch("testgen.mcp.tools.test_definitions.TestType")
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")
-def test_list_test_notes_basic(mock_td, mock_notes, mock_tt, db_session_mock):
+def test_list_test_notes_basic(mock_td, mock_notes, db_session_mock):
     td_id = str(uuid4())
 
     td = MagicMock()
     td.test_type = "Alpha_Trunc"
+    td.test_name_short = "Alpha Truncation"
     td.table_name = "orders"
     td.column_name = "name"
     mock_td.get_for_project.return_value = td
-
-    tt = MagicMock()
-    tt.test_type = "Alpha_Trunc"
-    tt.test_name_short = "Alpha Truncation"
-    mock_tt.select_where.return_value = [tt]
 
     mock_notes.get_notes.return_value = [
         {"detail": "Threshold looks wrong", "created_by": "alice", "created_at": "2026-04-01T10:00:00", "updated_at": None},
@@ -484,7 +453,6 @@ def test_list_test_types_basic(mock_tt, db_session_mock):
     tt.test_name_short = "Alpha Truncation"
     tt.dq_dimension = "Accuracy"
     tt.test_scope = "column"
-    tt.run_type = "CAT"
     tt.test_description = "Checks for truncated values"
     mock_tt.select_where.return_value = [tt]
 
@@ -495,7 +463,6 @@ def test_list_test_types_basic(mock_tt, db_session_mock):
     assert "Alpha Truncation" in result
     assert "Accuracy" in result
     assert "column" in result
-    assert "CAT" in result
 
 
 @patch("testgen.mcp.tools.test_definitions.TestType")
@@ -530,11 +497,11 @@ def test_list_test_types_invalid_scope(db_session_mock):
         list_test_types(scope="invalid")
 
 
-def test_list_test_types_invalid_run_type(db_session_mock):
+def test_list_test_types_invalid_quality_dimension(db_session_mock):
     from testgen.mcp.tools.test_definitions import list_test_types
 
-    with pytest.raises(MCPUserError, match="Invalid run_type"):
-        list_test_types(run_type="INVALID")
+    with pytest.raises(MCPUserError, match="Invalid quality_dimension"):
+        list_test_types(quality_dimension="NotADimension")
 
 
 @patch("testgen.mcp.tools.test_definitions.TestType")
@@ -543,14 +510,12 @@ def test_list_test_types_filter_description(mock_tt, db_session_mock):
     tt.test_name_short = "Row Count"
     tt.dq_dimension = "Completeness"
     tt.test_scope = "table"
-    tt.run_type = "CAT"
     tt.test_description = "Checks row count"
     mock_tt.select_where.return_value = [tt]
 
     from testgen.mcp.tools.test_definitions import list_test_types
 
-    result = list_test_types(scope="table", quality_dimension="Completeness", run_type="CAT")
+    result = list_test_types(scope="table", quality_dimension="Completeness")
 
     assert "scope: table" in result
     assert "dimension: Completeness" in result
-    assert "run_type: CAT" in result

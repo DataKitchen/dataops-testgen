@@ -12,7 +12,7 @@ from testgen.mcp.tools.common import (
 )
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
-_VALID_RUN_TYPES = {"CAT", "QUERY"}
+_VALID_DIMENSIONS = {"Accuracy", "Completeness", "Consistency", "Recency", "Timeliness", "Uniqueness", "Validity"}
 
 
 def _format_timestamp(value: str | None) -> str:
@@ -69,7 +69,6 @@ def list_tests(
             return f"No tests on page {page} (total: {total}){filter_str}."
         return f"No test definitions found for test suite `{test_suite_id}`{filter_str}."
 
-    type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
     notes_counts = TestDefinitionNote.get_notes_count_by_ids([str(td.id) for td in items])
 
     headers = ["Test Type", "Table", "Column", "Active", "Severity", "Locked", "Manual", "Flagged", "Notes", "ID"]
@@ -78,7 +77,7 @@ def list_tests(
         note_ct = notes_counts.get(str(td.id), 0)
         rows.append(
             [
-                type_names.get(td.test_type, td.test_type),
+                td.test_name_short or td.test_type,
                 f"`{td.table_name}`" if td.table_name else "—",
                 f"`{td.column_name}`" if td.column_name else "—",
                 "Yes" if td.test_active else "No",
@@ -116,10 +115,7 @@ def get_test(test_definition_id: str) -> str:
     if td is None:
         return f"Test definition `{test_definition_id}` not found."
 
-    # Look up full test type for fields not on the summary dataclass (dq_dimension, run_type)
-    test_type_map = {tt.test_type: tt for tt in TestType.select_where(TestType.active == "Y")}
-    tt = test_type_map.get(td.test_type)
-    test_name = tt.test_name_short if tt else td.test_type
+    test_name = td.test_name_short or td.test_type
 
     # Header
     if td.column_name:
@@ -135,8 +131,8 @@ def get_test(test_definition_id: str) -> str:
     lines.append(f"- **Schema:** `{td.schema_name}`")
     if td.test_scope:
         lines.append(f"- **Scope:** {td.test_scope}")
-    if tt and tt.dq_dimension:
-        lines.append(f"- **Quality Dimension:** {tt.dq_dimension}")
+    if td.dq_dimension:
+        lines.append(f"- **Quality Dimension:** {td.dq_dimension}")
 
     # Configuration
     lines.append("\n## Configuration\n")
@@ -171,12 +167,12 @@ def get_test(test_definition_id: str) -> str:
     # Parameters (editable fields from test type metadata)
     _append_parameters_section(lines, td)
 
-    # Custom SQL
-    if td.custom_query:
+    # Custom SQL (only show when the test type exposes it as an editable parameter)
+    if td.custom_query and "custom_query" in (td.default_parm_columns or ""):
         lines.append("\n## Custom SQL\n")
         lines.append(f"```sql\n{td.custom_query}\n```")
 
-    # Reference match (referential tests)
+    # Reference match (only fields listed in default_parm_columns)
     _append_match_section(lines, td)
 
     # Last result
@@ -227,8 +223,7 @@ def list_test_notes(test_definition_id: str) -> str:
     if not notes:
         return f"No notes for test definition `{test_definition_id}`."
 
-    test_type_map = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
-    test_name = test_type_map.get(td.test_type, td.test_type)
+    test_name = td.test_name_short or td.test_type
 
     if td.column_name:
         heading = f"# Notes for {test_name} on `{td.column_name}` in `{td.table_name}`\n"
@@ -274,16 +269,18 @@ def _append_parameters_section(lines: list[str], td: TestDefinitionSummary) -> N
 
 
 def _append_match_section(lines: list[str], td: TestDefinitionSummary) -> None:
-    """Append reference match section for referential tests."""
+    """Append reference match section, filtered by default_parm_columns."""
+    parm_columns = {c.strip() for c in td.default_parm_columns.split(",")} if td.default_parm_columns else set()
+
     match_fields = [
-        ("Match Schema", td.match_schema_name),
-        ("Match Table", td.match_table_name),
-        ("Match Columns", td.match_column_names),
-        ("Match Subset Condition", td.match_subset_condition),
-        ("Match Grouping Columns", td.match_groupby_names),
-        ("Match Having Condition", td.match_having_condition),
+        ("Match Schema", "match_schema_name", td.match_schema_name),
+        ("Match Table", "match_table_name", td.match_table_name),
+        ("Match Columns", "match_column_names", td.match_column_names),
+        ("Match Subset Condition", "match_subset_condition", td.match_subset_condition),
+        ("Match Grouping Columns", "match_groupby_names", td.match_groupby_names),
+        ("Match Having Condition", "match_having_condition", td.match_having_condition),
     ]
-    populated = [(label, value) for label, value in match_fields if value]
+    populated = [(label, value) for label, col, value in match_fields if col in parm_columns and value]
     if not populated:
         return
 
@@ -296,29 +293,25 @@ def _append_match_section(lines: list[str], td: TestDefinitionSummary) -> None:
 def list_test_types(
     scope: str | None = None,
     quality_dimension: str | None = None,
-    run_type: str | None = None,
 ) -> str:
     """List available test types with optional filtering.
 
     Args:
         scope: Filter by test scope ('column', 'table', 'referential', 'custom').
-        quality_dimension: Filter by quality dimension (e.g. 'Accuracy', 'Completeness').
-        run_type: Filter by execution type ('CAT' for catalog-based, 'QUERY' for custom SQL).
+        quality_dimension: Filter by quality dimension ('Accuracy', 'Completeness', 'Consistency', 'Recency', 'Timeliness', 'Uniqueness', 'Validity').
     """
     if scope and scope not in _VALID_SCOPES:
         valid = ", ".join(sorted(_VALID_SCOPES))
         raise MCPUserError(f"Invalid scope `{scope}`. Valid values: {valid}")
-    if run_type and run_type not in _VALID_RUN_TYPES:
-        valid = ", ".join(sorted(_VALID_RUN_TYPES))
-        raise MCPUserError(f"Invalid run_type `{run_type}`. Valid values: {valid}")
+    if quality_dimension and quality_dimension not in _VALID_DIMENSIONS:
+        valid = ", ".join(sorted(_VALID_DIMENSIONS))
+        raise MCPUserError(f"Invalid quality_dimension `{quality_dimension}`. Valid values: {valid}")
 
     clauses = [TestType.active == "Y"]
     if scope:
         clauses.append(TestType.test_scope == scope)
     if quality_dimension:
         clauses.append(TestType.dq_dimension == quality_dimension)
-    if run_type:
-        clauses.append(TestType.run_type == run_type)
 
     test_types = TestType.select_where(*clauses)
 
@@ -328,8 +321,6 @@ def list_test_types(
             filters.append(f"scope={scope}")
         if quality_dimension:
             filters.append(f"dimension={quality_dimension}")
-        if run_type:
-            filters.append(f"run_type={run_type}")
         filter_str = f" (filters: {', '.join(filters)})" if filters else ""
         return f"No test types found{filter_str}."
 
@@ -338,11 +329,9 @@ def list_test_types(
         filters_desc.append(f"scope: {scope}")
     if quality_dimension:
         filters_desc.append(f"dimension: {quality_dimension}")
-    if run_type:
-        filters_desc.append(f"run_type: {run_type}")
     filter_suffix = f" ({', '.join(filters_desc)})" if filters_desc else ""
 
-    headers = ["Test Type", "Quality Dimension", "Scope", "Run Type", "Description"]
+    headers = ["Test Type", "Quality Dimension", "Scope", "Description"]
     rows = []
     for tt in test_types:
         rows.append(
@@ -350,7 +339,6 @@ def list_test_types(
                 tt.test_name_short or "",
                 tt.dq_dimension or "",
                 tt.test_scope or "",
-                tt.run_type or "",
                 tt.test_description or "",
             ]
         )

@@ -46,6 +46,7 @@ class TestTypeSummary(EntityMinimal):
     default_parm_required: str
     default_severity: str
     test_scope: TestScope
+    dq_dimension: str
     usage_notes: str
 
 
@@ -331,7 +332,7 @@ class TestDefinition(Entity):
         page: int = 1,
         limit: int = 50,
     ) -> tuple[list[TestDefinitionSummary], int]:
-        """Paginated test definitions for a suite with optional filters."""
+        """Paginated test definitions for a suite with project-level access check and optional filters."""
         select_columns = [
             getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
             for col in cls._summary_columns
