@@ -461,6 +461,24 @@ ANALYTICS_ENABLED: bool = os.getenv("TG_ANALYTICS", "yes").lower() in ("yes", "t
 Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
 """
 
+DISABLE_FEEDBACK_POPUP: bool = os.getenv("TG_DISABLE_FEEDBACK_POPUP", "no").lower() in ("yes", "true")
+"""
+When set to "yes" or "true", suppresses the periodic feedback popup entirely.
+Intended for enterprise customers who block outbound network calls.
+
+from env variable: `TG_DISABLE_FEEDBACK_POPUP`
+defaults to: `no`
+"""
+
+SLACK_FEEDBACK_WEBHOOK: str | None = os.getenv("TG_SLACK_FEEDBACK_WEBHOOK")
+"""
+Slack Incoming Webhook URL to post feedback submissions.
+When set, each submitted feedback is posted to the configured Slack channel.
+
+from env variable: `TG_SLACK_FEEDBACK_WEBHOOK`
+defaults to: `None` (no Slack notification)
+"""
+
 ANALYTICS_JOB_SOURCE: str = os.getenv("TG_JOB_SOURCE", "CLI")
 """
 Identifies the job trigger for analytics purposes.

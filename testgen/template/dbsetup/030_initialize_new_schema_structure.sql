@@ -640,7 +640,8 @@ CREATE TABLE auth_users (
 	name 			 VARCHAR(256),
 	password 	 VARCHAR(120),
 	is_global_admin BOOLEAN NOT NULL DEFAULT FALSE,
-   latest_login TIMESTAMP
+   latest_login TIMESTAMP,
+   preferences JSONB NOT NULL DEFAULT '{}'
 );
 
 ALTER TABLE auth_users

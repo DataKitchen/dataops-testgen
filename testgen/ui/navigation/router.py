@@ -39,6 +39,35 @@ class Router(Singleton):
         source = st.query_params.pop("source", None)
         MixpanelService().send_event(f"nav-{url}", page_load=True, source=source)
 
+    def _evaluate_feedback_popup(self) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        from testgen import settings
+
+        if settings.DISABLE_FEEDBACK_POPUP:
+            session.show_feedback_popup = False
+            return
+
+        user = session.auth.user
+        if not user:
+            session.show_feedback_popup = False
+            return
+
+        last_popup_str = user.preferences.get("last_feedback_popup")
+        if last_popup_str:
+            try:
+                last_popup_dt = datetime.fromisoformat(last_popup_str)
+                if datetime.now(UTC) - last_popup_dt < timedelta(days=30):
+                    session.show_feedback_popup = False
+                    return
+            except (ValueError, TypeError):
+                pass  # Corrupted value — treat as no prior popup
+
+        # User is eligible: record the timestamp and show the popup
+        user.preferences["last_feedback_popup"] = datetime.now(UTC).isoformat()
+        user.update_preferences()
+        session.show_feedback_popup = True
+
     def run(self) -> None:
         streamlit_pages = [route.streamlit_page for route in self._routes.values()]
 
@@ -70,6 +99,13 @@ class Router(Singleton):
             if session.page_args_pending_router is not None:
                 st.query_params.from_dict(session.page_args_pending_router)
                 session.page_args_pending_router = None
+
+            if session.show_feedback_popup is None and session.auth.is_logged_in:
+                try:
+                    self._evaluate_feedback_popup()
+                except Exception:
+                    LOG.exception("Error evaluating feedback popup eligibility")
+                    session.show_feedback_popup = False
 
             session.current_page = current_page.url_path
             current_page.run()

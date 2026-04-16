@@ -1,3 +1,5 @@
+import logging
+
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
 
@@ -33,6 +35,9 @@ def page_header(
 
         st.html('<hr size="3" class="tg-header--line">')
 
+    # Feedback widget (bottom-right)
+    feedback_widget()
+
 
 def help_menu(help_topic: str | None = None) -> None:
     with st.container(key="tg-header--help"):
@@ -53,7 +58,11 @@ def help_menu(help_topic: str | None = None) -> None:
         def open_app_logs():
             close_help()
             application_logs_dialog()
-            
+
+        def open_feedback():
+            close_help()
+            st.session_state.feedback_visible = True
+
         with help_container.container():
             flex_row_end()
             with st.popover("Help"):
@@ -70,6 +79,7 @@ def help_menu(help_topic: str | None = None) -> None:
                     },
                     on_change_handlers={
                         "AppLogsClicked": lambda _: open_app_logs(),
+                        "FeedbackClicked": lambda _: open_feedback(),
                     },
                     event_handlers={
                         "ExternalLinkClicked": lambda _: close_help(rerun=True),
@@ -118,3 +128,66 @@ def _apply_html(html: str, container: DeltaGenerator | None = None):
         container.html(html)
     else:
         st.html(html)
+
+
+LOG = logging.getLogger("testgen")
+
+
+def feedback_widget():
+    """Render the feedback popup widget in the bottom-right corner.
+
+    Visibility is driven by two signals:
+    - session.show_feedback_popup: set by router on session start (30-day eligibility gate)
+    - st.session_state.feedback_visible: set when the user manually clicks "Give Feedback"
+
+    Feedback submissions are sent to MixPanel and optionally to Slack via TG_SLACK_FEEDBACK_WEBHOOK.
+    """
+    visible = bool(session.show_feedback_popup) or bool(st.session_state.get("feedback_visible", False))
+
+    def on_dismissed(_):
+        session.show_feedback_popup = False
+        st.session_state.feedback_visible = False
+
+    def on_submitted(payload):
+        if payload:
+            try:
+                from testgen.common.mixpanel_service import MixpanelService
+                MixpanelService().send_event(
+                    "feedback_submitted",
+                    rating=int(payload.get("rating", 0)),
+                    comment=payload.get("comment") or None,
+                    email=payload.get("email") or None,
+                )
+            except Exception:
+                LOG.exception("Error sending feedback to MixPanel")
+
+            if settings.SLACK_FEEDBACK_WEBHOOK:
+                try:
+                    import requests
+                    rating = payload.get("rating", "N/A")
+                    comment = payload.get("comment") or ""
+                    email = payload.get("email") or ""
+                    lines = [f"*New TestGen Feedback* ⭐ {rating}/5"]
+                    if comment:
+                        lines.append(f"*Comment:* {comment}")
+                    if email:
+                        lines.append(f"*Email:* {email}")
+                    response = requests.post(settings.SLACK_FEEDBACK_WEBHOOK, json={"text": "\n".join(lines)}, timeout=5)
+                    LOG.info("Slack feedback webhook response: %s %s", response.status_code, response.text)
+                except Exception:
+                    LOG.exception("Error sending feedback to Slack")
+            else:
+                LOG.warning("Slack feedback webhook not configured (TG_SLACK_FEEDBACK_WEBHOOK is not set)")
+
+        session.show_feedback_popup = False
+        st.session_state.feedback_visible = False
+
+    testgen_component(
+        "feedback_widget",
+        props={"visible": visible},
+        on_change_handlers={
+            "FeedbackDismissed": on_dismissed,
+            "FeedbackSubmitted": on_submitted,
+        },
+    )
+

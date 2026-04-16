@@ -36,6 +36,7 @@ const componentLoaders = {
     connections: () => import('./pages/connections.js').then(m => m.Connections),
     table_group_wizard: () => import('./pages/table_group_wizard.js').then(m => m.TableGroupWizard),
     help_menu: () => import('./components/help_menu.js').then(m => m.HelpMenu),
+    feedback_widget: () => import('./components/feedback_widget.js').then(m => m.FeedbackWidget),
     table_group_list: () => import('./pages/table_group_list.js').then(m => m.TableGroupList),
     table_group_delete: () => import('./pages/table_group_delete_confirmation.js').then(m => m.TableGroupDeleteConfirmation),
     run_profiling_dialog: () => import('./pages/run_profiling_dialog.js').then(m => m.RunProfilingDialog),

@@ -35,6 +35,8 @@ class TestgenSession(Singleton):
     add_project: bool
     version: Version | None
 
+    show_feedback_popup: bool
+
     testgen_event_id: ClassVar[dict[str, str]] = {}
     sidebar_event_id: str | None
     link_event_id: str | None

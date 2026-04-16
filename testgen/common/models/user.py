@@ -3,7 +3,7 @@ from typing import Self
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import Boolean, Column, String, asc, func, select, update
+from sqlalchemy import Boolean, Column, String, asc, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
@@ -22,6 +22,7 @@ class User(Entity):
     password: str = Column(String)
     is_global_admin: bool = Column(Boolean, nullable=False, default=False)
     latest_login: datetime = Column(postgresql.TIMESTAMP)
+    preferences: dict = Column(postgresql.JSONB, nullable=False, server_default=text("'{}'"))
 
     _get_by = "username"
     _default_order_by = (asc(func.lower(username)),)
@@ -40,6 +41,10 @@ class User(Entity):
             if update_latest_login:
                 self.latest_login = datetime.now(UTC)
             super().save()
+
+    def update_preferences(self) -> None:
+        query = update(User).where(User.id == self.id).values(preferences=self.preferences)
+        get_current_session().execute(query)
 
     @classmethod
     @st.cache_data(show_spinner=False)

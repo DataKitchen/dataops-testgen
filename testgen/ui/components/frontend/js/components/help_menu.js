@@ -58,6 +58,12 @@ const HelpMenu = (/** @type Properties */ props) => {
                 )
                 : null,
             span({ class: 'help-divider' }),
+            div(
+                { class: 'help-item help-item--feedback', onclick: () => emitEvent('FeedbackClicked') },
+                Icon({ classes: 'help-item-icon' }, 'rate_review'),
+                'Give Feedback',
+            ),
+            span({ class: 'help-divider' }),
             HelpLink(slackUrl, 'Slack Community', 'group'),
             getValue(props.support_email)
                 ? HelpLink(
@@ -138,6 +144,15 @@ stylesheet.replace(`
     height: 1px;
     background-color: var(--border-color);
     margin: 0 16px;
+}
+
+.help-item--feedback {
+    color: var(--primary-color);
+    font-weight: 500;
+}
+
+.help-item--feedback .help-item-icon {
+    color: var(--primary-color);
 }
 
 .help-version {
