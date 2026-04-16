@@ -75,7 +75,8 @@ def _init_wizard_state(
 ) -> dict:
     """Initialise (or reset) wizard session state. Returns the state dict."""
     state: dict = {
-        "step":              2 if table_group_id else 1,
+        "step":              2 if table_group_id else 0,
+        "method":            "table_group" if table_group_id else None,
         "project_code":      project_code,
         "table_group_id":    table_group_id,
         "table_group_name":  None,
@@ -107,13 +108,20 @@ def create_contract_wizard(
     table_group_id: str | None = None,
 ) -> None:
     """
-    5-step wizard to create a new data contract.
+    Wizard to create a new data contract.
 
-    Step 1 — Table Group (skipped if table_group_id provided)
-    Step 2 — Test Suites
-    Step 3 — Tables
-    Step 4 — Content toggles
-    Step 5 — Confirm + Name
+    Step 0 — Choose method (table group or YAML import)
+
+    Table-group path (5 steps):
+      Step 1 — Table Group
+      Step 2 — Test Suites
+      Step 3 — Tables
+      Step 4 — Content toggles
+      Step 5 — Confirm + Name
+
+    YAML-import path (2 steps):
+      Step 1 — Table Group
+      Step yaml — Upload YAML + Name → create
     """
     # Initialise or retrieve state
     if _WIZARD_KEY not in st.session_state or st.session_state[_WIZARD_KEY].get("project_code") != project_code:
@@ -124,10 +132,38 @@ def create_contract_wizard(
     step = state["step"]
 
     # ── Step indicator ─────────────────────────────────────────────
-    step_names = ["Table Group", "Suites", "Tables", "Content", "Confirm"]
-    total = 5
-    st.caption(f"Step {step} of {total} · {step_names[step - 1]}")
-    st.divider()
+    if step != 0:
+        if state.get("method") == "yaml":
+            yaml_step_num = 1 if step == 1 else 2
+            yaml_step_names = ["Table Group", "Upload YAML"]
+            st.caption(f"Step {yaml_step_num} of 2 · {yaml_step_names[yaml_step_num - 1]}")
+        else:
+            step_names = ["Table Group", "Suites", "Tables", "Content", "Confirm"]
+            st.caption(f"Step {step} of 5 · {step_names[step - 1]}")
+        st.divider()
+
+    # ── Step 0: Choose creation method ─────────────────────────────
+    if step == 0:
+        st.markdown("**How would you like to create this contract?**")
+        st.markdown("")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("##### 🗂 From a table group")
+            st.caption("Derive terms from profiling, DDL, tests, and governance data already in TestGen.")
+            if st.button("Choose →", key="wizard_method_tg", use_container_width=True, type="primary"):
+                state["method"] = "table_group"
+                state["step"] = 1
+                st.session_state[_WIZARD_KEY] = state
+                st.rerun(scope="fragment")
+        with col2:
+            st.markdown("##### 📄 From a YAML import")
+            st.caption("Upload an existing ODCS v3.1.0 YAML file to create the initial contract version.")
+            if st.button("Choose →", key="wizard_method_yaml", use_container_width=True):
+                state["method"] = "yaml"
+                state["step"] = 1
+                st.session_state[_WIZARD_KEY] = state
+                st.rerun(scope="fragment")
+        return
 
     # ── Step 1: Table Group ─────────────────────────────────────────
     if step == 1:
@@ -149,9 +185,65 @@ def create_contract_wizard(
             tg_name = next(tg["table_groups_name"] for tg in tgs if tg["id"] == selected_id)
             state["table_group_id"] = selected_id
             state["table_group_name"] = tg_name
-            state["step"] = 2
+            state["step"] = "yaml" if state.get("method") == "yaml" else 2
             st.session_state[_WIZARD_KEY] = state
             st.rerun(scope="fragment")
+        return
+
+    # ── Step yaml: YAML upload ─────────────────────────────────────
+    if step == "yaml":
+        from testgen.commands.create_data_contract import validate_odcs_header
+
+        tg_id   = state["table_group_id"]
+        tg_name = state.get("table_group_name", tg_id)
+        st.markdown(f"**Upload ODCS YAML for *{tg_name}***")
+
+        uploaded = st.file_uploader(
+            "Select ODCS v3.1.0 YAML file",
+            type=["yaml", "yml"],
+            key="wizard_yaml_file",
+        )
+
+        yaml_content: str | None = None
+        yaml_errors: list[str] = []
+        if uploaded is not None:
+            yaml_content = uploaded.read().decode("utf-8")
+            yaml_errors = validate_odcs_header(yaml_content)
+            for err in yaml_errors:
+                st.error(err)
+
+        contract_name = st.text_input(
+            "Contract name (unique within project)",
+            key="wizard_yaml_contract_name",
+        )
+        name_ok, name_err = _validate_contract_name(contract_name, project_code)
+        if contract_name and not name_ok:
+            st.error(name_err)
+
+        can_create = name_ok and yaml_content is not None and not yaml_errors
+
+        back_col, create_col = st.columns(2)
+        if back_col.button("← Back"):
+            state["step"] = 1
+            st.session_state[_WIZARD_KEY] = state
+            st.rerun(scope="fragment")
+
+        if create_col.button(
+            "Create Contract",
+            type="primary",
+            disabled=not can_create,
+            use_container_width=True,
+        ):
+            result = create_contract(contract_name.strip(), project_code, tg_id)
+            new_contract_id = result["contract_id"]
+
+            # Pre-inject the YAML as a preview so the detail page skips
+            # the generation step and goes straight to "Save as Version 0".
+            st.session_state[f"dc_preview:{new_contract_id}"] = yaml_content
+
+            st.session_state.pop(_WIZARD_KEY, None)
+            Router().queue_navigation(to="data-contract", with_args={"contract_id": new_contract_id})
+            safe_rerun()
         return
 
     # ── Step 2: Test Suites ────────────────────────────────────────
@@ -1014,7 +1106,7 @@ def _edit_rule_dialog(rule: dict, contract_id: str, yaml_key: str) -> None:
 # Update version dialog (in-place, no version bump)
 # ---------------------------------------------------------------------------
 
-@st.dialog("Save Changes", width="small")
+@st.dialog("Update Current Version", width="small")
 def _update_version_dialog(
     contract_id: str,
     table_group_id: str,
@@ -1028,7 +1120,7 @@ def _update_version_dialog(
     deletions  = pending.get("deletions", [])
 
     st.markdown(f"**Update version {current_version} in place**")
-    st.info("These changes will be saved to the **current version** — no new version number will be created. To snapshot a new version, cancel and click **Save version** without pending edits.", icon=":material/edit_note:")
+    st.info("These changes will be saved to the **current version** — no new version number will be created. To create a permanent snapshot, cancel and click **Save New Version**.", icon=":material/edit_note:")
 
     if gov_edits or test_edits or deletions:
         st.markdown("**Changes to save:**")
@@ -1093,18 +1185,22 @@ def _save_version_dialog(
 ) -> None:
     gov_edits  = pending.get("governance", [])
     test_edits = pending.get("tests", [])
+    deletions  = pending.get("deletions", [])
     next_ver   = (current_version + 1) if current_version is not None else 0
 
     st.markdown(f"**Create new version {next_ver}**")
     if current_version is not None:
         st.info(f"This creates a permanent, timestamped snapshot of the contract. Version {current_version} remains available as a historical record.", icon=":material/bookmark_add:")
 
-    if gov_edits or test_edits:
+    if gov_edits or test_edits or deletions:
         st.markdown("**Changes to include:**")
         for e in gov_edits:
             st.markdown(f"  · {html.escape(e['table'])}.{html.escape(e['col'])} — {html.escape(e['field'])}: {html.escape(str(e['value']))}")
         for e in test_edits:
-            st.markdown(f"  · Test `{e['rule_id'][:8]}…` updated")
+            label = "deleted" if e.get("_removed") else "updated"
+            st.markdown(f"  · Test `{e['rule_id'][:8]}…` {label}")
+        for e in deletions:
+            st.markdown(f"  · Deleted {html.escape(e.get('table', ''))}.{html.escape(e.get('col', ''))} — {html.escape(e.get('name', ''))}")
     else:
         st.info("No edits pending — this will snapshot the current contract state without changes.", icon="ℹ️")
 
