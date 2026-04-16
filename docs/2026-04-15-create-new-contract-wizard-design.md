@@ -67,7 +67,7 @@ def create_contract_wizard(
 **Shown:** Always (first visible step when called with a pre-filled table group).
 
 **UI:**
-- Checklist of all non-monitor, non-snapshot test suites for the selected table group
+- Checklist of all non-monitor, non-snapshot, non-contract-primary test suites for the selected table group
 - Each row shows: suite name, active test count
 - All suites are checked by default
 - A footer note: *"Monitor suites are controlled separately in Step 4 → Content."*
@@ -259,6 +259,7 @@ The wizard surfaces warnings contextually rather than blocking on prereqs:
 | `test_step2_next_disabled_with_no_suites` | Next is disabled when no suites are checked |
 | `test_step2_excludes_monitor_suites` | `is_monitor=TRUE` suites do not appear in the Step 2 checklist |
 | `test_step2_excludes_snapshot_suites` | `is_contract_snapshot=TRUE` suites do not appear |
+| `test_step2_excludes_contract_suite_suites` | `is_contract_suite=TRUE` suites do not appear |
 | `test_step3_next_disabled_with_no_tables` | Next is disabled when all tables are deselected |
 | `test_step3_select_all_none` | "Select all" checks all; "None" unchecks all |
 | `test_step3_multi_table_test_included_on_primary` | A test whose `table_name` is in the selected set is included even if its secondary reference table is deselected |
