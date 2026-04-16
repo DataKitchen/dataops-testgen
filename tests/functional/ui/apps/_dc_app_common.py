@@ -26,6 +26,7 @@ import streamlit as st  # noqa: E402
 
 # ── Shared constants ──────────────────────────────────────────────────────────
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 
 SAMPLE_YAML = """\
 apiVersion: v3.1.0
@@ -121,6 +122,13 @@ def make_default_patches(
         rebuild_quality_side_effect = lambda base_yaml, _suite_id: base_yaml  # noqa: E731
 
     return [
+        patch("testgen.ui.views.data_contract.get_contract", return_value={
+            "contract_id": CONTRACT_ID,
+            "table_group_id": TG_ID,
+            "project_code": "DEFAULT",
+            "is_active": True,
+            "name": "Test Contract",
+        }),
         patch("testgen.ui.views.data_contract.TableGroup.get_minimal", return_value=mock_tg),
         patch("testgen.ui.views.data_contract.TableGroup.get", return_value=mock_tg),
         patch("testgen.ui.views.data_contract.has_any_version", return_value=True),
@@ -153,7 +161,7 @@ def make_default_patches(
     ]
 
 
-def render_page(patches: list, tg_id: str = TG_ID) -> None:
+def render_page(patches: list, contract_id: str = CONTRACT_ID) -> None:
     """Apply patches and render the DataContractPage."""
     from testgen.ui.views.data_contract import DataContractPage  # noqa: E402
 
@@ -162,4 +170,4 @@ def render_page(patches: list, tg_id: str = TG_ID) -> None:
             stack.enter_context(p)
         page = DataContractPage.__new__(DataContractPage)
         page.router = MagicMock()
-        page.render(table_group_id=tg_id)
+        page.render(contract_id=contract_id)

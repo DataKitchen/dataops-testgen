@@ -13,6 +13,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 
 
 # ---------------------------------------------------------------------------
@@ -91,9 +92,9 @@ class Test_StalenessResetOnSave:
 
         with patch(
             "testgen.commands.contract_versions.execute_db_queries",
-            return_value=([0], [1]),
+            return_value=([None, 0], []),
         ) as mock_exec:
-            save_contract_version(TG_ID, "yaml-content")
+            save_contract_version(CONTRACT_ID, TG_ID, "yaml-content")
 
         queries = mock_exec.call_args[0][0]
         # At least one query must set contract_stale = FALSE
@@ -106,9 +107,9 @@ class Test_StalenessResetOnSave:
 
         with patch(
             "testgen.commands.contract_versions.execute_db_queries",
-            return_value=([0], [1]),
+            return_value=([None, 0], []),
         ) as mock_exec:
-            save_contract_version(TG_ID, "yaml-content")
+            save_contract_version(CONTRACT_ID, TG_ID, "yaml-content")
 
         queries = mock_exec.call_args[0][0]
         now_sqls = [q[0] for q in queries if "last_contract_save_date" in q[0]]

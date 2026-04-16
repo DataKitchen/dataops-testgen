@@ -8,7 +8,7 @@ with the rebuilt quality section after a fresh page load.
 from __future__ import annotations
 
 from tests.functional.ui.apps._dc_app_common import (
-    TG_ID,
+    TG_ID, CONTRACT_ID,
     make_mock_tg, make_mock_auth, make_mock_version_svc, make_minimal_term_diff,
     make_default_patches, render_page,
 )
@@ -60,7 +60,7 @@ _mock_vsvc      = make_mock_version_svc()
 _term_diff      = make_minimal_term_diff(saved_count=1, current_count=1, tg_test_passed=1)
 
 st.session_state["auth"] = _mock_auth
-st.query_params["table_group_id"] = TG_ID
+st.query_params["contract_id"] = CONTRACT_ID
 
 render_page(make_default_patches(
     _mock_tg, _term_diff, _mock_vsvc,

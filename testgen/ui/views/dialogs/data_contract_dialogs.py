@@ -329,10 +329,10 @@ def create_contract_wizard(
             safe_rerun()
 
 
-def _clear_contract_cache(table_group_id: str, *, also_anomalies: bool = False) -> None:
+def _clear_contract_cache(contract_id: str, *, also_anomalies: bool = False) -> None:
     keys = _CONTRACT_CACHE_KEYS + ("dc_anomalies",) if also_anomalies else _CONTRACT_CACHE_KEYS
     for key in keys:
-        st.session_state.pop(f"{key}:{table_group_id}", None)
+        st.session_state.pop(f"{key}:{contract_id}", None)
 
 
 # ---------------------------------------------------------------------------
@@ -1050,7 +1050,7 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_s
 # ---------------------------------------------------------------------------
 
 @st.dialog("Regenerate Contract", width="small")
-def _regenerate_dialog(table_group_id: str, current_version: int | None, pending_ct: int = 0) -> None:
+def _regenerate_dialog(contract_id: str, table_group_id: str, current_version: int | None, pending_ct: int = 0) -> None:
     """Re-export the contract from the live database and save it as a new version."""
     import io as _io
     next_ver = (current_version + 1) if current_version is not None else 0
@@ -1092,7 +1092,7 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
             st.error("Export produced no output — check that profiling and test suites exist.")
             return
         with st.spinner("Saving new version…"):
-            new_version = save_contract_version(table_group_id, fresh_yaml, label or None)
+            new_version = save_contract_version(contract_id, table_group_id, fresh_yaml, label=label or None)
 
         # Create the snapshot test suite.  On ANY failure, roll back the just-saved
         # version so the DB is not left with an orphaned row that has no snapshot suite.
@@ -1100,7 +1100,7 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
             create_contract_snapshot_suite(table_group_id, new_version)
         except Exception as snap_err:
             try:
-                rollback_contract_version(table_group_id, new_version)
+                rollback_contract_version(contract_id, new_version)
             except Exception:
                 LOG.exception("Failed to roll back orphaned contract version %d", new_version)
             if isinstance(snap_err, ValueError):
@@ -1110,7 +1110,7 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
             return
 
         st.success(f"Saved as version {new_version}.")
-        _clear_contract_cache(table_group_id)
+        _clear_contract_cache(contract_id)
         safe_rerun()
     if cancel_col.button("Cancel", use_container_width=True):
         safe_rerun()
@@ -1122,6 +1122,7 @@ def _regenerate_dialog(table_group_id: str, current_version: int | None, pending
 
 @st.dialog("Save Changes", width="small")
 def _update_version_dialog(
+    contract_id: str,
     table_group_id: str,
     pending: dict,
     current_yaml: str,
@@ -1152,7 +1153,7 @@ def _update_version_dialog(
         try:
             with st.spinner("Saving…"):
                 _persist_pending_edits(table_group_id, pending)
-                update_contract_version(table_group_id, current_version, current_yaml)
+                update_contract_version(contract_id, current_version, current_yaml)
 
                 # Mirror test mutations into the snapshot suite so the snapshot stays
                 # in sync with test_definitions after the in-place update.
@@ -1175,7 +1176,7 @@ def _update_version_dialog(
                             )
 
             st.success(f"Version {current_version} updated.")
-            _clear_contract_cache(table_group_id)
+            _clear_contract_cache(contract_id)
             safe_rerun()
         except Exception as exc:
             st.error(f"Save failed: {exc}")
@@ -1190,6 +1191,7 @@ def _update_version_dialog(
 
 @st.dialog("Save New Version", width="small")
 def _save_version_dialog(
+    contract_id: str,
     table_group_id: str,
     pending: dict,
     current_yaml: str,
@@ -1235,7 +1237,7 @@ def _save_version_dialog(
                 _persist_pending_edits(table_group_id, pending)
 
                 # 2. Save snapshot from the in-memory patched YAML (not a fresh export)
-                new_version = save_contract_version(table_group_id, current_yaml, label or None)
+                new_version = save_contract_version(contract_id, table_group_id, current_yaml, label=label or None)
 
             # 3. Create the snapshot test suite.  On ANY failure, roll back the
             # just-saved version so the DB is not left with an orphaned row that
@@ -1244,7 +1246,7 @@ def _save_version_dialog(
                 create_contract_snapshot_suite(table_group_id, new_version)
             except Exception as snap_err:
                 try:
-                    rollback_contract_version(table_group_id, new_version)
+                    rollback_contract_version(contract_id, new_version)
                 except Exception:
                     LOG.exception("Failed to roll back orphaned contract version %d", new_version)
                 if isinstance(snap_err, ValueError):
@@ -1254,7 +1256,7 @@ def _save_version_dialog(
                 return
 
             st.success(f"Saved as version {new_version}.")
-            _clear_contract_cache(table_group_id)
+            _clear_contract_cache(contract_id)
             safe_rerun()
 
         except ValueError as exc:
@@ -1273,7 +1275,7 @@ def _save_version_dialog(
 @st.dialog("Changes Since Last Save", width="large")
 def _review_changes_panel(
     stale_diff: StaleDiff,
-    table_group_id: str,
+    contract_id: str,
     version_record: dict,
     current_yaml: str,
 ) -> None:
@@ -1319,8 +1321,12 @@ def _review_changes_panel(
     if close_col.button("Close", use_container_width=True):
         safe_rerun()
     if save_col.button("Save new version →", type="primary", use_container_width=True):
-        pending = st.session_state.get(f"dc_pending:{table_group_id}", {})
-        _save_version_dialog(table_group_id, pending, current_yaml, version_record.get("version"))
+        pending = st.session_state.get(f"dc_pending:{contract_id}", {})
+        # table_group_id is not available here; _save_version_dialog needs it.
+        # We pass contract_id twice as a fallback — callers that need table_group_id
+        # should pre-stage it in session state if needed.
+        _tg_id = st.session_state.get(f"dc_tg_id:{contract_id}", contract_id)
+        _save_version_dialog(contract_id, _tg_id, pending, current_yaml, version_record.get("version"))
 
 
 # ---------------------------------------------------------------------------
@@ -1329,7 +1335,7 @@ def _review_changes_panel(
 
 @st.dialog("Discard Changes", width="small")
 def cancel_all_changes_dialog(
-    table_group_id: str,
+    contract_id: str,
     pending_ct: int,
     original_yaml: str,
 ) -> None:
@@ -1340,8 +1346,8 @@ def cancel_all_changes_dialog(
     st.divider()
     confirm_col, back_col = st.columns(2)
     if confirm_col.button("Discard", type="primary", use_container_width=True):
-        st.session_state.pop(f"dc_pending:{table_group_id}", None)
-        st.session_state[f"dc_yaml:{table_group_id}"] = original_yaml
+        st.session_state.pop(f"dc_pending:{contract_id}", None)
+        st.session_state[f"dc_yaml:{contract_id}"] = original_yaml
         safe_rerun()
     if back_col.button("Go back", use_container_width=True):
         safe_rerun()

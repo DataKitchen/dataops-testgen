@@ -34,6 +34,7 @@ import streamlit as st  # noqa: E402 — must follow sys.modules setup
 # Test constants
 # ---------------------------------------------------------------------------
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 
 SAMPLE_YAML = """\
 apiVersion: v3.1.0
@@ -74,13 +75,17 @@ def _mock_capture_yaml(tg_id: str, buf) -> None:  # noqa: ANN001
 # Session / query params — set before page render
 # ---------------------------------------------------------------------------
 st.session_state["auth"] = _mock_auth
-st.query_params["table_group_id"] = TG_ID
+st.query_params["contract_id"] = CONTRACT_ID
 
 # ---------------------------------------------------------------------------
 # Render the page with all external dependencies patched out
 # ---------------------------------------------------------------------------
 with (
     # Core page dependencies
+    patch("testgen.ui.views.data_contract.get_contract", return_value={
+        "contract_id": CONTRACT_ID, "table_group_id": TG_ID,
+        "project_code": "DEFAULT", "is_active": True, "name": "Test Contract",
+    }),
     patch("testgen.ui.views.data_contract.TableGroup.get_minimal", return_value=_mock_tg),
     patch("testgen.ui.views.data_contract.has_any_version", return_value=False),
     patch("testgen.ui.views.data_contract._check_contract_prerequisites", return_value={
@@ -114,4 +119,4 @@ with (
 
     _page = DataContractPage.__new__(DataContractPage)
     _page.router = MagicMock()
-    _page.render(table_group_id=TG_ID)
+    _page.render(contract_id=CONTRACT_ID)

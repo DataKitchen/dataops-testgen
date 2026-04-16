@@ -42,6 +42,7 @@ _APP_YAML_IMPORT  = str(pathlib.Path(__file__).parent / "apps" / "data_contract_
 _APP_IMPORT_CONFIRM = str(pathlib.Path(__file__).parent / "apps" / "data_contract_import_confirm.py")
 
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 
 
 # ---------------------------------------------------------------------------
@@ -123,15 +124,15 @@ class Test_DataContractPageLoad:
             f"Expected 'Test Orders' in info messages. Got: {info_texts}"
         )
 
-    def test_query_param_table_group_id_is_set(self):
-        """Confirms the AppTest correctly receives table_group_id as a query param —
-        the same value the project dashboard passes when the user clicks 'View Contract'."""
+    def test_query_param_contract_id_is_set(self):
+        """Confirms the AppTest correctly receives contract_id as a query param —
+        the same value passed when the user navigates to the contract detail page."""
         at = _at()
         at.run()
         assert not at.exception
         # AppTest stores query params as lists
-        tg_values = at.query_params.get("table_group_id", [])
-        assert TG_ID in tg_values, f"Expected {TG_ID} in {tg_values}"
+        contract_values = at.query_params.get("contract_id", [])
+        assert CONTRACT_ID in contract_values, f"Expected {CONTRACT_ID} in {contract_values}"
 
 
 # ---------------------------------------------------------------------------
@@ -394,7 +395,7 @@ class Test_ImportResultBanner:
     def test_import_success_shows_success_banner(self):
         """A successful YAML import (pre-staged in session state) must show a success banner."""
         at = _at_saved()
-        import_key = f"dc_import_result:{TG_ID}"
+        import_key = f"dc_import_result:{CONTRACT_ID}"
         _mock_diff = MagicMock()
         _mock_diff.has_errors = False
         _mock_diff.errors = []
@@ -416,7 +417,7 @@ class Test_ImportResultBanner:
     def test_import_success_mentions_created_count(self):
         """Import success banner must report the number of tests created."""
         at = _at_saved()
-        import_key = f"dc_import_result:{TG_ID}"
+        import_key = f"dc_import_result:{CONTRACT_ID}"
         _mock_diff = MagicMock()
         _mock_diff.has_errors = False
         _mock_diff.errors = []
@@ -438,7 +439,7 @@ class Test_ImportResultBanner:
     def test_import_error_shows_error_banner(self):
         """A failed YAML import (pre-staged) must show an error message."""
         at = _at_saved()
-        import_key = f"dc_import_result:{TG_ID}"
+        import_key = f"dc_import_result:{CONTRACT_ID}"
         at.session_state[import_key] = {"error": "YAML parse failure"}
         at.run()
         assert not at.exception
@@ -450,7 +451,7 @@ class Test_ImportResultBanner:
     def test_import_error_includes_error_message(self):
         """Error banner must echo back the actual error string."""
         at = _at_saved()
-        import_key = f"dc_import_result:{TG_ID}"
+        import_key = f"dc_import_result:{CONTRACT_ID}"
         at.session_state[import_key] = {"error": "YAML parse failure"}
         at.run()
         assert not at.exception
@@ -476,7 +477,7 @@ class Test_BulkDeleteClearsCache:
     def test_page_renders_with_yaml_cache(self):
         """Page must use cached YAML when available and render without exception."""
         at = _at_saved()
-        yaml_key = f"dc_yaml:{TG_ID}"
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
         at.session_state[yaml_key] = (
             "apiVersion: v3.1.0\nkind: DataContract\nid: cached\nschema: []\nquality: []\n"
         )
@@ -690,7 +691,7 @@ def _setup_deletion(at: AppTest, terms: list[dict]) -> AppTest:
 
 
 def _get_yaml(at: AppTest) -> dict:
-    key = f"dc_yaml:{TG_ID}"
+    key = f"dc_yaml:{CONTRACT_ID}"
     raw = at.session_state[key] if key in at.session_state else ""
     return yaml.safe_load(raw) or {}
 
@@ -883,7 +884,7 @@ class Test_SnapshotQualityRebuilt:
         at = self._at()
         at.run()
         assert not at.exception
-        yaml_key = f"dc_yaml:{TG_ID}"
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
         assert yaml_key in at.session_state
         stored_yaml = at.session_state[yaml_key]
         doc = yaml.safe_load(stored_yaml)
@@ -895,7 +896,7 @@ class Test_SnapshotQualityRebuilt:
         at = self._at()
         at.run()
         assert not at.exception
-        yaml_key = f"dc_yaml:{TG_ID}"
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
         assert yaml_key in at.session_state
         stored_yaml = at.session_state[yaml_key]
         assert "dddddddd-0000-0000-0000-000000000004" in stored_yaml, (
@@ -907,7 +908,7 @@ class Test_SnapshotQualityRebuilt:
         at = self._at()
         at.run()
         assert not at.exception
-        yaml_key = f"dc_yaml:{TG_ID}"
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
         assert yaml_key in at.session_state
         stored_yaml = at.session_state[yaml_key]
         # The rebuilt YAML should differ from the base (which had 'quality: []')
@@ -989,7 +990,7 @@ class Test_EditRuleDialog:
     def test_edit_rule_saves_pending_edit_to_session_state(self):
         """Pending test edit round-trips through session state correctly."""
         at = _at_pending_edits()
-        pending_key = f"dc_pending:{TG_ID}"
+        pending_key = f"dc_pending:{CONTRACT_ID}"
         at.session_state["dc_test_inject_pending"] = {
             "tests": [{"rule_id": "rule-001", "field": "mustBeGreaterThan", "value": "10"}],
             "governance": [],
@@ -1025,7 +1026,7 @@ class Test_GovernanceEditDialog:
     def test_governance_edit_shows_unsaved_changes_banner_when_pending(self):
         """Pre-seeding dc_pending with a governance edit → unsaved-changes warning visible."""
         at = _at_pending_edits()
-        pending_key = f"dc_pending:{TG_ID}"
+        pending_key = f"dc_pending:{CONTRACT_ID}"
         at.session_state["dc_test_inject_pending"] = {
             "governance": [
                 {"field": "description", "value": "New desc", "table": "orders",
@@ -1096,41 +1097,27 @@ class Test_VersionSwitching:
 
 
 # ---------------------------------------------------------------------------
-# Test_DeleteContractButton — delete contract button states
+# Test_DeleteContractButton — delete contract button removed from toolbar
 # ---------------------------------------------------------------------------
 
 class Test_DeleteContractButton:
 
-    def test_delete_contract_button_disabled_with_one_version(self):
-        """Single version → 'Delete contract' button is disabled."""
+    def test_delete_contract_button_absent_on_single_version(self):
+        """'Delete contract' toolbar button was removed; must not appear on any page."""
         at = _at_single_version()
         at.run()
         assert not at.exception
-        labels = _button_labels(at)
-        assert "Delete contract" in labels, (
-            f"Expected 'Delete contract' button. Available: {labels}"
+        assert "Delete contract" not in _button_labels(at), (
+            f"'Delete contract' button should have been removed from toolbar. Available: {_button_labels(at)}"
         )
-        btn = next(b for b in at.button if b.label == "Delete contract")
-        assert btn.disabled, "Delete contract should be disabled with only 1 version"
 
-    def test_delete_contract_button_enabled_with_multiple_versions(self):
-        """Multiple versions → 'Delete contract' button is enabled."""
+    def test_delete_contract_button_absent_on_saved_version(self):
+        """'Delete contract' must not appear in button labels on the saved version page."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        btn = next((b for b in at.button if b.label == "Delete contract"), None)
-        assert btn is not None, (
-            f"Expected 'Delete contract' button. Available: {_button_labels(at)}"
-        )
-        assert not btn.disabled, "Delete contract should be enabled with 2+ versions"
-
-    def test_delete_contract_button_present_on_saved_version(self):
-        """'Delete contract' must appear in button labels on the saved version page."""
-        at = _at_saved()
-        at.run()
-        assert not at.exception
-        assert "Delete contract" in _button_labels(at), (
-            f"Expected 'Delete contract'. Available: {_button_labels(at)}"
+        assert "Delete contract" not in _button_labels(at), (
+            f"'Delete contract' button should have been removed from toolbar. Available: {_button_labels(at)}"
         )
 
 
@@ -1176,7 +1163,7 @@ class Test_SaveVersionFlow:
     def test_cancel_save_preserves_pending_edits(self):
         """Pending edits survive a page render without being clicked away."""
         at = _at_pending_edits()
-        pending_key = f"dc_pending:{TG_ID}"
+        pending_key = f"dc_pending:{CONTRACT_ID}"
         pending_data = {
             "governance": [
                 {"field": "description", "value": "keep me", "table": "orders", "col": "amount",
@@ -1207,11 +1194,11 @@ class Test_RefreshButton:
         at.run()
         assert not at.exception
         # Pre-seed extra cache keys that refresh should clear
-        at.session_state[f"dc_anomalies:{TG_ID}"] = ["stale-anomaly"]
-        at.session_state[f"dc_gov:{TG_ID}"] = {"stale": True}
-        at.session_state[f"dc_run_dates:{TG_ID}"] = {"stale": True}
-        at.session_state[f"dc_suite_scope:{TG_ID}"] = {"stale": True}
-        at.session_state[f"dc_staleness_diff:{TG_ID}"] = MagicMock()
+        at.session_state[f"dc_anomalies:{CONTRACT_ID}"] = ["stale-anomaly"]
+        at.session_state[f"dc_gov:{CONTRACT_ID}"] = {"stale": True}
+        at.session_state[f"dc_run_dates:{CONTRACT_ID}"] = {"stale": True}
+        at.session_state[f"dc_suite_scope:{CONTRACT_ID}"] = {"stale": True}
+        at.session_state[f"dc_staleness_diff:{CONTRACT_ID}"] = MagicMock()
         # Click Refresh — pops all keys then reruns the page
         _click(at, "↺ Refresh")
         assert not at.exception
@@ -1300,7 +1287,7 @@ class Test_ImportYamlEdgeCases:
     def test_import_clears_yaml_cache_on_success(self):
         """Successful import clears dc_yaml cache so next render fetches fresh data."""
         at = _at_import_saved()
-        yaml_key = f"dc_yaml:{TG_ID}"
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
         # Pre-seed the import trigger and YAML cache
         at.session_state["dc_test_import_trigger"] = "apiVersion: v3.1.0\nkind: DataContract\n"
         at.session_state[yaml_key] = "old-cached-yaml"
@@ -1316,7 +1303,7 @@ class Test_ImportYamlEdgeCases:
     def test_import_preserves_session_on_failure(self):
         """Failed import (error path) keeps dc_yaml cache intact."""
         at = _at_import_saved()
-        yaml_key = f"dc_yaml:{TG_ID}"
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
         original_yaml = "apiVersion: v3.1.0\nkind: DataContract\nid: preserved\n"
         at.session_state["dc_test_import_trigger"] = "INVALID"
         at.session_state[yaml_key] = original_yaml
@@ -1595,7 +1582,7 @@ class Test_PendingEditsUX:
         at.run()
         assert not at.exception
         # The page stores pending in session state; verify the pending tests are present.
-        pending_key = f"dc_pending:{TG_ID}"
+        pending_key = f"dc_pending:{CONTRACT_ID}"
         assert pending_key in at.session_state, "dc_pending key must be present"
         stored = at.session_state[pending_key]
         test_edits = stored.get("tests", [])
@@ -1613,7 +1600,7 @@ class Test_PendingEditsUX:
         }
         at.run()
         assert not at.exception
-        pending_key = f"dc_pending:{TG_ID}"
+        pending_key = f"dc_pending:{CONTRACT_ID}"
         assert pending_key in at.session_state, "dc_pending key must be present"
         stored = at.session_state[pending_key]
         gov_edits = stored.get("governance", [])

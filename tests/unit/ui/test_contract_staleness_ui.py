@@ -133,7 +133,7 @@ class Test_RenderStalenessBanner:
             _render_staleness_banner(
                 version_record={"version": 1, "saved_at": datetime(2026, 1, 1)},
                 stale_diff=self._stale_diff_with_schema(),
-                table_group_id="abc",
+                contract_id="abc",
                 dismissed_key=dismissed_key,
             )
             mock_st.warning.assert_not_called()
@@ -150,7 +150,7 @@ class Test_RenderStalenessBanner:
             _render_staleness_banner(
                 version_record={"version": 3, "saved_at": datetime(2026, 1, 15)},
                 stale_diff=self._stale_diff_with_schema(),
-                table_group_id="tg-1",
+                contract_id="tg-1",
                 dismissed_key="dc_stale_dismissed:tg-1",
             )
 
@@ -171,7 +171,7 @@ class Test_RenderStalenessBanner:
             _render_staleness_banner(
                 version_record={"version": 2},
                 stale_diff=self._stale_diff_with_schema(),
-                table_group_id="tg-2",
+                contract_id="tg-2",
                 dismissed_key="dc_stale_dismissed:tg-2",
             )
 
@@ -191,7 +191,7 @@ class Test_RenderStalenessBanner:
             _render_staleness_banner(
                 version_record={"version": 1, "saved_at": datetime(2026, 3, 1)},
                 stale_diff=diff,
-                table_group_id="tg-3",
+                contract_id="tg-3",
                 dismissed_key="dc_stale_dismissed:tg-3",
             )
 
@@ -212,7 +212,7 @@ class Test_RenderStalenessBanner:
             _render_staleness_banner(
                 version_record={"version": 1, "saved_at": datetime(2026, 3, 1)},
                 stale_diff=self._stale_diff_with_schema(),
-                table_group_id="tg-4",
+                contract_id="tg-4",
                 dismissed_key=dismissed_key,
             )
 

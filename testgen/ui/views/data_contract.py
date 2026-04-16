@@ -24,6 +24,7 @@ from testgen.commands.contract_staleness import (
     compute_staleness_diff,
     compute_term_diff,
 )
+from testgen.commands.contract_management import get_contract
 from testgen.commands.contract_versions import (
     has_any_version,
     list_contract_versions,
@@ -38,6 +39,7 @@ from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
 from testgen.ui.queries.data_contract_queries import (
     _dismiss_hygiene_anomaly,
     _fetch_anomalies,
@@ -278,7 +280,7 @@ def _check_contract_prerequisites(table_group_id: str) -> dict:
 def _render_staleness_banner(
     version_record: dict,
     stale_diff: StaleDiff,
-    table_group_id: str,
+    contract_id: str,
     dismissed_key: str,
 ) -> None:
     """Render the staleness warning banner. Returns silently if not stale or dismissed."""
@@ -294,10 +296,10 @@ def _render_staleness_banner(
         icon="⚠️",
     )
     col1, col2 = st.columns([1, 8])
-    if col1.button("Review Changes", key=f"dc_review_changes:{table_group_id}"):
-        st.session_state[f"dc_show_review:{table_group_id}"] = True
+    if col1.button("Review Changes", key=f"dc_review_changes:{contract_id}"):
+        st.session_state[f"dc_show_review:{contract_id}"] = True
         safe_rerun()
-    if col2.button("Dismiss", key=f"dc_dismiss_stale:{table_group_id}"):
+    if col2.button("Dismiss", key=f"dc_dismiss_stale:{contract_id}"):
         st.session_state[dismissed_key] = True
         safe_rerun()
 
@@ -306,12 +308,16 @@ def _render_staleness_banner(
 # First-time flow renderer
 # ---------------------------------------------------------------------------
 
-def _render_first_time_flow(table_group_id: str) -> None:
+def _render_first_time_flow(contract_id: str, table_group_id: str, is_active: bool) -> None:
     """Render the guided first-contract generation wizard."""
+    if not is_active:
+        st.info("This contract is inactive. Activate it to generate a contract version.", icon="ℹ️")
+        return
+
     from testgen.ui.queries.data_contract_queries import _capture_yaml
 
     prereqs = _check_contract_prerequisites(table_group_id)
-    preview_key = f"dc_preview:{table_group_id}"
+    preview_key = f"dc_preview:{contract_id}"
     in_preview = preview_key in st.session_state
 
     st.markdown("### No contract saved yet")
@@ -367,7 +373,7 @@ def _render_first_time_flow(table_group_id: str) -> None:
             safe_rerun()
 
         if col2.button("Save as Version 0", type="primary"):
-            _save_version_dialog(table_group_id, {}, preview_yaml, None)
+            _save_version_dialog(contract_id, table_group_id, {}, preview_yaml, None)
 
     st.divider()
     with st.expander("Or import from YAML", expanded=False):
@@ -375,7 +381,7 @@ def _render_first_time_flow(table_group_id: str) -> None:
         uploaded = st.file_uploader(
             "Upload ODCS YAML",
             type=["yaml", "yml"],
-            key=f"dc_yaml_upload:{table_group_id}",
+            key=f"dc_yaml_upload:{contract_id}",
         )
         if uploaded is not None:
             from testgen.commands.create_data_contract import create_contract_from_yaml, validate_odcs_header
@@ -385,8 +391,8 @@ def _render_first_time_flow(table_group_id: str) -> None:
                 for err in errors:
                     st.error(err)
             else:
-                import_label = st.text_input("Version label (optional)", key=f"dc_yaml_upload_label:{table_group_id}")
-                if st.button("Save as Version 0", key=f"dc_yaml_upload_save:{table_group_id}", type="primary"):
+                import_label = st.text_input("Version label (optional)", key=f"dc_yaml_upload_label:{contract_id}")
+                if st.button("Save as Version 0", key=f"dc_yaml_upload_save:{contract_id}", type="primary"):
                     try:
                         create_contract_from_yaml(table_group_id, raw, import_label or None)
                         st.success("Contract version 0 saved.")
@@ -561,42 +567,62 @@ class DataContractPage(Page):
     path = "data-contract"
     can_activate: typing.ClassVar = [
         lambda: session.auth.is_logged_in,
-        lambda: "table_group_id" in st.query_params,
+        lambda: "contract_id" in st.query_params,
     ]
     menu_item = None
 
-    def render(self, table_group_id: str, **_kwargs) -> None:
+    def render(self, contract_id: str, **_kwargs) -> None:
         from testgen.ui.components.widgets.testgen_component import testgen_component
 
-        table_group = TableGroup.get_minimal(table_group_id)
-        if not table_group:
-            st.error("Table group not found.")
+        contract = get_contract(contract_id)
+        if not contract:
+            st.error("Contract not found.")
             return
 
-        tg_name = getattr(table_group, "table_groups_name", "") or ""
-        testgen.page_header(f"{PAGE_TITLE}: {tg_name}" if tg_name else PAGE_TITLE, "connect-your-database/manage-table-groups/")
+        table_group_id: str = contract["table_group_id"]
+        project_code: str = contract.get("project_code", "")
+        is_active: bool = bool(contract.get("is_active", True))
+        contract_name: str = contract.get("name", "")
+
+        table_group = TableGroup.get_minimal(table_group_id)
+        tg_name = getattr(table_group, "table_groups_name", "") if table_group else ""
+
+        # ── Back button ───────────────────────────────────────────────────────
+        if st.button("← Data Contracts", key="dc_back_btn", type="tertiary"):
+            Router().queue_navigation(to="data-contracts", with_args={"project_code": project_code})
+            from testgen.ui.services.rerun_service import safe_rerun as _rerun
+            _rerun()
+
+        display_name = contract_name or (tg_name or contract_id)
+        testgen.page_header(f"{PAGE_TITLE}: {display_name}", "connect-your-database/manage-table-groups/")
+
+        # ── Inactive banner ───────────────────────────────────────────────────
+        if not is_active:
+            st.warning("This contract is inactive. It is read-only and cannot be edited or saved.", icon="⚠️")
 
         # ── First-time flow ───────────────────────────────────────────────────
-        if not has_any_version(table_group_id):
-            _render_first_time_flow(table_group_id)
+        if not has_any_version(contract_id):
+            _render_first_time_flow(contract_id, table_group_id, is_active)
             return
 
         # ── Session state keys ────────────────────────────────────────────────
-        yaml_key        = f"dc_yaml:{table_group_id}"
-        version_key     = f"dc_version:{table_group_id}"
-        pending_key     = f"dc_pending:{table_group_id}"
-        anomaly_key     = f"dc_anomalies:{table_group_id}"
-        import_key      = f"dc_import_result:{table_group_id}"
-        import_preview_key = f"dc_import_preview:{table_group_id}"
-        import_open_key    = f"dc_import_open:{table_group_id}"
-        run_dates_key   = f"dc_run_dates:{table_group_id}"
-        gov_key         = f"dc_gov:{table_group_id}"
-        term_diff_key      = f"dc_term_diff:{table_group_id}"
-        suite_scope_key    = f"dc_suite_scope:{table_group_id}"
-        staleness_diff_key = f"dc_staleness_diff:{table_group_id}"
+        yaml_key        = f"dc_yaml:{contract_id}"
+        version_key     = f"dc_version:{contract_id}"
+        pending_key     = f"dc_pending:{contract_id}"
+        anomaly_key     = f"dc_anomalies:{contract_id}"
+        import_key      = f"dc_import_result:{contract_id}"
+        import_preview_key = f"dc_import_preview:{contract_id}"
+        import_open_key    = f"dc_import_open:{contract_id}"
+        run_dates_key   = f"dc_run_dates:{contract_id}"
+        gov_key         = f"dc_gov:{contract_id}"
+        term_diff_key      = f"dc_term_diff:{contract_id}"
+        suite_scope_key    = f"dc_suite_scope:{contract_id}"
+        staleness_diff_key = f"dc_staleness_diff:{contract_id}"
+        # Store table_group_id so dialogs invoked with only contract_id can retrieve it
+        st.session_state[f"dc_tg_id:{contract_id}"] = table_group_id
 
         # ── Version picker ────────────────────────────────────────────────────
-        versions = list_contract_versions(table_group_id)
+        versions = list_contract_versions(contract_id)
         requested_version: int | None = None
         raw_ver = st.query_params.get("version")
         if raw_ver is not None:
@@ -609,15 +635,15 @@ class DataContractPage(Page):
             requested_version is not None
             and st.session_state.get(version_key, {}).get("version") != requested_version
         ):
-            record = load_contract_version(table_group_id, requested_version)
+            record = load_contract_version(contract_id, requested_version)
             if record is None:
-                record = load_contract_version(table_group_id)
+                record = load_contract_version(contract_id)
             st.session_state[version_key] = record
             st.session_state.pop(yaml_key, None)
 
         version_record: dict = st.session_state[version_key]
         is_latest = (version_record["version"] == versions[0]["version"]) if versions else True
-        dismissed_key = f"dc_stale_dismissed:{table_group_id}:v{version_record['version']}"
+        dismissed_key = f"dc_stale_dismissed:{contract_id}:v{version_record['version']}"
 
         _snapshot_suite_id: str | None = version_record.get("snapshot_suite_id")
 
@@ -661,6 +687,8 @@ class DataContractPage(Page):
                         st.session_state[staleness_diff_key] = computed
                 stale_diff = st.session_state.get(staleness_diff_key)
 
+        is_latest_and_active = is_latest and is_active
+
         # ── Toolbar: Refresh · [version picker] · Save ────────────────────────
         pending_ct = _pending_edit_count(pending)
         if pending_ct > 0:
@@ -687,7 +715,7 @@ class DataContractPage(Page):
             current_idx = next(
                 (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
             )
-            picker_col, refresh_col, regen_col, save_col, delete_col = st.columns([4, 1, 1, 1, 1.3])
+            picker_col, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
             with picker_col:
                 chosen_idx = st.selectbox(
                     "Contract version",
@@ -715,10 +743,10 @@ class DataContractPage(Page):
                     st.query_params["version"] = str(chosen_ver)
                     safe_rerun()
         else:
-            _, refresh_col, regen_col, save_col, delete_col = st.columns([4, 1, 1, 1, 1.3])
+            _, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
 
         with refresh_col:
-            if st.button("↺ Refresh", key=f"dc_refresh_btn:{table_group_id}", use_container_width=True,
+            if st.button("↺ Refresh", key=f"dc_refresh_btn:{contract_id}", use_container_width=True,
                          help="Reload the saved data contract from the database"):
                 st.session_state.pop(yaml_key, None)
                 st.session_state.pop(anomaly_key, None)
@@ -730,31 +758,21 @@ class DataContractPage(Page):
                 st.session_state.pop(suite_scope_key, None)
                 st.session_state.pop(staleness_diff_key, None)
                 safe_rerun()
-        if is_latest:
+        if is_latest_and_active:
             with regen_col:
-                if st.button("Regenerate", key=f"dc_regen_btn:{table_group_id}", use_container_width=True,
+                if st.button("Regenerate", key=f"dc_regen_btn:{contract_id}", use_container_width=True,
                              help="Re-export from the current database state and save as a new version"):
-                    _regenerate_dialog(table_group_id, version_record["version"], pending_ct)
+                    _regenerate_dialog(contract_id, table_group_id, version_record["version"], pending_ct)
             with save_col:
                 if pending_ct > 0:
-                    if st.button(f"Save version ({pending_ct})", type="primary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
-                        _update_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+                    if st.button(f"Save version ({pending_ct})", type="primary", help=save_tip, key=f"dc_save_btn:{contract_id}", use_container_width=True):
+                        _update_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"], snapshot_suite_id=version_record.get("snapshot_suite_id"))
                 else:
-                    if st.button("Save version", type="secondary", help=save_tip, key=f"dc_save_btn:{table_group_id}", use_container_width=True):
-                        _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
-        with delete_col:
-            can_delete = len(versions) > 1
-            if st.button(
-                "Delete contract",
-                key=f"dc_delete_btn:{table_group_id}",
-                use_container_width=True,
-                disabled=not can_delete,
-                help=None if can_delete else "Cannot delete the only saved version",
-            ):
-                _delete_version_dialog(table_group_id, version_record["version"])
+                    if st.button("Save version", type="secondary", help=save_tip, key=f"dc_save_btn:{contract_id}", use_container_width=True):
+                        _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
 
         # ── Unsaved changes banner ────────────────────────────────────────────
-        if is_latest and pending_ct > 0:
+        if is_latest_and_active and pending_ct > 0:
             labels = _format_pending_labels(pending)
             shown = labels[:3]
             remainder = len(labels) - 3
@@ -765,8 +783,8 @@ class DataContractPage(Page):
                 st.warning(f"{pending_ct} staged {noun} — not yet saved. Click **Save version ({pending_ct})** to commit: {summary}", icon="⚠️")
             with cancel_col:
                 st.markdown("<div style='margin-top:0.4rem'></div>", unsafe_allow_html=True)
-                if st.button("✕ Cancel all", key=f"dc_cancel_all:{table_group_id}", type="tertiary", use_container_width=True):
-                    cancel_all_changes_dialog(table_group_id, pending_ct, version_record["contract_yaml"])
+                if st.button("✕ Cancel all", key=f"dc_cancel_all:{contract_id}", type="tertiary", use_container_width=True):
+                    cancel_all_changes_dialog(contract_id, pending_ct, version_record["contract_yaml"])
 
         # ── Historic read-only banner ─────────────────────────────────────────
         if not is_latest:
@@ -781,11 +799,11 @@ class DataContractPage(Page):
 
         # ── Staleness banner (latest only) ────────────────────────────────────
         if stale_diff and is_latest:
-            _render_staleness_banner(version_record, stale_diff, table_group_id, dismissed_key)
+            _render_staleness_banner(version_record, stale_diff, contract_id, dismissed_key)
 
         # ── Review changes panel ──────────────────────────────────────────────
-        if st.session_state.pop(f"dc_show_review:{table_group_id}", False) and stale_diff:
-            _review_changes_panel(stale_diff, table_group_id, version_record, contract_yaml)
+        if st.session_state.pop(f"dc_show_review:{contract_id}", False) and stale_diff:
+            _review_changes_panel(stale_diff, contract_id, version_record, contract_yaml)
 
         # ── Anomalies ─────────────────────────────────────────────────────────
         if anomaly_key not in st.session_state:
@@ -903,7 +921,7 @@ class DataContractPage(Page):
         # When a dialog's "Delete term from contract" button is clicked, it stores
         # the term key here instead of immediately deleting.  We pass it to JS so
         # the term card becomes selected in the multi-select UI.
-        _select_term_key = st.session_state.pop(f"dc_select_term:{table_group_id}", "") or ""
+        _select_term_key = st.session_state.pop(f"dc_select_term:{contract_id}", "") or ""
         props["select_term_key"] = _select_term_key
 
         # ── Pending edit keys — for "edited" chip indicators in JS ────────────
@@ -925,8 +943,7 @@ class DataContractPage(Page):
         def on_suite_picker(_payload: object) -> None:
             suite_runs = props.get("health", {}).get("suite_runs", [])
             if suite_runs:
-                _project_code = getattr(table_group, "project_code", "")
-                _suite_picker_dialog(suite_runs, _project_code, table_group_id)
+                _suite_picker_dialog(suite_runs, project_code, table_group_id)
 
         def on_term_detail(payload: dict) -> None:
             term       = payload.get("term", {})
@@ -937,7 +954,7 @@ class DataContractPage(Page):
             term_name = term.get("name", "")
             snapshot_suite_id = version_record.get("snapshot_suite_id")
             if not is_latest:
-                _term_read_dialog(term, table_name, col_name, table_group_id, yaml_key)
+                _term_read_dialog(term, table_name, col_name, contract_id, yaml_key)
             elif source == "monitor":
                 _monitor_term_dialog(term.get("rule", {}), term_name, table_name, col_name)
             elif source == "test":
@@ -946,12 +963,11 @@ class DataContractPage(Page):
                     from testgen.ui.views.test_definitions import show_test_form_by_id
                     show_test_form_by_id(rule_id)
                 else:
-                    _project_code = getattr(table_group, "project_code", "")
-                    _test_term_dialog(term, table_name, col_name, _project_code, yaml_key, table_group_id)
+                    _test_term_dialog(term, table_name, col_name, project_code, yaml_key, contract_id)
             elif source == "governance" and verif == "declared":
-                _term_edit_dialog(term, table_name, col_name, table_group_id, yaml_key)
+                _term_edit_dialog(term, table_name, col_name, contract_id, yaml_key)
             else:
-                _term_read_dialog(term, table_name, col_name, table_group_id, yaml_key)
+                _term_read_dialog(term, table_name, col_name, contract_id, yaml_key)
 
         def on_governance_edit(payload: dict) -> None:
             col_id     = payload.get("columnId", "")
@@ -961,7 +977,7 @@ class DataContractPage(Page):
                 return
             if not col_id:
                 col_id = _lookup_column_id(table_group_id, table_name, col_name)
-            _governance_edit_dialog(col_id, table_name, col_name, table_group_id, yaml_key)
+            _governance_edit_dialog(col_id, table_name, col_name, contract_id, yaml_key)
 
         def on_edit_rule(payload: dict) -> None:
             if not is_latest:
@@ -972,7 +988,7 @@ class DataContractPage(Page):
                 None,
             )
             if rule:
-                _edit_rule_dialog(rule, table_group_id, yaml_key, snapshot_suite_id=version_record.get("snapshot_suite_id"))
+                _edit_rule_dialog(rule, contract_id, yaml_key, snapshot_suite_id=version_record.get("snapshot_suite_id"))
 
         def on_add_test(payload: dict) -> None:
             if not is_latest:
@@ -1021,17 +1037,17 @@ class DataContractPage(Page):
             safe_rerun()
 
         def on_save_from_sticky_bar(_payload: object) -> None:
-            if not is_latest:
+            if not is_latest_and_active:
                 return
             if pending_ct > 0:
-                _update_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+                _update_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"], snapshot_suite_id=version_record.get("snapshot_suite_id"))
             else:
-                _save_version_dialog(table_group_id, pending, contract_yaml, version_record["version"])
+                _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
 
         def on_discard_from_sticky_bar(_payload: object) -> None:
-            if not is_latest:
+            if not is_latest_and_active:
                 return
-            cancel_all_changes_dialog(table_group_id, pending_ct, version_record["contract_yaml"])
+            cancel_all_changes_dialog(contract_id, pending_ct, version_record["contract_yaml"])
 
         def on_import_yaml(_payload: object) -> None:
             if not is_latest:
@@ -1071,7 +1087,7 @@ class DataContractPage(Page):
                 _import_preview["preview"],
                 _import_preview["yaml_content"],
                 table_group_id,
-                _import_preview["snapshot_suite_id"],
+                _import_preview.get("snapshot_suite_id"),
                 import_key,
             )
 
@@ -1102,7 +1118,7 @@ class DataContractPage(Page):
                             import_result["original_yaml"], diff_result.new_id_by_index
                         )
                         # Use a unique key per import so repeated imports don't collide
-                        dl_key = f"dc_import_dl:{table_group_id}:{','.join(diff_result.new_id_by_index.values())}"
+                        dl_key = f"dc_import_dl:{contract_id}:{','.join(diff_result.new_id_by_index.values())}"
                         st.download_button(
                             label="⬇ Download YAML with new test IDs",
                             data=updated_yaml,

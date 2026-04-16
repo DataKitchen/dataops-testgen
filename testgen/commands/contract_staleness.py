@@ -693,7 +693,7 @@ def compute_staleness_diff(
         WHERE table_groups_id = :tg_id
           AND include_in_contract IS NOT FALSE
           AND is_monitor IS NOT TRUE
-          AND is_contract_snapshot IS NOT TRUE
+          AND COALESCE(is_contract_snapshot, FALSE) = FALSE
         """,
         params={"tg_id": table_group_id},
     )

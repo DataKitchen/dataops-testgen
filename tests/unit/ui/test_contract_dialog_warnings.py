@@ -12,6 +12,7 @@ import pytest
 pytestmark = pytest.mark.unit
 
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 NEW_SUITE_ID = "cccccccc-0000-0000-0000-000000000003"
 
 
@@ -97,7 +98,7 @@ class Test_SaveVersionDialogWarning:
             from testgen.ui.views.dialogs.data_contract_dialogs import _save_version_dialog
             # Bypass the @st.dialog decorator by calling __wrapped__ if available
             fn = getattr(_save_version_dialog, "__wrapped__", _save_version_dialog)
-            fn(TG_ID, {}, "yaml-content", 1)
+            fn(CONTRACT_ID, TG_ID, {}, "yaml-content", 1)
 
         assert any("[Contract v2] My Group" in msg for msg in mock_streamlit), (
             f"Expected snapshot suite name in info messages, got: {mock_streamlit}"
@@ -118,7 +119,7 @@ class Test_SaveVersionDialogWarning:
 
             from testgen.ui.views.dialogs.data_contract_dialogs import _save_version_dialog
             fn = getattr(_save_version_dialog, "__wrapped__", _save_version_dialog)
-            fn(TG_ID, {}, "yaml-content", 1)
+            fn(CONTRACT_ID, TG_ID, {}, "yaml-content", 1)
 
         mock_snapshot.assert_called_once_with(TG_ID, 2)
 
@@ -146,7 +147,7 @@ class Test_RegenerateDialogWarning:
 
             from testgen.ui.views.dialogs.data_contract_dialogs import _regenerate_dialog
             fn = getattr(_regenerate_dialog, "__wrapped__", _regenerate_dialog)
-            fn(TG_ID, 2, 0)
+            fn(CONTRACT_ID, TG_ID, 2, 0)
 
         assert any("[Contract v3] Orders" in msg for msg in mock_streamlit), (
             f"Expected snapshot suite name in info messages, got: {mock_streamlit}"
@@ -168,6 +169,6 @@ class Test_RegenerateDialogWarning:
 
             from testgen.ui.views.dialogs.data_contract_dialogs import _regenerate_dialog
             fn = getattr(_regenerate_dialog, "__wrapped__", _regenerate_dialog)
-            fn(TG_ID, 2, 0)
+            fn(CONTRACT_ID, TG_ID, 2, 0)
 
         mock_snapshot.assert_called_once_with(TG_ID, 3)

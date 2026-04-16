@@ -894,7 +894,7 @@ def apply_import_diff(
         db_queries.append((
             f"UPDATE {schema}.test_definitions "
             f"SET {', '.join(set_parts)}, last_manual_update = NOW(), lock_refresh = :lock_y "
-            f"WHERE id = :test_id",
+            f"WHERE id = CAST(:test_id AS uuid)",
             params,
         ))
 

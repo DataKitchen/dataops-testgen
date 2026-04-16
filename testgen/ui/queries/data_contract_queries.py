@@ -116,8 +116,8 @@ def _fetch_suite_scope(table_group_id: str, snapshot_suite_id: str | None = None
             SELECT test_suite, COALESCE(include_in_contract, TRUE) AS include_in_contract
             FROM {schema}.test_suites
             WHERE table_groups_id = :tg_id
-              AND is_monitor IS NOT TRUE
-              AND is_contract_snapshot IS NOT TRUE
+              AND COALESCE(is_monitor, FALSE) = FALSE
+              AND COALESCE(is_contract_snapshot, FALSE) = FALSE
             ORDER BY LOWER(test_suite)
         """
         params = {"tg_id": table_group_id}
@@ -489,7 +489,7 @@ def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
             set_parts.append(f"{col} = :p_{col}")
         execute_db_queries([(
             f"UPDATE {schema}.test_definitions SET {', '.join(set_parts)}, "
-            "last_manual_update = NOW(), lock_refresh = :lock_y WHERE id = :test_id",
+            "last_manual_update = NOW(), lock_refresh = :lock_y WHERE id = CAST(:test_id AS uuid)",
             params,
         )])
 

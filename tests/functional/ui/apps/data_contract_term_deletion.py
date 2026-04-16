@@ -35,6 +35,7 @@ import yaml as _yaml  # noqa: E402
 # Test constants
 # ---------------------------------------------------------------------------
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 
 FULL_YAML = """\
 apiVersion: v3.1.0
@@ -128,14 +129,14 @@ _minimal_term_diff.tg_hygiene_possible = 0
 # Session / query params — set before deletion logic and page render
 # ---------------------------------------------------------------------------
 st.session_state["auth"] = _mock_auth
-st.query_params["table_group_id"] = TG_ID
+st.query_params["contract_id"] = CONTRACT_ID
 
 # ---------------------------------------------------------------------------
 # Apply deletion payload BEFORE page render (if staged in session state).
 # This mirrors the core of on_bulk_delete_terms from data_contract.py.
 # ---------------------------------------------------------------------------
-yaml_key    = f"dc_yaml:{TG_ID}"
-version_key = f"dc_version:{TG_ID}"
+yaml_key    = f"dc_yaml:{CONTRACT_ID}"
+version_key = f"dc_version:{CONTRACT_ID}"
 
 # Seed the version record so the page render does NOT reload from DB
 # (which would pop yaml_key and overwrite our mutated YAML).
@@ -201,6 +202,10 @@ if _delete_payload is not None:
 # Render the page with all external dependencies patched out
 # ---------------------------------------------------------------------------
 _patches = [
+    patch("testgen.ui.views.data_contract.get_contract", return_value={
+        "contract_id": CONTRACT_ID, "table_group_id": TG_ID,
+        "project_code": "DEFAULT", "is_active": True, "name": "Test Contract",
+    }),
     patch("testgen.ui.views.data_contract.TableGroup.get_minimal", return_value=_mock_tg),
     patch("testgen.ui.views.data_contract.TableGroup.get", return_value=_mock_tg),
     patch("testgen.ui.views.data_contract.has_any_version", return_value=True),
@@ -242,4 +247,4 @@ with ExitStack() as _stack:
 
     _page = DataContractPage.__new__(DataContractPage)
     _page.router = MagicMock()
-    _page.render(table_group_id=TG_ID)
+    _page.render(contract_id=CONTRACT_ID)

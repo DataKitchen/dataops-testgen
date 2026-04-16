@@ -27,6 +27,7 @@ if "testgen.ui.components.widgets.testgen_component" not in sys.modules:
 import streamlit as st  # noqa: E402
 
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 
 SAMPLE_YAML = """\
 apiVersion: v3.1.0
@@ -95,9 +96,9 @@ _mock_diff_ok.orphaned_ids = []
 # ---------------------------------------------------------------------------
 # Session / query params
 # ---------------------------------------------------------------------------
-yaml_key    = f"dc_yaml:{TG_ID}"
-import_key  = f"dc_import_result:{TG_ID}"
-version_key = f"dc_version:{TG_ID}"
+yaml_key    = f"dc_yaml:{CONTRACT_ID}"
+import_key  = f"dc_import_result:{CONTRACT_ID}"
+version_key = f"dc_version:{CONTRACT_ID}"
 
 # Seed YAML cache so page knows it was previously populated
 if yaml_key not in st.session_state:
@@ -121,9 +122,13 @@ if _import_payload is not None:
         st.session_state.pop(yaml_key, None)
 
 st.session_state["auth"] = _mock_auth
-st.query_params["table_group_id"] = TG_ID
+st.query_params["contract_id"] = CONTRACT_ID
 
 _patches = [
+    patch("testgen.ui.views.data_contract.get_contract", return_value={
+        "contract_id": CONTRACT_ID, "table_group_id": TG_ID,
+        "project_code": "DEFAULT", "is_active": True, "name": "Test Contract",
+    }),
     patch("testgen.ui.views.data_contract.TableGroup.get_minimal", return_value=_mock_tg),
     patch("testgen.ui.views.data_contract.TableGroup.get", return_value=_mock_tg),
     patch("testgen.ui.views.data_contract.has_any_version", return_value=True),
@@ -165,4 +170,4 @@ with ExitStack() as _stack:
 
     _page = DataContractPage.__new__(DataContractPage)
     _page.router = MagicMock()
-    _page.render(table_group_id=TG_ID)
+    _page.render(contract_id=CONTRACT_ID)

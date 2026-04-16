@@ -681,13 +681,13 @@ The Coverage card counts a column as "covered" if it has any non-schema term, in
 
 ## Known Issues
 
-All critical and important issues from the 2026-04-15 code review have been fixed. 534/534 unit tests passing.
+All critical and important issues from the 2026-04-15 and 2026-04-16 code reviews have been fixed. 948/948 unit tests and 110/110 functional tests passing.
 
 ### Minor (open)
 
-- **Inconsistent `is_contract_snapshot` filter idioms** — three variants in use: `COALESCE(ts.is_contract_snapshot, FALSE) = FALSE`, `is_contract_snapshot IS NOT TRUE`, and `COALESCE(...) IS NOT TRUE`. All are functionally equivalent given `NOT NULL DEFAULT FALSE`, but CLAUDE.md specifies the `COALESCE(...) = FALSE` form. Affected: `data_contract_queries.py:120`, `contract_staleness.py:696`, `export_data_contract.py:359/377/443`.
+- **Duplicate import dialog logic** — `_confirm_import_dialog` and `_import_yaml_dialog` share ~80 lines of copy-pasted quality-rule summary / orphan-test rendering. A shared helper would reduce duplication risk.
 
-- **Missing `CAST(:x AS uuid)` in many new queries** — `table_groups_id = :tg_id` is used throughout without `CAST`. Works in practice (PostgreSQL implicitly casts), but inconsistent with the project standard.
+- **Potential version number race condition** — `save_contract_version` computes `MAX(version)+1` inside the INSERT SELECT. Concurrent saves from two sessions would hit a unique constraint violation; the error is non-fatal (surfaces to user) but not graceful. Acceptable for single-user workflow.
 
 ---
 
