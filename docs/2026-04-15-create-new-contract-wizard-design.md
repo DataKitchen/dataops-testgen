@@ -1,4 +1,4 @@
-When there are no monitor suites, it does have a button that says "Create a new contract". Do that for four # Create New Contract Wizard — Design Spec
+# Create New Contract Wizard — Design Spec
 
 **Date:** 2026-04-15
 **Branch:** data-contracts-vibe
@@ -8,14 +8,14 @@ When there are no monitor suites, it does have a button that says "Create a new 
 
 ## Overview
 
-Replace the **Regenerate** button on the Data Contract page with a **Create New Contract** button that opens a reusable 5-step modal wizard. The wizard allows the user to configure a new contract from scratch — selecting which table group, test suites, tables, and content categories to include.
+A reusable 5-step modal wizard that creates a new data contract from scratch — selecting which table group, test suites, tables, and content categories to include. On completion, it atomically creates a `contracts` row and a linked `test_suites` row (`is_contract_suite=TRUE`), then navigates to the contract detail page where the user generates and saves the first version.
+
+**Data model dependency:** This wizard depends on the `contracts` + `contract_versions` schema defined in `docs/specs/2026-04-15-data-contracts-list-design.md`. The wizard itself creates only the `contracts` and `test_suites` rows — it does not generate YAML or create a `contract_versions` row.
 
 The wizard is designed to be callable from two contexts:
 
-1. **Data Contract page** (existing) — "Create New Contract" button in the toolbar; the table group is pre-filled and the wizard opens at Step 2.
-2. **Contract listing page** (future) — wizard opens at Step 1 so the user picks the table group first.
-
-The wizard always saves as a **new version number**, preserving all prior versions as read-only history. It never overwrites an existing version in place.
+1. **Data Contracts list page** (primary) — "+ New Contract" button; wizard opens at Step 1 so the user picks the table group first.
+2. **Any future entry point** — `create_contract_wizard(table_group_id=tg_id)` pre-fills the table group and opens at Step 2.
 
 ---
 
@@ -27,7 +27,6 @@ The wizard always saves as a **new version number**, preserving all prior versio
 @st.dialog("Create New Contract", width="large")
 def create_contract_wizard(
     table_group_id: str | None = None,  # Pre-fill Step 1; None = show Step 1
-    current_version: int | None = None, # For version number display in confirm step
 ) -> None:
     ...
 ```
@@ -41,9 +40,8 @@ def create_contract_wizard(
 
 | Location | Call style |
 |---|---|
-| Data Contract page toolbar | `create_contract_wizard(table_group_id=tg_id, current_version=version_record["version"])` |
-| Contract listing page (future) | `create_contract_wizard()` — opens at Step 1 |
-| First-time flow (replaces `_render_first_time_flow`) | `create_contract_wizard(table_group_id=tg_id)` — opens at Step 2 |
+| Data Contracts list page (primary) | `create_contract_wizard()` — opens at Step 1 |
+| Pre-filled table group (future) | `create_contract_wizard(table_group_id=tg_id)` — opens at Step 2 |
 
 ---
 
@@ -140,14 +138,18 @@ A **"Create monitors →"** link appears inline, navigating to the table group's
   - Table count summary: *"10 of 12 selected"* (with `table` icon)
   - Content categories as a dot-separated string: *"Profiling · DDL · Hygiene · Monitors"* (with `tune` icon)
   - **Tests in scope** count in green (with `bolt` icon) — computed via a DB query on entering Step 5, using the selected suite IDs, table names, and monitor toggle state
-- Optional free-text **Contract name** field (stored as the version label)
-- **Generate & Save** button (green, primary)
+- Required free-text **Contract name** field (unique within the project; validated on blur)
+- **Create Contract** button (green, primary)
 
 **Business rules:**
-- Version number displayed as: current version + 1 (or 1 if no prior versions)
 - "Tests in scope" count is computed via a DB query on entering Step 5: active tests from the selected suites where `table_name = ANY(:selected_tables)`, plus active monitor tests for the table group if the Monitors toggle is on
-- On confirm: calls the existing `_capture_yaml` / `save_contract_version` / `create_contract_snapshot_suite` pipeline, passing the new filter parameters
-- On failure of snapshot suite creation, rolls back the saved version (same rollback logic as current `_regenerate_dialog`)
+- Contract name must be unique within the project (`UNIQUE (name, project_code)` from the `contracts` table). Validation is shown inline if name is already taken.
+- On confirm, atomically:
+  1. INSERT into `test_suites`: `is_contract_suite=TRUE`, `test_suite=<contract_name>`, `table_groups_id=<tg_id>`, including the suite_ids / table_names / content toggle selections as metadata for the first-version generation
+  2. INSERT into `contracts`: `name=<contract_name>`, `project_code=<project_code>`, `table_group_id=<tg_id>`, `test_suite_id=<new_suite_id>`
+  3. Close the dialog and navigate to `data-contract?contract_id=<new_contract_id>` — the detail page's first-time flow handles YAML generation and saving version 1
+- If either INSERT fails, roll back both (no orphaned rows)
+- The wizard does NOT generate YAML, does NOT create a `contract_versions` row — that is deferred to the detail page
 
 ---
 
@@ -210,23 +212,30 @@ def run_export_data_contract(
 ```
 
 When `suite_ids` is provided, only those suites are queried (replacing the `include_in_contract IS NOT FALSE` filter).
-When `table_names` is provided, schema and quality queries are filtered to those tables via a `WHERE table_name = ANY(:table_names)` clause.
+
+When `table_names` is provided, the filter applies consistently across all content sections — not just test rules:
+- **Schema section:** Only rows where `table_name = ANY(:table_names)` are included. Profiling stat properties (`_customProperties.testgen.*`) for excluded tables are not emitted.
+- **Quality section:** Test rules where `table_name = ANY(:table_names)` only. Multi-table tests (e.g. `Aggregate_Balance`) are included only when their primary `table_name` is in the selected set.
+- **Hygiene anomalies:** Only anomalies where `table_name = ANY(:table_names)` are surfaced in the schema section's hygiene terms.
+- **Monitor tests:** Filtered to `table_name = ANY(:table_names)` when a table column is available on monitor test definitions; otherwise included as table-group-level monitors.
+
+The intent is that deselecting a table in Step 3 removes all its profiling stats, hygiene info, DDL constraints, and quality rules from the generated contract — not just its test counts.
 
 ---
 
-## What Replaces What
+## Relationship to the Data Contracts List Page
 
-| Before | After |
-|---|---|
-| **Regenerate** button → `_regenerate_dialog()` | **Create New Contract** button → `create_contract_wizard()` |
-| `_render_first_time_flow()` — inline page wizard | `create_contract_wizard(table_group_id=tg_id)` — same modal, opens at Step 2 |
-| No table/suite/content filtering on export | Filtered export via new `run_export_data_contract` parameters |
+This wizard is defined as a dependency of `docs/specs/2026-04-15-data-contracts-list-design.md`. Key alignment points:
 
-The `_regenerate_dialog` function can be deleted. `_render_first_time_flow` is replaced by a call to the modal wizard — the wizard never blocks on prereqs, but surfaces warnings contextually:
+- **Only the list page creates contracts.** The wizard is launched exclusively from the "+ New Contract" button on `DataContractsListPage`. The detail page (`data-contract`) does not have a "Create New Contract" entry point.
+- **Wizard creates rows, not versions.** The wizard's Step 5 atomically creates the `contracts` and `test_suites` (`is_contract_suite=TRUE`) rows, then navigates to the detail page. The `contract_versions` row (version 1) is created by the detail page's first-time flow after the user previews and confirms the generated YAML.
+- **Data model:** Wizard writes to `contracts` and `test_suites`. It does not write to `contract_versions` or `data_contracts`.
+
+The wizard surfaces warnings contextually rather than blocking on prereqs:
 
 - **Step 2 (Suites):** If no non-monitor suites exist for the table group, an inline warning is shown and Next is disabled.
 - **Step 4 (Content):** If no completed profiling run exists for the table group, the Profiling toggle shows an inline warning ("No profiling data — profiling stats will be empty") but remains toggleable.
-- **Step 5 (Confirm):** If "Tests in scope" resolves to 0, the Generate & Save button is disabled with an explanation.
+- **Step 5 (Confirm):** If "Tests in scope" resolves to 0, the Create Contract button is disabled with an explanation.
 
 ---
 
@@ -252,12 +261,14 @@ The `_regenerate_dialog` function can be deleted. `_render_first_time_flow` is r
 | `test_step4_monitors_toggle_independent` | Monitors toggle state is independent of Step 2 suite selection |
 | `test_step4_monitors_disabled_when_no_monitor_suites` | Monitors toggle is disabled and "Create monitors →" link is shown when no `is_monitor=TRUE` suites exist for the table group |
 | `test_step4_profiling_warning_when_no_profiling_run` | Profiling toggle shows warning text when `last_profiling` is None |
-| `test_step5_generate_disabled_when_zero_tests` | Generate & Save button is disabled when in-scope test count is 0 |
-| `test_step5_version_number_increments` | Displayed version = `current_version + 1`; version = 1 when no prior versions |
-| `test_export_filter_params_constructed_correctly` | `run_export_data_contract` is called with the correct `suite_ids`, `table_names`, and content booleans derived from wizard state |
-| `test_rollback_on_snapshot_suite_failure` | If `create_contract_snapshot_suite` raises, `rollback_contract_version` is called with the new version number |
+| `test_step5_create_disabled_when_zero_tests` | Create Contract button is disabled when in-scope test count is 0 |
+| `test_step5_create_disabled_when_name_empty` | Create Contract button is disabled when contract name field is empty |
+| `test_step5_name_validation_shows_error_on_duplicate` | Inline error is shown when contract name already exists in the project |
+| `test_step5_create_contract_inserts_rows_atomically` | On confirm, both `contracts` and `test_suites` (`is_contract_suite=TRUE`) rows are created in a single transaction |
+| `test_step5_rollback_on_insert_failure` | If either INSERT fails, no orphaned rows are left behind |
+| `test_step5_navigates_to_detail_page_on_success` | After row creation, wizard closes and navigation goes to `data-contract?contract_id=<uuid>` |
 
-**Supporting unit tests for the extended export pipeline:**
+**Supporting unit tests for the extended export pipeline** (called from the detail page first-time flow, not the wizard itself):
 **Location:** `tests/unit/commands/test_export_data_contract_filters.py`
 
 | Test | What it verifies |
@@ -286,7 +297,7 @@ The `_regenerate_dialog` function can be deleted. `_render_first_time_flow` is r
 | `test_wizard_step4_profiling_warning_no_profiling` | `contract_wizard_no_profiling.py` | Step 4 Profiling toggle shows the "no profiling data" warning text |
 | `test_wizard_step4_monitors_disabled_no_monitor_suites` | `contract_wizard_no_monitors.py` | Step 4 Monitors toggle is disabled; inline note and "Create monitors →" link are visible |
 | `test_wizard_step5_disabled_when_zero_tests` | `contract_wizard_zero_tests.py` | Step 5 Generate & Save button is disabled; explanatory text is shown |
-| `test_wizard_replaces_first_time_flow` | `contract_wizard_first_time_flow.py` | Data Contract page with no saved contract renders the wizard modal trigger instead of the old inline prereqs flow |
+| `test_wizard_success_navigates_to_detail` | `contract_wizard_success.py` | After clicking Create Contract, dialog closes and the app navigates to `data-contract?contract_id=<uuid>` |
 
 ---
 
