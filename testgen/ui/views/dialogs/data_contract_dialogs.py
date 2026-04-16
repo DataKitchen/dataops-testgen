@@ -51,6 +51,15 @@ LOG = logging.getLogger("testgen")
 _CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope", "dc_staleness_diff")
 
 
+# ---------------------------------------------------------------------------
+# Create Contract Wizard — stub (will be replaced in Task 8)
+# ---------------------------------------------------------------------------
+
+def create_contract_wizard(project_code: str, table_group_id: str | None = None) -> None:
+    """5-step wizard for creating a new data contract. Stub — implemented in Task 8."""
+    pass
+
+
 def _clear_contract_cache(table_group_id: str, *, also_anomalies: bool = False) -> None:
     keys = _CONTRACT_CACHE_KEYS + ("dc_anomalies",) if also_anomalies else _CONTRACT_CACHE_KEYS
     for key in keys:
@@ -578,7 +587,7 @@ def _term_edit_dialog(
     _modal_header("declared", term_name, table_name, col_name)
 
     if term_name == "CDE":
-        new_cde: bool   = st.checkbox("Mark as Critical Data Element", value=True)
+        new_cde: bool   = st.checkbox("Mark as Critical Data Element", value=bool(current_value))
         new_value: str  = "true" if new_cde else ""
     elif term_name == "Description":
         new_value = st.text_area("Description", value=current_value, height=120)
@@ -679,7 +688,7 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_s
         help="Human-readable name shown in contract and test results.",
     )
 
-    severity_options = [None, "Log", "Warning", "Failed"]
+    severity_options = [None, "Log", "Warning", "Fail"]
     current_sev = rule.get("severity")
     try:
         sev_index = severity_options.index(current_sev)
@@ -848,6 +857,7 @@ def _update_version_dialog(
     pending: dict,
     current_yaml: str,
     current_version: int,
+    snapshot_suite_id: str | None = None,
 ) -> None:
     gov_edits  = pending.get("governance", [])
     test_edits = pending.get("tests", [])
@@ -859,12 +869,12 @@ def _update_version_dialog(
     if gov_edits or test_edits or deletions:
         st.markdown("**Changes to save:**")
         for e in gov_edits:
-            st.markdown(f"  · {e['table']}.{e['col']} — {e['field']}: {e['value']}")
+            st.markdown(f"  · {html.escape(e['table'])}.{html.escape(e['col'])} — {html.escape(e['field'])}: {html.escape(str(e['value']))}")
         for e in test_edits:
             label = "deleted" if e.get("_removed") else "updated"
             st.markdown(f"  · Test `{e['rule_id'][:8]}…` {label}")
         for e in deletions:
-            st.markdown(f"  · Deleted {e.get('table', '')}.{e.get('col', '')} — {e.get('name', '')}")
+            st.markdown(f"  · Deleted {html.escape(e.get('table', ''))}.{html.escape(e.get('col', ''))} — {html.escape(e.get('name', ''))}")
 
     st.divider()
     save_col, cancel_col = st.columns(2)
@@ -874,6 +884,26 @@ def _update_version_dialog(
             with st.spinner("Saving…"):
                 _persist_pending_edits(table_group_id, pending)
                 update_contract_version(table_group_id, current_version, current_yaml)
+
+                # Mirror test mutations into the snapshot suite so the snapshot stays
+                # in sync with test_definitions after the in-place update.
+                if snapshot_suite_id:
+                    updated_ids = [
+                        e["rule_id"] for e in test_edits
+                        if not e.get("_removed")
+                    ]
+                    deleted_ids = [
+                        e["rule_id"] for e in test_edits
+                        if e.get("_removed")
+                    ]
+                    if updated_ids or deleted_ids:
+                        try:
+                            sync_import_to_snapshot_suite(snapshot_suite_id, [], updated_ids, deleted_ids)
+                        except Exception:
+                            LOG.exception(
+                                "_update_version_dialog: failed to sync to snapshot suite %s",
+                                snapshot_suite_id,
+                            )
 
             st.success(f"Version {current_version} updated.")
             _clear_contract_cache(table_group_id)
@@ -907,7 +937,7 @@ def _save_version_dialog(
     if gov_edits or test_edits:
         st.markdown("**Changes to include:**")
         for e in gov_edits:
-            st.markdown(f"  · {e['table']}.{e['col']} — {e['field']}: {e['value']}")
+            st.markdown(f"  · {html.escape(e['table'])}.{html.escape(e['col'])} — {html.escape(e['field'])}: {html.escape(str(e['value']))}")
         for e in test_edits:
             st.markdown(f"  · Test `{e['rule_id'][:8]}…` updated")
     else:
