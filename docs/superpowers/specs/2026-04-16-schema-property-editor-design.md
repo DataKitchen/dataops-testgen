@@ -15,10 +15,10 @@ Schema edits are only available on the **latest (editable) version** of a contra
 
 **In scope:**
 - Add / edit / delete manually specified ODCS schema property fields per column
-- Curated form for well-known ODCS fields (tags, title, unique, pattern, precision, scale, default, encryptedName, partitioned, partitionKeyPosition)
+- Curated form for well-known ODCS fields (tags, title, unique, pattern, precision, scale, default, encryptedName, partitioned, partitionKeyPosition, references)
 - Custom escape hatch for arbitrary ODCS-compliant field names
 - Schema chips rendered in the terms grid alongside DDL / profiling / governance / test chips
-- "◈ + Schema" button in the column header row next to existing Governance and Add test buttons
+- "◈ + Schema" button in the column header row **below** existing Governance and Add test buttons (vertical stack)
 - "Schema" filter pill in the filter bar
 - Schema source row added to the "What are contract terms?" help panel
 - Schema edits join the pending-edits staging flow (dc_pending.schema); count included in save button label and warning banner
@@ -45,7 +45,7 @@ Schema edits are only available on the **latest (editable) version** of a contra
 | `testgen/ui/components/frontend/js/pages/data_contract.js` | New `SchemaButton` component; new `chip-sch` chip style; new "Schema" filter pill (filters by `source === 'schema'`); new `SourceRow` in `TermsHelpPanel`; filter logic special-cases `source` check for schema |
 | `testgen/ui/views/data_contract.py` | New `_build_schema_terms(yaml_doc, table_name, col_name)` → produces `source='schema'` terms; new `SchemaEditClicked` event handler; `pending_ct` includes `len(pending.get("schema", []))` |
 | `testgen/ui/views/dialogs/data_contract_dialogs.py` | New `_schema_edit_dialog(contract_id, table_group_id, table_name, col_name)` — Option A form (curated fields + custom escape hatch); loads current values from `st.session_state` YAML |
-| `testgen/ui/views/data_contract_yaml.py` | New `_apply_pending_schema_edits(doc, pending_schema)` — writes/deletes fields in `schema[].properties[]` and updates `x-testgen.user_schema_fields` tracker |
+| `testgen/ui/views/data_contract_yaml.py` | New `_apply_pending_schema_edits(doc, pending_schema)` — writes/deletes fields in `schema[].properties[]` and updates `x-testgen.user_schema_fields` tracker; new `_find_property(yaml_doc, table_name, col_name)` pure helper |
 | `testgen/ui/queries/data_contract_queries.py` | `_persist_pending_edits` flushes `pending["schema"]` by calling `_apply_pending_schema_edits` then serializing YAML — no DB write |
 | `tests/unit/ui/test_schema_property_terms.py` | Unit tests (new file) |
 | `tests/functional/ui/test_data_contract_apptest.py` | New `Test_SchemaPendingEdits` test class |
@@ -125,7 +125,7 @@ Schema property chips appear in `static_terms` (not `live_terms`) since they hav
 - Color: teal (`background: var(--teal-bg); border-color: var(--teal-border); color: var(--teal)`)
 - Label: `{field}: {display_value}` — for lists, values are comma-joined and truncated at 30 chars with `…`
 - Has an ✕ button — clicking emits `BulkDeleteTermsClicked` with `source: 'schema'` and the chip's `rule_id`
-- Clicking the chip body (not ✕) opens `_schema_edit_dialog` with the full current properties for that column
+- Clicking the chip body (not ✕) opens `_schema_edit_dialog` — only on the **latest (editable) version**; chip body is inert on historical versions
 - Pending (not-yet-saved) chips render with a dashed border
 
 ### Filter Pill
@@ -245,6 +245,7 @@ For each entry in `pending_schema`:
 4. Update `x-testgen.user_schema_fields["{table}.{col}"]`:
    - Remove the field if `value is None`
    - Append the field if not already present
+   - If the list is now empty, delete the entire `"{table}.{col}"` key from `user_schema_fields`
 
 ### Deletion via ✕ Chip
 
