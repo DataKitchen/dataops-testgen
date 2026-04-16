@@ -18,7 +18,7 @@ from testgen.commands.contract_snapshot_suite import (
     delete_contract_version,
     sync_import_to_snapshot_suite,
 )
-from testgen.commands.odcs_contract import ContractDiff, get_updated_yaml, run_import_contract
+from testgen.commands.odcs_contract import ContractDiff, run_import_contract
 from testgen.commands.contract_staleness import StaleDiff
 from testgen.commands.contract_versions import (
     list_contract_versions,
@@ -50,7 +50,10 @@ from testgen.ui.session import session
 from testgen.ui.views.data_contract_props import _STATUS_ICON, _VERIF_META
 from testgen.ui.views.data_contract_yaml import (
     _apply_pending_governance_edit,
+    _apply_pending_schema_edit,
+    _apply_pending_schema_edits,
     _apply_pending_test_edit,
+    _find_property,
     _patch_yaml_governance,
 )
 
@@ -78,11 +81,12 @@ def _init_wizard_state(
         "table_group_name":  None,
         "suite_ids":         None,   # list[str] or None = all
         "table_names":       None,   # list[str] or None = all
-        "include_profiling": True,
-        "include_ddl":       True,
-        "include_hygiene":   True,
-        "include_monitors":  True,
-        "contract_name":     "",
+        "include_profiling":  True,
+        "include_ddl":        True,
+        "include_hygiene":    True,
+        "include_monitors":   True,
+        "include_governance": True,
+        "contract_name":      "",
     }
     st.session_state[_WIZARD_KEY] = state
     return state
@@ -147,7 +151,7 @@ def create_contract_wizard(
             state["table_group_name"] = tg_name
             state["step"] = 2
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
+            st.rerun(scope="fragment")
         return
 
     # ── Step 2: Test Suites ────────────────────────────────────────
@@ -158,112 +162,104 @@ def create_contract_wizard(
             if st.button("← Back"):
                 state["step"] = 1
                 st.session_state[_WIZARD_KEY] = state
-                safe_rerun()
+                st.rerun(scope="fragment")
             return
 
         suites = fetch_eligible_suites_for_wizard(tg_id)
-        st.markdown("**Select Test Suites to include**")
-
-        if not suites:
-            st.warning("No eligible test suites found for this table group.")
-            if st.button("← Back"):
-                state["step"] = 1
-                st.session_state[_WIZARD_KEY] = state
-                safe_rerun()
-            return
+        st.markdown("**Select Test Suites to include** (optional)")
 
         selected_suite_ids: list[str] = []
-        for suite in suites:
-            checked = st.checkbox(
-                f"{suite['name']}  ({suite['active_test_count']} active tests)",
-                value=True,
-                key=f"wizard_suite_{suite['id']}",
-            )
-            if checked:
-                selected_suite_ids.append(suite["id"])
+        if not suites:
+            st.info("No existing test suites found for this table group. You can add tests after creating the contract.")
+        else:
+            for suite in suites:
+                checked = st.checkbox(
+                    f"{suite['name']}  ({suite['active_test_count']} active tests)",
+                    value=True,
+                    key=f"wizard_suite_{suite['id']}",
+                )
+                if checked:
+                    selected_suite_ids.append(suite["id"])
 
-        st.caption("Monitor suites are controlled separately in Step 4 → Content.")
+            st.caption("Monitor suites are controlled separately in Step 4 → Content.")
 
         back_col, next_col = st.columns(2)
         if back_col.button("← Back"):
             state["step"] = 1
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
-        if next_col.button("Next →", type="primary", disabled=not selected_suite_ids):
+            st.rerun(scope="fragment")
+        if next_col.button("Next →", type="primary"):
             state["suite_ids"] = selected_suite_ids
             state["step"] = 3
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
+            st.rerun(scope="fragment")
         return
 
     # ── Step 3: Tables ─────────────────────────────────────────────
     if step == 3:
         tg_id = state["table_group_id"]
         tables = fetch_tables_for_wizard(tg_id)
-        st.markdown("**Select Tables to include**")
-
-        if not tables:
-            st.warning("No profiled tables found for this table group.")
-            if st.button("← Back"):
-                state["step"] = 2
-                st.session_state[_WIZARD_KEY] = state
-                safe_rerun()
-            return
-
-        sel_all, sel_none = st.columns(2)
-        if sel_all.button("Select all", key="wizard_tbl_all"):
-            for t in tables:
-                st.session_state[f"wizard_tbl_{t['table_name']}"] = True
-        if sel_none.button("None", key="wizard_tbl_none"):
-            for t in tables:
-                st.session_state[f"wizard_tbl_{t['table_name']}"] = False
+        st.markdown("**Select Tables to include** (optional)")
 
         selected_tables: list[str] = []
-        for tbl in tables:
-            checked = st.checkbox(
-                f"{tbl['table_name']}  ({tbl['active_test_count']} tests)",
-                value=st.session_state.get(f"wizard_tbl_{tbl['table_name']}", True),
-                key=f"wizard_tbl_{tbl['table_name']}",
-            )
-            if checked:
-                selected_tables.append(tbl["table_name"])
+        if not tables:
+            st.info("No profiled tables found for this table group. Run profiling first to enable table-level filtering.")
+        else:
+            sel_all, sel_none = st.columns(2)
+            if sel_all.button("Select all", key="wizard_tbl_all"):
+                for t in tables:
+                    st.session_state[f"wizard_tbl_{t['table_name']}"] = True
+            if sel_none.button("None", key="wizard_tbl_none"):
+                for t in tables:
+                    st.session_state[f"wizard_tbl_{t['table_name']}"] = False
 
-        st.caption(f"{len(tables)} tables · {len(selected_tables)} selected")
+            for tbl in tables:
+                checked = st.checkbox(
+                    f"{tbl['table_name']}  ({tbl['active_test_count']} tests)",
+                    value=st.session_state.get(f"wizard_tbl_{tbl['table_name']}", True),
+                    key=f"wizard_tbl_{tbl['table_name']}",
+                )
+                if checked:
+                    selected_tables.append(tbl["table_name"])
+
+            st.caption(f"{len(tables)} tables · {len(selected_tables)} selected")
 
         back_col, next_col = st.columns(2)
         if back_col.button("← Back"):
             state["step"] = 2
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
-        if next_col.button("Next →", type="primary", disabled=not selected_tables):
-            state["table_names"] = selected_tables
+            st.rerun(scope="fragment")
+        if next_col.button("Next →", type="primary"):
+            state["table_names"] = selected_tables if selected_tables else None
             state["step"] = 4
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
+            st.rerun(scope="fragment")
         return
 
     # ── Step 4: Content ────────────────────────────────────────────
     if step == 4:
         st.markdown("**Select Content to include**")
-        state["include_profiling"] = st.toggle("Profiling", value=state.get("include_profiling", True),
-                                               help="Schema stats + auto-generated profiling tests")
-        state["include_ddl"]       = st.toggle("DDL Constraints", value=state.get("include_ddl", True),
-                                               help="Column types, NOT NULL, primary key")
-        state["include_hygiene"]   = st.toggle("Hygiene", value=state.get("include_hygiene", True),
-                                               help="Data quality anomalies from the latest profiling run")
-        state["include_monitors"]  = st.toggle("Monitors", value=state.get("include_monitors", True),
-                                               help="Freshness, volume, schema drift, and metric tests")
+        state["include_profiling"]  = st.toggle("Profiling", value=state.get("include_profiling", True),
+                                                help="Schema stats + auto-generated profiling tests")
+        state["include_ddl"]        = st.toggle("DDL Constraints", value=state.get("include_ddl", True),
+                                                help="Column types, NOT NULL, primary key")
+        state["include_hygiene"]    = st.toggle("Hygiene", value=state.get("include_hygiene", True),
+                                                help="Data quality anomalies from the latest profiling run")
+        state["include_monitors"]   = st.toggle("Monitors", value=state.get("include_monitors", True),
+                                                help="Freshness, volume, schema drift, and metric tests")
+        state["include_governance"] = st.toggle("Governance", value=state.get("include_governance", True),
+                                                help="Column descriptions, CDE flags, PII classification, and data tags")
         st.session_state[_WIZARD_KEY] = state
 
         back_col, next_col = st.columns(2)
         if back_col.button("← Back"):
             state["step"] = 3
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
+            st.rerun(scope="fragment")
         if next_col.button("Next →", type="primary"):
             state["step"] = 5
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
+            st.rerun(scope="fragment")
         return
 
     # ── Step 5: Confirm ────────────────────────────────────────────
@@ -274,36 +270,48 @@ def create_contract_wizard(
         table_names   = state.get("table_names") or []
         content_parts = [
             k for k, flag in [
-                ("Profiling", state.get("include_profiling", True)),
-                ("DDL", state.get("include_ddl", True)),
-                ("Hygiene", state.get("include_hygiene", True)),
-                ("Monitors", state.get("include_monitors", True)),
+                ("Profiling",   state.get("include_profiling", True)),
+                ("DDL",         state.get("include_ddl", True)),
+                ("Hygiene",     state.get("include_hygiene", True)),
+                ("Monitors",    state.get("include_monitors", True)),
+                ("Governance",  state.get("include_governance", True)),
             ] if flag
         ]
 
+        raw_table_names = state.get("table_names")  # None = all tables
+        suite_display = f"{len(suite_ids)} selected" if suite_ids else "None"
+
         st.markdown("**Summary**")
         st.markdown(f"- **Table group:** {tg_name}")
-        st.markdown(f"- **Suites:** {len(suite_ids)} selected")
-        st.markdown(f"- **Tables:** {len(table_names)} selected")
+        st.markdown(f"- **Suites:** {suite_display}")
+        if raw_table_names:
+            st.markdown("- **Tables:**")
+            for tname in raw_table_names:
+                st.markdown(f"  - {tname}")
+        else:
+            st.markdown("- **Tables:** All")
         st.markdown(f"- **Content:** {' · '.join(content_parts) or 'None'}")
 
         in_scope = count_in_scope_tests(
             suite_ids, table_names, tg_id, state.get("include_monitors", True)
         )
-        st.markdown(f":green[**{in_scope} tests in scope**]")
+        if in_scope > 0:
+            st.markdown(f":green[**{in_scope} tests in scope**]")
+        else:
+            st.caption("No tests in scope with current selections. You can add tests after creating the contract.")
 
         contract_name = st.text_input("Contract name (unique within project)", key="wizard_contract_name")
         name_ok, name_err = _validate_contract_name(contract_name, project_code)
         if contract_name and not name_ok:
             st.error(name_err)
 
-        can_create = name_ok and in_scope > 0
+        can_create = name_ok
 
         back_col, create_col = st.columns(2)
         if back_col.button("← Back"):
             state["step"] = 4
             st.session_state[_WIZARD_KEY] = state
-            safe_rerun()
+            st.rerun(scope="fragment")
 
         if create_col.button(
             "Create Contract", type="primary",
@@ -313,14 +321,16 @@ def create_contract_wizard(
             result = create_contract(contract_name.strip(), project_code, tg_id)
             new_contract_id = result["contract_id"]
 
-            # Store wizard filter selections for the detail page's first-time flow
+            # Store wizard filter selections for the detail page's first-time flow.
+            # Normalize empty lists to None so _capture_yaml applies no filter (= all).
             st.session_state[f"dc_wizard_filters:{new_contract_id}"] = {
-                "suite_ids":         suite_ids,
-                "table_names":       table_names,
-                "include_profiling": state.get("include_profiling", True),
-                "include_ddl":       state.get("include_ddl", True),
-                "include_hygiene":   state.get("include_hygiene", True),
-                "include_monitors":  state.get("include_monitors", True),
+                "suite_ids":          suite_ids or None,
+                "table_names":        state.get("table_names"),  # already None or non-empty list
+                "include_profiling":  state.get("include_profiling", True),
+                "include_ddl":        state.get("include_ddl", True),
+                "include_hygiene":    state.get("include_hygiene", True),
+                "include_monitors":   state.get("include_monitors", True),
+                "include_governance": state.get("include_governance", True),
             }
             # Clear wizard state
             st.session_state.pop(_WIZARD_KEY, None)
@@ -329,8 +339,24 @@ def create_contract_wizard(
             safe_rerun()
 
 
+def _table_names_from_yaml(contract_yaml: str) -> list[str] | None:
+    """Extract table names from the schema section of an ODCS YAML string.
+
+    Returns a non-empty list when the YAML has a schema section, or None when
+    the schema is absent/empty (meaning all tables should be in scope).
+    """
+    try:
+        doc = yaml.safe_load(contract_yaml)
+        if not isinstance(doc, dict):
+            return None
+        tables = [t["name"] for t in (doc.get("schema") or []) if isinstance(t, dict) and t.get("name")]
+        return tables if tables else None
+    except Exception:
+        return None
+
+
 def _clear_contract_cache(contract_id: str, *, also_anomalies: bool = False) -> None:
-    keys = _CONTRACT_CACHE_KEYS + ("dc_anomalies",) if also_anomalies else _CONTRACT_CACHE_KEYS
+    keys = (*_CONTRACT_CACHE_KEYS, "dc_anomalies") if also_anomalies else _CONTRACT_CACHE_KEYS
     for key in keys:
         st.session_state.pop(f"{key}:{contract_id}", None)
 
@@ -417,68 +443,6 @@ def _modal_header(verif: str, name: str, table_name: str, col_name: str, subtitl
 
 
 # ---------------------------------------------------------------------------
-# Live-terms row (Streamlit render, calls dialog functions)
-# ---------------------------------------------------------------------------
-
-def _render_live_terms_row(
-    col_key: str,
-    live_terms: list[dict],
-    table_group_id: str,
-    yaml_key: str,
-) -> None:
-    """Render live (test + anomaly) terms as Streamlit bordered containers with optional edit."""
-    if not live_terms:
-        return
-
-    n    = len(live_terms)
-    cols = st.columns(min(n, 4))
-    for i, term in enumerate(live_terms):
-        with cols[i % 4]:
-            term_name  = term.get("name", "Test")
-            is_test    = term_name == "Test"
-            is_monitor = term_name == "Monitor"
-            status     = term.get("status", "not run")
-            if term_name == "Hygiene":
-                border_color = "#f9a825"
-            elif is_monitor:
-                border_color = (
-                    "#c62828" if status in ("failing", "error") else
-                    "#f9a825" if status == "warning" else
-                    "#00695c" if status == "passing" else
-                    "#90a4ae"
-                )
-            else:
-                border_color = (
-                    "#c62828" if status in ("failing", "error") else
-                    "#f9a825" if status == "warning" else
-                    "#2e7d32" if status == "passing" else
-                    "#90a4ae"
-                )
-            label_text = "Monitor 📡" if is_monitor else ("Test" if is_test else "Hygiene")
-            st.markdown(
-                f'<div style="border:1px solid #e0e0e0;border-left:4px solid {border_color};'
-                f'border-radius:0 6px 6px 0;padding:7px 10px;background:#fafafa;">'
-                f'<div style="font-size:10px;color:#888;text-transform:uppercase;letter-spacing:0.5px;">'
-                f'{label_text}</div>'
-                f'<div style="font-size:12px;font-weight:600;color:#1a1a1a;word-break:break-word;'
-                f'margin:2px 0 0 0;">{html.escape(str(term["value"]))}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            if (is_test or is_monitor) and term.get("rule"):
-                rule    = term["rule"]
-                rule_id = str(rule.get("id", ""))
-                if rule_id:
-                    btn_key   = f"edit_{col_key}_{rule_id[:8]}_{i}"
-                    btn_label = "📡 Detail" if is_monitor else "✏️ Edit"
-                    if st.button(btn_label, key=btn_key, type="tertiary", use_container_width=True):
-                        if is_monitor:
-                            _monitor_term_dialog(rule, term_name)
-                        else:
-                            _edit_rule_dialog(rule, table_group_id, yaml_key)
-
-
-# ---------------------------------------------------------------------------
 # Governance edit dialog
 # ---------------------------------------------------------------------------
 
@@ -487,8 +451,9 @@ def _governance_edit_dialog(
     column_id: str,
     table_name: str,
     col_name: str,
-    table_group_id: str,
+    contract_id: str,
     yaml_key: str,
+    table_group_id: str = "",
 ) -> None:
     """Edit all governance metadata for a column, writing directly to data_column_chars."""
     gov_map = _fetch_governance_data(table_group_id)
@@ -589,7 +554,7 @@ def _governance_edit_dialog(
             "data_product":          "Data Product",
         }
 
-        pending_key = f"dc_pending:{table_group_id}"
+        pending_key = f"dc_pending:{contract_id}"
         pending = st.session_state.get(pending_key, {})
 
         for db_col, new_val in updates.items():
@@ -847,7 +812,7 @@ def _term_edit_dialog(
     term: dict,
     table_name: str,
     col_name: str,
-    table_group_id: str,
+    contract_id: str,
     yaml_key: str,
 ) -> None:
     term_name     = term.get("name", "")
@@ -890,7 +855,7 @@ def _term_edit_dialog(
 
         patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
         st.session_state[yaml_key] = patched_yaml
-        pending_key = f"dc_pending:{table_group_id}"
+        pending_key = f"dc_pending:{contract_id}"
         LOG.debug("Pending governance edit: %s.%s %s = %r", table_name, col_name, term_name, edit_value)
         st.session_state[pending_key] = _apply_pending_governance_edit(
             st.session_state.get(pending_key, {}),
@@ -904,7 +869,7 @@ def _term_edit_dialog(
     st.divider()
     if st.button("Delete term from contract", key="term_edit_delete", use_container_width=True):
         _gov_key = f"governance|{term_name}|{current_value}|{table_name}|{col_name}"
-        st.session_state[f"dc_select_term:{table_group_id}"] = _gov_key
+        st.session_state[f"dc_select_term:{contract_id}"] = _gov_key
         safe_rerun()
 
 
@@ -913,7 +878,7 @@ def _term_edit_dialog(
 # ---------------------------------------------------------------------------
 
 @st.dialog("Edit Quality Rule", width="small")
-def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_suite_id: str | None = None) -> None:  # noqa: ARG001
+def _edit_rule_dialog(rule: dict, contract_id: str, yaml_key: str) -> None:
     rule_id   = str(rule.get("id", ""))
     test_name = rule.get("name") or rule.get("type") or "Test"
 
@@ -1027,7 +992,7 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_s
 
         patched_yaml = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
         st.session_state[yaml_key] = patched_yaml
-        pending_key = f"dc_pending:{table_group_id}"
+        pending_key = f"dc_pending:{contract_id}"
         LOG.debug("Pending test edit: rule %s updates %r", rule_id, test_updates)
         st.session_state[pending_key] = _apply_pending_test_edit(
             st.session_state.get(pending_key, {}),
@@ -1041,78 +1006,7 @@ def _edit_rule_dialog(rule: dict, table_group_id: str, yaml_key: str, snapshot_s
 
     st.divider()
     if st.button("Delete term from contract", key="rule_delete_btn", use_container_width=True):
-        st.session_state[f"dc_select_term:{table_group_id}"] = rule_id
-        safe_rerun()
-
-
-# ---------------------------------------------------------------------------
-# Regenerate dialog
-# ---------------------------------------------------------------------------
-
-@st.dialog("Regenerate Contract", width="small")
-def _regenerate_dialog(contract_id: str, table_group_id: str, current_version: int | None, pending_ct: int = 0) -> None:
-    """Re-export the contract from the live database and save it as a new version."""
-    import io as _io
-    next_ver = (current_version + 1) if current_version is not None else 0
-    st.markdown(f"**Re-export and save as Version {next_ver}**")
-    st.caption(
-        "This will re-generate the full contract YAML from the current database state "
-        "(test definitions, profiling results, governance metadata) and save it as a new version."
-    )
-    confirmed = True
-    if pending_ct > 0:
-        st.warning(
-            f"You have **{pending_ct} unsaved {'edit' if pending_ct == 1 else 'edits'}** that will be discarded. "
-            "Save a new version first if you want to keep them.",
-            icon="⚠️",
-        )
-        confirmed = st.checkbox("I understand — discard my pending edits and regenerate")
-
-    # Show snapshot suite name that will be created
-    _tg_regen = TableGroup.get_minimal(table_group_id)
-    _tg_name_regen = getattr(_tg_regen, "table_groups_name", "") or table_group_id
-    _snapshot_suite_name_regen = f"[Contract v{next_ver}] {_tg_name_regen}"
-    st.info(
-        f"A new test suite will be created:\n\n"
-        f"**{_snapshot_suite_name_regen}**\n\n"
-        f"It will contain a copy of all tests currently in scope for this contract. "
-        f"Tests in this suite can only be managed from the Data Contract UI.",
-        icon="ℹ️",
-    )
-
-    label = st.text_input("Label (optional)", placeholder="e.g. Regenerated with test descriptions")
-    st.divider()
-    go_col, cancel_col = st.columns(2)
-    if go_col.button("Regenerate & Save", type="primary", use_container_width=True, disabled=not confirmed):
-        with st.spinner("Exporting from database…"):
-            buf = _io.StringIO()
-            _capture_yaml(table_group_id, buf)
-            fresh_yaml = buf.getvalue()
-        if not fresh_yaml.strip():
-            st.error("Export produced no output — check that profiling and test suites exist.")
-            return
-        with st.spinner("Saving new version…"):
-            new_version = save_contract_version(contract_id, table_group_id, fresh_yaml, label=label or None)
-
-        # Create the snapshot test suite.  On ANY failure, roll back the just-saved
-        # version so the DB is not left with an orphaned row that has no snapshot suite.
-        try:
-            create_contract_snapshot_suite(table_group_id, new_version)
-        except Exception as snap_err:
-            try:
-                rollback_contract_version(contract_id, new_version)
-            except Exception:
-                LOG.exception("Failed to roll back orphaned contract version %d", new_version)
-            if isinstance(snap_err, ValueError):
-                st.error(f"No in-scope tests found — add tests to at least one contract suite before saving. ({snap_err})")
-            else:
-                st.error(f"Snapshot suite creation failed: {snap_err}")
-            return
-
-        st.success(f"Saved as version {new_version}.")
-        _clear_contract_cache(contract_id)
-        safe_rerun()
-    if cancel_col.button("Cancel", use_container_width=True):
+        st.session_state[f"dc_select_term:{contract_id}"] = rule_id
         safe_rerun()
 
 
@@ -1243,16 +1137,16 @@ def _save_version_dialog(
             # just-saved version so the DB is not left with an orphaned row that
             # has no snapshot suite.
             try:
-                create_contract_snapshot_suite(table_group_id, new_version)
+                create_contract_snapshot_suite(
+                    contract_id, table_group_id, new_version,
+                    table_names=_table_names_from_yaml(current_yaml),
+                )
             except Exception as snap_err:
                 try:
                     rollback_contract_version(contract_id, new_version)
                 except Exception:
                     LOG.exception("Failed to roll back orphaned contract version %d", new_version)
-                if isinstance(snap_err, ValueError):
-                    st.error(f"No in-scope tests found — add tests to at least one contract suite before saving. ({snap_err})")
-                else:
-                    st.error(f"Snapshot suite creation failed: {snap_err}")
+                st.error(f"Snapshot suite creation failed: {snap_err}")
                 return
 
             st.success(f"Saved as version {new_version}.")
@@ -1359,21 +1253,22 @@ def cancel_all_changes_dialog(
 
 @st.dialog("Delete Contract Version", width="small")
 @with_database_session
-def _delete_version_dialog(table_group_id: str, version: int) -> None:
+def _delete_version_dialog(contract_id: str, version: int) -> None:
     """Confirm and delete a saved contract version and its snapshot suite."""
     schema = get_tg_schema()
 
-    # Fetch version info and snapshot suite details
+    # Fetch version info and snapshot suite details from the new schema
     ver_rows = fetch_dict_from_db(
         f"""
-        SELECT dc.snapshot_suite_id::text AS snapshot_suite_id,
-               dc.label,
-               dc.saved_at
-        FROM {schema}.data_contracts dc
-        WHERE dc.table_group_id = CAST(:tg_id AS uuid)
-          AND dc.version = :version
+        SELECT cv.snapshot_suite_id::text AS snapshot_suite_id,
+               cv.label,
+               cv.saved_at,
+               cv.is_current
+        FROM {schema}.contract_versions cv
+        WHERE cv.contract_id = CAST(:contract_id AS uuid)
+          AND cv.version = :version
         """,
-        params={"tg_id": table_group_id, "version": version},
+        params={"contract_id": contract_id, "version": version},
     )
 
     if not ver_rows:
@@ -1402,8 +1297,8 @@ def _delete_version_dialog(table_group_id: str, version: int) -> None:
         )
         suite_name = suite_rows[0]["test_suite"] if suite_rows else f"[Contract v{version}]"
 
-    # Check if this is the latest version
-    all_versions = list_contract_versions(table_group_id)
+    # Check if this is the latest/current version
+    all_versions = list_contract_versions(contract_id)
     latest_version = all_versions[0]["version"] if all_versions else version
     is_latest_version = (version == latest_version)
     prev_version = all_versions[1]["version"] if len(all_versions) > 1 and is_latest_version else None
@@ -1435,8 +1330,8 @@ def _delete_version_dialog(table_group_id: str, version: int) -> None:
     confirm_col, cancel_col = st.columns(2)
     if confirm_col.button("Delete", type="primary", use_container_width=True, disabled=not is_confirmed):
         try:
-            delete_contract_version(table_group_id, version)
-            _clear_contract_cache(table_group_id, also_anomalies=True)
+            delete_contract_version(contract_id, version)
+            _clear_contract_cache(contract_id, also_anomalies=True)
             # Clear version query param if this was the viewed version
             if "version" in st.query_params:
                 del st.query_params["version"]
@@ -1462,6 +1357,7 @@ def _confirm_import_dialog(
     table_group_id: str,
     snapshot_suite_id: str | None,
     import_key: str,
+    contract_id: str = "",
 ) -> None:
     """Show a preview of the import diff and ask the user to confirm."""
     st.subheader("Import Contract from YAML")
@@ -1552,8 +1448,8 @@ def _confirm_import_dialog(
                         sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, [])
                     except Exception:
                         LOG.exception("_confirm_import_dialog: failed to sync to snapshot suite %s", snapshot_suite_id)
-            if not diff.has_errors:
-                _clear_contract_cache(table_group_id, also_anomalies=True)
+            if not diff.has_errors and contract_id:
+                _clear_contract_cache(contract_id, also_anomalies=True)
         except Exception as exc:
             st.session_state[import_key] = {"error": str(exc)}
         safe_rerun()
@@ -1567,6 +1463,7 @@ def _import_yaml_dialog(
     table_group_id: str,
     snapshot_suite_id: str | None,
     import_key: str,
+    contract_id: str = "",
 ) -> None:
     """Toolbar-triggered import dialog: file upload + dry-run preview + confirm."""
     uploaded = st.file_uploader(
@@ -1679,10 +1576,150 @@ def _import_yaml_dialog(
                         sync_import_to_snapshot_suite(snapshot_suite_id, created_ids, updated_ids, [])
                     except Exception:
                         LOG.exception("_import_yaml_dialog: failed to sync to snapshot suite %s", snapshot_suite_id)
-            if not diff.has_errors:
-                _clear_contract_cache(table_group_id, also_anomalies=True)
+            if not diff.has_errors and contract_id:
+                _clear_contract_cache(contract_id, also_anomalies=True)
         except Exception as exc:
             st.session_state[import_key] = {"error": str(exc)}
+        safe_rerun()
+
+    if cancel_col.button("Cancel", use_container_width=True):
+        safe_rerun()
+
+
+# ---------------------------------------------------------------------------
+# Schema property editor dialog
+# ---------------------------------------------------------------------------
+
+_SCHEMA_CURATED: list[tuple[str, str]] = [
+    ("tags",                 "string[]"),
+    ("title",                "string"),
+    ("unique",               "boolean"),
+    ("pattern",              "string"),
+    ("precision",            "integer"),
+    ("scale",                "integer"),
+    ("default",              "string"),
+    ("encryptedName",        "string"),
+    ("partitioned",          "boolean"),
+    ("partitionKeyPosition", "integer"),
+    ("references",           "string"),
+]
+_SCHEMA_CURATED_NAMES: frozenset[str] = frozenset(f for f, _ in _SCHEMA_CURATED)
+
+
+@st.dialog("Schema Properties")
+def _schema_edit_dialog(
+    contract_id: str,
+    table_group_id: str,  # noqa: ARG001  reserved for future governance fallback
+    table_name: str,
+    col_name: str,
+) -> None:
+    """Edit user-specified ODCS schema property fields for a single column."""
+    yaml_key    = f"dc_yaml:{contract_id}"
+    pending_key = f"dc_pending:{contract_id}"
+
+    contract_yaml: str = st.session_state.get(yaml_key, "")
+    doc: dict = {}
+    try:
+        parsed = yaml.safe_load(contract_yaml)
+        doc = parsed if isinstance(parsed, dict) else {}
+    except yaml.YAMLError:
+        pass
+
+    prop       = _find_property(doc, table_name, col_name) or {}
+    user_fields: list[str] = (
+        doc.get("x-testgen", {})
+           .get("user_schema_fields", {})
+           .get(f"{table_name}.{col_name}", [])
+    )
+    pending: dict = st.session_state.get(pending_key, {})
+
+    # In-flight pending edits for this column take precedence over the YAML values.
+    pending_for_col: dict[str, object] = {
+        e["field"]: e["value"]
+        for e in pending.get("schema", [])
+        if e["table"] == table_name and e["col"] == col_name
+    }
+
+    def _cur(field: str) -> object:
+        return pending_for_col.get(field, prop.get(field))
+
+    st.caption(f"`{table_name}.{col_name}` — changes are staged and applied when you save the version.")
+
+    # ── Curated fields ────────────────────────────────────────────────────────
+    submitted: dict[str, object] = {}
+    for field, ftype in _SCHEMA_CURATED:
+        cur = _cur(field)
+        if ftype == "boolean":
+            is_on = st.toggle(field, value=bool(cur) if cur is not None else False, key=f"sch_dlg_{field}")
+            # Toggle off on a previously-set value → delete; toggle on → True; no change → keep cur
+            if is_on:
+                submitted[field] = True
+            elif cur is not None and cur is not False:
+                submitted[field] = None  # was True, now off → delete
+            else:
+                submitted[field] = cur   # was None or False — unchanged
+        elif ftype == "integer":
+            cur_int = int(cur) if cur is not None else None
+            raw = st.number_input(field, value=cur_int, step=1, key=f"sch_dlg_{field}")
+            submitted[field] = int(raw) if raw is not None else None
+        elif ftype == "string[]":
+            cur_str = ", ".join(str(v) for v in cur) if isinstance(cur, list) else (str(cur) if cur else "")
+            val = st.text_input(field, value=cur_str, placeholder="comma-separated", key=f"sch_dlg_{field}")
+            if val.strip():
+                submitted[field] = [v.strip() for v in val.split(",") if v.strip()]
+            else:
+                submitted[field] = None
+        else:
+            val = st.text_input(field, value=str(cur) if cur is not None else "", key=f"sch_dlg_{field}")
+            submitted[field] = val.strip() if val.strip() else None
+
+    # ── Custom fields ────────────────────────────────────────────────────────
+    custom_fields = [f for f in user_fields if f not in _SCHEMA_CURATED_NAMES]
+    st.subheader("Custom fields", divider="grey")
+    surviving_customs: list[tuple[str, object]] = []
+    for i, cf in enumerate(custom_fields):
+        cur_v = _cur(cf)
+        c1, c2, c3 = st.columns([3, 4, 1])
+        new_key = c1.text_input("Field name", value=cf, key=f"sch_cf_k_{i}", label_visibility="collapsed")
+        new_val = c2.text_input("Value", value=str(cur_v) if cur_v is not None else "",
+                                key=f"sch_cf_v_{i}", label_visibility="collapsed")
+        if not c3.button("✕", key=f"sch_cf_rm_{i}") and new_key.strip():
+            surviving_customs.append((new_key.strip(), new_val.strip() if new_val.strip() else None))
+
+    st.caption("Add a custom ODCS-compliant field (alphanumeric, dots, underscores).")
+    nc1, nc2, _ = st.columns([3, 4, 1])
+    new_field_key = nc1.text_input("New field name", value="", key="sch_cf_new_k",
+                                   label_visibility="collapsed", placeholder="field name")
+    new_field_val = nc2.text_input("New field value", value="", key="sch_cf_new_v",
+                                   label_visibility="collapsed", placeholder="value")
+    if new_field_key.strip():
+        surviving_customs.append((new_field_key.strip(), new_field_val.strip() if new_field_val.strip() else None))
+
+    # ── Save / Cancel ─────────────────────────────────────────────────────────
+    save_col, cancel_col = st.columns(2)
+    if save_col.button("Save to pending", type="primary", use_container_width=True):
+        # Only record fields that actually changed
+        for field, new_val in submitted.items():
+            old_val = _cur(field)
+            if new_val != old_val:
+                pending = _apply_pending_schema_edit(pending, table_name, col_name, field, new_val)
+                _apply_pending_schema_edits(doc, [{"table": table_name, "col": col_name, "field": field, "value": new_val}])
+
+        # Custom field changes: delete removed ones, set survivors
+        surviving_keys = {k for k, _ in surviving_customs}
+        for cf in custom_fields:
+            if cf not in surviving_keys:
+                pending = _apply_pending_schema_edit(pending, table_name, col_name, cf, None)
+                _apply_pending_schema_edits(doc, [{"table": table_name, "col": col_name, "field": cf, "value": None}])
+        for cf_key, cf_val in surviving_customs:
+            if cf_key not in _SCHEMA_CURATED_NAMES:
+                old_v = _cur(cf_key)
+                if cf_val != old_v:
+                    pending = _apply_pending_schema_edit(pending, table_name, col_name, cf_key, cf_val)
+                    _apply_pending_schema_edits(doc, [{"table": table_name, "col": col_name, "field": cf_key, "value": cf_val}])
+
+        st.session_state[yaml_key]    = yaml.dump(doc, default_flow_style=False, allow_unicode=True, sort_keys=False)
+        st.session_state[pending_key] = pending
         safe_rerun()
 
     if cancel_col.button("Cancel", use_container_width=True):
