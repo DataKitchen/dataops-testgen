@@ -4,15 +4,7 @@ from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_run import TestRun
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import parse_result_status, parse_uuid
-
-
-def _resolve_test_type(short_name: str) -> str:
-    """Resolve a test type short name to its internal code."""
-    matches = TestType.select_where(TestType.test_name_short == short_name)
-    if not matches:
-        raise MCPUserError(f"Unknown test type: `{short_name}`. Use the testgen://test-types resource to see available types.")
-    return matches[0].test_type
+from testgen.mcp.tools.common import parse_result_status, parse_uuid, resolve_test_type
 
 
 @with_database_session
@@ -43,7 +35,7 @@ def get_test_results(
     status_enum = parse_result_status(status) if status else None
     offset = (page - 1) * limit
 
-    test_type_code = _resolve_test_type(test_type) if test_type else None
+    test_type_code = resolve_test_type(test_type) if test_type else None
 
     perms = get_project_permissions()
 
@@ -182,7 +174,9 @@ def get_test_result_history(
 
     perms = get_project_permissions()
 
-    results = TestResult.select_history(test_definition_id=def_uuid, limit=limit, offset=offset, project_codes=perms.allowed_codes)
+    results = TestResult.select_history(
+        test_definition_id=def_uuid, limit=limit, offset=offset, project_codes=perms.allowed_codes
+    )
 
     if not results:
         return f"No historical results found for test definition `{test_definition_id}`."
@@ -199,11 +193,13 @@ def get_test_result_history(
     if first.column_names:
         lines.append(f"- **Column:** `{first.column_names}`")
 
-    lines.extend([
-        f"\nShowing {len(results)} result(s), newest first (page {page}).\n",
-        "| Date | Measure | Threshold | Status |",
-        "|---|---|---|---|",
-    ])
+    lines.extend(
+        [
+            f"\nShowing {len(results)} result(s), newest first (page {page}).\n",
+            "| Date | Measure | Threshold | Status |",
+            "|---|---|---|---|",
+        ]
+    )
 
     for r in results:
         date_str = str(r.test_time) if r.test_time else "—"

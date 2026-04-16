@@ -92,16 +92,17 @@ def test_get_test_results_empty(mock_result, mock_test_run_cls, db_session_mock)
     assert "No test results found" in result
 
 
+@patch("testgen.mcp.tools.common.TestType")
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_results_with_filters(mock_result, mock_tt_cls, mock_test_run_cls, db_session_mock):
+def test_get_test_results_with_filters(mock_result, mock_tt_cls, mock_test_run_cls, mock_tt_common, db_session_mock):
     mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
-
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
     tt.test_name_short = "Alpha Truncation"
     mock_tt_cls.select_where.return_value = [tt]
+    mock_tt_common.select_where.return_value = [tt]
     mock_result.select_results.return_value = []
 
     from testgen.mcp.tools.test_results import get_test_results
