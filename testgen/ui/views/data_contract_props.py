@@ -11,6 +11,7 @@ import html
 import re
 
 from testgen.ui.queries.data_contract_queries import _fetch_governance_data
+from testgen.ui.views.data_contract_yaml import _find_property
 
 # ---------------------------------------------------------------------------
 # Shared constants — imported by data_contract_dialogs.py as well
@@ -69,6 +70,7 @@ _SOURCE_META: dict[str, tuple[str, str, str]] = {
     "governance": ("Governance", "#fffde7", "#ffa000"),
     "test":       ("Test",       "#f1f8e9", "#388e3c"),
     "monitor":    ("Monitor",    "#e8f5e9", "#00695c"),
+    "schema":     ("Schema",     "#e0f2f1", "#00695c"),
 }
 
 _VERIF_META: dict[str, tuple[str, str, str]] = {
@@ -432,6 +434,42 @@ def _extract_column_terms(
 
 
 # ---------------------------------------------------------------------------
+# Schema property term builder
+# ---------------------------------------------------------------------------
+
+def _build_schema_terms(yaml_doc: dict, table_name: str, col_name: str) -> list[dict]:
+    """Return source='schema' term dicts for user-specified ODCS property fields."""
+    user_fields: list[str] = (
+        yaml_doc.get("x-testgen", {})
+                .get("user_schema_fields", {})
+                .get(f"{table_name}.{col_name}", [])
+    )
+    prop = _find_property(yaml_doc, table_name, col_name) or {}
+    terms: list[dict] = []
+    for field in user_fields:
+        val = prop.get(field)
+        if val is None:
+            continue
+        if isinstance(val, list):
+            display = ", ".join(str(v) for v in val)
+        elif isinstance(val, bool):
+            display = "true" if val else "false"
+        else:
+            display = str(val)
+        if len(display) > 30:
+            display = display[:29] + "…"
+        terms.append({
+            "name":    field,
+            "source":  "schema",
+            "verif":   "declared",
+            "value":   display,
+            "kind":    "static",
+            "rule_id": f"schema|{table_name}|{col_name}|{field}",
+        })
+    return terms
+
+
+# ---------------------------------------------------------------------------
 # Quality status helpers
 # ---------------------------------------------------------------------------
 
@@ -465,6 +503,7 @@ def _build_contract_props(
     suite_scope: dict | None = None,
     test_statuses: dict[str, str] | None = None,
     gov_by_col: dict | None = None,
+    snapshot_test_count: int | None = None,
 ) -> dict:
     """Pre-compute all display data for the VanJS component.
 
@@ -510,11 +549,25 @@ def _build_contract_props(
             + rules_by_element.get(prop.get("name", ""), []),
         )
     )
+    covered_tables = sum(
+        1 for t in schema
+        if any(
+            _is_covered(
+                p,
+                rules_by_element.get(f"{t.get('name', '')}.{p.get('name', '')}", [])
+                + rules_by_element.get(p.get("name", ""), []),
+            )
+            for p in (t.get("properties") or [])
+        )
+    )
     coverage_pct = int(100 * covered / n_cols) if n_cols else 0
 
     _n_elements = n_cols + len(schema)
 
-    counts = _quality_counts(quality)
+    # Separate non-monitor tests from monitor tests for the health card counts.
+    # Monitors are shown in the compliance card; the Test Results card shows only tests.
+    non_monitor_quality = [r for r in quality if r.get("testType", "") not in _MONITOR_TEST_TYPES]
+    counts = _quality_counts(non_monitor_quality)
     rd = run_dates or {}
 
     def _fmt_ts(ts: object) -> str:
@@ -530,12 +583,14 @@ def _build_contract_props(
         "coverage_pct":          coverage_pct,
         "covered":               covered,
         "n_cols":                n_cols,
+        "n_tables":              len(schema),
+        "covered_tables":        covered_tables,
         "tg_enforced":           0,
         "db_enforced":           0,
         "unenforced":            0,
         "uncovered":             0,
         "n_elements":            _n_elements,
-        "n_tests":               len(quality),
+        "n_tests":               snapshot_test_count if snapshot_test_count is not None else len(non_monitor_quality),
         "passing":               counts.get("passing", 0),
         "warning":               counts.get("warning", 0),
         "failing":               counts.get("failing", 0) + counts.get("error", 0),
@@ -724,6 +779,7 @@ def _build_contract_props(
             col_refs      = refs_by_col.get(col_key, []) + refs_by_col.get(col_name, [])
             gov           = effective_gov.get((table_name, col_name))
             terms         = _extract_column_terms(prop, col_rules, col_anomalies, col_refs, gov=gov)
+            terms        += _build_schema_terms(doc, table_name, col_name)
             static_terms  = [c for c in terms if c.get("kind") == "static"]
             live_terms    = [c for c in terms if c.get("kind") == "live"]
 
@@ -750,7 +806,13 @@ def _build_contract_props(
                 "covered":      is_cov,
                 "status":       worst_live,
                 "static_terms": [
-                    {"name": c["name"], "value": c["value"], "source": c["source"], "verif": c["verif"]}
+                    {
+                        "name":    c["name"],
+                        "value":   c["value"],
+                        "source":  c["source"],
+                        "verif":   c["verif"],
+                        "rule_id": c.get("rule_id", ""),
+                    }
                     for c in static_terms
                 ],
                 "live_terms": [
