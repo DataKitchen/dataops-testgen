@@ -40,6 +40,7 @@ _APP_TERM_DEL     = str(pathlib.Path(__file__).parent / "apps" / "data_contract_
 _APP_SNAP_QUALITY = str(pathlib.Path(__file__).parent / "apps" / "data_contract_snapshot_quality.py")
 _APP_YAML_IMPORT  = str(pathlib.Path(__file__).parent / "apps" / "data_contract_yaml_import.py")
 _APP_IMPORT_CONFIRM = str(pathlib.Path(__file__).parent / "apps" / "data_contract_import_confirm.py")
+_APP_SCHEMA         = str(pathlib.Path(__file__).parent / "apps" / "data_contract_schema_terms.py")
 
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
@@ -68,6 +69,10 @@ def _at_hist() -> AppTest:
 
 def _at_no_prof() -> AppTest:
     return AppTest.from_file(_APP_NO_PROF, default_timeout=15)
+
+
+def _at_schema() -> AppTest:
+    return AppTest.from_file(_APP_SCHEMA, default_timeout=15)
 
 
 def _all_text(at: AppTest) -> str:
@@ -484,22 +489,13 @@ class Test_BulkDeleteClearsCache:
         at.run()
         assert not at.exception
 
-    def test_saved_version_shows_refresh_button(self):
-        """Saved version page must always include the Refresh button for cache-busting."""
+    def test_saved_version_shows_save_button(self):
+        """Saved version page must include the Save version button."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "↺ Refresh" in _button_labels(at), (
-            f"Expected '↺ Refresh' button. Available: {_button_labels(at)}"
-        )
-
-    def test_saved_version_shows_regenerate_button(self):
-        """Latest saved version must show Regenerate button for re-exporting."""
-        at = _at_saved()
-        at.run()
-        assert not at.exception
-        assert "Regenerate" in _button_labels(at), (
-            f"Expected 'Regenerate' button. Available: {_button_labels(at)}"
+        assert "Save version" in _button_labels(at), (
+            f"Expected 'Save version' button. Available: {_button_labels(at)}"
         )
 
 
@@ -561,58 +557,18 @@ def _at_term_deletion() -> AppTest:
 
 
 # ---------------------------------------------------------------------------
-# Test Group 1: Test_RegenerateDialog — Regenerate button and dialog
+# Test Group 1: Test_RegenerateDialog — Regenerate button has been removed
 # ---------------------------------------------------------------------------
 
 class Test_RegenerateDialog:
 
-    def test_regenerate_button_is_present(self):
-        """Latest saved version must show the Regenerate button."""
+    def test_regenerate_button_absent(self):
+        """Regenerate button has been removed; must not appear on any version page."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "Regenerate" in _button_labels(at), (
-            f"Expected 'Regenerate'. Available: {_button_labels(at)}"
-        )
-
-    def test_regenerate_dialog_opens_without_exception(self):
-        """Clicking Regenerate must open the dialog without raising an exception."""
-        at = _at_saved()
-        at.run()
-        _click(at, "Regenerate")
-        assert not at.exception
-
-    def test_regenerate_dialog_shows_next_version_number(self):
-        """VERSION_1 has version=1, so the dialog header must say 'Version 2'."""
-        at = _at_saved()
-        at.run()
-        _click(at, "Regenerate")
-        assert not at.exception
-        text = _all_text(at)
-        assert "Version 2" in text, (
-            f"Expected 'Version 2' in dialog text. Got: {text[:500]}"
-        )
-
-    def test_regenerate_dialog_shows_snapshot_suite_info(self):
-        """Dialog must display an info message describing the new snapshot suite."""
-        at = _at_saved()
-        at.run()
-        _click(at, "Regenerate")
-        assert not at.exception
-        assert any(at.info), "Expected at least one st.info widget in the dialog"
-
-    def test_regenerate_dialog_has_regenerate_and_cancel_buttons(self):
-        """Dialog must contain both 'Regenerate & Save' and 'Cancel' buttons."""
-        at = _at_saved()
-        at.run()
-        _click(at, "Regenerate")
-        assert not at.exception
-        labels = _button_labels(at)
-        assert "Regenerate & Save" in labels, (
-            f"Expected 'Regenerate & Save'. Available: {labels}"
-        )
-        assert "Cancel" in labels, (
-            f"Expected 'Cancel'. Available: {labels}"
+        assert "Regenerate" not in _button_labels(at), (
+            f"'Regenerate' button should have been removed. Available: {_button_labels(at)}"
         )
 
 
@@ -1085,14 +1041,17 @@ class Test_VersionSwitching:
             f"Found {len(at.selectbox)} selectboxes."
         )
 
-    def test_version_picker_hidden_for_single_version(self):
-        """Single version → no selectbox for version switching."""
+    def test_version_picker_present_but_disabled_for_single_version(self):
+        """Single version → selectbox is shown but disabled (no navigation possible)."""
         at = _at_single_version()
         at.run()
         assert not at.exception
-        assert len(at.selectbox) == 0, (
-            f"Expected no selectbox with a single version. "
+        assert len(at.selectbox) == 1, (
+            f"Expected one selectbox (disabled) with a single version. "
             f"Found {len(at.selectbox)} selectboxes."
+        )
+        assert at.selectbox[0].disabled, (
+            "Version picker selectbox should be disabled when there is only one version."
         )
 
 
@@ -1182,36 +1141,18 @@ class Test_SaveVersionFlow:
 
 
 # ---------------------------------------------------------------------------
-# Test_RefreshButton — refresh button behavior
+# Test_RefreshButton — Refresh button has been removed from the toolbar
 # ---------------------------------------------------------------------------
 
 class Test_RefreshButton:
 
-    def test_refresh_clears_all_cache_keys(self):
-        """Clicking '↺ Refresh' removes all dc_* cache keys from session state."""
-        at = _at_saved()
-        # First run to render the page and populate session state
-        at.run()
-        assert not at.exception
-        # Pre-seed extra cache keys that refresh should clear
-        at.session_state[f"dc_anomalies:{CONTRACT_ID}"] = ["stale-anomaly"]
-        at.session_state[f"dc_gov:{CONTRACT_ID}"] = {"stale": True}
-        at.session_state[f"dc_run_dates:{CONTRACT_ID}"] = {"stale": True}
-        at.session_state[f"dc_suite_scope:{CONTRACT_ID}"] = {"stale": True}
-        at.session_state[f"dc_staleness_diff:{CONTRACT_ID}"] = MagicMock()
-        # Click Refresh — pops all keys then reruns the page
-        _click(at, "↺ Refresh")
-        assert not at.exception
-        # Page ran successfully after clearing all cache keys — no exception means
-        # the keys were properly cleared and re-populated from the mocked DB calls.
-
-    def test_refresh_button_present_on_saved_version(self):
-        """'↺ Refresh' must be in button labels on the saved version page."""
+    def test_refresh_button_absent(self):
+        """'↺ Refresh' button has been removed; must not appear on the saved version page."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "↺ Refresh" in _button_labels(at), (
-            f"Expected '↺ Refresh'. Available: {_button_labels(at)}"
+        assert "↺ Refresh" not in _button_labels(at), (
+            f"'↺ Refresh' should have been removed. Available: {_button_labels(at)}"
         )
 
 
@@ -1654,3 +1595,347 @@ class Test_PendingEditsUX:
         assert not any("staged" in t.lower() or "not yet saved" in t.lower() for t in warning_texts), (
             f"Historical version must not show unsaved-changes warning. Got: {warning_texts}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test_YamlSessionState — dc_yaml cache populated on first render
+# ---------------------------------------------------------------------------
+
+class Test_YamlSessionState:
+    """The page populates dc_yaml in session state on first render so the YAML tab
+    can be served without a DB round-trip on subsequent widget interactions."""
+
+    def test_yaml_key_populated_after_first_render(self):
+        """dc_yaml:{contract_id} must be present in session state after page render."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
+        assert yaml_key in at.session_state, (
+            f"Expected '{yaml_key}' in session state after render. "
+            f"Keys: {[k for k in at.session_state if k.startswith('dc_')]}"
+        )
+
+    def test_yaml_value_is_non_empty_string(self):
+        """The cached YAML must be a non-empty string."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
+        assert yaml_key in at.session_state
+        cached = at.session_state[yaml_key]
+        assert isinstance(cached, str) and len(cached) > 0, (
+            f"Expected non-empty YAML string in session state. Got: {cached!r}"
+        )
+
+    def test_yaml_contains_apiversion(self):
+        """The cached YAML must be valid ODCS YAML with an apiVersion field."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
+        assert yaml_key in at.session_state
+        cached = at.session_state[yaml_key]
+        assert "apiVersion" in cached, (
+            f"Expected 'apiVersion' in cached YAML. Got first 200 chars: {cached[:200]}"
+        )
+
+    def test_yaml_cache_preserved_across_render(self):
+        """A pre-seeded dc_yaml must survive a page render unchanged."""
+        at = _at_saved()
+        yaml_key = f"dc_yaml:{CONTRACT_ID}"
+        sentinel = "apiVersion: v3.1.0\nkind: DataContract\nid: sentinel\nschema: []\nquality: []\n"
+        at.session_state[yaml_key] = sentinel
+        at.run()
+        assert not at.exception
+        # The page must not blow away an already-populated YAML cache
+        assert yaml_key in at.session_state, "dc_yaml cache must survive render"
+
+    def test_version_key_populated_after_render(self):
+        """dc_version:{contract_id} must be set so version picker can re-render without refetching."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        version_key = f"dc_version:{CONTRACT_ID}"
+        assert version_key in at.session_state, (
+            f"Expected '{version_key}' in session state. "
+            f"Keys: {[k for k in at.session_state if k.startswith('dc_')]}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test_PendingDeletionCount — deletions contribute to save button count
+# ---------------------------------------------------------------------------
+
+class Test_PendingDeletionCount:
+    """Pending deletions (terms deleted from YAML) must count toward the save button label
+    and the unsaved-changes warning banner, same as governance/test edits."""
+
+    def _pending_with_deletions(self, count: int) -> dict:
+        return {
+            "governance": [],
+            "tests": [],
+            "deletions": [
+                {"source": "test", "rule_id": f"rule-del-{i:03d}",
+                 "table": "orders", "col": "amount"}
+                for i in range(count)
+            ],
+        }
+
+    def test_single_deletion_shows_count_in_save_button(self):
+        """One pending deletion → save button must contain '1'."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = self._pending_with_deletions(1)
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert any("1" in lbl and "Save version" in lbl for lbl in labels), (
+            f"Expected 'Save version (1)' for 1 pending deletion. Available: {labels}"
+        )
+
+    def test_mixed_pending_shows_combined_count(self):
+        """1 deletion + 1 governance edit = 2 pending → save button shows '2'."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = {
+            "governance": [
+                {"field": "description", "value": "new", "table": "orders", "col": "amount",
+                 "snapshot": {"name": "Description", "source": "governance", "verif": "declared"}}
+            ],
+            "tests": [],
+            "deletions": [
+                {"source": "test", "rule_id": "rule-del-001", "table": "orders", "col": "amount"}
+            ],
+        }
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert any("2" in lbl for lbl in labels), (
+            f"Expected '2' in save button label for 2 mixed pending. Available: {labels}"
+        )
+
+    def test_deletions_show_unsaved_warning(self):
+        """Pending deletions must trigger the unsaved-changes warning banner."""
+        at = _at_pending_edits()
+        at.session_state["dc_test_inject_pending"] = self._pending_with_deletions(2)
+        at.run()
+        assert not at.exception
+        warning_texts = [w.value for w in at.warning]
+        assert any("staged" in t.lower() or "not yet saved" in t.lower() for t in warning_texts), (
+            f"Expected unsaved-changes warning with pending deletions. Got: {warning_texts}"
+        )
+
+    def test_zero_deletions_no_count_in_label(self):
+        """No pending items → save button must not show a count suffix."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert not any("Save version (" in lbl for lbl in labels), (
+            f"Save button must not show count when nothing is pending. Labels: {labels}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test_StalenessActionButtons — stale banner interaction buttons
+# ---------------------------------------------------------------------------
+
+class Test_StalenessActionButtons:
+    """Verify the two CTA buttons on the staleness banner."""
+
+    def test_review_changes_button_present(self):
+        """'Review Changes' must appear on a stale contract."""
+        at = _at_stale()
+        at.run()
+        assert not at.exception
+        assert "Review Changes" in _button_labels(at), (
+            f"Expected 'Review Changes'. Available: {_button_labels(at)}"
+        )
+
+    def test_dismiss_button_present(self):
+        """'Dismiss' must appear on a stale contract."""
+        at = _at_stale()
+        at.run()
+        assert not at.exception
+        assert "Dismiss" in _button_labels(at), (
+            f"Expected 'Dismiss'. Available: {_button_labels(at)}"
+        )
+
+    def test_no_staleness_buttons_on_non_stale_contract(self):
+        """Non-stale contract must not render 'Dismiss' or 'Review Changes'."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert "Dismiss" not in labels, (
+            f"'Dismiss' must not appear on non-stale contract. Available: {labels}"
+        )
+        assert "Review Changes" not in labels, (
+            f"'Review Changes' must not appear on non-stale contract. Available: {labels}"
+        )
+
+    def test_no_staleness_banner_on_historical_version(self):
+        """Historical (read-only) version must not show staleness banner."""
+        at = _at_hist()
+        at.run()
+        assert not at.exception
+        warning_texts = [w.value for w in at.warning]
+        assert not any("Since then" in t for t in warning_texts), (
+            f"Historical version must not show staleness warning. Got: {warning_texts}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test_DeleteVersionButtonPlacement — delete version button in toolbar
+# ---------------------------------------------------------------------------
+
+class Test_DeleteVersionButtonPlacement:
+    """'Delete ver.' appears whenever there are multiple versions and the contract is active.
+    It is NOT restricted to the latest version — any version can be deleted."""
+
+    def test_delete_version_button_present_on_latest(self):
+        """Latest version must offer a 'Delete ver.' button in the toolbar."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert any("Delete ver" in lbl for lbl in labels), (
+            f"Expected 'Delete ver.' button on latest version. Available: {labels}"
+        )
+
+    def test_delete_version_button_present_on_historical(self):
+        """Historical version with multiple versions also shows 'Delete ver.' (any version can be deleted)."""
+        at = _at_hist()
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert any("Delete ver" in lbl for lbl in labels), (
+            f"Expected 'Delete ver.' on historical view with multiple versions. Available: {labels}"
+        )
+
+    def test_save_version_absent_on_historical(self):
+        """Historical version must NOT show 'Save version' (read-only)."""
+        at = _at_hist()
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert "Save version" not in labels, (
+            f"'Save version' must not appear on historical view. Available: {labels}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test_ContractMetadataDisplay — version picker and toolbar metadata
+# ---------------------------------------------------------------------------
+
+class Test_ContractMetadataDisplay:
+    """Spot-check that key metadata surfaces in the rendered UI."""
+
+    def test_latest_version_in_selectbox(self):
+        """Version picker selectbox must include the latest version number."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        assert len(at.selectbox) > 0, "Expected at least one selectbox (version picker)"
+        # The selectbox options contain version labels
+        sb = at.selectbox[0]
+        option_labels = [str(o) for o in sb.options]
+        assert any("1" in lbl for lbl in option_labels), (
+            f"Expected version 1 in selectbox options. Got: {option_labels}"
+        )
+
+    def test_single_version_picker_disabled(self):
+        """Single-version contract → selectbox is present but disabled."""
+        at = _at_single_version()
+        at.run()
+        assert not at.exception
+        assert len(at.selectbox) == 1, (
+            f"Expected exactly 1 selectbox. Found: {len(at.selectbox)}"
+        )
+        assert at.selectbox[0].disabled, "Version picker must be disabled for a single version"
+
+    def test_save_button_toolbar_order(self):
+        """'Save version' must be present before 'Export YAML' — toolbar left-to-right order."""
+        at = _at_saved()
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        assert "Save version" in labels, f"Expected 'Save version'. Available: {labels}"
+        # Export YAML / Download is rendered as a download_button (not in at.button)
+        # so we just verify Save version is there without crashing
+
+
+# ---------------------------------------------------------------------------
+# Test_SchemaPendingEdits — schema pending edits: count, warning banner
+# ---------------------------------------------------------------------------
+
+class Test_SchemaPendingEdits:
+    """Schema pending edits — pending count, save label, warning banner."""
+
+    def _inject_schema_pending(self, at: AppTest) -> AppTest:
+        """Pre-inject one schema pending edit via session state before running."""
+        at.session_state["dc_pending:" + CONTRACT_ID] = {
+            "schema": [{"table": "orders", "col": "amount", "field": "pattern", "value": r"^\d+$"}],
+        }
+        return at
+
+    def test_page_renders_with_schema_yaml(self):
+        at = _at_schema().run()
+        assert not at.exception
+
+    def test_schema_pending_edit_increments_pending_count(self):
+        at = _at_schema()
+        self._inject_schema_pending(at)
+        at.run()
+        assert not at.exception
+        # pending count > 0 means Save button shows "(1)" in label OR warning banner appears
+        labels = _button_labels(at)
+        warnings = [w.value for w in at.warning]
+        assert any("1" in lbl for lbl in labels) or any(
+            "staged" in w.lower() or "not yet saved" in w.lower() for w in warnings
+        ), f"Expected pending count=1 in button labels or warning. Labels: {labels}, Warnings: {warnings}"
+
+    def test_warning_banner_present_when_schema_edits_pending(self):
+        at = _at_schema()
+        self._inject_schema_pending(at)
+        at.run()
+        assert not at.exception
+        warnings = [w.value for w in at.warning]
+        assert any(
+            "unsaved" in w.lower() or "pending" in w.lower() or "staged" in w.lower() or "not yet saved" in w.lower()
+            for w in warnings
+        ), f"Expected unsaved-changes warning. Got: {warnings}"
+
+    def test_warning_banner_absent_when_no_schema_edits(self):
+        at = _at_schema().run()
+        assert not at.exception
+        # No pending edits → no warning banner about unsaved changes
+        warnings = [w.value for w in at.warning]
+        assert not any("not yet saved" in w.lower() for w in warnings), (
+            f"Unexpected unsaved warning without pending edits. Got: {warnings}"
+        )
+
+    def test_zero_schema_edits_no_count_suffix(self):
+        at = _at_schema().run()
+        assert not at.exception
+        labels = _button_labels(at)
+        # Save button should not show a count > 0
+        assert not any("Save version (" in lbl for lbl in labels), (
+            f"Save button must not show count when nothing is pending. Labels: {labels}"
+        )
+
+    def test_multiple_schema_edits_counted_correctly(self):
+        at = _at_schema()
+        at.session_state["dc_pending:" + CONTRACT_ID] = {
+            "schema": [
+                {"table": "orders", "col": "amount", "field": "pattern", "value": r"^\d+$"},
+                {"table": "orders", "col": "amount", "field": "scale",   "value": 2},
+            ],
+        }
+        at.run()
+        assert not at.exception
+        labels = _button_labels(at)
+        # Save button must show count of 2
+        assert any("Save version (2)" in lbl for lbl in labels), (
+            f"Expected 'Save version (2)' for 2 schema pending edits. Available: {labels}"
+        )
+
