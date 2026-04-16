@@ -11,6 +11,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
+CONTRACT_ID = "cccccccc-0000-0000-0000-000000000001"
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 
 
@@ -39,13 +40,22 @@ class Test_HasAnyVersion:
         from testgen.commands.contract_versions import has_any_version
 
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[{"1": 1}]):
-            assert has_any_version(TG_ID) is True
+            assert has_any_version(CONTRACT_ID) is True
 
     def test_returns_false_when_no_rows(self):
         from testgen.commands.contract_versions import has_any_version
 
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[]):
-            assert has_any_version(TG_ID) is False
+            assert has_any_version(CONTRACT_ID) is False
+
+    def test_queries_contract_versions_table(self):
+        from testgen.commands.contract_versions import has_any_version
+
+        with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[]) as mock_fetch:
+            has_any_version(CONTRACT_ID)
+        sql = mock_fetch.call_args[0][0]
+        assert "contract_versions" in sql
+        assert "contract_id" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +69,7 @@ class Test_LoadContractVersion:
         from testgen.commands.contract_versions import load_contract_version
 
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[]):
-            assert load_contract_version(TG_ID) is None
+            assert load_contract_version(CONTRACT_ID) is None
 
     def test_returns_dict_with_correct_keys_for_latest(self):
         from testgen.commands.contract_versions import load_contract_version
@@ -69,9 +79,11 @@ class Test_LoadContractVersion:
             "saved_at": self._SAVED_AT,
             "label": "v2-label",
             "contract_yaml": "apiVersion: v3.1.0\n",
+            "snapshot_suite_id": None,
+            "is_current": True,
         }
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[row]):
-            result = load_contract_version(TG_ID)
+            result = load_contract_version(CONTRACT_ID)
 
         assert result is not None
         assert result["version"] == 2
@@ -87,9 +99,11 @@ class Test_LoadContractVersion:
             "saved_at": self._SAVED_AT,
             "label": None,
             "contract_yaml": "yaml-content",
+            "snapshot_suite_id": None,
+            "is_current": False,
         }
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[row]):
-            result = load_contract_version(TG_ID, version=1)
+            result = load_contract_version(CONTRACT_ID, version=1)
 
         assert result is not None
         assert result["version"] == 1
@@ -103,9 +117,11 @@ class Test_LoadContractVersion:
             "saved_at": self._SAVED_AT,
             "label": None,
             "contract_yaml": "yaml",
+            "snapshot_suite_id": None,
+            "is_current": True,
         }
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[row]):
-            result = load_contract_version(TG_ID)
+            result = load_contract_version(CONTRACT_ID)
 
         assert result is not None
         assert isinstance(result["version"], int)
@@ -123,18 +139,18 @@ class Test_ListContractVersions:
         from testgen.commands.contract_versions import list_contract_versions
 
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=[]):
-            assert list_contract_versions(TG_ID) == []
+            assert list_contract_versions(CONTRACT_ID) == []
 
     def test_returns_versions_newest_first(self):
         from testgen.commands.contract_versions import list_contract_versions
 
         rows = [
-            {"version": 2, "saved_at": self._SAVED_AT, "label": "latest"},
-            {"version": 1, "saved_at": self._SAVED_AT, "label": None},
-            {"version": 0, "saved_at": self._SAVED_AT, "label": "initial"},
+            {"version": 2, "saved_at": self._SAVED_AT, "label": "latest", "is_current": True},
+            {"version": 1, "saved_at": self._SAVED_AT, "label": None, "is_current": False},
+            {"version": 0, "saved_at": self._SAVED_AT, "label": "initial", "is_current": False},
         ]
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=rows):
-            result = list_contract_versions(TG_ID)
+            result = list_contract_versions(CONTRACT_ID)
 
         assert len(result) == 3
         assert result[0]["version"] == 2
@@ -145,11 +161,11 @@ class Test_ListContractVersions:
         from testgen.commands.contract_versions import list_contract_versions
 
         rows = [
-            {"version": 0, "saved_at": self._SAVED_AT, "label": "first"},
-            {"version": 1, "saved_at": self._SAVED_AT, "label": None},
+            {"version": 0, "saved_at": self._SAVED_AT, "label": "first", "is_current": False},
+            {"version": 1, "saved_at": self._SAVED_AT, "label": None, "is_current": True},
         ]
         with patch("testgen.commands.contract_versions.fetch_dict_from_db", return_value=rows):
-            result = list_contract_versions(TG_ID)
+            result = list_contract_versions(CONTRACT_ID)
 
         for entry in result:
             assert "version" in entry
@@ -165,41 +181,48 @@ class Test_SaveContractVersion:
     def _run_save(self, return_values, row_counts, label=None):
         from testgen.commands.contract_versions import save_contract_version
 
-        # INSERT and UPDATE now run as a single execute_db_queries call via a CTE.
+        # Two statements: flip UPDATE (index 0) + INSERT RETURNING version (index 1)
         with patch(
             "testgen.commands.contract_versions.execute_db_queries",
             return_value=(return_values, row_counts),
         ) as mock_exec:
-            result = save_contract_version(TG_ID, "yaml-content", label=label)
+            result = save_contract_version(CONTRACT_ID, TG_ID, "yaml-content", label=label)
             return result, mock_exec
 
     def test_first_save_returns_zero(self):
-        result, _ = self._run_save([0], [1])
+        result, _ = self._run_save([None, 0], [0, 1])
         assert result == 0
 
     def test_second_save_returns_one(self):
-        result, _ = self._run_save([1], [1])
+        result, _ = self._run_save([None, 1], [0, 1])
         assert result == 1
 
-    def test_executes_single_query(self):
-        """INSERT and UPDATE are now combined into one execute_db_queries call via a CTE."""
-        _, mock_exec = self._run_save([0], [1])
+    def test_executes_two_queries(self):
+        """Flip UPDATE and INSERT are two separate queries in execute_db_queries."""
+        _, mock_exec = self._run_save([None, 0], [0, 1])
         assert mock_exec.call_count == 1
+        queries = mock_exec.call_args[0][0]
+        assert len(queries) == 2
 
-    def test_combined_query_contains_insert_and_update(self):
-        _, mock_exec = self._run_save([0], [1])
+    def test_insert_query_contains_contract_versions_and_update(self):
+        _, mock_exec = self._run_save([None, 0], [0, 1])
         queries = mock_exec.call_args_list[0][0][0]
-        sql = queries[0][0].upper()
-        assert "INSERT" in sql
-        assert "UPDATE" in sql
-        assert "contract_stale".upper() in sql
-        assert "FALSE" in sql
-        assert "RETURNING" in sql
+        insert_sql = queries[1][0].upper()
+        assert "INSERT" in insert_sql
+        assert "CONTRACT_VERSIONS" in insert_sql
+        assert "RETURNING" in insert_sql
+
+    def test_insert_query_also_updates_staleness(self):
+        _, mock_exec = self._run_save([None, 0], [0, 1])
+        queries = mock_exec.call_args_list[0][0][0]
+        insert_sql = queries[1][0].upper()
+        assert "CONTRACT_STALE" in insert_sql
+        assert "FALSE" in insert_sql
 
     def test_label_passed_as_param(self):
-        _, mock_exec = self._run_save([0], [1], label="my-label")
+        _, mock_exec = self._run_save([None, 0], [0, 1], label="my-label")
         queries = mock_exec.call_args_list[0][0][0]
-        params = queries[0][1]
+        params = queries[1][1]
         assert params.get("label") == "my-label"
 
 

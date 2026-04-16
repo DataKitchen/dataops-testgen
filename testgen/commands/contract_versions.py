@@ -1,11 +1,16 @@
+# testgen/commands/contract_versions.py
 """
-Contract version management — save, load, list, and staleness for data_contracts table.
+Contract version management — save, load, list, and staleness for contract_versions table.
+
+All version functions are scoped by contract_id (not table_group_id).
+Staleness helpers remain table_group_id scoped (they update table_groups).
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
+
+import yaml as _yaml
 
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_dict_from_db
@@ -14,51 +19,59 @@ from testgen.common.models import with_database_session
 LOG = logging.getLogger("testgen")
 
 
+def _count_terms(yaml_content: str) -> int:
+    """Count schema property terms + quality rules in an ODCS YAML document."""
+    try:
+        doc = _yaml.safe_load(yaml_content)
+        if not isinstance(doc, dict):
+            return 0
+        schema_terms = sum(len(t.get("properties") or []) for t in (doc.get("schema") or []))
+        quality_terms = len(doc.get("quality") or [])
+        return schema_terms + quality_terms
+    except Exception:
+        return 0
+
+
 @with_database_session
-def has_any_version(table_group_id: str) -> bool:
-    """Return True if at least one saved contract version exists for the table group."""
+def has_any_version(contract_id: str) -> bool:
+    """Return True if at least one saved version exists for the contract."""
     schema = get_tg_schema()
     rows = fetch_dict_from_db(
-        f"SELECT 1 FROM {schema}.data_contracts WHERE table_group_id = CAST(:tg_id AS uuid) LIMIT 1",
-        params={"tg_id": table_group_id},
+        f"SELECT 1 FROM {schema}.contract_versions WHERE contract_id = CAST(:contract_id AS uuid) LIMIT 1",
+        params={"contract_id": contract_id},
     )
     return bool(rows)
 
 
 @with_database_session
-def load_contract_version(table_group_id: str, version: int | None = None) -> dict[str, Any] | None:
+def load_contract_version(contract_id: str, version: int | None = None) -> dict[str, Any] | None:
     """
-    Load a saved contract version from the database.
+    Load a contract version. Pass version=None to load the current (is_current=TRUE) version.
 
-    Args:
-        table_group_id: UUID of the table group.
-        version: Specific version number to load, or None to load the latest.
-
-    Returns:
-        Dict with keys version (int), saved_at (datetime), label (str|None),
-        contract_yaml (str), or None if no matching row is found.
+    Returns dict with keys: version, saved_at, label, contract_yaml, snapshot_suite_id, is_current.
+    Returns None if no matching row found.
     """
     schema = get_tg_schema()
 
     if version is None:
         sql = f"""
-            SELECT version, saved_at, label, contract_yaml,
+            SELECT version, saved_at, label, contract_yaml, is_current,
                    snapshot_suite_id::text AS snapshot_suite_id
-            FROM {schema}.data_contracts
-            WHERE table_group_id = :tg_id
-            ORDER BY version DESC
-            LIMIT 1
+              FROM {schema}.contract_versions
+             WHERE contract_id = CAST(:contract_id AS uuid)
+               AND is_current = TRUE
+             LIMIT 1
         """
-        params: dict[str, Any] = {"tg_id": table_group_id}
+        params: dict[str, Any] = {"contract_id": contract_id}
     else:
         sql = f"""
-            SELECT version, saved_at, label, contract_yaml,
+            SELECT version, saved_at, label, contract_yaml, is_current,
                    snapshot_suite_id::text AS snapshot_suite_id
-            FROM {schema}.data_contracts
-            WHERE table_group_id = :tg_id
-              AND version = :ver
+              FROM {schema}.contract_versions
+             WHERE contract_id = CAST(:contract_id AS uuid)
+               AND version = :ver
         """
-        params = {"tg_id": table_group_id, "ver": version}
+        params = {"contract_id": contract_id, "ver": version}
 
     rows = fetch_dict_from_db(sql, params=params)
     if not rows:
@@ -66,157 +79,156 @@ def load_contract_version(table_group_id: str, version: int | None = None) -> di
 
     row = dict(rows[0])
     return {
-        "version":          int(row["version"]),
-        "saved_at":         row["saved_at"],
-        "label":            row.get("label"),
-        "contract_yaml":    row["contract_yaml"],
+        "version":           int(row["version"]),
+        "saved_at":          row["saved_at"],
+        "label":             row.get("label"),
+        "contract_yaml":     row["contract_yaml"],
         "snapshot_suite_id": row.get("snapshot_suite_id") or None,
+        "is_current":        bool(row.get("is_current", False)),
     }
 
 
 @with_database_session
-def list_contract_versions(table_group_id: str) -> list[dict[str, Any]]:
-    """
-    Return a summary list of all saved versions for the table group, newest first.
-
-    Each entry has keys: version (int), saved_at (datetime), label (str|None).
-    """
+def list_contract_versions(contract_id: str) -> list[dict[str, Any]]:
+    """Return all versions for a contract, newest first. Each entry: version, saved_at, label, is_current."""
     schema = get_tg_schema()
     rows = fetch_dict_from_db(
         f"""
-        SELECT version, saved_at, label
-        FROM {schema}.data_contracts
-        WHERE table_group_id = :tg_id
-        ORDER BY version DESC
+        SELECT version, saved_at, label, is_current
+          FROM {schema}.contract_versions
+         WHERE contract_id = CAST(:contract_id AS uuid)
+         ORDER BY version DESC
         """,
-        params={"tg_id": table_group_id},
+        params={"contract_id": contract_id},
     )
     return [
         {
-            "version":  int(r["version"]),
-            "saved_at": r["saved_at"],
-            "label":    r.get("label"),
+            "version":    int(r["version"]),
+            "saved_at":   r["saved_at"],
+            "label":      r.get("label"),
+            "is_current": bool(r.get("is_current", False)),
         }
         for r in rows
     ]
 
 
 @with_database_session
-def save_contract_version(table_group_id: str, yaml_content: str, label: str | None = None) -> int:
+def save_contract_version(
+    contract_id: str,
+    table_group_id: str,
+    yaml_content: str,
+    term_count: int | None = None,
+    label: str | None = None,
+) -> int:
     """
-    Atomically insert a new contract version and update the table group staleness state.
+    Atomically flip the current version to is_current=FALSE and insert a new is_current=TRUE version.
 
-    The new version number is computed as MAX(existing_version) + 1, starting at 0
-    when no previous versions exist.
-
-    Args:
-        table_group_id: UUID of the table group.
-        yaml_content: Raw YAML string of the ODCS document to store.
-        label: Optional human-readable label for the snapshot.
-
-    Returns:
-        The newly assigned version number (int).
+    Also clears the table_groups.contract_stale flag.
+    Returns the new version number (int).
     """
     schema = get_tg_schema()
+    if term_count is None:
+        term_count = _count_terms(yaml_content)
 
-    # Single statement: INSERT + UPDATE run atomically in one transaction via a CTE.
-    # The UPDATE only executes if the INSERT succeeds; the final SELECT returns the new version.
-    combined_sql = f"""
+    # Two statements: flip old current → FALSE, then insert new version as is_current=TRUE.
+    flip_sql = f"""
+        UPDATE {schema}.contract_versions
+           SET is_current = FALSE
+         WHERE contract_id = CAST(:contract_id AS uuid) AND is_current = TRUE
+    """
+
+    insert_sql = f"""
         WITH ins AS (
-            INSERT INTO {schema}.data_contracts (table_group_id, version, saved_at, label, contract_yaml)
-            SELECT :tg_id,
+            INSERT INTO {schema}.contract_versions
+                   (contract_id, version, is_current, label, contract_yaml, term_count)
+            SELECT CAST(:contract_id AS uuid),
                    COALESCE(MAX(version), -1) + 1,
-                   NOW(),
+                   TRUE,
                    :label,
-                   :yaml
-            FROM {schema}.data_contracts
-            WHERE table_group_id = :tg_id
+                   :yaml,
+                   :term_count
+              FROM {schema}.contract_versions
+             WHERE contract_id = CAST(:contract_id AS uuid)
             RETURNING version
         ),
         upd AS (
             UPDATE {schema}.table_groups
-            SET contract_stale = FALSE,
-                last_contract_save_date = NOW()
-            WHERE id = :tg_id
+               SET contract_stale = FALSE,
+                   last_contract_save_date = NOW()
+             WHERE id = CAST(:tg_id AS uuid)
         )
         SELECT version FROM ins
     """
 
-    return_values, _row_counts = execute_db_queries([
-        (combined_sql, {"tg_id": table_group_id, "label": label, "yaml": yaml_content}),
+    return_values, _ = execute_db_queries([
+        (flip_sql, {"contract_id": contract_id}),
+        (insert_sql, {"contract_id": contract_id, "label": label, "yaml": yaml_content,
+                      "term_count": term_count, "tg_id": table_group_id}),
     ])
-    new_version = int(return_values[0])
-    LOG.info("Contract version %d saved for table group %s", new_version, table_group_id)
+    new_version = int(return_values[1])
+    LOG.info("Contract version %d saved for contract %s", new_version, contract_id)
     return new_version
 
 
 @with_database_session
-def update_contract_version(table_group_id: str, version: int, yaml_content: str) -> None:
-    """
-    Update the YAML of an existing contract version in-place.
-    Does not bump the version number or create a new snapshot suite.
-    """
+def update_contract_version(contract_id: str, version: int, yaml_content: str) -> None:
+    """Update the YAML of an existing version in-place (no version bump)."""
     schema = get_tg_schema()
     execute_db_queries([(
-        f"UPDATE {schema}.data_contracts SET contract_yaml = :yaml "
-        "WHERE table_group_id = CAST(:tg_id AS uuid) AND version = :version",
-        {"tg_id": table_group_id, "version": version, "yaml": yaml_content},
+        f"UPDATE {schema}.contract_versions SET contract_yaml = :yaml "
+        f" WHERE contract_id = CAST(:contract_id AS uuid) AND version = :version",
+        {"contract_id": contract_id, "version": version, "yaml": yaml_content},
     )])
-    LOG.info("Contract version %d updated in-place for table group %s", version, table_group_id)
+    LOG.info("Contract version %d updated in-place for contract %s", version, contract_id)
 
 
 @with_database_session
 def mark_contract_stale(table_group_id: str) -> None:
-    """
-    Mark the contract as stale, but only if a saved version already exists
-    (i.e. last_contract_save_date IS NOT NULL).
-    """
+    """Mark the table group's contract as stale (only if a version exists)."""
     schema = get_tg_schema()
-    execute_db_queries(
-        [
-            (
-                f"""
-                UPDATE {schema}.table_groups
-                SET contract_stale = TRUE
-                WHERE id = :tg_id
-                  AND last_contract_save_date IS NOT NULL
-                """,
-                {"tg_id": table_group_id},
-            )
-        ]
-    )
+    execute_db_queries([(
+        f"""
+        UPDATE {schema}.table_groups
+           SET contract_stale = TRUE
+         WHERE id = CAST(:tg_id AS uuid)
+           AND last_contract_save_date IS NOT NULL
+        """,
+        {"tg_id": table_group_id},
+    )])
 
 
 @with_database_session
 def mark_contract_not_stale(table_group_id: str) -> None:
-    """Clear the stale flag for the table group's contract."""
+    """Clear the stale flag for the table group."""
     schema = get_tg_schema()
-    execute_db_queries(
-        [
-            (
-                f"UPDATE {schema}.table_groups SET contract_stale = FALSE WHERE id = :tg_id",
-                {"tg_id": table_group_id},
-            )
-        ]
-    )
+    execute_db_queries([(
+        f"UPDATE {schema}.table_groups SET contract_stale = FALSE WHERE id = CAST(:tg_id AS uuid)",
+        {"tg_id": table_group_id},
+    )])
 
 
 @with_database_session
-def rollback_contract_version(table_group_id: str, version: int) -> None:
-    """
-    Delete a just-created contract version when the paired snapshot suite creation failed.
-
-    Unlike delete_contract_version (in contract_snapshot_suite.py), this function has no
-    minimum-version guard — it is only called immediately after save_contract_version to
-    undo an orphaned row when snapshot creation failed before snapshot_suite_id was set.
-    """
+def rollback_contract_version(contract_id: str, version: int) -> None:
+    """Delete a just-created version when snapshot suite creation failed."""
     schema = get_tg_schema()
     execute_db_queries([(
-        f"DELETE FROM {schema}.data_contracts "
-        "WHERE table_group_id = CAST(:tg_id AS uuid) AND version = :version",
-        {"tg_id": table_group_id, "version": version},
+        f"DELETE FROM {schema}.contract_versions "
+        f" WHERE contract_id = CAST(:contract_id AS uuid) AND version = :version",
+        {"contract_id": contract_id, "version": version},
     )])
-    LOG.info(
-        "Rolled back orphaned contract version %d for table group %s",
-        version, table_group_id,
+    LOG.info("Rolled back version %d for contract %s", version, contract_id)
+
+
+def get_snapshot_suite_ids_for_contract(contract_id: str) -> list[str]:
+    """Return all non-NULL snapshot_suite_ids for a contract's versions."""
+    schema = get_tg_schema()
+    rows = fetch_dict_from_db(
+        f"""
+        SELECT snapshot_suite_id::text
+          FROM {schema}.contract_versions
+         WHERE contract_id = CAST(:contract_id AS uuid)
+           AND snapshot_suite_id IS NOT NULL
+        """,
+        params={"contract_id": contract_id},
     )
+    return [str(r["snapshot_suite_id"]) for r in rows]
