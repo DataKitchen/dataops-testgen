@@ -43,6 +43,32 @@ def _status_badge(status: str) -> str:
     return f":{color}[{label}]"
 
 
+def _format_last_run(dt: object) -> str:
+    """Return a human-readable relative time string for a datetime, or 'Never'."""
+    if dt is None:
+        return "Never"
+    import datetime
+    if hasattr(dt, "date"):  # already a datetime
+        now = datetime.datetime.now(tz=dt.tzinfo)
+        delta = now - dt
+        days = delta.days
+        if days == 0:
+            return "Today"
+        if days == 1:
+            return "Yesterday"
+        if days < 7:
+            return f"{days} days ago"
+        if days < 30:
+            weeks = days // 7
+            return f"{weeks} week{'s' if weeks != 1 else ''} ago"
+        if days < 365:
+            months = days // 30
+            return f"{months} month{'s' if months != 1 else ''} ago"
+        years = days // 365
+        return f"{years} year{'s' if years != 1 else ''} ago"
+    return str(dt)
+
+
 @st.dialog("Delete Contract")
 def _delete_contract_dialog(contract_id: str, contract_name: str, version_count: int) -> None:
     st.warning(
@@ -83,24 +109,28 @@ class DataContractsListPage(Page):
 
         # ── Toolbar ────────────────────────────────────────────────
         tg_count = len({c["table_group_id"] for c in contracts})
-        toolbar_left, toolbar_right = st.columns([6, 1])
+        toolbar_left, toolbar_right = st.columns([4, 2])
         with toolbar_left:
             st.caption(
                 f"{len(contracts)} contract{'s' if len(contracts) != 1 else ''} · "
                 f"{tg_count} table group{'s' if tg_count != 1 else ''}"
             )
         with toolbar_right:
-            if st.button("+ New Contract", type="primary", use_container_width=True):
+            if st.button("+ New Contract", type="secondary"):
                 create_contract_wizard(project_code=project_code)
 
         if not contracts:
-            st.info("No contracts yet. Click **+ New Contract** to create one.", icon=":material/contract:")
+            st.info("No contracts yet. Use **+ New Contract** to create one.", icon=":material/contract:")
+            if st.button("+ New Contract", key="dc_list_empty_new", type="primary"):
+                create_contract_wizard(project_code=project_code)
             return
 
         # ── Cards grouped by table group ───────────────────────────
         sorted_contracts = sorted(contracts, key=lambda c: (c["table_group_name"], c["name"]))
-        for tg_name, group_iter in groupby(sorted_contracts, key=lambda c: c["table_group_name"]):
+        for group_idx, (tg_name, group_iter) in enumerate(groupby(sorted_contracts, key=lambda c: c["table_group_name"])):
             group = list(group_iter)
+            if group_idx > 0:
+                st.divider()
             st.markdown(f"**{tg_name}**")
             cols = st.columns(3)
             for idx, contract in enumerate(group):
@@ -109,7 +139,7 @@ class DataContractsListPage(Page):
                     self._render_card(contract)
 
     def _render_card(self, contract: dict) -> None:
-        """Render one contract card."""
+        """Render one contract card. The card body is a single anchor — whole card is clickable."""
         contract_id   = contract["contract_id"]
         name          = contract["name"]
         is_active     = contract["is_active"]
@@ -118,58 +148,71 @@ class DataContractsListPage(Page):
         term_count    = contract["term_count"]
         test_count    = contract["test_count"]
         version_count = contract["version_count"]
+        table_count   = contract["table_count"]
+        last_run_at   = contract.get("last_run_at")
 
-        # Inactive overrides
         if not is_active:
             strip_color = "#94a3b8"
-            badge_md = ":gray[Inactive]"
+            badge_html  = '<span style="color:var(--text-color);opacity:.6">Inactive</span>'
         else:
             strip_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])[0]
             _, badge_label, badge_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])
-            badge_md = f":{badge_color}[{badge_label}]"
+            _BADGE_HEX = {"green": "#22c55e", "orange": "#f59e0b", "red": "#ef4444", "gray": "#94a3b8"}
+            hex_color   = _BADGE_HEX.get(badge_color, "#94a3b8")
+            badge_html  = f'<span style="color:{hex_color};font-size:.85em;font-weight:600">{badge_label}</span>'
+
+        v_label = f"v{version}" if version >= 0 else "—"
+        last_run_str = _format_last_run(last_run_at)
+        detail_url = f"/data-contract?contract_id={contract_id}"
 
         with st.container(border=True):
-            # Color strip (4px top border via markdown)
-            st.markdown(
-                f'<div style="height:4px;background:{strip_color};'
-                f'border-radius:3px;margin-bottom:6px"></div>',
-                unsafe_allow_html=True,
-            )
+            # Card body: entire area is a single <a> link so clicking anywhere navigates.
+            st.markdown(f"""
+<a href="{detail_url}" target="_self" style="display:block;text-decoration:none;color:inherit">
+  <div style="height:6px;background:{strip_color};border-radius:3px;margin-bottom:10px"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <span style="font-weight:600;font-size:1em">{name}</span>
+    {badge_html}
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:6px">
+    <div style="flex:1;text-align:left">
+      <div style="font-size:.75em;opacity:.6;margin-bottom:2px">Version</div>
+      <div style="font-size:1.1em;font-weight:600">{v_label}</div>
+    </div>
+    <div style="flex:1;text-align:left">
+      <div style="font-size:.75em;opacity:.6;margin-bottom:2px">Tables</div>
+      <div style="font-size:1.1em;font-weight:600">{table_count}</div>
+    </div>
+    <div style="flex:1;text-align:left">
+      <div style="font-size:.75em;opacity:.6;margin-bottom:2px">Terms</div>
+      <div style="font-size:1.1em;font-weight:600">{term_count}</div>
+    </div>
+    <div style="flex:1;text-align:left">
+      <div style="font-size:.75em;opacity:.6;margin-bottom:2px">Tests</div>
+      <div style="font-size:1.1em;font-weight:600">{test_count}</div>
+    </div>
+  </div>
+  <div style="font-size:.73em;opacity:.5;margin-bottom:8px">Last run: {last_run_str}</div>
+</a>
+""", unsafe_allow_html=True)
 
-            # Name + status badge
-            name_col, badge_col = st.columns([3, 2])
-            with name_col:
-                if st.button(
-                    name,
-                    key=f"dc_list_card_btn:{contract_id}",
-                    type="tertiary",
-                    help="Open contract detail",
-                ):
-                    Router().queue_navigation(to="data-contract", with_args={"contract_id": contract_id})
-            with badge_col:
-                st.markdown(badge_md)
-
-            # Stats row
-            v_col, t_col, tst_col = st.columns(3)
-            v_label   = f"v{version}" if version >= 0 else "—"
-            v_col.metric("Version", v_label)
-            t_col.metric("Terms", str(term_count))
-            tst_col.metric("Tests", str(test_count))
-
-            # Footer: deactivate/reactivate + delete
-            act_col, del_col = st.columns([1, 1])
-            with act_col:
-                if is_active:
-                    if st.button("Deactivate", key=f"dc_list_deact:{contract_id}",
-                                 type="secondary", use_container_width=True):
-                        set_contract_active(contract_id, False)
-                        safe_rerun()
-                else:
+            # Footer buttons — outside the <a> link so they act independently
+            if is_active:
+                # Only Delete — right-aligned
+                _, del_col = st.columns([2, 1])
+                with del_col:
+                    if st.button("Delete", key=f"dc_list_del:{contract_id}",
+                                 use_container_width=True):
+                        _delete_contract_dialog(contract_id, name, version_count)
+            else:
+                # Reactivate + Delete side by side
+                react_col, del_col = st.columns([1, 1])
+                with react_col:
                     if st.button("Reactivate", key=f"dc_list_react:{contract_id}",
                                  type="secondary", use_container_width=True):
                         set_contract_active(contract_id, True)
                         safe_rerun()
-            with del_col:
-                if st.button("Delete", key=f"dc_list_del:{contract_id}",
-                             use_container_width=True):
-                    _delete_contract_dialog(contract_id, name, version_count)
+                with del_col:
+                    if st.button("Delete", key=f"dc_list_del:{contract_id}",
+                                 use_container_width=True):
+                        _delete_contract_dialog(contract_id, name, version_count)

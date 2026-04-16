@@ -42,7 +42,13 @@ def fetch_contracts_for_project(project_code: str) -> list[dict[str, Any]]:
                 WHEN COALESCE(rs.has_warning, FALSE) THEN 'Warning'
                 WHEN COALESCE(rs.has_passed, FALSE)  THEN 'Passing'
                 ELSE 'No Run'
-            END                          AS status
+            END                          AS status,
+            (
+                SELECT MAX(run.test_starttime)
+                  FROM {schema}.test_runs run
+                 WHERE run.test_suite_id = cv.snapshot_suite_id
+            ) AS last_run_at,
+            COALESCE(tbl.table_count, 0) AS table_count
           FROM {schema}.contracts c
           JOIN {schema}.table_groups tg
             ON tg.id = c.table_group_id
@@ -60,6 +66,13 @@ def fetch_contracts_for_project(project_code: str) -> list[dict[str, Any]]:
                   ON td.test_suite_id = ts.id AND td.test_active = 'Y'
                GROUP BY ts.id
           ) tc ON tc.suite_id = c.test_suite_id
+          LEFT JOIN (
+              SELECT ts.id AS suite_id, COUNT(DISTINCT td.table_name) AS table_count
+                FROM {schema}.test_suites ts
+                JOIN {schema}.test_definitions td
+                  ON td.test_suite_id = ts.id AND td.test_active = 'Y'
+               GROUP BY ts.id
+          ) tbl ON tbl.suite_id = c.test_suite_id
           LEFT JOIN LATERAL (
               SELECT
                   BOOL_OR(tr.result_status IN ('Failed','Error'))  AS has_failed,
@@ -67,11 +80,11 @@ def fetch_contracts_for_project(project_code: str) -> list[dict[str, Any]]:
                   BOOL_AND(tr.result_status = 'Passed')            AS has_passed
                 FROM {schema}.test_runs run
                 JOIN {schema}.test_results tr ON tr.test_run_id = run.id
-               WHERE run.test_suite_id = c.test_suite_id
+               WHERE run.test_suite_id = cv.snapshot_suite_id
                  AND run.test_starttime = (
                      SELECT MAX(test_starttime)
                        FROM {schema}.test_runs
-                      WHERE test_suite_id = c.test_suite_id
+                      WHERE test_suite_id = cv.snapshot_suite_id
                  )
           ) rs ON TRUE
          WHERE c.project_code = :project_code
@@ -140,19 +153,26 @@ def fetch_eligible_suites_for_wizard(table_group_id: str) -> list[dict[str, Any]
 
 @with_database_session
 def fetch_tables_for_wizard(table_group_id: str) -> list[dict[str, Any]]:
-    """Return distinct profiled tables for wizard Step 3."""
+    """Return distinct profiled tables for wizard Step 3.
+
+    active_test_count excludes tests from contract, snapshot, and monitor suites
+    so the count reflects only tests the user would bring into the contract.
+    """
     schema = get_tg_schema()
     rows = fetch_dict_from_db(
         f"""
-        SELECT DISTINCT dcc.table_name,
-               COUNT(td.id) AS active_test_count
+        SELECT dcc.table_name,
+               COUNT(DISTINCT td.id) AS active_test_count
           FROM {schema}.data_column_chars dcc
-          LEFT JOIN {schema}.test_definitions td
-            ON td.table_name = dcc.table_name
-           AND td.test_active = 'Y'
           LEFT JOIN {schema}.test_suites ts
-            ON ts.id = td.test_suite_id
-           AND ts.table_groups_id = CAST(:tg_id AS uuid)
+            ON ts.table_groups_id = CAST(:tg_id AS uuid)
+           AND COALESCE(ts.is_monitor, FALSE) = FALSE
+           AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
+           AND COALESCE(ts.is_contract_suite, FALSE) = FALSE
+          LEFT JOIN {schema}.test_definitions td
+            ON td.test_suite_id = ts.id
+           AND td.table_name = dcc.table_name
+           AND td.test_active = 'Y'
          WHERE dcc.table_groups_id = CAST(:tg_id AS uuid)
          GROUP BY dcc.table_name
          ORDER BY dcc.table_name
@@ -197,6 +217,12 @@ def count_in_scope_tests(
 
     if include_monitors:
         params["tg_id"] = table_group_id
+        mon_tbl_filter = ""
+        if table_names:
+            mon_placeholders = ", ".join(f":mon_tbl_{i}" for i, _ in enumerate(table_names))
+            for i, t in enumerate(table_names):
+                params[f"mon_tbl_{i}"] = t
+            mon_tbl_filter = f"AND td.table_name IN ({mon_placeholders})"
         parts.append(f"""
             SELECT COUNT(td.id)
               FROM {schema}.test_definitions td
@@ -204,6 +230,7 @@ def count_in_scope_tests(
              WHERE ts.table_groups_id = CAST(:tg_id AS uuid)
                AND COALESCE(ts.is_monitor, FALSE) = TRUE
                AND td.test_active = 'Y'
+               {mon_tbl_filter}
         """)
 
     if not parts:
