@@ -183,6 +183,7 @@ def _pending_edit_count(pending: dict) -> int:
     return (
         len(pending.get("governance", []))
         + len(pending.get("tests", []))
+        + len(pending.get("schema", []))
         + len(pending.get("deletions", []))
     )
 
@@ -231,3 +232,78 @@ def _build_pending_governance_edit(
     if result is None:
         return None
     return {"table": table_name, "col": col_name, "field": field, "value": value}
+
+
+# ---------------------------------------------------------------------------
+# Schema property helpers (pure, no Streamlit, no DB)
+# ---------------------------------------------------------------------------
+
+def _find_property(yaml_doc: dict, table_name: str, col_name: str) -> dict | None:
+    """Return the property dict for col_name within table_name, or None if not found."""
+    for table in yaml_doc.get("schema", []):
+        if table.get("name") == table_name:
+            for prop in table.get("properties", []):
+                if prop.get("name") == col_name:
+                    return prop
+    return None
+
+
+def _apply_pending_schema_edit(
+    pending: dict,
+    table_name: str,
+    col_name: str,
+    field: str,
+    value: object,
+) -> dict:
+    """Add or replace a schema edit in the pending dict. Returns updated pending.
+
+    value=None signals deletion.
+    """
+    schema = [
+        e for e in pending.get("schema", [])
+        if not (e["table"] == table_name and e["col"] == col_name and e["field"] == field)
+    ]
+    schema.append({"table": table_name, "col": col_name, "field": field, "value": value})
+    return {**pending, "schema": schema}
+
+
+def _apply_pending_schema_edits(doc: dict, pending_schema: list[dict]) -> None:
+    """Apply pending schema edits in-place on the YAML doc.
+
+    Each entry: {"table": str, "col": str, "field": str, "value": any | None}
+    value=None deletes the field; any other value sets it.
+    Updates x-testgen.user_schema_fields atomically.
+    """
+    x_testgen: dict = doc.setdefault("x-testgen", {})
+    user_fields: dict[str, list[str]] = x_testgen.setdefault("user_schema_fields", {})
+
+    for entry in pending_schema:
+        table_name = entry["table"]
+        col_name   = entry["col"]
+        field      = entry["field"]
+        value      = entry["value"]
+        col_key    = f"{table_name}.{col_name}"
+
+        prop: dict | None = _find_property(doc, table_name, col_name)
+        if prop is None:
+            for tbl in doc.get("schema", []):
+                if tbl.get("name") == table_name:
+                    tbl.setdefault("properties", []).append({"name": col_name})
+                    prop = _find_property(doc, table_name, col_name)
+                    break
+            if prop is None:
+                continue
+
+        if value is None:
+            prop.pop(field, None)
+            current = user_fields.get(col_key, [])
+            updated = [f for f in current if f != field]
+            if updated:
+                user_fields[col_key] = updated
+            else:
+                user_fields.pop(col_key, None)
+        else:
+            prop[field] = value
+            current = user_fields.get(col_key, [])
+            if field not in current:
+                user_fields[col_key] = current + [field]
