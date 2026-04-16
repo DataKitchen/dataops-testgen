@@ -5,7 +5,9 @@
 
 ## Overview
 
-Users can currently edit governance fields (description, CDE, PII, tag fields) from the data contract UI. This feature adds a fifth term source — **Schema** — that lets users manually set any ODCS v3.1.0 property-level field that TestGen does not auto-derive from DDL or profiling. Full create, update, and delete of these user-specified properties is supported, with the same pending-edits staging pattern used by governance and test edits.
+Users can currently edit governance fields (description, CDE, PII, tag fields) from the data contract UI. This feature adds a new term source — **Schema** — that lets users manually set any ODCS v3.1.0 property-level field that TestGen does not auto-derive from DDL or profiling. Full create, update, and delete of these user-specified properties is supported, with the same pending-edits staging pattern used by governance and test edits.
+
+Schema edits are only available on the **latest (editable) version** of a contract. Historical (read-only) versions suppress the Schema button and disable chip ✕ deletion.
 
 ---
 
@@ -29,6 +31,8 @@ Users can currently edit governance fields (description, CDE, PII, tag fields) f
 - DB sync for schema property values
 - Overriding governance fields (description, CDE, PII) via this dialog — those stay in the governance dialog
 - Bulk schema property editing across multiple columns at once
+- Schema edits on historical (read-only) versions — the Schema button and chip ✕ are hidden on non-latest versions
+- Document-level ODCS fields (`description.purpose`, `domain`, `status`, `version`) — these are top-level YAML fields, not property-level. Editing them is a separate future feature: a document metadata dialog in the contract toolbar targeting the root YAML dict via a new `dc_pending.document` key and `_apply_pending_document_edits`. The pending-edits pattern is identical; only the target path changes.
 
 ---
 
@@ -40,7 +44,7 @@ Users can currently edit governance fields (description, CDE, PII, tag fields) f
 |---|---|
 | `testgen/ui/components/frontend/js/pages/data_contract.js` | New `SchemaButton` component; new `chip-sch` chip style; new "Schema" filter pill (filters by `source === 'schema'`); new `SourceRow` in `TermsHelpPanel`; filter logic special-cases `source` check for schema |
 | `testgen/ui/views/data_contract.py` | New `_build_schema_terms(yaml_doc, table_name, col_name)` → produces `source='schema'` terms; new `SchemaEditClicked` event handler; `pending_ct` includes `len(pending.get("schema", []))` |
-| `testgen/ui/views/dialogs/data_contract_dialogs.py` | New `_schema_edit_dialog(contract_id, table_group_id, table_name, col_name, current_props)` — Option A form (curated fields + custom escape hatch) |
+| `testgen/ui/views/dialogs/data_contract_dialogs.py` | New `_schema_edit_dialog(contract_id, table_group_id, table_name, col_name)` — Option A form (curated fields + custom escape hatch); loads current values from `st.session_state` YAML |
 | `testgen/ui/views/data_contract_yaml.py` | New `_apply_pending_schema_edits(doc, pending_schema)` — writes/deletes fields in `schema[].properties[]` and updates `x-testgen.user_schema_fields` tracker |
 | `testgen/ui/queries/data_contract_queries.py` | `_persist_pending_edits` flushes `pending["schema"]` by calling `_apply_pending_schema_edits` then serializing YAML — no DB write |
 | `tests/unit/ui/test_schema_property_terms.py` | Unit tests (new file) |
@@ -92,6 +96,7 @@ All fields are optional. Absence means the field is not included in the YAML.
 | `encryptedName` | string | Text input | Obfuscated column name for masking |
 | `partitioned` | boolean | Toggle | Whether this is a partition key |
 | `partitionKeyPosition` | integer | Number input | Position among partition keys (1-based) |
+| `references` | string | Text input | Foreign key reference, e.g. `customers.id` |
 
 Below the curated section: a dynamic key/value list for **custom fields**. Each row has a field-name input, a value input, and an ✕ remove button. The "+ Add another" link appends a new blank row. Any field name is accepted here as long as it is a valid ODCS identifier (alphanumeric + dots/underscores).
 
@@ -103,13 +108,16 @@ Clearing a curated field's value (empty string / toggling off a boolean that was
 
 ### Column Header
 
-Three action buttons appear in `col-header`, in this order:
+The `col-header` element uses a vertical stack (flex-direction: column). The action buttons appear as a stacked group below the column name / type row, in this order:
 
 ```
-[col-name]  [col-type]  [🏷 Governance]  [+ Add test]  [◈ + Schema]
+[col-name]  [col-type]
+[🏷 Governance]
+[+ Add test]
+[◈ + Schema]          ← new, bottom of stack
 ```
 
-The Schema button uses the same `gov-btn` CSS class pattern, styled teal (`chip-sch` palette). When at least one schema property exists for the column, the button label changes to `◈ Schema (N)` where N is the count of user-specified fields, mirroring the existing `GovernanceButton` pattern.
+The Schema button uses the same `gov-btn` CSS class pattern, styled teal (`chip-sch` palette). It is only rendered when the contract is on its latest (editable) version. When at least one schema property exists for the column, the button label changes to `◈ Schema (N)` where N is the count of user-specified fields, mirroring the existing `GovernanceButton` pattern.
 
 ### Schema Chips
 
@@ -174,6 +182,18 @@ The save button label and warning banner already compute `pending_ct` from this 
 
 ---
 
+## Import Behavior
+
+When a user uploads a YAML via the Import YAML flow, the imported document may already contain `x-testgen.user_schema_fields` entries (e.g., exported from TestGen earlier, then edited externally).
+
+The import handler (`run_import_contract`) must:
+1. Preserve the `x-testgen.user_schema_fields` section from the uploaded YAML as-is
+2. Not attempt to reconcile it with DB state — schema property fields are YAML-only
+
+If the uploaded YAML has schema properties for a column but no `x-testgen.user_schema_fields` entry for that column, those properties are treated as auto-derived (not shown as schema chips). The user may re-add them via the Schema dialog to register them as user-specified.
+
+---
+
 ## Schema Term Building
 
 ### _build_schema_terms(yaml_doc, table_name, col_name)
@@ -207,7 +227,7 @@ def _build_schema_terms(yaml_doc: dict, table_name: str, col_name: str) -> list[
             "source": "schema",
             "verif": "declared",
             "value": display,
-            "rule_id": f"schema:{table_name}:{col_name}:{field}",
+            "rule_id": f"schema|{table_name}|{col_name}|{field}",
         })
     return terms
 ```
@@ -232,11 +252,13 @@ When the user clicks ✕ on a schema chip, the frontend emits `BulkDeleteTermsCl
 
 ```json
 {
-  "terms": [{"source": "schema", "rule_id": "schema:orders:amount:tags", "table": "orders", "col": "amount"}]
+  "terms": [{"source": "schema", "rule_id": "schema|orders|amount|tags", "table": "orders", "col": "amount"}]
 }
 ```
 
-The Python handler parses `rule_id` to extract `field` and appends `{"table": …, "col": …, "field": …, "value": None}` to `dc_pending["schema"]`. The chip immediately renders with a dashed border as a `pending_delete_term`. On save, `_apply_pending_schema_edits` removes the field from YAML.
+The `rule_id` uses `|` as separator (not `:`) to avoid collisions with table or column names that contain colons. The Python handler splits on `|` to extract `(_, table, col, field)` and appends `{"table": …, "col": …, "field": …, "value": None}` to `dc_pending["schema"]`. The chip immediately renders with a dashed border as a `pending_delete_term`. On save, `_apply_pending_schema_edits` removes the field from YAML.
+
+The ✕ button is only rendered when the contract is on its latest (editable) version. Historical versions render chips without a ✕.
 
 ---
 
@@ -244,17 +266,37 @@ The Python handler parses `rule_id` to extract `field` and appends `{"table": �
 
 Decorator: `@st.dialog("Schema Properties")`
 
-Parameters: `contract_id, table_group_id, table_name, col_name`
+Signature: `_schema_edit_dialog(contract_id: str, table_group_id: str, table_name: str, col_name: str) -> None`
+
+No `current_props` parameter — the dialog loads current values directly from the cached YAML in session state.
 
 Behavior:
 1. Load current YAML from `st.session_state[f"dc_yaml:{contract_id}"]`
-2. Read current values for this column from `schema[table].properties[col]`
-3. Render curated fields section — each field pre-populated with its current value (or empty)
-4. Render custom fields section — rows for any `user_schema_fields` entries not in the curated list
-5. On "Save to pending": build diff between current and submitted values; append changes to `dc_pending["schema"]`; call `_apply_pending_schema_edits` on the in-memory YAML; update `st.session_state[yaml_key]`; rerun
-6. On "Cancel": rerun without changes
+2. Call `_find_property(yaml_doc, table_name, col_name)` to get the current property dict (may be `{}`)
+3. Read `x-testgen.user_schema_fields[f"{table_name}.{col_name}"]` to know which fields are already user-specified
+4. Render curated fields section — each field pre-populated with its current value (or empty/off)
+5. Render custom fields section — rows for any `user_schema_fields` entries not in the curated list, plus a blank row for new entries
+6. On "Save to pending": build diff between current and submitted values; append changes to `dc_pending["schema"]`; call `_apply_pending_schema_edits` on the in-memory YAML; update `st.session_state[yaml_key]`; rerun
+7. On "Cancel": rerun without changes
 
 The dialog is opened via `SchemaEditClicked` event from the frontend, following the same `event_handlers` pattern as `GovernanceEditClicked`.
+
+---
+
+## Helper: _find_property
+
+```python
+def _find_property(yaml_doc: dict, table_name: str, col_name: str) -> dict | None:
+    """Return the property dict for col_name within table_name, or None if not found."""
+    for table in yaml_doc.get("schema", []):
+        if table.get("name") == table_name:
+            for prop in table.get("properties", []):
+                if prop.get("name") == col_name:
+                    return prop
+    return None
+```
+
+Used by both `_build_schema_terms` and `_schema_edit_dialog`. When `_apply_pending_schema_edits` needs to set a field on a column whose property dict does not yet exist, it creates the path (adds to `schema[table].properties[]`).
 
 ---
 
