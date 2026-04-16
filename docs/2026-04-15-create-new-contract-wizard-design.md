@@ -32,7 +32,7 @@ def create_contract_wizard(
 ```
 
 - Self-contained `@st.dialog` function in `testgen/ui/views/dialogs/data_contract_dialogs.py`
-- Step state stored in `st.session_state` under a wizard-scoped key
+- Step state stored in `st.session_state` under a wizard-scoped key; the key is cleared and re-initialized every time the wizard opens so each invocation starts fresh
 - Callable from any page — no assumption about surrounding page state
 - When `table_group_id` is provided, the wizard skips Step 1 and shows a locked table group banner at the top with a "Change" link. Clicking "Change" resets the wizard to Step 1 with the table group unlocked and clears any selections made in Steps 2–4.
 
@@ -74,7 +74,8 @@ def create_contract_wizard(
 
 **Business rules:**
 - Suites with `is_monitor=TRUE` are excluded from this list entirely
-- Suites with `is_contract_snapshot=TRUE` are excluded
+- Suites with `is_contract_snapshot=TRUE` are excluded (per-version copies)
+- Suites with `is_contract_suite=TRUE` are excluded (primary suites owned by other contracts)
 - At least one suite must be selected to proceed
 
 ---
@@ -144,12 +145,15 @@ A **"Create monitors →"** link appears inline, navigating to the table group's
 **Business rules:**
 - "Tests in scope" count is computed via a DB query on entering Step 5: active tests from the selected suites where `table_name = ANY(:selected_tables)`, plus active monitor tests for the table group if the Monitors toggle is on
 - Contract name must be unique within the project (`UNIQUE (name, project_code)` from the `contracts` table). Validation is shown inline if name is already taken.
+- `project_code` is derived from the selected `table_group_id` via join with `table_groups` — no separate project picker needed.
 - On confirm, atomically:
-  1. INSERT into `test_suites`: `is_contract_suite=TRUE`, `test_suite=<contract_name>`, `table_groups_id=<tg_id>`, including the suite_ids / table_names / content toggle selections as metadata for the first-version generation
+  1. INSERT into `test_suites`: `is_contract_suite=TRUE`, `test_suite=<contract_name>`, `table_groups_id=<tg_id>`
   2. INSERT into `contracts`: `name=<contract_name>`, `project_code=<project_code>`, `table_group_id=<tg_id>`, `test_suite_id=<new_suite_id>`
-  3. Close the dialog and navigate to `data-contract?contract_id=<new_contract_id>` — the detail page's first-time flow handles YAML generation and saving version 1
+  3. Write the wizard's filter selections (suite IDs, table names, content toggles) to `st.session_state` under a key the detail page reads on first load
+  4. Close the dialog and navigate to `data-contract?contract_id=<new_contract_id>` — the detail page's first-time flow reads the filter selections from session state and uses them when generating the initial YAML
 - If either INSERT fails, roll back both (no orphaned rows)
 - The wizard does NOT generate YAML, does NOT create a `contract_versions` row — that is deferred to the detail page
+- Filter selections are passed via `st.session_state`, not persisted to the DB, since navigation to the detail page is immediate within the same session
 
 ---
 
@@ -290,13 +294,13 @@ The wizard surfaces warnings contextually rather than blocking on prereqs:
 
 | Test | App script | What it verifies |
 |---|---|---|
-| `test_wizard_full_flow_from_listing_page` | `contract_wizard_full_flow.py` | Step 1 shown; user selects table group, advances through all steps, clicks Generate & Save; success path completes without error |
+| `test_wizard_full_flow_from_listing_page` | `contract_wizard_full_flow.py` | Step 1 shown; user selects table group, advances through all steps, clicks Create Contract; success path creates rows and navigates to detail page |
 | `test_wizard_skips_step1_when_tg_provided` | `contract_wizard_prefilled_tg.py` | Wizard renders at Step 2 when `table_group_id` is pre-filled; "Change" link visible |
 | `test_wizard_change_link_returns_to_step1` | `contract_wizard_prefilled_tg.py` | Clicking the "Change" link renders the table group picker (Step 1) |
 | `test_wizard_step2_no_suites_warning` | `contract_wizard_no_suites.py` | Step 2 shows a warning and Next button is disabled when table group has no eligible suites |
 | `test_wizard_step4_profiling_warning_no_profiling` | `contract_wizard_no_profiling.py` | Step 4 Profiling toggle shows the "no profiling data" warning text |
 | `test_wizard_step4_monitors_disabled_no_monitor_suites` | `contract_wizard_no_monitors.py` | Step 4 Monitors toggle is disabled; inline note and "Create monitors →" link are visible |
-| `test_wizard_step5_disabled_when_zero_tests` | `contract_wizard_zero_tests.py` | Step 5 Generate & Save button is disabled; explanatory text is shown |
+| `test_wizard_step5_disabled_when_zero_tests` | `contract_wizard_zero_tests.py` | Step 5 Create Contract button is disabled when in-scope test count is 0; explanatory text is shown |
 | `test_wizard_success_navigates_to_detail` | `contract_wizard_success.py` | After clicking Create Contract, dialog closes and the app navigates to `data-contract?contract_id=<uuid>` |
 
 ---
@@ -305,7 +309,7 @@ The wizard surfaces warnings contextually rather than blocking on prereqs:
 
 - Editing an existing contract's scope after creation (change which tables/suites are included) — this is a separate feature
 - Per-table content toggle granularity (e.g. profiling on for table A, off for table B)
-- Contract naming / renaming outside of the version label field
+- Renaming a contract after creation
 - Validation of ODCS YAML correctness before saving (existing behavior unchanged)
 
 ---
