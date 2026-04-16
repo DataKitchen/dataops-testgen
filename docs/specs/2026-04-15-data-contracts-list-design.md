@@ -10,6 +10,8 @@
 
 Restructures data contracts from one-per-table-group to one-per-test-suite, adds a project-scoped list page as the primary entry point, and introduces a proper `contracts` + `contract_versions` schema. Each contract is co-created with a dedicated test suite. The list page is the only place to create or delete contracts; the detail page is edit + version-save only.
 
+**Fundamental contract authoring rule:** A contract is always created first; its linked test suite is created as a consequence of that action — never the other way around. You never select or convert an existing active test suite into a contract. The wizard (`docs/2026-04-15-create-new-contract-wizard-design.md`) handles the full creation flow: user names the contract, selects a table group, and optionally adds tests — all as part of one guided sequence. The resulting test suite is owned by the contract and hidden from the normal test suite listing.
+
 **Out of scope:** Migration from existing `data_contracts` rows — no production users exist yet.
 
 **Dependency:** The "New Contract" creation flow is defined in `docs/2026-04-15-create-new-contract-wizard-design.md`. The "+ New Contract" button on the list page calls that wizard. The data model in this spec (atomically creating `contracts` + `test_suites` rows) must be reconciled with the wizard spec's completion step.
@@ -163,12 +165,14 @@ Add `AND COALESCE(is_contract_suite, FALSE) = FALSE` to the test suite listing q
 ## Key Operations
 
 ### Create contract
-1. Wizard collects: contract name (validated unique within project), table group
-2. Backend atomically:
-   - Creates `test_suites` row: `is_contract_suite=TRUE`, `test_suite=<name>`, `table_groups_id=<tg_id>`
-   - Creates `contracts` row pointing to new suite
-3. No version created yet; detail page shows first-time flow (generate preview → save as v0)
-4. *(Full wizard flow defined in `docs/2026-04-15-create-new-contract-wizard-design.md`)*
+A contract is always created before its test suite — never by selecting or converting an existing one.
+
+1. User clicks "+ New Contract" on the list page — launches the wizard (`docs/2026-04-15-create-new-contract-wizard-design.md`)
+2. Wizard collects: contract name (validated unique within project), table group, and optionally guides the user through adding tests
+3. On wizard completion, backend atomically:
+   - Creates `test_suites` row: `is_contract_suite=TRUE`, `test_suite=<contract name>`, `table_groups_id=<tg_id>`
+   - Creates `contracts` row pointing to the new suite
+4. No version exists yet; navigating to the detail page shows the first-time flow (generate preview → save as v0)
 
 ### Save new version
 1. User edits, clicks "Save version" on detail page
