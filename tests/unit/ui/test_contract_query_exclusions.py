@@ -94,3 +94,11 @@ class Test_ContractQueryExclusions:
 
         assert "suite_a" in result["included"]
         assert "suite_b" in result["excluded"]
+
+
+def test_select_summary_sql_excludes_contract_suite_suites():
+    """is_contract_suite=TRUE suites must not appear in TestSuite.select_summary."""
+    import inspect
+    from testgen.common.models.test_suite import TestSuite
+    source = inspect.getsource(TestSuite.select_summary)
+    assert "is_contract_suite" in source
