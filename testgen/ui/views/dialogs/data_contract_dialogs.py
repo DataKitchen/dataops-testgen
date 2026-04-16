@@ -37,6 +37,14 @@ from testgen.ui.queries.data_contract_queries import (
     _fetch_test_live_info,
     _persist_pending_edits,
 )
+from testgen.commands.contract_management import create_contract
+from testgen.ui.queries.data_contract_list_queries import (
+    count_in_scope_tests,
+    fetch_eligible_suites_for_wizard,
+    fetch_table_groups_for_project,
+    fetch_tables_for_wizard,
+    is_contract_name_taken,
+)
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 from testgen.ui.views.data_contract_props import _STATUS_ICON, _VERIF_META
@@ -51,13 +59,274 @@ LOG = logging.getLogger("testgen")
 _CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope", "dc_staleness_diff")
 
 
-# ---------------------------------------------------------------------------
-# Create Contract Wizard — stub (will be replaced in Task 8)
-# ---------------------------------------------------------------------------
+# ─────────────────────────────────────────────────────────────────────────────
+# Create Contract Wizard
+# ─────────────────────────────────────────────────────────────────────────────
 
-def create_contract_wizard(project_code: str, table_group_id: str | None = None) -> None:
-    """5-step wizard for creating a new data contract. Stub — implemented in Task 8."""
-    pass
+_WIZARD_KEY = "create_contract_wizard"
+
+
+def _init_wizard_state(
+    project_code: str,
+    table_group_id: str | None = None,
+) -> dict:
+    """Initialise (or reset) wizard session state. Returns the state dict."""
+    state: dict = {
+        "step":              2 if table_group_id else 1,
+        "project_code":      project_code,
+        "table_group_id":    table_group_id,
+        "table_group_name":  None,
+        "suite_ids":         None,   # list[str] or None = all
+        "table_names":       None,   # list[str] or None = all
+        "include_profiling": True,
+        "include_ddl":       True,
+        "include_hygiene":   True,
+        "include_monitors":  True,
+        "contract_name":     "",
+    }
+    st.session_state[_WIZARD_KEY] = state
+    return state
+
+
+def _validate_contract_name(name: str, project_code: str) -> tuple[bool, str]:
+    """Return (is_valid, error_message). Empty string error means valid."""
+    if not name or not name.strip():
+        return False, "Contract name is required."
+    if is_contract_name_taken(name.strip(), project_code):
+        return False, f"A contract named '{name.strip()}' already exists in this project."
+    return True, ""
+
+
+@st.dialog("Create New Contract", width="large")
+def create_contract_wizard(
+    project_code: str,
+    table_group_id: str | None = None,
+) -> None:
+    """
+    5-step wizard to create a new data contract.
+
+    Step 1 — Table Group (skipped if table_group_id provided)
+    Step 2 — Test Suites
+    Step 3 — Tables
+    Step 4 — Content toggles
+    Step 5 — Confirm + Name
+    """
+    # Initialise or retrieve state
+    if _WIZARD_KEY not in st.session_state or st.session_state[_WIZARD_KEY].get("project_code") != project_code:
+        state = _init_wizard_state(project_code, table_group_id)
+    else:
+        state = st.session_state[_WIZARD_KEY]
+
+    step = state["step"]
+
+    # ── Step indicator ─────────────────────────────────────────────
+    step_names = ["Table Group", "Suites", "Tables", "Content", "Confirm"]
+    total = 5
+    st.caption(f"Step {step} of {total} · {step_names[step - 1]}")
+    st.divider()
+
+    # ── Step 1: Table Group ─────────────────────────────────────────
+    if step == 1:
+        st.markdown("**Select a Table Group**")
+        tgs = fetch_table_groups_for_project(project_code)
+        if not tgs:
+            st.warning("No table groups found for this project.")
+            return
+
+        options = {tg["id"]: f"{tg['table_groups_name']}  ({tg['contract_count']} contracts)" for tg in tgs}
+        selected_id = st.radio(
+            "Table group",
+            options=list(options.keys()),
+            format_func=lambda x: options[x],
+            key="wizard_tg_radio",
+            label_visibility="collapsed",
+        )
+        if st.button("Next →", type="primary", disabled=not selected_id):
+            tg_name = next(tg["table_groups_name"] for tg in tgs if tg["id"] == selected_id)
+            state["table_group_id"] = selected_id
+            state["table_group_name"] = tg_name
+            state["step"] = 2
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+        return
+
+    # ── Step 2: Test Suites ────────────────────────────────────────
+    if step == 2:
+        tg_id = state["table_group_id"]
+        if not tg_id:
+            st.error("No table group selected. Please go back.")
+            if st.button("← Back"):
+                state["step"] = 1
+                st.session_state[_WIZARD_KEY] = state
+                safe_rerun()
+            return
+
+        suites = fetch_eligible_suites_for_wizard(tg_id)
+        st.markdown("**Select Test Suites to include**")
+
+        if not suites:
+            st.warning("No eligible test suites found for this table group.")
+            if st.button("← Back"):
+                state["step"] = 1
+                st.session_state[_WIZARD_KEY] = state
+                safe_rerun()
+            return
+
+        selected_suite_ids: list[str] = []
+        for suite in suites:
+            checked = st.checkbox(
+                f"{suite['name']}  ({suite['active_test_count']} active tests)",
+                value=True,
+                key=f"wizard_suite_{suite['id']}",
+            )
+            if checked:
+                selected_suite_ids.append(suite["id"])
+
+        st.caption("Monitor suites are controlled separately in Step 4 → Content.")
+
+        back_col, next_col = st.columns(2)
+        if back_col.button("← Back"):
+            state["step"] = 1
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+        if next_col.button("Next →", type="primary", disabled=not selected_suite_ids):
+            state["suite_ids"] = selected_suite_ids
+            state["step"] = 3
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+        return
+
+    # ── Step 3: Tables ─────────────────────────────────────────────
+    if step == 3:
+        tg_id = state["table_group_id"]
+        tables = fetch_tables_for_wizard(tg_id)
+        st.markdown("**Select Tables to include**")
+
+        if not tables:
+            st.warning("No profiled tables found for this table group.")
+            if st.button("← Back"):
+                state["step"] = 2
+                st.session_state[_WIZARD_KEY] = state
+                safe_rerun()
+            return
+
+        sel_all, sel_none = st.columns(2)
+        if sel_all.button("Select all", key="wizard_tbl_all"):
+            for t in tables:
+                st.session_state[f"wizard_tbl_{t['table_name']}"] = True
+        if sel_none.button("None", key="wizard_tbl_none"):
+            for t in tables:
+                st.session_state[f"wizard_tbl_{t['table_name']}"] = False
+
+        selected_tables: list[str] = []
+        for tbl in tables:
+            checked = st.checkbox(
+                f"{tbl['table_name']}  ({tbl['active_test_count']} tests)",
+                value=st.session_state.get(f"wizard_tbl_{tbl['table_name']}", True),
+                key=f"wizard_tbl_{tbl['table_name']}",
+            )
+            if checked:
+                selected_tables.append(tbl["table_name"])
+
+        st.caption(f"{len(tables)} tables · {len(selected_tables)} selected")
+
+        back_col, next_col = st.columns(2)
+        if back_col.button("← Back"):
+            state["step"] = 2
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+        if next_col.button("Next →", type="primary", disabled=not selected_tables):
+            state["table_names"] = selected_tables
+            state["step"] = 4
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+        return
+
+    # ── Step 4: Content ────────────────────────────────────────────
+    if step == 4:
+        st.markdown("**Select Content to include**")
+        state["include_profiling"] = st.toggle("Profiling", value=state.get("include_profiling", True),
+                                               help="Schema stats + auto-generated profiling tests")
+        state["include_ddl"]       = st.toggle("DDL Constraints", value=state.get("include_ddl", True),
+                                               help="Column types, NOT NULL, primary key")
+        state["include_hygiene"]   = st.toggle("Hygiene", value=state.get("include_hygiene", True),
+                                               help="Data quality anomalies from the latest profiling run")
+        state["include_monitors"]  = st.toggle("Monitors", value=state.get("include_monitors", True),
+                                               help="Freshness, volume, schema drift, and metric tests")
+        st.session_state[_WIZARD_KEY] = state
+
+        back_col, next_col = st.columns(2)
+        if back_col.button("← Back"):
+            state["step"] = 3
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+        if next_col.button("Next →", type="primary"):
+            state["step"] = 5
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+        return
+
+    # ── Step 5: Confirm ────────────────────────────────────────────
+    if step == 5:
+        tg_id         = state["table_group_id"]
+        tg_name       = state.get("table_group_name", tg_id)
+        suite_ids     = state.get("suite_ids") or []
+        table_names   = state.get("table_names") or []
+        content_parts = [
+            k for k, flag in [
+                ("Profiling", state.get("include_profiling", True)),
+                ("DDL", state.get("include_ddl", True)),
+                ("Hygiene", state.get("include_hygiene", True)),
+                ("Monitors", state.get("include_monitors", True)),
+            ] if flag
+        ]
+
+        st.markdown("**Summary**")
+        st.markdown(f"- **Table group:** {tg_name}")
+        st.markdown(f"- **Suites:** {len(suite_ids)} selected")
+        st.markdown(f"- **Tables:** {len(table_names)} selected")
+        st.markdown(f"- **Content:** {' · '.join(content_parts) or 'None'}")
+
+        in_scope = count_in_scope_tests(
+            suite_ids, table_names, tg_id, state.get("include_monitors", True)
+        )
+        st.markdown(f":green[**{in_scope} tests in scope**]")
+
+        contract_name = st.text_input("Contract name (unique within project)", key="wizard_contract_name")
+        name_ok, name_err = _validate_contract_name(contract_name, project_code)
+        if contract_name and not name_ok:
+            st.error(name_err)
+
+        can_create = name_ok and in_scope > 0
+
+        back_col, create_col = st.columns(2)
+        if back_col.button("← Back"):
+            state["step"] = 4
+            st.session_state[_WIZARD_KEY] = state
+            safe_rerun()
+
+        if create_col.button(
+            "Create Contract", type="primary",
+            disabled=not can_create,
+            use_container_width=True,
+        ):
+            result = create_contract(contract_name.strip(), project_code, tg_id)
+            new_contract_id = result["contract_id"]
+
+            # Store wizard filter selections for the detail page's first-time flow
+            st.session_state[f"dc_wizard_filters:{new_contract_id}"] = {
+                "suite_ids":         suite_ids,
+                "table_names":       table_names,
+                "include_profiling": state.get("include_profiling", True),
+                "include_ddl":       state.get("include_ddl", True),
+                "include_hygiene":   state.get("include_hygiene", True),
+                "include_monitors":  state.get("include_monitors", True),
+            }
+            # Clear wizard state
+            st.session_state.pop(_WIZARD_KEY, None)
+
+            Router().queue_navigation(to="data-contract", with_args={"contract_id": new_contract_id})
+            safe_rerun()
 
 
 def _clear_contract_cache(table_group_id: str, *, also_anomalies: bool = False) -> None:
