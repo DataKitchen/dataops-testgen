@@ -93,12 +93,12 @@ UPDATE {schema}.contract_versions
 
 -- 2. Insert new version as current
 INSERT INTO {schema}.contract_versions
-       (contract_id, version, is_current, label, contract_yaml, snapshot_suite_id)
+       (contract_id, version, is_current, label, contract_yaml, term_count, snapshot_suite_id)
 VALUES (:contract_id,
         (SELECT COALESCE(MAX(version), -1) + 1
            FROM {schema}.contract_versions
           WHERE contract_id = :contract_id),
-        TRUE, :label, :yaml, :snapshot_suite_id);
+        TRUE, :label, :yaml, :term_count, :snapshot_suite_id);
 ```
 
 ---
