@@ -1,4 +1,4 @@
-# Create New Contract Wizard — Design Spec
+When there are no monitor suites, it does have a button that says "Create a new contract". Do that for four # Create New Contract Wizard — Design Spec
 
 **Date:** 2026-04-15
 **Branch:** data-contracts-vibe
@@ -120,6 +120,13 @@ def create_contract_wizard(
 - Turning off DDL Constraints suppresses `physicalType`, `required`, and `_customProperties.testgen.primaryKey` from the schema section
 - Turning off Hygiene suppresses anomaly-sourced profiling terms from the contract
 - Turning off Monitors excludes all tests from monitor suites
+
+**No monitor suites case:**
+If no `is_monitor=TRUE` suites exist for the selected table group, the Monitors toggle is shown **disabled** (greyed out, locked off) with an inline note beneath it:
+
+> *"No monitor suites configured for this table group."*
+
+A **"Create monitors →"** link appears inline, navigating to the table group's monitor configuration page. The toggle cannot be turned on until at least one monitor suite exists. This follows the same pattern used elsewhere in the app when a feature dependency is absent.
 
 ---
 
@@ -243,6 +250,7 @@ The `_regenerate_dialog` function can be deleted. `_render_first_time_flow` is r
 | `test_step3_select_all_none` | "Select all" checks all; "None" unchecks all |
 | `test_step3_multi_table_test_included_on_primary` | A test whose `table_name` is in the selected set is included even if its secondary reference table is deselected |
 | `test_step4_monitors_toggle_independent` | Monitors toggle state is independent of Step 2 suite selection |
+| `test_step4_monitors_disabled_when_no_monitor_suites` | Monitors toggle is disabled and "Create monitors →" link is shown when no `is_monitor=TRUE` suites exist for the table group |
 | `test_step4_profiling_warning_when_no_profiling_run` | Profiling toggle shows warning text when `last_profiling` is None |
 | `test_step5_generate_disabled_when_zero_tests` | Generate & Save button is disabled when in-scope test count is 0 |
 | `test_step5_version_number_increments` | Displayed version = `current_version + 1`; version = 1 when no prior versions |
@@ -276,6 +284,7 @@ The `_regenerate_dialog` function can be deleted. `_render_first_time_flow` is r
 | `test_wizard_change_link_returns_to_step1` | `contract_wizard_prefilled_tg.py` | Clicking the "Change" link renders the table group picker (Step 1) |
 | `test_wizard_step2_no_suites_warning` | `contract_wizard_no_suites.py` | Step 2 shows a warning and Next button is disabled when table group has no eligible suites |
 | `test_wizard_step4_profiling_warning_no_profiling` | `contract_wizard_no_profiling.py` | Step 4 Profiling toggle shows the "no profiling data" warning text |
+| `test_wizard_step4_monitors_disabled_no_monitor_suites` | `contract_wizard_no_monitors.py` | Step 4 Monitors toggle is disabled; inline note and "Create monitors →" link are visible |
 | `test_wizard_step5_disabled_when_zero_tests` | `contract_wizard_zero_tests.py` | Step 5 Generate & Save button is disabled; explanatory text is shown |
 | `test_wizard_replaces_first_time_flow` | `contract_wizard_first_time_flow.py` | Data Contract page with no saved contract renders the wizard modal trigger instead of the old inline prereqs flow |
 
