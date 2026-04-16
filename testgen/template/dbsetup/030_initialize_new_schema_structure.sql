@@ -180,6 +180,7 @@ CREATE TABLE test_suites (
    is_monitor              BOOLEAN DEFAULT FALSE,
    include_in_contract     BOOLEAN NOT NULL DEFAULT TRUE,
    is_contract_snapshot    BOOLEAN NOT NULL DEFAULT FALSE,
+   is_contract_suite       BOOLEAN,
    monitor_lookback        INTEGER DEFAULT NULL,
    monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
    predict_sensitivity     VARCHAR(6),
@@ -207,6 +208,35 @@ CREATE TABLE data_contracts (
 
 CREATE INDEX idx_data_contracts_tg_version
     ON data_contracts (table_group_id, version DESC);
+
+CREATE TABLE contracts (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name             TEXT NOT NULL,
+    project_code     TEXT NOT NULL REFERENCES projects(project_code),
+    table_group_id   UUID NOT NULL REFERENCES table_groups(id),
+    test_suite_id    UUID NOT NULL REFERENCES test_suites(id),
+    created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+    is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+    UNIQUE (name, project_code),
+    UNIQUE (test_suite_id)
+);
+
+CREATE TABLE contract_versions (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    contract_id       UUID NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
+    version           INT NOT NULL,
+    is_current        BOOLEAN NOT NULL DEFAULT FALSE,
+    saved_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+    label             TEXT,
+    contract_yaml     TEXT NOT NULL,
+    term_count        INT NOT NULL DEFAULT 0,
+    snapshot_suite_id UUID REFERENCES test_suites(id) ON DELETE SET NULL,
+    UNIQUE (contract_id, version)
+);
+
+CREATE UNIQUE INDEX contract_versions_one_current
+    ON contract_versions (contract_id)
+    WHERE is_current = TRUE;
 
 CREATE TABLE test_definitions (
    id                     UUID DEFAULT gen_random_uuid()

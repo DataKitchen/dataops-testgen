@@ -67,14 +67,37 @@ def _get_upgrade_scripts(sub_directory: str, params_mapping: dict, mask: str = r
     return scripts
 
 
+def _split_sql_statements(sql: str) -> list[str]:
+    """Split a SQL script into individual statements on semicolons.
+
+    Handles the common DDL patterns in upgrade scripts. Does not handle
+    dollar-quoted PL/pgSQL blocks — upgrade scripts should not contain those.
+    Strips SET SEARCH_PATH lines since upgrade scripts use fully-qualified names.
+    """
+    statements = []
+    for raw in sql.split(";"):
+        stmt = raw.strip()
+        if not stmt:
+            continue
+        # SET SEARCH_PATH is handled by the connection; skip it
+        if stmt.upper().startswith("SET SEARCH_PATH"):
+            continue
+        # Strip inline comments from otherwise-empty lines
+        lines = [ln for ln in stmt.splitlines() if ln.strip() and not ln.strip().startswith("--")]
+        if lines:
+            statements.append(stmt)
+    return statements
+
+
 def _execute_upgrade_scripts(params_mapping: dict, scripts: list[tuple[str, str]]) -> bool:
     admin_user = params_mapping["TESTGEN_ADMIN_USER"]
     admin_password = params_mapping["TESTGEN_ADMIN_PASSWORD"]
 
     for revision_prefix, query in scripts:
         LOG.info(f"Applying upgrade script {revision_prefix}")
+        statements = _split_sql_statements(query)
         execute_db_queries(
-            [(query, None)],
+            [(stmt, None) for stmt in statements],
             user_override=admin_user,
             password_override=admin_password,
             user_type="schema_admin",
