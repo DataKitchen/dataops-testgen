@@ -69,8 +69,8 @@ import { withTooltip } from '../components/tooltip.js';
 const { div, span, h2, h3, pre, table, colgroup, col, thead, tbody, tr, th, td, input, label, p, ul, li, code, hr, a } = van.tags;
 
 // ── Source → chip CSS class ──────────────────────────────────────────────────
-const SOURCE_CLASS = { ddl: 'ddl', profiling: 'prof', governance: 'gov', test: 'tst' };
-const SOURCE_LABEL = { ddl: 'DDL', profiling: 'Profiling', governance: 'Governance', test: 'Test' };
+const SOURCE_CLASS = { ddl: 'ddl', profiling: 'prof', governance: 'gov', test: 'tst', schema: 'sch' };
+const SOURCE_LABEL = { ddl: 'DDL', profiling: 'Profiling', governance: 'Governance', test: 'Test', schema: 'Schema' };
 
 // ── Verification badge labels / icons ────────────────────────────────────────
 // VERIF_META: icon is a Material Symbols ligature name used with .badge-icon span
@@ -276,7 +276,28 @@ const AddTestButton = (col, tableName) => withTooltip(
     { text: 'Add a quality test to this column', position: 'bottom' },
 );
 
-const ColumnRow = (col, tableName, showAddTest = false) => {
+const SchemaButton = (col, tableName) => {
+    const schTerms = [...col.static_terms].filter((c) => c.source === 'schema');
+    const hasSch = schTerms.length > 0;
+    const label = hasSch ? `◈ Schema (${schTerms.length})` : '◈ + Schema';
+    return withTooltip(
+        div(
+            {
+                class: 'gov-btn gov-btn--schema',
+                onclick: (e) => {
+                    e.stopPropagation();
+                    emitEvent('SchemaEditClicked', {
+                        payload: { tableName, colName: col.name },
+                    });
+                },
+            },
+            label,
+        ),
+        { text: hasSch ? 'Edit ODCS schema properties' : 'Add ODCS schema properties', position: 'bottom' },
+    );
+};
+
+const ColumnRow = (col, tableName, showAddTest = false, showSchema = false) => {
     const statusIcon = col.status === 'failing'
         ? mat('cancel', 14, 'col-status-fail')
         : col.status === 'warning'
@@ -291,7 +312,8 @@ const ColumnRow = (col, tableName, showAddTest = false) => {
             col.is_pk ? span({ class: 'key-badge' }, mat('key', 13), ' PK') : '',
             col.is_fk ? span({ class: 'key-badge' }, mat('call_made', 13), ' FK') : '',
             GovernanceButton(col, tableName),
-            showAddTest ? AddTestButton(col, tableName) : '',
+            showAddTest  ? AddTestButton(col, tableName)  : '',
+            showSchema   ? SchemaButton(col, tableName)   : '',
         ),
         div(
             { class: 'terms-row' },
@@ -321,7 +343,7 @@ const TableTermsRow = (tableTerms, tableName) => {
 
 // ── Table section ─────────────────────────────────────────────────────────────
 
-const TableSection = (tableData, startOpen = false, showAddTest = false) => {
+const TableSection = (tableData, startOpen = false, showAddTest = false, showSchema = false) => {
     const open = van.state(startOpen);
     const tblTermCount = (tableData.table_terms || []).length;
     const colTermCount = tableData.columns.reduce(
@@ -346,7 +368,7 @@ const TableSection = (tableData, startOpen = false, showAddTest = false) => {
         () => open.val
             ? div(
                 TableTermsRow(tableData.table_terms || [], tableData.name),
-                ...tableData.columns.map((col) => ColumnRow(col, tableData.name, showAddTest)),
+                ...tableData.columns.map((col) => ColumnRow(col, tableData.name, showAddTest, showSchema)),
               )
             : '',
     );
@@ -386,7 +408,7 @@ const _collectAllTermKeys = (filteredTables) => {
     return keys;
 };
 
-const TermsDetail = (tables, activeFilter, showAddTest = false) => {
+const TermsDetail = (tables, activeFilter, showAddTest = false, showSchema = false) => {
     // Reset module-level selection state so re-navigating to this page never inherits
     // phantom selections or confirming-delete state from a previous visit.
     _selectionMode.val = false;
@@ -479,6 +501,7 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
             if (filter === 'uncovered') return false;
             if (filter === 'failing')   return c.kind === 'live' && FAILING_STATUS.has(c.status);
             if (filter === 'anomalies') return c.kind === 'live' && c.source === 'profiling';
+            if (filter === 'schema')    return c.source === 'schema';
             return c.verif === filter;
         };
         const colFilter = (col) => {
@@ -593,6 +616,13 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
                         mat(meta.icon, 12, 'filter-pill-icon'), ' ', meta.label,
                     );
                 }),
+                span(
+                    {
+                        class: () => `filter-pill filter-pill--verif filter-pill--badge-sch ${activeFilter.val === 'schema' ? 'active' : ''}`,
+                        onclick: () => { activeFilter.val = 'schema'; },
+                    },
+                    mat('schema', 12, 'filter-pill-icon'), ' Schema',
+                ),
                 () => _selectionMode.val
                     ? ''
                     : withTooltip(
@@ -664,7 +694,7 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
         () => {
             const filter = activeFilter.val;
             if (filter === 'all') {
-                return div(...tables.map((t, i) => TableSection(t, i === 0, showAddTest)));
+                return div(...tables.map((t, i) => TableSection(t, i === 0, showAddTest, showSchema)));
             }
 
             const COVERED_VERIFS = new Set(['tested', 'monitored', 'declared']);
@@ -674,6 +704,7 @@ const TermsDetail = (tables, activeFilter, showAddTest = false) => {
                 if (filter === 'uncovered') return false; // handled at column level
                 if (filter === 'failing')   return c.kind === 'live' && FAILING_STATUS.has(c.status);
                 if (filter === 'anomalies') return c.kind === 'live' && c.source === 'profiling';
+                if (filter === 'schema')    return c.source === 'schema';
                 return c.verif === filter; // verif-level filters
             };
 
@@ -1333,13 +1364,8 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, versionNum, suite
         );
 
     const handleTestCardClick = () => {
-        if (!health.last_test_run_id) return;
-        if (suiteRuns.length > 1) {
-            // Multiple suites — open a Streamlit dialog (can't use iframe-bound popups)
-            emitEvent('SuitePickerClicked', {});
-        } else {
-            emitEvent('LinkClicked', { href: 'test-runs:results', params: { run_id: health.last_test_run_id } });
-        }
+        activeTab.val = 'testing';
+        emitEvent('ContractTestingTabShown', {});
     };
 
     const StatusCount = (color, label, count) =>
@@ -1349,59 +1375,93 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, versionNum, suite
                    ` ${count} ${label}`)
             : '';
 
-    const ComplianceCardContent = (h, tdf) => {
-        const TierRow = (cnt, lbl, color) =>
-            div({ class: 'ct-tier-row' },
-                span({ class: 'ct-count' }, cnt),
-                span({ class: 'ct-label', style: `color:${color}` }, lbl),
+    const DotRow = (color, lbl, count) =>
+        div({ class: 'hc-metric-row' },
+            span({ class: 'hc-dot', style: `background:${color}` }),
+            span({ class: 'hc-metric-count', style: `color:${color}` }, count),
+            span({ class: 'hc-metric-label' }, lbl),
+        );
+
+    const ComplianceCardContent = (h) =>
+        div(
+            div({ class: 'hc-hero' },
+                span({ class: 'hc-hero-num' }, h.n_cols || 0),
+                span({ class: 'hc-hero-label' }, 'data elements'),
+            ),
+            div({ class: 'hc-divider' }),
+            DotRow('var(--dc-tier-tg)',  'TestGen enforced', h.tg_enforced || 0),
+            DotRow('var(--dc-tier-db)',  'DB enforced',      h.db_enforced || 0),
+            DotRow('var(--dc-tier-unf)', 'unenforced',       h.unenforced  || 0),
+        );
+
+    const TestResultsCardContent = () => {
+        if (health.n_tests === 0) {
+            return div({ class: 'health-card__sub' }, 'No tests defined');
+        }
+        if (!health.passing && !health.warning && !health.failing) {
+            return div(
+                div({ class: 'hc-hero' },
+                    span({ class: 'hc-hero-num' }, health.n_tests),
+                    span({ class: 'hc-hero-label' }, 'tests defined'),
+                ),
+                div({ class: 'hc-divider' }),
+                div({ class: 'health-card__sub' }, 'No results yet — run the snapshot suite.'),
             );
-
-        const SubRow = (lbl, children) =>
-            div({ class: 'ct-sub-row' },
-                span({ class: 'ct-sublabel' }, lbl),
-                div({ class: 'ct-chips' }, ...children),
-            );
-
-        const S = (color, lbl, count) =>
-            count ? span({ class: 'ct-chip', style: `color:${color}` }, `${count} ${lbl}`) : '';
-
-        const monitorTotal = tdf.tg_monitor_passed + tdf.tg_monitor_failed + tdf.tg_monitor_warning
-                           + tdf.tg_monitor_error  + tdf.tg_monitor_not_run;
-
+        }
+        const total = (health.passing || 0) + (health.failing || 0) + (health.warning || 0) + (health.not_run || 0);
+        const passRate = Math.round(100 * (health.passing || 0) / (total || 1));
+        const rateColor = passRate >= 80 ? 'var(--dc-status-passed)' : passRate >= 50 ? 'var(--dc-status-warning)' : 'var(--dc-status-failed)';
         return div(
-            { class: 'ct-card-content' },
-            TierRow(h.db_enforced || 0, 'database enforced', 'var(--dc-tier-db)'),
-            TierRow(h.unenforced  || 0, 'unenforced',        'var(--dc-tier-unf)'),
-            TierRow(h.tg_enforced || 0, 'TestGen enforced',  'var(--dc-tier-tg)'),
-            monitorTotal > 0
-                ? SubRow('Monitors', [
-                    S('var(--dc-status-passed)',  'passed',  tdf.tg_monitor_passed),
-                    S('var(--dc-status-failed)',  'failed',  tdf.tg_monitor_failed),
-                    S('var(--dc-status-warning)', 'warning', tdf.tg_monitor_warning),
-                    S('var(--dc-status-error)',   'error',   tdf.tg_monitor_error),
-                    S('var(--dc-status-not-run)', 'not run', tdf.tg_monitor_not_run),
-                  ])
+            div({ class: 'hc-hero' },
+                span({ class: 'hc-hero-num', style: `color:${rateColor}` }, `${passRate}%`),
+                span({ class: 'hc-hero-label' }, 'pass rate'),
+            ),
+            div({ class: 'hc-divider' }),
+            health.passing  ? DotRow('var(--dc-status-passed)',  'passed',  health.passing)  : '',
+            health.failing  ? DotRow('var(--dc-status-failed)',  'failed',  health.failing)  : '',
+            health.warning  ? DotRow('var(--dc-status-warning)', 'warning', health.warning)  : '',
+            health.not_run  ? DotRow('var(--dc-status-not-run)', 'not run', health.not_run)  : '',
+            health.last_test_run
+                ? div({ class: 'health-card__run-time' }, mat('schedule', 13), ` ${health.last_test_run}`)
                 : '',
-            SubRow('Tests', [
-                S('var(--dc-status-passed)',  'passed',  tdf.tg_test_passed),
-                S('var(--dc-status-failed)',  'failed',  tdf.tg_test_failed),
-                S('var(--dc-status-warning)', 'warning', tdf.tg_test_warning),
-                S('var(--dc-status-error)',   'error',   tdf.tg_test_error),
-                S('var(--dc-status-not-run)', 'not run', tdf.tg_test_not_run),
-            ]),
-            tdf.tg_hygiene_definite + tdf.tg_hygiene_likely + tdf.tg_hygiene_possible > 0
-                ? SubRow('Hygiene', [
-                    S('var(--dc-status-failed)',  'definite', tdf.tg_hygiene_definite),
-                    S('var(--dc-status-warning)', 'likely',   tdf.tg_hygiene_likely),
-                    S('var(--dc-status-error)',   'possible', tdf.tg_hygiene_possible),
-                  ])
-                : '',
+        );
+    };
+
+    const CoverageCardContent = (h) => {
+        const CovGroup = (label, covered, total) => {
+            const pct = total ? Math.round(100 * covered / total) : 0;
+            const col = pct >= 80 ? 'var(--dc-status-passed)' : pct >= 50 ? 'var(--dc-status-warning)' : 'var(--dc-status-failed)';
+            return div({ class: 'hc-cov-group' },
+                span({ class: 'hc-cov-label' }, label),
+                div({ class: 'hc-cov-fraction' },
+                    span({ class: 'hc-cov-num', style: `color:${col}` }, covered),
+                    span({ class: 'hc-cov-denom' }, ` of ${total}`),
+                    span({ class: 'hc-cov-unit' }, 'covered'),
+                ),
+                div({ class: 'hc-cov-track' },
+                    div({ class: 'hc-cov-fill', style: `width:${pct}%;background:${col}` }),
+                ),
+            );
+        };
+        return div(
+            CovGroup('Tables', h.covered_tables || 0, h.n_tables || 0),
+            div({ class: 'hc-divider' }),
+            CovGroup('Data Elements', h.covered || 0, h.n_cols || 0),
         );
     };
 
     return div(
         { class: 'health-grid' },
-        // — Compliance card (first)
+        // — Test Results card (first)
+        div(
+            { class: 'health-card suites health-card--link', onclick: handleTestCardClick },
+            div({ class: 'health-card__label' },
+                mat('assignment_turned_in', 13), ' Contract Test Results',
+                span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
+            ),
+            TestResultsCardContent(),
+        ),
+        // — Enforcement card (second)
         withTooltip(
             div(
                 {
@@ -1409,16 +1469,16 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, versionNum, suite
                     onclick: () => { activeTab.val = 'compliance'; },
                 },
                 div({ class: 'health-card__label' },
-                    mat('fact_check', 13), ` Version ${versionNum} Contract Term Compliance`,
+                    mat('fact_check', 13), ' Contract Data Element Enforcement',
                     span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
                 ),
                 termDiff
-                    ? ComplianceCardContent(health, termDiff)
+                    ? ComplianceCardContent(health)
                     : div({ class: 'health-card__sub' }, 'No saved version yet'),
             ),
-            { text: 'View Contract Term Compliance', position: 'bottom' },
+            { text: 'View Contract Data Element Enforcement', position: 'bottom' },
         ),
-        // — Coverage card (second)
+        // — Coverage card (third)
         withTooltip(
             div(
                 {
@@ -1426,85 +1486,16 @@ const HealthGrid = (health, activeFilter, activeTab, termDiff, versionNum, suite
                     onclick: () => { activeTab.val = 'matrix'; },
                 },
                 div({ class: 'health-card__label' },
-                    mat('verified', 13), ' Contract Term Coverage',
+                    mat('verified', 13), ' Contract Data Coverage',
                     span({ class: 'health-card__nav-icon' }, mat('open_in_new', 11)),
                 ),
-                health.n_elements != null
-                    ? CoverageTierBars(health, null)
-                    : [
-                        div({ class: `health-card__value ${coverageCls}` }, `${health.coverage_pct}%`),
-                        div({ class: 'progress-track' },
-                            div({ class: `progress-fill ${coverageCls}`, style: `width:${health.coverage_pct}%` }),
-                        ),
-                      ],
+                CoverageCardContent(health),
             ),
-            { text: 'View Coverage Matrix', position: 'bottom' },
-        ),
-        // — Test Suites card (third)
-        div(
-            { class: 'health-card suites' },
-            div({ class: 'health-card__label' },
-                mat('rule', 13), ' Contract Test Suites',
-            ),
-            suiteScope && suiteScope.total > 0
-                ? SuiteScope(suiteScope, meta)
-                : div({ class: 'health-card__sub' }, 'No suites in scope'),
+            { text: 'View Contract Data Coverage', position: 'bottom' },
         ),
     );
 };
 
-// ── Suite scope bar ───────────────────────────────────────────────────────────
-
-const SuiteScope = (suiteScope, meta) => {
-    const included = suiteScope.included || [];
-    const excluded = suiteScope.excluded || [];
-    const total    = suiteScope.total    || 0;
-
-    if (total === 0) return '';
-
-    const SuiteChip = (name, isIncluded) =>
-        withTooltip(
-            span(
-                {
-                    class: `suite-chip ${isIncluded ? 'suite-chip--in' : 'suite-chip--out'} suite-chip--clickable`,
-                    role: 'link',
-                    tabindex: '0',
-                    onclick: () => emitEvent('LinkClicked', {
-                        href: 'test-suites',
-                        params: {
-                            project_code: meta.project_code,
-                            table_group_id: meta.table_group_id,
-                            test_suite_name: name,
-                        },
-                    }),
-                    onkeydown: (e) => e.key === 'Enter' && emitEvent('LinkClicked', {
-                        href: 'test-suites',
-                        params: {
-                            project_code: meta.project_code,
-                            table_group_id: meta.table_group_id,
-                            test_suite_name: name,
-                        },
-                    }),
-                },
-                span({ class: 'suite-chip__icon' }, isIncluded ? 'check' : 'remove'),
-                name,
-                span({ class: 'suite-chip__arrow' }, mat('arrow_forward', 14)),
-            ),
-            { text: `Go to ${name} in Test Suites`, position: 'bottom' },
-        );
-
-    return div(
-        { class: 'suite-scope-chips-wrap' },
-        div(
-            { class: 'suite-scope-chips' },
-            ...included.map((s) => SuiteChip(s, true)),
-            ...excluded.map((s) => SuiteChip(s, false)),
-        ),
-        excluded.length > 0
-            ? span({ class: 'suite-scope-hint' }, `${excluded.length} suite(s) excluded — edit in Test Suites to change`)
-            : '',
-    );
-};
 
 // ── Page header ───────────────────────────────────────────────────────────────
 
@@ -1517,6 +1508,7 @@ const PageHeader = (meta) =>
 
 const TABS = [
     { id: 'overview',   label: 'Contract Terms'     },
+    { id: 'testing',    label: 'Contract Testing'   },
     { id: 'compliance', label: 'Contract Compliance' },
     { id: 'matrix',     label: 'Contract Coverage'  },
     { id: 'yaml',       label: 'Contract YAML'      },
@@ -1529,7 +1521,12 @@ const TabBar = (activeTab) =>
             const tabEl = div(
                 {
                     class: () => `dc-tab${t.isAction ? ' dc-tab--action' : ''}${activeTab.val === t.id ? ' active' : ''}`,
-                    onclick: () => { activeTab.val = t.id; },
+                    onclick: () => {
+                        if (t.id === 'testing') emitEvent('ContractTestingTabShown', {});
+                        else if (activeTab.val === 'testing') emitEvent('ContractTestingTabHidden', { tab: t.id });
+                        if (t.id === 'compliance') emitEvent('ContractComplianceTabShown', {});
+                        activeTab.val = t.id;
+                    },
                 },
                 t.isAction ? mat('upload', 13, 'dc-tab-action-icon') : '',
                 t.isAction ? ' ' : '',
@@ -1603,6 +1600,8 @@ const TermsHelpPanel = () => {
                     'PII classification, Critical Data Element flag, description, standard pattern (EMAIL, ZIP, SSN, etc.).'),
                 SourceRow('tst',  'Test',       'Tested',
                     'Active quality rule — format check, LOV match, range bound, custom SQL assertion — executes on every test run.'),
+                SourceRow('sch',  'Schema',     'Declared',
+                    'Manually specified ODCS standard fields — tags, title, uniqueness, value pattern, precision/scale, and other property-level annotations not derived from DDL or profiling.'),
             ),
 
             div({ class: 'help-divider' }),
@@ -1850,14 +1849,21 @@ const DataContract = (props) => {
     resizeFrameHeightToElement(wrapperId);
     resizeFrameHeightOnDOMChange(wrapperId);
 
-    const activeTab    = van.state('overview');
+    const activeTab    = van.state(getValue(props.initial_tab) || 'overview');
     const activeFilter = van.state('all');
+
+    // Sync initial_tab prop → activeTab so Python reruns restore tab selection
+    van.derive(() => {
+        const newTab = getValue(props.initial_tab) || 'overview';
+        if (newTab !== activeTab.val) activeTab.val = newTab;
+    });
 
     // Sync pending-edit keys into module-level state so TermChip can react
     van.derive(() => {
-        const ruleIds = getValue(props.pending_edit_rule_ids) || [];
-        const govKeys = getValue(props.pending_edit_gov_keys) || [];
-        const next = new Set([...ruleIds, ...govKeys]);
+        const ruleIds    = getValue(props.pending_edit_rule_ids)    || [];
+        const govKeys    = getValue(props.pending_edit_gov_keys)    || [];
+        const schemaKeys = getValue(props.pending_edit_schema_keys) || [];
+        const next = new Set([...ruleIds, ...govKeys, ...schemaKeys]);
         const cur = _pendingEditKeys.val;
         if (next.size === cur.size && [...next].every(k => cur.has(k))) return;
         _pendingEditKeys.val = next;
@@ -1879,7 +1885,7 @@ const DataContract = (props) => {
     });
 
     return div(
-        { id: wrapperId, class: 'dc-page' },
+        { id: wrapperId, class: () => `dc-page${activeTab.val === 'testing' ? ' dc-page--no-min-height' : ''}` },
         () => {
             const tgName     = getValue(props.table_group_name) || '';
             const meta       = getValue(props.meta)             || {};
@@ -1893,6 +1899,7 @@ const DataContract = (props) => {
             const versionInfo    = getValue(props.version_info)    || {};
             const versionNum     = versionInfo.version || '';
             const showAddTest    = !!(versionInfo.snapshot_suite_id && versionInfo.is_latest);
+            const showSchema     = !!(versionInfo.is_latest);
 
             // If Python passed a select_term_key (from a modal "Delete" button), stage it
             // for TermsDetail to pick up.  TermsDetail resets selection on each call, so
@@ -1907,11 +1914,12 @@ const DataContract = (props) => {
                 TabBar(activeTab),
                 () => {
                     const tab = activeTab.val;
-                    if (tab === 'overview')   return TermsDetail(tables, activeFilter, showAddTest);
+                    if (tab === 'overview')   return TermsDetail(tables, activeFilter, showAddTest, showSchema);
                     if (tab === 'matrix')     return CoverageMatrix(matrix, suiteScope, tables, health, activeTab);
                     if (tab === 'compliance') return ComplianceTab(termDiff, health);
-                    if (tab === 'yaml')        return YamlViewer(yaml, tgName, versionInfo.is_latest);
-                    if (tab === 'help')        return TermsHelpPanel();
+                    if (tab === 'yaml')       return YamlViewer(yaml, tgName, versionInfo.is_latest);
+                    if (tab === 'help')       return TermsHelpPanel();
+                    if (tab === 'testing')    return div({ class: 'dc-testing-placeholder' });
                     return '';
                 },
                 StickyPendingBar(versionInfo),
@@ -1928,6 +1936,10 @@ stylesheet.replace(`
     overflow-y: auto;
     min-height: 400px;
     padding-bottom: 48px;
+}
+.dc-page--no-min-height {
+    min-height: 0;
+    padding-bottom: 8px;
 }
 
 /* ── Material icon helper ── */
@@ -2191,6 +2203,7 @@ stylesheet.replace(`
 .filter-pill--badge-mon.active      { color: #f97316; border-color: rgba(249,115,22,0.4);  background: rgba(249,115,22,0.15);  }
 .filter-pill--badge-obs.active      { color: #94a3b8; border-color: rgba(100,116,139,0.4); background: rgba(100,116,139,0.15); }
 .filter-pill--badge-decl.active     { color: #f59e0b; border-color: rgba(245,158,11,0.4);  background: rgba(245,158,11,0.15);  }
+.filter-pill--badge-sch.active      { color: #00796b; border-color: rgba(0,150,136,0.4);   background: rgba(0,150,136,0.12);   }
 
 /* ── Table section (terms detail) ── */
 .table-section { margin-bottom: 24px; }
@@ -2280,6 +2293,8 @@ stylesheet.replace(`
     position: relative;
 }
 .gov-btn:hover { color: var(--link-text-color); border-color: var(--link-text-color); background: rgba(79,142,247,0.06); }
+.gov-btn--schema { color: #00796b; border-color: rgba(0,150,136,0.4); }
+.gov-btn--schema:hover { color: #004d40; border-color: #00796b; background: rgba(0,150,136,0.08); }
 .col-status-fail { color: var(--dc-status-failed); vertical-align: middle; }
 .col-status-warn { color: var(--dc-status-warning); vertical-align: middle; }
 .col-name-link {
@@ -2334,6 +2349,8 @@ stylesheet.replace(`
 .term-chip.tst  { border-color: rgba(34,197,94,0.3);   background: rgba(34,197,94,0.07);   }
 .term-chip.gov  { border-color: rgba(245,158,11,0.3);  background: rgba(245,158,11,0.07);  }
 .term-chip.obs  { border-color: rgba(100,116,139,0.3); background: rgba(100,116,139,0.07); }
+.term-chip.sch  { border-color: rgba(0,150,136,0.3);   background: rgba(0,150,136,0.07);   }
+.term-chip.sch  .term-chip__src { color: #00796b; }
 .term-chip__header { display: flex; align-items: center; gap: 5px; }
 .term-chip__src {
     font-size: 10px;
@@ -3065,6 +3082,7 @@ stylesheet.replace(`
 .chip-prof { background: rgba(79,142,247,0.12);  color: #4f8ef7; border: 1px solid rgba(79,142,247,0.3);  }
 .chip-gov  { background: rgba(245,158,11,0.12);  color: #d97706; border: 1px solid rgba(245,158,11,0.3);  }
 .chip-tst  { background: rgba(34,197,94,0.12);   color: #16a34a; border: 1px solid rgba(34,197,94,0.3);   }
+.chip-sch  { background: rgba(0,150,136,0.12);   color: #00796b; border: 1px solid rgba(0,150,136,0.3);   }
 .help-verif {
     font-size: 12px;
     color: var(--secondary-text-color);
@@ -3284,13 +3302,32 @@ stylesheet.replace(`
 
 /* ── Compliance card content ── */
 .ct-card-content { margin-top: 4px; }
+.ct-total-elements { display: flex; align-items: baseline; gap: 6px; margin-bottom: 6px; }
+.ct-total-count { font-size: 22px; font-weight: 700; color: var(--primary-text-color); }
+.ct-total-label { font-size: 12px; color: var(--caption-text-color); }
 .ct-tier-row { display: flex; align-items: baseline; gap: 8px; padding: 1px 0; }
 .ct-count { font-size: 15px; font-weight: 700; min-width: 28px; text-align: right; color: var(--primary-text-color); }
 .ct-label { font-size: 12px; color: var(--caption-text-color); }
-.ct-sub-row { display: flex; align-items: flex-start; padding-left: 36px; padding-top: 2px; gap: 6px; }
-.ct-sublabel { font-size: 11px; color: var(--caption-text-color); min-width: 52px; padding-top: 1px; }
-.ct-chips { display: flex; flex-wrap: wrap; gap: 2px 8px; }
-.ct-chip { font-size: 11px; white-space: nowrap; }
+
+/* ── Health card shared components ── */
+.hc-hero { display: flex; align-items: baseline; gap: 7px; margin-bottom: 2px; }
+.hc-hero-num { font-size: 32px; font-weight: 700; letter-spacing: -1px; line-height: 1; color: var(--primary-text-color); }
+.hc-hero-label { font-size: 13px; color: var(--caption-text-color); font-weight: 500; }
+.hc-divider { height: 1px; background: var(--border-color); margin: 10px 0; opacity: 0.5; }
+.hc-metric-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.hc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.hc-metric-count { font-size: 14px; font-weight: 600; min-width: 28px; text-align: right; }
+.hc-metric-label { font-size: 12px; color: var(--caption-text-color); }
+
+/* ── Coverage card ── */
+.hc-cov-group { display: flex; flex-direction: column; gap: 3px; }
+.hc-cov-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--caption-text-color); }
+.hc-cov-fraction { display: flex; align-items: baseline; gap: 5px; }
+.hc-cov-num { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; line-height: 1; }
+.hc-cov-denom { font-size: 14px; color: var(--caption-text-color); font-weight: 500; }
+.hc-cov-unit { font-size: 12px; color: var(--caption-text-color); font-weight: 500; margin-left: 2px; }
+.hc-cov-track { height: 5px; background: var(--border-color); border-radius: 3px; overflow: hidden; margin-top: 5px; }
+.hc-cov-fill { height: 100%; border-radius: 3px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); }
 
 /* ── Compliance tab ── */
 .dc-compliance-tab { padding: 16px 0; }
