@@ -5,6 +5,7 @@ from testgen.common.models.test_run import TestRun
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import parse_result_status, parse_uuid, resolve_test_type
+from testgen.mcp.tools.markdown import MdDoc
 
 
 @with_database_session
@@ -62,29 +63,28 @@ def get_test_results(
 
     type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
-    lines = [f"# Test Results for run `{job_execution_id}`\n"]
-    lines.append(f"Showing {len(results)} result(s) (page {page}).\n")
+    doc = MdDoc()
+    doc.heading(1, f"Test Results for run `{job_execution_id}`")
+    doc.text(f"Showing {len(results)} result(s) (page {page}).")
 
     for r in results:
         status_str = r.status.value if r.status else "Unknown"
         test_name = type_names.get(r.test_type, r.test_type)
         if r.column_names:
-            title = f"## [{status_str}] {test_name} on `{r.column_names}` in `{r.table_name}`"
+            doc.heading(2, f"[{status_str}] {test_name} on `{r.column_names}` in `{r.table_name}`")
         else:
-            title = f"## [{status_str}] {test_name} on `{r.table_name}`"
-        lines.append(title)
-        lines.append(f"- Test definition: `{r.test_definition_id}`")
+            doc.heading(2, f"[{status_str}] {test_name} on `{r.table_name}`")
+        doc.field("Test definition", r.test_definition_id, code=True)
         if r.column_names:
-            lines.append(f"- Column: `{r.column_names}`")
+            doc.field("Column", r.column_names, code=True)
         if r.result_measure is not None:
-            lines.append(f"- Measured value: {r.result_measure}")
+            doc.field("Measured value", r.result_measure)
         if r.threshold_value is not None:
-            lines.append(f"- Threshold: {r.threshold_value}")
+            doc.field("Threshold", r.threshold_value)
         if r.message:
-            lines.append(f"- Message: {r.message}")
-        lines.append("")
+            doc.field("Message", r.message)
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -116,43 +116,38 @@ def get_failure_summary(job_execution_id: str, group_by: str = "test_type") -> s
     if group_by == "test_type":
         type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
-    lines = [
-        f"# Failure Summary for run `{job_execution_id}`\n",
-        f"**Total confirmed failures (Failed + Warning):** {total}\n",
-    ]
+    doc = MdDoc()
+    doc.heading(1, f"Failure Summary for run `{job_execution_id}`")
+    doc.text(f"**Total confirmed failures (Failed + Warning):** {total}")
 
     if group_by == "test_type":
-        lines.append("| Test Type | Severity | Count |")
-        lines.append("|---|---|---|")
-    else:
-        group_label = {"table": "Table Name", "column": "Column"}[group_by]
-        lines.append(f"| {group_label} | Count |")
-        lines.append("|---|---|")
-
-    for row in failures:
-        count = row[-1]
-        if group_by == "column":
-            # Row is (table_name, column_names, count)
-            table, column = row[0], row[1]
-            label = f"`{column}` in `{table}`" if column else f"`{table}` (table-level)"
-            lines.append(f"| {label} | {count} |")
-        elif group_by == "test_type":
-            # Row is (test_type, status, count)
-            code = row[0]
-            status = row[1]
+        headers = ["Test Type", "Severity", "Count"]
+        rows = []
+        for row in failures:
+            code, status, count = row[0], row[1], row[-1]
             name = type_names.get(code, code)
             severity = status.value if status else "Unknown"
-            lines.append(f"| {name} | {severity} | {count} |")
-        else:
-            lines.append(f"| `{row[0]}` | {count} |")
+            rows.append([name, severity, count])
+    elif group_by == "column":
+        headers = ["Column", "Count"]
+        rows = []
+        for row in failures:
+            table, column, count = row[0], row[1], row[-1]
+            label = f"{MdDoc.code(column)} in {MdDoc.code(table)}" if column else f"{MdDoc.code(table)} (table-level)"
+            rows.append([label, count])
+    else:
+        headers = ["Table Name", "Count"]
+        rows = [[row[0], row[-1]] for row in failures]
+
+    doc.table(headers, rows, code=[0] if group_by == "table" else None)
 
     if group_by == "test_type":
-        lines.append(
-            "\nCheck `testgen://test-types` to understand what each test type checks "
+        doc.text(
+            "Check `testgen://test-types` to understand what each test type checks "
             "and `get_test_type(test_type='...')` to fetch more details."
         )
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -185,27 +180,20 @@ def get_test_result_history(
 
     first = results[0]
     test_name = type_names.get(first.test_type, first.test_type)
-    lines = [
-        "# Test Result History\n",
-        f"- **Test Type:** {test_name}",
-        f"- **Table:** `{first.table_name}`",
-    ]
-    if first.column_names:
-        lines.append(f"- **Column:** `{first.column_names}`")
 
-    lines.extend(
-        [
-            f"\nShowing {len(results)} result(s), newest first (page {page}).\n",
-            "| Date | Measure | Threshold | Status |",
-            "|---|---|---|---|",
-        ]
+    doc = MdDoc()
+    doc.heading(1, "Test Result History")
+    doc.field("Test Type", test_name)
+    doc.field("Table", first.table_name, code=True)
+    if first.column_names:
+        doc.field("Column", first.column_names, code=True)
+    doc.text(f"Showing {len(results)} result(s), newest first (page {page}).")
+    doc.table(
+        headers=["Date", "Measure", "Threshold", "Status"],
+        rows=[
+            [r.test_time, r.result_measure, r.threshold_value, r.status.value if r.status else None]
+            for r in results
+        ],
     )
 
-    for r in results:
-        date_str = str(r.test_time) if r.test_time else "—"
-        measure = r.result_measure if r.result_measure is not None else "—"
-        threshold = r.threshold_value if r.threshold_value is not None else "—"
-        status_str = r.status.value if r.status else "—"
-        lines.append(f"| {date_str} | {measure} | {threshold} | {status_str} |")
-
-    return "\n".join(lines)
+    return doc.render()

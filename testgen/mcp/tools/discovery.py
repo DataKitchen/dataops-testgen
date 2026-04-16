@@ -5,6 +5,7 @@ from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import parse_uuid
+from testgen.mcp.tools.markdown import MdDoc
 
 
 @with_database_session
@@ -38,11 +39,12 @@ def list_projects() -> str:
     if not projects:
         return "No projects found."
 
-    lines = ["# Projects\n"]
+    doc = MdDoc()
+    doc.heading(1, "Projects")
     for project in projects:
-        lines.append(f"- **{project.project_name}** (`{project.project_code}`)")
+        doc.field(project.project_name, project.project_code, code=True)
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -68,32 +70,33 @@ def list_test_suites(project_code: str) -> str:
     run_ids = [s.latest_run_id for s in summaries if s.latest_run_id]
     job_exec_map = TestRun.get_job_execution_ids(run_ids) if run_ids else {}
 
-    lines = [f"# Test Suites for `{project_code}`\n"]
+    doc = MdDoc()
+    doc.heading(1, f"Test Suites for `{project_code}`")
     for s in summaries:
-        lines.append(f"## {s.test_suite} (id: `{s.id}`)")
-        lines.append(f"- Connection: {s.connection_name}")
-        lines.append(f"- Table Group: {s.table_groups_name}")
+        doc.heading(2, f"{s.test_suite} (id: `{s.id}`)")
+        doc.field("Connection", s.connection_name)
+        doc.field("Table Group", s.table_groups_name)
         if s.test_suite_description:
-            lines.append(f"- Description: {s.test_suite_description}")
-        lines.append(f"- Test definitions: {s.test_ct or 0}")
+            doc.field("Description", s.test_suite_description)
+        doc.field("Test definitions", s.test_ct or 0)
 
         if s.latest_run_id:
             run_id = job_exec_map.get(s.latest_run_id) or s.latest_run_id
-            lines.append(f"- Latest run: `{run_id}` ({s.latest_run_start})")
-            lines.append(
-                f"  - {s.last_run_test_ct or 0} tests: "
+            doc.field("Latest run", f"`{run_id}` ({s.latest_run_start})")
+            results_summary = (
+                f"{s.last_run_test_ct or 0} tests: "
                 f"{s.last_run_passed_ct or 0} passed, "
                 f"{s.last_run_failed_ct or 0} failed, "
                 f"{s.last_run_warning_ct or 0} warnings, "
                 f"{s.last_run_error_ct or 0} errors"
             )
+            doc.field("Results", results_summary)
             if s.last_run_dismissed_ct:
-                lines.append(f"  - {s.last_run_dismissed_ct} dismissed")
+                doc.field("Dismissed", s.last_run_dismissed_ct)
         else:
-            lines.append("- _No completed runs._")
-        lines.append("")
+            doc.text("_No completed runs._")
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -120,14 +123,13 @@ def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
             return f"No tables on page {page} (total: {total})."
         return f"No tables found for table group `{table_group_id}`."
 
-    lines = [f"# Tables in Table Group `{table_group_id}`\n"]
-    lines.append(f"Total tables: {total}. Showing {len(table_names)} (page {page}).\n")
-
-    for name in table_names:
-        lines.append(f"- `{name}`")
+    doc = MdDoc()
+    doc.heading(1, f"Tables in Table Group `{table_group_id}`")
+    doc.text(f"Total tables: {total}. Showing {len(table_names)} (page {page}).")
+    doc.bullets([f"`{name}`" for name in table_names])
 
     total_pages = (total + limit - 1) // limit
     if page < total_pages:
-        lines.append(f"\n_Page {page} of {total_pages}. Use `page={page + 1}` for more._")
+        doc.text(f"_Page {page} of {total_pages}. Use `page={page + 1}` for more._")
 
-    return "\n".join(lines)
+    return doc.render()

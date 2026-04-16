@@ -1,11 +1,10 @@
 from uuid import UUID
 
-import pandas as pd
 import pytest
 
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.tools.common import dataframe_to_markdown, parse_result_status, parse_uuid
+from testgen.mcp.tools.common import parse_result_status, parse_uuid
 
 # --- parse_uuid ---
 
@@ -56,58 +55,3 @@ def test_parse_result_status_invalid_lists_valid_values():
         parse_result_status("nope")
     for status in TestResultStatus:
         assert status.value in str(exc_info.value)
-
-
-# --- dataframe_to_markdown ---
-
-
-def test_dataframe_to_markdown_basic():
-    df = pd.DataFrame({"name": ["Alice", "Bob"], "score": [95, 87]})
-    result = dataframe_to_markdown(df)
-
-    assert "| name | score |" in result
-    assert "| --- | --- |" in result
-    assert "| Alice | 95 |" in result
-    assert "| Bob | 87 |" in result
-
-
-def test_dataframe_to_markdown_none():
-    assert dataframe_to_markdown(None) == "_No rows._"
-
-
-def test_dataframe_to_markdown_empty():
-    df = pd.DataFrame({"col": []})
-    assert dataframe_to_markdown(df) == "_No rows._"
-
-
-def test_dataframe_to_markdown_null_values():
-    df = pd.DataFrame({"a": [1, None], "b": [None, "x"]})
-    result = dataframe_to_markdown(df)
-
-    lines = result.split("\n")
-    data_rows = lines[2:]
-    assert "| 1.0 | _NULL_ |" == data_rows[0]
-    assert "| _NULL_ | x |" == data_rows[1]
-
-
-def test_dataframe_to_markdown_custom_null_display():
-    df = pd.DataFrame({"a": [None]})
-    result = dataframe_to_markdown(df, null_display="<null>")
-
-    assert "| <null> |" in result
-
-
-def test_dataframe_to_markdown_escapes_pipes_in_values():
-    df = pd.DataFrame({"col": ['{"a"|"b"}', "no pipes"]})
-    result = dataframe_to_markdown(df)
-
-    lines = result.split("\n")
-    assert r'| {"a"\|"b"} |' == lines[2]
-    assert "| no pipes |" == lines[3]
-
-
-def test_dataframe_to_markdown_escapes_pipes_in_headers():
-    df = pd.DataFrame({"col|name": [1]})
-    result = dataframe_to_markdown(df)
-
-    assert r"| col\|name |" in result

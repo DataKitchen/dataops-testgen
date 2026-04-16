@@ -417,7 +417,7 @@ def test_list_test_notes_basic(mock_td, mock_notes, db_session_mock):
     assert "Alpha Truncation" in result
     assert "`name`" in result
     assert "`orders`" in result
-    assert "2 notes" in result
+    assert "2 note(s)" in result
     assert "Threshold looks wrong" in result
     assert "alice" in result
     assert "2026-04-01 10:00" in result
