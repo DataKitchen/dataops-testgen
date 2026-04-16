@@ -38,7 +38,7 @@ def test_get_source_data_query_basic(mock_td, mock_build, db_session_mock):
 
     assert f"# Source Data Query for Test Definition `{td_id}`" in result
     assert "Alpha_Trunc" in result
-    assert "`public`.`orders`" in result
+    assert "public.orders" in result
     assert "`customer_name`" in result
     assert "SELECT * FROM orders" in result
     mock_build.assert_called_once()
