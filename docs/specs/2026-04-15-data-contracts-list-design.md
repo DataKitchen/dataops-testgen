@@ -55,7 +55,8 @@ CREATE TABLE {schema}.contract_versions (
     saved_at          TIMESTAMP NOT NULL DEFAULT NOW(),
     label             TEXT,
     contract_yaml     TEXT NOT NULL,
-    snapshot_suite_id UUID REFERENCES {schema}.test_suites(id),
+    term_count        INT NOT NULL DEFAULT 0,
+    snapshot_suite_id UUID REFERENCES {schema}.test_suites(id) ON DELETE SET NULL,
     UNIQUE (contract_id, version)
 );
 
@@ -66,7 +67,8 @@ CREATE UNIQUE INDEX contract_versions_one_current
 ```
 
 - `is_current` — exactly one `TRUE` per `contract_id`, enforced by the partial unique index
-- `snapshot_suite_id` — per-version copy of the linked test suite's tests (existing snapshot behavior, unchanged)
+- `term_count` — denormalized count of schema + quality terms in the YAML; populated at save time, used by the list page card to avoid parsing YAML on every render
+- `snapshot_suite_id` — per-version copy of the linked test suite's tests; `ON DELETE SET NULL` so deleting a snapshot suite orphans the reference safely rather than blocking the delete
 - `CASCADE DELETE` — deleting a contract removes all its versions automatically
 
 ### Modified table: `test_suites`
@@ -124,7 +126,7 @@ VALUES (:contract_id,
 
 **Card anatomy (per mockup):**
 - Colored top strip (green/amber/red/gray by status)
-- Test suite name (linked, navigates to detail page)
+- Contract name (linked, navigates to detail page)
 - Status badge in upper right (Passing / Warning / Failing / No Run)
 - Stats row: Version · Terms · Tests
 - Footer: "Delete Contract" button (neutral/white style)
@@ -134,7 +136,7 @@ VALUES (:contract_id,
 - **+ New Contract** → opens the new contract wizard defined in `docs/2026-04-15-create-new-contract-wizard-design.md`. On wizard completion: new `contracts` row + new `test_suites` row (`is_contract_suite=TRUE`) created atomically.
 - **Card click** → navigates to `data-contract?contract_id=<uuid>`
 - **Delete Contract** → confirmation dialog: "Delete [name] and all N saved versions? This cannot be undone." → `DELETE FROM contracts` (cascades); deletes linked test suite and all snapshot suites.
-- **Deactivate / Reactivate** → overflow action on card (not the delete button) → `UPDATE contracts SET is_active = ...`
+- **Deactivate / Reactivate** → `⋮` icon button in the card header opens a small menu with "Deactivate" / "Reactivate" → `UPDATE contracts SET is_active = ...`
 
 **List page status computation:**
 The status badge and top strip color for each card are derived from the aggregate result of the latest test run on the contract's linked test suite (`contracts.test_suite_id`). Logic:
@@ -151,10 +153,12 @@ This is a single query joining `test_suites → test_runs → test_results` for 
 
 **Changes from current:**
 - Accepts `contract_id` query param instead of `table_group_id`. Resolves `table_group_id` from the `contracts` row.
+- `can_activate` changes from `"table_group_id" in st.query_params` to `"contract_id" in st.query_params`.
 - Removes: first-time flow, "Delete contract" toolbar button, any "New Contract" entry point.
 - Adds: breadcrumb / back-link to the list page (`data-contracts?project_code=...`).
 - Inactive contracts open in strict read-only mode — no save, no edit, banner shown.
-- All other behavior (version picker, edit terms, save new version, staleness detection, import/export YAML, regenerate) is unchanged.
+- Version picker and all queries in `contract_versions.py` that previously filtered by `table_group_id` must be updated to filter by `contract_id`.
+- All other behavior (version picker, edit terms, save new version, staleness detection, import/export YAML, regenerate) is otherwise unchanged.
 
 ### `TestSuitesPage` (modified)
 
@@ -180,10 +184,12 @@ A contract is always created before its test suite — never by selecting or con
 3. Detail page reloads on new active version
 
 ### Delete contract
-1. Confirmation dialog on list page
-2. Explicitly delete per-version snapshot suites (`is_contract_snapshot=TRUE`) linked to this contract's versions
-3. `DELETE FROM contracts WHERE id=:id` — cascades to `contract_versions`
-4. Delete linked test suite (`is_contract_suite=TRUE`)
+1. Confirmation dialog on list page showing version count
+2. `DELETE FROM contracts WHERE id=:id` — cascades to all `contract_versions` rows (removing FK references to snapshot suites)
+3. Delete per-version snapshot suites (`is_contract_snapshot=TRUE`) — safe now that `contract_versions` rows are gone; `ON DELETE SET NULL` on `snapshot_suite_id` also protects against ordering issues
+4. Delete the primary linked test suite (`is_contract_suite=TRUE`)
+
+Note: snapshot suites must be deleted **after** the cascade in step 2, not before — deleting them first would cause an FK violation while `contract_versions.snapshot_suite_id` still references them.
 
 ### Deactivate / reactivate contract
 - `UPDATE contracts SET is_active = FALSE` — contract visible on list (grayed), detail page read-only
@@ -207,6 +213,10 @@ A contract is always created before its test suite — never by selecting or con
 - `test_fetch_contracts_grouped_by_table_group` — result is ordered/grouped correctly
 - `test_inactive_contract_included_in_list` — `is_active=FALSE` contracts appear in the result
 - `test_contract_suite_excluded_from_test_suites_query` — `is_contract_suite=TRUE` suites are not returned by the test suites listing query
+- `test_contract_status_aggregation_passing` — all passed results → status is Passing
+- `test_contract_status_aggregation_failing` — any failed result → status is Failing regardless of other results
+- `test_contract_status_aggregation_warning` — warning present, no failures → status is Warning
+- `test_contract_status_aggregation_no_run` — no test results → status is No Run
 
 **`tests/unit/test_contract_management.py`**
 - `test_create_contract_creates_test_suite` — contract creation atomically creates a `test_suites` row with `is_contract_suite=TRUE`
@@ -222,6 +232,8 @@ A contract is always created before its test suite — never by selecting or con
 - `test_delete_contract_shows_confirmation` — clicking "Delete Contract" shows confirmation dialog with version count
 - `test_delete_contract_removes_card` — confirming delete removes the card from the list
 - `test_new_contract_button_opens_wizard` — clicking "+ New Contract" opens the wizard entry point
+- `test_deactivate_contract_makes_card_grayed` — deactivating a contract via the `⋮` menu updates the card to the inactive visual state
+- `test_reactivate_contract_restores_editability` — reactivating sets `is_active=TRUE` and the card returns to normal state
 
 **`tests/functional/test_data_contract_detail_page.py`**
 - `test_detail_page_accepts_contract_id_param` — navigating with `contract_id=<uuid>` renders the contract
