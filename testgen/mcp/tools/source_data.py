@@ -9,7 +9,8 @@ from testgen.common.source_data_service import (
 )
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import dataframe_to_markdown, parse_uuid
+from testgen.mcp.tools.common import parse_uuid
+from testgen.mcp.tools.markdown import MdDoc
 
 
 def _resolve_context(test_definition_id: str, reference_date: str | None) -> dict:
@@ -65,17 +66,16 @@ def get_source_data_query(
             "This test type does not have a defined lookup query."
         )
 
-    lines = [
-        f"# Source Data Query for Test Definition `{test_definition_id}`\n",
-        f"- **Test type:** `{context.get('test_type')}`",
-        f"- **Table:** `{context.get('schema_name')}`.`{context.get('table_name')}`",
-    ]
+    doc = MdDoc()
+    doc.heading(1, f"Source Data Query for Test Definition `{test_definition_id}`")
+    doc.field("Test type", context.get("test_type"), code=True)
+    doc.field("Table", f"{context.get('schema_name')}.{context.get('table_name')}", code=True)
     if context.get("column_names"):
-        lines.append(f"- **Column:** `{context['column_names']}`")
-    lines.append(f"- **Limit:** {limit}")
-    lines.append(f"\n```sql\n{query}\n```")
+        doc.field("Column", context["column_names"], code=True)
+    doc.field("Limit", limit)
+    doc.code_block(query, language="sql")
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -104,30 +104,33 @@ def get_source_data(
 
     result: SourceDataResult = fetch_test_result_source_data(context, limit, mask_pii)
 
-    lines = [f"# Source Data for Test Definition `{test_definition_id}`\n"]
-    lines.append(f"- **Test type:** `{context.get('test_type')}`")
-    lines.append(f"- **Table:** `{context.get('schema_name')}`.`{context.get('table_name')}`")
+    doc = MdDoc()
+    doc.heading(1, f"Source Data for Test Definition `{test_definition_id}`")
+    doc.field("Test type", context.get("test_type"), code=True)
+    doc.field("Table", f"{context.get('schema_name')}.{context.get('table_name')}", code=True)
     if context.get("column_names"):
-        lines.append(f"- **Column:** `{context['column_names']}`")
+        doc.field("Column", context["column_names"], code=True)
 
     if result.status == "OK":
         row_count = len(result.df) if result.df is not None else 0
-        lines.append(f"- **Rows returned:** {row_count}")
+        doc.field("Rows returned", row_count)
         if mask_pii:
-            lines.append("- _PII columns have been redacted._")
-        lines.append("")
-        lines.append(dataframe_to_markdown(result.df))
+            doc.text("_PII columns have been redacted._")
+        doc.table_from_dataframe(result.df)
         if result.query:
-            lines.append(f"\n**Query used:**\n```sql\n{result.query}\n```")
+            doc.text("**Query used:**")
+            doc.code_block(result.query, language="sql")
     elif result.status == "NA":
-        lines.append(f"\n{result.message}")
+        doc.text(result.message)
     elif result.status == "ND":
-        lines.append(f"\n{result.message}")
+        doc.text(result.message)
         if result.query:
-            lines.append(f"\n**Query used:**\n```sql\n{result.query}\n```")
+            doc.text("**Query used:**")
+            doc.code_block(result.query, language="sql")
     elif result.status == "ERR":
-        lines.append(f"\n**Error:** {result.message}")
+        doc.text(f"**Error:** {result.message}")
         if result.query:
-            lines.append(f"\n**Query used:**\n```sql\n{result.query}\n```")
+            doc.text("**Query used:**")
+            doc.code_block(result.query, language="sql")
 
-    return "\n".join(lines)
+    return doc.render()

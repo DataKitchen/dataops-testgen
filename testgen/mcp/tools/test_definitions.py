@@ -3,23 +3,11 @@ from testgen.common.models.test_definition import TestDefinition, TestDefinition
 from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import (
-    build_markdown_table,
-    format_page_footer,
-    format_page_info,
-    parse_uuid,
-    resolve_test_type,
-)
+from testgen.mcp.tools.common import format_page_footer, format_page_info, parse_uuid, resolve_test_type
+from testgen.mcp.tools.markdown import MdDoc
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
 _VALID_DIMENSIONS = {"Accuracy", "Completeness", "Consistency", "Recency", "Timeliness", "Uniqueness", "Validity"}
-
-
-def _format_timestamp(value: str | None) -> str:
-    """Format an ISO timestamp string to 'YYYY-MM-DD HH:MM' or '—'."""
-    if not value:
-        return "—"
-    return value[:16].replace("T", " ")
 
 
 @with_database_session
@@ -78,26 +66,27 @@ def list_tests(
         rows.append(
             [
                 td.display_name,
-                f"`{td.table_name}`" if td.table_name else "—",
-                f"`{td.column_name}`" if td.column_name else "—",
+                td.table_name,
+                td.column_name or None,
                 "Yes" if td.test_active else "No",
-                td.severity or td.default_severity or "—",
+                td.severity or td.default_severity or None,
                 "Yes" if td.lock_refresh else "No",
                 "No" if td.last_auto_gen_date else "Yes",
                 "Yes" if td.flagged else "No",
-                str(note_ct) if note_ct else "—",
-                f"`{td.id}`",
+                str(note_ct) if note_ct else None,
+                str(td.id),
             ]
         )
 
-    lines = [f"# Test Definitions for suite `{test_suite_id}`\n"]
-    lines.append(format_page_info(total, page, limit))
-    lines.append(build_markdown_table(headers, rows))
+    doc = MdDoc()
+    doc.heading(1, f"Test Definitions for suite `{test_suite_id}`")
+    doc.text(format_page_info(total, page, limit))
+    doc.table(headers, rows, code=[1, 2, 9])
     footer = format_page_footer(total, page, limit)
     if footer:
-        lines.append(footer)
+        doc.text(footer)
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -117,66 +106,68 @@ def get_test(test_definition_id: str) -> str:
 
     test_name = td.display_name
 
+    doc = MdDoc()
+
     # Header
     if td.column_name:
-        lines = [f"# {test_name} on `{td.column_name}` in `{td.table_name}`\n"]
+        doc.heading(1, f"{test_name} on `{td.column_name}` in `{td.table_name}`")
     else:
-        lines = [f"# {test_name} on `{td.table_name}`\n"]
+        doc.heading(1, f"{test_name} on `{td.table_name}`")
 
-    lines.append(f"- **ID:** `{td.id}`")
-    lines.append(f"- **Test Type:** {test_name}")
-    lines.append(f"- **Table:** `{td.table_name}`")
+    doc.field("ID", td.id, code=True)
+    doc.field("Test Type", test_name)
+    doc.field("Table", td.table_name, code=True)
     if td.column_name:
-        lines.append(f"- **Column:** `{td.column_name}`")
-    lines.append(f"- **Schema:** `{td.schema_name}`")
+        doc.field("Column", td.column_name, code=True)
+    doc.field("Schema", td.schema_name, code=True)
     if td.test_scope:
-        lines.append(f"- **Scope:** {td.test_scope}")
+        doc.field("Scope", td.test_scope)
     if td.dq_dimension:
-        lines.append(f"- **Quality Dimension:** {td.dq_dimension}")
+        doc.field("Quality Dimension", td.dq_dimension)
 
     # Configuration
-    lines.append("\n## Configuration\n")
-    lines.append(f"- **Active:** {'Yes' if td.test_active else 'No'}")
+    doc.heading(2, "Configuration")
+    doc.field("Active", "Yes" if td.test_active else "No")
     severity = td.severity or (f"{td.default_severity} (test type default)" if td.default_severity else None)
     if severity:
-        lines.append(f"- **Severity:** {severity}")
-    lines.append(f"- **Locked:** {'Yes' if td.lock_refresh else 'No'}")
+        doc.field("Severity", severity)
+    doc.field("Locked", "Yes" if td.lock_refresh else "No")
     if td.export_to_observability is None:
         from testgen.common.models.test_suite import TestSuite
 
         suite = TestSuite.get(td.test_suite_id)
         inherited = suite.export_to_observability if suite else None
-        lines.append(f"- **Export to Observability:** {'Yes' if inherited else 'No'} (inherited from suite)")
+        doc.field("Export to Observability", f"{'Yes' if inherited else 'No'} (inherited from suite)")
     else:
-        lines.append(f"- **Export to Observability:** {'Yes' if td.export_to_observability else 'No'}")
+        doc.field("Export to Observability", "Yes" if td.export_to_observability else "No")
 
     # Review status
     notes = TestDefinitionNote.get_notes(def_uuid)
     flag_str = "Flagged" if td.flagged else "Not Flagged"
-    note_str = f"{len(notes)} Note{'s' if len(notes) != 1 else ''}" if notes else "No Notes"
-    lines.append(f"- **Review:** {flag_str}, {note_str}")
+    note_str = f"{len(notes)} Notes" if notes else "No Notes"
+    doc.field("Review", f"{flag_str}, {note_str}")
 
     # Origin and last update
     if td.last_manual_update and td.last_auto_gen_date:
-        lines.append(f"- **Last Updated:** {max(td.last_manual_update, td.last_auto_gen_date)} (auto-generated, edited)")
+        doc.field("Last Updated", f"{max(td.last_manual_update, td.last_auto_gen_date)} (auto-generated, edited)")
     elif td.last_manual_update:
-        lines.append(f"- **Last Updated:** {td.last_manual_update} (manual edit)")
+        doc.field("Last Updated", f"{td.last_manual_update} (manual edit)")
     elif td.last_auto_gen_date:
-        lines.append(f"- **Last Updated:** {td.last_auto_gen_date} (auto-generated)")
+        doc.field("Last Updated", f"{td.last_auto_gen_date} (auto-generated)")
 
     # Parameters (editable fields from test type metadata)
-    _append_parameters_section(lines, td)
+    _append_parameters_section(doc, td)
 
     # Custom SQL (only show when the test type declares it as an editable parameter)
     if "custom_query" in td.param_columns:
-        lines.append("\n## Custom SQL\n")
+        doc.heading(2, "Custom SQL")
         if td.custom_query:
-            lines.append(f"```sql\n{td.custom_query}\n```")
+            doc.code_block(td.custom_query, language="sql")
         else:
-            lines.append("_No custom SQL defined._")
+            doc.text("_No custom SQL defined._")
 
-    # Reference match (only fields listed in default_parm_columns)
-    _append_match_section(lines, td)
+    # Reference match (only fields listed in param_columns)
+    _append_match_section(doc, td)
 
     # Last result
     results = TestResult.select_history(
@@ -184,27 +175,26 @@ def get_test(test_definition_id: str) -> str:
         project_codes=perms.allowed_codes,
         limit=1,
     )
-    lines.append("\n## Last Result\n")
+    doc.heading(2, "Last Result")
     if results:
         r = results[0]
-        status_str = r.status.value if r.status else "—"
-        lines.append(f"- **Date:** {r.test_time or '—'}")
-        lines.append(f"- **Status:** {status_str}")
+        doc.field("Date", r.test_time)
+        doc.field("Status", r.status.value if r.status else None)
         if r.message:
-            lines.append(f"- **Message:** {r.message}")
+            doc.field("Message", r.message)
     else:
-        lines.append("_No results recorded for this test definition._")
+        doc.text("_No results recorded for this test definition._")
 
     # Description
     description = td.test_description or td.default_test_description
     if description:
-        lines.append("\n## Description\n")
-        lines.append(description)
+        doc.heading(2, "Description")
+        doc.text(description)
     if td.usage_notes:
-        lines.append("\n## Usage Notes\n")
-        lines.append(td.usage_notes)
+        doc.heading(2, "Usage Notes")
+        doc.text(td.usage_notes)
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -228,31 +218,24 @@ def list_test_notes(test_definition_id: str) -> str:
 
     test_name = td.display_name
 
+    doc = MdDoc()
     if td.column_name:
-        heading = f"# Notes for {test_name} on `{td.column_name}` in `{td.table_name}`\n"
+        doc.heading(1, f"Notes for {test_name} on `{td.column_name}` in `{td.table_name}`")
     else:
-        heading = f"# Notes for {test_name} on `{td.table_name}`\n"
+        doc.heading(1, f"Notes for {test_name} on `{td.table_name}`")
 
-    headers = ["Date", "Author", "Note", "Updated"]
-    rows = [
-        [
-            _format_timestamp(n["created_at"]),
-            n["created_by"] or "—",
-            n["detail"],
-            _format_timestamp(n["updated_at"]),
-        ]
-        for n in notes
-    ]
-
-    lines = [
-        heading,
-        f"{len(notes)} note{'s' if len(notes) != 1 else ''}.\n",
-        build_markdown_table(headers, rows),
-    ]
-    return "\n".join(lines)
+    doc.text(f"{len(notes)} note(s).")
+    doc.table(
+        headers=["Date", "Author", "Note", "Updated"],
+        rows=[
+            [n["created_at"], n["created_by"], n["detail"], n["updated_at"]]
+            for n in notes
+        ],
+    )
+    return doc.render()
 
 
-def _append_parameters_section(lines: list[str], td: TestDefinitionSummary) -> None:
+def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
     """Build the editable parameters table from test type metadata.
 
     Always shows all parameters declared in param_columns, even when the
@@ -261,17 +244,16 @@ def _append_parameters_section(lines: list[str], td: TestDefinitionSummary) -> N
     if not td.param_fields:
         return
 
-    headers = ["Parameter", "Field", "Value"]
     rows = []
     for column, prompt, _help in td.param_fields:
         value = getattr(td, column, None)
-        rows.append([prompt, f"`{column}`", str(value) if value is not None else "—"])
+        rows.append([prompt, column, str(value) if value is not None else None])
 
-    lines.append("\n## Parameters\n")
-    lines.append(build_markdown_table(headers, rows))
+    doc.heading(2, "Parameters")
+    doc.table(["Parameter", "Field", "Value"], rows, code=[1])
 
 
-def _append_match_section(lines: list[str], td: TestDefinitionSummary) -> None:
+def _append_match_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
     """Append reference match section — shows all match fields declared in param_columns."""
     match_fields = [
         ("Match Schema", "match_schema_name", td.match_schema_name),
@@ -285,9 +267,9 @@ def _append_match_section(lines: list[str], td: TestDefinitionSummary) -> None:
     if not relevant:
         return
 
-    lines.append("\n## Reference Match\n")
+    doc.heading(2, "Reference Match")
     for label, value in relevant:
-        lines.append(f"- **{label}:** {f'`{value}`' if value else '—'}")
+        doc.field(label, value, code=bool(value))
 
 
 @with_database_session
@@ -332,22 +314,15 @@ def list_test_types(
         filters_desc.append(f"dimension: {quality_dimension}")
     filter_suffix = f" ({', '.join(filters_desc)})" if filters_desc else ""
 
-    headers = ["Test Type", "Quality Dimension", "Scope", "Description"]
-    rows = []
-    for tt in test_types:
-        rows.append(
-            [
-                tt.test_name_short or "",
-                tt.dq_dimension or "",
-                tt.test_scope or "",
-                tt.test_description or "",
-            ]
-        )
+    doc = MdDoc()
+    doc.heading(1, "Test Types")
+    doc.text(f"Showing {len(test_types)} test type(s){filter_suffix}.")
+    doc.table(
+        headers=["Test Type", "Quality Dimension", "Scope", "Description"],
+        rows=[
+            [tt.test_name_short, tt.dq_dimension, tt.test_scope, tt.test_description]
+            for tt in test_types
+        ],
+    )
 
-    lines = [
-        "# Test Types\n",
-        f"Showing {len(rows)} test type{'s' if len(rows) != 1 else ''}{filter_suffix}.\n",
-        build_markdown_table(headers, rows),
-    ]
-
-    return "\n".join(lines)
+    return doc.render()

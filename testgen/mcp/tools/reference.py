@@ -1,6 +1,6 @@
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
-from testgen.mcp.tools.common import build_markdown_table
+from testgen.mcp.tools.markdown import MdDoc
 
 
 @with_database_session
@@ -16,45 +16,45 @@ def get_test_type(test_type: str) -> str:
     if not tt:
         return f"Test type `{test_type}` not found. Use `testgen://test-types` to see available types."
 
-    lines = [
-        f"# {tt.test_name_short}\n",
-    ]
+    doc = MdDoc()
+    doc.heading(1, tt.test_name_short)
     if tt.test_name_long:
-        lines.append(f"- **Full Name:** {tt.test_name_long}")
+        doc.field("Full Name", tt.test_name_long)
     if tt.test_description:
-        lines.append(f"- **Description:** {tt.test_description}")
+        doc.field("Description", tt.test_description)
     if tt.measure_uom:
-        lines.append(f"- **Unit of Measure:** {tt.measure_uom}")
+        doc.field("Unit of Measure", tt.measure_uom)
     if tt.measure_uom_description:
-        lines.append(f"- **Measure Description:** {tt.measure_uom_description}")
+        doc.field("Measure Description", tt.measure_uom_description)
     if tt.threshold_description:
-        lines.append(f"- **Threshold:** {tt.threshold_description}")
+        doc.field("Threshold", tt.threshold_description)
     if tt.dq_dimension:
-        lines.append(f"- **Quality Dimension:** {tt.dq_dimension}")
+        doc.field("Quality Dimension", tt.dq_dimension)
     if tt.test_scope:
-        lines.append(f"- **Scope:** {tt.test_scope}")
+        doc.field("Scope", tt.test_scope)
     if tt.except_message:
-        lines.append(f"- **Exception Message:** {tt.except_message}")
+        doc.field("Exception Message", tt.except_message)
 
-    # Parameters
-    _append_type_parameters(lines, tt)
+    _append_type_parameters(doc, tt)
 
     if tt.usage_notes:
-        lines.append(f"\n## Usage Notes\n\n{tt.usage_notes}")
+        doc.heading(2, "Usage Notes")
+        doc.text(tt.usage_notes)
 
-    return "\n".join(lines)
+    return doc.render()
 
 
-def _append_type_parameters(lines: list[str], tt: TestType) -> None:
+def _append_type_parameters(doc: MdDoc, tt: TestType) -> None:
     """Add parameter definitions section from test type metadata."""
     if not tt.param_fields:
         return
 
-    headers = ["Parameter", "Field", "Description"]
-    rows = [[prompt, f"`{column}`", help_text or None] for column, prompt, help_text in tt.param_fields]
-
-    lines.append("\n## Parameters\n")
-    lines.append(build_markdown_table(headers, rows))
+    doc.heading(2, "Parameters")
+    doc.table(
+        headers=["Parameter", "Field", "Description"],
+        rows=[[prompt, column, help_text or None] for column, prompt, help_text in tt.param_fields],
+        code=[1],
+    )
 
 
 @with_database_session
@@ -65,20 +65,17 @@ def test_types_resource() -> str:
     if not test_types:
         return "No test types found."
 
-    lines = [
-        "# TestGen Test Types Reference\n",
-        "| Test Type | Quality Dimension | Scope | Description |",
-        "|---|---|---|---|",
-    ]
+    doc = MdDoc()
+    doc.heading(1, "TestGen Test Types Reference")
+    doc.table(
+        headers=["Test Type", "Quality Dimension", "Scope", "Description"],
+        rows=[
+            [tt.test_name_short, tt.dq_dimension, tt.test_scope, tt.test_description]
+            for tt in test_types
+        ],
+    )
 
-    for tt in test_types:
-        desc = tt.test_description or ""
-        lines.append(
-            f"| {tt.test_name_short or ''} | "
-            f"{tt.dq_dimension or ''} | {tt.test_scope or ''} | {desc} |"
-        )
-
-    return "\n".join(lines)
+    return doc.render()
 
 
 def glossary_resource() -> str:
