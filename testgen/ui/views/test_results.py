@@ -65,6 +65,7 @@ class TestResultsPage(Page):
         test_type: str | None = None,
         action: str | None = None,
         flagged: str | None = None,
+        embed_key: str = "",
         **_kwargs,
     ) -> None:
         run = TestRun.get_minimal(run_id)
@@ -85,14 +86,15 @@ class TestResultsPage(Page):
         run_date = date_service.get_timezoned_timestamp(st.session_state, run.test_starttime)
         session.set_sidebar_project(run.project_code)
 
-        testgen.page_header(
-            "Test Results",
-            "data-quality-testing/investigate-test-results/",
-            breadcrumbs=[
-                { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run.project_code } },
-                { "label": f"{run.test_suite} | {run_date}" },
-            ],
-        )
+        if not embed_key:
+            testgen.page_header(
+                "Test Results",
+                "data-quality-testing/investigate-test-results/",
+                breadcrumbs=[
+                    { "label": "Test Runs", "path": "test-runs", "params": { "project_code": run.project_code } },
+                    { "label": f"{run.test_suite} | {run_date}" },
+                ],
+            )
 
         summary_column, score_column, export_button_column = st.columns([.35, .15, .5], vertical_alignment="bottom")
         status_filter_column, table_filter_column, column_filter_column, test_type_filter_column, flagged_filter_column, action_filter_column, sort_column = st.columns(
@@ -274,7 +276,7 @@ class TestResultsPage(Page):
             id_column="test_result_id",
             selection_mode="multiple" if multi_select else "single",
             reset_pagination=filters_changed,
-            bind_to_query=True,
+            bind_to_query=not bool(embed_key),
             column_styles={"review": {"textAlign": "center", "fontSize": "1.1em"}},
         )
 

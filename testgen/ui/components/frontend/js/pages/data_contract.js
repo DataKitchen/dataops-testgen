@@ -1831,10 +1831,17 @@ const StickyPendingBar = (versionInfo) => {
             ),
             withTooltip(
                 span({
+                    class: 'spb-btn spb-btn--update',
+                    onclick: () => emitEvent('UpdateFromStickyBar', {}),
+                }, mat('edit', 14), ` Update Current Version (${n})`),
+                { text: 'Save changes to the current version in place — no new version number', position: 'top' },
+            ),
+            withTooltip(
+                span({
                     class: 'spb-btn spb-btn--save',
                     onclick: () => emitEvent('SaveFromStickyBar', {}),
-                }, mat('save', 14), ` Save version (${n})`),
-                { text: 'Save staged changes to current version', position: 'top' },
+                }, mat('save', 14), ` Save New Version (${n})`),
+                { text: 'Create a new numbered version snapshot with these changes', position: 'top' },
             ),
         ),
     );
@@ -3447,6 +3454,12 @@ stylesheet.replace(`
     color: #92400e;
 }
 .spb-btn--discard:hover { background: rgba(245,158,11,0.12); }
+.spb-btn--update {
+    border-color: #d97706;
+    background: transparent;
+    color: #92400e;
+}
+.spb-btn--update:hover { background: rgba(245,158,11,0.15); }
 .spb-btn--save {
     border-color: #d97706;
     background: #f59e0b;

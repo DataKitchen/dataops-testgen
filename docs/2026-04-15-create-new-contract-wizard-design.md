@@ -2,7 +2,56 @@
 
 **Date:** 2026-04-15
 **Branch:** data-contracts-vibe
-**Status:** Approved for implementation
+**Status:** Implemented (with intentional deviations) — see Implementation Status section below
+
+---
+
+## Implementation Status
+
+**Last updated:** 2026-04-16
+
+### Implemented as designed
+
+| Item | Notes |
+|---|---|
+| `create_contract_wizard` `@st.dialog` | `testgen/ui/views/dialogs/data_contract_dialogs.py` |
+| Step 1 — Table Group picker | Includes table count, last profiling date, existing contract count |
+| Step 2 — Test Suites checklist | Excludes `is_monitor`, `is_contract_snapshot`, `is_contract_suite` suites |
+| Step 3 — Tables checklist | Sourced from `data_column_chars`; active test counts exclude monitor/snapshot/contract suites via JOIN filter (`testgen/ui/queries/data_contract_list_queries.py`) |
+| Step 4 — Content toggles | Four independent toggles; Monitors toggle disabled when no monitor suites exist |
+| Step 5 — Confirm + Create | Contract name unique validation; "Tests in scope" count; atomic INSERT of `contracts` + `test_suites` (`is_contract_suite=TRUE`) |
+| Wizard step persistence | All 9 intermediate `Next`/`Back` buttons use `st.rerun(scope="fragment")` so the dialog stays open; only the final "Create Contract" commit uses `safe_rerun()` |
+| Wizard filters applied in first-time flow | `_render_first_time_flow` reads `dc_wizard_filters:{contract_id}` from session state and passes kwargs to `_capture_yaml` |
+| `_capture_yaml` filter parameters | Extended to accept `suite_ids`, `table_names`, `include_profiling`, `include_ddl`, `include_hygiene`, `include_monitors` forwarded to `run_export_data_contract` |
+| `_check_contract_prerequisites` fix | Excludes `is_contract_suite=TRUE` suites so no false "has_suites" positives after a contract is created |
+| `empty suite_ids → None` normalization | Prevents accidentally filtering to 0 suites when user selected none in Step 2 |
+| Unit tests — `test_contract_wizard.py` | `tests/unit/ui/test_contract_wizard.py` — state init, name validation, step logic |
+
+### Intentional deviations from spec
+
+| Spec requirement | Implemented behavior | Reason |
+|---|---|---|
+| Step 2: Next disabled when no eligible suites | Next is enabled; an info message is shown explaining there are no eligible suites | Allows users to proceed with a content-only contract (profiling/DDL/monitors) even when no existing suites are available |
+| Step 3: Next disabled when no tables selected | Next is enabled with an info message | Same rationale — an entirely deselected table list with monitors still produces a valid contract |
+| Step 5: Create Contract disabled when in-scope tests = 0 | Create is enabled; a neutral caption shows the 0-test count | A user may want to create a contract stub and add tests later via the detail page; blocking on 0 would prevent that |
+
+### Additional items implemented (2026-04-16)
+
+| Item | Notes |
+|---|---|
+| Governance toggle in Step 4 | A fifth "Governance" toggle was added to Step 4 (content selection). When off, PII/CDE/description data is excluded from the generated YAML. The toggle is passed as `include_governance` to `_capture_yaml` → `run_export_data_contract`. |
+| `table_names` passed to `create_contract_snapshot_suite` | Both `_save_version_dialog` and `_regenerate_dialog` now extract table names from the YAML `schema` section and pass them to `create_contract_snapshot_suite`, so snapshot suites only contain tests for tables in the contract's scope. |
+| `_regenerate_dialog` reads scope from existing YAML | On regenerate, the dialog reads the current YAML's table scope and `x-testgen.contentFlags` before calling `_capture_yaml`, so the regenerated contract respects the original scope. |
+
+### Not yet implemented
+
+| Item | Location in spec | Notes |
+|---|---|---|
+| Unit tests — full suite in `test_contract_wizard.py` | Testing section | Step advance/back, `test_step1_skipped_when_tg_provided`, monitors-disabled tests, etc. — file exists with partial coverage |
+| Unit tests — `test_export_data_contract_filters.py` | Testing section | Filter parameter coverage for `run_export_data_contract` |
+| Functional tests — `test_contract_wizard_apptest.py` + app scripts | Testing section | Full wizard flow functional tests not yet written |
+| `tests/functional/ui/apps/data_contract_delete_version_dialog.py` | — | Still uses old `table_group_id`/`data_contracts` references; needs update to `contract_id`/`contract_versions` |
+| Step indicator UI (pill + dots) | Step Indicator section | Backend wired; visual pill/dot step indicator not yet rendered in the frontend component |
 
 ---
 

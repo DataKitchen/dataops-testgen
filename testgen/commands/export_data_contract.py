@@ -290,7 +290,8 @@ def _fetch_group_context(table_group_id: str, schema: str) -> dict:
     return dict(rows[0]) if rows else {}
 
 
-def _fetch_columns(table_group_id: str, schema: str) -> list[dict]:
+def _fetch_columns(table_group_id: str, schema: str, table_names: list[str] | None = None) -> list[dict]:
+    table_filter = "          AND col.table_name = ANY(:table_names)\n" if table_names else ""
     sql = f"""
         SELECT
             col.table_name,
@@ -334,13 +335,25 @@ def _fetch_columns(table_group_id: str, schema: str) -> list[dict]:
                 )
         WHERE col.table_groups_id = :tg_id
           AND col.excluded_data_element IS NOT TRUE
-        ORDER BY col.table_name, col.column_name
+{table_filter}        ORDER BY col.table_name, col.column_name
     """
-    return [dict(r) for r in fetch_dict_from_db(sql, params={"tg_id": table_group_id})]
+    params: dict = {"tg_id": table_group_id}
+    if table_names:
+        params["table_names"] = table_names
+    return [dict(r) for r in fetch_dict_from_db(sql, params=params)]
 
 
-def _fetch_test_run_history(table_group_id: str, schema: str, limit: int = 5) -> list[dict]:
-    """Return the last N completed test runs across all suites in the table group."""
+def _fetch_test_run_history(table_group_id: str, schema: str, suite_ids: list[str] | None = None, limit: int = 5) -> list[dict]:
+    """Return the last N completed test runs for the suites in scope.
+
+    When *suite_ids* is provided only those suites are included; otherwise all
+    non-snapshot suites with include_in_contract = TRUE are used.
+    """
+    suite_filter = (
+        "AND s.id = ANY(:suite_ids)"
+        if suite_ids
+        else "AND s.include_in_contract IS NOT FALSE"
+    )
     sql = f"""
         SELECT
             tr.test_starttime,
@@ -355,31 +368,46 @@ def _fetch_test_run_history(table_group_id: str, schema: str, limit: int = 5) ->
         FROM {schema}.test_runs tr
         JOIN {schema}.test_suites s ON s.id = tr.test_suite_id
         WHERE s.table_groups_id = :tg_id
-          AND s.include_in_contract IS NOT FALSE  -- TRUE or NULL; column is NOT NULL DEFAULT TRUE so NULL only on pre-migration rows
+          {suite_filter}
           AND COALESCE(s.is_contract_snapshot, FALSE) IS NOT TRUE
+          AND COALESCE(s.is_contract_suite, FALSE) IS NOT TRUE
+          AND COALESCE(s.is_monitor, FALSE) IS NOT TRUE
           AND tr.status = 'Complete'
         ORDER BY tr.test_starttime DESC
         LIMIT :limit
     """
+    params: dict = {"tg_id": table_group_id, "limit": limit}
+    if suite_ids:
+        params["suite_ids"] = suite_ids
     try:
-        return [dict(r) for r in fetch_dict_from_db(sql, params={"tg_id": table_group_id, "limit": limit})]
+        return [dict(r) for r in fetch_dict_from_db(sql, params=params)]
     except Exception:
         return []
 
 
-def _fetch_suite_scope(table_group_id: str, schema: str) -> dict:
-    """Return counts and names of included/excluded suites for the table group."""
+def _fetch_suite_scope(table_group_id: str, schema: str, suite_ids: list[str] | None = None) -> dict:
+    """Return counts and names of included/excluded suites for the table group.
+
+    When *suite_ids* is provided only those suites are considered included;
+    all other non-monitor, non-snapshot suites in the table group are excluded.
+    """
     sql = f"""
-        SELECT test_suite, COALESCE(include_in_contract, TRUE) AS include_in_contract
+        SELECT id::text AS id, test_suite, COALESCE(include_in_contract, TRUE) AS include_in_contract
         FROM {schema}.test_suites
         WHERE table_groups_id = :tg_id
-          AND is_monitor IS NOT TRUE
+          AND COALESCE(is_monitor, FALSE) IS NOT TRUE
           AND COALESCE(is_contract_snapshot, FALSE) IS NOT TRUE
+          AND COALESCE(is_contract_suite, FALSE) IS NOT TRUE
         ORDER BY LOWER(test_suite)
     """
     rows = fetch_dict_from_db(sql, params={"tg_id": table_group_id})
-    included = [r["test_suite"] for r in rows if r["include_in_contract"]]
-    excluded = [r["test_suite"] for r in rows if not r["include_in_contract"]]
+    if suite_ids is not None:
+        suite_id_set = {str(s).lower() for s in suite_ids}
+        included = [r["test_suite"] for r in rows if str(r["id"]).lower() in suite_id_set]
+        excluded = [r["test_suite"] for r in rows if str(r["id"]).lower() not in suite_id_set]
+    else:
+        included = [r["test_suite"] for r in rows if r["include_in_contract"]]
+        excluded = [r["test_suite"] for r in rows if not r["include_in_contract"]]
     return {
         "included": included,
         "excluded": excluded,
@@ -387,7 +415,18 @@ def _fetch_suite_scope(table_group_id: str, schema: str) -> dict:
     }
 
 
-def _fetch_tests(table_group_id: str, schema: str) -> list[dict]:
+def _fetch_tests(
+    table_group_id: str,
+    schema: str,
+    suite_ids: list[str] | None = None,
+    include_monitors: bool = True,
+    table_names: list[str] | None = None,
+) -> list[dict]:
+    suite_filter = ""
+    if suite_ids:
+        suite_filter = "          AND s.id = ANY(CAST(:suite_ids AS uuid[]))\n"
+    monitor_filter = "" if include_monitors else "          AND COALESCE(s.is_monitor, FALSE) IS NOT TRUE\n"
+    table_filter = "          AND td.table_name = ANY(:table_names)\n" if table_names else ""
     sql = f"""
         SELECT
             td.id,
@@ -441,10 +480,15 @@ def _fetch_tests(table_group_id: str, schema: str) -> list[dict]:
         WHERE s.table_groups_id = :tg_id
           AND s.include_in_contract IS NOT FALSE  -- TRUE or NULL; column is NOT NULL DEFAULT TRUE so NULL only on pre-migration rows
           AND COALESCE(s.is_contract_snapshot, FALSE) IS NOT TRUE
-          AND td.test_active    = 'Y'
+{suite_filter}{monitor_filter}{table_filter}          AND td.test_active    = 'Y'
         ORDER BY td.table_name, td.column_name, td.test_type
     """
-    return [dict(r) for r in fetch_dict_from_db(sql, params={"tg_id": table_group_id})]
+    params: dict = {"tg_id": table_group_id}
+    if suite_ids:
+        params["suite_ids"] = [str(s) for s in suite_ids]
+    if table_names:
+        params["table_names"] = table_names
+    return [dict(r) for r in fetch_dict_from_db(sql, params=params)]
 
 
 def _fetch_tests_from_suite(suite_id: str, schema: str) -> list[dict]:
@@ -511,6 +555,10 @@ def rebuild_quality_from_suite(base_yaml: str, suite_id: str) -> str:
     """
     Return a copy of base_yaml with its 'quality' section replaced by fresh data
     fetched from the given suite (snapshot or live).
+
+    Tests are filtered to only include tables present in the YAML's schema section
+    so that snapshot suites created before table-name filtering was introduced do
+    not bleed tests from other tables into this contract's quality section.
     """
     schema = get_tg_schema()
     tests   = _fetch_tests_from_suite(suite_id, schema)
@@ -518,6 +566,18 @@ def rebuild_quality_from_suite(base_yaml: str, suite_id: str) -> str:
         doc: dict[str, Any] = yaml.safe_load(base_yaml) or {}
     except yaml.YAMLError:
         return base_yaml
+
+    # Scope tests to tables present in the YAML schema section.
+    # This prevents tests for tables outside this contract's scope from
+    # appearing when the snapshot suite was created without table filtering.
+    schema_tables: set[str] = {
+        t["name"]
+        for t in (doc.get("schema") or [])
+        if isinstance(t, dict) and t.get("name")
+    }
+    if schema_tables:
+        tests = [t for t in tests if not t.get("table_name") or t["table_name"] in schema_tables]
+
     quality = _build_quality(tests)
     if quality:
         doc["quality"] = quality
@@ -530,7 +590,12 @@ def rebuild_quality_from_suite(base_yaml: str, suite_id: str) -> str:
 # ODCS builders
 # ---------------------------------------------------------------------------
 
-def _build_schema(columns: list[dict]) -> list[dict]:
+def _build_schema(
+    columns: list[dict],
+    include_ddl: bool = True,
+    include_profiling: bool = True,
+    include_governance: bool = True,
+) -> list[dict]:
     tables: dict[str, list[dict]] = {}
     for col in columns:
         tbl = col["table_name"]
@@ -540,60 +605,67 @@ def _build_schema(columns: list[dict]) -> list[dict]:
     for table_name, cols in tables.items():
         properties = []
         for col in cols:
-            logical_type = FUNCTIONAL_TYPE_TO_LOGICAL.get(col.get("functional_data_type") or "", "string")
             prop: dict[str, Any] = {
                 "name": col["column_name"],
-                "description": _nonempty(col.get("description")),
-                "physicalType": _nonempty(col.get("db_data_type")),
-                "logicalType": logical_type,
-                "required": bool(col.get("record_ct") and col.get("null_value_ct") == 0),
-                "criticalDataElement": bool(col.get("critical_data_element")),
-                "classification": _pii_flag_to_classification(col.get("pii_flag")) if col.get("pii_flag") else None,
             }
 
-            # Primary key detection — ID-Unique functional type or profiling all-unique indicator
-            is_pk = (
-                col.get("functional_data_type") == "ID-Unique"
-                or bool(col.get("all_values_unique") and col.get("record_ct") and col.get("null_value_ct") == 0)
+            if include_governance:
+                prop["description"] = _nonempty(col.get("description"))
+                prop["criticalDataElement"] = bool(col.get("critical_data_element"))
+                prop["classification"] = _pii_flag_to_classification(col.get("pii_flag")) if col.get("pii_flag") else None
+
+            if include_ddl:
+                logical_type = FUNCTIONAL_TYPE_TO_LOGICAL.get(col.get("functional_data_type") or "", "string")
+                prop["physicalType"] = _nonempty(col.get("db_data_type"))
+                prop["logicalType"] = logical_type
+
+            if include_profiling:
+                prop["required"] = bool(col.get("record_ct") and col.get("null_value_ct") == 0)
+
+            # Primary key detection — ID-Unique functional type (DDL) or profiling all-unique indicator
+            is_pk_ddl      = include_ddl       and col.get("functional_data_type") == "ID-Unique"
+            is_pk_profiling = include_profiling and bool(
+                col.get("all_values_unique") and col.get("record_ct") and col.get("null_value_ct") == 0
             )
+            is_pk = is_pk_ddl or is_pk_profiling
 
             # customProperties — TestGen-specific extensions, not part of the ODCS standard.
             # Prefixed with "testgen." so consumers know they are not portable.
             custom_props: list[dict[str, Any]] = []
             if is_pk:
                 custom_props.append({"property": "testgen.primaryKey", "value": True})
-            if col.get("min_length") is not None:
-                custom_props.append({"property": "testgen.minLength", "value": col["min_length"]})
-            if col.get("max_length") is not None:
-                custom_props.append({"property": "testgen.maxLength", "value": col["max_length"]})
-            if col.get("min_value") is not None:
-                custom_props.append({"property": "testgen.minimum", "value": _safe_float(col["min_value"])})
-            if col.get("max_value") is not None:
-                custom_props.append({"property": "testgen.maximum", "value": _safe_float(col["max_value"])})
-            fmt = _PATTERN_TO_FORMAT.get(col.get("std_pattern_match") or "")
-            if fmt:
-                custom_props.append({"property": "testgen.format", "value": fmt})
-            # Store the raw pii_flag so it round-trips exactly on import
-            if col.get("pii_flag"):
-                custom_props.append({"property": "testgen.pii_flag", "value": col["pii_flag"]})
-            # Column-level governance tags
-            for _tag in _TAG_FIELDS:
-                if col.get(_tag):
-                    custom_props.append({"property": f"testgen.{_tag}", "value": col[_tag]})
+            if include_profiling:
+                if col.get("min_length") is not None:
+                    custom_props.append({"property": "testgen.minLength", "value": col["min_length"]})
+                if col.get("max_length") is not None:
+                    custom_props.append({"property": "testgen.maxLength", "value": col["max_length"]})
+                if col.get("min_value") is not None:
+                    custom_props.append({"property": "testgen.minimum", "value": _safe_float(col["min_value"])})
+                if col.get("max_value") is not None:
+                    custom_props.append({"property": "testgen.maximum", "value": _safe_float(col["max_value"])})
+                fmt = _PATTERN_TO_FORMAT.get(col.get("std_pattern_match") or "")
+                if fmt:
+                    custom_props.append({"property": "testgen.format", "value": fmt})
+            if include_governance:
+                if col.get("pii_flag"):
+                    custom_props.append({"property": "testgen.pii_flag", "value": col["pii_flag"]})
+                for _tag in _TAG_FIELDS:
+                    if col.get(_tag):
+                        custom_props.append({"property": f"testgen.{_tag}", "value": col[_tag]})
             if custom_props:
                 prop["customProperties"] = custom_props
 
-            # examples from top_freq_values — omitted for PII columns to avoid leaking sensitive data
-            # DB format: "| value | count\n| value | count\n..." — value is at index 1 after split on "|"
-            if col.get("top_freq_values") and not col.get("pii_flag"):
+            # examples from top_freq_values — profiling data, omit when include_profiling=False
+            # Also omitted for PII columns to avoid leaking sensitive data
+            if include_profiling and col.get("top_freq_values") and not col.get("pii_flag"):
                 raw = col["top_freq_values"]
                 parts = [p.split("|") for p in raw.split("\n") if "|" in p]
                 examples = [v for p in parts if len(p) >= 2 and (v := p[1].strip())][:5]
                 if len(examples) >= 2:
                     prop["examples"] = examples
 
-            # strip None values
-            prop = {k: v for k, v in prop.items() if v is not None and v != "" and (v is not False or k in ("required", "criticalDataElement"))}
+            keep_false = {"required", "criticalDataElement"} if include_governance else {"required"}
+            prop = {k: v for k, v in prop.items() if v is not None and v != "" and (v is not False or k in keep_false)}
             properties.append(prop)
 
         result.append({
@@ -855,6 +927,7 @@ def run_export_data_contract(
     include_ddl: bool = True,
     include_hygiene: bool = True,
     include_monitors: bool = True,
+    include_governance: bool = True,
 ) -> None:
     schema = get_tg_schema()
 
@@ -863,10 +936,10 @@ def run_export_data_contract(
         LOG.error("Table group not found: %s", table_group_id)
         sys.exit(1)
 
-    columns     = _fetch_columns(table_group_id, schema)
-    suite_scope = _fetch_suite_scope(table_group_id, schema)
-    tests       = _fetch_tests(table_group_id, schema)
-    run_history = _fetch_test_run_history(table_group_id, schema)
+    columns     = _fetch_columns(table_group_id, schema, table_names=table_names)
+    suite_scope = _fetch_suite_scope(table_group_id, schema, suite_ids=suite_ids)
+    tests       = _fetch_tests(table_group_id, schema, suite_ids=suite_ids, include_monitors=include_monitors, table_names=table_names)
+    run_history = _fetch_test_run_history(table_group_id, schema, suite_ids=suite_ids)
 
     if suite_scope["total"] > 0 and not suite_scope["included"]:
         LOG.warning(
@@ -916,7 +989,7 @@ def run_export_data_contract(
 
     contract["servers"] = _build_servers(ctx)
 
-    schema_section = _build_schema(columns)
+    schema_section = _build_schema(columns, include_ddl=include_ddl, include_profiling=include_profiling, include_governance=include_governance)
     if schema_section:
         contract["schema"] = schema_section
 
@@ -949,6 +1022,13 @@ def run_export_data_contract(
     # x-testgen: auditable extension block — not part of the ODCS spec
     x_testgen: dict[str, Any] = {
         "includedSuites": suite_scope["included"],
+        "contentFlags": {
+            "governance": include_governance,
+            "hygiene": include_hygiene,
+            "profiling": include_profiling,
+            "ddl": include_ddl,
+            "monitors": include_monitors,
+        },
     }
     if suite_scope["excluded"]:
         x_testgen["excludedSuites"] = suite_scope["excluded"]

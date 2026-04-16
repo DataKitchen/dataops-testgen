@@ -94,7 +94,7 @@ If you are writing code that reads contract state, be aware that `st.session_sta
 
 ### 4. Staleness
 
-Staleness is a passive detection: when the live TestGen DB has drifted from the saved contract (schema changed, tests added or removed), a banner appears. `compute_staleness_diff` in `contract_staleness.py` computes this diff. It is distinct from the user-initiated **Regenerate** action, which re-baselines the contract from the current DB state.
+Staleness is a passive detection: when the live TestGen DB has drifted from the saved contract (schema changed, tests added or removed), a banner appears. `compute_staleness_diff` in `contract_staleness.py` computes this diff. It is distinct from user-initiated save actions that re-baseline the contract.
 
 ### 5. Enforcement tiers
 
@@ -159,9 +159,9 @@ These traces walk through what actually happens in the code for common operation
 1. User clicks a test chip → JS emits `EditRuleClicked { rule_id }` → Python `on_edit_rule_clicked` → `@st.dialog` opens (`_edit_rule_dialog`).
 2. User changes the threshold → clicks Save in dialog.
 3. Python writes the new threshold to `st.session_state["dc_pending:{tg_id}"]` as a YAML patch and calls `safe_rerun()`.
-4. On next render, the staged change appears in the toolbar warning bar ("N staged changes — not yet saved").
-5. User clicks **Save version (N)** → `_save_version_dialog` opens.
-6. User confirms → `_persist_pending_edits()` applies YAML patches → `save_contract_version()` writes to `data_contracts` table and creates a new snapshot suite via `create_contract_snapshot_suite()` → `_clear_contract_cache()` → `safe_rerun()`.
+4. On next render, the staged change appears in the toolbar warning banner ("N staged changes — not yet saved") and in the JS sticky bar at the bottom of the component.
+5a. User clicks **Update (N)** → `_update_version_dialog` opens → confirms → `_persist_pending_edits()` + `update_contract_version()` rewrites YAML in place for the current version; no new version number, no new snapshot suite.
+5b. User clicks **Save New (N)** → `_save_version_dialog` opens → confirms → `_persist_pending_edits()` applies YAML patches → `save_contract_version()` writes to `data_contracts` table and creates a new snapshot suite via `create_contract_snapshot_suite()` → `_clear_contract_cache()` → `safe_rerun()`.
 
 ### YAML import
 
@@ -173,13 +173,6 @@ These traces walk through what actually happens in the code for common operation
 6. `sync_import_to_snapshot_suite(snap_id, created_ids, updated_ids, [])` mirrors changes to the snapshot suite.
 7. `_clear_contract_cache()` → result banner shown.
 
-### Regenerate
-
-1. User clicks **Regenerate** → `_regenerate_dialog()` opens.
-2. User confirms (checkbox if pending edits exist) → `_capture_yaml()` calls `run_export_data_contract()` to build fresh YAML from current DB state.
-3. `save_contract_version()` writes the new version + creates a new snapshot suite.
-4. `_clear_contract_cache()` → page reloads at new version.
-
 ---
 
 ## Contract Lifecycle
@@ -188,40 +181,48 @@ A data contract passes through these lifecycle activities:
 
 1. **Bootstrap (Create)** — First-time flow generates the initial contract YAML from the current DB state (schema + profiling stats + active test definitions). Entry point: `_render_first_time_flow()`.
 
-2. **Inline edit** — Users edit governance terms (description, CDE, PII), test rule thresholds/tolerances/severity, and delete terms directly in the UI. Edits are staged as pending changes (`dc_pending:{tg_id}` session state) and committed via Save.
+2. **Inline edit** — Users edit governance terms (description, CDE, PII), test rule thresholds/tolerances/severity, and delete terms directly in the UI. Edits are staged as pending changes (`dc_pending:{tg_id}` session state) and committed via one of the two save buttons.
 
-3. **Save version** — Creates a named, timestamped snapshot of the current state. When pending edits exist, the user can update the current version in-place (`_update_version_dialog`) or promote to a new version number (`_save_version_dialog`).
+3. **Update (in-place)** — Saves pending edits to the current version without creating a new version number or a new snapshot suite. The toolbar button label is **Update (N)** (visible only when there are staged changes). Entry point: `_update_version_dialog()`. Also reachable from the JS sticky bar at the bottom of the component.
 
-4. **Export YAML** — Download the current contract as an ODCS v3.1.0 YAML file (read-only; enables external editing).
+4. **Save New (new snapshot)** — Creates a permanent, numbered, timestamped snapshot of the current state, including any pending edits. A new snapshot test suite is also created. The toolbar button label is **Save New (N)** (or just **Save New** when no edits are pending). Entry point: `_save_version_dialog()`. Also reachable from the JS sticky bar.
 
-5. **Import YAML** — Upload a modified ODCS YAML to sync changes back to TestGen. Rules without an `id` field are created as new tests; rules with an `id` update the matching test. Entry point: `run_import_contract()`.
+5. **Export YAML** — Download the current contract as an ODCS v3.1.0 YAML file (read-only; enables external editing).
 
-6. **Regenerate** — Re-export from the current DB state and save as a new version, picking up schema changes, new/removed tests, and updated profiling stats. Entry point: `_regenerate_dialog()`.
+6. **Import YAML** — Upload a modified ODCS YAML to sync changes back to TestGen. Rules without an `id` field are created as new tests; rules with an `id` update the matching test. Entry point: `run_import_contract()`.
 
-7. **Staleness detection + response** — Passive lifecycle event: the system detects when the DB has drifted from the saved contract (schema changes, test additions/removals) and shows a banner. The user reviews a diff (`compute_staleness_diff`) and can accept or dismiss. Distinct from Regenerate, which is user-initiated.
+7. **Staleness detection + response** — Passive lifecycle event: the system detects when the DB has drifted from the saved contract (schema changes, test additions/removals) and shows a banner. The user reviews a diff (`compute_staleness_diff`) and can accept or dismiss.
 
 8. **Version navigation** — Switch between historical read-only snapshots. The latest version is always editable; older versions are read-only.
 
 9. **Delete version** — Removes a specific saved version and its paired snapshot test suite. Deleting the latest version promotes the previous version to active. Entry point: `_delete_version_dialog()`.
 
 ```
-Bootstrap → Edit → Save version ──────────────────────────────┐
-                 ↑ Import YAML (download → edit externally → upload)  │
-                 ↑ Regenerate (re-export from DB)              │
-                 ↑ Respond to staleness (DB drift detected)    │
+Bootstrap → Edit → Update (in-place) ─────────────────────────┐
+                ↓                                              │
+                Save New (new snapshot) ───────────────────────┤
+                ↑ Import YAML (download → edit externally → upload) │
+                ↑ Respond to staleness (DB drift detected)     │
                                                                ↓
                                                Delete version (any version)
 ```
 
+### The two save paths
+
+| Button | When visible | Action | Snapshot suite |
+|---|---|---|---|
+| **Update (N)** | Only when N > 0 staged edits exist; latest version only | Rewrites the current version's YAML in-place; no version bump | Existing snapshot suite updated via `sync_import_to_snapshot_suite` |
+| **Save New** / **Save New (N)** | Always on latest version | Creates a new numbered version + timestamped snapshot | New snapshot suite created via `create_contract_snapshot_suite` |
+
+Both buttons are present in the Python toolbar and in the JS sticky bar at the bottom of the component. The sticky bar also has a **Discard** button to abandon all staged changes.
+
 There are exactly three supported paths to creating or updating a contract:
 
-1. **Start from existing tests** — Begin with existing TestGen test suites, edit contract terms in the UI, and click **Save version**. Saving creates a new snapshot suite that freezes the contract state.
+1. **Start from existing tests** — Begin with existing TestGen test suites, edit contract terms in the UI, and click **Save New**. Saving creates a new snapshot suite that freezes the contract state.
 
 2. **Upload YAML** — Upload an ODCS v3.1.0 YAML file directly. TestGen imports the rules and syncs the snapshot suite. The contract is static once imported.
 
 3. **Round-trip editing** — Download the contract YAML, edit it externally (in an IDE, or collaboratively with stakeholders), and re-upload. Each re-upload is applied against the current version's snapshot suite; save a new version when the round-trip is complete.
-
-**Regenerate** creates a fresh version from the current live DB state (new snapshot suite, version bump). Use it when re-baselining, not for targeted edits.
 
 ---
 
@@ -249,11 +250,10 @@ When a contract version is saved, a **snapshot test suite** (`[Contract vN] {tab
 
 | Button | Condition | Action |
 |---|---|---|
-| **Save ● (n)** | Pending edits exist in session state | In-place update — `update_contract_version` rewrites YAML for the current version; no new snapshot suite, no version bump |
-| **Save version** | No pending edits | Creates a new version + new snapshot suite via `create_contract_snapshot_suite` |
-| **Regenerate** | Always | Re-baselines from the current live DB state; saves as a new version + new snapshot suite |
+| **Update (N)** | Pending edits exist; latest version only | In-place update — `update_contract_version` rewrites YAML for the current version; no new snapshot suite, no version bump |
+| **Save New** / **Save New (N)** | Always on latest version | Creates a new version + new snapshot suite via `create_contract_snapshot_suite` |
 
-**Save ● (n)** is the only action that modifies an existing snapshot in place (YAML rewrite, no version bump). Once **Save version** is clicked, the snapshot is fully frozen.
+**Update (N)** is the only action that modifies an existing snapshot in place (YAML rewrite, no version bump). Once **Save New** is clicked, a new snapshot is created and becomes the canonical frozen record for that version.
 
 ### Snapshot suite filters
 
@@ -300,6 +300,9 @@ All live events go through `event_handlers` (supports `st.rerun()`):
 | `BulkDeleteTermsClicked` | `{ terms: [...] }` | Multi-select bulk delete; each term carries `{table, col, source, name, rule_id}` |
 | `ImportContractClicked` | `{ payload: <yaml_string> }` | Dry-run preview, stages result in `import_preview_key`, reruns; confirmation dialog shown on next cycle |
 | `AddTestClicked` | `{ tableName, colName }` | Opens `add_test_dialog` for creating new tests |
+| `SaveFromStickyBar` | — | Same as clicking **Save New** in the toolbar |
+| `UpdateFromStickyBar` | — | Same as clicking **Update (N)** in the toolbar |
+| `DiscardFromStickyBar` | — | Opens `cancel_all_changes_dialog` to discard all staged changes |
 
 ---
 
@@ -676,6 +679,33 @@ The Coverage card counts a column as "covered" if it has any non-schema term, in
 **Open questions:**
 - Two coverage percentages (schema vs. quality coverage), or replace the metric with the stricter definition?
 - Should the Coverage Matrix visually distinguish columns with only schema terms?
+
+---
+
+## Recent Bug Fixes (2026-04-16)
+
+The following bugs were identified and fixed after the initial implementation:
+
+1. **YAML scope bug (`rebuild_quality_from_suite`)** — `rebuild_quality_from_suite` now filters tests to only include tables present in the YAML's `schema` section, preventing snapshot suites created before table-name filtering from bleeding tests from other tables into the quality section.
+
+2. **Regenerate scope bug (`_regenerate_dialog`)** — `_regenerate_dialog` now reads the current contract YAML's table scope (from the `schema` section) and content flags (from `x-testgen.contentFlags`) before calling `_capture_yaml`, so regenerated contracts stay within the same table and content boundaries as the original.
+
+3. **Contract testing tab auto-switch** — The tab now auto-switches from test definitions to test results after tests run. Fixed by fetching `run_dates` fresh on each render instead of caching them, so the presence of new results is detected immediately.
+
+4. **Listing page "Not Run" bug** — Fixed by correcting the LATERAL join to use `cv.snapshot_suite_id` instead of `c.test_suite_id` when computing run status for each card, so the status correctly reflects the snapshot suite's test results rather than the primary suite's.
+
+5. **Snapshot suite table scoping** — `create_contract_snapshot_suite` now accepts a `table_names` parameter to filter which tests are copied into the snapshot. Both `_save_version_dialog` and `_regenerate_dialog` pass table names extracted from the YAML `schema` section, so snapshot suites only contain tests for tables in the contract's scope.
+
+6. **Governance wizard toggle** — Added a "Governance" toggle to wizard Step 4 (content selection), so PII/CDE/description data is excluded from the generated YAML when governance is deselected.
+
+7. **Contract testing tab scope** — Snapshot suite creation now only copies tests for tables in the contract's scope (uses the `table_names` filter described in fix 5 above).
+
+8. **Listing page test run status** — LATERAL join corrected to use `snapshot_suite_id` (see fix 4 above) for accurate run status display per contract card.
+
+## UI Changes (2026-04-16)
+
+- **Data Contract button removed from project dashboard** — The `DcPill` component and all associated CSS have been removed from `project_dashboard.js`. The Data Contracts list page is the sole entry point for contracts.
+- **Data Contract button removed from table group listing** — The `DcButton` component and all associated CSS have been removed from `table_group_list.js`; the `ViewContractClicked` event handler has been removed from `table_groups.py`.
 
 ---
 
@@ -1323,3 +1353,12 @@ Expected: `lower_tolerance = NULL`, `upper_tolerance = NULL`, `threshold_value =
 - No `suiteId` and table group has no included suites → **WARN**
 
 - `rowCount` with `unit: percent` (undefined semantics) → **WARN**: use `unit: rows`
+
+---
+
+## TODO: ODCS Compliance Improvements
+
+- **`description.purpose` and `domain`** — add these top-level fields to the exported YAML; they are standard ODCS fields that TestGen currently omits.
+- **`logicalType` / `physicalType` reconciliation** — audit the mapping between exported `logicalType` values and their corresponding `physicalType`; mismatches (e.g. a `physicalType: varchar` paired with `logicalType: integer`) should be detected and corrected.
+- **`errorRate` placement** — decide whether `errorRate` belongs under the `sla` section (as an SLA threshold) or under quality rules; the current placement is ambiguous.
+- Everything else is polish.

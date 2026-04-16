@@ -14,7 +14,7 @@ from testgen.commands.export_data_contract import run_export_data_contract
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_dict_from_db
 from testgen.common.models import with_database_session
-from testgen.ui.queries.profiling_queries import COLUMN_GOVERNANCE_FIELDS, TAG_FIELDS
+from testgen.ui.queries.profiling_queries import COLUMN_GOVERNANCE_FIELDS
 
 _log = logging.getLogger(__name__)
 
@@ -47,9 +47,31 @@ _GOVERNANCE_LABEL_TO_FIELD: dict[str, tuple[str, object]] = {
 # ---------------------------------------------------------------------------
 
 @with_database_session
-def _capture_yaml(table_group_id: str, buf: io.StringIO) -> None:
-    """Export the current contract YAML for a table group into *buf*."""
-    run_export_data_contract(table_group_id, output_path=None, output_stream=buf)
+def _capture_yaml(
+    table_group_id: str,
+    buf: io.StringIO,
+    *,
+    suite_ids: list[str] | None = None,
+    table_names: list[str] | None = None,
+    include_profiling: bool = True,
+    include_ddl: bool = True,
+    include_hygiene: bool = True,
+    include_monitors: bool = True,
+    include_governance: bool = True,
+) -> None:
+    """Export the current contract YAML for a table group into *buf*, with optional filters."""
+    run_export_data_contract(
+        table_group_id,
+        output_path=None,
+        output_stream=buf,
+        suite_ids=suite_ids,
+        table_names=table_names,
+        include_profiling=include_profiling,
+        include_ddl=include_ddl,
+        include_hygiene=include_hygiene,
+        include_monitors=include_monitors,
+        include_governance=include_governance,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +115,26 @@ def _fetch_anomalies(table_group_id: str) -> list[dict]:
     except Exception:
         _log.warning("_fetch_anomalies failed for tg_id=%s", table_group_id, exc_info=True)
         return []
+
+
+@with_database_session
+def _count_snapshot_tests(snapshot_suite_id: str) -> int:
+    """Return the number of active test definitions in the given snapshot suite."""
+    schema = get_tg_schema()
+    try:
+        rows = fetch_dict_from_db(
+            f"""
+            SELECT COUNT(*) AS ct
+              FROM {schema}.test_definitions
+             WHERE test_suite_id = CAST(:suite_id AS uuid)
+               AND test_active = 'Y'
+            """,
+            params={"suite_id": snapshot_suite_id},
+        )
+        return int((rows[0]["ct"] if rows else 0) or 0)
+    except Exception:
+        _log.warning("_count_snapshot_tests failed for suite_id=%s", snapshot_suite_id, exc_info=True)
+        return 0
 
 
 @with_database_session
@@ -360,6 +402,7 @@ def _fetch_last_run_dates(table_group_id: str, snapshot_suite_id: str | None = N
                 WHERE s.table_groups_id = :tg_id
                   AND s.include_in_contract IS NOT FALSE
                   AND COALESCE(s.is_contract_snapshot, FALSE) = FALSE
+                  AND COALESCE(s.is_monitor, FALSE) = FALSE
                 ORDER BY s.id, tr.test_starttime DESC
             ) latest
             ORDER BY is_monitor ASC, run_start DESC

@@ -10,6 +10,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
+CONTRACT_ID = "dddddddd-0000-0000-0000-000000000004"
 TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 SNAP_ID = "bbbbbbbb-0000-0000-0000-000000000002"
 NEW_SUITE_ID = "cccccccc-0000-0000-0000-000000000003"
@@ -42,15 +43,15 @@ def patch_uuid(monkeypatch):
 
 def _make_fetch_side_effect(
     tg_name: str = "My Group",
-    source_count: int = 5,
     has_suites: bool = True,
 ):
-    """Return a side_effect list for fetch_dict_from_db calls in create_contract_snapshot_suite."""
+    """Return a side_effect list for fetch_dict_from_db calls in create_contract_snapshot_suite.
+    New signature has 2 fetch calls: tg_rows lookup, then source suite lookup.
+    """
     suite_info = [{"connection_id": 1, "project_code": "proj", "severity": None}] if has_suites else []
     return [
-        [{"table_groups_name": tg_name}],          # table_groups lookup
-        [{"ct": source_count}],                    # count check
-        suite_info,                                # source suite lookup
+        [{"table_groups_name": tg_name}],   # table_groups lookup
+        suite_info,                           # source suite lookup
     ]
 
 
@@ -68,10 +69,9 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect("My Group")), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 2)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 2)
 
         calls = mock_exec.call_args[0][0]
-        # The suite name is a param bound across all three queries
         params = calls[0][1]
         assert params["suite_name"] == "[Contract v2] My Group"
 
@@ -83,7 +83,7 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 0)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 0)
 
         calls = mock_exec.call_args[0][0]
         suite_insert_sql = calls[0][0]
@@ -98,7 +98,7 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 0)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 0)
 
         calls = mock_exec.call_args[0][0]
         suite_insert_sql = calls[0][0]
@@ -113,27 +113,41 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 1)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 1)
 
         calls = mock_exec.call_args[0][0]
         bulk_copy_sql = calls[1][0]
         assert "source_test_definition_id" in bulk_copy_sql
         assert "td.id" in bulk_copy_sql
 
-    def test_data_contracts_snapshot_suite_id_updated(self):
-        """The UPDATE data_contracts must set snapshot_suite_id."""
+    def test_contract_versions_snapshot_suite_id_updated(self):
+        """The UPDATE must target contract_versions and set snapshot_suite_id using contract_id."""
         from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
 
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 1)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 1)
 
         calls = mock_exec.call_args[0][0]
         update_sql = calls[2][0]
         assert "snapshot_suite_id" in update_sql
-        assert "data_contracts" in update_sql
+        assert "contract_versions" in update_sql
+
+    def test_contract_versions_update_uses_contract_id(self):
+        """contract_versions uses contract_id (not table_group_id) for the WHERE clause."""
+        from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
+
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=_make_fetch_side_effect()), \
+             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
+                   return_value=([], [])) as mock_exec:
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 1)
+
+        calls = mock_exec.call_args[0][0]
+        update_sql = calls[2][0]
+        assert "contract_id" in update_sql
 
     def test_monitor_suites_excluded_from_bulk_copy(self):
         """Bulk copy SQL must exclude is_monitor suites."""
@@ -143,7 +157,7 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 0)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 0)
 
         calls = mock_exec.call_args[0][0]
         bulk_copy_sql = calls[1][0]
@@ -158,7 +172,7 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 0)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 0)
 
         calls = mock_exec.call_args[0][0]
         bulk_copy_sql = calls[1][0]
@@ -172,7 +186,7 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 0)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 0)
 
         calls = mock_exec.call_args[0][0]
         bulk_copy_sql = calls[1][0]
@@ -186,37 +200,25 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 0)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 0)
 
         assert mock_exec.call_count == 1
         calls = mock_exec.call_args[0][0]
         assert len(calls) == 3
 
-    def test_raises_value_error_when_no_in_scope_tests(self):
-        """Must raise ValueError when source test count = 0."""
+    def test_no_error_when_no_in_scope_tests(self):
+        """Must NOT raise when source suite exists but has no test definitions.
+        Empty snapshots are valid for schema-only contracts."""
         from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
 
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
-                   side_effect=_make_fetch_side_effect(source_count=0)):
-            with pytest.raises(ValueError, match="No in-scope tests"):
-                create_contract_snapshot_suite(TG_ID, 0)
-
-    def test_data_contracts_update_uses_table_group_id_singular(self):
-        """data_contracts uses table_group_id (singular), not table_groups_id.
-        Regression test for UndefinedColumn error on regenerate+save."""
-        from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
-
-        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
-                   side_effect=_make_fetch_side_effect()), \
+                   side_effect=_make_fetch_side_effect(has_suites=True)), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
-                   return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 1)
+                   return_value=([], [])):
+            # Should not raise — empty snapshot suites are allowed
+            result = create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 0)
 
-        calls = mock_exec.call_args[0][0]
-        update_sql = calls[2][0]
-        # Must use singular table_group_id for data_contracts table
-        assert "table_group_id" in update_sql
-        assert "table_groups_id" not in update_sql
+        assert result == NEW_SUITE_ID
 
     def test_bulk_copy_uses_on_conflict_do_nothing(self):
         """Bulk copy SQL must use ON CONFLICT DO NOTHING so duplicate test types
@@ -228,7 +230,7 @@ class Test_CreateContractSnapshotSuite:
                    side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, 1)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, 1)
 
         calls = mock_exec.call_args[0][0]
         bulk_copy_sql = calls[1][0].upper()
@@ -348,55 +350,55 @@ class Test_SyncImportToSnapshotSuite:
 
 
 # ---------------------------------------------------------------------------
-# Regression tests for snapshot suite creation / rollback behaviour
+# Regression tests for snapshot suite creation
 # ---------------------------------------------------------------------------
 
 class Test_CreateContractSnapshotSuiteRegression:
-    """Regression tests targeting the silent-failure bug where a non-ValueError
-    exception from create_contract_snapshot_suite was swallowed by the outer
-    try/except in the save/regenerate dialogs, leaving an orphaned contract
-    version with snapshot_suite_id = NULL."""
+    """Regression tests for the signature change (contract_id added) and the
+    removal of the empty-test guard (schema-only contracts must be supported)."""
 
     def test_create_contract_snapshot_suite_creates_suite(self):
         """create_contract_snapshot_suite calls fetch_dict_from_db and
-        execute_db_queries with the expected parameters when in-scope tests exist."""
+        execute_db_queries with the expected parameters."""
         from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
 
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
-                   side_effect=_make_fetch_side_effect("Regression Group", source_count=3)) as mock_fetch, \
+                   side_effect=_make_fetch_side_effect("Regression Group")) as mock_fetch, \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            create_contract_snapshot_suite(TG_ID, version=1)
+            create_contract_snapshot_suite(CONTRACT_ID, TG_ID, version=1)
 
-        # fetch_dict_from_db must be called exactly 3 times (tg lookup, count, suite lookup)
-        assert mock_fetch.call_count == 3
+        # fetch_dict_from_db must be called exactly 2 times (tg lookup, suite lookup)
+        assert mock_fetch.call_count == 2
 
         # execute_db_queries must be called exactly once with 3 SQL statements
         assert mock_exec.call_count == 1
         queries = mock_exec.call_args[0][0]
         assert len(queries) == 3
 
-        # The shared params dict must contain the table group id and version
+        # The shared params dict must contain the table group id, contract id, and version
         params = queries[0][1]
         assert params["tg_id"] == TG_ID
+        assert params["contract_id"] == CONTRACT_ID
         assert params["version"] == 1
         assert params["suite_name"] == "[Contract v1] Regression Group"
         assert params["new_suite_id"] == NEW_SUITE_ID
 
-    def test_create_contract_snapshot_suite_raises_when_no_tests(self):
-        """create_contract_snapshot_suite raises ValueError (not silently returns)
-        when the count of in-scope test definitions is zero."""
+    def test_create_contract_snapshot_suite_succeeds_with_no_existing_tests(self):
+        """create_contract_snapshot_suite must NOT raise when the source suite has
+        no test definitions — empty snapshots are valid for schema-only contracts.
+        Regression: previous code raised ValueError("No in-scope tests") here."""
         from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
 
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
-                   side_effect=_make_fetch_side_effect(source_count=0)), \
+                   side_effect=_make_fetch_side_effect(has_suites=True)), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            with pytest.raises(ValueError, match="No in-scope tests"):
-                create_contract_snapshot_suite(TG_ID, version=0)
+            # Must not raise
+            result = create_contract_snapshot_suite(CONTRACT_ID, TG_ID, version=0)
 
-        # execute_db_queries must NOT have been called — no partial inserts
-        mock_exec.assert_not_called()
+        assert isinstance(result, str)
+        mock_exec.assert_called_once()
 
     def test_create_snapshot_suite_returns_suite_id(self):
         """create_contract_snapshot_suite returns the new suite UUID as a string."""
@@ -404,10 +406,10 @@ class Test_CreateContractSnapshotSuiteRegression:
         from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
 
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
-                   side_effect=_make_fetch_side_effect(source_count=2)), \
+                   side_effect=_make_fetch_side_effect()), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])):
-            result = create_contract_snapshot_suite(TG_ID, version=5)
+            result = create_contract_snapshot_suite(CONTRACT_ID, TG_ID, version=5)
 
         # The return value must be a valid UUID string
         assert isinstance(result, str)

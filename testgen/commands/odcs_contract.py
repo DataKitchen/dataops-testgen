@@ -872,7 +872,7 @@ def apply_import_diff(
             set_parts.append(f"{col} = :{pname}")
             params[pname] = val
         db_queries.append((
-            f"UPDATE {schema}.table_groups SET {', '.join(set_parts)} WHERE id = :tg_id",
+            f"UPDATE {schema}.table_groups SET {', '.join(set_parts)} WHERE id = CAST(:tg_id AS uuid)",
             params,
         ))
 

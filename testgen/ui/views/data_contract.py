@@ -70,6 +70,7 @@ from testgen.ui.views.dialogs.data_contract_dialogs import (
     _review_changes_panel,
     _save_version_dialog,
     _schema_edit_dialog,
+    _update_version_dialog,
     _suite_picker_dialog,
     _term_edit_dialog,
     _term_read_dialog,
@@ -382,31 +383,6 @@ def _render_first_time_flow(contract_id: str, table_group_id: str, is_active: bo
 
         if col2.button("Save as Version 0", type="primary"):
             _save_version_dialog(contract_id, table_group_id, {}, preview_yaml, None)
-
-    st.divider()
-    with st.expander("Or import from YAML", expanded=False):
-        st.caption("Upload an existing ODCS v3.1.0 YAML file to create a new contract version.")
-        uploaded = st.file_uploader(
-            "Upload ODCS YAML",
-            type=["yaml", "yml"],
-            key=f"dc_yaml_upload:{contract_id}",
-        )
-        if uploaded is not None:
-            from testgen.commands.create_data_contract import create_contract_from_yaml, validate_odcs_header
-            raw = uploaded.read().decode("utf-8")
-            errors = validate_odcs_header(raw)
-            if errors:
-                for err in errors:
-                    st.error(err)
-            else:
-                import_label = st.text_input("Version label (optional)", key=f"dc_yaml_upload_label:{contract_id}")
-                if st.button("Save as Version 0", key=f"dc_yaml_upload_save:{contract_id}", type="primary"):
-                    try:
-                        create_contract_from_yaml(table_group_id, raw, import_label or None)
-                        st.success("Contract version 0 saved.")
-                        safe_rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
 
 
 # ---------------------------------------------------------------------------
@@ -769,7 +745,7 @@ class DataContractPage(Page):
             (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
         )
 
-        picker_col, save_col, del_col = st.columns([4, 1, 1])
+        picker_col, update_col, save_col, del_col = st.columns([3, 1, 1, 1])
         with picker_col:
             chosen_idx = st.selectbox(
                 "Contract version",
@@ -800,10 +776,22 @@ class DataContractPage(Page):
                 safe_rerun()
 
         if is_latest_and_active:
+            if pending_ct > 0:
+                with update_col:
+                    upd_label = f"Update ({pending_ct})"
+                    if st.button(upd_label, type="secondary", help="Save changes to the current version in place — no new version number", key=f"dc_update_btn:{contract_id}", use_container_width=True):
+                        _update_version_dialog(
+                            contract_id,
+                            table_group_id,
+                            pending,
+                            contract_yaml,
+                            version_record["version"],
+                            snapshot_suite_id=version_record.get("snapshot_suite_id"),
+                        )
             with save_col:
-                btn_label = f"Save version ({pending_ct})" if pending_ct > 0 else "Save version"
-                btn_type = "primary" if pending_ct > 0 else "secondary"
-                if st.button(btn_label, type=btn_type, help=save_tip, key=f"dc_save_btn:{contract_id}", use_container_width=True):
+                save_label = f"Save New ({pending_ct})" if pending_ct > 0 else "Save New"
+                save_type = "primary" if pending_ct > 0 else "secondary"
+                if st.button(save_label, type=save_type, help=save_tip, key=f"dc_save_btn:{contract_id}", use_container_width=True):
                     _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
         if is_active and len(versions) > 1:
             with del_col:
@@ -820,7 +808,7 @@ class DataContractPage(Page):
             noun = "change" if pending_ct == 1 else "changes"
             warn_col, cancel_col = st.columns([7, 1])
             with warn_col:
-                st.warning(f"{pending_ct} staged {noun} — not yet saved. Click **Save version ({pending_ct})** to commit: {summary}", icon="⚠️")
+                st.warning(f"{pending_ct} staged {noun} — not yet saved. Click **Update ({pending_ct})** to save to current version or **Save New ({pending_ct})** for a new snapshot: {summary}", icon="⚠️")
             with cancel_col:
                 st.markdown("<div style='margin-top:0.4rem'></div>", unsafe_allow_html=True)
                 if st.button("✕ Cancel all", key=f"dc_cancel_all:{contract_id}", type="tertiary", use_container_width=True):
@@ -1131,6 +1119,18 @@ class DataContractPage(Page):
                 return
             _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
 
+        def on_update_from_sticky_bar(_payload: object) -> None:
+            if not is_latest_and_active:
+                return
+            _update_version_dialog(
+                contract_id,
+                table_group_id,
+                pending,
+                contract_yaml,
+                version_record["version"],
+                snapshot_suite_id=version_record.get("snapshot_suite_id"),
+            )
+
         def on_discard_from_sticky_bar(_payload: object) -> None:
             if not is_latest_and_active:
                 return
@@ -1169,6 +1169,7 @@ class DataContractPage(Page):
                 "BulkDeleteTermsClicked":       on_bulk_delete_terms,
                 "AddTestClicked":               on_add_test,
                 "SaveFromStickyBar":            on_save_from_sticky_bar,
+                "UpdateFromStickyBar":          on_update_from_sticky_bar,
                 "DiscardFromStickyBar":         on_discard_from_sticky_bar,
                 "ContractTestingTabShown":      on_contract_testing_tab_shown,
                 "ContractTestingTabHidden":     on_contract_testing_tab_hidden,

@@ -389,7 +389,7 @@ function(params) {
         # So we ignore that run to prevent flickering the selected count
         if not page_changed:
             selection.difference_update(paginated_df[id_column].to_list())
-            selection.update([row[id_column] for row in selected_rows])
+            selection.update([row[id_column] for row in selected_rows if id_column in row])
             st.session_state[f"{key}_multiselection"] = selection
 
         if selection:
@@ -402,7 +402,7 @@ function(params) {
 
             selected_id, selected_item = None, None
             if selected_rows:
-                selected_id = selected_rows[len(selected_rows) - 1][id_column]
+                selected_id = selected_rows[len(selected_rows) - 1].get(id_column)
                 selected_item = next((item for item in selected_data if item[id_column] == selected_id), None)
             if bind_to_query:
                 Router().set_query_params({"selected": selected_id})

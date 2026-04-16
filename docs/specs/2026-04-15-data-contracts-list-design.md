@@ -2,7 +2,42 @@
 
 **Date:** 2026-04-15
 **Branch:** data-contracts-vibe
-**Status:** Draft — awaiting implementation plan
+**Status:** Implemented — see Implementation Status section below
+
+---
+
+## Implementation Status
+
+**Last updated:** 2026-04-16
+
+### Implemented as designed
+
+| Item | Notes |
+|---|---|
+| DB schema — `contracts` table | `testgen/template/dbupgrade/0186_incremental_upgrade.sql` |
+| DB schema — `contract_versions` table | Same migration; includes partial unique index on `is_current` |
+| DB schema — `test_suites.is_contract_suite` | Same migration |
+| Navigation — "Data Contracts" menu entry, `order=1` | Sits between Monitors (`order=0`) and Test Suites (`order=2`); TestRunsPage moved to `order=3` to resolve conflict |
+| `DataContractsListPage` | `testgen/ui/views/data_contracts_list.py` — cards grouped by table group, status badge, stats row |
+| `fetch_contracts_for_project` query | `testgen/ui/queries/data_contract_list_queries.py` — status aggregation via `BOOL_OR`/`BOOL_AND` |
+| `DataContractPage` — `contract_id` param | `testgen/ui/views/data_contract.py` — resolves `table_group_id` from `contracts` row |
+| `TestSuitesPage` exclusion | `is_contract_suite=TRUE` suites hidden from listing |
+| `delete_contract_version` rewrite | `testgen/commands/contract_snapshot_suite.py` — new signature `(contract_id, version)`; promotes previous version to `is_current=TRUE` when deleting the active version |
+| `_delete_version_dialog` rewrite + wiring | `testgen/ui/views/dialogs/data_contract_dialogs.py` — rewired to `contract_versions` table; "Delete ver." button added to the detail page toolbar |
+| Unit tests — `test_delete_contract_version.py` | `tests/unit/commands/test_delete_contract_version.py` — covers non-current, current (promotes previous), and last-version deletion; uses `contract_id` param |
+
+### Not yet implemented
+
+| Item | Location in spec | Notes |
+|---|---|---|
+| Unit tests — `tests/unit/test_contract_versions.py` | Testing section | Schema-level constraint tests |
+| Unit tests — `tests/unit/test_contracts_list_queries.py` | Testing section | Status aggregation and query tests |
+| Unit tests — `tests/unit/test_contract_management.py` | Testing section | Atomic create/delete tests |
+| Functional tests — `tests/functional/test_data_contracts_list_page.py` | Testing section | Full list page app tests |
+| Functional tests — `tests/functional/test_data_contract_detail_page.py` | Testing section | Detail page app tests |
+| Functional tests — `tests/functional/test_test_suites_page.py` | Testing section | `is_contract_suite` exclusion end-to-end |
+| `tests/functional/ui/apps/data_contract_delete_version_dialog.py` | — | Functional test script still uses old `table_group_id` signature; needs update to `contract_id` |
+| Deactivate / Reactivate contract | `⋮` menu on list page card | Not yet wired up — UI scaffold present but `UPDATE contracts SET is_active` not called |
 
 ---
 

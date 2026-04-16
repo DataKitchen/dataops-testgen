@@ -59,10 +59,18 @@ class Test_CreateContract:
 class Test_DeleteContract:
     def test_executes_delete_queries(self):
         from testgen.commands.contract_management import delete_contract
-        with patch("testgen.commands.contract_management.execute_db_queries") as mock_exec:
-            mock_exec.return_value = ([None, None, None], [1, 2, 1])
+        with patch("testgen.commands.contract_management.execute_db_queries") as mock_exec, \
+             patch("testgen.common.models.test_suite.TestSuite.cascade_delete") as mock_cascade:
+            mock_exec.return_value = ([None], [1])
             delete_contract(CONTRACT_ID, SUITE_ID, ["snap1", "snap2"])
+        # contracts row deleted first
         assert mock_exec.called
+        sql = mock_exec.call_args[0][0][0][0]
+        assert "contracts" in sql
+        # then all suites cascade-deleted together
+        assert mock_cascade.called
+        called_ids = mock_cascade.call_args[0][0]
+        assert set(called_ids) == {"snap1", "snap2", SUITE_ID}
 
 
 class Test_SetContractActive:

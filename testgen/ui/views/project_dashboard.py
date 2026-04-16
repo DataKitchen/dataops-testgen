@@ -51,6 +51,7 @@ class ProjectDashboardPage(Page):
                             test_suite.to_dict(json_safe=True)
                             for test_suite in test_suites
                             if test_suite.table_groups_id == table_group.id
+                            and not test_suite.is_contract_snapshot
                         ],
                         "latest_tests_start": make_json_safe(
                             max(
@@ -58,6 +59,7 @@ class ProjectDashboardPage(Page):
                                     test_suite.latest_run_start
                                     for test_suite in test_suites
                                     if test_suite.table_groups_id == table_group.id
+                                    and not test_suite.is_contract_snapshot
                                     and test_suite.latest_run_start
                                 ),
                                 default=None,

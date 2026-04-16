@@ -133,8 +133,8 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     );
 }
 
-const DcPill = ({ tableGroupId }) => button(
-    { class: 'tg-dc-pill', title: 'View Data Contract', 'aria-label': 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contract', params: { table_group_id: tableGroupId } }) },
+const DcPill = ({ tableGroupId, projectCode }) => button(
+    { class: 'tg-dc-pill', title: 'View Data Contract', 'aria-label': 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contracts', params: { project_code: projectCode, table_group_id: tableGroupId } }) },
     i({ class: 'material-symbols-rounded' }, 'contract'),
     span({ class: 'tg-dc-label', 'aria-hidden': 'true' }, 'Data Contract'),
 );
@@ -168,7 +168,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type str
                 ),
                 div(
                     { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
-                    DcPill({ tableGroupId: tableGroup.id }),
+                    DcPill({ tableGroupId: tableGroup.id, projectCode }),
                     ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
                 ),
             ),
@@ -213,7 +213,7 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /*
                 ),
                 div(
                     { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
-                    DcPill({ tableGroupId: tableGroup.id }),
+                    DcPill({ tableGroupId: tableGroup.id, projectCode }),
                     ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
                 ),
             ),
@@ -417,9 +417,7 @@ button.tg-dc-pill:hover {
     background: rgba(0, 0, 0, .04);
 }
 
-button.tg-dc-pill .material-symbols-rounded {
-    font-size: 18px;
-}
 `);
+
 
 export { ProjectDashboard };

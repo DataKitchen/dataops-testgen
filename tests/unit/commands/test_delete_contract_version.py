@@ -10,7 +10,7 @@ import pytest
 
 pytestmark = pytest.mark.unit
 
-TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+CONTRACT_ID = "aaaaaaaa-0000-0000-0000-000000000001"
 SNAP_ID = "bbbbbbbb-0000-0000-0000-000000000002"
 
 
@@ -37,20 +37,20 @@ class Test_DeleteContractVersion:
                        [{"ct": 1}],  # version count
                    ]):
             with pytest.raises(ValueError, match="Cannot delete the only saved version"):
-                delete_contract_version(TG_ID, 0)
+                delete_contract_version(CONTRACT_ID, 0)
 
     def test_five_delete_statements_when_snapshot_suite_present(self):
-        """With snapshot_suite_id: test_results + test_runs + test_definitions + test_suites + contract = 5 total."""
+        """With snapshot_suite_id and non-current version: 4 suite DELETEs + 1 contract_versions DELETE = 5 total."""
         from testgen.commands.contract_snapshot_suite import delete_contract_version
 
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
                    side_effect=[
-                       [{"ct": 3}],                                    # version count
-                       [{"snapshot_suite_id": SNAP_ID}],               # snapshot suite id
+                       [{"ct": 3}],                                                    # version count
+                       [{"snapshot_suite_id": SNAP_ID, "is_current": False}],          # version info
                    ]), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            delete_contract_version(TG_ID, 1)
+            delete_contract_version(CONTRACT_ID, 1)
 
         assert mock_exec.call_count == 1
         calls = mock_exec.call_args[0][0]
@@ -60,42 +60,42 @@ class Test_DeleteContractVersion:
         assert any("test_runs" in s for s in sql_statements)
         assert any("test_definitions" in s for s in sql_statements)
         assert any("test_suites" in s for s in sql_statements)
-        assert any("data_contracts" in s for s in sql_statements)
+        assert any("contract_versions" in s for s in sql_statements)
 
     def test_only_contract_delete_when_no_snapshot_suite(self):
-        """With no snapshot_suite_id: only 1 DELETE statement (contract row)."""
-        from testgen.commands.contract_snapshot_suite import delete_contract_version
-
-        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
-                   side_effect=[
-                       [{"ct": 2}],              # version count
-                       [{"snapshot_suite_id": None}],  # no snapshot suite
-                   ]), \
-             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
-                   return_value=([], [])) as mock_exec:
-            delete_contract_version(TG_ID, 0)
-
-        calls = mock_exec.call_args[0][0]
-        assert len(calls) == 1
-        assert "data_contracts" in calls[0][0]
-
-    def test_correct_tg_id_and_version_in_contract_delete(self):
-        """Contract DELETE must be bound with correct table_group_id and version."""
+        """With no snapshot_suite_id and non-current version: only 1 DELETE statement (contract_versions row)."""
         from testgen.commands.contract_snapshot_suite import delete_contract_version
 
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
                    side_effect=[
                        [{"ct": 2}],
-                       [{"snapshot_suite_id": None}],
+                       [{"snapshot_suite_id": None, "is_current": False}],
                    ]), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            delete_contract_version(TG_ID, 5)
+            delete_contract_version(CONTRACT_ID, 0)
+
+        calls = mock_exec.call_args[0][0]
+        assert len(calls) == 1
+        assert "contract_versions" in calls[0][0]
+
+    def test_correct_contract_id_and_version_in_delete(self):
+        """contract_versions DELETE must be bound with correct contract_id and version."""
+        from testgen.commands.contract_snapshot_suite import delete_contract_version
+
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=[
+                       [{"ct": 2}],
+                       [{"snapshot_suite_id": None, "is_current": False}],
+                   ]), \
+             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
+                   return_value=([], [])) as mock_exec:
+            delete_contract_version(CONTRACT_ID, 5)
 
         calls = mock_exec.call_args[0][0]
         contract_delete = calls[0]
         params = contract_delete[1]
-        assert params["tg_id"] == TG_ID
+        assert params["contract_id"] == CONTRACT_ID
         assert params["version"] == 5
 
     def test_snapshot_suite_id_bound_in_suite_deletes(self):
@@ -105,14 +105,35 @@ class Test_DeleteContractVersion:
         with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
                    side_effect=[
                        [{"ct": 2}],
-                       [{"snapshot_suite_id": SNAP_ID}],
+                       [{"snapshot_suite_id": SNAP_ID, "is_current": False}],
                    ]), \
              patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
                    return_value=([], [])) as mock_exec:
-            delete_contract_version(TG_ID, 1)
+            delete_contract_version(CONTRACT_ID, 1)
 
         calls = mock_exec.call_args[0][0]
-        # First 3 calls are suite-related deletes
-        for i in range(3):
+        # First 4 calls are suite-related deletes (test_results, test_runs, test_definitions, test_suites)
+        for i in range(4):
             params = calls[i][1]
-            assert params.get("snapshot_suite_id") == SNAP_ID
+            assert params.get("sid") == SNAP_ID
+
+    def test_promotes_previous_version_when_deleting_current(self):
+        """Deleting the is_current=TRUE version must prepend an UPDATE to promote the previous version."""
+        from testgen.commands.contract_snapshot_suite import delete_contract_version
+
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=[
+                       [{"ct": 2}],
+                       [{"snapshot_suite_id": None, "is_current": True}],
+                   ]), \
+             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
+                   return_value=([], [])) as mock_exec:
+            delete_contract_version(CONTRACT_ID, 3)
+
+        calls = mock_exec.call_args[0][0]
+        # First statement must be the UPDATE to promote previous version
+        assert "UPDATE" in calls[0][0]
+        assert "is_current" in calls[0][0]
+        # Last statement is the DELETE of contract_versions
+        assert "contract_versions" in calls[-1][0]
+        assert "DELETE" in calls[-1][0]

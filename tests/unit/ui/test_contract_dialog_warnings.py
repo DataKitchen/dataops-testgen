@@ -121,54 +121,5 @@ class Test_SaveVersionDialogWarning:
             fn = getattr(_save_version_dialog, "__wrapped__", _save_version_dialog)
             fn(CONTRACT_ID, TG_ID, {}, "yaml-content", 1)
 
-        mock_snapshot.assert_called_once_with(TG_ID, 2)
+        mock_snapshot.assert_called_once_with(CONTRACT_ID, TG_ID, 2, table_names=None)
 
-
-# ---------------------------------------------------------------------------
-# _regenerate_dialog
-# ---------------------------------------------------------------------------
-
-class Test_RegenerateDialogWarning:
-
-    def test_regen_dialog_info_contains_snapshot_suite_name(self, mock_streamlit):
-        """The regenerate dialog st.info call must include the [Contract v{N}] suite name."""
-        import io as _io
-        mock_tg = MagicMock()
-        mock_tg.table_groups_name = "Orders"
-
-        with patch("testgen.ui.views.dialogs.data_contract_dialogs.TableGroup") as mock_tg_cls, \
-             patch("testgen.ui.views.dialogs.data_contract_dialogs._capture_yaml",
-                   side_effect=lambda tg_id, buf: buf.write("yaml-content")), \
-             patch("testgen.ui.views.dialogs.data_contract_dialogs.save_contract_version",
-                   return_value=3), \
-             patch("testgen.ui.views.dialogs.data_contract_dialogs.create_contract_snapshot_suite",
-                   return_value=NEW_SUITE_ID):
-            mock_tg_cls.get_minimal.return_value = mock_tg
-
-            from testgen.ui.views.dialogs.data_contract_dialogs import _regenerate_dialog
-            fn = getattr(_regenerate_dialog, "__wrapped__", _regenerate_dialog)
-            fn(CONTRACT_ID, TG_ID, 2, 0)
-
-        assert any("[Contract v3] Orders" in msg for msg in mock_streamlit), (
-            f"Expected snapshot suite name in info messages, got: {mock_streamlit}"
-        )
-
-    def test_regen_dialog_calls_create_snapshot_suite(self, mock_streamlit):
-        """_regenerate_dialog must call create_contract_snapshot_suite after save."""
-        mock_tg = MagicMock()
-        mock_tg.table_groups_name = "Orders"
-
-        with patch("testgen.ui.views.dialogs.data_contract_dialogs.TableGroup") as mock_tg_cls, \
-             patch("testgen.ui.views.dialogs.data_contract_dialogs._capture_yaml",
-                   side_effect=lambda tg_id, buf: buf.write("yaml-content")), \
-             patch("testgen.ui.views.dialogs.data_contract_dialogs.save_contract_version",
-                   return_value=3), \
-             patch("testgen.ui.views.dialogs.data_contract_dialogs.create_contract_snapshot_suite",
-                   return_value=NEW_SUITE_ID) as mock_snapshot:
-            mock_tg_cls.get_minimal.return_value = mock_tg
-
-            from testgen.ui.views.dialogs.data_contract_dialogs import _regenerate_dialog
-            fn = getattr(_regenerate_dialog, "__wrapped__", _regenerate_dialog)
-            fn(CONTRACT_ID, TG_ID, 2, 0)
-
-        mock_snapshot.assert_called_once_with(TG_ID, 3)

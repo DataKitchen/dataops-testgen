@@ -28,12 +28,12 @@ class Test_WizardStateInit:
         _init_wizard_state(project_code=PROJECT)
         assert "create_contract_wizard" in st.session_state
 
-    def test_wizard_starts_at_step_1_without_tg(self, monkeypatch):
+    def test_wizard_starts_at_step_0_without_tg(self, monkeypatch):
         import streamlit as st
         from testgen.ui.views.dialogs.data_contract_dialogs import _init_wizard_state
         monkeypatch.setattr(st, "session_state", {})
         state = _init_wizard_state(project_code=PROJECT)
-        assert state["step"] == 1
+        assert state["step"] == 0  # step 0 = choose method (table group vs YAML import)
         assert state["table_group_id"] is None
 
     def test_wizard_starts_at_step_2_with_tg(self, monkeypatch):

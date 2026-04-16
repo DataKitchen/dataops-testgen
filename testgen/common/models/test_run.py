@@ -268,6 +268,8 @@ class TestRun(Entity):
             INNER JOIN table_groups ON (test_suites.table_groups_id = table_groups.id)
             INNER JOIN projects ON (test_suites.project_code = projects.project_code)
         WHERE test_suites.is_monitor IS NOT TRUE
+            AND COALESCE(test_suites.is_contract_snapshot, FALSE) = FALSE
+            AND COALESCE(test_suites.is_contract_suite, FALSE) = FALSE
             {" AND test_suites.project_code = :project_code" if project_code else ""}
             {" AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND test_suites.id = :test_suite_id" if test_suite_id else ""}

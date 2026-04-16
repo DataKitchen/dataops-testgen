@@ -14,19 +14,26 @@ LOG = logging.getLogger("testgen")
 
 
 @with_database_session
-def create_contract_snapshot_suite(table_group_id: str, version: int) -> str:
+def create_contract_snapshot_suite(
+    contract_id: str,
+    table_group_id: str,
+    version: int,
+    table_names: list[str] | None = None,
+) -> str:
     """
     Create a snapshot test suite for the given contract version.
 
-    Copies all active test definitions from suites where:
+    Copies active test definitions from suites where:
       - table_groups_id = table_group_id
       - include_in_contract = TRUE
       - is_monitor IS NOT TRUE
       - is_contract_snapshot IS NOT TRUE
 
-    Updates data_contracts.snapshot_suite_id for the matching version row.
+    When *table_names* is provided, only tests for those tables are copied.
+
+    Updates contract_versions.snapshot_suite_id for the matching (contract_id, version) row.
     Returns the new suite UUID as a string.
-    Raises ValueError if no in-scope test definitions exist.
+    Creates an empty snapshot suite when there are no in-scope tests (valid for schema-only contracts).
     """
     schema = get_tg_schema()
 
@@ -36,25 +43,7 @@ def create_contract_snapshot_suite(table_group_id: str, version: int) -> str:
     )
     if not tg_rows:
         raise ValueError(f"Table group {table_group_id} not found")
-    table_group_name: str = tg_rows[0]["table_groups_name"] or ""
-
-    check_rows = fetch_dict_from_db(
-        f"""
-        SELECT COUNT(*) AS ct
-        FROM {schema}.test_definitions td
-        JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
-        WHERE ts.table_groups_id = CAST(:tg_id AS uuid)
-          AND COALESCE(ts.include_in_contract, TRUE) = TRUE
-          AND COALESCE(ts.is_monitor, FALSE) = FALSE
-          AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
-        """,
-        params={"tg_id": table_group_id},
-    )
-    count = int((check_rows[0]["ct"] or 0)) if check_rows else 0
-    if count == 0:
-        raise ValueError(
-            "No in-scope tests found. Add tests to at least one contract suite before saving."
-        )
+    table_group_name = tg_rows[0]["table_groups_name"]
 
     suite_rows = fetch_dict_from_db(
         f"""
@@ -204,24 +193,27 @@ def create_contract_snapshot_suite(table_group_id: str, version: int) -> str:
           AND COALESCE(ts.include_in_contract, TRUE) = TRUE
           AND COALESCE(ts.is_monitor, FALSE) = FALSE
           AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
+          {"AND td.table_name = ANY(CAST(:table_names AS text[]))" if table_names else ""}
         ON CONFLICT DO NOTHING
     """
 
     update_contract_sql = f"""
-        UPDATE {schema}.data_contracts
+        UPDATE {schema}.contract_versions
         SET snapshot_suite_id = CAST(:new_suite_id AS uuid)
-        WHERE table_group_id = CAST(:tg_id AS uuid)
+        WHERE contract_id = CAST(:contract_id AS uuid)
           AND version = :version
     """
 
     params = {
-        "new_suite_id": new_suite_id,
-        "suite_name":   suite_name,
-        "project_code": src.get("project_code") or "",
+        "new_suite_id":  new_suite_id,
+        "suite_name":    suite_name,
+        "project_code":  src.get("project_code") or "",
         "connection_id": src.get("connection_id"),
-        "tg_id":        table_group_id,
-        "severity":     src.get("severity"),
-        "version":      version,
+        "tg_id":         table_group_id,
+        "contract_id":   contract_id,
+        "severity":      src.get("severity"),
+        "version":       version,
+        "table_names":   table_names,
     }
 
     execute_db_queries([
@@ -412,16 +404,17 @@ def sync_import_to_snapshot_suite(
 
 
 @with_database_session
-def delete_contract_version(table_group_id: str, version: int) -> None:
+def delete_contract_version(contract_id: str, version: int) -> None:
     """
     Delete a contract version and its paired snapshot suite (if any).
-    Raises ValueError if this is the only version for the table group.
+    Raises ValueError if this is the only version for the contract.
+    Promotes the previous version to is_current=TRUE if the deleted version was current.
     """
     schema = get_tg_schema()
 
     count_rows = fetch_dict_from_db(
-        f"SELECT COUNT(*) AS ct FROM {schema}.data_contracts WHERE table_group_id = CAST(:tg_id AS uuid)",
-        params={"tg_id": table_group_id},
+        f"SELECT COUNT(*) AS ct FROM {schema}.contract_versions WHERE contract_id = CAST(:contract_id AS uuid)",
+        params={"contract_id": contract_id},
     )
     version_count = int((count_rows[0]["ct"] or 0)) if count_rows else 0
     if version_count <= 1:
@@ -429,45 +422,51 @@ def delete_contract_version(table_group_id: str, version: int) -> None:
 
     ver_rows = fetch_dict_from_db(
         f"""
-        SELECT snapshot_suite_id::text AS snapshot_suite_id
-        FROM {schema}.data_contracts
-        WHERE table_group_id = CAST(:tg_id AS uuid)
+        SELECT snapshot_suite_id::text AS snapshot_suite_id, is_current
+        FROM {schema}.contract_versions
+        WHERE contract_id = CAST(:contract_id AS uuid)
           AND version = :version
         """,
-        params={"tg_id": table_group_id, "version": version},
+        params={"contract_id": contract_id, "version": version},
     )
+    if not ver_rows:
+        raise ValueError(f"Version {version} not found for contract {contract_id}")
+
     snapshot_suite_id: str | None = None
-    if ver_rows and ver_rows[0].get("snapshot_suite_id"):
+    if ver_rows[0].get("snapshot_suite_id"):
         snapshot_suite_id = str(ver_rows[0]["snapshot_suite_id"])
+    is_current_version = bool(ver_rows[0].get("is_current", False))
 
     queries: list[tuple[str, dict]] = []
 
-    if snapshot_suite_id:
+    # If deleting the current version, promote the next most-recent version to current
+    if is_current_version:
         queries.append((
-            f"DELETE FROM {schema}.test_results WHERE test_suite_id = CAST(:snapshot_suite_id AS uuid)",
-            {"snapshot_suite_id": snapshot_suite_id},
-        ))
-        queries.append((
-            f"DELETE FROM {schema}.test_runs WHERE test_suite_id = CAST(:snapshot_suite_id AS uuid)",
-            {"snapshot_suite_id": snapshot_suite_id},
-        ))
-        queries.append((
-            f"DELETE FROM {schema}.test_definitions WHERE test_suite_id = CAST(:snapshot_suite_id AS uuid)",
-            {"snapshot_suite_id": snapshot_suite_id},
-        ))
-        queries.append((
-            f"DELETE FROM {schema}.test_suites WHERE id = CAST(:snapshot_suite_id AS uuid)",
-            {"snapshot_suite_id": snapshot_suite_id},
+            f"""
+            UPDATE {schema}.contract_versions
+               SET is_current = TRUE
+             WHERE contract_id = CAST(:contract_id AS uuid)
+               AND version = (
+                   SELECT MAX(version) FROM {schema}.contract_versions
+                    WHERE contract_id = CAST(:contract_id AS uuid)
+                      AND version != :version
+               )
+            """,
+            {"contract_id": contract_id, "version": version},
         ))
 
+    if snapshot_suite_id:
+        queries.extend([
+            (f"DELETE FROM {schema}.test_results WHERE test_suite_id = CAST(:sid AS uuid)", {"sid": snapshot_suite_id}),
+            (f"DELETE FROM {schema}.test_runs WHERE test_suite_id = CAST(:sid AS uuid)", {"sid": snapshot_suite_id}),
+            (f"DELETE FROM {schema}.test_definitions WHERE test_suite_id = CAST(:sid AS uuid)", {"sid": snapshot_suite_id}),
+            (f"DELETE FROM {schema}.test_suites WHERE id = CAST(:sid AS uuid)", {"sid": snapshot_suite_id}),
+        ])
+
     queries.append((
-        f"DELETE FROM {schema}.data_contracts WHERE table_group_id = CAST(:tg_id AS uuid) AND version = :version",
-        {"tg_id": table_group_id, "version": version},
+        f"DELETE FROM {schema}.contract_versions WHERE contract_id = CAST(:contract_id AS uuid) AND version = :version",
+        {"contract_id": contract_id, "version": version},
     ))
 
     execute_db_queries(queries)
-
-    LOG.info(
-        "Deleted contract version %d for table group %s (snapshot_suite_id=%s)",
-        version, table_group_id, snapshot_suite_id,
-    )
+    LOG.info("Deleted contract version %d for contract %s (snapshot_suite_id=%s)", version, contract_id, snapshot_suite_id)

@@ -32,7 +32,6 @@ from testgen.common.models import with_database_session
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.data_contract_queries import (
-    _capture_yaml,
     _fetch_governance_data,
     _fetch_test_live_info,
     _persist_pending_edits,
@@ -132,14 +131,9 @@ def create_contract_wizard(
     step = state["step"]
 
     # ── Step indicator ─────────────────────────────────────────────
-    if step != 0:
-        if state.get("method") == "yaml":
-            yaml_step_num = 1 if step == 1 else 2
-            yaml_step_names = ["Table Group", "Upload YAML"]
-            st.caption(f"Step {yaml_step_num} of 2 · {yaml_step_names[yaml_step_num - 1]}")
-        else:
-            step_names = ["Table Group", "Suites", "Tables", "Content", "Confirm"]
-            st.caption(f"Step {step} of 5 · {step_names[step - 1]}")
+    if step != 0 and state.get("method") != "yaml":
+        step_names = ["Table Group", "Suites", "Tables", "Content", "Confirm"]
+        st.caption(f"Step {step} of 5 · {step_names[step - 1]}")
         st.divider()
 
     # ── Step 0: Choose creation method ─────────────────────────────
@@ -160,7 +154,7 @@ def create_contract_wizard(
             st.caption("Upload an existing ODCS v3.1.0 YAML file to create the initial contract version.")
             if st.button("Choose →", key="wizard_method_yaml", use_container_width=True):
                 state["method"] = "yaml"
-                state["step"] = 1
+                state["step"] = "yaml"
                 st.session_state[_WIZARD_KEY] = state
                 st.rerun(scope="fragment")
         return
@@ -194,9 +188,31 @@ def create_contract_wizard(
     if step == "yaml":
         from testgen.commands.create_data_contract import validate_odcs_header
 
-        tg_id   = state["table_group_id"]
-        tg_name = state.get("table_group_name", tg_id)
-        st.markdown(f"**Upload ODCS YAML for *{tg_name}***")
+        st.markdown("**Upload ODCS v3.1.0 YAML**")
+
+        # Inline table group selector (required to store the contract)
+        tgs = fetch_table_groups_for_project(project_code)
+        if not tgs:
+            st.warning("No table groups found for this project.")
+            if st.button("← Back"):
+                state["step"] = 0
+                st.session_state[_WIZARD_KEY] = state
+                st.rerun(scope="fragment")
+            return
+
+        tg_options = {tg["id"]: tg["table_groups_name"] for tg in tgs}
+        # Pre-select if only one option, or keep previous selection
+        default_tg = state.get("table_group_id") or (next(iter(tg_options.keys())) if len(tg_options) == 1 else None)
+        selected_tg = st.selectbox(
+            "Table group",
+            options=list(tg_options.keys()),
+            format_func=lambda x: tg_options[x],
+            index=list(tg_options.keys()).index(default_tg) if default_tg and default_tg in tg_options else 0,
+            key="wizard_yaml_tg_select",
+        )
+        state["table_group_id"] = selected_tg
+        state["table_group_name"] = tg_options.get(selected_tg, selected_tg)
+        tg_id = selected_tg
 
         uploaded = st.file_uploader(
             "Select ODCS v3.1.0 YAML file",
@@ -224,7 +240,7 @@ def create_contract_wizard(
 
         back_col, create_col = st.columns(2)
         if back_col.button("← Back"):
-            state["step"] = 1
+            state["step"] = 0
             st.session_state[_WIZARD_KEY] = state
             st.rerun(scope="fragment")
 

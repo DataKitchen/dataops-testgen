@@ -55,6 +55,7 @@ class TestDefinitionsPage(Page):
         column_name: str | None = None,
         test_type: str | None = None,
         flagged: str | None = None,
+        embed_key: str = "",
         **_kwargs,
     ) -> None:
         test_suite = TestSuite.get(test_suite_id)
@@ -78,14 +79,15 @@ class TestDefinitionsPage(Page):
         user_can_edit = session.auth.user_has_permission("edit")
         user_can_disposition = session.auth.user_has_permission("disposition")
 
-        testgen.page_header(
-            "Test Definitions",
-            "generate-tests/test-definitions/",
-            breadcrumbs=[
-                { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
-                { "label": test_suite.test_suite },
-            ],
-        )
+        if not embed_key:
+            testgen.page_header(
+                "Test Definitions",
+                "generate-tests/test-definitions/",
+                breadcrumbs=[
+                    { "label": "Test Suites", "path": "test-suites", "params": { "project_code": project_code } },
+                    { "label": test_suite.test_suite },
+                ],
+            )
 
         table_filter_column, column_filter_column, test_filter_column, flagged_filter_column, sort_column, table_actions_column = st.columns([.2, .2, .15, .1, .1, .25], vertical_alignment="bottom")
         testgen.flex_row_end(table_actions_column)
@@ -155,6 +157,7 @@ class TestDefinitionsPage(Page):
             default = [(sortable_columns[i][1], "ASC") for i in (2, 3, 4)]
             sorting_columns = testgen.sorting_selector(sortable_columns, default)
 
+        multi_select = False
         if user_can_disposition:
             with disposition_column:
                 multi_select = st.toggle("Multi-Select", help="Toggle on to perform actions on multiple test definitions")

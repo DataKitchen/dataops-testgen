@@ -2,7 +2,6 @@ from urllib.parse import quote_plus
 
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
-from snowflake.sqlalchemy import URL
 
 from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
 
@@ -43,6 +42,7 @@ class SnowflakeFlavorService(FlavorService):
         # SNOWFLAKE FORMAT:  strConnect = 'flavor://username:password@host/database'
         #   optionally + '/[schema]' + '?warehouse=xxx'
         #   NOTE:  Snowflake host should NOT include ".snowflakecomputing.com"
+        from snowflake.sqlalchemy import URL  # noqa: PLC0415 — deferred to avoid broken botocore import at module level
 
         account, _ = params.host.split(".", maxsplit=1) if "." in params.host else ("", "")
         host = params.host

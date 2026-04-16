@@ -216,6 +216,7 @@ class TestSuite(Entity):
             ON (dc.snapshot_suite_id = suites.id)
         WHERE suites.is_monitor IS NOT TRUE
             AND COALESCE(suites.is_contract_suite, FALSE) = FALSE
+            AND COALESCE(suites.is_contract_snapshot, FALSE) = FALSE
             AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {"AND suites.test_suite ILIKE :test_suite_name" if test_suite_name else ""}

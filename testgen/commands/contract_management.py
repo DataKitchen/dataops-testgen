@@ -88,33 +88,25 @@ def delete_contract(contract_id: str, primary_suite_id: str, snapshot_suite_ids:
 
     Ordering is critical:
     1. DELETE contracts row (cascades to contract_versions, clearing snapshot FK refs)
-    2. DELETE snapshot suites (snapshot_suite_id FK is now NULL from CASCADE+SET NULL)
-    3. DELETE primary suite
+    2. Cascade-delete all linked suites (clears test_definitions, test_results, test_runs first)
     """
+    from testgen.common.models.test_suite import TestSuite
+
     schema = get_tg_schema()
 
-    queries: list[tuple[str, dict]] = [
-        # Step 1: cascade delete contract → contract_versions (snapshot_suite_id SET NULL)
-        (
-            f"DELETE FROM {schema}.contracts WHERE id = CAST(:contract_id AS uuid)",
-            {"contract_id": contract_id},
-        ),
-    ]
+    # Step 1: delete contracts row — cascades to contract_versions, sets snapshot_suite_id = NULL
+    execute_db_queries([(
+        f"DELETE FROM {schema}.contracts WHERE id = CAST(:contract_id AS uuid)",
+        {"contract_id": contract_id},
+    )])
 
-    # Step 2: delete per-version snapshot suites (safe now that contract_versions rows are gone)
-    for snap_id in snapshot_suite_ids:
-        queries.append((
-            f"DELETE FROM {schema}.test_suites WHERE id = CAST(:suite_id AS uuid)",
-            {"suite_id": snap_id},
-        ))
+    # Step 2: cascade-delete all linked suites (snapshot suites + primary suite).
+    # TestSuite.cascade_delete removes test_definitions, test_results, test_runs,
+    # job_schedules, then the suite rows — in the correct order.
+    all_suite_ids = [s for s in snapshot_suite_ids + [primary_suite_id] if s]
+    if all_suite_ids:
+        TestSuite.cascade_delete(all_suite_ids)
 
-    # Step 3: delete primary linked suite
-    queries.append((
-        f"DELETE FROM {schema}.test_suites WHERE id = CAST(:suite_id AS uuid)",
-        {"suite_id": primary_suite_id},
-    ))
-
-    execute_db_queries(queries)
     LOG.info("Contract %s deleted (suite %s + %d snapshots)", contract_id, primary_suite_id, len(snapshot_suite_ids))
 
 

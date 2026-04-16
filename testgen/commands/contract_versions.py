@@ -219,6 +219,7 @@ def rollback_contract_version(contract_id: str, version: int) -> None:
     LOG.info("Rolled back version %d for contract %s", version, contract_id)
 
 
+@with_database_session
 def get_snapshot_suite_ids_for_contract(contract_id: str) -> list[str]:
     """Return all non-NULL snapshot_suite_ids for a contract's versions."""
     schema = get_tg_schema()

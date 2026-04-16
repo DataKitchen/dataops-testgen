@@ -301,9 +301,16 @@ def _term_test_row(
     }
 
 
-def _diff_patch_db(test_rows: list | None = None) -> list:
-    """Return side_effect list for the single fetch_dict_from_db call in compute_term_diff."""
-    return [test_rows if test_rows is not None else []]
+def _diff_patch_db(test_rows: list | None = None, monitor_rows: list | None = None) -> list:
+    """Return side_effect list for the TWO fetch_dict_from_db calls in compute_term_diff (non-snapshot path).
+
+    First call: non-monitor test definitions.
+    Second call: monitor test definitions (for separate tg_monitor_* counting).
+    """
+    return [
+        test_rows if test_rows is not None else [],
+        monitor_rows if monitor_rows is not None else [],
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -373,12 +380,13 @@ class Test_ComputeTermDiff:
         assert result.current_count == 2
 
     def test_monitor_status_counted_separately(self):
-        test_id = str(uuid4())
-        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
+        # Monitor tests are counted via the second DB query (separate from YAML ID matching).
+        # The YAML rule ID won't match any non-monitor test → DELETED; monitor status comes
+        # from the second query and lands in tg_monitor_*.
+        saved = _yaml_with_quality([{"id": str(uuid4()), "type": "library", "element": "orders.amount",
                                      "mustBeGreaterOrEqualTo": 1}])
-        rows = [_term_test_row(test_id, threshold="1", is_monitor=True, last_status="passed")]
         with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
-                   side_effect=_diff_patch_db(rows)):
+                   side_effect=_diff_patch_db([], [{"last_status": "passed"}])):
             result = compute_term_diff(TABLE_GROUP_ID, saved, [])
         assert result.tg_monitor_passed == 1
         assert result.tg_test_passed == 0
@@ -426,15 +434,17 @@ class Test_ComputeTermDiff:
         assert result.entries == []
         assert result.saved_count == 0
 
-    def test_entry_carries_is_monitor_flag(self):
-        test_id = str(uuid4())
-        saved = _yaml_with_quality([{"id": test_id, "type": "library", "element": "orders.amount",
-                                     "mustBeGreaterOrEqualTo": 1}])
-        rows = [_term_test_row(test_id, threshold="1", is_monitor=True, last_status="passed")]
+    def test_monitor_counts_accumulated_from_second_query(self):
+        # Monitor IDs regenerate each run — they never match saved YAML IDs.
+        # The second DB query provides raw statuses that accumulate into tg_monitor_*.
+        saved = _yaml_with_quality([])
+        monitor_rows = [{"last_status": "passed"}, {"last_status": "failed"}, {"last_status": None}]
         with patch("testgen.commands.contract_staleness.fetch_dict_from_db",
-                   side_effect=_diff_patch_db(rows)):
+                   side_effect=_diff_patch_db([], monitor_rows)):
             result = compute_term_diff(TABLE_GROUP_ID, saved, [])
-        assert result.entries[0].is_monitor is True
+        assert result.tg_monitor_passed == 1
+        assert result.tg_monitor_failed == 1
+        assert result.tg_monitor_not_run == 1
 
     def test_range_same_when_bounds_match(self):
         """mustBeBetween in YAML matches lower_tolerance + upper_tolerance in DB → same."""

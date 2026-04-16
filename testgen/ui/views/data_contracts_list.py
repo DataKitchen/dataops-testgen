@@ -6,6 +6,8 @@ Only place to create or delete contracts.
 """
 from __future__ import annotations
 
+import datetime
+import html
 import typing
 from itertools import groupby
 
@@ -32,22 +34,14 @@ _STATUS_STYLE: dict[str, tuple[str, str, str]] = {
     "No Run":  ("#cbd5e1", "○ No Run",  "gray"),
 }
 
+_BADGE_HEX: dict[str, str] = {"green": "#22c55e", "orange": "#f59e0b", "red": "#ef4444", "gray": "#94a3b8"}
 
-def _status_strip(status: str) -> str:
-    color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])[0]
-    return f'<div style="height:4px;background:{color};border-radius:4px 4px 0 0;margin:-8px -8px 8px -8px"></div>'
-
-
-def _status_badge(status: str) -> str:
-    _, label, color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])
-    return f":{color}[{label}]"
 
 
 def _format_last_run(dt: object) -> str:
     """Return a human-readable relative time string for a datetime, or 'Never'."""
     if dt is None:
         return "Never"
-    import datetime
     if hasattr(dt, "date"):  # already a datetime
         now = datetime.datetime.now(tz=dt.tzinfo)
         delta = now - dt
@@ -157,13 +151,13 @@ class DataContractsListPage(Page):
         else:
             strip_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])[0]
             _, badge_label, badge_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])
-            _BADGE_HEX = {"green": "#22c55e", "orange": "#f59e0b", "red": "#ef4444", "gray": "#94a3b8"}
             hex_color   = _BADGE_HEX.get(badge_color, "#94a3b8")
             badge_html  = f'<span style="color:{hex_color};font-size:.85em;font-weight:600">{badge_label}</span>'
 
         v_label = f"v{version}" if version >= 0 else "—"
         last_run_str = _format_last_run(last_run_at)
         detail_url = f"/data-contract?contract_id={contract_id}"
+        name_escaped = html.escape(name, quote=True)
 
         with st.container(border=True):
             # Card body: entire area is a single <a> link so clicking anywhere navigates.
@@ -171,7 +165,7 @@ class DataContractsListPage(Page):
 <a href="{detail_url}" target="_self" style="display:block;text-decoration:none;color:inherit">
   <div style="height:6px;background:{strip_color};border-radius:3px;margin-bottom:10px"></div>
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <span style="font-weight:600;font-size:1em">{name}</span>
+    <span style="font-weight:600;font-size:1em">{name_escaped}</span>
     {badge_html}
   </div>
   <div style="display:flex;gap:8px;margin-bottom:6px">

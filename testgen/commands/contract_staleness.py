@@ -332,6 +332,36 @@ def compute_term_diff(
             """,
             params={"tg_id": table_group_id},
         )
+        # Monitor test IDs are regenerated on each run so they never match saved YAML IDs.
+        # Count current monitor statuses directly into tg_monitor_* without ID matching.
+        monitor_rows = fetch_dict_from_db(
+            f"""
+            SELECT CASE tr.result_status
+                       WHEN 'Passed'  THEN 'passed'
+                       WHEN 'Failed'  THEN 'failed'
+                       WHEN 'Warning' THEN 'warning'
+                       WHEN 'Error'   THEN 'error'
+                       ELSE NULL
+                   END AS last_status
+            FROM {schema}.test_definitions td
+            JOIN {schema}.test_suites ts ON ts.id = td.test_suite_id
+            JOIN {schema}.test_types  tt ON tt.test_type = td.test_type
+            LEFT JOIN LATERAL (
+                SELECT result_status FROM {schema}.test_results
+                WHERE  test_definition_id = td.id
+                ORDER  BY test_time DESC LIMIT 1
+            ) tr ON TRUE
+            WHERE ts.table_groups_id         = :tg_id
+              AND ts.include_in_contract     IS NOT FALSE
+              AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE
+              AND COALESCE(ts.is_monitor, FALSE) = TRUE
+              AND td.test_active             = 'Y'
+              AND COALESCE(tt.test_scope, '') != 'referential'
+            """,
+            params={"tg_id": table_group_id},
+        )
+        for mrow in monitor_rows:
+            _add_status_count(result, True, mrow.get("last_status"))
     current_tests: dict[str, dict[str, Any]] = {str(r["id"]): dict(r) for r in test_rows}
     result.current_count = len(current_tests)
 

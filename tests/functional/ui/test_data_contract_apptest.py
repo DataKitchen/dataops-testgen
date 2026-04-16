@@ -351,13 +351,13 @@ class Test_HistoricalVersionReadOnly:
         )
 
     def test_historical_version_has_no_save_button(self):
-        """Viewing an older version must not show 'Save version' button."""
+        """Viewing an older version must not show 'Save New' button."""
         at = _at_hist()
         at.run()
         assert not at.exception
         labels = _button_labels(at)
-        assert "Save version" not in labels, (
-            f"Expected no 'Save version' on historical view. Buttons: {labels}"
+        assert not any(lbl.startswith("Save New") for lbl in labels), (
+            f"Expected no 'Save New' on historical view. Buttons: {labels}"
         )
 
     def test_historical_version_has_no_regenerate_button(self):
@@ -490,12 +490,12 @@ class Test_BulkDeleteClearsCache:
         assert not at.exception
 
     def test_saved_version_shows_save_button(self):
-        """Saved version page must include the Save version button."""
+        """Saved version page must include the Save New button."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "Save version" in _button_labels(at), (
-            f"Expected 'Save version' button. Available: {_button_labels(at)}"
+        assert "Save New" in _button_labels(at), (
+            f"Expected 'Save New' button. Available: {_button_labels(at)}"
         )
 
 
@@ -878,7 +878,7 @@ class Test_SnapshotQualityRebuilt:
 # ---------------------------------------------------------------------------
 
 class Test_YamlImportFlow:
-    """Verify the 'Or import from YAML' expander on the first-time flow page."""
+    """Verify the first-time flow page when a YAML preview is pre-loaded."""
 
     def _at(self) -> AppTest:
         return AppTest.from_file(_APP_YAML_IMPORT, default_timeout=10)
@@ -888,13 +888,13 @@ class Test_YamlImportFlow:
         at.run()
         assert not at.exception
 
-    def test_import_expander_visible(self):
-        """'Or import from YAML' expander is present on first-time flow page."""
+    def test_import_expander_not_present(self):
+        """'Or import from YAML' expander is removed — YAML import now goes through the wizard."""
         at = self._at()
         at.run()
         assert not at.exception
         all_text = " ".join(str(e) for e in at.expander)
-        assert "import" in all_text.lower() or "yaml" in all_text.lower()
+        assert "import" not in all_text.lower() and "yaml" not in all_text.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1111,12 +1111,12 @@ class Test_SaveVersionFlow:
         )
 
     def test_save_button_default_label_without_pending(self):
-        """No pending edits → save button shows default 'Save version' label."""
+        """No pending edits → save button shows default 'Save New' label."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "Save version" in _button_labels(at), (
-            f"Expected 'Save version'. Available: {_button_labels(at)}"
+        assert "Save New" in _button_labels(at), (
+            f"Expected 'Save New'. Available: {_button_labels(at)}"
         )
 
     def test_cancel_save_preserves_pending_edits(self):
@@ -1406,7 +1406,7 @@ class Test_PendingEditsUX:
     # -- save button label -------------------------------------------------
 
     def test_save_button_shows_version_label_with_count_when_pending(self):
-        """Save button label must read 'Save version (N)' when N pending edits exist."""
+        """Save button label must read 'Save New (N)' when N pending edits exist."""
         at = _at_pending_edits()
         at.session_state["dc_test_inject_pending"] = {
             "governance": [_pending_gov_edit()],
@@ -1416,20 +1416,20 @@ class Test_PendingEditsUX:
         at.run()
         assert not at.exception
         labels = _button_labels(at)
-        assert any("Save version" in lbl and "1" in lbl for lbl in labels), (
-            f"Expected 'Save version (1)' button. Available: {labels}"
+        assert any("Save New" in lbl and "1" in lbl for lbl in labels), (
+            f"Expected 'Save New (1)' button. Available: {labels}"
         )
 
     def test_save_button_shows_plain_version_label_without_pending(self):
-        """Save button label must read 'Save version' (no count) when no pending edits."""
+        """Save button label must read 'Save New' (no count) when no pending edits."""
         at = _at_saved()
         at.run()
         assert not at.exception
-        assert "Save version" in _button_labels(at), (
-            f"Expected 'Save version'. Available: {_button_labels(at)}"
+        assert "Save New" in _button_labels(at), (
+            f"Expected 'Save New'. Available: {_button_labels(at)}"
         )
         # Must NOT have a count suffix
-        assert not any("Save version (" in lbl for lbl in _button_labels(at)), (
+        assert not any("Save New (" in lbl for lbl in _button_labels(at)), (
             f"Save button must not show count without pending edits. Labels: {_button_labels(at)}"
         )
 
@@ -1480,7 +1480,7 @@ class Test_PendingEditsUX:
         )
 
     def test_warning_banner_references_save_button_label(self):
-        """Warning banner text must reference 'Save version (N)' matching the button."""
+        """Warning banner text must reference 'Save New (N)' matching the button."""
         at = _at_pending_edits()
         at.session_state["dc_test_inject_pending"] = {
             "governance": [_pending_gov_edit()],
@@ -1490,8 +1490,8 @@ class Test_PendingEditsUX:
         at.run()
         assert not at.exception
         warning_texts = [w.value for w in at.warning]
-        assert any("Save version" in t for t in warning_texts), (
-            f"Expected 'Save version' in warning text. Got: {warning_texts}"
+        assert any("Save New" in t for t in warning_texts), (
+            f"Expected 'Save New' in warning text. Got: {warning_texts}"
         )
 
     def test_warning_banner_count_matches_pending_count(self):
@@ -1580,8 +1580,8 @@ class Test_PendingEditsUX:
         assert not at.exception, f"Page raised: {at.exception}"
         # The Python-side save button is the entry point for SaveFromStickyBar.
         labels = _button_labels(at)
-        assert any("Save version" in lbl for lbl in labels), (
-            f"Expected 'Save version' button. Available: {labels}"
+        assert any("Save New" in lbl for lbl in labels), (
+            f"Expected 'Save New' button. Available: {labels}"
         )
 
     # -- historical version guard ------------------------------------------
@@ -1689,8 +1689,8 @@ class Test_PendingDeletionCount:
         at.run()
         assert not at.exception
         labels = _button_labels(at)
-        assert any("1" in lbl and "Save version" in lbl for lbl in labels), (
-            f"Expected 'Save version (1)' for 1 pending deletion. Available: {labels}"
+        assert any("1" in lbl and "Save New" in lbl for lbl in labels), (
+            f"Expected 'Save New (1)' for 1 pending deletion. Available: {labels}"
         )
 
     def test_mixed_pending_shows_combined_count(self):
@@ -1730,7 +1730,7 @@ class Test_PendingDeletionCount:
         at.run()
         assert not at.exception
         labels = _button_labels(at)
-        assert not any("Save version (" in lbl for lbl in labels), (
+        assert not any("Save New (" in lbl for lbl in labels), (
             f"Save button must not show count when nothing is pending. Labels: {labels}"
         )
 
@@ -1813,13 +1813,13 @@ class Test_DeleteVersionButtonPlacement:
         )
 
     def test_save_version_absent_on_historical(self):
-        """Historical version must NOT show 'Save version' (read-only)."""
+        """Historical version must NOT show 'Save New' (read-only)."""
         at = _at_hist()
         at.run()
         assert not at.exception
         labels = _button_labels(at)
-        assert "Save version" not in labels, (
-            f"'Save version' must not appear on historical view. Available: {labels}"
+        assert not any(lbl.startswith("Save New") for lbl in labels), (
+            f"'Save New' must not appear on historical view. Available: {labels}"
         )
 
 
@@ -1854,14 +1854,14 @@ class Test_ContractMetadataDisplay:
         assert at.selectbox[0].disabled, "Version picker must be disabled for a single version"
 
     def test_save_button_toolbar_order(self):
-        """'Save version' must be present before 'Export YAML' — toolbar left-to-right order."""
+        """'Save New' must be present before 'Export YAML' — toolbar left-to-right order."""
         at = _at_saved()
         at.run()
         assert not at.exception
         labels = _button_labels(at)
-        assert "Save version" in labels, f"Expected 'Save version'. Available: {labels}"
+        assert "Save New" in labels, f"Expected 'Save New'. Available: {labels}"
         # Export YAML / Download is rendered as a download_button (not in at.button)
-        # so we just verify Save version is there without crashing
+        # so we just verify Save New is there without crashing
 
 
 # ---------------------------------------------------------------------------
@@ -1919,7 +1919,7 @@ class Test_SchemaPendingEdits:
         assert not at.exception
         labels = _button_labels(at)
         # Save button should not show a count > 0
-        assert not any("Save version (" in lbl for lbl in labels), (
+        assert not any("Save New (" in lbl for lbl in labels), (
             f"Save button must not show count when nothing is pending. Labels: {labels}"
         )
 
@@ -1935,7 +1935,7 @@ class Test_SchemaPendingEdits:
         assert not at.exception
         labels = _button_labels(at)
         # Save button must show count of 2
-        assert any("Save version (2)" in lbl for lbl in labels), (
-            f"Expected 'Save version (2)' for 2 schema pending edits. Available: {labels}"
+        assert any("Save New (2)" in lbl for lbl in labels), (
+            f"Expected 'Save New (2)' for 2 schema pending edits. Available: {labels}"
         )
 
