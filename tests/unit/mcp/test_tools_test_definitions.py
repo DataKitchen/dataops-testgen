@@ -15,6 +15,7 @@ def test_list_tests_basic(mock_td, mock_notes, db_session_mock):
     item = MagicMock()
     item.test_type = "Alpha_Trunc"
     item.test_name_short = "Alpha Truncation"
+    item.display_name = "Alpha Truncation"
     item.table_name = "orders"
     item.column_name = "customer_name"
     item.test_active = True
@@ -136,6 +137,7 @@ def test_get_test_basic(mock_td, mock_tr, mock_notes, db_session_mock):
     td.id = td_id
     td.test_type = "Alpha_Trunc"
     td.test_name_short = "Alpha Truncation"
+    td.display_name = "Alpha Truncation"
     td.dq_dimension = "Accuracy"
     td.table_name = "orders"
     td.column_name = "customer_name"
@@ -152,6 +154,8 @@ def test_get_test_basic(mock_td, mock_tr, mock_notes, db_session_mock):
     td.last_auto_gen_date = None
     td.last_manual_update = None
     td.default_parm_columns = None
+    td.param_columns = set()
+    td.param_fields = []
     td.custom_query = None
     td.match_schema_name = None
     td.match_table_name = None
@@ -202,6 +206,7 @@ def test_get_test_with_last_result(mock_td, mock_tr, mock_notes, db_session_mock
     td.id = td_id
     td.test_type = "Row_Ct"
     td.test_name_short = "Row Count"
+    td.display_name = "Row Count"
     td.dq_dimension = "Completeness"
     td.table_name = "orders"
     td.column_name = None
@@ -218,6 +223,8 @@ def test_get_test_with_last_result(mock_td, mock_tr, mock_notes, db_session_mock
     td.last_auto_gen_date = None
     td.last_manual_update = None
     td.default_parm_columns = None
+    td.param_columns = set()
+    td.param_fields = []
     td.custom_query = None
     td.match_schema_name = None
     td.match_table_name = None
@@ -259,6 +266,7 @@ def test_get_test_with_parameters(mock_td, mock_tr, mock_notes, db_session_mock)
     td.id = td_id
     td.test_type = "Alpha_Trunc"
     td.test_name_short = "Alpha Truncation"
+    td.display_name = "Alpha Truncation"
     td.dq_dimension = None
     td.table_name = "orders"
     td.column_name = "name"
@@ -275,6 +283,8 @@ def test_get_test_with_parameters(mock_td, mock_tr, mock_notes, db_session_mock)
     td.last_auto_gen_date = None
     td.last_manual_update = None
     td.default_parm_columns = "threshold_value,baseline_value"
+    td.param_columns = {"threshold_value", "baseline_value"}
+    td.param_fields = [("threshold_value", "Threshold", ""), ("baseline_value", "Baseline", "")]
     td.default_parm_prompts = "Threshold,Baseline"
     td.default_parm_help = "Max allowed value|Reference baseline"
     td.threshold_value = "5.0"
@@ -316,6 +326,7 @@ def test_get_test_flagged_with_notes(mock_td, mock_tr, mock_notes, db_session_mo
     td.id = td_id
     td.test_type = "Alpha_Trunc"
     td.test_name_short = "Alpha Truncation"
+    td.display_name = "Alpha Truncation"
     td.dq_dimension = None
     td.table_name = "orders"
     td.column_name = "name"
@@ -332,6 +343,8 @@ def test_get_test_flagged_with_notes(mock_td, mock_tr, mock_notes, db_session_mo
     td.last_auto_gen_date = datetime(2026, 3, 15)
     td.last_manual_update = None
     td.default_parm_columns = None
+    td.param_columns = set()
+    td.param_fields = []
     td.custom_query = None
     td.match_schema_name = None
     td.match_table_name = None
@@ -387,6 +400,7 @@ def test_list_test_notes_basic(mock_td, mock_notes, db_session_mock):
     td = MagicMock()
     td.test_type = "Alpha_Trunc"
     td.test_name_short = "Alpha Truncation"
+    td.display_name = "Alpha Truncation"
     td.table_name = "orders"
     td.column_name = "name"
     mock_td.get_for_project.return_value = td

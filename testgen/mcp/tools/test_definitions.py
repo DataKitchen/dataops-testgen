@@ -77,7 +77,7 @@ def list_tests(
         note_ct = notes_counts.get(str(td.id), 0)
         rows.append(
             [
-                td.test_name_short or td.test_type,
+                td.display_name,
                 f"`{td.table_name}`" if td.table_name else "—",
                 f"`{td.column_name}`" if td.column_name else "—",
                 "Yes" if td.test_active else "No",
@@ -115,7 +115,7 @@ def get_test(test_definition_id: str) -> str:
     if td is None:
         return f"Test definition `{test_definition_id}` not found."
 
-    test_name = td.test_name_short or td.test_type
+    test_name = td.display_name
 
     # Header
     if td.column_name:
@@ -153,7 +153,7 @@ def get_test(test_definition_id: str) -> str:
     # Review status
     notes = TestDefinitionNote.get_notes(def_uuid)
     flag_str = "Flagged" if td.flagged else "Not Flagged"
-    note_str = f"{len(notes)} Notes" if notes else "No Notes"
+    note_str = f"{len(notes)} Note{'s' if len(notes) != 1 else ''}" if notes else "No Notes"
     lines.append(f"- **Review:** {flag_str}, {note_str}")
 
     # Origin and last update
@@ -167,10 +167,13 @@ def get_test(test_definition_id: str) -> str:
     # Parameters (editable fields from test type metadata)
     _append_parameters_section(lines, td)
 
-    # Custom SQL (only show when the test type exposes it as an editable parameter)
-    if td.custom_query and "custom_query" in (td.default_parm_columns or ""):
+    # Custom SQL (only show when the test type declares it as an editable parameter)
+    if "custom_query" in td.param_columns:
         lines.append("\n## Custom SQL\n")
-        lines.append(f"```sql\n{td.custom_query}\n```")
+        if td.custom_query:
+            lines.append(f"```sql\n{td.custom_query}\n```")
+        else:
+            lines.append("_No custom SQL defined._")
 
     # Reference match (only fields listed in default_parm_columns)
     _append_match_section(lines, td)
@@ -223,7 +226,7 @@ def list_test_notes(test_definition_id: str) -> str:
     if not notes:
         return f"No notes for test definition `{test_definition_id}`."
 
-    test_name = td.test_name_short or td.test_type
+    test_name = td.display_name
 
     if td.column_name:
         heading = f"# Notes for {test_name} on `{td.column_name}` in `{td.table_name}`\n"
@@ -250,28 +253,26 @@ def list_test_notes(test_definition_id: str) -> str:
 
 
 def _append_parameters_section(lines: list[str], td: TestDefinitionSummary) -> None:
-    """Build the editable parameters table from test type metadata."""
-    parm_columns = [c.strip() for c in td.default_parm_columns.split(",")] if td.default_parm_columns else []
-    if not parm_columns:
-        return
+    """Build the editable parameters table from test type metadata.
 
-    parm_prompts = [p.strip() for p in td.default_parm_prompts.split(",")] if td.default_parm_prompts else []
+    Always shows all parameters declared in param_columns, even when the
+    value is empty — this tells the LLM/user which fields can be edited.
+    """
+    if not td.param_fields:
+        return
 
     headers = ["Parameter", "Field", "Value"]
     rows = []
-    for i, field_name in enumerate(parm_columns):
-        label = parm_prompts[i] if i < len(parm_prompts) else field_name
-        value = getattr(td, field_name, None)
-        rows.append([label, f"`{field_name}`", str(value) if value is not None else None])
+    for column, prompt, _help in td.param_fields:
+        value = getattr(td, column, None)
+        rows.append([prompt, f"`{column}`", str(value) if value is not None else "—"])
 
     lines.append("\n## Parameters\n")
     lines.append(build_markdown_table(headers, rows))
 
 
 def _append_match_section(lines: list[str], td: TestDefinitionSummary) -> None:
-    """Append reference match section, filtered by default_parm_columns."""
-    parm_columns = {c.strip() for c in td.default_parm_columns.split(",")} if td.default_parm_columns else set()
-
+    """Append reference match section — shows all match fields declared in param_columns."""
     match_fields = [
         ("Match Schema", "match_schema_name", td.match_schema_name),
         ("Match Table", "match_table_name", td.match_table_name),
@@ -280,13 +281,13 @@ def _append_match_section(lines: list[str], td: TestDefinitionSummary) -> None:
         ("Match Grouping Columns", "match_groupby_names", td.match_groupby_names),
         ("Match Having Condition", "match_having_condition", td.match_having_condition),
     ]
-    populated = [(label, value) for label, col, value in match_fields if col in parm_columns and value]
-    if not populated:
+    relevant = [(label, value) for label, col, value in match_fields if col in td.param_columns]
+    if not relevant:
         return
 
     lines.append("\n## Reference Match\n")
-    for label, value in populated:
-        lines.append(f"- **{label}:** `{value}`")
+    for label, value in relevant:
+        lines.append(f"- **{label}:** {f'`{value}`' if value else '—'}")
 
 
 @with_database_session
@@ -345,7 +346,7 @@ def list_test_types(
 
     lines = [
         "# Test Types\n",
-        f"Showing {len(rows)} test type(s){filter_suffix}.\n",
+        f"Showing {len(rows)} test type{'s' if len(rows) != 1 else ''}{filter_suffix}.\n",
         build_markdown_table(headers, rows),
     ]
 

@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import zip_longest
 from typing import ClassVar, Literal
 from uuid import UUID, uuid4
 
@@ -34,8 +35,32 @@ TestScope = Literal["column", "referential", "table", "tablegroup", "custom"]
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 
 
+class ParamFieldsMixin:
+    """Parsed access to default_parm_columns/prompts/help metadata.
+
+    Mixed into both TestTypeSummary (dataclass) and TestType (ORM model).
+    """
+
+    @property
+    def param_columns(self) -> set[str]:
+        """Column names declared as editable parameters for this test type."""
+        return {column for column, _, _ in self.param_fields}
+
+    @property
+    def param_fields(self) -> list[tuple[str, str, str]]:
+        """Parsed parameter metadata as (column, prompt, help) tuples, preserving order."""
+        if not self.default_parm_columns:
+            return []
+        columns = [c.strip() for c in self.default_parm_columns.split(",")]
+        prompts = [p.strip() for p in self.default_parm_prompts.split(",")] if self.default_parm_prompts else []
+        helps = [h.strip() for h in self.default_parm_help.split("|")] if self.default_parm_help else []
+        # Pad prompts with column names (sensible fallback) and helps with ""
+        prompts.extend(columns[len(prompts):])
+        return list(zip_longest(columns, prompts, helps, fillvalue=""))
+
+
 @dataclass
-class TestTypeSummary(EntityMinimal):
+class TestTypeSummary(ParamFieldsMixin, EntityMinimal):
     test_name_short: str
     default_test_description: str
     measure_uom: str
@@ -98,6 +123,11 @@ class TestDefinitionSummary(TestTypeSummary):
     prediction: dict[str, dict[str, float]] | None
     flagged: bool
 
+    @property
+    def display_name(self) -> str:
+        """Human-readable test type name, falling back to the internal code."""
+        return self.test_name_short or self.test_type
+
 
 @dataclass
 class TestDefinitionMinimal(EntityMinimal):
@@ -125,7 +155,7 @@ class QueryString(TypeDecorator):
         return value or None
 
 
-class TestType(Entity):
+class TestType(ParamFieldsMixin, Entity):
     __tablename__ = "test_types"
 
     _get_by = "test_type"

@@ -47,19 +47,11 @@ def get_test_type(test_type: str) -> str:
 
 def _append_type_parameters(lines: list[str], tt: TestType) -> None:
     """Add parameter definitions section from test type metadata."""
-    parm_columns = [c.strip() for c in tt.default_parm_columns.split(",")] if tt.default_parm_columns else []
-    if not parm_columns:
+    if not tt.param_fields:
         return
 
-    parm_prompts = [p.strip() for p in tt.default_parm_prompts.split(",")] if tt.default_parm_prompts else []
-    parm_help = [h.strip() for h in tt.default_parm_help.split("|")] if tt.default_parm_help else []
-
     headers = ["Parameter", "Field", "Description"]
-    rows = []
-    for i, field_name in enumerate(parm_columns):
-        label = parm_prompts[i] if i < len(parm_prompts) else field_name
-        help_text = parm_help[i] if i < len(parm_help) else None
-        rows.append([label, f"`{field_name}`", help_text])
+    rows = [[prompt, f"`{column}`", help_text or None] for column, prompt, help_text in tt.param_fields]
 
     lines.append("\n## Parameters\n")
     lines.append(build_markdown_table(headers, rows))
