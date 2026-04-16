@@ -848,6 +848,13 @@ def run_export_data_contract(
     table_group_id: str,
     output_path: str | None = None,
     output_stream: io.StringIO | None = None,
+    # Filter parameters (None = no filter = existing behavior)
+    suite_ids: list[str] | None = None,
+    table_names: list[str] | None = None,
+    include_profiling: bool = True,
+    include_ddl: bool = True,
+    include_hygiene: bool = True,
+    include_monitors: bool = True,
 ) -> None:
     schema = get_tg_schema()
 
