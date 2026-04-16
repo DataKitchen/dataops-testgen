@@ -12,8 +12,6 @@ from __future__ import annotations
 import logging
 import typing
 
-_log = logging.getLogger(__name__)
-
 import streamlit as st
 import yaml
 
@@ -41,6 +39,7 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.data_contract_queries import (
+    _count_snapshot_tests,
     _dismiss_hygiene_anomaly,
     _fetch_anomalies,
     _fetch_governance_data,
@@ -57,6 +56,7 @@ from testgen.ui.views.data_contract_props import (
     _quality_counts,
 )
 from testgen.ui.views.data_contract_yaml import (
+    _apply_pending_schema_edit,
     _apply_pending_test_edit,
     _pending_edit_count,
 )
@@ -67,20 +67,20 @@ from testgen.ui.views.dialogs.data_contract_dialogs import (
     _governance_edit_dialog,
     _import_yaml_dialog,
     _monitor_term_dialog,
-    _regenerate_dialog,
     _review_changes_panel,
     _save_version_dialog,
+    _schema_edit_dialog,
     _suite_picker_dialog,
     _term_edit_dialog,
     _term_read_dialog,
     _test_term_dialog,
-    _update_version_dialog,
     cancel_all_changes_dialog,
 )
 
+_log = logging.getLogger(__name__)
+
 PAGE_TITLE = "Data Contract"
 PAGE_ICON = "contract"
-
 
 
 def _format_pending_labels(pending: dict) -> list[str]:
@@ -229,7 +229,7 @@ def _render_health_dashboard(
 # ---------------------------------------------------------------------------
 
 @with_database_session
-def _check_contract_prerequisites(table_group_id: str) -> dict:
+def _check_contract_prerequisites(table_group_id: str, suite_ids: list[str] | None = None) -> dict:
     """Check whether the prerequisites for generating a first contract are met."""
     schema = get_tg_schema()
 
@@ -240,13 +240,19 @@ def _check_contract_prerequisites(table_group_id: str) -> dict:
     )
     last_profiling = dict(profiling_rows[0]).get("last_run") if profiling_rows else None
 
+    suite_filter = "AND ts.id = ANY(CAST(:suite_ids AS uuid[])) " if suite_ids else ""
+    suite_params: dict = {"tg_id": table_group_id}
+    if suite_ids:
+        suite_params["suite_ids"] = [str(s) for s in suite_ids]
     suite_rows = fetch_dict_from_db(
         f"SELECT COUNT(*) AS ct FROM {schema}.test_suites ts "
         f"JOIN {schema}.test_definitions td ON td.test_suite_id = ts.id "
         f"WHERE ts.table_groups_id = :tg_id AND ts.is_monitor IS NOT TRUE "
         f"AND COALESCE(ts.is_contract_snapshot, FALSE) = FALSE "
+        f"AND COALESCE(ts.is_contract_suite, FALSE) = FALSE "
+        f"{suite_filter}"
         f"AND td.test_active = 'Y'",
-        params={"tg_id": table_group_id},
+        params=suite_params,
     )
     suite_ct = int(dict(suite_rows[0]).get("ct", 0)) if suite_rows else 0
 
@@ -316,7 +322,8 @@ def _render_first_time_flow(contract_id: str, table_group_id: str, is_active: bo
 
     from testgen.ui.queries.data_contract_queries import _capture_yaml
 
-    prereqs = _check_contract_prerequisites(table_group_id)
+    wizard_suite_ids = st.session_state.get(f"dc_wizard_filters:{contract_id}", {}).get("suite_ids")
+    prereqs = _check_contract_prerequisites(table_group_id, suite_ids=wizard_suite_ids)
     preview_key = f"dc_preview:{contract_id}"
     in_preview = preview_key in st.session_state
 
@@ -338,7 +345,7 @@ def _render_first_time_flow(contract_id: str, table_group_id: str, is_active: bo
         if suite_ok:
             st.success(f"✅  Test suites present   ({prereqs['suite_ct']} active tests, monitor suites excluded)", icon=None)
         else:
-            st.error("❌  No non-monitor test suites with active tests found.", icon=None)
+            st.warning("⚠️  No non-monitor test suites with active tests found — contract quality section will be empty.", icon=None)
 
         meta_pct = prereqs["meta_pct"]
         if meta_pct < 25:
@@ -348,11 +355,12 @@ def _render_first_time_flow(contract_id: str, table_group_id: str, is_active: bo
                 icon=None,
             )
 
-        all_ok = prof_ok and suite_ok
+        all_ok = prof_ok
         if st.button("Generate Contract Preview →", disabled=not all_ok, type="primary"):
             import io
             buf = io.StringIO()
-            _capture_yaml(table_group_id, buf)
+            wizard_filters = st.session_state.pop(f"dc_wizard_filters:{contract_id}", {})
+            _capture_yaml(table_group_id, buf, **wizard_filters)
             st.session_state[preview_key] = buf.getvalue()
             safe_rerun()
     else:
@@ -560,6 +568,50 @@ def _apply_term_deletions(
 
 
 # ---------------------------------------------------------------------------
+# Contract Testing tab
+# ---------------------------------------------------------------------------
+
+def _render_contract_testing_tab(
+    snapshot_suite_id: str | None,
+    last_run_id: str | None,
+    router: object,
+    project_code: str = "",
+) -> None:
+    """
+    Render test results (or test definitions when no run exists) for the
+    current contract version's snapshot suite.
+
+    Page subclasses cannot be instantiated outside app bootstrap (Page.__init__
+    calls st.Page which is invalid post-startup). We bypass __init__ and inject
+    router. The embed_key suffix makes every Streamlit key unique so it doesn't
+    clash with keys already rendered by DataContractPage.
+    """
+    from testgen.ui.views.test_definitions import TestDefinitionsPage
+    from testgen.ui.views.test_results import TestResultsPage
+
+    if not snapshot_suite_id:
+        st.info("No saved version yet — save a contract version to see test definitions here.")
+        return
+
+    btn_col, _ = st.columns([1, 5])
+    with btn_col:
+        if st.button("Rerun Tests", key="dc_rerun_tests_btn", icon=":material/play_arrow:", use_container_width=True):
+            from testgen.common.models.test_suite import TestSuite
+            from testgen.ui.views.dialogs.run_tests_dialog import run_tests_dialog
+            suite = TestSuite.get_minimal(snapshot_suite_id)
+            run_tests_dialog(project_code=project_code, test_suite=suite)
+
+    if last_run_id:
+        page = object.__new__(TestResultsPage)
+        page.router = router
+        page.render(run_id=last_run_id, embed_key=":dc-testing")
+    else:
+        page = object.__new__(TestDefinitionsPage)
+        page.router = router
+        page.render(test_suite_id=snapshot_suite_id, embed_key=":dc-testing")
+
+
+# ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
 
@@ -618,6 +670,7 @@ class DataContractPage(Page):
         term_diff_key      = f"dc_term_diff:{contract_id}"
         suite_scope_key    = f"dc_suite_scope:{contract_id}"
         staleness_diff_key = f"dc_staleness_diff:{contract_id}"
+        testing_tab_key    = f"dc_testing_tab:{contract_id}"
         # Store table_group_id so dialogs invoked with only contract_id can retrieve it
         st.session_state[f"dc_tg_id:{contract_id}"] = table_group_id
 
@@ -701,75 +754,62 @@ class DataContractPage(Page):
         else:
             save_tip = "Snapshot the current contract state as a new version"
 
-        if len(versions) > 1:
-            version_labels = [
-                (
-                    f"Version {v['version']}  ·  {v['saved_at'].strftime('%b %d %Y %H:%M') if v.get('saved_at') else ''}  "
-                    f"{'— ' + v['label'] if v.get('label') else ''}  (latest)"
-                    if i == 0 else
-                    f"Version {v['version']}  ·  {v['saved_at'].strftime('%b %d %Y %H:%M') if v.get('saved_at') else ''}  "
-                    f"{'— ' + v['label'] if v.get('label') else ''}"
-                )
-                for i, v in enumerate(versions)
-            ]
-            current_idx = next(
-                (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
+        # ── Version picker (always visible) ───────────────────────────
+        version_labels = [
+            (
+                f"Version {v['version']}  ·  {v['saved_at'].strftime('%b %d %Y %H:%M') if v.get('saved_at') else ''}  "
+                f"{'— ' + v['label'] if v.get('label') else ''}  (latest)"
+                if i == 0 else
+                f"Version {v['version']}  ·  {v['saved_at'].strftime('%b %d %Y %H:%M') if v.get('saved_at') else ''}  "
+                f"{'— ' + v['label'] if v.get('label') else ''}"
             )
-            picker_col, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
-            with picker_col:
-                chosen_idx = st.selectbox(
-                    "Contract version",
-                    options=range(len(versions)),
-                    index=current_idx,
-                    format_func=lambda i: version_labels[i],
-                    label_visibility="collapsed",
-                )
-            if chosen_idx != current_idx:
-                chosen_ver = versions[chosen_idx]["version"]
-                if pending_ct > 0:
-                    st.warning("You have unsaved changes. Switch versions? Changes will be lost.")
-                    c1, c2 = st.columns(2)
-                    if c1.button("Switch anyway"):
-                        st.session_state.pop(pending_key, None)
-                        st.session_state.pop(yaml_key, None)
-                        st.session_state.pop(version_key, None)
-                        st.query_params["version"] = str(chosen_ver)
-                        safe_rerun()
-                    if c2.button("Stay"):
-                        safe_rerun()
-                else:
+            for i, v in enumerate(versions)
+        ]
+        current_idx = next(
+            (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
+        )
+
+        picker_col, save_col, del_col = st.columns([4, 1, 1])
+        with picker_col:
+            chosen_idx = st.selectbox(
+                "Contract version",
+                options=range(len(versions)),
+                index=current_idx,
+                format_func=lambda i: version_labels[i],
+                label_visibility="collapsed",
+                disabled=len(versions) == 1,
+            )
+
+        if chosen_idx != current_idx:
+            chosen_ver = versions[chosen_idx]["version"]
+            if pending_ct > 0:
+                st.warning("You have unsaved changes. Switch versions? Changes will be lost.")
+                c1, c2 = st.columns(2)
+                if c1.button("Switch anyway"):
+                    st.session_state.pop(pending_key, None)
                     st.session_state.pop(yaml_key, None)
                     st.session_state.pop(version_key, None)
                     st.query_params["version"] = str(chosen_ver)
                     safe_rerun()
-        else:
-            _, refresh_col, regen_col, save_col = st.columns([4, 1, 1, 1])
-
-        with refresh_col:
-            if st.button("↺ Refresh", key=f"dc_refresh_btn:{contract_id}", use_container_width=True,
-                         help="Reload the saved data contract from the database"):
+                if c2.button("Stay"):
+                    safe_rerun()
+            else:
                 st.session_state.pop(yaml_key, None)
-                st.session_state.pop(anomaly_key, None)
                 st.session_state.pop(version_key, None)
-                st.session_state.pop(pending_key, None)
-                st.session_state.pop(run_dates_key, None)
-                st.session_state.pop(gov_key, None)
-                st.session_state.pop(term_diff_key, None)
-                st.session_state.pop(suite_scope_key, None)
-                st.session_state.pop(staleness_diff_key, None)
+                st.query_params["version"] = str(chosen_ver)
                 safe_rerun()
+
         if is_latest_and_active:
-            with regen_col:
-                if st.button("Regenerate", key=f"dc_regen_btn:{contract_id}", use_container_width=True,
-                             help="Re-export from the current database state and save as a new version"):
-                    _regenerate_dialog(contract_id, table_group_id, version_record["version"], pending_ct)
             with save_col:
-                if pending_ct > 0:
-                    if st.button(f"Save version ({pending_ct})", type="primary", help=save_tip, key=f"dc_save_btn:{contract_id}", use_container_width=True):
-                        _update_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"], snapshot_suite_id=version_record.get("snapshot_suite_id"))
-                else:
-                    if st.button("Save version", type="secondary", help=save_tip, key=f"dc_save_btn:{contract_id}", use_container_width=True):
-                        _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
+                btn_label = f"Save version ({pending_ct})" if pending_ct > 0 else "Save version"
+                btn_type = "primary" if pending_ct > 0 else "secondary"
+                if st.button(btn_label, type=btn_type, help=save_tip, key=f"dc_save_btn:{contract_id}", use_container_width=True):
+                    _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
+        if is_active and len(versions) > 1:
+            with del_col:
+                if st.button("Delete ver.", key=f"dc_del_ver_btn:{contract_id}", use_container_width=True,
+                             help=f"Delete version {version_record['version']} and its snapshot suite"):
+                    _delete_version_dialog(contract_id, version_record["version"])
 
         # ── Unsaved changes banner ────────────────────────────────────────────
         if is_latest_and_active and pending_ct > 0:
@@ -810,11 +850,8 @@ class DataContractPage(Page):
             st.session_state[anomaly_key] = _fetch_anomalies(table_group_id)
         anomalies: list[dict] = st.session_state[anomaly_key]
 
-        if run_dates_key not in st.session_state:
-            st.session_state[run_dates_key] = _fetch_last_run_dates(
-                table_group_id, snapshot_suite_id=_snapshot_suite_id
-            )
-        run_dates = st.session_state[run_dates_key]
+        run_dates = _fetch_last_run_dates(table_group_id, snapshot_suite_id=_snapshot_suite_id)  # always fresh per design
+        st.session_state[run_dates_key] = run_dates
 
         if suite_scope_key not in st.session_state:
             st.session_state[suite_scope_key] = _fetch_suite_scope(
@@ -822,13 +859,26 @@ class DataContractPage(Page):
             )
         suite_scope   = st.session_state[suite_scope_key]
         test_statuses = _fetch_test_statuses(table_group_id, snapshot_suite_id=_snapshot_suite_id)  # always fresh per design
+        snapshot_test_count: int | None = (
+            _count_snapshot_tests(_snapshot_suite_id) if _snapshot_suite_id else None
+        )
 
         if gov_key not in st.session_state:
             st.session_state[gov_key] = _fetch_governance_data(table_group_id)
         gov_by_col = st.session_state[gov_key]
+
+        # Respect the content flags recorded in the YAML at export time.
+        # Contracts created before this feature have no contentFlags → default True (show all).
+        _content_flags: dict = (doc.get("x-testgen") or {}).get("contentFlags") or {}
+        _show_governance = _content_flags.get("governance", True)
+        _show_hygiene    = _content_flags.get("hygiene", True)
+        _effective_gov      = gov_by_col if _show_governance else {}
+        _effective_anomalies = anomalies if _show_hygiene    else []
+
         props = _build_contract_props(
-            table_group, doc, anomalies, contract_yaml,
-            run_dates, suite_scope, test_statuses, gov_by_col,
+            table_group, doc, _effective_anomalies, contract_yaml,
+            run_dates, suite_scope, test_statuses, _effective_gov,
+            snapshot_test_count=snapshot_test_count,
         )
 
         # Inject pending deletions as grayed-out ghost chips in the terms grid
@@ -840,6 +890,10 @@ class DataContractPage(Page):
             for e in pending.get("tests", []):
                 if e.get("_removed") and "_snapshot" in e:
                     deletions_by_col.setdefault((e["_table"], e["_col"]), []).append(e["_snapshot"])
+            for e in pending.get("schema", []):
+                if e.get("value") is None:
+                    snapshot = {"name": e["field"], "source": "schema", "verif": "declared"}
+                    deletions_by_col.setdefault((e["table"], e["col"]), []).append(snapshot)
             if deletions_by_col:
                 for tbl in props.get("tables", []):
                     for col in tbl.get("columns", []):
@@ -862,7 +916,7 @@ class DataContractPage(Page):
         # ── Term diff (Compliance card / Compliance tab) ──────────────────────
         if term_diff_key not in st.session_state:
             st.session_state[term_diff_key] = compute_term_diff(
-                table_group_id, contract_yaml, anomalies, snapshot_suite_id=_snapshot_suite_id
+                table_group_id, contract_yaml, _effective_anomalies, snapshot_suite_id=_snapshot_suite_id
             )
         term_diff: TermDiffResult = st.session_state[term_diff_key]
 
@@ -881,7 +935,7 @@ class DataContractPage(Page):
                 "anomaly_type":     a.get("anomaly_type", ""),
                 "issue_likelihood": a.get("issue_likelihood", ""),
             }
-            for a in anomalies
+            for a in _effective_anomalies
             if (
                 f"{a['table_name']}.{a['column_name']}"
                 if a.get("column_name") else a["table_name"]
@@ -939,6 +993,17 @@ class DataContractPage(Page):
         props["pending_edit_rule_ids"] = _pending_rule_ids
         props["pending_edit_gov_keys"] = _pending_gov_keys
 
+        _pending_schema_keys: list[str] = [
+            f"schema|{e['table']}|{e['col']}|{e['field']}"
+            for e in pending.get("schema", [])
+            if e.get("value") is not None
+        ]
+        props["pending_edit_schema_keys"] = _pending_schema_keys
+
+        # ── Active tab state (testing vs. contract tabs) ──────────────────────
+        _testing_tab_active = st.session_state.get(testing_tab_key, False)
+        props["initial_tab"] = "testing" if _testing_tab_active else "overview"
+
         # ── Event handlers ────────────────────────────────────────────────────
         def on_suite_picker(_payload: object) -> None:
             suite_runs = props.get("health", {}).get("suite_runs", [])
@@ -955,6 +1020,8 @@ class DataContractPage(Page):
             snapshot_suite_id = version_record.get("snapshot_suite_id")
             if not is_latest:
                 _term_read_dialog(term, table_name, col_name, contract_id, yaml_key)
+            elif source == "schema":
+                _schema_edit_dialog(contract_id, table_group_id, table_name, col_name)
             elif source == "monitor":
                 _monitor_term_dialog(term.get("rule", {}), term_name, table_name, col_name)
             elif source == "test":
@@ -977,7 +1044,14 @@ class DataContractPage(Page):
                 return
             if not col_id:
                 col_id = _lookup_column_id(table_group_id, table_name, col_name)
-            _governance_edit_dialog(col_id, table_name, col_name, contract_id, yaml_key)
+            _governance_edit_dialog(col_id, table_name, col_name, contract_id, yaml_key, table_group_id=table_group_id)
+
+        def on_schema_edit(payload: dict) -> None:
+            if not is_latest:
+                return
+            table_name = payload.get("tableName", "")
+            col_name   = payload.get("colName", "")
+            _schema_edit_dialog(contract_id, table_group_id, table_name, col_name)
 
         def on_edit_rule(payload: dict) -> None:
             if not is_latest:
@@ -988,7 +1062,7 @@ class DataContractPage(Page):
                 None,
             )
             if rule:
-                _edit_rule_dialog(rule, contract_id, yaml_key, snapshot_suite_id=version_record.get("snapshot_suite_id"))
+                _edit_rule_dialog(rule, contract_id, yaml_key)
 
         def on_add_test(payload: dict) -> None:
             if not is_latest:
@@ -1029,20 +1103,33 @@ class DataContractPage(Page):
             terms: list[dict] = payload.get("terms") or []
             if not terms:
                 return
-            _apply_term_deletions(
-                terms, yaml_key, pending_key, table_group_id,
-                snapshot_suite_id=version_record.get("snapshot_suite_id"),
-            )
-            st.session_state.pop(term_diff_key, None)
+
+            # Intercept schema chip deletions before the generic handler
+            schema_deletions = [t for t in terms if (t.get("rule_id") or "").startswith("schema|")]
+            other_terms      = [t for t in terms if not (t.get("rule_id") or "").startswith("schema|")]
+
+            if schema_deletions:
+                current_pending: dict = st.session_state.get(pending_key, {})
+                for t in schema_deletions:
+                    parts = t["rule_id"].split("|")  # ["schema", table, col, field]
+                    if len(parts) == 4:
+                        _, tbl, col, field = parts
+                        current_pending = _apply_pending_schema_edit(current_pending, tbl, col, field, None)
+                st.session_state[pending_key] = current_pending
+
+            if other_terms:
+                _apply_term_deletions(
+                    other_terms, yaml_key, pending_key, table_group_id,
+                    snapshot_suite_id=version_record.get("snapshot_suite_id"),
+                )
+                st.session_state.pop(term_diff_key, None)
+
             safe_rerun()
 
         def on_save_from_sticky_bar(_payload: object) -> None:
             if not is_latest_and_active:
                 return
-            if pending_ct > 0:
-                _update_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"], snapshot_suite_id=version_record.get("snapshot_suite_id"))
-            else:
-                _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
+            _save_version_dialog(contract_id, table_group_id, pending, contract_yaml, version_record["version"])
 
         def on_discard_from_sticky_bar(_payload: object) -> None:
             if not is_latest_and_active:
@@ -1055,20 +1142,37 @@ class DataContractPage(Page):
             st.session_state[import_open_key] = True
             safe_rerun()
 
+        def on_contract_testing_tab_shown(_payload: object) -> None:
+            st.session_state[testing_tab_key] = True
+            safe_rerun()
+
+        def on_contract_testing_tab_hidden(_payload: object) -> None:
+            st.session_state.pop(testing_tab_key, None)
+            safe_rerun()
+
+        def on_contract_compliance_tab_shown(_payload: object) -> None:
+            st.session_state.pop(testing_tab_key, None)
+            st.session_state.pop(term_diff_key, None)
+            safe_rerun()
+
         testgen_component(
             "data_contract",
             props=props,
             event_handlers={
-                "EditRuleClicked":          on_edit_rule,
-                "TermDetailClicked":        on_term_detail,
-                "SuitePickerClicked":       on_suite_picker,
-                "GovernanceEditClicked":    on_governance_edit,
-                "ImportContractClicked":    on_import_contract,
-                "ImportYamlClicked":        on_import_yaml,
-                "BulkDeleteTermsClicked":   on_bulk_delete_terms,
-                "AddTestClicked":           on_add_test,
-                "SaveFromStickyBar":        on_save_from_sticky_bar,
-                "DiscardFromStickyBar":     on_discard_from_sticky_bar,
+                "EditRuleClicked":              on_edit_rule,
+                "TermDetailClicked":            on_term_detail,
+                "SuitePickerClicked":           on_suite_picker,
+                "GovernanceEditClicked":        on_governance_edit,
+                "SchemaEditClicked":            on_schema_edit,
+                "ImportContractClicked":        on_import_contract,
+                "ImportYamlClicked":            on_import_yaml,
+                "BulkDeleteTermsClicked":       on_bulk_delete_terms,
+                "AddTestClicked":               on_add_test,
+                "SaveFromStickyBar":            on_save_from_sticky_bar,
+                "DiscardFromStickyBar":         on_discard_from_sticky_bar,
+                "ContractTestingTabShown":      on_contract_testing_tab_shown,
+                "ContractTestingTabHidden":     on_contract_testing_tab_hidden,
+                "ContractComplianceTabShown":   on_contract_compliance_tab_shown,
             },
         )
 
@@ -1078,6 +1182,7 @@ class DataContractPage(Page):
                 table_group_id,
                 version_record.get("snapshot_suite_id"),
                 import_key,
+                contract_id=contract_id,
             )
 
         # ── Import confirmation dialog (dry-run preview staged by on_import_contract) ────
@@ -1089,6 +1194,7 @@ class DataContractPage(Page):
                 table_group_id,
                 _import_preview.get("snapshot_suite_id"),
                 import_key,
+                contract_id=contract_id,
             )
 
         # ── Import result banner ──────────────────────────────────────────────
@@ -1126,3 +1232,12 @@ class DataContractPage(Page):
                             mime="text/yaml",
                             key=dl_key,
                         )
+
+        # ── Contract Testing tab content (rendered below the component) ───────
+        if _testing_tab_active:
+            _render_contract_testing_tab(
+                _snapshot_suite_id,
+                run_dates.get("last_test_run_id"),
+                self.router,
+                project_code=project_code,
+            )
