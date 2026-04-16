@@ -73,7 +73,8 @@ def _configure_mcp_logging() -> None:
 
 
 def build_mcp_app(
-    api_base_url: str, server_url: str | None = None,
+    api_base_url: str,
+    server_url: str | None = None,
 ) -> tuple[Starlette, StreamableHTTPSessionManager]:
     """Create the MCP Starlette app with tools, resources, and prompts registered.
 
@@ -90,6 +91,7 @@ def build_mcp_app(
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
+    from testgen.mcp.tools.test_definitions import get_test, list_test_notes, list_test_types, list_tests
     from testgen.mcp.tools.test_results import get_failure_summary, get_test_result_history, get_test_results
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
@@ -128,6 +130,10 @@ def build_mcp_app(
     safe_tool(get_test_type)
     safe_tool(get_source_data)
     safe_tool(get_source_data_query)
+    safe_tool(list_tests)
+    safe_tool(get_test)
+    safe_tool(list_test_notes)
+    safe_tool(list_test_types)
 
     # Resources (2)
     safe_resource("testgen://test-types", test_types_resource)
