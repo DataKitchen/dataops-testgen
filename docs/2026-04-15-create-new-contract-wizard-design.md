@@ -223,6 +223,64 @@ The `_regenerate_dialog` function can be deleted. `_render_first_time_flow` is r
 
 ---
 
+## Testing
+
+### Unit Tests
+**Location:** `tests/unit/ui/test_contract_wizard.py`
+**Marker:** `@pytest.mark.unit`
+**Pattern:** Mock all `st.*` calls via monkeypatch (same pattern as `test_contract_dialog_warnings.py`). No Streamlit runtime required.
+
+| Test | What it verifies |
+|---|---|
+| `test_step_advances_on_next` | Clicking Next increments the step counter in session state |
+| `test_back_decrements_step` | Clicking Back decrements the step counter; cannot go below 1 |
+| `test_step1_skipped_when_tg_provided` | When `table_group_id` is passed, wizard initialises at step 2 |
+| `test_change_link_resets_to_step1` | Clicking "Change" on the pre-filled banner sets step to 1 and clears suite/table/content selections |
+| `test_step2_next_disabled_with_no_suites` | Next is disabled when no suites are checked |
+| `test_step2_excludes_monitor_suites` | `is_monitor=TRUE` suites do not appear in the Step 2 checklist |
+| `test_step2_excludes_snapshot_suites` | `is_contract_snapshot=TRUE` suites do not appear |
+| `test_step3_next_disabled_with_no_tables` | Next is disabled when all tables are deselected |
+| `test_step3_select_all_none` | "Select all" checks all; "None" unchecks all |
+| `test_step3_multi_table_test_included_on_primary` | A test whose `table_name` is in the selected set is included even if its secondary reference table is deselected |
+| `test_step4_monitors_toggle_independent` | Monitors toggle state is independent of Step 2 suite selection |
+| `test_step4_profiling_warning_when_no_profiling_run` | Profiling toggle shows warning text when `last_profiling` is None |
+| `test_step5_generate_disabled_when_zero_tests` | Generate & Save button is disabled when in-scope test count is 0 |
+| `test_step5_version_number_increments` | Displayed version = `current_version + 1`; version = 1 when no prior versions |
+| `test_export_filter_params_constructed_correctly` | `run_export_data_contract` is called with the correct `suite_ids`, `table_names`, and content booleans derived from wizard state |
+| `test_rollback_on_snapshot_suite_failure` | If `create_contract_snapshot_suite` raises, `rollback_contract_version` is called with the new version number |
+
+**Supporting unit tests for the extended export pipeline:**
+**Location:** `tests/unit/commands/test_export_data_contract_filters.py`
+
+| Test | What it verifies |
+|---|---|
+| `test_suite_filter_restricts_quality_query` | Passing `suite_ids` excludes tests from suites not in the list |
+| `test_table_filter_restricts_schema_and_quality` | Passing `table_names` excludes schema rows and quality rules for excluded tables |
+| `test_include_profiling_false_strips_stat_fields` | Schema properties omit `customProperties.testgen.*` stat fields when `include_profiling=False` |
+| `test_include_ddl_false_strips_ddl_fields` | Schema properties omit `physicalType`, `required`, `primaryKey` when `include_ddl=False` |
+| `test_include_monitors_false_excludes_monitor_tests` | Monitor suite tests absent from quality section when `include_monitors=False` |
+| `test_no_filters_produces_same_output_as_current` | Calling with all defaults produces identical output to the current unfiltered export |
+
+---
+
+### Functional / AppTest Tests
+**Location:** `tests/functional/ui/test_contract_wizard_apptest.py`
+**App scripts:** `tests/functional/ui/apps/contract_wizard_*.py` (one script per scenario)
+**Marker:** `@pytest.mark.functional`
+**Pattern:** `AppTest.from_file(script, default_timeout=15)` — same pattern as `test_data_contract_apptest.py`. Each script bootstraps minimal mocked DB state and renders the wizard directly.
+
+| Test | App script | What it verifies |
+|---|---|---|
+| `test_wizard_full_flow_from_listing_page` | `contract_wizard_full_flow.py` | Step 1 shown; user selects table group, advances through all steps, clicks Generate & Save; success path completes without error |
+| `test_wizard_skips_step1_when_tg_provided` | `contract_wizard_prefilled_tg.py` | Wizard renders at Step 2 when `table_group_id` is pre-filled; "Change" link visible |
+| `test_wizard_change_link_returns_to_step1` | `contract_wizard_prefilled_tg.py` | Clicking the "Change" link renders the table group picker (Step 1) |
+| `test_wizard_step2_no_suites_warning` | `contract_wizard_no_suites.py` | Step 2 shows a warning and Next button is disabled when table group has no eligible suites |
+| `test_wizard_step4_profiling_warning_no_profiling` | `contract_wizard_no_profiling.py` | Step 4 Profiling toggle shows the "no profiling data" warning text |
+| `test_wizard_step5_disabled_when_zero_tests` | `contract_wizard_zero_tests.py` | Step 5 Generate & Save button is disabled; explanatory text is shown |
+| `test_wizard_replaces_first_time_flow` | `contract_wizard_first_time_flow.py` | Data Contract page with no saved contract renders the wizard modal trigger instead of the old inline prereqs flow |
+
+---
+
 ## Out of Scope
 
 - Editing an existing contract's scope after creation (change which tables/suites are included) — this is a separate feature
