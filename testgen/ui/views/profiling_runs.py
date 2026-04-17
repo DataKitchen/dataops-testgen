@@ -1,23 +1,20 @@
 import logging
 import typing
 from collections.abc import Iterable
-from functools import partial
 
 import streamlit as st
 
 RUN_PROFILING_DIALOG_KEY = "pr:run_profiling_dialog"
 RUN_SCHEDULES_DIALOG_KEY = "pr:run_schedules_dialog"
 RUN_NOTIFICATIONS_DIALOG_KEY = "pr:run_notifications_dialog"
-DELETE_DIALOG_KEY = "pr:delete_dialog"
 RUN_PROFILING_RESULT_KEY = "pr:run_profiling_result"
 RUN_PROFILING_DIALOG_OPEN_COUNT_KEY = "pr:run_profiling_dialog_open_count"
 RUN_SCHEDULES_DIALOG_OPEN_COUNT_KEY = "pr:run_schedules_dialog_open_count"
 RUN_NOTIFICATIONS_DIALOG_OPEN_COUNT_KEY = "pr:run_notifications_dialog_open_count"
-DELETE_DIALOG_OPEN_COUNT_KEY = "pr:delete_dialog_open_count"
 
 import testgen.ui.services.form_service as fm
-from testgen.common.models import database_session, with_database_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models import database_session, get_current_session, with_database_session
+from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.notification_settings import (
     ProfilingRunNotificationSettings,
     ProfilingRunNotificationTrigger,
@@ -59,9 +56,11 @@ class DataProfilingPage(Page):
             "data-profiling",
         )
 
+        page = int(st.query_params.get("page", 1))
+
         with st.spinner("Loading data ..."):
             project_summary = get_project_summary(project_code)
-            profiling_runs = get_profiling_run_summaries(project_code, table_group_id)
+            profiling_runs, total_count = get_profiling_run_summaries(project_code, table_group_id, page=page)
             table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
 
         schedule_obj = ProfilingScheduleDialog(project_code)
@@ -80,10 +79,6 @@ class DataProfilingPage(Page):
         def on_run_notifications_clicked(*_) -> None:
             st.session_state[RUN_NOTIFICATIONS_DIALOG_KEY] = True
             st.session_state[RUN_NOTIFICATIONS_DIALOG_OPEN_COUNT_KEY] = st.session_state.get(RUN_NOTIFICATIONS_DIALOG_OPEN_COUNT_KEY, 0) + 1
-
-        def on_delete_runs_clicked(profiling_run_ids: list[str]) -> None:
-            st.session_state[DELETE_DIALOG_KEY] = profiling_run_ids
-            st.session_state[DELETE_DIALOG_OPEN_COUNT_KEY] = st.session_state.get(DELETE_DIALOG_OPEN_COUNT_KEY, 0) + 1
 
         # Build run profiling dialog data
         run_profiling_data = None
@@ -110,15 +105,6 @@ class DataProfilingPage(Page):
             notifications_data = ns_obj.build_data()
             notifications_data["open"] = st.session_state[RUN_NOTIFICATIONS_DIALOG_OPEN_COUNT_KEY]
 
-        # Build delete dialog data
-        delete_dialog_data = None
-        if run_ids := st.session_state.get(DELETE_DIALOG_KEY):
-            delete_dialog_data = {
-                "open": st.session_state[DELETE_DIALOG_OPEN_COUNT_KEY],
-                "run_ids": run_ids,
-                "has_active_job": ProfilingRun.has_active_job_for(ProfilingRun, *run_ids),
-            }
-
         def on_run_profiling_confirmed(table_group: dict) -> None:
             success = True
             message = f"Profiling run started for table group '{table_group['table_groups_name']}'."
@@ -138,6 +124,7 @@ class DataProfilingPage(Page):
             st.session_state[RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
             if success and not show_link:
                 get_profiling_run_summaries.clear()
+                Router().set_query_params({"page": 1})
                 st.session_state.pop(RUN_PROFILING_DIALOG_KEY, None)
                 st.session_state.pop(RUN_PROFILING_RESULT_KEY, None)
 
@@ -158,8 +145,8 @@ class DataProfilingPage(Page):
             ns_obj.clear_state()
             st.session_state.pop(RUN_NOTIFICATIONS_DIALOG_KEY, None)
 
-        def on_delete_dialog_closed(*_) -> None:
-            st.session_state.pop(DELETE_DIALOG_KEY, None)
+        def on_page_changed(new_page: int) -> None:
+            Router().set_query_params({"page": new_page})
 
         testgen.profiling_runs_widget(
             key="profiling_runs",
@@ -168,9 +155,13 @@ class DataProfilingPage(Page):
                 "profiling_runs": [
                     {
                         **run.to_dict(json_safe=True),
+                        "status_label": run.status_label,
                         "dq_score_profiling": friendly_score(run.dq_score_profiling),
                     } for run in profiling_runs
                 ],
+                "total_count": total_count,
+                "page": page,
+                "page_size": 20,
                 "table_group_options": [
                     {
                         "value": str(table_group.id),
@@ -184,16 +175,14 @@ class DataProfilingPage(Page):
                 "run_profiling_dialog": run_profiling_data,
                 "schedule_dialog": schedule_data,
                 "notifications_dialog": notifications_data,
-                "delete_dialog": delete_dialog_data,
             },
+            on_PageChanged_change=on_page_changed,
             on_FilterApplied_change=on_profiling_runs_filtered,
             on_RunNotificationsClicked_change=on_run_notifications_clicked,
             on_RunSchedulesClicked_change=on_run_schedules_clicked,
             on_RunProfilingClicked_change=on_run_profiling_clicked,
             on_RefreshData_change=refresh_data,
-            on_DeleteRunsClicked_change=on_delete_runs_clicked,
-            on_RunsDeleted_change=partial(on_delete_runs, project_code, table_group_id),
-            on_DeleteDialogClosed_change=on_delete_dialog_closed,
+            on_RunsDeleted_change=on_delete_runs,
             on_RunCanceled_change=on_cancel_run,
             # RunProfilingDialog events
             on_RunProfilingConfirmed_change=on_run_profiling_confirmed,
@@ -220,7 +209,7 @@ class ProfilingRunFilters(typing.TypedDict):
     table_group_id: str
 
 def on_profiling_runs_filtered(filters: ProfilingRunFilters) -> None:
-    Router().set_query_params(filters)
+    Router().set_query_params({**filters, "page": 1})
 
 
 def refresh_data(*_) -> None:
@@ -285,28 +274,37 @@ class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
 
 
 @with_database_session
-def on_cancel_run(profiling_run: dict) -> None:
-    if (job_execution_id := profiling_run.get("job_execution_id")) and (job_exec := JobExecution.get(job_execution_id)) and job_exec.request_cancel():
+def on_cancel_run(payload: dict) -> None:
+    job_execution_id = payload.get("job_execution_id")
+    if not job_execution_id:
+        fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
+        return
+
+    job_exec = JobExecution.get(job_execution_id)
+    if job_exec and job_exec.request_cancel():
         # Stopgap: also update the run status so the UI reflects cancellation immediately.
-        # The proper flow is subprocess catches SIGTERM and updates its own status on exit.
-        ProfilingRun.cancel_run(profiling_run["id"])
+        if profiling_run_id := payload.get("profiling_run_id"):
+            ProfilingRun.cancel_run(profiling_run_id)
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
         fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
 
 
 @with_database_session
-def on_delete_runs(project_code: str, table_group_id: str, profiling_run_ids: list[str]) -> None:
+def on_delete_runs(job_execution_ids: list[str]) -> None:
     try:
-        profiling_runs = get_profiling_run_summaries(project_code, table_group_id, profiling_run_ids)
-        for profiling_run in profiling_runs:
-            if profiling_run.status == "Running" and profiling_run.job_execution_id:
-                job_exec = JobExecution.get(profiling_run.job_execution_id)
-                if job_exec:
-                    job_exec.request_cancel()
-        ProfilingRun.cascade_delete(profiling_run_ids)
+        for je_id in job_execution_ids:
+            job_exec = JobExecution.get(je_id)
+            if not job_exec:
+                continue
+            if job_exec.status in (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
+                job_exec.request_cancel()
+            profiling_run = next(iter(ProfilingRun.select_where(ProfilingRun.job_execution_id == je_id)), None)
+            if profiling_run:
+                ProfilingRun.cascade_delete([str(profiling_run.id)])
+            get_current_session().delete(job_exec)
         get_profiling_run_summaries.clear()
-        st.session_state.pop(DELETE_DIALOG_KEY, None)
+        Router().set_query_params({"page": 1})
     except Exception:
         LOG.exception("Failed to delete profiling runs")
         st.toast("Unable to delete the selected profiling runs, try again.", icon=":material/error:")
