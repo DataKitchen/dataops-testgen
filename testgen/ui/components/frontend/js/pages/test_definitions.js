@@ -16,6 +16,7 @@ import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { Icon } from '/app/static/js/components/icon.js';
+import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 
 const { button: btn, div, i: icon, span, strong, input, label } = van.tags;
 
@@ -639,6 +640,12 @@ const TestDefinitions = (/** @type object */ props) => {
             });
         },
 
+        // Profiling results dialog
+        ProfilingResultsDialog({ emit,
+            profilingColumn: van.derive(() => getValue(props.profiling_column) ?? null),
+            onClose: () => emit('ProfilingClosed', {}),
+        }),
+
         // Notes dialog
         Dialog(
             {
@@ -752,19 +759,24 @@ const TestDefinitions = (/** @type object */ props) => {
                 if (!row) return '';
                 return div(
                     { class: 'tg-td--detail flex-column fx-gap-4' },
-                    canEdit.val ? div(
+                    div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
-                        Button({
+                        canEdit.val ? Button({
                             type: 'stroked', icon: 'edit', label: 'Edit', width: 'auto',
                             style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('EditDialogOpened', { payload: { id: row.id } }),
-                        }),
-                        Button({
+                        }) : '',
+                        canEdit.val ? Button({
                             type: 'stroked', icon: 'sticky_note_2', label: 'Notes', width: 'auto',
                             style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('NotesClicked', { payload: { id: row.id, table_name: row.table_name, column_name: row.column_name, test_name_short: row.test_name_short } }),
-                        }),
-                    ) : '',
+                        }) : '',
+                        row.column_name ? Button({
+                            type: 'stroked', icon: 'query_stats', label: 'Profiling', width: 'auto',
+                            style: 'background: var(--button-generic-background-color);',
+                            onclick: () => emit('ProfilingClicked', { payload: { table_name: row.table_name, column_name: row.column_name, table_groups_id: row.table_groups_id } }),
+                        }) : '',
+                    ),
                     DetailPanel(row),
                 );
             },
