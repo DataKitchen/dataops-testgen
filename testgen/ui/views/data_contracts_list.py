@@ -38,6 +38,21 @@ _BADGE_HEX: dict[str, str] = {"green": "#22c55e", "orange": "#f59e0b", "red": "#
 
 
 
+def _color_bar_html(passed_ct: int, warning_ct: int, failed_ct: int) -> str:
+    """Return the proportional color-strip HTML for a contract card."""
+    total_run = passed_ct + warning_ct + failed_ct
+    if total_run == 0:
+        return '<div style="height:6px;background:#cbd5e1;border-radius:3px;margin-bottom:10px"></div>'
+    segs = ""
+    if passed_ct:
+        segs += f'<div style="flex:{passed_ct};background:#22c55e"></div>'
+    if warning_ct:
+        segs += f'<div style="flex:{warning_ct};background:#f59e0b"></div>'
+    if failed_ct:
+        segs += f'<div style="flex:{failed_ct};background:#ef4444"></div>'
+    return f'<div style="height:6px;display:flex;border-radius:3px;overflow:hidden;margin-bottom:10px">{segs}</div>'
+
+
 def _format_last_run(dt: object) -> str:
     """Return a human-readable relative time string for a datetime, or 'Never'."""
     if dt is None:
@@ -152,18 +167,7 @@ class DataContractsListPage(Page):
             passed_ct  = int(contract.get("passed_ct")  or 0)
             warning_ct = int(contract.get("warning_ct") or 0)
             failed_ct  = int(contract.get("failed_ct")  or 0)
-            total_run  = passed_ct + warning_ct + failed_ct
-            if total_run == 0:
-                strip_html = '<div style="height:6px;background:#cbd5e1;border-radius:3px;margin-bottom:10px"></div>'
-            else:
-                segs = ""
-                if passed_ct:
-                    segs += f'<div style="flex:{passed_ct};background:#22c55e"></div>'
-                if warning_ct:
-                    segs += f'<div style="flex:{warning_ct};background:#f59e0b"></div>'
-                if failed_ct:
-                    segs += f'<div style="flex:{failed_ct};background:#ef4444"></div>'
-                strip_html = f'<div style="height:6px;display:flex;border-radius:3px;overflow:hidden;margin-bottom:10px">{segs}</div>'
+            strip_html = _color_bar_html(passed_ct, warning_ct, failed_ct)
             badge_label, badge_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])
             hex_color  = _BADGE_HEX.get(badge_color, "#94a3b8")
             badge_html = f'<span style="color:{hex_color};font-size:.85em;font-weight:600">{badge_label}</span>'

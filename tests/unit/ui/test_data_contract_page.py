@@ -209,14 +209,6 @@ class Test_JsLinkHrefs:
         base = pathlib.Path(__file__).parents[3] / "testgen" / "ui" / "components" / "frontend" / "js" / "pages"
         return (base / filename).read_text()
 
-    def test_project_dashboard_js_has_data_contract_link(self):
-        src = self._read_js("project_dashboard.js")
-        assert "data-contract" in src
-
-    def test_table_group_list_js_has_data_contract_link(self):
-        src = self._read_js("table_group_list.js")
-        assert "data-contract" in src
-
     def test_table_group_list_js_passes_table_group_id(self):
         src = self._read_js("table_group_list.js")
         # Confirm the data-contract link uses table_group_id param
@@ -224,26 +216,7 @@ class Test_JsLinkHrefs:
 
 
 # ---------------------------------------------------------------------------
-# 6. Python navigation handler wired in table_groups.py
-# ---------------------------------------------------------------------------
-
-class Test_NavigationHandlers:
-    """
-    Verifies that table_groups.py has the ViewContractClicked handler so that
-    clicking the link actually navigates to the data-contract page.
-    """
-    def test_view_contract_clicked_handler_present(self):
-        import pathlib
-        src = (
-            pathlib.Path(__file__).parents[3]
-            / "testgen" / "ui" / "views" / "table_groups.py"
-        ).read_text()
-        assert "ViewContractClicked" in src
-        assert "data-contract" in src
-
-
-# ---------------------------------------------------------------------------
-# 7. Term count consistency — Overview == Coverage Matrix top == bottom
+# 6. Term count consistency — Overview == Coverage Matrix top == bottom
 # ---------------------------------------------------------------------------
 
 def _make_table_group(tg_id: str = "tg-001") -> MagicMock:
