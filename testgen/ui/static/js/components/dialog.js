@@ -51,7 +51,7 @@ const Dialog = ({ title, open, onClose, width = '30rem' }, ...children) => {
                 { class: 'tg-dialog-header' },
                 span({ 'data-testid': 'dialog-title', class: 'tg-dialog-title' }, title),
             ),
-            div({ class: 'tg-dialog-content' }, ...children),
+            div({ 'data-testid': 'dialog-content', class: 'tg-dialog-content' }, ...children),
             button(
                 {
                     class: 'tg-dialog-close',

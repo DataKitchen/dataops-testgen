@@ -49,6 +49,7 @@ const DropdownButton = (props) => {
                     ...items.map(item =>
                         div({
                             class: 'tg-dropdown-button--item',
+                            'data-testid': 'dropdown-item',
                             style: item.separator ? 'border-top: var(--button-stroked-border);' : '',
                             onclick: () => { menuOpen.val = false; item.onclick(); },
                         }, item.label),

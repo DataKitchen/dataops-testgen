@@ -176,6 +176,7 @@ const Table = (options, rows) => {
 
     return div(
         {
+            'data-testid': 'table',
             class: () => `tg-table flex-column border border-radius-1 ${getValue(options.highDensity) ? 'tg-table-high-density' : ''} ${getValue(options.dynamicWidth) ? 'tg-table-dynamic-width' : ''} ${(getValue(options.uppercaseHeader) ?? true) ? 'tg-table-uppercase-header' : ''} ${options.selection?.onRowsSelected ? 'tg-table-hoverable' : ''}`,
             style: () => `height: ${getValue(options.height) ? getValue(options.height) : defaultHeight}; ${getValue(options.maxHeight) ? 'max-height: ' + getValue(options.maxHeight) + ';' : ''}`,
         },
@@ -222,7 +223,7 @@ const Table = (options, rows) => {
                     const rows_ = getValue(rows);
                     if (rows_.length <= 0 && options.emptyState) {
                         return tbody(
-                            {class: 'tg-table-empty-state-body'},
+                            {'data-testid': 'table-empty', class: 'tg-table-empty-state-body'},
                             tr(
                                 td(
                                     {colspan: dataColumns.val.length},
@@ -413,7 +414,7 @@ const Paginatior = (
     const sizeOptions = (pageSizeOptions ?? defaultPageSizeOptions).map(n => ({ label: String(n), value: n }));
 
     return div(
-        {class: `tg-table-paginator flex-row fx-justify-content-flex-end ${highDensity ? '' : 'p-1'} text-secondary`},
+        {'data-testid': 'table-paginator', class: `tg-table-paginator flex-row fx-justify-content-flex-end ${highDensity ? '' : 'p-1'} text-secondary`},
 
         leftContent,
         leftContent != undefined ? span({class: 'fx-flex'}) : '',

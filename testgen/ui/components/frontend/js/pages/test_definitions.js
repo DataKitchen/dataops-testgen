@@ -75,6 +75,7 @@ const BLANK_PARAM_FIELDS = {
 const ClearFlagButton = ({ disabled, onclick }) => {
     return withTooltip(btn(
         {
+            'data-testid': 'button',
             class: 'tg-button tg-icon-button tg-basic-button',
             disabled,
             onclick,
@@ -394,7 +395,7 @@ const TestDefinitions = (/** @type object */ props) => {
 
     // Table header bar: multi-select toggle + edit buttons | dashed separator | disposition buttons + export
     const tableHeader = div(
-        { class: 'flex-row fx-align-center fx-gap-2 p-2 fx-flex-wrap' },
+        { 'data-testid': 'table-header', class: 'flex-row fx-align-center fx-gap-2 p-2 fx-flex-wrap' },
         () => canDisposition.val
             ? Toggle({
                 label: () => {
@@ -429,7 +430,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 test_type: r.test_type, lock_refresh: r.lock_refresh,
             }));
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'edit-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'file_copy', tooltip: 'Copy/Move', disabled: !hasSelection, onclick: () => emit('CopyMoveDialogOpened', { payload: isAll ? 'all' : minimalSelected() }) }),
                 Button({
                     type: 'icon', icon: 'delete', tooltip: 'Delete', disabled: !hasSelection,
@@ -462,7 +463,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 }
             };
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'disposition-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Activate selected', disabled: noSelection || allActive, onclick: () => emitAttribute('test_active', true) }),
                 Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Deactivate selected', disabled: noSelection || allInactive, onclick: () => emitAttribute('test_active', false) }),
                 div({ class: 'td-header-separator' }),
@@ -758,7 +759,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 const row = singleSelected.val;
                 if (!row) return '';
                 return div(
-                    { class: 'tg-td--detail flex-column fx-gap-4' },
+                    { 'data-testid': 'test-definition-detail', class: 'tg-td--detail flex-column fx-gap-4' },
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
                         canEdit.val ? Button({

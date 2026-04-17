@@ -129,10 +129,10 @@ const Toolbar = (
             label: 'Score Explorer',
             color: 'primary',
             style: 'background: var(--button-generic-background-color); width: unset;',
+            testId: 'scorecards-goto-explorer',
             onclick: () => emit('LinkClicked', {
                 href: 'quality-dashboard:explorer',
                 params: { project_code: projectSummary.project_code },
-                testId: 'scorecards-goto-explorer',
             }),
         }),
         Button({

@@ -21,11 +21,11 @@ const SummaryCounts = (/** @type Properties */ props) => {
     return div(
         { class: 'flex-row fx-gap-5 fx-flex-wrap', 'data-testid': 'summary-counts' },
         getValue(props.items).map(item => div(
-            { class: 'flex-row fx-align-stretch fx-gap-2' },
+            { 'data-testid': 'summary-count', class: 'flex-row fx-align-stretch fx-gap-2' },
             div({ class: 'tg-summary-counts--bar', style: `background-color: ${colorMap[item.color] || item.color};` }),
             div(
-                div({ class: 'text-caption' }, item.label),
-                div({ class: 'tg-summary-counts--count' }, formatNumber(item.value)),
+                div({ 'data-testid': 'summary-count-label', class: 'text-caption' }, item.label),
+                div({ 'data-testid': 'summary-count-value', class: 'tg-summary-counts--count' }, formatNumber(item.value)),
             )
         )),
     );

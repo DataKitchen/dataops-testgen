@@ -133,6 +133,7 @@ const Input = (/** @type Properties */ props) => {
                 : undefined,
             () => input({
                 value,
+                'data-value': value,
                 name: props.name ?? '',
                 type: inputType,
                 disabled: props.disabled,

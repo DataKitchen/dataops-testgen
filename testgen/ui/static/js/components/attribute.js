@@ -19,9 +19,13 @@ const Attribute = (/** @type Properties */ props) => {
     loadStylesheet('attribute', stylesheet);
 
     return div(
-        { style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`, class: props.class },
+        {
+            'data-testid': 'attribute',
+            style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`,
+            class: props.class,
+        },
         div(
-            { class: 'flex-row fx-gap-1 text-caption mb-1' },
+            { 'data-testid': 'attribute-label', class: 'flex-row fx-gap-1 text-caption mb-1' },
             props.label,
             () => getValue(props.help)
                 ? withTooltip(
@@ -31,7 +35,7 @@ const Attribute = (/** @type Properties */ props) => {
                 : null,
         ),
         div(
-            { class: 'attribute-value' },
+            { 'data-testid': 'attribute-value', class: 'attribute-value' },
             () => {
                 const value = getValue(props.value);
                 if (value === PII_REDACTED) {

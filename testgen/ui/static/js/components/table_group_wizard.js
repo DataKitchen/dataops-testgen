@@ -461,7 +461,7 @@ const TableGroupWizard = (props) => {
       return div(
         { class: 'flex-column' },
         div(
-          { class: 'flex-column fx-gap-4 mb-4 p-5 border border-radius-2' },
+          { class: 'flex-column fx-gap-4 mb-4 p-5 border border-radius-2', 'data-testid': 'wizard-success-panel' },
           div(
             { class: 'flex-row fx-gap-2' },
             Icon({ style: 'color: var(--green);' }, 'check_circle'),

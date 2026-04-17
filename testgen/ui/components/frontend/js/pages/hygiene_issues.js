@@ -458,7 +458,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
 
     // Table header bar (actions above the table)
     const tableHeader = div(
-        { class: 'flex-row fx-align-center fx-gap-2 p-2' },
+        { 'data-testid': 'table-header', class: 'flex-row fx-align-center fx-gap-2 p-2' },
         Toggle({
             label: () => {
                 return div(
@@ -481,7 +481,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
             if (!permissions.val.can_disposition) return '';
             const disabled = allSelectedArePassed.val;
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'disposition-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Confirm selected as relevant', disabled, onclick: () => onDisposition('Confirmed') }),
                 Button({ type: 'icon', icon: 'cancel', tooltip: 'Dismiss selected as not relevant', disabled, onclick: () => onDisposition('Dismissed') }),
                 Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Mute selected for future runs', disabled, onclick: () => onDisposition('Inactive') }),
@@ -576,14 +576,14 @@ const HygieneIssues = (/** @type Properties */ props) => {
             { class: 'flex-row fx-gap-5 fx-align-flex-end mb-3 fx-flex-wrap' },
             () => othersSummary.val.length
                 ? div(
-                    { class: 'flex-column fx-gap-1' },
+                    { 'data-testid': 'hygiene-issues-summary', class: 'flex-column fx-gap-1' },
                     div({ class: 'text-caption' }, 'Hygiene Issues'),
                     SummaryCounts({ items: othersSummary.val }),
                 )
                 : '',
             () => piiSummary.val.length
                 ? div(
-                    { class: 'flex-column fx-gap-1' },
+                    { 'data-testid': 'hygiene-pii-summary', class: 'flex-column fx-gap-1' },
                     div({ class: 'text-caption' }, 'Potential PII (Risk)'),
                     SummaryCounts({ items: piiSummary.val }),
                 )
@@ -594,7 +594,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 div(
                     { class: 'flex-column' },
                     div({ class: 'text-caption'}, 'Score'),
-                    div({ style: 'font-size: 28px' }, score),
+                    div({ 'data-testid': 'hygiene-score', style: 'font-size: 28px' }, score),
                 ),
                 Button({
                     type: 'icon',
@@ -668,7 +668,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 if (!sel) return '';
 
                 return div(
-                    { class: 'tg-hi--detail flex-column fx-gap-4' },
+                    { 'data-testid': 'hygiene-issue-detail', class: 'tg-hi--detail flex-column fx-gap-4' },
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
                         sel.table_name !== '(multi-table)' 

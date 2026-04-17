@@ -86,6 +86,7 @@ const Textarea = (/** @type Properties */ props) => {
             class: () => `tg-textarea--field ${getValue(props.disabled) ? 'tg-textarea--disabled' : ''}`,
             style: () => `min-height: ${getValue(props.height) || defaultHeight}px;`,
             value,
+            'data-value': value,
             name: props.name ?? '',
             disabled: props.disabled,
             placeholder: () => getValue(props.placeholder) ?? '',
