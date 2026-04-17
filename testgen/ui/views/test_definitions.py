@@ -20,6 +20,7 @@ from testgen.common.models.test_definition import (
     TestDefinitionSummary,
 )
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -29,9 +30,10 @@ from testgen.ui.components.widgets.download_dialog import (
 )
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.queries import profiling_queries
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
 from testgen.ui.session import session
-from testgen.utils import to_dataframe
+from testgen.utils import make_json_safe, to_dataframe
 
 LOG = logging.getLogger("testgen")
 
@@ -56,6 +58,7 @@ TD_VALIDATE_RESULT_KEY = "td:validate_result"
 TD_COPY_MOVE_COLLISION_KEY = "td:copy_move_collision"
 TD_COPY_MOVE_OVERWRITE_KEY = "td:copy_move_overwrite"
 TD_NOTES_DIALOG_KEY = "td:notes_dialog"
+TD_PROFILING_KEY = "td:profiling"
 
 
 def _parse_sort_param(sort: str | None) -> tuple[list | None, list[dict]]:
@@ -491,6 +494,21 @@ class TestDefinitionsPage(Page):
         def on_notes_dialog_closed(*_) -> None:
             st.session_state.pop(TD_NOTES_DIALOG_KEY, None)
 
+        @with_database_session
+        def on_profiling_clicked(payload: dict) -> None:
+            column_name = payload.get("column_name")
+            table_name = payload.get("table_name")
+            table_groups_id = payload.get("table_groups_id")
+            if not (column_name and table_name and table_groups_id):
+                return
+            column = profiling_queries.get_column_by_name(column_name, table_name, table_groups_id)
+            if column:
+                mask_profiling_pii(column, get_pii_columns(table_groups_id, table_name=table_name))
+                st.session_state[TD_PROFILING_KEY] = make_json_safe(column)
+
+        def on_profiling_closed(*_) -> None:
+            st.session_state.pop(TD_PROFILING_KEY, None)
+
         def on_export_all(*_) -> None:
             download_dialog(
                 dialog_title="Download Excel Report",
@@ -575,6 +593,7 @@ class TestDefinitionsPage(Page):
                 "copy_move_dialog": copy_move_dialog,
                 "run_tests_dialog": run_tests_data,
                 "notes_dialog": notes_dialog,
+                "profiling_column": st.session_state.get(TD_PROFILING_KEY),
             },
             on_AddDialogOpened_change=on_add_dialog_opened,
             on_EditDialogOpened_change=on_edit_dialog_opened,
@@ -610,6 +629,8 @@ class TestDefinitionsPage(Page):
             on_NoteUpdated_change=on_note_updated,
             on_NoteDeleted_change=on_note_deleted,
             on_NotesDialogClosed_change=on_notes_dialog_closed,
+            on_ProfilingClicked_change=on_profiling_clicked,
+            on_ProfilingClosed_change=on_profiling_closed,
             on_FilterChanged_change=on_filter_changed,
             on_PageChanged_change=on_page_changed,
             on_SortChanged_change=on_sort_changed,
