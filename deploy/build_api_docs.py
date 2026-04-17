@@ -1,11 +1,9 @@
 """Export the TestGen OpenAPI spec as a JSON file.
 
-Usage (from the enterprise repo root):
-    python testgen/deploy/build_docs.py [--output PATH] [--version VERSION]
+Usage:
+    python deploy/build_api_docs.py [--output PATH] [--version VERSION]
 
-The output JSON is committed to docs/api/openapi.json and served by a static
-Redoc HTML shell alongside it.  The CI "Update Repo" job regenerates this on
-every release.
+The output JSON is served by a static Redoc HTML shell alongside it.
 """
 
 import argparse

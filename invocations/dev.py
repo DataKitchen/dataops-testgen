@@ -1,4 +1,4 @@
-__all__ = ["build_docs", "build_public_image", "clean", "install", "lint"]
+__all__ = ["build_api_docs", "build_public_image", "clean", "install", "lint"]
 
 import re
 from os.path import exists, join
@@ -72,15 +72,15 @@ def clean(ctx: Context) -> None:
     print("Cleaning finished!")
 
 
-@task(name="build-docs", pre=(install,))
-def build_docs(ctx: Context, version: str = "", output: str = "") -> None:
+@task(name="build-api-docs", pre=(install,))
+def build_api_docs(ctx: Context, version: str = "", output: str = "") -> None:
     """Exports the OpenAPI spec as JSON for the static API docs."""
     args = []
     if version:
         args.append(f"--version {version}")
     if output:
         args.append(f"--output {output}")
-    ctx.run(f"python deploy/build_docs.py {' '.join(args)}")
+    ctx.run(f"python deploy/build_api_docs.py {' '.join(args)}")
 
 
 @task(
