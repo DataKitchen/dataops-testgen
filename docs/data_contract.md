@@ -4,9 +4,11 @@
 
 A **data contract** in TestGen is a versioned, formal agreement about what a dataset should look like and whether it currently meets that agreement. It takes the test suites you've already defined for a table group — null-rate checks, value ranges, duplicate checks, custom SQL, etc. — and packages them into a versioned YAML document following the [ODCS v3.1.0](https://bitol-io.github.io/open-data-contract-standard/) open standard. That document becomes a stable, exportable record that data consumers, data stewards, and external tools can reference.
 
-From a user's perspective: navigate to a table group, click **Data Contract**, and you get a health dashboard showing how well the current data matches the contract, a full matrix of every schema column and its quality terms, and the ability to save a named version, export the contract as YAML, import edited YAML back in, and track drift between the saved contract and live TestGen state.
+From a user's perspective: click **Data Contracts** in the left navigation bar to reach the list page. From there you can create a new contract (via the **+ New Contract** wizard) or open an existing contract to see its health dashboard — showing how well the current data matches the contract, a full matrix of every schema column and its quality terms, and the ability to save a named version, export the contract as YAML, import edited YAML back in, and track drift between the saved contract and live TestGen state.
 
-**Entry point:** `?table_group_id=<uuid>` on page key `data-contract`. Registered as `AvailablePages.DATA_CONTRACT` in `testgen_component.py`.
+**Entry points:**
+- List page: `data-contracts?project_code=<code>` — `DataContractsListPage` in `data_contracts_list.py`
+- Detail page: `data-contract?contract_id=<uuid>` — `DataContractPage` in `data_contract.py`
 
 ---
 
@@ -98,13 +100,13 @@ On import, `schema`, `servers`, and `references` are read-only (TestGen is the s
 
 ### 3. Staged changes / pending edits
 
-When a user edits a term inline — adjusting a threshold, changing a severity, adding a description — those changes are held in `st.session_state["dc_pending:{tg_id}"]` until the user clicks Save. They are **staged**, not committed.
+When a user edits a term inline — adjusting a threshold, changing a severity, adding a description — those changes are held in `st.session_state["dc_pending:{contract_id}"]` until the user clicks Save. They are **staged**, not committed.
 
 If you are writing code that reads contract state, be aware that `st.session_state` may hold edits not yet in the DB. The YAML in session state is the in-progress version; the DB and snapshot suite reflect the last saved state.
 
 ### 4. Staleness
 
-Staleness is a passive detection: when the live TestGen DB has drifted from the saved contract (schema changed, tests added or removed), a banner appears. `compute_staleness_diff` in `contract_staleness.py` computes this diff. It is distinct from user-initiated save actions that re-baseline the contract.
+Staleness is a passive detection: when the live TestGen DB has drifted from the saved contract (schema changed, tests added or removed), a banner appears. `compute_term_diff` in `contract_term_diff.py` computes this diff. It is distinct from user-initiated save actions that re-baseline the contract.
 
 ### 5. Enforcement tiers
 
@@ -122,17 +124,21 @@ Every contract term is classified into one of three enforcement tiers by `_class
 
 | Layer | File | Role |
 |---|---|---|
-| View | `testgen/ui/views/data_contract.py` | Page render, toolbar, event handlers, pending edits |
+| List view | `testgen/ui/views/data_contracts_list.py` | Contract list page, + New Contract button, delete/reactivate |
+| Detail view | `testgen/ui/views/data_contract.py` | Contract detail page, toolbar, event handlers, pending edits |
 | Frontend | `testgen/ui/components/frontend/js/pages/data_contract.js` | VanJS UI, term chips, selection mode, modals via `emitEvent` |
 | Props | `testgen/ui/views/data_contract_props.py` | Props builder, `_classify_enforcement_tier`, coverage tiers |
 | YAML helpers | `testgen/ui/views/data_contract_yaml.py` | YAML mutation helpers, `_delete_term_yaml_patch` |
-| DB queries | `testgen/ui/queries/data_contract_queries.py` | `_fetch_test_statuses`, `_persist_governance_deletion`, `_GOVERNANCE_LABEL_TO_FIELD` |
-| Dialogs | `testgen/ui/views/dialogs/data_contract_dialogs.py` | All `@st.dialog` save/edit/delete dialogs; `_clear_contract_cache` |
+| DB queries | `testgen/ui/queries/data_contract_queries.py` | `_fetch_test_statuses`, `_persist_pending_edits`, `_GOVERNANCE_LABEL_TO_FIELD`; imports `sync_import_to_snapshot_suite` at module level |
+| List queries | `testgen/ui/queries/data_contract_list_queries.py` | `fetch_contracts_for_project` — card data incl. last_run_at, table_count |
+| Dialogs | `testgen/ui/views/dialogs/data_contract_dialogs.py` | All `@st.dialog` functions: wizard, save/update, schema editor, version delete; `_clear_contract_cache(contract_id)` |
+| Contract CRUD | `testgen/commands/contract_management.py` | `create_contract`, `get_contract`, `delete_contract` (session.execute), `set_contract_active` |
+| Versions | `testgen/commands/contract_versions.py` | `save_contract_version` (single CTE), `load_contract_version`, `has_any_version`, `mark_contract_stale` |
+| Snapshot | `testgen/commands/contract_snapshot_suite.py` | `create_contract_snapshot_suite` (falls back to table_groups), `sync_import_to_snapshot_suite`, `delete_contract_version` |
+| Create from YAML | `testgen/commands/create_data_contract.py` | `create_contract_from_yaml`, `validate_odcs_header` |
 | Export | `testgen/commands/export_data_contract.py` | ODCS YAML generation |
 | Import | `testgen/commands/odcs_contract.py` | `run_import_contract`, `get_updated_yaml`, `ContractDiff` |
-| Term diff | `testgen/commands/contract_term_diff.py` | `compute_term_diff`, `TermDiffResult` |
-| Versions | `testgen/commands/contract_versions.py` | `save_contract_version`, `load_contract_version`, `update_contract_version` |
-| Snapshot | `testgen/commands/contract_snapshot_suite.py` | `create_contract_snapshot_suite`, `sync_import_to_snapshot_suite`, `delete_contract_version` |
+| Term diff | `testgen/commands/contract_term_diff.py` | `compute_term_diff(table_group_id, saved_yaml, anomalies, snapshot_suite_id)`, `TermDiffResult` |
 
 ### Key architectural patterns
 
@@ -140,9 +146,9 @@ Every contract term is classified into one of three enforcement tiers by `_class
 
 **`event_handlers` vs `on_change_handlers`:** Use `event_handlers` when the handler needs to call `st.rerun()`. Dialogs always need `st.rerun()`, so dialog-triggering events go in `event_handlers`. `on_change_handlers` does not support `st.rerun()`.
 
-**YAML caching:** The contract YAML string is cached in `st.session_state["dc_yaml:{tg_id}"]` to avoid re-fetching on every Streamlit rerun. Test run results are NOT cached — fetched fresh from DB on each render via `_fetch_test_statuses()`. Never use `lastResult` from the cached YAML; it may be stale.
+**YAML caching:** The contract YAML string is cached in `st.session_state["dc_yaml:{contract_id}"]` to avoid re-fetching on every Streamlit rerun. Test run results are NOT cached — fetched fresh from DB on each render via `_fetch_test_statuses()`. Never use `lastResult` from the cached YAML; it may be stale.
 
-**Cache management:** `_clear_contract_cache(table_group_id, *, also_anomalies=False)` clears all 7 session state keys:
+**Cache management:** `_clear_contract_cache(contract_id, *, also_anomalies=False)` clears all 7 session state keys:
 ```python
 _CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope")
 ```
@@ -168,20 +174,150 @@ These traces walk through what actually happens in the code for common operation
 
 1. User clicks a test chip → JS emits `EditRuleClicked { rule_id }` → Python `on_edit_rule_clicked` → `@st.dialog` opens (`_edit_rule_dialog`).
 2. User changes the threshold → clicks Save in dialog.
-3. Python writes the new threshold to `st.session_state["dc_pending:{tg_id}"]` as a YAML patch and calls `safe_rerun()`.
+3. Python writes the new threshold to `st.session_state["dc_pending:{contract_id}"]` as a YAML patch and calls `safe_rerun()`.
 4. On next render, the staged change appears in the toolbar warning banner ("N staged changes — not yet saved") and in the JS sticky bar at the bottom of the component.
-5a. User clicks **Update (N)** → `_update_version_dialog` opens → confirms → `_persist_pending_edits()` + `update_contract_version()` rewrites YAML in place for the current version; no new version number, no new snapshot suite.
-5b. User clicks **Save New (N)** → `_save_version_dialog` opens → confirms → `_persist_pending_edits()` applies YAML patches → `save_contract_version()` writes to `data_contracts` table and creates a new snapshot suite via `create_contract_snapshot_suite()` → `_clear_contract_cache()` → `safe_rerun()`.
+5a. User clicks **Update (N)** → `_update_version_dialog` opens → confirms → `_persist_pending_edits()` + `update_contract_version(contract_id, version, yaml_content)` rewrites YAML in place for the current version; no new version number, no new snapshot suite.
+5b. User clicks **Save New (N)** → `_save_version_dialog` opens → confirms → `_persist_pending_edits()` applies YAML patches → `save_contract_version()` writes to `contract_versions` table and creates a new snapshot suite via `create_contract_snapshot_suite()` → `_clear_contract_cache(contract_id)` → `safe_rerun()`.
 
 ### YAML import
 
-1. User clicks **Import YAML** in toolbar → `_import_yaml_dialog` opens (Python `@st.dialog`).
-2. User uploads a `.yaml` file → Python runs `run_import_contract(yaml_content, table_group_id, dry_run=True)` — returns a `ContractDiff` with no DB writes.
-3. Preview is stored in `st.session_state["dc_import_preview:{tg_id}"]` → `safe_rerun()`.
+The import flow involves two separate JS events:
+
+1. User clicks **Import YAML** in toolbar → JS emits `ImportYamlClicked` → Python `on_import_yaml` sets `import_open_key` and reruns → `_import_yaml_dialog` opens (`@st.dialog`).
+2. User uploads a `.yaml` file inside that dialog → JS emits `ImportContractClicked { payload: <yaml_string> }` → Python `on_import_contract` runs `run_import_contract(yaml_content, table_group_id, dry_run=True)` — returns a `ContractDiff` with no DB writes.
+3. Preview is stored in `st.session_state["dc_import_preview:{contract_id}"]` → `safe_rerun()`.
 4. Confirmation dialog renders from the staged preview: accepted/skipped counts, create/update breakdown, warnings, orphaned IDs.
 5. User clicks **Confirm Import** → `run_import_contract(yaml_content, table_group_id, dry_run=False)` runs for real.
 6. `sync_import_to_snapshot_suite(snap_id, created_ids, updated_ids, [])` mirrors changes to the snapshot suite.
-7. `_clear_contract_cache()` → result banner shown.
+7. `_clear_contract_cache(contract_id)` → result banner shown.
+
+---
+
+## New Developer Guide: Create, Version, and Delete a Contract
+
+This section is the fastest path to understanding the core data model and flows. Read this before the rest of the doc.
+
+### The data model in one paragraph
+
+A **contract** (`contracts` table) belongs to one table group and has a primary test suite (`is_contract_suite=TRUE`). A contract has zero or more **versions** (`contract_versions` table, one row per saved snapshot). Each version stores the full ODCS YAML at save time and a version number (0, 1, 2, …). Exactly one version is `is_current=TRUE`. Each saved version also has a paired **snapshot test suite** (`is_contract_snapshot=TRUE`) — a frozen copy of the in-scope tests at save time, used to run compliance checks. The snapshot suite is created separately after `save_contract_version` writes the version row.
+
+```
+contracts (id, name, table_group_id, test_suite_id[primary], is_active)
+    └── contract_versions (id, contract_id, version, is_current, contract_yaml, snapshot_suite_id)
+                                                                         └── test_suites (is_contract_snapshot=TRUE)
+```
+
+---
+
+### How a contract is created
+
+**UI path (via wizard):**
+
+Both wizard flows start from **+ New Contract** on the list page, which opens `create_contract_wizard` in `data_contract_dialogs.py`. Both end the same way: the user lands on the detail page and clicks "Save as Version 0".
+
+*Step 1 — Create the contract shell:*
+`create_contract(name, project_code, table_group_id)` in `contract_management.py`:
+- Inserts a row into `contracts`
+- Creates a primary test suite with `is_contract_suite=TRUE` (linked via `contracts.test_suite_id`)
+- Returns `{contract_id, test_suite_id}`
+
+No version exists yet. `has_any_version(contract_id)` returns `False`, so the detail page renders `_render_first_time_flow`.
+
+*Step 2 — Generate or supply YAML:*
+
+| Wizard choice | What happens |
+|---|---|
+| **From test suites** | Wizard navigates to detail page. User clicks "Generate Contract Preview →" → `_capture_yaml(table_group_id, buf, **filters)` builds YAML from live DB state → stored in `st.session_state["dc_preview:{contract_id}"]` |
+| **From YAML upload** | Wizard uploads YAML, calls `create_contract(...)`, pre-sets `st.session_state["dc_preview:{contract_id}"]` with the uploaded YAML, then navigates to detail page |
+
+*Step 3 — Save Version 0:*
+When `dc_preview:{contract_id}` is in session state, `_render_first_time_flow` shows a preview health dashboard and a "Save as Version 0" button. Clicking it calls `_save_version_dialog(contract_id, table_group_id, {}, preview_yaml, None)` which calls `save_contract_version` (see below).
+
+**CLI path (YAML only, no UI steps):**
+```bash
+testgen create-contract -tg <table-group-id> -i contract.yaml [--label "baseline"]
+```
+Calls `create_contract_from_yaml(table_group_id, yaml_content, label)` in `create_data_contract.py`:
+1. `validate_odcs_header(yaml_content)` — checks `apiVersion` and `kind: DataContract`
+2. Fetches `project_code` / `table_groups_name` from `table_groups`
+3. `create_contract(name, project_code, table_group_id)` → gets `contract_id`
+4. `save_contract_version(contract_id, table_group_id, yaml_content, label=label)` → version 0 saved immediately
+
+---
+
+### How a contract is versioned
+
+A version is a numbered, immutable YAML snapshot plus a paired snapshot test suite. **Two separate actions write to the DB:**
+
+**Action 1 — Save the version row:**
+
+`save_contract_version(contract_id, table_group_id, yaml_content, label, term_count)` in `contract_versions.py` runs one atomic CTE that: flips the previous `is_current=TRUE` row to `FALSE`, inserts the new version row with `version = MAX(version)+1`, and resets `table_groups.contract_stale = FALSE`. Returns the new version number from `return_values[0]`.
+
+```sql
+WITH flipped AS (
+    UPDATE contract_versions SET is_current = FALSE
+    WHERE contract_id = :contract_id AND is_current = TRUE
+),
+ins AS (
+    INSERT INTO contract_versions (contract_id, version, is_current, label, contract_yaml, term_count)
+    SELECT :contract_id, COALESCE(MAX(version), -1) + 1, TRUE, :label, :yaml, :term_count
+    FROM contract_versions WHERE contract_id = :contract_id
+    RETURNING version
+),
+upd AS (
+    UPDATE table_groups SET contract_stale = FALSE, last_contract_save_date = NOW()
+    WHERE id = :tg_id
+)
+SELECT version FROM ins
+```
+
+**Action 2 — Create the snapshot test suite:**
+
+`create_contract_snapshot_suite(table_group_id, table_names, ...)` in `contract_snapshot_suite.py` creates a new test suite with `is_contract_snapshot=TRUE` and copies the in-scope tests into it. The new `snapshot_suite_id` is written back to the `contract_versions` row.
+
+**Update in-place (no new version):**
+
+`update_contract_version(contract_id, version, yaml_content)` rewrites the YAML for an existing `contract_versions` row without bumping the version number or creating a new snapshot suite. This is what the **Update (N)** toolbar button does.
+
+**Two save buttons — when to use each:**
+
+| Button | When visible | What it does |
+|---|---|---|
+| **Update (N)** | Only when N pending edits exist; latest version only | Rewrites YAML in-place, no version bump, no new snapshot |
+| **Save New** / **Save New (N)** | Always on latest version | New version row + new snapshot suite |
+
+---
+
+### How a contract is deleted
+
+There are two delete operations with different scopes.
+
+**Delete a single version** (toolbar on the detail page):
+1. `_delete_version_dialog` in `data_contract_dialogs.py` opens
+2. Calls `delete_contract_version(contract_id, version)` in `contract_snapshot_suite.py`
+3. Deletes the `contract_versions` row and its paired snapshot suite via `TestSuite.cascade_delete`
+4. If the deleted version was `is_current=TRUE`, the previous version is promoted to `is_current=TRUE`
+
+**Delete the entire contract** (from the list page):
+1. `_delete_contract_dialog` in `data_contracts_list.py` opens
+2. Fetches all snapshot suite IDs: `get_snapshot_suite_ids_for_contract(contract_id)` in `contract_versions.py`
+3. Calls `delete_contract(contract_id, primary_suite_id, snapshot_suite_ids)` in `contract_management.py`:
+   - `session.execute(text("DELETE FROM contracts WHERE id = ..."))` — removes the contracts row
+   - All `contract_versions` rows cascade-delete automatically (FK `ON DELETE CASCADE`)
+   - `TestSuite.cascade_delete([primary_suite_id, *snapshot_suite_ids])` cleans up all suites
+4. **Critical:** both the contracts DELETE and `cascade_delete` must use `get_current_session()` — they must share the same SQLAlchemy session or the transaction won't be atomic.
+
+---
+
+### Staleness
+
+When live TestGen state drifts from the saved contract (tests added/removed, schema changed), `table_groups.contract_stale` is set to `TRUE` by `mark_contract_stale(table_group_id)` in `contract_versions.py`. The detail page shows a staleness banner. Saving any new version resets `contract_stale = FALSE` via the combined CTE above.
+
+`compute_term_diff` in `contract_term_diff.py` always filters:
+```sql
+AND COALESCE(ts.is_contract_suite, FALSE) = FALSE
+```
+on every suite/test query to prevent the primary contract suite and snapshot suites from bleeding into the diff calculation.
 
 ---
 
@@ -191,7 +327,7 @@ A data contract passes through these lifecycle activities:
 
 1. **Bootstrap (Create)** — First-time flow generates the initial contract YAML from the current DB state (schema + profiling stats + active test definitions). Entry point: `_render_first_time_flow()`.
 
-2. **Inline edit** — Users edit governance terms (description, CDE, PII), test rule thresholds/tolerances/severity, and delete terms directly in the UI. Edits are staged as pending changes (`dc_pending:{tg_id}` session state) and committed via one of the two save buttons.
+2. **Inline edit** — Users edit governance terms (description, CDE, PII), test rule thresholds/tolerances/severity, and delete terms directly in the UI. Edits are staged as pending changes (`dc_pending:{contract_id}` session state) and committed via one of the two save buttons.
 
 3. **Update (in-place)** — Saves pending edits to the current version without creating a new version number or a new snapshot suite. The toolbar button label is **Update (N)** (visible only when there are staged changes). Entry point: `_update_version_dialog()`. Also reachable from the JS sticky bar at the bottom of the component.
 
@@ -235,17 +371,57 @@ There are exactly three supported paths to creating or updating a contract:
 
 ## DB Schema
 
-| Column | Table | Type | Purpose |
-|---|---|---|---|
-| `include_in_contract` | `test_suites` | `BOOLEAN NOT NULL DEFAULT TRUE` | Controls which suites are in scope for the contract |
-| `is_monitor` | `test_suites` | `BOOLEAN` | Monitor suites — excluded from contract test counts and suite picker |
-| `is_contract_snapshot` | `test_suites` | `BOOLEAN NOT NULL DEFAULT FALSE` | Marks a suite as a locked snapshot created at save time; excluded from all source-suite queries |
-| `snapshot_suite_id` | `data_contracts` | `UUID REFERENCES test_suites(id) ON DELETE SET NULL` | Links each saved contract version to its paired snapshot test suite |
-| `source_test_definition_id` | `test_definitions` | `UUID` | On snapshot suite rows, points back to the source test definition that was copied; no FK constraint |
+### Core contract tables (migration `0186_incremental_upgrade.sql`)
 
-Migrations:
-- `testgen/template/dbupgrade/0183_incremental_upgrade.sql` — adds `include_in_contract`
-- `testgen/template/dbupgrade/0185_incremental_upgrade.sql` — adds `is_contract_snapshot` on `test_suites`, `snapshot_suite_id` on `data_contracts`, `source_test_definition_id` on `test_definitions`
+```sql
+-- One row per named contract; one contract per table group
+contracts (
+    id               UUID PK,
+    name             TEXT NOT NULL,
+    project_code     TEXT REFERENCES projects,
+    table_group_id   UUID REFERENCES table_groups,
+    test_suite_id    UUID REFERENCES test_suites,   -- primary contract suite (is_contract_suite=TRUE)
+    created_at       TIMESTAMP DEFAULT NOW(),
+    is_active        BOOLEAN DEFAULT TRUE,
+    UNIQUE (name, project_code),
+    UNIQUE (test_suite_id)
+)
+
+-- One row per saved version; only one is_current=TRUE per contract (partial unique index)
+contract_versions (
+    id                UUID PK,
+    contract_id       UUID REFERENCES contracts ON DELETE CASCADE,
+    version           INT NOT NULL,
+    is_current        BOOLEAN DEFAULT FALSE,
+    saved_at          TIMESTAMP DEFAULT NOW(),
+    label             TEXT,
+    contract_yaml     TEXT NOT NULL,
+    term_count        INT DEFAULT 0,
+    snapshot_suite_id UUID REFERENCES test_suites ON DELETE SET NULL,
+    UNIQUE (contract_id, version)
+)
+```
+
+### Columns on `test_suites`
+
+| Column | Type | Purpose |
+|---|---|---|
+| `include_in_contract` | `BOOLEAN NOT NULL DEFAULT TRUE` | Controls which suites are in scope for the contract |
+| `is_monitor` | `BOOLEAN` | Monitor suites — excluded from contract test counts and suite picker |
+| `is_contract_suite` | `BOOLEAN` | Primary contract suite (`create_contract` sets this); excluded from source-suite queries |
+| `is_contract_snapshot` | `BOOLEAN NOT NULL DEFAULT FALSE` | Frozen snapshot suite created at each Save New; excluded from all source-suite queries |
+
+### Other columns
+
+| Column | Table | Purpose |
+|---|---|---|
+| `source_test_definition_id` | `test_definitions` | On snapshot rows, points back to the source test definition; no FK constraint |
+
+### Migrations
+
+- `0183_incremental_upgrade.sql` — adds `include_in_contract` to `test_suites`
+- `0185_incremental_upgrade.sql` — adds `is_contract_snapshot` on `test_suites`, `snapshot_suite_id` on `data_contracts` (legacy table), `source_test_definition_id` on `test_definitions`
+- `0186_incremental_upgrade.sql` — adds `is_contract_suite` on `test_suites`, creates `contracts` table and `contract_versions` table
 
 ---
 
@@ -272,7 +448,7 @@ This applies to:
 - `_fetch_suite_scope` (`data_contract_queries.py`)
 - `_fetch_test_statuses` (`data_contract_queries.py`)
 - `_fetch_last_run_dates` (`data_contract_queries.py`)
-- `_fetch_suite_scope` / `compute_term_diff` (`contract_staleness.py`)
+- `_fetch_suite_scope` / `compute_term_diff` (`contract_term_diff.py`)
 - `_fetch_tests` / `_fetch_test_run_history` (`export_data_contract.py`)
 
 ### Sync on mutation
@@ -288,9 +464,9 @@ All test mutations in the contract UI are immediately mirrored to the snapshot s
 
 `showAddTest = !!(versionInfo.snapshot_suite_id && versionInfo.is_latest)` — only the latest snapshot-backed version shows the button. Emits `AddTestClicked { tableName, colName }` → routes to `on_add_test` in `data_contract.py`.
 
-### Staleness diff — quality suppression
+### Staleness diff — snapshot scoping
 
-`compute_staleness_diff` accepts `snapshot_suite_id: str | None`. When non-null, `quality_changes = []` (tests are locked to the snapshot suite and always in sync). Schema, governance, and suite-scope changes are still computed.
+`compute_term_diff` accepts `snapshot_suite_id: str | None`. When non-null, the query is scoped to tests in that specific snapshot suite, so the diff reflects what was frozen at save time rather than the broader live suite set.
 
 ---
 
@@ -450,7 +626,7 @@ TermStatus = Literal["same", "changed", "new", "deleted"]
 
 **Key rule:** Terms absent from the saved contract YAML (i.e. previously intentionally deleted) are never surfaced as "new". The diff is always from the saved contract's perspective.
 
-**Entry point:** `compute_term_diff(table_group_id, saved_yaml) -> TermDiffResult` in `contract_staleness.py`.
+**Entry point:** `compute_term_diff(table_group_id, saved_yaml, anomalies, snapshot_suite_id=None) -> TermDiffResult` in `contract_term_diff.py`.
 
 **Algorithm:**
 1. Parse saved YAML `quality` array → build index `{rule_id: rule}`
@@ -471,16 +647,16 @@ TermStatus = Literal["same", "changed", "new", "deleted"]
 
 ```bash
 # Export to stdout
-testgen export-data-contract -t <table-group-id>
+testgen export-data-contract -tg <table-group-id>
 
 # Export to file
-testgen export-data-contract -t <table-group-id> -o orders_contract.yaml
+testgen export-data-contract -tg <table-group-id> -o orders_contract.yaml
 
 # Import from file
-testgen import-data-contract -t <table-group-id> -f orders_contract.yaml
+testgen import-data-contract -tg <table-group-id> -i orders_contract.yaml
 
 # Dry run — preview changes without applying
-testgen import-data-contract -t <table-group-id> -f orders_contract.yaml --dry-run
+testgen import-data-contract -tg <table-group-id> -i orders_contract.yaml --dry-run
 
 # Create a brand-new contract for a table group from an ODCS YAML file
 testgen create-contract -tg <table-group-id> -i orders_contract.yaml [--label "v1 baseline"]
@@ -507,31 +683,44 @@ diff = run_import_contract(yaml_content, table_group_id, dry_run=False)
 
 ### Unit Tests
 
-534 data-contract unit tests across 17 files. **All 534 passing as of 2026-04-15.**
+**1403 total tests passing as of 2026-04-17** (all markers: unit, functional, app).
 
 ```bash
 pytest -m unit tests/unit/
 ```
 
-| File | Lines | Covers |
-|---|---|---|
-| `tests/unit/commands/test_data_contract_export.py` | 827 | Export mapping, anomaly criteria, YAML output |
-| `tests/unit/commands/test_odcs_contract.py` | 1429 | Import validation, diff, apply, CREATE/UPDATE/WRITE-BACK round-trip; `Test_ContractDiffRuleCounters` |
-| `tests/unit/ui/test_data_contract_page.py` | 815 | Page registration, coverage tiers, JS link hrefs, `Test_TermCountConsistency` |
-| `tests/unit/ui/test_contract_pending_edits.py` | 236 | Pending edit accumulation, YAML patching, persistence helpers |
-| `tests/unit/ui/test_contract_term_deletion.py` | 270 | All 13 deletable term types across DDL (4), Profiling (6), Governance (3); error cases |
-| `tests/unit/ui/test_bulk_delete_terms.py` | 285 | Multi-select bulk delete across governance, test, and hygiene term types |
-| `tests/unit/commands/test_contract_staleness.py` | 472 | `compute_staleness_diff` — schema, quality, governance, and suite scope diffs |
-| `tests/unit/commands/test_contract_versions.py` | 258 | `save_contract_version`, `load_contract_version`, `list_contract_versions`, staleness marking |
-| `tests/unit/commands/test_staleness_diff.py` | 449 | Threshold comparison helpers; range vs scalar; float/string normalization |
-| `tests/unit/commands/test_staleness_detection.py` | 117 | Staleness trigger integration |
-| `tests/unit/commands/test_contract_snapshot_suite.py` | 415 | `create_contract_snapshot_suite`, `sync_import_to_snapshot_suite`, `delete_contract_version` |
-| `tests/unit/commands/test_delete_contract_version.py` | 118 | Delete contract version cleanup and cascade behavior |
-| `tests/unit/commands/test_data_contract_cli.py` | 264 | `create-contract` and `run-contract-tests` CLI commands |
-| `tests/unit/commands/test_staleness_diff_snapshot.py` | 170 | Staleness diff with snapshot suite quality suppression |
-| `tests/unit/ui/test_contract_on_term_detail_snapshot.py` | 127 | Term detail snapshot rendering |
-| `tests/unit/ui/test_contract_dialog_warnings.py` | 173 | Dialog warning states and confirmation flows |
-| `tests/unit/ui/test_contract_query_exclusions.py` | 96 | Snapshot suite filter exclusions in all DB queries |
+| File | Covers |
+|---|---|
+| `tests/unit/commands/test_data_contract_export.py` | Export mapping, anomaly criteria, YAML output |
+| `tests/unit/commands/test_odcs_contract.py` | Import validation, diff, apply, CREATE/UPDATE/WRITE-BACK round-trip; orphaned IDs |
+| `tests/unit/commands/test_create_data_contract.py` | `validate_odcs_header`, `create_contract_from_yaml` (correct call signatures, table group lookup) |
+| `tests/unit/commands/test_contract_management.py` | `get_contract`, `create_contract`, `delete_contract` (session.execute), `set_contract_active` |
+| `tests/unit/commands/test_contract_versions.py` | `save_contract_version` (single CTE, `return_values[0]`), `load_contract_version`, staleness marking |
+| `tests/unit/commands/test_contract_versions_refactor.py` | contract_id-based version API; `has_any_version` |
+| `tests/unit/commands/test_contract_snapshot_suite.py` | `create_contract_snapshot_suite` (fallback to table_groups), `sync_import_to_snapshot_suite`, `delete_contract_version` |
+| `tests/unit/commands/test_contract_term_diff.py` | `compute_term_diff` logic |
+| `tests/unit/commands/test_contracts_list_queries.py` | List query structure |
+| `tests/unit/commands/test_data_contract_cli.py` | `create-contract` and `run-contract-tests` CLI commands |
+| `tests/unit/ui/test_data_contract_page.py` | Page registration, coverage tiers, JS link hrefs |
+| `tests/unit/ui/test_contract_pending_edits.py` | Pending edit accumulation, YAML patching, `_persist_pending_edits`, snapshot sync on deletion |
+| `tests/unit/ui/test_contract_term_deletion.py` | All 13 deletable term types; error cases |
+| `tests/unit/ui/test_bulk_delete_terms.py` | Multi-select bulk delete across governance, test, hygiene term types |
+| `tests/unit/ui/test_contract_dialog_warnings.py` | Dialog warning states and confirmation flows |
+| `tests/unit/ui/test_contract_first_time_flow.py` | First-time / no-version flow |
+| `tests/unit/ui/test_contract_historic_view.py` | Historic version view |
+| `tests/unit/ui/test_contract_on_term_detail_snapshot.py` | Term detail in snapshot context |
+| `tests/unit/ui/test_contract_query_exclusions.py` | `is_contract_suite` filter exclusions in all DB queries |
+| `tests/unit/ui/test_contract_staleness_hooks.py` | Staleness hook wiring |
+| `tests/unit/ui/test_contract_wizard.py` | Wizard creation flow |
+
+### Patching notes for unit tests
+
+- `with_database_session` must be monkeypatched to `lambda f: f` in all unit tests — the decorator is a no-op in test context
+- `get_tg_schema` must be monkeypatched to `lambda: "tg"`
+- All imports used by a function under test must be at **module level** — function-level imports cannot be patched as module attributes
+- `execute_db_queries` with the single combined CTE returns `([version_number], [1])` — read `return_values[0]`, not `return_values[1]`
+- `delete_contract` tests must patch `get_current_session` and verify `mock_session.execute.called` (not `execute_db_queries.called`)
+- Use `CAST(:x AS uuid)` — never `::uuid` — in SQLAlchemy parameterized queries
 
 ### UI Tests (AppTest)
 
@@ -567,7 +756,7 @@ pytest -m functional tests/functional/ui/test_data_contract_apptest.py
 
 ### Shared Utilities
 
-`_pii_flag_to_classification(pii_flag: str) -> str` lives in `export_data_contract.py` and is imported by `contract_staleness.py`. Do not duplicate this mapping.
+`_pii_flag_to_classification(pii_flag: str) -> str` lives in `export_data_contract.py` and is imported by `contract_term_diff.py`. Do not duplicate this mapping.
 
 ### HTML Escaping
 
@@ -709,16 +898,23 @@ The following bugs were identified and fixed after the initial implementation:
 
 8. **Listing page test run status** — LATERAL join corrected to use `snapshot_suite_id` (see fix 4 above) for accurate run status display per contract card.
 
-## UI Changes (2026-04-16)
+## UI Changes (2026-04-16 → 2026-04-17)
 
-- **Data Contract button removed from project dashboard** — The `DcPill` component and all associated CSS have been removed from `project_dashboard.js`. The Data Contracts list page is the sole entry point for contracts.
-- **Data Contract button removed from table group listing** — The `DcButton` component and all associated CSS have been removed from `table_group_list.js`; the `ViewContractClicked` event handler has been removed from `table_groups.py`.
+- **Data Contracts in left nav** — Data Contracts now has its own left nav entry (`DataContractsListPage`, section: "Data Quality Testing"). Clicking it navigates to the list page, not directly to a single contract detail.
+- **Data Contract button removed from project dashboard** — `DcPill` component and CSS removed from `project_dashboard.js`. Navigation is exclusively via the left nav.
+- **Data Contract button removed from table group listing** — `DcButton` component and CSS removed from `table_group_list.js`; `ViewContractClicked` handler removed from `table_groups.py`.
+- **List page toolbar** — `+ New Contract` button pinned to far right via `st.columns([5, 1])`.
+- **Contract versioning rewrite** — `contract_versions` table and `contracts` table introduced (migration `0186`); `save_contract_version` now uses a single combined CTE; returns version from `return_values[0]`.
+- **`create_contract_from_yaml` rewrite** — removed `has_any_version` guard from this function; the function now looks up `project_code` and name from DB, calls `create_contract` to get `contract_id`, then `save_contract_version`. `has_any_version` still exists in `contract_versions.py` and is used elsewhere.
+- **`delete_contract` session fix** — now uses `session.execute(text(...))` for the contracts DELETE so it shares the SQLAlchemy session with `TestSuite.cascade_delete`.
+- **Staleness filter** — `compute_term_diff` adds `AND COALESCE(ts.is_contract_suite, FALSE) = FALSE` to all suite/test WHERE clauses.
+- **Snapshot suite fallback** — `create_contract_snapshot_suite` falls back to `table_groups` for `connection_id`/`project_code` when no eligible suites exist; only raises `ValueError` if the table group itself is not found.
 
 ---
 
 ## Known Issues
 
-All critical and important issues from the 2026-04-15 and 2026-04-16 code reviews have been fixed. 948/948 unit tests and 110/110 functional tests passing.
+All critical and important issues from the 2026-04-15 and 2026-04-16 code reviews have been fixed. **1403/1403 tests passing as of 2026-04-17.**
 
 ### Minor (open)
 
