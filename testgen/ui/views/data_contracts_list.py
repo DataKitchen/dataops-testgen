@@ -103,7 +103,7 @@ class DataContractsListPage(Page):
 
         # ── Toolbar ────────────────────────────────────────────────
         tg_count = len({c["table_group_id"] for c in contracts})
-        toolbar_left, toolbar_right = st.columns([4, 2])
+        toolbar_left, toolbar_right = st.columns([5, 1])
         with toolbar_left:
             st.caption(
                 f"{len(contracts)} contract{'s' if len(contracts) != 1 else ''} · "

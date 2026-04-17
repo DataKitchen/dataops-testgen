@@ -133,11 +133,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     );
 }
 
-const DcPill = ({ tableGroupId, projectCode }) => button(
-    { class: 'tg-dc-pill', title: 'View Data Contract', 'aria-label': 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contracts', params: { project_code: projectCode, table_group_id: tableGroupId } }) },
-    i({ class: 'material-symbols-rounded' }, 'contract'),
-    span({ class: 'tg-dc-label', 'aria-hidden': 'true' }, 'Data Contract'),
-);
 
 const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
     const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
@@ -168,7 +163,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type str
                 ),
                 div(
                     { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
-                    DcPill({ tableGroupId: tableGroup.id, projectCode }),
+
                     ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
                 ),
             ),
@@ -213,7 +208,7 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /*
                 ),
                 div(
                     { class: 'flex-row fx-align-flex-start', style: 'gap: 10px; flex-shrink: 0;' },
-                    DcPill({ tableGroupId: tableGroup.id, projectCode }),
+
                     ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
                 ),
             ),
@@ -392,29 +387,6 @@ hr.tg-overview--table-group-divider {
 
 .tg-overview--row > * {
     padding: 0 4px;
-}
-
-button.tg-dc-pill {
-    display: inline-flex;
-    align-items: center;
-    height: 32px;
-    border-radius: 20px;
-    border: 1.5px solid rgba(0, 0, 0, .3);
-    padding: 0 14px 0 10px;
-    background: transparent;
-    color: rgba(0, 0, 0, .87);
-    cursor: pointer;
-    white-space: nowrap;
-    flex-shrink: 0;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 500;
-    gap: 6px;
-}
-
-button.tg-dc-pill:hover {
-    border-color: rgba(0, 0, 0, .7);
-    background: rgba(0, 0, 0, .04);
 }
 
 `);

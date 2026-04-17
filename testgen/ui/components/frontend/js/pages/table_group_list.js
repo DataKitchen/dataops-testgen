@@ -31,15 +31,6 @@ import { TruncatedText } from '../components/truncated_text.js';
 
 const { button, div, h4, i, span } = van.tags;
 
-/**
- * @param {Properties} props
- * @returns {HTMLElement}
- */
-const DcButton = ({ tableGroupId, projectCode }) => button(
-    { class: 'tg-dc-pill', title: 'View Data Contract', 'aria-label': 'View Data Contract', onclick: () => emitEvent('LinkClicked', { href: 'data-contracts', params: { project_code: projectCode, table_group_id: tableGroupId } }) },
-    i({ class: 'material-symbols-rounded' }, 'contract'),
-    span({ class: 'tg-dc-label' }, 'Data Contract'),
-);
 
 const ActionIcon = ({ icon, label, tooltip, onclick }) => button(
     { class: 'tg-action-icon', title: tooltip, 'aria-label': tooltip, onclick },
@@ -175,7 +166,6 @@ const TableGroupList = (props) => {
                         ),
                         actionContent: div(
                             { class: 'tg-action-group' },
-                            DcButton({ tableGroupId: tableGroup.id, projectCode: projectSummary.project_code }),
                             permissions.can_edit
                                 ? ActionIcon({
                                     icon: 'edit',
@@ -391,48 +381,6 @@ button.tg-action-icon:focus-visible .tg-action-label {
     margin-left: 6px;
 }
 
-/* Data Contract pill — always expanded */
-button.tg-dc-pill {
-    display: inline-flex;
-    align-items: center;
-    height: 36px;
-    max-width: 180px;
-    border-radius: 20px;
-    border: 1.5px solid rgba(0, 0, 0, .3);
-    padding: 0 14px 0 10px;
-    background: transparent;
-    color: rgba(0, 0, 0, .87);
-    cursor: pointer;
-    overflow: hidden;
-    white-space: nowrap;
-    flex-shrink: 0;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 500;
-    gap: 6px;
-}
-
-button.tg-dc-pill .material-symbols-rounded {
-    font-size: 20px;
-    flex-shrink: 0;
-}
-
-button.tg-dc-pill .tg-dc-label {
-    display: inline-block;
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    max-width: 140px;
-    opacity: 1;
-    margin-left: 6px;
-    pointer-events: none;
-}
-
-button.tg-dc-pill:hover {
-    border-color: rgba(0, 0, 0, .7);
-    background: rgba(0, 0, 0, .04);
-}
 `);
 
 export { TableGroupList };
