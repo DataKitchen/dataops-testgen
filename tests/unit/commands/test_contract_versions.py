@@ -178,10 +178,9 @@ class Test_ListContractVersions:
 # ---------------------------------------------------------------------------
 
 class Test_SaveContractVersion:
-    def _run_save(self, return_values, row_counts, label=None):
+    def _run_save(self, return_values: list, row_counts: list, label: str | None = None):
         from testgen.commands.contract_versions import save_contract_version
 
-        # Two statements: flip UPDATE (index 0) + INSERT RETURNING version (index 1)
         with patch(
             "testgen.commands.contract_versions.execute_db_queries",
             return_value=(return_values, row_counts),
@@ -190,39 +189,52 @@ class Test_SaveContractVersion:
             return result, mock_exec
 
     def test_first_save_returns_zero(self):
-        result, _ = self._run_save([None, 0], [0, 1])
+        result, _ = self._run_save([0], [1])
         assert result == 0
 
     def test_second_save_returns_one(self):
-        result, _ = self._run_save([None, 1], [0, 1])
+        result, _ = self._run_save([1], [1])
         assert result == 1
 
-    def test_executes_two_queries(self):
-        """Flip UPDATE and INSERT are two separate queries in execute_db_queries."""
-        _, mock_exec = self._run_save([None, 0], [0, 1])
-        assert mock_exec.call_count == 1
+    def test_single_query_used_not_two(self):
+        """save_contract_version must use exactly one combined CTE query.
+
+        Using one statement eliminates the fragile return_values index assumption
+        that existed when flip UPDATE and INSERT were separate queries.
+        """
+        _, mock_exec = self._run_save([0], [1])
         queries = mock_exec.call_args[0][0]
-        assert len(queries) == 2
+        assert len(queries) == 1, (
+            f"Expected 1 combined CTE query, got {len(queries)} queries"
+        )
 
-    def test_insert_query_contains_contract_versions_and_update(self):
-        _, mock_exec = self._run_save([None, 0], [0, 1])
-        queries = mock_exec.call_args_list[0][0][0]
-        insert_sql = queries[1][0].upper()
-        assert "INSERT" in insert_sql
-        assert "CONTRACT_VERSIONS" in insert_sql
-        assert "RETURNING" in insert_sql
+    def test_returns_int_from_index_zero(self):
+        """save_contract_version reads return_values[0] from the single query."""
+        result, _ = self._run_save([5], [1])
+        assert result == 5
 
-    def test_insert_query_also_updates_staleness(self):
-        _, mock_exec = self._run_save([None, 0], [0, 1])
-        queries = mock_exec.call_args_list[0][0][0]
-        insert_sql = queries[1][0].upper()
-        assert "CONTRACT_STALE" in insert_sql
-        assert "FALSE" in insert_sql
+    def test_combined_sql_contains_flip_update_and_insert_returning(self):
+        """The single CTE must contain UPDATE (flip), INSERT, and RETURNING."""
+        _, mock_exec = self._run_save([0], [1])
+        sql = mock_exec.call_args[0][0][0][0].upper()
+        assert "UPDATE" in sql
+        assert "INSERT" in sql
+        assert "RETURNING" in sql
+
+    def test_combined_sql_clears_staleness_flag(self):
+        _, mock_exec = self._run_save([0], [1])
+        sql = mock_exec.call_args[0][0][0][0].upper()
+        assert "CONTRACT_STALE" in sql
+        assert "FALSE" in sql
+
+    def test_combined_sql_targets_contract_versions(self):
+        _, mock_exec = self._run_save([0], [1])
+        sql = mock_exec.call_args[0][0][0][0].upper()
+        assert "CONTRACT_VERSIONS" in sql
 
     def test_label_passed_as_param(self):
-        _, mock_exec = self._run_save([None, 0], [0, 1], label="my-label")
-        queries = mock_exec.call_args_list[0][0][0]
-        params = queries[1][1]
+        _, mock_exec = self._run_save([0], [1], label="my-label")
+        params = mock_exec.call_args[0][0][0][1]
         assert params.get("label") == "my-label"
 
 
@@ -260,22 +272,3 @@ class Test_MarkContractStale:
         params = queries[0][1]
         assert params.get("tg_id") == TG_ID
 
-
-# ---------------------------------------------------------------------------
-# mark_contract_not_stale
-# ---------------------------------------------------------------------------
-
-class Test_MarkContractNotStale:
-    def test_sets_stale_false(self):
-        from testgen.commands.contract_versions import mark_contract_not_stale
-
-        with patch(
-            "testgen.commands.contract_versions.execute_db_queries",
-            return_value=([], [1]),
-        ) as mock_exec:
-            mark_contract_not_stale(TG_ID)
-
-        queries = mock_exec.call_args[0][0]
-        sql = queries[0][0]
-        assert "contract_stale" in sql
-        assert "FALSE" in sql.upper()

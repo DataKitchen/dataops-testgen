@@ -234,3 +234,109 @@ class Test_GovFieldHelpers:
         assert result is not None
         assert result["col"] == "name"
         assert result["value"] == "Full name of the user"
+
+
+# ---------------------------------------------------------------------------
+# Test__PersistPendingEdits — snapshot suite sync on deletion
+# ---------------------------------------------------------------------------
+
+TG_ID = "aaaaaaaa-0000-0000-0000-000000000001"
+SNAP_ID = "bbbbbbbb-0000-0000-0000-000000000002"
+RULE_ID = "cccccccc-0000-0000-0000-000000000003"
+
+
+@pytest.fixture(autouse=False)
+def patch_persist_deps(monkeypatch):
+    """Strip DB session decorator and schema lookup from _persist_pending_edits."""
+    monkeypatch.setattr(
+        "testgen.ui.queries.data_contract_queries.with_database_session",
+        lambda f: f,
+    )
+    monkeypatch.setattr(
+        "testgen.ui.queries.data_contract_queries.get_tg_schema",
+        lambda: "tg",
+    )
+
+
+class Test_PersistPendingEdits_SnapshotSync:
+    """Verify that _persist_pending_edits syncs test deletions to the snapshot suite."""
+
+    def test_deleted_test_removed_from_source(self, patch_persist_deps):
+        """A _removed=True pending edit must DELETE the test from test_definitions."""
+        from unittest.mock import patch as _patch
+        from testgen.ui.queries.data_contract_queries import _persist_pending_edits
+
+        pending = {"tests": [{"rule_id": RULE_ID, "_removed": True}]}
+        with _patch("testgen.ui.queries.data_contract_queries.execute_db_queries",
+                    return_value=([], [])) as mock_exec, \
+             _patch("testgen.ui.queries.data_contract_queries.sync_import_to_snapshot_suite"):
+            _persist_pending_edits(TG_ID, pending)
+
+        all_sqls = [call[0][0][0][0] for call in mock_exec.call_args_list]
+        assert any("DELETE" in sql.upper() and "test_definitions" in sql for sql in all_sqls), (
+            "Expected a DELETE from test_definitions for the removed test"
+        )
+
+    def test_deletion_synced_to_snapshot_when_snapshot_suite_id_provided(self, patch_persist_deps):
+        """When snapshot_suite_id is provided, sync_import_to_snapshot_suite must be called
+        with the deleted test ID so the snapshot suite stays consistent.
+
+        Regression: previously _persist_pending_edits did not call sync, leaving the
+        snapshot suite with a stale copy of the deleted test.
+        """
+        from unittest.mock import patch as _patch
+        from testgen.ui.queries.data_contract_queries import _persist_pending_edits
+
+        pending = {"tests": [{"rule_id": RULE_ID, "_removed": True}]}
+        with _patch("testgen.ui.queries.data_contract_queries.execute_db_queries",
+                    return_value=([], [])), \
+             _patch("testgen.ui.queries.data_contract_queries.sync_import_to_snapshot_suite",
+                    return_value=None) as mock_sync:
+            _persist_pending_edits(TG_ID, pending, snapshot_suite_id=SNAP_ID)
+
+        mock_sync.assert_called_once()
+        _, _, deleted_ids = mock_sync.call_args[0][1], mock_sync.call_args[0][2], mock_sync.call_args[0][3]
+        assert RULE_ID in deleted_ids, (
+            f"Expected {RULE_ID} in deleted_ids passed to sync_import_to_snapshot_suite"
+        )
+
+    def test_no_snapshot_sync_when_snapshot_suite_id_is_none(self, patch_persist_deps):
+        """sync_import_to_snapshot_suite must NOT be called when no snapshot_suite_id is given."""
+        from unittest.mock import patch as _patch
+        from testgen.ui.queries.data_contract_queries import _persist_pending_edits
+
+        pending = {"tests": [{"rule_id": RULE_ID, "_removed": True}]}
+        with _patch("testgen.ui.queries.data_contract_queries.execute_db_queries",
+                    return_value=([], [])), \
+             _patch("testgen.ui.queries.data_contract_queries.sync_import_to_snapshot_suite",
+                    return_value=None) as mock_sync:
+            _persist_pending_edits(TG_ID, pending, snapshot_suite_id=None)
+
+        mock_sync.assert_not_called()
+
+    def test_non_removed_tests_do_not_trigger_snapshot_sync(self, patch_persist_deps):
+        """Only _removed=True edits trigger snapshot sync; plain updates do not."""
+        from unittest.mock import patch as _patch
+        from testgen.ui.queries.data_contract_queries import _persist_pending_edits
+
+        pending = {"tests": [{"rule_id": RULE_ID, "threshold_value": "100"}]}
+        with _patch("testgen.ui.queries.data_contract_queries.execute_db_queries",
+                    return_value=([], [])), \
+             _patch("testgen.ui.queries.data_contract_queries.sync_import_to_snapshot_suite",
+                    return_value=None) as mock_sync:
+            _persist_pending_edits(TG_ID, pending, snapshot_suite_id=SNAP_ID)
+
+        mock_sync.assert_not_called()
+
+    def test_empty_pending_does_not_call_sync(self, patch_persist_deps):
+        """No-op when pending is empty — sync must not be called."""
+        from unittest.mock import patch as _patch
+        from testgen.ui.queries.data_contract_queries import _persist_pending_edits
+
+        with _patch("testgen.ui.queries.data_contract_queries.execute_db_queries",
+                    return_value=([], [])), \
+             _patch("testgen.ui.queries.data_contract_queries.sync_import_to_snapshot_suite",
+                    return_value=None) as mock_sync:
+            _persist_pending_edits(TG_ID, {}, snapshot_suite_id=SNAP_ID)
+
+        mock_sync.assert_not_called()

@@ -86,6 +86,9 @@ def delete_contract(contract_id: str, primary_suite_id: str, snapshot_suite_ids:
     """
     Delete a contract and all its versions (via CASCADE), then delete the test suites.
 
+    Both operations share the same SQLAlchemy session so they are atomic —
+    if cascade_delete fails, the contracts row deletion is also rolled back.
+
     Ordering is critical:
     1. DELETE contracts row (cascades to contract_versions, clearing snapshot FK refs)
     2. Cascade-delete all linked suites (clears test_definitions, test_results, test_runs first)
@@ -93,14 +96,15 @@ def delete_contract(contract_id: str, primary_suite_id: str, snapshot_suite_ids:
     from testgen.common.models.test_suite import TestSuite
 
     schema = get_tg_schema()
+    session = get_current_session()
 
-    # Step 1: delete contracts row — cascades to contract_versions, sets snapshot_suite_id = NULL
-    execute_db_queries([(
-        f"DELETE FROM {schema}.contracts WHERE id = CAST(:contract_id AS uuid)",
+    # Step 1: delete contracts row using the current session — cascades to contract_versions.
+    session.execute(
+        text(f"DELETE FROM {schema}.contracts WHERE id = CAST(:contract_id AS uuid)"),
         {"contract_id": contract_id},
-    )])
+    )
 
-    # Step 2: cascade-delete all linked suites (snapshot suites + primary suite).
+    # Step 2: cascade-delete all linked suites in the same session.
     # TestSuite.cascade_delete removes test_definitions, test_results, test_runs,
     # job_schedules, then the suite rows — in the correct order.
     all_suite_ids = [s for s in snapshot_suite_ids + [primary_suite_id] if s]

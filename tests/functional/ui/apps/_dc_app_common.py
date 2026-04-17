@@ -109,7 +109,6 @@ def make_default_patches(
     *,
     current_version: dict = VERSION_1,
     all_versions: list[dict] | None = None,
-    stale_diff: object = None,
     suite_scope: dict | None = None,
     rebuild_quality_side_effect: object = None,
 ) -> list:
@@ -136,7 +135,6 @@ def make_default_patches(
         patch("testgen.ui.views.data_contract.has_any_version", return_value=True),
         patch("testgen.ui.views.data_contract.load_contract_version", return_value=current_version),
         patch("testgen.ui.views.data_contract.list_contract_versions", return_value=all_versions),
-        patch("testgen.ui.views.data_contract.compute_staleness_diff", return_value=stale_diff),
         patch("testgen.ui.views.data_contract.compute_term_diff", return_value=minimal_term_diff),
         patch("testgen.ui.views.data_contract._fetch_suite_scope", return_value=suite_scope),
         patch("testgen.ui.views.data_contract._fetch_last_run_dates",
@@ -144,7 +142,6 @@ def make_default_patches(
         patch("testgen.ui.views.data_contract._fetch_test_statuses", return_value={}),
         patch("testgen.ui.views.data_contract._fetch_anomalies", return_value=[]),
         patch("testgen.ui.views.data_contract._fetch_governance_data", return_value={}),
-        patch("testgen.ui.views.data_contract.mark_contract_not_stale", MagicMock()),
         patch("testgen.ui.views.data_contract._count_snapshot_tests", return_value=2),
         patch("testgen.commands.export_data_contract.rebuild_quality_from_suite",
               side_effect=rebuild_quality_side_effect),

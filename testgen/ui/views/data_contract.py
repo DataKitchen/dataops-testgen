@@ -16,10 +16,8 @@ import streamlit as st
 import yaml
 
 from testgen.commands.contract_snapshot_suite import sync_import_to_snapshot_suite
-from testgen.commands.contract_staleness import (
-    StaleDiff,
+from testgen.commands.contract_term_diff import (
     TermDiffResult,
-    compute_staleness_diff,
     compute_term_diff,
 )
 from testgen.commands.contract_management import get_contract
@@ -27,7 +25,6 @@ from testgen.commands.contract_versions import (
     has_any_version,
     list_contract_versions,
     load_contract_version,
-    mark_contract_not_stale,
 )
 from testgen.commands.odcs_contract import ContractDiff as OdcsContractDiff
 from testgen.commands.odcs_contract import get_updated_yaml, run_import_contract
@@ -67,7 +64,6 @@ from testgen.ui.views.dialogs.data_contract_dialogs import (
     _governance_edit_dialog,
     _import_yaml_dialog,
     _monitor_term_dialog,
-    _review_changes_panel,
     _save_version_dialog,
     _schema_edit_dialog,
     _update_version_dialog,
@@ -278,37 +274,6 @@ def _check_contract_prerequisites(table_group_id: str, suite_ids: list[str] | No
         "suite_ct": suite_ct,
         "meta_pct": meta_pct,
     }
-
-
-# ---------------------------------------------------------------------------
-# Staleness banner
-# ---------------------------------------------------------------------------
-
-def _render_staleness_banner(
-    version_record: dict,
-    stale_diff: StaleDiff,
-    contract_id: str,
-    dismissed_key: str,
-) -> None:
-    """Render the staleness warning banner. Returns silently if not stale or dismissed."""
-    if st.session_state.get(dismissed_key):
-        return
-    parts = stale_diff.summary_parts()
-    saved_at = version_record.get("saved_at")
-    saved_str = saved_at.strftime("%b %d, %Y") if saved_at else "unknown date"
-    version_num = version_record.get("version", "?")
-    st.warning(
-        f"Contract version {version_num} was saved on {saved_str}. "
-        f"Since then: {', '.join(parts)}.",
-        icon="⚠️",
-    )
-    col1, col2 = st.columns([1, 8])
-    if col1.button("Review Changes", key=f"dc_review_changes:{contract_id}"):
-        st.session_state[f"dc_show_review:{contract_id}"] = True
-        safe_rerun()
-    if col2.button("Dismiss", key=f"dc_dismiss_stale:{contract_id}"):
-        st.session_state[dismissed_key] = True
-        safe_rerun()
 
 
 # ---------------------------------------------------------------------------
@@ -645,7 +610,6 @@ class DataContractPage(Page):
         gov_key         = f"dc_gov:{contract_id}"
         term_diff_key      = f"dc_term_diff:{contract_id}"
         suite_scope_key    = f"dc_suite_scope:{contract_id}"
-        staleness_diff_key = f"dc_staleness_diff:{contract_id}"
         testing_tab_key    = f"dc_testing_tab:{contract_id}"
         # Store table_group_id so dialogs invoked with only contract_id can retrieve it
         st.session_state[f"dc_tg_id:{contract_id}"] = table_group_id
@@ -672,7 +636,6 @@ class DataContractPage(Page):
 
         version_record: dict = st.session_state[version_key]
         is_latest = (version_record["version"] == versions[0]["version"]) if versions else True
-        dismissed_key = f"dc_stale_dismissed:{contract_id}:v{version_record['version']}"
 
         _snapshot_suite_id: str | None = version_record.get("snapshot_suite_id")
 
@@ -697,24 +660,6 @@ class DataContractPage(Page):
         if "apiVersion" not in doc or "kind" not in doc:
             doc = {"apiVersion": "v3.1.0", "kind": "DataContract", **doc}
             contract_yaml = yaml.dump(doc, allow_unicode=True, sort_keys=False)
-
-        # ── Staleness check (latest version only) ─────────────────────────────
-        stale_diff: StaleDiff | None = None
-        if is_latest:
-            tg_full = TableGroup.get(table_group_id)
-            is_stale = bool(getattr(tg_full, "contract_stale", False))
-            if is_stale and not st.session_state.get(dismissed_key):
-                if staleness_diff_key not in st.session_state:
-                    computed = compute_staleness_diff(
-                        table_group_id,
-                        version_record["contract_yaml"],
-                        snapshot_suite_id=version_record.get("snapshot_suite_id"),
-                    )
-                    if computed.is_empty:
-                        mark_contract_not_stale(table_group_id)
-                    else:
-                        st.session_state[staleness_diff_key] = computed
-                stale_diff = st.session_state.get(staleness_diff_key)
 
         is_latest_and_active = is_latest and is_active
 
@@ -745,7 +690,7 @@ class DataContractPage(Page):
             (i for i, v in enumerate(versions) if v["version"] == version_record["version"]), 0
         )
 
-        picker_col, update_col, save_col, del_col = st.columns([3, 1, 1, 1])
+        picker_col, update_col, del_col, save_col = st.columns([3, 1, 1, 1])
         with picker_col:
             chosen_idx = st.selectbox(
                 "Contract version",
@@ -825,14 +770,6 @@ class DataContractPage(Page):
                 icon=None,
             )
 
-        # ── Staleness banner (latest only) ────────────────────────────────────
-        if stale_diff and is_latest:
-            _render_staleness_banner(version_record, stale_diff, contract_id, dismissed_key)
-
-        # ── Review changes panel ──────────────────────────────────────────────
-        if st.session_state.pop(f"dc_show_review:{contract_id}", False) and stale_diff:
-            _review_changes_panel(stale_diff, contract_id, version_record, contract_yaml)
-
         # ── Anomalies ─────────────────────────────────────────────────────────
         if anomaly_key not in st.session_state:
             st.session_state[anomaly_key] = _fetch_anomalies(table_group_id)
@@ -894,7 +831,6 @@ class DataContractPage(Page):
             "saved_at":           version_record["saved_at"].isoformat() if version_record.get("saved_at") else None,
             "label":              version_record.get("label"),
             "is_latest":          is_latest,
-            "is_stale":           stale_diff is not None,
             "pending_count":      pending_ct,
             "snapshot_suite_id":  version_record.get("snapshot_suite_id"),
             "num_versions":       len(versions),

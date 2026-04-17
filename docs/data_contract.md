@@ -75,6 +75,16 @@ This matters for your code in two ways:
 
 Think of a snapshot suite like a git tag: an immutable, named point in time. The live test suites are the working tree.
 
+**Snapshot suite vs. source suites — where test results live:**
+
+| Suite type | Created by | Tests run here | Results used by |
+|---|---|---|---|
+| Source suites (`include_in_contract=TRUE`, `is_contract_suite=FALSE`) | User; pre-exists the contract | `testgen run-tests`, `testgen run-contract-tests`, UI test runner | Day-to-day test history; NOT used by the list-page status bar |
+| Contract primary suite (`is_contract_suite=TRUE`) | `create_contract()` | Never run directly | Stores the contract's test definitions; not a run target |
+| Snapshot suite (`is_contract_snapshot=TRUE`) | `create_contract_snapshot_suite()` on Save New | Must be triggered explicitly (compliance tab or CLI) | List-page status badge and color bar; detail-page health card |
+
+The list-page status badge and color bar both use **snapshot suite results only**. If the snapshot suite has never been run, both show gray/No Run — even if the source suites have abundant test history. This is intentional: the bar reflects compliance against the *saved contract version*, not general test health.
+
 ### 2. ODCS and the contract YAML
 
 [ODCS v3.1.0](https://bitol-io.github.io/open-data-contract-standard/) defines a standard YAML format for data contracts. TestGen exports to and imports from this format. The YAML has several top-level sections:
@@ -120,7 +130,7 @@ Every contract term is classified into one of three enforcement tiers by `_class
 | Dialogs | `testgen/ui/views/dialogs/data_contract_dialogs.py` | All `@st.dialog` save/edit/delete dialogs; `_clear_contract_cache` |
 | Export | `testgen/commands/export_data_contract.py` | ODCS YAML generation |
 | Import | `testgen/commands/odcs_contract.py` | `run_import_contract`, `get_updated_yaml`, `ContractDiff` |
-| Staleness | `testgen/commands/contract_staleness.py` | `compute_staleness_diff`, `compute_term_diff`, `TermDiffResult` |
+| Term diff | `testgen/commands/contract_term_diff.py` | `compute_term_diff`, `TermDiffResult` |
 | Versions | `testgen/commands/contract_versions.py` | `save_contract_version`, `load_contract_version`, `update_contract_version` |
 | Snapshot | `testgen/commands/contract_snapshot_suite.py` | `create_contract_snapshot_suite`, `sync_import_to_snapshot_suite`, `delete_contract_version` |
 
@@ -191,18 +201,15 @@ A data contract passes through these lifecycle activities:
 
 6. **Import YAML** — Upload a modified ODCS YAML to sync changes back to TestGen. Rules without an `id` field are created as new tests; rules with an `id` update the matching test. Entry point: `run_import_contract()`.
 
-7. **Staleness detection + response** — Passive lifecycle event: the system detects when the DB has drifted from the saved contract (schema changes, test additions/removals) and shows a banner. The user reviews a diff (`compute_staleness_diff`) and can accept or dismiss.
+7. **Version navigation** — Switch between historical read-only snapshots. The latest version is always editable; older versions are read-only.
 
-8. **Version navigation** — Switch between historical read-only snapshots. The latest version is always editable; older versions are read-only.
-
-9. **Delete version** — Removes a specific saved version and its paired snapshot test suite. Deleting the latest version promotes the previous version to active. Entry point: `_delete_version_dialog()`.
+8. **Delete version** — Removes a specific saved version and its paired snapshot test suite. Deleting the latest version promotes the previous version to active. Entry point: `_delete_version_dialog()`.
 
 ```
 Bootstrap → Edit → Update (in-place) ─────────────────────────┐
                 ↓                                              │
                 Save New (new snapshot) ───────────────────────┤
                 ↑ Import YAML (download → edit externally → upload) │
-                ↑ Respond to staleness (DB drift detected)     │
                                                                ↓
                                                Delete version (any version)
 ```

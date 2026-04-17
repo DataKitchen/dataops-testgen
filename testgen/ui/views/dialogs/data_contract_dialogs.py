@@ -19,7 +19,6 @@ from testgen.commands.contract_snapshot_suite import (
     sync_import_to_snapshot_suite,
 )
 from testgen.commands.odcs_contract import ContractDiff, run_import_contract
-from testgen.commands.contract_staleness import StaleDiff
 from testgen.commands.contract_versions import (
     list_contract_versions,
     rollback_contract_version,
@@ -58,7 +57,7 @@ from testgen.ui.views.data_contract_yaml import (
 
 LOG = logging.getLogger("testgen")
 
-_CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope", "dc_staleness_diff")
+_CONTRACT_CACHE_KEYS = ("dc_pending", "dc_yaml", "dc_version", "dc_run_dates", "dc_gov", "dc_term_diff", "dc_suite_scope")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1154,26 +1153,22 @@ def _update_version_dialog(
     if save_col.button("Save", type="primary", use_container_width=True):
         try:
             with st.spinner("Saving…"):
-                _persist_pending_edits(table_group_id, pending)
+                # Deletions are synced to the snapshot suite inside _persist_pending_edits.
+                _persist_pending_edits(table_group_id, pending, snapshot_suite_id=snapshot_suite_id)
                 update_contract_version(contract_id, current_version, current_yaml)
 
-                # Mirror test mutations into the snapshot suite so the snapshot stays
-                # in sync with test_definitions after the in-place update.
+                # Mirror non-deletion test mutations (updates) into the snapshot suite.
                 if snapshot_suite_id:
                     updated_ids = [
                         e["rule_id"] for e in test_edits
                         if not e.get("_removed")
                     ]
-                    deleted_ids = [
-                        e["rule_id"] for e in test_edits
-                        if e.get("_removed")
-                    ]
-                    if updated_ids or deleted_ids:
+                    if updated_ids:
                         try:
-                            sync_import_to_snapshot_suite(snapshot_suite_id, [], updated_ids, deleted_ids)
+                            sync_import_to_snapshot_suite(snapshot_suite_id, [], updated_ids, [])
                         except Exception:
                             LOG.exception(
-                                "_update_version_dialog: failed to sync to snapshot suite %s",
+                                "_update_version_dialog: failed to sync updates to snapshot suite %s",
                                 snapshot_suite_id,
                             )
 
@@ -1239,8 +1234,9 @@ def _save_version_dialog(
     if save_col.button("Save Version", type="primary", use_container_width=True):
         try:
             with st.spinner("Saving…"):
-                # 1. Apply all pending edits to DB (governance + tests)
-                _persist_pending_edits(table_group_id, pending)
+                # 1. Apply all pending edits to DB (governance + tests).
+                # No snapshot_suite_id here — a new snapshot is created fresh below.
+                _persist_pending_edits(table_group_id, pending, snapshot_suite_id=None)
 
                 # 2. Save snapshot from the in-memory patched YAML (not a fresh export)
                 new_version = save_contract_version(contract_id, table_group_id, current_yaml, label=label or None)
@@ -1272,67 +1268,6 @@ def _save_version_dialog(
 
     if cancel_col.button("Cancel", use_container_width=True):
         safe_rerun()
-
-
-# ---------------------------------------------------------------------------
-# Review changes panel
-# ---------------------------------------------------------------------------
-
-@st.dialog("Changes Since Last Save", width="large")
-def _review_changes_panel(
-    stale_diff: StaleDiff,
-    contract_id: str,
-    version_record: dict,
-    current_yaml: str,
-) -> None:
-    version_num = version_record.get("version", "?")
-    saved_at    = version_record.get("saved_at")
-    saved_str   = saved_at.strftime("%b %d, %Y at %H:%M") if saved_at else ""
-    st.markdown(f"**Changes since version {version_num}** ({saved_str})")
-    st.divider()
-
-    def _section(title: str, items: list[dict], key_fn) -> None:
-        if items:
-            st.markdown(f"**{title}**")
-            for item in items:
-                icon = {"added": "➕", "removed": "➖", "changed": "✏️"}.get(item.get("change", ""), "·")
-                st.markdown(f"{icon} {key_fn(item)}")
-        else:
-            st.markdown(f"**{title}** — no changes")
-
-    _section(
-        "Schema",
-        stale_diff.schema_changes,
-        lambda i: f"`{i['table']}.{i['column']}` {i.get('detail', '')}",
-    )
-    _section(
-        "Quality rules",
-        stale_diff.quality_changes,
-        lambda i: f"`{i['element']}` {i['test_type']} {i.get('detail', '')} "
-                  f"{'  (' + i['last_result'] + ')' if i.get('last_result') else ''}",
-    )
-    _section(
-        "Governance",
-        stale_diff.governance_changes,
-        lambda i: f"`{i['table']}.{i['column']}` {i['field']} {i.get('detail', '')}",
-    )
-    _section(
-        "Suite scope",
-        stale_diff.suite_scope_changes,
-        lambda i: f"{i['suite_name']}",
-    )
-
-    st.divider()
-    close_col, save_col = st.columns([3, 1])
-    if close_col.button("Close", use_container_width=True):
-        safe_rerun()
-    if save_col.button("Save new version →", type="primary", use_container_width=True):
-        pending = st.session_state.get(f"dc_pending:{contract_id}", {})
-        # table_group_id is not available here; _save_version_dialog needs it.
-        # We pass contract_id twice as a fallback — callers that need table_group_id
-        # should pre-stage it in session state if needed.
-        _tg_id = st.session_state.get(f"dc_tg_id:{contract_id}", contract_id)
-        _save_version_dialog(contract_id, _tg_id, pending, current_yaml, version_record.get("version"))
 
 
 # ---------------------------------------------------------------------------

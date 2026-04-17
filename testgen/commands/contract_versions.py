@@ -130,15 +130,15 @@ def save_contract_version(
     if term_count is None:
         term_count = _count_terms(yaml_content)
 
-    # Two statements: flip old current → FALSE, then insert new version as is_current=TRUE.
-    flip_sql = f"""
-        UPDATE {schema}.contract_versions
-           SET is_current = FALSE
-         WHERE contract_id = CAST(:contract_id AS uuid) AND is_current = TRUE
-    """
-
-    insert_sql = f"""
-        WITH ins AS (
+    # Single CTE: flip old current → FALSE, insert new version as is_current=TRUE, clear stale flag.
+    # Using one statement avoids relying on index-based positioning in execute_db_queries return values.
+    combined_sql = f"""
+        WITH flipped AS (
+            UPDATE {schema}.contract_versions
+               SET is_current = FALSE
+             WHERE contract_id = CAST(:contract_id AS uuid) AND is_current = TRUE
+        ),
+        ins AS (
             INSERT INTO {schema}.contract_versions
                    (contract_id, version, is_current, label, contract_yaml, term_count)
             SELECT CAST(:contract_id AS uuid),
@@ -161,11 +161,10 @@ def save_contract_version(
     """
 
     return_values, _ = execute_db_queries([
-        (flip_sql, {"contract_id": contract_id}),
-        (insert_sql, {"contract_id": contract_id, "label": label, "yaml": yaml_content,
-                      "term_count": term_count, "tg_id": table_group_id}),
+        (combined_sql, {"contract_id": contract_id, "label": label, "yaml": yaml_content,
+                        "term_count": term_count, "tg_id": table_group_id}),
     ])
-    new_version = int(return_values[1])
+    new_version = int(return_values[0])
     LOG.info("Contract version %d saved for contract %s", new_version, contract_id)
     return new_version
 
@@ -193,16 +192,6 @@ def mark_contract_stale(table_group_id: str) -> None:
          WHERE id = CAST(:tg_id AS uuid)
            AND last_contract_save_date IS NOT NULL
         """,
-        {"tg_id": table_group_id},
-    )])
-
-
-@with_database_session
-def mark_contract_not_stale(table_group_id: str) -> None:
-    """Clear the stale flag for the table group."""
-    schema = get_tg_schema()
-    execute_db_queries([(
-        f"UPDATE {schema}.table_groups SET contract_stale = FALSE WHERE id = CAST(:tg_id AS uuid)",
         {"tg_id": table_group_id},
     )])
 

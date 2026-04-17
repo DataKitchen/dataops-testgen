@@ -48,7 +48,10 @@ def fetch_contracts_for_project(project_code: str) -> list[dict[str, Any]]:
                   FROM {schema}.test_runs run
                  WHERE run.test_suite_id = cv.snapshot_suite_id
             ) AS last_run_at,
-            COALESCE(tbl.table_count, 0) AS table_count
+            COALESCE(tbl.table_count, 0)      AS table_count,
+            COALESCE(bar_cts.passed_ct,  0)   AS passed_ct,
+            COALESCE(bar_cts.warning_ct, 0)   AS warning_ct,
+            COALESCE(bar_cts.failed_ct,  0)   AS failed_ct
           FROM {schema}.contracts c
           JOIN {schema}.table_groups tg
             ON tg.id = c.table_group_id
@@ -87,6 +90,20 @@ def fetch_contracts_for_project(project_code: str) -> list[dict[str, Any]]:
                       WHERE test_suite_id = cv.snapshot_suite_id
                  )
           ) rs ON TRUE
+          LEFT JOIN LATERAL (
+              SELECT
+                  COUNT(*) FILTER (WHERE tr.result_status = 'Passed')            AS passed_ct,
+                  COUNT(*) FILTER (WHERE tr.result_status = 'Warning')           AS warning_ct,
+                  COUNT(*) FILTER (WHERE tr.result_status IN ('Failed','Error')) AS failed_ct
+                FROM {schema}.test_runs run
+                JOIN {schema}.test_results tr ON tr.test_run_id = run.id
+               WHERE run.test_suite_id = cv.snapshot_suite_id
+                 AND run.test_starttime = (
+                     SELECT MAX(test_starttime)
+                       FROM {schema}.test_runs
+                      WHERE test_suite_id = cv.snapshot_suite_id
+                 )
+          ) bar_cts ON TRUE
          WHERE c.project_code = :project_code
          ORDER BY tg.table_groups_name, c.name
         """,

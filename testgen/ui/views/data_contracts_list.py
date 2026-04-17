@@ -26,12 +26,12 @@ from testgen.ui.session import session
 PAGE_TITLE = "Data Contracts"
 PAGE_ICON = "contract"
 
-# Status → (strip_color_hex, badge_label, badge_color_class)
-_STATUS_STYLE: dict[str, tuple[str, str, str]] = {
-    "Passing": ("#22c55e", "✓ Passing", "green"),
-    "Warning": ("#f59e0b", "⚠ Warning", "orange"),
-    "Failing": ("#ef4444", "✗ Failing", "red"),
-    "No Run":  ("#cbd5e1", "○ No Run",  "gray"),
+# Status → (badge_label, badge_color_class)
+_STATUS_STYLE: dict[str, tuple[str, str]] = {
+    "Passing": ("✓ Passing", "green"),
+    "Warning": ("⚠ Warning", "orange"),
+    "Failing": ("✗ Failing", "red"),
+    "No Run":  ("○ No Run",  "gray"),
 }
 
 _BADGE_HEX: dict[str, str] = {"green": "#22c55e", "orange": "#f59e0b", "red": "#ef4444", "gray": "#94a3b8"}
@@ -146,13 +146,27 @@ class DataContractsListPage(Page):
         last_run_at   = contract.get("last_run_at")
 
         if not is_active:
-            strip_color = "#94a3b8"
-            badge_html  = '<span style="color:var(--text-color);opacity:.6">Inactive</span>'
+            strip_html = '<div style="height:6px;background:#94a3b8;border-radius:3px;margin-bottom:10px"></div>'
+            badge_html = '<span style="color:var(--text-color);opacity:.6">Inactive</span>'
         else:
-            strip_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])[0]
-            _, badge_label, badge_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])
-            hex_color   = _BADGE_HEX.get(badge_color, "#94a3b8")
-            badge_html  = f'<span style="color:{hex_color};font-size:.85em;font-weight:600">{badge_label}</span>'
+            passed_ct  = int(contract.get("passed_ct")  or 0)
+            warning_ct = int(contract.get("warning_ct") or 0)
+            failed_ct  = int(contract.get("failed_ct")  or 0)
+            total_run  = passed_ct + warning_ct + failed_ct
+            if total_run == 0:
+                strip_html = '<div style="height:6px;background:#cbd5e1;border-radius:3px;margin-bottom:10px"></div>'
+            else:
+                segs = ""
+                if passed_ct:
+                    segs += f'<div style="flex:{passed_ct};background:#22c55e"></div>'
+                if warning_ct:
+                    segs += f'<div style="flex:{warning_ct};background:#f59e0b"></div>'
+                if failed_ct:
+                    segs += f'<div style="flex:{failed_ct};background:#ef4444"></div>'
+                strip_html = f'<div style="height:6px;display:flex;border-radius:3px;overflow:hidden;margin-bottom:10px">{segs}</div>'
+            badge_label, badge_color = _STATUS_STYLE.get(status, _STATUS_STYLE["No Run"])
+            hex_color  = _BADGE_HEX.get(badge_color, "#94a3b8")
+            badge_html = f'<span style="color:{hex_color};font-size:.85em;font-weight:600">{badge_label}</span>'
 
         v_label = f"v{version}" if version >= 0 else "—"
         last_run_str = _format_last_run(last_run_at)
@@ -163,7 +177,7 @@ class DataContractsListPage(Page):
             # Card body: entire area is a single <a> link so clicking anywhere navigates.
             st.markdown(f"""
 <a href="{detail_url}" target="_self" style="display:block;text-decoration:none;color:inherit">
-  <div style="height:6px;background:{strip_color};border-radius:3px;margin-bottom:10px"></div>
+  {strip_html}
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <span style="font-weight:600;font-size:1em">{name_escaped}</span>
     {badge_html}

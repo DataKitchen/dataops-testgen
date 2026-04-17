@@ -108,7 +108,11 @@ with (
     patch("testgen.ui.views.dialogs.data_contract_dialogs._persist_pending_edits", MagicMock()),
     patch("testgen.ui.views.dialogs.data_contract_dialogs.safe_rerun", MagicMock(side_effect=st.rerun)),
     # YAML import dependencies
-    patch("testgen.commands.create_data_contract.has_any_version", return_value=False),
+    patch("testgen.commands.create_data_contract.get_tg_schema", return_value="tg"),
+    patch("testgen.commands.create_data_contract.fetch_dict_from_db",
+          return_value=[{"project_code": "P1", "table_groups_name": "orders_tg"}]),
+    patch("testgen.commands.create_data_contract.create_contract",
+          return_value={"contract_id": CONTRACT_ID, "test_suite_id": "ssssssss-0000-0000-0000-000000000002"}),
     patch("testgen.commands.create_data_contract.save_contract_version", return_value=0),
     # page_header infrastructure
     patch("testgen.ui.components.widgets.page.testgen_component", _mock_tg_component.testgen_component),

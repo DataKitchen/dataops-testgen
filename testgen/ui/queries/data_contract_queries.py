@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import logging
 
+from testgen.commands.contract_snapshot_suite import sync_import_to_snapshot_suite
 from testgen.commands.export_data_contract import run_export_data_contract
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import execute_db_queries, fetch_dict_from_db
@@ -488,11 +489,18 @@ def _save_governance_data(column_id: str, updates: dict) -> None:
 
 
 @with_database_session
-def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
+def _persist_pending_edits(
+    table_group_id: str,
+    pending: dict,
+    snapshot_suite_id: str | None = None,
+) -> None:
     """Apply all pending governance and test edits to the database.
 
     Called when the user saves a new contract version so that the DB reflects
     every in-memory edit captured during the session.
+
+    When snapshot_suite_id is provided, test deletions are also mirrored into
+    the snapshot suite so source and snapshot stay consistent.
     """
     from testgen.commands.odcs_contract import _ALLOWED_TEST_UPDATE_COLS as _ALLOWED_TEST_COLS
 
@@ -513,6 +521,7 @@ def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
         )])
 
     # 2. Test edits → test_definitions
+    deleted_ids: list[str] = []
     for e in pending.get("tests", []):
         rule_id = e["rule_id"]
         if e.get("_removed"):
@@ -520,6 +529,7 @@ def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
                 f"DELETE FROM {schema}.test_definitions WHERE id = CAST(:test_id AS uuid)",
                 {"test_id": rule_id},
             )])
+            deleted_ids.append(rule_id)
             continue
         updates = {k: v for k, v in e.items() if k != "rule_id"}
         safe_updates = {k: v for k, v in updates.items() if k in _ALLOWED_TEST_COLS}
@@ -535,6 +545,10 @@ def _persist_pending_edits(table_group_id: str, pending: dict) -> None:
             "last_manual_update = NOW(), lock_refresh = :lock_y WHERE id = CAST(:test_id AS uuid)",
             params,
         )])
+
+    # 3. Mirror test deletions into the snapshot suite when one exists.
+    if snapshot_suite_id and deleted_ids:
+        sync_import_to_snapshot_suite(snapshot_suite_id, [], [], deleted_ids)
 
 
 @with_database_session

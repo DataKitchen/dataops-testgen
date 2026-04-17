@@ -58,16 +58,21 @@ class Test_CreateContract:
 
 class Test_DeleteContract:
     def test_executes_delete_queries(self):
+        """delete_contract must DELETE the contracts row via session.execute then cascade-delete suites."""
         from testgen.commands.contract_management import delete_contract
-        with patch("testgen.commands.contract_management.execute_db_queries") as mock_exec, \
+
+        mock_session = MagicMock()
+        with patch("testgen.commands.contract_management.get_current_session",
+                   return_value=mock_session), \
              patch("testgen.common.models.test_suite.TestSuite.cascade_delete") as mock_cascade:
-            mock_exec.return_value = ([None], [1])
             delete_contract(CONTRACT_ID, SUITE_ID, ["snap1", "snap2"])
-        # contracts row deleted first
-        assert mock_exec.called
-        sql = mock_exec.call_args[0][0][0][0]
-        assert "contracts" in sql
-        # then all suites cascade-deleted together
+
+        # contracts row deleted via session.execute (not execute_db_queries)
+        assert mock_session.execute.called
+        executed_sql = str(mock_session.execute.call_args[0][0])
+        assert "contracts" in executed_sql.lower()
+
+        # all suites cascade-deleted together
         assert mock_cascade.called
         called_ids = mock_cascade.call_args[0][0]
         assert set(called_ids) == {"snap1", "snap2", SUITE_ID}

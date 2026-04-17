@@ -32,7 +32,6 @@ _APP = str(pathlib.Path(__file__).parent / "apps" / "data_contract_first_time_fl
 
 # Paths to additional app scripts
 _APP_SAVED        = str(pathlib.Path(__file__).parent / "apps" / "data_contract_saved_version.py")
-_APP_STALE        = str(pathlib.Path(__file__).parent / "apps" / "data_contract_stale_version.py")
 _APP_HIST         = str(pathlib.Path(__file__).parent / "apps" / "data_contract_historical_version.py")
 _APP_NO_PROF      = str(pathlib.Path(__file__).parent / "apps" / "data_contract_no_profiling.py")
 _APP_DEL_DIALOG   = str(pathlib.Path(__file__).parent / "apps" / "data_contract_delete_version_dialog.py")
@@ -57,10 +56,6 @@ def _at() -> AppTest:
 
 def _at_saved() -> AppTest:
     return AppTest.from_file(_APP_SAVED, default_timeout=15)
-
-
-def _at_stale() -> AppTest:
-    return AppTest.from_file(_APP_STALE, default_timeout=15)
 
 
 def _at_hist() -> AppTest:
@@ -288,50 +283,6 @@ class Test_SaveDialog:
         at = self._open_save_dialog()
         assert not at.exception
         assert "Cancel" in _button_labels(at)
-
-
-# ---------------------------------------------------------------------------
-# Test 1: Test_StaleContractBanner — staleness warning on latest version
-# ---------------------------------------------------------------------------
-
-class Test_StaleContractBanner:
-
-    def test_stale_banner_appears(self):
-        """When a saved contract is stale, a staleness warning must be visible."""
-        at = _at_stale()
-        at.run()
-        assert not at.exception
-        warning_texts = [w.value for w in at.warning]
-        assert any("Contract version" in t and "Since then" in t for t in warning_texts), (
-            f"Expected staleness warning. Got: {warning_texts}"
-        )
-
-    def test_stale_banner_shows_regenerate_button(self):
-        """Stale banner must offer a 'Review Changes' button to act on the staleness."""
-        at = _at_stale()
-        at.run()
-        assert not at.exception
-        labels = _button_labels(at)
-        assert "Review Changes" in labels, (
-            f"Expected 'Review Changes' button. Available: {labels}"
-        )
-
-    def test_stale_banner_shows_dismiss_button(self):
-        """Stale banner must offer a 'Dismiss' button."""
-        at = _at_stale()
-        at.run()
-        assert not at.exception
-        assert "Dismiss" in _button_labels(at)
-
-    def test_stale_banner_includes_schema_change_detail(self):
-        """Stale warning text must mention the specific change returned by summary_parts()."""
-        at = _at_stale()
-        at.run()
-        assert not at.exception
-        warning_texts = [w.value for w in at.warning]
-        assert any("1 new column added" in t for t in warning_texts), (
-            f"Expected change detail in warning. Got: {warning_texts}"
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -1732,55 +1683,6 @@ class Test_PendingDeletionCount:
         labels = _button_labels(at)
         assert not any("Save New (" in lbl for lbl in labels), (
             f"Save button must not show count when nothing is pending. Labels: {labels}"
-        )
-
-
-# ---------------------------------------------------------------------------
-# Test_StalenessActionButtons — stale banner interaction buttons
-# ---------------------------------------------------------------------------
-
-class Test_StalenessActionButtons:
-    """Verify the two CTA buttons on the staleness banner."""
-
-    def test_review_changes_button_present(self):
-        """'Review Changes' must appear on a stale contract."""
-        at = _at_stale()
-        at.run()
-        assert not at.exception
-        assert "Review Changes" in _button_labels(at), (
-            f"Expected 'Review Changes'. Available: {_button_labels(at)}"
-        )
-
-    def test_dismiss_button_present(self):
-        """'Dismiss' must appear on a stale contract."""
-        at = _at_stale()
-        at.run()
-        assert not at.exception
-        assert "Dismiss" in _button_labels(at), (
-            f"Expected 'Dismiss'. Available: {_button_labels(at)}"
-        )
-
-    def test_no_staleness_buttons_on_non_stale_contract(self):
-        """Non-stale contract must not render 'Dismiss' or 'Review Changes'."""
-        at = _at_saved()
-        at.run()
-        assert not at.exception
-        labels = _button_labels(at)
-        assert "Dismiss" not in labels, (
-            f"'Dismiss' must not appear on non-stale contract. Available: {labels}"
-        )
-        assert "Review Changes" not in labels, (
-            f"'Review Changes' must not appear on non-stale contract. Available: {labels}"
-        )
-
-    def test_no_staleness_banner_on_historical_version(self):
-        """Historical (read-only) version must not show staleness banner."""
-        at = _at_hist()
-        at.run()
-        assert not at.exception
-        warning_texts = [w.value for w in at.warning]
-        assert not any("Since then" in t for t in warning_texts), (
-            f"Historical version must not show staleness warning. Got: {warning_texts}"
         )
 
 

@@ -1427,3 +1427,57 @@ class Test_ContractDiffRuleCounters:
         assert len(diff.test_inserts) == 1,  f"Expected 1 create. Got: {len(diff.test_inserts)}"
         assert diff.no_change_rules == 1,    f"Expected no_change=1. Got: {diff.no_change_rules}"
         assert diff.skipped_rules == 1,      f"Expected skipped=1. Got: {diff.skipped_rules}"
+
+    def test_orphaned_ids_populated_when_db_has_tests_not_in_yaml(self):
+        """compute_import_diff must populate orphaned_ids for DB tests not referenced in YAML.
+
+        Orphan detection is the safety net that prevents accidental test deletion on import.
+        A test in the DB but not in the YAML should be reported as an orphan, not silently
+        dropped or incorrectly treated as a delete.
+        """
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+
+        yaml_id = str(uuid4())
+        orphan_id = str(uuid4())
+
+        # YAML only references yaml_id
+        doc = self._make_doc([
+            {"id": yaml_id, "name": "referenced", "type": "library",
+             "metric": "nullValues", "mustBeLessOrEqualTo": 5.0,
+             "unit": "percent", "element": "orders.amount"},
+        ])
+        # DB has both yaml_id and orphan_id
+        tests = [
+            self._fake_test(yaml_id, threshold_value="5.0"),
+            self._fake_test(orphan_id, threshold_value="10.0"),
+        ]
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, tests, self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert orphan_id in diff.orphaned_ids, (
+            f"orphan_id {orphan_id} should be in orphaned_ids but got: {diff.orphaned_ids}"
+        )
+        assert yaml_id not in diff.orphaned_ids, (
+            "Referenced test must not appear in orphaned_ids"
+        )
+        assert len(diff.orphaned_ids) == 1
+
+    def test_orphaned_ids_empty_when_all_db_tests_referenced(self):
+        """orphaned_ids must be empty when every DB test is referenced in the YAML."""
+        from unittest.mock import patch as _patch
+        from testgen.commands.odcs_contract import compute_import_diff
+
+        test_id = str(uuid4())
+        doc = self._make_doc([
+            {"id": test_id, "name": "rule", "type": "library",
+             "metric": "nullValues", "mustBeLessOrEqualTo": 5.0,
+             "unit": "percent", "element": "orders.amount"},
+        ])
+        tests = [self._fake_test(test_id, threshold_value="5.0")]
+        with _patch("testgen.commands.odcs_contract.fetch_dict_from_db") as mock_fetch:
+            mock_fetch.side_effect = [self._FAKE_GROUP, tests, self._FAKE_SUITES]
+            diff = compute_import_diff(doc, "tg-1", "public")
+
+        assert diff.orphaned_ids == []

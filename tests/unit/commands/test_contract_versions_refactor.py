@@ -76,17 +76,17 @@ class Test_LoadContractVersion:
 class Test_SaveContractVersion:
     def test_returns_new_version_number(self):
         from testgen.commands.contract_versions import save_contract_version
-        # Two queries: [0]=flip UPDATE, [1]=INSERT returning version
+        # Single combined CTE query: return_values[0] is the new version number
         with patch("testgen.commands.contract_versions.execute_db_queries",
-                   return_value=([None, 3], [0, 1])):
+                   return_value=([3], [1])):
             v = save_contract_version(CONTRACT_ID, TG_ID, "yaml:", term_count=5)
         assert v == 3
 
     def test_sql_touches_contract_versions_table(self):
         from testgen.commands.contract_versions import save_contract_version
         with patch("testgen.commands.contract_versions.execute_db_queries",
-                   return_value=([None, 0], [0, 1])) as mock_exec:
+                   return_value=([0], [1])) as mock_exec:
             save_contract_version(CONTRACT_ID, TG_ID, "yaml:", term_count=0)
-        # Second query (index 1) is the INSERT into contract_versions
-        sql = mock_exec.call_args[0][0][1][0]
+        # Single combined CTE query (index 0) must reference contract_versions
+        sql = mock_exec.call_args[0][0][0][0]
         assert "contract_versions" in sql

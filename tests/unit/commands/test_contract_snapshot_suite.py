@@ -415,3 +415,40 @@ class Test_CreateContractSnapshotSuiteRegression:
         assert isinstance(result, str)
         parsed = _uuid.UUID(result)  # raises ValueError if not valid UUID
         assert str(parsed) == result
+
+    def test_no_eligible_suites_falls_back_to_table_groups(self):
+        """When no include_in_contract suites exist, connection info is fetched from table_groups.
+
+        This supports schema-only contracts or table groups with only monitor/snapshot suites.
+        Regression: previously raised ValueError("No source suites found...").
+        """
+        from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
+
+        fetch_side_effect = [
+            [{"table_groups_name": "My Group"}],   # tg_rows lookup
+            [],                                     # suite lookup → empty (no eligible suites)
+            [{"connection_id": 42, "project_code": "proj"}],  # table_groups fallback
+        ]
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=fetch_side_effect), \
+             patch("testgen.commands.contract_snapshot_suite.execute_db_queries",
+                   return_value=([], [])) as mock_exec:
+            result = create_contract_snapshot_suite(CONTRACT_ID, TG_ID, version=0)
+
+        assert isinstance(result, str)
+        # execute_db_queries still called (suite INSERT + bulk copy + update)
+        mock_exec.assert_called_once()
+
+    def test_no_eligible_suites_raises_when_table_group_also_missing(self):
+        """Raises ValueError when neither suites nor the table group itself can be found."""
+        from testgen.commands.contract_snapshot_suite import create_contract_snapshot_suite
+
+        fetch_side_effect = [
+            [{"table_groups_name": "My Group"}],   # tg_rows lookup
+            [],                                     # suite lookup → empty
+            [],                                     # table_groups fallback → also empty
+        ]
+        with patch("testgen.commands.contract_snapshot_suite.fetch_dict_from_db",
+                   side_effect=fetch_side_effect):
+            with pytest.raises(ValueError, match="not found"):
+                create_contract_snapshot_suite(CONTRACT_ID, TG_ID, version=0)

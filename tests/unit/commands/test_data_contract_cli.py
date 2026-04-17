@@ -140,14 +140,28 @@ class Test_ImportDataContract:
 # create-contract
 # ---------------------------------------------------------------------------
 
+_TG_DB_ROW = [{"project_code": "P1", "table_groups_name": "orders_tg"}]
+_CONTRACT_IDS = {"contract_id": "cccccccc-0000-0000-0000-000000000001", "test_suite_id": "ssssssss-0000-0000-0000-000000000002"}
+
+
 class Test_CreateContract:
+    def _base_patches(self) -> list:
+        return [
+            patch("testgen.commands.create_data_contract.get_tg_schema", return_value="tg"),
+            patch("testgen.commands.create_data_contract.fetch_dict_from_db", return_value=_TG_DB_ROW),
+            patch("testgen.commands.create_data_contract.create_contract", return_value=_CONTRACT_IDS),
+            patch("testgen.commands.create_data_contract.save_contract_version", return_value=0),
+        ]
+
     def test_create_success(self, tmp_path):
         from testgen.__main__ import cli
 
         yaml_file = tmp_path / "contract.yaml"
         yaml_file.write_text(VALID_YAML)
 
-        with patch("testgen.commands.create_data_contract.has_any_version", return_value=False), \
+        with patch("testgen.commands.create_data_contract.get_tg_schema", return_value="tg"), \
+             patch("testgen.commands.create_data_contract.fetch_dict_from_db", return_value=_TG_DB_ROW), \
+             patch("testgen.commands.create_data_contract.create_contract", return_value=_CONTRACT_IDS), \
              patch("testgen.commands.create_data_contract.save_contract_version", return_value=0):
             runner = CliRunner()
             result = runner.invoke(cli, ["create-contract", "-tg", TG_ID, "-i", str(yaml_file)])
@@ -155,18 +169,19 @@ class Test_CreateContract:
         assert result.exit_code == 0
         assert "version 0" in result.output.lower()
 
-    def test_create_fails_when_contract_exists(self, tmp_path):
+    def test_create_fails_when_table_group_not_found(self, tmp_path):
         from testgen.__main__ import cli
 
         yaml_file = tmp_path / "contract.yaml"
         yaml_file.write_text(VALID_YAML)
 
-        with patch("testgen.commands.create_data_contract.has_any_version", return_value=True):
+        with patch("testgen.commands.create_data_contract.get_tg_schema", return_value="tg"), \
+             patch("testgen.commands.create_data_contract.fetch_dict_from_db", return_value=[]):
             runner = CliRunner()
             result = runner.invoke(cli, ["create-contract", "-tg", TG_ID, "-i", str(yaml_file)])
 
         assert result.exit_code != 0
-        assert "Error" in result.output or "already exists" in result.output
+        assert "Error" in result.output
 
     def test_create_with_label(self, tmp_path):
         from testgen.__main__ import cli
@@ -174,14 +189,16 @@ class Test_CreateContract:
         yaml_file = tmp_path / "contract.yaml"
         yaml_file.write_text(VALID_YAML)
 
-        with patch("testgen.commands.create_data_contract.has_any_version", return_value=False), \
+        with patch("testgen.commands.create_data_contract.get_tg_schema", return_value="tg"), \
+             patch("testgen.commands.create_data_contract.fetch_dict_from_db", return_value=_TG_DB_ROW), \
+             patch("testgen.commands.create_data_contract.create_contract", return_value=_CONTRACT_IDS), \
              patch("testgen.commands.create_data_contract.save_contract_version", return_value=0) as mock_save:
             runner = CliRunner()
             runner.invoke(cli, [
                 "create-contract", "-tg", TG_ID, "-i", str(yaml_file), "--label", "v1 baseline"
             ])
 
-        mock_save.assert_called_once_with(TG_ID, VALID_YAML, "v1 baseline")
+        assert mock_save.call_args[1].get("label") == "v1 baseline" or mock_save.call_args[0][3] == "v1 baseline"
 
     def test_create_requires_input_file(self):
         from testgen.__main__ import cli

@@ -59,8 +59,19 @@ def create_contract_snapshot_suite(
         params={"tg_id": table_group_id},
     )
     if not suite_rows:
-        raise ValueError("No source suites found to copy connection info from")
-    src = suite_rows[0]
+        # Fall back to the table_groups row for connection info so schema-only
+        # contracts (no eligible test suites) can still produce a snapshot suite.
+        tg_info_rows = fetch_dict_from_db(
+            f"SELECT connection_id, project_code FROM {schema}.table_groups WHERE id = CAST(:tg_id AS uuid)",
+            params={"tg_id": table_group_id},
+        )
+        if not tg_info_rows:
+            raise ValueError(f"Table group {table_group_id} not found — cannot create snapshot suite")
+        src: dict = {"connection_id": tg_info_rows[0]["connection_id"],
+                     "project_code": tg_info_rows[0]["project_code"],
+                     "severity": None}
+    else:
+        src = suite_rows[0]
 
     new_suite_id = str(uuid.uuid4())
     suite_name = f"[Contract v{version}] {table_group_name}"
