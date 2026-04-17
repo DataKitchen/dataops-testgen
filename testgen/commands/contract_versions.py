@@ -130,15 +130,18 @@ def save_contract_version(
     if term_count is None:
         term_count = _count_terms(yaml_content)
 
-    # Single CTE: flip old current → FALSE, insert new version as is_current=TRUE, clear stale flag.
-    # Using one statement avoids relying on index-based positioning in execute_db_queries return values.
-    combined_sql = f"""
-        WITH flipped AS (
-            UPDATE {schema}.contract_versions
-               SET is_current = FALSE
-             WHERE contract_id = CAST(:contract_id AS uuid) AND is_current = TRUE
-        ),
-        ins AS (
+    # Must be separate statements. A single modifying CTE sharing one snapshot
+    # trips the partial unique index (contract_versions_one_current) because
+    # the INSERT's is_current=TRUE is checked before the sibling UPDATE's
+    # is_current=FALSE is visible to the index.
+    flip_sql = f"""
+        UPDATE {schema}.contract_versions
+           SET is_current = FALSE
+         WHERE contract_id = CAST(:contract_id AS uuid) AND is_current = TRUE
+    """
+
+    insert_sql = f"""
+        WITH ins AS (
             INSERT INTO {schema}.contract_versions
                    (contract_id, version, is_current, label, contract_yaml, term_count)
             SELECT CAST(:contract_id AS uuid),
@@ -150,21 +153,24 @@ def save_contract_version(
               FROM {schema}.contract_versions
              WHERE contract_id = CAST(:contract_id AS uuid)
             RETURNING version
-        ),
-        upd AS (
-            UPDATE {schema}.table_groups
-               SET contract_stale = FALSE,
-                   last_contract_save_date = NOW()
-             WHERE id = CAST(:tg_id AS uuid)
         )
         SELECT version FROM ins
     """
 
+    clear_stale_sql = f"""
+        UPDATE {schema}.table_groups
+           SET contract_stale = FALSE,
+               last_contract_save_date = NOW()
+         WHERE id = CAST(:tg_id AS uuid)
+    """
+
     return_values, _ = execute_db_queries([
-        (combined_sql, {"contract_id": contract_id, "label": label, "yaml": yaml_content,
-                        "term_count": term_count, "tg_id": table_group_id}),
+        (flip_sql,        {"contract_id": contract_id}),
+        (insert_sql,      {"contract_id": contract_id, "label": label, "yaml": yaml_content,
+                           "term_count": term_count}),
+        (clear_stale_sql, {"tg_id": table_group_id}),
     ])
-    new_version = int(return_values[0])
+    new_version = int(return_values[1])
     LOG.info("Contract version %d saved for contract %s", new_version, contract_id)
     return new_version
 

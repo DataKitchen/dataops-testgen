@@ -1262,8 +1262,10 @@ def _save_version_dialog(
             safe_rerun()
 
         except ValueError as exc:
+            LOG.exception("_save_version_dialog: validation error for contract %s", contract_id)
             st.error(str(exc))
         except Exception as exc:
+            LOG.exception("_save_version_dialog: save failed for contract %s", contract_id)
             st.error(f"Save failed: {exc}")
 
     if cancel_col.button("Cancel", use_container_width=True):
