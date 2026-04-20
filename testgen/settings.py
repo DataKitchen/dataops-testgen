@@ -493,6 +493,12 @@ from env variable: 'TG_JOB_POLL_INTERVAL'
 defaults to: 5
 """
 
+ACCESS_TOKEN_EXPIRES_IN: int = 3600  # 1 hour
+REFRESH_TOKEN_EXPIRES_IN: int = 2_592_000  # 30 days
+"""
+Lifetime of OAuth access and refresh tokens.
+"""
+
 JWT_HASHING_KEY_B64: str = os.getenv("TG_JWT_HASHING_KEY")
 """
 Random key used to sign/verify the authentication token

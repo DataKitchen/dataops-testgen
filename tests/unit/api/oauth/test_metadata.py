@@ -42,8 +42,8 @@ def test_metadata_lists_supported_grant_types():
     data = client.get("/.well-known/oauth-authorization-server").json()
 
     assert "authorization_code" in data["grant_types_supported"]
-    assert "client_credentials" in data["grant_types_supported"]
     assert "refresh_token" in data["grant_types_supported"]
+    assert "client_credentials" not in data["grant_types_supported"]
     assert data["code_challenge_methods_supported"] == ["S256"]
 
 
