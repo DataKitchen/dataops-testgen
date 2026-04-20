@@ -8,6 +8,7 @@ from authlib.integrations.sqla_oauth2 import (
 from sqlalchemy import Column, ForeignKey, String
 from sqlalchemy.dialects import postgresql
 
+from testgen import settings
 from testgen.common.models import Base
 
 
@@ -38,7 +39,7 @@ class OAuth2Token(Base, OAuth2TokenMixin):
     access_token = Column(String(2048), unique=True, nullable=False)
 
     def is_refresh_token_active(self) -> bool:
-        if self.is_revoked():
+        if self.refresh_token_revoked_at:
             return False
-        expires_at = self.issued_at + self.expires_in * 2
+        expires_at = self.issued_at + settings.REFRESH_TOKEN_EXPIRES_IN
         return expires_at >= time.time()
