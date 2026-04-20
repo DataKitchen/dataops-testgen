@@ -17,12 +17,11 @@ from authlib.oauth2.rfc6749.errors import InvalidGrantError
 from authlib.oauth2.rfc7009 import RevocationEndpoint
 from authlib.oauth2.rfc7636 import CodeChallenge
 
+from testgen import settings
 from testgen.api.oauth.models import OAuth2AuthorizationCode, OAuth2Client, OAuth2Token
 from testgen.common.auth import create_jwt_token
 from testgen.common.models import get_current_session
 from testgen.common.models.user import User
-
-ACCESS_TOKEN_EXPIRES_IN = 3600  # 1 hour
 
 
 class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
@@ -61,14 +60,14 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
 
 
 class RefreshTokenGrant(grants.RefreshTokenGrant):
-    INCLUDE_NEW_REFRESH_TOKEN = True
+    INCLUDE_NEW_REFRESH_TOKEN = False
 
     def authenticate_refresh_token(self, refresh_token):
         session = get_current_session()
         item = session.query(OAuth2Token).filter_by(
             refresh_token=refresh_token,
         ).first()
-        if item and not item.is_revoked():
+        if item and item.is_refresh_token_active():
             return item
         return None
 
@@ -77,9 +76,9 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         return session.query(User).filter(User.id == credential.user_id).first()
 
     def revoke_old_credential(self, credential):
-        now = int(time.time())
-        credential.access_token_revoked_at = now
-        credential.refresh_token_revoked_at = now
+        # Rotation is off (INCLUDE_NEW_REFRESH_TOKEN=False): keep the refresh token
+        # live so clients can reuse it until its independent expiry.
+        credential.access_token_revoked_at = int(time.time())
 
 
 class ClientCredentialsGrant(grants.ClientCredentialsGrant):
@@ -163,11 +162,11 @@ def _generate_bearer_token(
     """Generate a Bearer token with a JWT access_token."""
     if user is None:
         raise RuntimeError(f"Token generation requires a user (client_id={client.client_id})")
-    access_token = create_jwt_token(user.username, expiry_seconds=ACCESS_TOKEN_EXPIRES_IN)
+    access_token = create_jwt_token(user.username, expiry_seconds=settings.ACCESS_TOKEN_EXPIRES_IN)
     token = {
         "token_type": "Bearer",
         "access_token": access_token,
-        "expires_in": expires_in or ACCESS_TOKEN_EXPIRES_IN,
+        "expires_in": expires_in or settings.ACCESS_TOKEN_EXPIRES_IN,
     }
     if include_refresh_token:
         token["refresh_token"] = secrets.token_urlsafe(48)

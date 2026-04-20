@@ -256,7 +256,7 @@ def register_client(body: dict = Depends(_json_body)):  # noqa: B008
 
     metadata = {
         "client_name": body.get("client_name", ""),
-        "grant_types": body.get("grant_types", ["authorization_code", "client_credentials", "refresh_token"]),
+        "grant_types": body.get("grant_types", ["authorization_code", "refresh_token"]),
         "redirect_uris": body.get("redirect_uris", []),
         "response_types": ["code"],
         "scope": body.get("scope", ""),

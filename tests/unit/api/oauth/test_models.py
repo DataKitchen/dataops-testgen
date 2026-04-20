@@ -22,12 +22,18 @@ def test_is_refresh_token_active_returns_true_when_valid():
     assert token.is_refresh_token_active() is True
 
 
-def test_is_refresh_token_active_returns_false_when_revoked():
-    now = int(time.time())
-    token = _make_token(access_token_revoked_at=now, refresh_token_revoked_at=now)
+def test_is_refresh_token_active_returns_false_when_refresh_revoked():
+    token = _make_token(refresh_token_revoked_at=int(time.time()))
     assert token.is_refresh_token_active() is False
 
 
+def test_is_refresh_token_active_ignores_access_revocation():
+    # Rotation is off: the access token is revoked on every refresh, but the
+    # refresh token must stay live so clients can reuse it.
+    token = _make_token(access_token_revoked_at=int(time.time()))
+    assert token.is_refresh_token_active() is True
+
+
 def test_is_refresh_token_active_returns_false_when_expired():
-    token = _make_token(issued_at=int(time.time()) - 100000, expires_in=100)
+    token = _make_token(issued_at=int(time.time()) - (31 * 86400))
     assert token.is_refresh_token_active() is False

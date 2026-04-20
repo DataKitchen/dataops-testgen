@@ -7,8 +7,8 @@ from uuid import uuid4
 import pytest
 from authlib.oauth2.rfc6749 import grants
 
+from testgen import settings
 from testgen.api.oauth.server import (
-    ACCESS_TOKEN_EXPIRES_IN,
     AuthorizationCodeGrant,
     ClientCredentialsGrant,
     RefreshTokenGrant,
@@ -132,7 +132,7 @@ def test_refresh_token_authenticate_returns_none_for_revoked(mock_get_session):
     mock_get_session.return_value = mock_session
 
     mock_token = MagicMock()
-    mock_token.is_revoked.return_value = True
+    mock_token.is_refresh_token_active.return_value = False
     mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token
 
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
@@ -155,16 +155,17 @@ def test_refresh_token_authenticate_returns_none_when_not_found(mock_get_session
     assert result is None
 
 
-def test_revoke_old_credential_sets_timestamps():
+def test_revoke_old_credential_revokes_access_but_keeps_refresh_live():
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
     credential = MagicMock()
+    credential.refresh_token_revoked_at = 0
 
     before = int(time.time())
     grant.revoke_old_credential(credential)
     after = int(time.time())
 
     assert before <= credential.access_token_revoked_at <= after
-    assert before <= credential.refresh_token_revoked_at <= after
+    assert credential.refresh_token_revoked_at == 0
 
 
 @patch("testgen.api.oauth.server.get_current_session")
@@ -284,10 +285,10 @@ def test_generate_bearer_token_with_user(mock_jwt):
 
     assert token["token_type"] == "Bearer"  # noqa: S105
     assert token["access_token"] == "jwt_access_token"  # noqa: S105
-    assert token["expires_in"] == ACCESS_TOKEN_EXPIRES_IN
+    assert token["expires_in"] == settings.ACCESS_TOKEN_EXPIRES_IN
     assert "refresh_token" in token
     assert token["scope"] == "read"
-    mock_jwt.assert_called_once_with("alice", expiry_seconds=ACCESS_TOKEN_EXPIRES_IN)
+    mock_jwt.assert_called_once_with("alice", expiry_seconds=settings.ACCESS_TOKEN_EXPIRES_IN)
 
 
 def test_generate_bearer_token_raises_when_no_user():
