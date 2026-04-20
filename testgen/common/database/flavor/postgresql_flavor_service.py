@@ -7,6 +7,7 @@ from testgen.common.database.flavor.redshift_flavor_service import RedshiftFlavo
 class PostgresqlFlavorService(RedshiftFlavorService):
 
     escaped_underscore = "\\_"
+    url_scheme = "postgresql"
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         if params.host.startswith("/"):

@@ -138,8 +138,8 @@ class TestRun(Entity):
         if not is_uuid4(run_id):
             return None
 
-        query = select(cls._minimal_columns).join(TestSuite).where(cls.id == run_id)
-        result = get_current_session().execute(query).first()
+        query = select(*cls._minimal_columns).join(TestSuite).where(cls.id == run_id)
+        result = get_current_session().execute(query).mappings().first()
         return TestRunMinimal(**result) if result else None
 
     @classmethod
@@ -151,7 +151,7 @@ class TestRun(Entity):
             .order_by(desc(TestRun.test_starttime))
             .limit(1)
         )
-        result = get_current_session().execute(query).first()
+        result = get_current_session().execute(query).mappings().first()
         if result:
             return LatestTestRun(str(result["id"]), result["test_starttime"])
         return None
@@ -330,7 +330,7 @@ class TestRun(Entity):
             .group_by(*group_by)
         )
 
-        return TestRunMonitorSummary(**get_current_session().execute(query).first())
+        return TestRunMonitorSummary(**get_current_session().execute(query).mappings().first())
 
     @classmethod
     def has_running_process(cls, ids: list[str]) -> bool:

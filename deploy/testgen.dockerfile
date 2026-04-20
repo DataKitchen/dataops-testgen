@@ -7,10 +7,14 @@ ARG TESTGEN_VERSION
 ARG TESTGEN_DOCKER_HUB_REPO
 ARG TESTGEN_SUPPORT_EMAIL
 
-ENV PYTHONPATH=/dk/lib/python3.12/site-packages
+ENV PYTHONPATH=/dk/lib/python3.13/site-packages
 ENV PATH=$PATH:/dk/bin
 
 RUN apk upgrade
+
+# Remove interactive ODBC tools — not needed at runtime, and iusql triggers
+# false-positive secret detection in security scanners (SECRET-3010)
+RUN rm -f /usr/bin/iusql /usr/bin/isql
 
 # Now install everything (hdbcli is pre-installed in the base image via manual wheel extraction)
 COPY . /tmp/dk/
@@ -20,7 +24,7 @@ RUN sed -i '/hdbcli/d' /tmp/dk/pyproject.toml /tmp/dk/testgen/pyproject.toml 2>/
 # Generate third-party license notices from installed packages
 RUN pip install --no-cache-dir pip-licenses \
     && SCRIPT=$(find /tmp/dk -name generate_third_party_notices.py | head -1) \
-    && PYTHONPATH=/dk/lib/python3.12/site-packages python3 "$SCRIPT" --output /dk/THIRD-PARTY-NOTICES \
+    && PYTHONPATH=/dk/lib/python3.13/site-packages python3 "$SCRIPT" --output /dk/THIRD-PARTY-NOTICES \
     && pip uninstall -y pip-licenses
 
 RUN rm -Rf /tmp/dk /root/.cache/pip
@@ -31,7 +35,7 @@ RUN addgroup -S testgen && adduser -S testgen -G testgen
 
 # Streamlit has to be able to write to these dirs
 RUN mkdir /var/lib/testgen
-RUN chown -R testgen:testgen /var/lib/testgen /dk/lib/python3.12/site-packages/streamlit/static /dk/lib/python3.12/site-packages/testgen/ui/components/frontend
+RUN chown -R testgen:testgen /var/lib/testgen /dk/lib/python3.13/site-packages/streamlit/static /dk/lib/python3.13/site-packages/testgen/ui/components/frontend
 
 ENV TESTGEN_VERSION=${TESTGEN_VERSION}
 ENV TESTGEN_DOCKER_HUB_REPO=${TESTGEN_DOCKER_HUB_REPO}

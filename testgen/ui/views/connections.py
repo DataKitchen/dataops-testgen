@@ -105,7 +105,13 @@ class ConnectionsPage(Page):
                 if len(url_parts) > 1:
                     updated_connection["url"] = url_parts[1]
 
-            if updated_connection.get("connect_by_key"):
+            # Databricks OAuth sets connect_by_key but stores the Client Secret in project_pw_encrypted,
+            # so it follows the password path rather than the private-key path.
+            uses_private_key = (
+                updated_connection.get("connect_by_key")
+                and updated_connection.get("sql_flavor_code") != "databricks"
+            )
+            if uses_private_key:
                 updated_connection["project_pw_encrypted"] = ""
                 if is_pristine(updated_connection.get("private_key_passphrase")):
                     del updated_connection["private_key_passphrase"]
@@ -242,7 +248,7 @@ class ConnectionsPage(Page):
         try:
             flavor_service = get_flavor_service(connection.sql_flavor)
             results = db.fetch_from_target_db(connection, flavor_service.test_query)
-            connection_successful = len(results) == 1 and results[0][0] == 1
+            connection_successful = len(results) == 1 and next(iter(results[0].values())) == 1
 
             if not connection_successful:
                 return ConnectionStatus(message="Error completing a query to the database server.", successful=False)

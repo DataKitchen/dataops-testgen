@@ -5,7 +5,8 @@ import threading
 import urllib.parse
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session as SQLAlchemySession, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from sqlalchemy.orm import Session as SQLAlchemySession
 
 from testgen import settings
 

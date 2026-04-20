@@ -12,9 +12,15 @@ from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from testgen.common.models import Base, get_current_session
 from testgen.utils import is_uuid4, make_json_safe
 
+def _hash_clause(x):
+    # Don't use literal_binds=True — SA 2.0 can't render UUID POSTCOMPILE IN-lists
+    # that way and raises CompileError when Streamlit hashes cached args.
+    compiled = x.compile()
+    return f"{compiled}|{compiled.params}"
+
 ENTITY_HASH_FUNCS = {
-    BinaryExpression: lambda x: str(x.compile(compile_kwargs={"literal_binds": True})),
-    BooleanClauseList: lambda x: str(x.compile(compile_kwargs={"literal_binds": True})),
+    BinaryExpression: _hash_clause,
+    BooleanClauseList: _hash_clause,
     tuple: lambda x: [str(y) for y in x],
 }
 
@@ -68,13 +74,13 @@ class Entity(Base):
             select_columns = [
                 getattr(cls, col, None) or getattr(join_target, col) if isinstance(col, str) else col for col in columns
             ]
-            query = select(select_columns).join(join_target, join_clause)
+            query = select(*select_columns).join(join_target, join_clause)
         else:
             select_columns = [getattr(cls, col) if isinstance(col, str) else col for col in columns]
-            query = select(select_columns)
+            query = select(*select_columns)
 
         query = query.where(get_by_column == identifier)
-        return get_current_session().execute(query).first()
+        return get_current_session().execute(query).mappings().first()
 
     @classmethod
     @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
@@ -100,14 +106,14 @@ class Entity(Base):
             select_columns = [
                 getattr(cls, col, None) or getattr(join_target, col) if isinstance(col, str) else col for col in columns
             ]
-            query = select(select_columns).join(join_target, join_clause)
+            query = select(*select_columns).join(join_target, join_clause)
         else:
             select_columns = [getattr(cls, col) if isinstance(col, str) else col for col in columns]
-            query = select(select_columns)
+            query = select(*select_columns)
 
         order_by = order_by or cls._default_order_by
         query = query.where(*clauses).order_by(*order_by)
-        return get_current_session().execute(query).all()
+        return get_current_session().execute(query).mappings().all()
 
     @classmethod
     def has_running_process(cls, ids: list[str]) -> bool:

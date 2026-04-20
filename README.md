@@ -101,7 +101,7 @@ source venv/bin/activate
 
 _On Windows_
 ```powershell
-py -3.12 -m venv venv
+py -3.13 -m venv venv
 venv\Scripts\activate
 ```
 

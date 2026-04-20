@@ -383,7 +383,7 @@ class TestDefinition(Entity):
         select_columns.extend(other_columns)
 
         query = insert(cls).from_select(
-            [*modified_columns, *other_columns], select(select_columns).where(cls.id.in_(test_definition_ids))
+            [*modified_columns, *other_columns], select(*select_columns).where(cls.id.in_(test_definition_ids))
         )
         db_session = get_current_session()
         db_session.execute(query)

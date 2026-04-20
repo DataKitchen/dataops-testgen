@@ -2,6 +2,7 @@ import concurrent.futures
 import csv
 import importlib
 import logging
+import math
 import re
 from collections.abc import Callable, Iterable
 from contextlib import suppress
@@ -10,11 +11,10 @@ from typing import Any, Literal, TypedDict
 from urllib.parse import quote_plus
 
 import psycopg2.sql
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import LegacyRow, RowMapping
-from sqlalchemy.engine.base import Connection, Engine
+from sqlalchemy import Connection, Engine, Row, create_engine, text
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
-from sqlalchemy.pool.base import _ConnectionFairy
+from sqlalchemy.pool import PoolProxiedConnection
 
 from testgen import settings
 from testgen.common.credentials import (
@@ -32,8 +32,9 @@ from testgen.common.database.flavor.flavor_service import (
     SQLFlavor,
     resolve_connection_params,
 )
-from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string, is_standalone_mode
 from testgen.common.read_file import get_template_files
+from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string
+from testgen.common.standalone_postgres import is_standalone_mode
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
@@ -103,12 +104,14 @@ def create_database(
 ) -> None:
     LOG.debug("DB operation: create_database on App database (User type = database_admin)")
 
+    # DDL like CREATE/DROP DATABASE cannot run inside a transaction.
+    # Use AUTOCOMMIT isolation so each statement commits immediately.
     connection = _init_db_connection(
         user_override=params["TESTGEN_ADMIN_USER"],
         password_override=params["TESTGEN_ADMIN_PASSWORD"],
         user_type="database_admin",
     )
-    connection.execute("commit")
+    connection = connection.execution_options(isolation_level="AUTOCOMMIT")
 
     with connection:
         if drop_existing:
@@ -118,20 +121,16 @@ def create_database(
                 ),
                 {"database_name": database_name},
             )
-            connection.execute("commit")
-            connection.execute(f"DROP DATABASE IF EXISTS {database_name}")
-            connection.execute("commit")
+            connection.execute(text(f"DROP DATABASE IF EXISTS {database_name}"))
             if drop_users_and_roles:
                 if user := params.get("TESTGEN_USER"):
-                    connection.execute(f"DROP USER IF EXISTS {user}")
+                    connection.execute(text(f"DROP USER IF EXISTS {user}"))
                 if report_user := params.get("TESTGEN_REPORT_USER"):
-                    connection.execute(f"DROP USER IF EXISTS {report_user}")
-                connection.execute("DROP ROLE IF EXISTS testgen_execute_role")
-                connection.execute("DROP ROLE IF EXISTS testgen_report_role")
-                connection.execute("commit")
+                    connection.execute(text(f"DROP USER IF EXISTS {report_user}"))
+                connection.execute(text("DROP ROLE IF EXISTS testgen_execute_role"))
+                connection.execute(text("DROP ROLE IF EXISTS testgen_report_role"))
         with suppress(ProgrammingError):
-            connection.execute(f"CREATE DATABASE {database_name}")
-            connection.close()
+            connection.execute(text(f"CREATE DATABASE {database_name}"))
 
 
 def execute_db_queries(
@@ -150,7 +149,6 @@ def execute_db_queries(
             LOG.debug("No queries to process")
         for index, (query, params) in enumerate(queries):
             LOG.debug(f"Query {index + 1} of {len(queries)}: {query}")
-            transaction = connection.begin()
             result = connection.execute(text(query), params)
             row_counts.append(result.rowcount)
             if result.rowcount == -1:
@@ -163,7 +161,7 @@ def execute_db_queries(
                 except Exception:
                     return_values.append(None)
 
-            transaction.commit()
+            connection.commit()
             LOG.debug(message)
 
     return return_values, row_counts
@@ -180,12 +178,12 @@ def fetch_from_db_threaded(
     use_target_db: bool = False,
     max_threads: int = 4,
     progress_callback: Callable[[ThreadedProgress], None] | None = None,
-) -> tuple[list[LegacyRow], list[str], dict[int, str]]:
+) -> tuple[list[RowMapping], list[str], dict[int, str]]:
     LOG.debug(f"DB operation: fetch_from_db_threaded ({len(queries)}) on {'Target' if use_target_db else 'App'} database (User type = normal)")
 
-    def fetch_data(query: str, params: dict | None, index: int) -> tuple[list[LegacyRow], list[str], int, str | None]:
+    def fetch_data(query: str, params: dict | None, index: int) -> tuple[list[RowMapping], list[str], int, str | None]:
         LOG.debug(f"Query: {query}")
-        row_data: list[LegacyRow] = []
+        row_data: list[RowMapping] = []
         column_names: list[str] = []
         error = None
 
@@ -193,7 +191,7 @@ def fetch_from_db_threaded(
             with _init_db_connection(use_target_db) as connection:
                 result = connection.execute(text(query), params)
                 LOG.debug(f"{result.rowcount} records retrieved")
-                row_data = result.fetchall()
+                row_data = result.mappings().fetchall()
                 column_names = list(result.keys())
         except Exception as e:
             error = get_exception_message(e)
@@ -201,7 +199,7 @@ def fetch_from_db_threaded(
 
         return row_data, column_names, index, error
 
-    result_data: list[LegacyRow] = []
+    result_data: list[RowMapping] = []
     result_columns: list[str] = []
     error_data: dict[int, str] = {}
 
@@ -241,7 +239,7 @@ def fetch_from_db_threaded(
 
 def fetch_list_from_db(
     query: str, params: dict | None = None, use_target_db: bool = False
-) -> tuple[list[LegacyRow], list[str]]:
+) -> tuple[list[Row], list[str]]:
     LOG.debug(f"DB operation: fetch_list_from_db on {'Target' if use_target_db else 'App'} database (User type = normal)")
 
     with _init_db_connection(use_target_db) as connection:
@@ -263,11 +261,10 @@ def fetch_dict_from_db(
         LOG.debug(f"Query: {query}")
         result = connection.execute(text(query), params)
         LOG.debug(f"{result.rowcount} records retrieved")
-        # Creates list of dictionaries so records are addressible by column name
-        return [row._mapping for row in result]
+        return result.mappings().all()
 
 
-def write_to_app_db(data: list[LegacyRow], column_names: Iterable[str], table_name: str) -> None:
+def write_to_app_db(data: list[Row], column_names: Iterable[str], table_name: str) -> None:
     LOG.debug("DB operation: write_to_app_db on App database (User type = normal)")
 
     # use_raw is required to make use of the copy_expert method for fast batch ingestion
@@ -275,9 +272,18 @@ def write_to_app_db(data: list[LegacyRow], column_names: Iterable[str], table_na
     cursor = connection.cursor()
 
     # Write List to CSV in memory
+    # Sanitize NaN → None: some DB connectors (e.g. Databricks via Arrow) return
+    # float('nan') for NULL integers. CSV would serialize these as "nan" which
+    # PostgreSQL rejects for numeric columns.
+    # RowMapping objects iterate over keys, not values — extract values explicitly.
+    def _row_values(row):
+        values = row.values() if isinstance(row, RowMapping) else row
+        return tuple(None if isinstance(v, float) and math.isnan(v) else v for v in values)
+
+    sanitized = [_row_values(row) for row in data]
     buffer = FilteredStringIO(["\x00"])
     writer = csv.writer(buffer, quoting=csv.QUOTE_MINIMAL)
-    writer.writerows(data)
+    writer.writerows(sanitized)
     buffer.seek(0)
 
     # List should have same column names as destination table, though not all columns in table are required
@@ -362,7 +368,7 @@ def _init_app_db_connection(
     password_override: str | None = None,
     user_type: UserType = "normal",
     use_raw: bool = False,
-) -> Connection | _ConnectionFairy:
+) -> Connection | PoolProxiedConnection:
     database_name = "postgres" if user_type == "database_admin" else get_tg_db()
     is_admin = user_type == "database_admin" or user_type == "schema_admin"
 
@@ -399,7 +405,7 @@ def _init_app_db_connection(
     try:
         schema_name = "public" if is_admin else get_tg_schema()
         if use_raw:
-            connection: _ConnectionFairy = engine.raw_connection()
+            connection: PoolProxiedConnection = engine.raw_connection()
             with connection.cursor() as cursor:
                 cursor.execute(
                     "SET SEARCH_PATH = %(schema_name)s",

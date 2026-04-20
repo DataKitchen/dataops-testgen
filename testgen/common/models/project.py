@@ -89,7 +89,7 @@ class Project(Entity):
 
         db_session = get_current_session()
         result = db_session.execute(text(query), {"project_code": project_code}).first()
-        return ProjectSummary(**result, project_code=project_code) if result else None
+        return ProjectSummary(**result._mapping, project_code=project_code) if result else None
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:

@@ -156,10 +156,14 @@ const IssueCountCell = (value, row, score, category, scoreType, onViewDetails) =
         drilldown = `${row.table_groups_id}.${row.table_name}.${row.column_name}`;
     }
 
+    // Hide View for rows where the grouping value is null/empty — drilldown filtering
+    // needs a non-empty value on the backend and router, so the link would dead-end.
+    const canDrillDown = value && drilldown && onViewDetails;
+
     return div(
         { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.issue_ct}`, 'data-testid': 'score-breakdown-cell' },
         span({ class: 'mr-2', style: 'min-width: 40px;' }, value || '-'),
-        (value && onViewDetails)
+        canDrillDown
         ? div(
             {
                 class: 'flex-row clickable',

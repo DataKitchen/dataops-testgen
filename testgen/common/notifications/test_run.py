@@ -319,7 +319,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
             .limit(result_count_by_status[status])
         )
 
-        result_list_by_status[status] = [{**r} for r in get_current_session().execute(query)]
+        result_list_by_status[status] = [{**r._mapping} for r in get_current_session().execute(query)]
 
     tr_summary, = TestRun.select_summary(test_run_ids=[test_run.id])
 
