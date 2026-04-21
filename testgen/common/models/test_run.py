@@ -1,4 +1,3 @@
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
@@ -46,30 +45,38 @@ class TestRunMinimal(EntityMinimal):
 
 @dataclass
 class TestRunSummary(EntityMinimal):
-    test_run_id: UUID
-    test_starttime: datetime
-    test_endtime: datetime
-    table_groups_name: str
-    test_suite: str
+    job_execution_id: UUID
+    test_run_id: UUID | None
+    status: JobStatus
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_message: str | None
+    progress: list[ProgressStep]
+    table_groups_name: str | None
+    test_suite: str | None
     project_code: str
     project_name: str
-    status: TestRunStatus
-    progress: list[ProgressStep]
-    process_id: int
-    job_execution_id: UUID | None
-    log_message: str
-    test_ct: int
-    passed_ct: int
-    warning_ct: int
-    failed_ct: int
-    error_ct: int
-    log_ct: int
-    dismissed_ct: int
-    dq_score_testing: float
+    process_id: int | None
+    log_message: str | None
+    test_ct: int | None
+    passed_ct: int | None
+    warning_ct: int | None
+    failed_ct: int | None
+    error_ct: int | None
+    log_ct: int | None
+    dismissed_ct: int | None
+    dq_score_testing: float | None
+    total_count: int
 
     STATUS_LABEL: ClassVar[dict[str, str]] = {
-        "Complete": "Completed",
-        "Cancelled": "Canceled",
+        JobStatus.COMPLETED: "Completed",
+        JobStatus.CANCELED: "Canceled",
+        JobStatus.CANCEL_REQUESTED: "Canceling",
+        JobStatus.PENDING: "Pending",
+        JobStatus.CLAIMED: "Starting",
+        JobStatus.RUNNING: "Running",
+        JobStatus.ERROR: "Error",
     }
 
     @property
@@ -206,112 +213,87 @@ class TestRun(Entity):
         project_code: str | None = None,
         table_group_id: str | None = None,
         test_suite_id: str | None = None,
-        test_run_ids: list[str] | None = None,
-    ) -> Iterable[TestRunSummary]:
+        test_run_ids: list[str | UUID] | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[TestRunSummary], int]:
         if (
             (table_group_id and not is_uuid4(table_group_id))
             or (test_suite_id and not is_uuid4(test_suite_id))
             or (test_run_ids and not all(is_uuid4(run_id) for run_id in test_run_ids))
         ):
-            return []
+            return [], 0
 
         query = f"""
         WITH run_results AS (
             SELECT test_run_id,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Passed' THEN 1
-                        ELSE 0
-                    END
-                ) AS passed_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Warning' THEN 1
-                        ELSE 0
-                    END
-                ) AS warning_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Failed' THEN 1
-                        ELSE 0
-                    END
-                ) AS failed_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Error' THEN 1
-                        ELSE 0
-                    END
-                ) AS error_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Log' THEN 1
-                        ELSE 0
-                    END
-                ) AS log_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
-                        ELSE 0
-                    END
-                ) AS dismissed_ct
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Passed' THEN 1 ELSE 0 END) AS passed_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Warning' THEN 1 ELSE 0 END) AS warning_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Failed' THEN 1 ELSE 0 END) AS failed_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Error' THEN 1 ELSE 0 END) AS error_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Log' THEN 1 ELSE 0 END) AS log_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
+                    THEN 1 ELSE 0 END) AS dismissed_ct
             FROM test_results
             GROUP BY test_run_id
         )
-        SELECT test_runs.id AS test_run_id,
-            je.started_at AS test_starttime,
-            COALESCE(je.completed_at, NOW()) AS test_endtime,
-            table_groups.table_groups_name,
-            test_suites.test_suite,
-            test_suites.project_code,
-            projects.project_name,
-            CASE je.status
-                WHEN 'completed' THEN 'Complete'
-                WHEN 'error' THEN 'Error'
-                WHEN 'canceled' THEN 'Cancelled'
-                WHEN 'cancel_requested' THEN 'Cancelled'
-                WHEN 'running' THEN 'Running'
-                WHEN 'pending' THEN 'Running'
-                WHEN 'claimed' THEN 'Running'
-            END AS status,
-            test_runs.progress,
-            test_runs.process_id,
-            test_runs.job_execution_id,
-            je.error_message AS log_message,
-            test_runs.test_ct,
-            run_results.passed_ct,
-            run_results.warning_ct,
-            run_results.failed_ct,
-            run_results.error_ct,
-            run_results.log_ct,
-            run_results.dismissed_ct,
-            test_runs.dq_score_test_run AS dq_score_testing
-        FROM test_runs
-            LEFT JOIN job_executions je ON je.id = test_runs.job_execution_id
-            LEFT JOIN run_results ON (test_runs.id = run_results.test_run_id)
-            INNER JOIN test_suites ON (test_runs.test_suite_id = test_suites.id)
-            INNER JOIN table_groups ON (test_suites.table_groups_id = table_groups.id)
-            INNER JOIN projects ON (test_suites.project_code = projects.project_code)
-        WHERE test_suites.is_monitor IS NOT TRUE
-            {" AND test_suites.project_code = :project_code" if project_code else ""}
-            {" AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
-            {" AND test_suites.id = :test_suite_id" if test_suite_id else ""}
-            {" AND test_runs.id IN :test_run_ids" if test_run_ids else ""}
-        ORDER BY je.started_at DESC;
+        SELECT
+            je.id AS job_execution_id,
+            tr.id AS test_run_id,
+            je.status,
+            je.created_at,
+            je.started_at,
+            je.completed_at,
+            je.error_message,
+            COALESCE(tr.progress, '[]'::jsonb) AS progress,
+            tg.table_groups_name,
+            ts.test_suite,
+            je.project_code,
+            p.project_name,
+            tr.process_id,
+            tr.log_message,
+            tr.test_ct,
+            rr.passed_ct,
+            rr.warning_ct,
+            rr.failed_ct,
+            rr.error_ct,
+            rr.log_ct,
+            rr.dismissed_ct,
+            tr.dq_score_test_run AS dq_score_testing,
+            COUNT(*) OVER() AS total_count
+        FROM job_executions je
+            LEFT JOIN test_runs tr ON tr.job_execution_id = je.id
+            LEFT JOIN test_suites ts ON ts.id = tr.test_suite_id
+            LEFT JOIN table_groups tg ON tg.id = ts.table_groups_id
+            LEFT JOIN projects p ON p.project_code = je.project_code
+            LEFT JOIN run_results rr ON rr.test_run_id = tr.id
+        WHERE je.job_key = 'run-tests'
+            AND (ts.is_monitor IS NOT TRUE OR ts.id IS NULL)
+            {" AND je.project_code = :project_code" if project_code else ""}
+            {" AND ts.table_groups_id = :table_group_id" if table_group_id else ""}
+            {" AND ts.id = :test_suite_id" if test_suite_id else ""}
+            {" AND tr.id IN :test_run_ids" if test_run_ids else ""}
+        ORDER BY je.created_at DESC
+        LIMIT :limit OFFSET :offset;
         """
         params = {
             "project_code": project_code,
             "table_group_id": table_group_id,
             "test_suite_id": test_suite_id,
             "test_run_ids": tuple(test_run_ids or []),
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
         }
         db_session = get_current_session()
         results = db_session.execute(text(query), params).mappings().all()
-        return [TestRunSummary(**row) for row in results]
+        items = [TestRunSummary(**row) for row in results]
+        total = items[0].total_count if items else 0
+        return items, total
 
     def get_monitoring_summary(self, table_name: str | None = None) -> TestRunMonitorSummary:
         freshness_anomalies = func.sum(case(
