@@ -264,6 +264,7 @@ ignore = ["TRY003", "S608", "S404", "F841", "B023"]
 "tasks.py" = ["F403"]
 "tests*" = ["S101", "T201", "ARG001"]
 "invocations/**" = ["ARG001", "T201"]
+"deploy/**" = ["T201"]
 "testgen/common/encrypt.py" = ["S413"]
 "testgen/ui/pdf/dk_logo.py" = ["T201"]
 

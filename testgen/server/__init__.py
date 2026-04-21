@@ -68,8 +68,8 @@ def _patch_openapi_schema(app: FastAPI) -> None:
     app.openapi = patched_openapi  # type: ignore[method-assign]
 
 
-def create_app() -> FastAPI:
-    version_data = with_database_session(version_service.get_version)()
+def create_app(version: str | None = None) -> FastAPI:
+    version_data = None if version else with_database_session(version_service.get_version)()
 
     mcp_session_manager = None
 
@@ -94,7 +94,7 @@ def create_app() -> FastAPI:
     ]
 
     app = FastAPI(
-        title=f"{version_data.edition} API",
+        title=f"{version_data.edition} API" if version_data else "DataOps TestGen API",
         summary="REST API for DataOps TestGen.",
         description=(
             "Automate profiling, test execution, and test generation jobs. "
@@ -102,7 +102,7 @@ def create_app() -> FastAPI:
             "**Authentication**: OAuth 2.0 authorization code flow. "
             "See `GET /.well-known/oauth-authorization-server` for discovery."
         ),
-        version=version_data.current or "dev",
+        version=version or version_data.current or "dev",
         contact={"name": "DataKitchen Support", "email": "support@datakitchen.io", "url": "https://datakitchen.io"},
         terms_of_service="https://datakitchen.io/terms-of-service/",
         docs_url=None,
