@@ -483,9 +483,10 @@ def _monitor_changes_by_tables_query(
     {"OFFSET :offset" if offset else ""}
     """
 
+    escaped_table_name_filter = table_name_filter.replace("_", "\\_") if table_name_filter else None
     params = {
         "table_group_id": table_group_id,
-        "table_name_filter": f"%{table_name_filter.replace('_', '\\_')}%" if table_name_filter else None,
+        "table_name_filter": f"%{escaped_table_name_filter}%" if escaped_table_name_filter else None,
         "sort_field": sort_field,
         "limit": limit,
         "offset": offset,

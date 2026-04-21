@@ -265,7 +265,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         update_progress(1.0)
         buffer.seek(0)
 
-        file_name = f"testgen_{issue["issue_type"]}_issue_report_{issue_id}_{timestamp}.pdf"
+        file_name = f"testgen_{issue['issue_type']}_issue_report_{issue_id}_{timestamp}.pdf"
         return file_name, "application/pdf", buffer.read()
 
 
@@ -282,15 +282,15 @@ def column_selector_dialog(project_code: str, score_definition_dict: dict, _) ->
 
         column_filters = get_column_filters(project_code)
         for column in column_filters:
-            table_group_selected = (f"table_groups_name={column["table_group"]}",) in selected_filters
+            table_group_selected = (f"table_groups_name={column['table_group']}",) in selected_filters
             table_selected = (
-                f"table_groups_name={column["table_group"]}",
-                f"table_name={column["table"]}",
+                f"table_groups_name={column['table_group']}",
+                f"table_name={column['table']}",
             ) in selected_filters
             column_selected = (
-                f"table_groups_name={column["table_group"]}",
-                f"table_name={column["table"]}",
-                f"column_name={column["name"]}",
+                f"table_groups_name={column['table_group']}",
+                f"table_name={column['table']}",
+                f"column_name={column['name']}",
             ) in selected_filters
             column["selected"] = table_group_selected or table_selected or column_selected
 

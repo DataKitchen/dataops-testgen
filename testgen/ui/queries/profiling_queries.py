@@ -180,8 +180,7 @@ def get_tables_by_condition(
     include_active_tests: bool = False,
     include_scores: bool = False,
 ) -> list[dict]:
-    query = f"""
-    {"""
+    active_tests_cte = """
     WITH active_test_definitions AS (
         SELECT
             test_defs.table_groups_id,
@@ -201,7 +200,48 @@ def get_tables_by_condition(
             test_defs.schema_name,
             test_defs.table_name
     )
-    """ if include_active_tests else ""}
+    """ if include_active_tests else ""
+
+    table_tags_select = f"""
+        -- Table Tags
+        table_chars.description,
+        table_chars.critical_data_element,
+        {", ".join([ f"table_chars.{tag}" for tag in TAG_FIELDS ])},
+        -- Table Groups Tags
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
+    """ if include_tags else ""
+
+    has_test_runs_select = """
+        -- Has Test Runs
+        EXISTS(
+            SELECT 1
+            FROM test_results
+            WHERE table_groups_id = table_chars.table_groups_id
+                AND table_name = table_chars.table_name
+        ) AS has_test_runs,
+    """ if include_has_test_runs else ""
+
+    active_tests_select = """
+        -- Test Definition Count
+        active_tests.count AS active_test_count,
+    """ if include_active_tests else ""
+
+    scores_select = """
+        -- Scores
+        table_chars.dq_score_profiling,
+        table_chars.dq_score_testing,
+    """ if include_scores else ""
+
+    active_tests_join = """
+        LEFT JOIN active_test_definitions active_tests ON (
+            table_chars.table_groups_id = active_tests.table_groups_id
+            AND table_chars.schema_name = active_tests.schema_name
+            AND table_chars.table_name = active_tests.table_name
+        )
+    """ if include_active_tests else ""
+
+    query = f"""
+    {active_tests_cte}
     SELECT
         table_chars.table_id::VARCHAR AS id,
         'table' AS type,
@@ -216,32 +256,10 @@ def get_tables_by_condition(
         add_date,
         last_refresh_date,
         drop_date,
-        {f"""
-        -- Table Tags
-        table_chars.description,
-        table_chars.critical_data_element,
-        {", ".join([ f"table_chars.{tag}" for tag in TAG_FIELDS ])},
-        -- Table Groups Tags
-        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
-        """ if include_tags else ""}
-        {"""
-        -- Has Test Runs
-        EXISTS(
-            SELECT 1
-            FROM test_results
-            WHERE table_groups_id = table_chars.table_groups_id
-                AND table_name = table_chars.table_name
-        ) AS has_test_runs,
-        """ if include_has_test_runs else ""}
-        {"""
-        -- Test Definition Count
-        active_tests.count AS active_test_count,
-        """ if include_active_tests else ""}
-        {"""
-        -- Scores
-        table_chars.dq_score_profiling,
-        table_chars.dq_score_testing,
-        """ if include_scores else ""}
+        {table_tags_select}
+        {has_test_runs_select}
+        {active_tests_select}
+        {scores_select}
         -- Profile Run
         table_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         profiling_starttime AS profile_run_date,
@@ -255,13 +273,7 @@ def get_tables_by_condition(
         LEFT JOIN table_groups ON (
             table_chars.table_groups_id = table_groups.id
         )
-        {"""
-        LEFT JOIN active_test_definitions active_tests ON (
-            table_chars.table_groups_id = active_tests.table_groups_id
-            AND table_chars.schema_name = active_tests.schema_name
-            AND table_chars.table_name = active_tests.table_name
-        )
-        """ if include_active_tests else ""}
+        {active_tests_join}
     {filter_condition}
     ORDER BY LOWER(table_chars.table_name);
     """
@@ -347,6 +359,49 @@ def get_columns_by_condition(
     include_active_tests: bool = False,
     include_scores: bool = False,
 ) -> list[dict]:
+    column_tags_select = f"""
+        -- Column Tags
+        column_chars.description,
+        column_chars.critical_data_element,
+        column_chars.excluded_data_element,
+        column_chars.pii_flag,
+        {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
+        -- Table Tags
+        table_chars.critical_data_element AS table_critical_data_element,
+        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])},
+        -- Table Groups Tags
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
+    """ if include_tags else ""
+
+    has_test_runs_select = """
+        -- Has Test Runs
+        EXISTS(
+            SELECT 1
+            FROM test_results
+            WHERE table_groups_id = column_chars.table_groups_id
+                AND table_name = column_chars.table_name
+                AND column_names = column_chars.column_name
+        ) AS has_test_runs,
+    """ if include_has_test_runs else ""
+
+    active_tests_select = """
+        -- Test Definition Count
+        (
+            SELECT COUNT(*)
+            FROM test_definitions
+            WHERE table_groups_id = column_chars.table_groups_id
+                AND table_name = column_chars.table_name
+                AND column_name = column_chars.column_name
+                AND test_active = 'Y'
+        ) AS active_test_count,
+    """ if include_active_tests else ""
+
+    scores_select = """
+        -- Scores
+        column_chars.dq_score_profiling,
+        column_chars.dq_score_testing,
+    """ if include_scores else ""
+
     query = f"""
     SELECT
         column_chars.column_id::VARCHAR AS id,
@@ -364,50 +419,15 @@ def get_columns_by_condition(
         column_chars.add_date,
         column_chars.last_mod_date,
         column_chars.drop_date,
-        {f"""
-        -- Column Tags
-        column_chars.description,
-        column_chars.critical_data_element,
-        column_chars.excluded_data_element,
-        column_chars.pii_flag,
-        {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
-        -- Table Tags
-        table_chars.critical_data_element AS table_critical_data_element,
-        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])},
-        -- Table Groups Tags
-        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])},
-        """ if include_tags else ""}
+        {column_tags_select}
         -- Profile Run
         column_chars.last_complete_profile_run_id::VARCHAR AS profile_run_id,
         run_date AS profile_run_date,
         TRUE AS is_latest_profile,
         query_error AS profiling_error,
-        {"""
-        -- Has Test Runs
-        EXISTS(
-            SELECT 1
-            FROM test_results
-            WHERE table_groups_id = column_chars.table_groups_id
-                AND table_name = column_chars.table_name
-                AND column_names = column_chars.column_name
-        ) AS has_test_runs,
-        """ if include_has_test_runs else ""}
-        {"""
-        -- Test Definition Count
-        (
-            SELECT COUNT(*)
-            FROM test_definitions
-            WHERE table_groups_id = column_chars.table_groups_id
-                AND table_name = column_chars.table_name
-                AND column_name = column_chars.column_name
-                AND test_active = 'Y'
-        ) AS active_test_count,
-        """ if include_active_tests else ""}
-        {"""
-        -- Scores
-        column_chars.dq_score_profiling,
-        column_chars.dq_score_testing,
-        """ if include_scores else ""}
+        {has_test_runs_select}
+        {active_tests_select}
+        {scores_select}
         table_chars.approx_record_ct,
         table_groups.project_code,
         table_groups.connection_id::VARCHAR AS connection_id,

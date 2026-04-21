@@ -196,7 +196,7 @@ def get_report_file_data(update_progress, issue) -> FILE_DATA_TYPE:
         update_progress(1.0)
         buffer.seek(0)
 
-        file_name = f"testgen_{issue["issue_type"]}_issue_report_{issue_id}_{timestamp}.pdf"
+        file_name = f"testgen_{issue['issue_type']}_issue_report_{issue_id}_{timestamp}.pdf"
         return file_name, "application/pdf", buffer.read()
 
 

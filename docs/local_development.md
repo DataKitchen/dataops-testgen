@@ -23,7 +23,7 @@ git clone https://github.com/YOUR-USERNAME/dataops-testgen
 
 We recommend using a Python virtual environment to avoid any dependency conflicts with other applications installed on your machine. The [venv](https://docs.python.org/3/library/venv.html#creating-virtual-environments) module, which is part of the Python standard library, or other third-party tools, like [virtualenv](https://virtualenv.pypa.io/en/latest/) or [conda](https://docs.conda.io/en/latest/), can be used.
 
-From the root of your local repository, create and activate a virtual environment with a TestGen-compatible version of Python (`>=3.12`). The steps may vary based on your operating system and Python installation - the [Python packaging user guide](https://packaging.python.org/en/latest/tutorials/installing-packages/) is a useful reference.
+From the root of your local repository, create and activate a virtual environment with a TestGen-compatible version of Python (`>=3.11`; we develop on 3.13). The steps may vary based on your operating system and Python installation - the [Python packaging user guide](https://packaging.python.org/en/latest/tutorials/installing-packages/) is a useful reference.
 
 _On Linux/Mac_
 ```shell

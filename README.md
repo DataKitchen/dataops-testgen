@@ -84,14 +84,14 @@ As an alternative to the Docker Compose [installation with dk-installer (recomme
 
 | Software                                                                                                                                                                         | Tested Versions  | Command to check version               |
 |----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------|------------------------------|
-| [Python](https://www.python.org/downloads/) <br/>- Most Linux and macOS systems have Python pre-installed. <br/>- On Windows machines, you will need to download and install it. | 3.12 | `python3 --version`               |
+| [Python](https://www.python.org/downloads/) <br/>- Most Linux and macOS systems have Python pre-installed. <br/>- On Windows machines, you will need to download and install it. | 3.11, 3.12, 3.13 | `python3 --version`               |
 | [PostgreSQL](https://www.postgresql.org/download/)                                                                                                                                                                     | 14.1, 15.8, 16.4       | `psql --version`|
 
 ### Install the TestGen package
 
 We recommend using a Python virtual environment to avoid any dependency conflicts with other applications installed on your machine. The [venv](https://docs.python.org/3/library/venv.html#creating-virtual-environments) module, which is part of the Python standard library, or other third-party tools, like [virtualenv](https://virtualenv.pypa.io/en/latest/) or [conda](https://docs.conda.io/en/latest/), can be used.
 
-Create and activate a virtual environment with a TestGen-compatible version of Python (`>=3.12`). The steps may vary based on your operating system and Python installation - the [Python packaging user guide](https://packaging.python.org/en/latest/tutorials/installing-packages/) is a useful reference.
+Create and activate a virtual environment with a TestGen-compatible version of Python (`>=3.11`). The steps may vary based on your operating system and Python installation - the [Python packaging user guide](https://packaging.python.org/en/latest/tutorials/installing-packages/) is a useful reference.
 
 _On Linux/Mac_
 ```shell
