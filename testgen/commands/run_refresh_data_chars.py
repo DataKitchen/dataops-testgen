@@ -35,7 +35,7 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
             count_queries, use_target_db=True, max_threads=connection.max_threads,
         )
 
-        count_map = dict(count_results)
+        count_map = {row["table_name"]: row["row_count"] for row in count_results}
         for column in data_chars:
             column.record_ct = count_map.get(column.table_name)
 

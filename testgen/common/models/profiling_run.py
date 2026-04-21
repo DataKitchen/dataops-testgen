@@ -113,9 +113,9 @@ class ProfilingRun(Entity):
             return None
 
         query = (
-            select(cls._minimal_columns).join(TableGroup, cls.table_groups_id == TableGroup.id).where(cls.id == run_id)
+            select(*cls._minimal_columns).join(TableGroup, cls.table_groups_id == TableGroup.id).where(cls.id == run_id)
         )
-        result = get_current_session().execute(query).first()
+        result = get_current_session().execute(query).mappings().first()
         return ProfilingRunMinimal(**result) if result else None
 
     @classmethod
@@ -126,7 +126,7 @@ class ProfilingRun(Entity):
             .order_by(desc(ProfilingRun.profiling_starttime))
             .limit(1)
         )
-        result = get_current_session().execute(query).first()
+        result = get_current_session().execute(query).mappings().first()
         if result:
             return LatestProfilingRun(str(result["id"]), result["profiling_starttime"])
         return None
@@ -137,12 +137,12 @@ class ProfilingRun(Entity):
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[ProfilingRunMinimal]:
         query = (
-            select(cls._minimal_columns)
+            select(*cls._minimal_columns)
             .join(TableGroup, cls.table_groups_id == TableGroup.id)
             .where(*clauses)
             .order_by(*order_by)
         )
-        results = get_current_session().execute(query).all()
+        results = get_current_session().execute(query).mappings().all()
         return [ProfilingRunMinimal(**row) for row in results]
 
     @classmethod

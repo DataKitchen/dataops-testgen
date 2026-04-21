@@ -29,16 +29,18 @@ def configure_logging(
         logger.addHandler(console_handler)
 
         if settings.LOG_TO_FILE:
-            os.makedirs(settings.LOG_FILE_PATH, exist_ok=True)
-
-            file_handler = ConcurrentTimedRotatingFileHandler(
-                get_log_full_path(),
-                when="MIDNIGHT",
-                interval=1,
-                backupCount=int(settings.LOG_FILE_MAX_QTY),
-            )
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+            try:
+                os.makedirs(settings.LOG_FILE_PATH, exist_ok=True)
+                file_handler = ConcurrentTimedRotatingFileHandler(
+                    get_log_full_path(),
+                    when="MIDNIGHT",
+                    interval=1,
+                    backupCount=int(settings.LOG_FILE_MAX_QTY),
+                )
+                file_handler.setFormatter(formatter)
+                logger.addHandler(file_handler)
+            except OSError:
+                logger.warning("Cannot write logs to %s — file logging disabled", settings.LOG_FILE_PATH)
 
 
 def get_log_full_path() -> str:

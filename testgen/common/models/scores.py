@@ -76,26 +76,29 @@ class ScoreDefinition(Base):
     cde_score: bool = Column(Boolean, default=False, nullable=False)
     category: ScoreCategory | None = Column(Enum(ScoreCategory), nullable=True)
 
-    criteria: ScoreDefinitionCriteria = relationship(
+    # Note: avoid `Mapped[...]`-style or `Iterable[...]` annotations on these —
+    # with DeclarativeBase + `__allow_unmapped__=True`, they confuse SA's
+    # uselist inference and cause `self.results` to be treated as a scalar.
+    criteria = relationship(
         "ScoreDefinitionCriteria",
         cascade="all, delete-orphan",
         lazy="select",
         uselist=False,
         single_parent=True,
     )
-    results: Iterable[ScoreDefinitionResult] = relationship(
+    results = relationship(
         "ScoreDefinitionResult",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionResult.category",
         lazy="joined",
     )
-    breakdown: Iterable[ScoreDefinitionBreakdownItem] = relationship(
+    breakdown = relationship(
         "ScoreDefinitionBreakdownItem",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
         lazy="select",
     )
-    history: Iterable[ScoreDefinitionResultHistoryEntry] = relationship(
+    history = relationship(
         "ScoreDefinitionResultHistoryEntry",
         order_by="ScoreDefinitionResultHistoryEntry.last_run_time.asc()",
         cascade="all, delete-orphan",
@@ -241,10 +244,10 @@ class ScoreDefinition(Base):
 
         filters = " AND ".join(self._get_raw_query_filters())
         overall_scores = get_current_session().execute(
-            read_template_sql_file(
+            text(read_template_sql_file(
                 overall_score_query_template_file,
                 sub_directory="score_cards",
-            ).replace("{filters}", filters)
+            ).replace("{filters}", filters))
         ).mappings().first() or {}
 
         categories_scores = []
@@ -252,10 +255,10 @@ class ScoreDefinition(Base):
             categories_scores = [
                 dict(result)
                 for result in get_current_session().execute(
-                    read_template_sql_file(
+                    text(read_template_sql_file(
                         categories_query_template_file,
                         sub_directory="score_cards",
-                    ).replace("{category}", category.value).replace("{filters}", filters)
+                    ).replace("{category}", category.value).replace("{filters}", filters))
                 ).mappings().all()
             ]
 
@@ -359,7 +362,7 @@ class ScoreDefinition(Base):
             .replace("{records_count_filters}", records_count_filters)
             .replace("{non_null_columns}", ", ".join(non_null_columns))
         )
-        results = get_current_session().execute(query).mappings().all()
+        results = get_current_session().execute(text(query)).mappings().all()
 
         return [dict(row) for row in results]
 
@@ -499,7 +502,7 @@ class ScoreDefinitionCriteria(Base):
     definition_id: str = Column(postgresql.UUID(as_uuid=True), ForeignKey("score_definitions.id", ondelete="CASCADE"))
     operand: Literal["AND", "OR"] = Column(String, nullable=False, default="AND")
     group_by_field: bool = Column(Boolean, nullable=False, default=True)
-    filters: list[ScoreDefinitionFilter] = relationship(
+    filters = relationship(
         "ScoreDefinitionFilter",
         cascade="all, delete-orphan",
         lazy="joined",
@@ -578,7 +581,7 @@ class ScoreDefinitionFilter(Base):
         nullable=True,
         default=None,
     )
-    next_filter: ScoreDefinitionFilter = relationship(
+    next_filter = relationship(
         "ScoreDefinitionFilter",
         cascade="all, delete-orphan",
         lazy="joined",
@@ -681,7 +684,7 @@ class ScoreDefinitionResultHistoryEntry(Base):
     score: float = Column(Float, nullable=True)
     last_run_time: datetime = Column(DateTime(timezone=False), nullable=False, primary_key=True)
 
-    definition: ScoreDefinition = relationship("ScoreDefinition", back_populates="history")
+    definition = relationship("ScoreDefinition", back_populates="history")
 
     def add_as_cutoff(self):
         """

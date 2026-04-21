@@ -5,9 +5,8 @@ import threading
 import urllib.parse
 
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.orm import Session as SQLAlchemySession
-from sqlalchemy.orm import sessionmaker
 
 from testgen import settings
 
@@ -19,11 +18,17 @@ engine = create_engine(
     echo=False,
     connect_args={
         "application_name": platform.node(),
-        "options": f"-csearch_path={settings.DATABASE_SCHEMA}",
+        # TimeZone=UTC so TIMESTAMP (no-tz) columns store aware UTC datetimes as-is.
+        # Without this, pgserver inherits the OS TZ and silently shifts
+        # timestamps on insert, which make_json_safe then re-reads as UTC.
+        "options": f"-csearch_path={settings.DATABASE_SCHEMA} -c TimeZone=UTC",
     },
 )
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    # Allow legacy Column() + type-hint patterns without Mapped[].
+    # Can be removed once all models use Mapped[] annotations.
+    __allow_unmapped__ = True
 
 Session = sessionmaker(
     engine,

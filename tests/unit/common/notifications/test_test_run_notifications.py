@@ -141,8 +141,14 @@ def test_send_test_run_notification(
         error_ct=error_ct,
     )
 
+    # SA 2.0 Row objects expose ._mapping; mock them accordingly
+    def _make_row():
+        r = Mock()
+        r._mapping = {}
+        return r
+
     db_session_mock.execute.side_effect = [
-        [{} for _ in range(ct)]
+        [_make_row() for _ in range(ct)]
         for ct in (failed_expected, warning_expected, error_expected)
         if ct > 0
     ]

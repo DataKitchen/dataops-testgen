@@ -38,7 +38,7 @@ function formatDuration(
 function formatDurationSeconds(
     /** @type number */ totalSeconds,
 ) {
-    if (!totalSeconds) {
+    if (totalSeconds == null || totalSeconds < 0) {
         return '--';
     }
 

@@ -4,6 +4,7 @@ import os
 from testgen import settings
 from testgen.common import create_database, execute_db_queries
 from testgen.common.credentials import get_tg_db, get_tg_schema
+from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
 from testgen.common.models import with_database_session
@@ -22,6 +23,14 @@ def _get_latest_revision_number():
 def _get_params_mapping() -> dict:
     ui_user_encrypted_password = encrypt_ui_password(settings.PASSWORD)
 
+    project_host = settings.PROJECT_DATABASE_HOST
+    project_user = settings.PROJECT_DATABASE_USER
+    project_password = settings.PROJECT_DATABASE_PASSWORD
+    if is_standalone_mode():
+        project_host = str(get_home_dir() / "pgdata")
+        project_user = "postgres"
+        project_password = ""
+
     return {
         "UI_USER_NAME": settings.USERNAME,
         "UI_USER_USERNAME": settings.USERNAME,
@@ -33,10 +42,10 @@ def _get_params_mapping() -> dict:
         "SQL_FLAVOR": settings.PROJECT_SQL_FLAVOR,
         "PROJECT_NAME": settings.PROJECT_NAME,
         "PROJECT_DB": settings.PROJECT_DATABASE_NAME,
-        "PROJECT_USER": settings.PROJECT_DATABASE_USER,
+        "PROJECT_USER": project_user,
         "PROJECT_PORT": settings.PROJECT_DATABASE_PORT,
-        "PROJECT_HOST": settings.PROJECT_DATABASE_HOST,
-        "PROJECT_PW_ENCRYPTED": EncryptText(settings.PROJECT_DATABASE_PASSWORD),
+        "PROJECT_HOST": project_host,
+        "PROJECT_PW_ENCRYPTED": EncryptText(project_password),
         "PROJECT_HTTP_PATH": "",
         "PROJECT_SERVICE_ACCOUNT_KEY": "",
         "PROJECT_SCHEMA": settings.PROJECT_DATABASE_SCHEMA,
