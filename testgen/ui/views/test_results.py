@@ -811,7 +811,11 @@ def render_binary_chart(data: pd.DataFrame, **params: dict) -> None:
     history["test_start"] = history["test_date"].apply(datetime.fromisoformat)
     history["test_end"] = history["test_start"].apply(lambda start: start + timedelta(seconds=60))
     history["formatted_test_date"] = history["test_date"].apply(lambda date_str: datetime.fromisoformat(date_str).strftime("%I:%M:%S %p, %d/%m/%Y"))
-    history["result_measure_with_status"] = history.apply(lambda row: f"{legend_labels[str(int(row['result_measure'])) if not pd.isnull(row['result_measure']) else "0"]} ({row['result_status']})", axis=1)
+    def _format_measure_with_status(row):
+        measure_key = str(int(row["result_measure"])) if not pd.isnull(row["result_measure"]) else "0"
+        return f"{legend_labels[measure_key]} ({row['result_status']})"
+
+    history["result_measure_with_status"] = history.apply(_format_measure_with_status, axis=1)
 
     fig = px.timeline(
         history,

@@ -79,7 +79,7 @@ def _create_tag(relative_filepath: str, html: BeautifulSoup) -> Tag | None:
         ),
     }
 
-    extension = f".{relative_filepath.split(".")[-1]}"
+    extension = f".{relative_filepath.split('.')[-1]}"
     if extension in tag_for_ext:
         return tag_for_ext[extension]()
     return None

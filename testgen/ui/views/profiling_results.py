@@ -225,16 +225,27 @@ def get_excel_report_data(
     type_map = {"A": "Alpha", "B": "Boolean", "D": "Datetime", "N": "Numeric"}
     data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
 
-    data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
-        if val and val != PII_REDACTED
-        else val
-    )
-    data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
-        if val and val != PII_REDACTED
-        else val
-    )
+    def _format_top_freq_values(val):
+        if not val or val == PII_REDACTED:
+            return val
+        lines = []
+        for part in val[2:].split("\n| "):
+            left, right = part.split(" | ")
+            lines.append(f"{right} | {left}")
+        return "\n".join(lines)
+
+    def _format_top_patterns(val):
+        if not val or val == PII_REDACTED:
+            return val
+        parts = val.split(" | ")
+        formatted = []
+        for index, part in enumerate(parts):
+            separator = "\n" if index % 2 else " | "
+            formatted.append(f"{part}{separator}")
+        return "".join(formatted)
+
+    data["top_freq_values"] = data["top_freq_values"].apply(_format_top_freq_values)
+    data["top_patterns"] = data["top_patterns"].apply(_format_top_patterns)
 
     columns = {
         "table_name": {"header": "Table"},

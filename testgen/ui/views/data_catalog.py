@@ -251,12 +251,13 @@ def get_excel_report_data(
     data["excluded_data_element"] = data["excluded_data_element"].apply(lambda val: "Yes" if val else None)
     data["pii_flag"] = data["pii_flag"].apply(lambda val: "Yes" if val else None)
     data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join([f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ")])
+        lambda val: "\n".join([f"{part.split(' | ')[1]} | {part.split(' | ')[0]}" for part in val[2:].split("\n| ")])
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )
+    nl = "\n" # For Python 3.11 compatibility
     data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "".join([f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
+        lambda val: "".join([f"{part}{nl if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )

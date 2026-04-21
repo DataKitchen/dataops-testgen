@@ -30,7 +30,8 @@ def generate_create_script(table_name: str, data: list[dict]) -> str | None:
         separator = " " if index == len(table_data) - 1 else ","
         col_defs.append(f"{col['column_name']:<{max_name}} {(col_type):<{max_type}}{separator}    {comment}")
 
+    col_defs_joined = "\n    ".join(col_defs)
     return f"""
 CREATE TABLE {table_data[0]['schema_name']}.{table_data[0]['table_name']} (
-    {"\n    ".join(col_defs)}
+    {col_defs_joined}
 );"""

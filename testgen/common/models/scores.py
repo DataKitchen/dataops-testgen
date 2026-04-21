@@ -522,7 +522,7 @@ class ScoreDefinitionCriteria(Base):
                 for _, field_filters in grouped_filters:
                     field_filters_sql = [f.get_as_sql(prefix=prefix, operand="AND") for f in field_filters]
                     filters_sql.append(
-                        f"({" OR ".join(field_filters_sql)})" if len(field_filters_sql) > 1 else field_filters_sql[0]
+                        f"({' OR '.join(field_filters_sql)})" if len(field_filters_sql) > 1 else field_filters_sql[0]
                     )
             else:
                 filters_sql = [ f.get_as_sql(prefix=prefix, operand="AND") for f in self.filters ]
