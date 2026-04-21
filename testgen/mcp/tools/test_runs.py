@@ -31,7 +31,7 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
             return f"Test suite `{test_suite}` not found in project `{project_code}`."
         test_suite_id = str(suites[0].id)
 
-    summaries = TestRun.select_summary(project_code=project_code, test_suite_id=test_suite_id)
+    summaries, _ = TestRun.select_summary(project_code=project_code, test_suite_id=test_suite_id, page_size=1000)
 
     if not summaries:
         scope = f" for suite `{test_suite}`" if test_suite else ""
@@ -64,10 +64,10 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
         warning = run.warning_ct or 0
         errors = run.error_ct or 0
 
-        doc.heading(3, f"{run.test_starttime} — {run.status_label}")
+        doc.heading(3, f"{run.created_at} — {run.status_label}")
         doc.field("Run ID", run.job_execution_id, code=True)
-        doc.field("Started", run.test_starttime)
-        doc.field("Ended", run.test_endtime)
+        doc.field("Started", run.created_at)
+        doc.field("Ended", run.completed_at or "In progress")
         doc.field("Results", f"{run.test_ct or 0} tests — {passed} passed, {failed} failed, {warning} warnings, {errors} errors")
 
         if run.dismissed_ct:

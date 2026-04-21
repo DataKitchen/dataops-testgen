@@ -85,13 +85,15 @@ def get_test_run_summaries(
     project_code: str | None = None,
     table_group_id: str | UUID | None = None,
     test_suite_id: str | int | None = None,
-    test_run_ids: list[str | UUID] | None = None,
-) -> Iterable[TestRunSummary]:
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[TestRunSummary], int]:
     return TestRun.select_summary(
         project_code=project_code,
         table_group_id=table_group_id,
         test_suite_id=test_suite_id,
-        test_run_ids=test_run_ids,
+        page=page,
+        page_size=page_size,
     )
 
 
@@ -119,6 +121,7 @@ def get_table_group_summaries(
 def get_profiling_run_summaries(
     project_code: str,
     table_group_id: str | UUID | None = None,
-    profiling_run_ids: list[str | UUID] | None = None,
-) -> Iterable[ProfilingRunSummary]:
-    return ProfilingRun.select_summary(project_code, table_group_id, profiling_run_ids)
+    page: int = 1,
+    page_size: int = 20,
+) -> tuple[list[ProfilingRunSummary], int]:
+    return ProfilingRun.select_summary(project_code, table_group_id, page=page, page_size=page_size)

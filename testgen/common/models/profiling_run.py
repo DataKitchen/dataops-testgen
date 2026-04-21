@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal, NamedTuple, Self, TypedDict
+from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
 import streamlit as st
@@ -44,26 +44,43 @@ class ProfilingRunMinimal(EntityMinimal):
 
 @dataclass
 class ProfilingRunSummary(EntityMinimal):
-    id: UUID
-    profiling_starttime: datetime
-    profiling_endtime: datetime
-    table_groups_name: str
-    status: ProfilingRunStatus
+    job_execution_id: UUID
+    profiling_run_id: UUID | None
+    status: JobStatus
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_message: str | None
     progress: list[ProgressStep]
-    process_id: int
-    job_execution_id: UUID | None
-    log_message: str
-    table_group_schema: str
-    table_ct: int
-    column_ct: int
-    record_ct: int
-    data_point_ct: int
-    anomaly_ct: int
-    anomalies_definite_ct: int
-    anomalies_likely_ct: int
-    anomalies_possible_ct: int
-    anomalies_dismissed_ct: int
-    dq_score_profiling: float
+    table_groups_name: str | None
+    table_group_schema: str | None
+    process_id: int | None
+    log_message: str | None
+    table_ct: int | None
+    column_ct: int | None
+    record_ct: int | None
+    data_point_ct: int | None
+    anomaly_ct: int | None
+    anomalies_definite_ct: int | None
+    anomalies_likely_ct: int | None
+    anomalies_possible_ct: int | None
+    anomalies_dismissed_ct: int | None
+    dq_score_profiling: float | None
+    total_count: int
+
+    STATUS_LABEL: ClassVar[dict[str, str]] = {
+        JobStatus.COMPLETED: "Completed",
+        JobStatus.CANCELED: "Canceled",
+        JobStatus.CANCEL_REQUESTED: "Canceling",
+        JobStatus.PENDING: "Pending",
+        JobStatus.CLAIMED: "Starting",
+        JobStatus.RUNNING: "Running",
+        JobStatus.ERROR: "Error",
+    }
+
+    @property
+    def status_label(self) -> str:
+        return self.STATUS_LABEL.get(self.status, self.status)
 
 
 class LatestProfilingRun(NamedTuple):
@@ -162,94 +179,74 @@ class ProfilingRun(Entity):
         cls,
         project_code: str,
         table_group_id: str | UUID | None = None,
-        profiling_run_ids: list[str|UUID] | None = None,
-    ) -> Iterable[ProfilingRunSummary]:
-        if (table_group_id and not is_uuid4(table_group_id)) or (
-            profiling_run_ids and not all(is_uuid4(run_id) for run_id in profiling_run_ids)
-        ):
-            return []
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[ProfilingRunSummary], int]:
+        if table_group_id and not is_uuid4(table_group_id):
+            return [], 0
 
         query = f"""
         WITH profile_anomalies AS (
             SELECT profile_anomaly_results.profile_run_id,
-                SUM(
-                    CASE
-                        WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND profile_anomaly_types.issue_likelihood = 'Definite' THEN 1
-                        ELSE 0
-                    END
-                ) AS definite_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND profile_anomaly_types.issue_likelihood = 'Likely' THEN 1
-                        ELSE 0
-                    END
-                ) AS likely_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND profile_anomaly_types.issue_likelihood IN ('Possible', 'Potential PII') THEN 1
-                        ELSE 0
-                    END
-                ) AS possible_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
-                        ELSE 0
-                    END
-                ) AS dismissed_ct
+                SUM(CASE WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') = 'Confirmed'
+                    AND profile_anomaly_types.issue_likelihood = 'Definite' THEN 1 ELSE 0 END) AS definite_ct,
+                SUM(CASE WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') = 'Confirmed'
+                    AND profile_anomaly_types.issue_likelihood = 'Likely' THEN 1 ELSE 0 END) AS likely_ct,
+                SUM(CASE WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed') = 'Confirmed'
+                    AND profile_anomaly_types.issue_likelihood IN ('Possible', 'Potential PII')
+                    THEN 1 ELSE 0 END) AS possible_ct,
+                SUM(CASE WHEN COALESCE(profile_anomaly_results.disposition, 'Confirmed')
+                    IN ('Dismissed', 'Inactive') THEN 1 ELSE 0 END) AS dismissed_ct
             FROM profile_anomaly_results
-                LEFT JOIN profile_anomaly_types ON (
-                    profile_anomaly_types.id = profile_anomaly_results.anomaly_id
-                )
+                LEFT JOIN profile_anomaly_types
+                    ON profile_anomaly_types.id = profile_anomaly_results.anomaly_id
             GROUP BY profile_anomaly_results.profile_run_id
         )
-        SELECT profiling_runs.id,
-            je.started_at AS profiling_starttime,
-            COALESCE(je.completed_at, NOW()) AS profiling_endtime,
-            table_groups.table_groups_name,
-            CASE je.status
-                WHEN 'completed' THEN 'Complete'
-                WHEN 'error' THEN 'Error'
-                WHEN 'canceled' THEN 'Cancelled'
-                WHEN 'cancel_requested' THEN 'Cancelled'
-                WHEN 'running' THEN 'Running'
-                WHEN 'pending' THEN 'Running'
-                WHEN 'claimed' THEN 'Running'
-            END AS status,
-            profiling_runs.progress,
-            profiling_runs.process_id,
-            profiling_runs.job_execution_id,
-            je.error_message AS log_message,
-            table_groups.table_group_schema,
-            profiling_runs.table_ct,
-            profiling_runs.column_ct,
-            profiling_runs.record_ct,
-            profiling_runs.data_point_ct,
-            profiling_runs.anomaly_ct,
-            profile_anomalies.definite_ct AS anomalies_definite_ct,
-            profile_anomalies.likely_ct AS anomalies_likely_ct,
-            profile_anomalies.possible_ct AS anomalies_possible_ct,
-            profile_anomalies.dismissed_ct AS anomalies_dismissed_ct,
-            profiling_runs.dq_score_profiling
-        FROM profiling_runs
-            LEFT JOIN job_executions je ON je.id = profiling_runs.job_execution_id
-            LEFT JOIN table_groups ON (profiling_runs.table_groups_id = table_groups.id)
-            LEFT JOIN profile_anomalies ON (profiling_runs.id = profile_anomalies.profile_run_id)
-        WHERE profiling_runs.project_code = :project_code
-            {"AND profiling_runs.table_groups_id = :table_group_id" if table_group_id else ""}
-            {"AND profiling_runs.id IN :profiling_run_ids" if profiling_run_ids else ""}
-        ORDER BY je.started_at DESC;
+        SELECT
+            je.id AS job_execution_id,
+            pr.id AS profiling_run_id,
+            je.status,
+            je.created_at,
+            je.started_at,
+            je.completed_at,
+            je.error_message,
+            COALESCE(pr.progress, '[]'::jsonb) AS progress,
+            tg.table_groups_name,
+            tg.table_group_schema,
+            pr.process_id,
+            pr.log_message,
+            pr.table_ct,
+            pr.column_ct,
+            pr.record_ct,
+            pr.data_point_ct,
+            pr.anomaly_ct,
+            pa.definite_ct AS anomalies_definite_ct,
+            pa.likely_ct AS anomalies_likely_ct,
+            pa.possible_ct AS anomalies_possible_ct,
+            pa.dismissed_ct AS anomalies_dismissed_ct,
+            pr.dq_score_profiling,
+            COUNT(*) OVER() AS total_count
+        FROM job_executions je
+            LEFT JOIN profiling_runs pr ON pr.job_execution_id = je.id
+            LEFT JOIN table_groups tg ON tg.id = pr.table_groups_id
+            LEFT JOIN profile_anomalies pa ON pa.profile_run_id = pr.id
+        WHERE je.job_key = 'run-profile'
+            AND je.project_code = :project_code
+            {" AND tg.id = :table_group_id" if table_group_id else ""}
+        ORDER BY je.created_at DESC
+        LIMIT :limit OFFSET :offset;
         """
         params = {
             "project_code": project_code,
             "table_group_id": table_group_id,
-            "profiling_run_ids": tuple(profiling_run_ids or []),
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
         }
         db_session = get_current_session()
         results = db_session.execute(text(query), params).mappings().all()
-        return [ProfilingRunSummary(**row) for row in results]
+        items = [ProfilingRunSummary(**row) for row in results]
+        total = items[0].total_count if items else 0
+        return items, total
 
     _ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)
 

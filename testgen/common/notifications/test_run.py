@@ -21,7 +21,7 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
 
     def get_subject_template(self) -> str:
         return (
-            "[TestGen] Test Run {{format_status test_run.status}}: {{test_run.test_suite}}"
+            "[TestGen] Test Run {{test_run.status_label}}: {{test_run.test_suite}}"
             "{{#with test_run}}"
             '{{#if failed_ct}} | {{format_number failed_ct}} {{pluralize failed_ct "failure" "failures"}}{{/if}}'
             '{{#if warning_ct}} | {{format_number warning_ct}} {{pluralize warning_ct "warning" "warnings"}}{{/if}}'
@@ -32,9 +32,9 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
     def get_title_template(self):
         return """
           TestGen Test Run - <span class="
-          {{#if (eq test_run.status 'Error')}} text-red {{/if}}
-          {{#if (eq test_run.status 'Cancelled')}} text-purple {{/if}}
-          ">{{format_status test_run.status}}</span>
+          {{#if (eq test_run.status 'error')}} text-red {{/if}}
+          {{#if (eq test_run.status 'canceled')}} text-purple {{/if}}
+          ">{{test_run.status_label}}</span>
         """
 
     def get_main_content_template(self):
@@ -59,11 +59,11 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
                 <tr>
                   <td class="summary__label">Start Time</td>
-                  <td class="summary__value">{{format_dt test_run.test_starttime}}</td>
+                  <td class="summary__value">{{format_dt test_run.started_at}}</td>
                 </tr>
                 <tr>
                   <td class="summary__label">Duration</td>
-                  <td class="summary__value">{{format_duration test_run.test_starttime test_run.test_endtime}}</td>
+                  <td class="summary__value">{{format_duration test_run.started_at test_run.completed_at}}</td>
                 </tr>
               </table>
             </div>
@@ -78,7 +78,7 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
                 <tr>
                   <td class="summary__subtitle">
-                    {{#if (eq test_run.status 'Complete')}}
+                    {{#if (eq test_run.status 'completed')}}
                         {{#if (eq notification_trigger 'on_changes')}}
                             Test run has new failures, warnings, or errors.
                         {{/if}}
@@ -89,15 +89,15 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                             Test run has failures, warnings, or errors.
                         {{/if}}
                     {{/if}}
-                    {{#if (eq test_run.status 'Error')}}
+                    {{#if (eq test_run.status 'error')}}
                         Test execution encountered an error.
                     {{/if}}
-                    {{#if (eq test_run.status 'Cancelled')}}
+                    {{#if (eq test_run.status 'canceled')}}
                         Test run was canceled.
                     {{/if}}
                   </td>
                 </tr>
-                {{#if (eq test_run.status 'Complete')}}
+                {{#if (eq test_run.status 'completed')}}
                 <tr>
                   <td colspan="2" style="padding-top: 12px; padding-bottom: 12px;">
                     <table cellspacing="0" cellpadding="0" class="tg-summary-bar">
@@ -134,12 +134,12 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                   </td>
                 </tr>
                 {{/if}}
-                {{#if (eq test_run.status 'Error')}}
+                {{#if (eq test_run.status 'error')}}
                 <tr>
                   <td><div class="code">{{test_run.log_message}}</div></td>
                 </tr>
                 {{/if}}
-                {{#if (eq test_run.status 'Complete')}}
+                {{#if (eq test_run.status 'completed')}}
                 <tr>
                   <td>
                     <a class="link" href="{{test_run_url}}" target="_blank">View on TestGen &gt;</a>
@@ -321,7 +321,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
         result_list_by_status[status] = [{**r} for r in get_current_session().execute(query)]
 
-    tr_summary, = TestRun.select_summary(test_run_ids=[test_run.id])
+    (tr_summary,), _ = TestRun.select_summary(test_run_ids=[test_run.id])
 
     test_run_url = "".join(
         (
