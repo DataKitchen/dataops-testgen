@@ -199,6 +199,7 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
             END as execution_error_ct,
             p.project_code, r.table_groups_id::VARCHAR,
             r.id::VARCHAR as test_result_id, r.test_run_id::VARCHAR,
+            tr.job_execution_id::VARCHAR as job_execution_id,
             c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
             r.test_definition_id::VARCHAR,
             r.auto_gen,
@@ -218,6 +219,8 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
             COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
             COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
         FROM test_results r
+    INNER JOIN test_runs tr
+        ON (r.test_run_id = tr.id)
     INNER JOIN test_types tt
         ON (r.test_type = tt.test_type)
     INNER JOIN test_suites ts

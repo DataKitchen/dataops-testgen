@@ -265,7 +265,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
           settings.UI_BASE_URL,
           "/profiling-runs:hygiene?project_code=",
           str(profiling_run.project_code),
-          "&run_id=", str(profiling_run.id),
+          "&run_id=", str(profiling_run.job_execution_id),
           "&source=email"
         )
     )
@@ -318,7 +318,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
                     "/profiling-runs:results?project_code=",
                     str(profiling_run.project_code),
                     "&run_id=",
-                    str(profiling_run.id),
+                    str(profiling_run.job_execution_id),
                     "&source=email"
                 )
             ),

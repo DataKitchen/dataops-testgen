@@ -92,6 +92,8 @@ class ProfilingResultsPage(Page):
             )
             return
 
+        run_id = str(run.id)
+
         run_date = date_service.get_timezoned_timestamp(st.session_state, run.profiling_starttime)
         session.set_sidebar_project(run.project_code)
 

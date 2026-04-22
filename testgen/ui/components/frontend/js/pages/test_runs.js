@@ -440,7 +440,7 @@ const TestRunItem = (
                 ? Link({ emit,
                     label: formatTimestamp(displayTime),
                     href: 'test-runs:results',
-                    params: { 'run_id': item.test_run_id, 'project_code': projectCode },
+                    params: { 'run_id': item.job_execution_id, 'project_code': projectCode },
                     underline: true,
                 })
                 : span(formatTimestamp(displayTime)),

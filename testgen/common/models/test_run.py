@@ -164,7 +164,11 @@ class TestRun(Entity):
         if not is_uuid4(run_id):
             return None
 
-        query = select(cls._minimal_columns).join(TestSuite).where(cls.id == run_id)
+        query = (
+            select(cls._minimal_columns)
+            .join(TestSuite)
+            .where((cls.id == run_id) | (cls.job_execution_id == run_id))
+        )
         result = get_current_session().execute(query).first()
         return TestRunMinimal(**result) if result else None
 

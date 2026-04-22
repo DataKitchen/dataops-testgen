@@ -134,6 +134,7 @@ def test_send_test_run_notification(
 
     test_run = TestRun(
         id="tr-id",
+        job_execution_id="tr-id",
         status=test_run_status,
         test_suite_id="ts-id",
         failed_ct=failed_ct,
