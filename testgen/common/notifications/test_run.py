@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 
 from sqlalchemy import case, literal, select
 
@@ -322,6 +323,10 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
         result_list_by_status[status] = [{**r} for r in get_current_session().execute(query)]
 
     (tr_summary,), _ = TestRun.select_summary(test_run_ids=[test_run.id])
+    # Notifications fire before the scheduler calls mark_completed(); fall back to NOW() so
+    # the duration helper in the email template doesn't crash. See job-execution-callbacks followup.
+    if tr_summary.completed_at is None:
+        tr_summary.completed_at = datetime.now(UTC)
 
     test_run_url = "".join(
         (
@@ -329,7 +334,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
             "/test-runs:results?project_code=",
             str(tr_summary.project_code),
             "&run_id=",
-            str(test_run.id),
+            str(test_run.job_execution_id),
             "&source=email"
         )
     )

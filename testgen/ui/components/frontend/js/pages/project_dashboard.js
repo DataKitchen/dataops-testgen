@@ -17,6 +17,7 @@
  * @property {string?} dq_score_profiling
  * @property {string?} dq_score_testing
  * @property {string?} latest_profile_id
+ * @property {string?} latest_profile_job_execution_id
  * @property {number?} latest_profile_start
  * @property {number} latest_anomalies_ct
  * @property {number} latest_anomalies_definite_ct
@@ -226,10 +227,10 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
         div(
             { class: 'flex-row fx-gap-2', style: 'flex: 1 1 50%;' },
             span('Latest profile:'),
-            Link({ emit, 
+            Link({ emit,
                 label: formatTimestamp(tableGroup.latest_profile_start),
                 href: 'profiling-runs:results',
-                params: { run_id: tableGroup.latest_profile_id, project_code: projectCode },
+                params: { run_id: tableGroup.latest_profile_job_execution_id, project_code: projectCode },
             }),
             daysAgo > staleProfileDays
                 ? span({ class: 'text-error' }, `(${daysAgo} days ago)`)
@@ -237,11 +238,11 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
         ),
         div(
             { class: 'flex-row fx-gap-5', style: 'flex: 1 1 50%;' },
-            Link({ emit, 
+            Link({ emit,
                 label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
                 href: 'profiling-runs:hygiene',
                 params: {
-                    run_id: tableGroup.latest_profile_id,
+                    run_id: tableGroup.latest_profile_job_execution_id,
                     project_code: projectCode,
                 },
                 width: 150,
@@ -289,10 +290,10 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites, /
                 span({ class: 'text-caption' }, `${suite.test_ct ?? 0} tests`),
             ),
             suite.latest_run_id
-                ? Link({ emit, 
+                ? Link({ emit,
                     label: formatTimestamp(suite.latest_run_start),
                     href: 'test-runs:results',
-                    params: { run_id: suite.latest_run_id, project_code: projectCode },
+                    params: { run_id: suite.latest_run_job_execution_id, project_code: projectCode },
                     style: 'flex: 1 1 25%;',
                 })
                 : span({ style: 'flex: 1 1 25%;' }, '--'),

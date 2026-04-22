@@ -100,7 +100,13 @@ def test_send_profiling_run_notification(
     hi_count_mock,
     send_mock,
 ):
-    profiling_run = ProfilingRun(id="pr-id", table_groups_id="tg-id", status=profiling_run_status, project_code="proj")
+    profiling_run = ProfilingRun(
+        id="pr-id",
+        job_execution_id="pr-id",
+        table_groups_id="tg-id",
+        status=profiling_run_status,
+        project_code="proj",
+    )
     get_prev_mock.return_value = ProfilingRun(id="pr-prev-id") if has_prev_run else None
     new_count = iter(count())
     priorities = ("Definite", "Likely", "Possible", "High", "Moderate")

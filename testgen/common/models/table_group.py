@@ -60,6 +60,7 @@ class TableGroupSummary(EntityMinimal):
     dq_score_profiling: float
     dq_score_testing: float
     latest_profile_id: UUID
+    latest_profile_job_execution_id: UUID | None
     latest_profile_start: datetime
     latest_anomalies_ct: int
     latest_anomalies_definite_ct: int
@@ -211,6 +212,7 @@ class TableGroup(Entity):
         latest_profile AS (
             SELECT latest_run.table_groups_id,
                 latest_run.id,
+                latest_run.job_execution_id,
                 latest_run.profiling_starttime,
                 latest_run.anomaly_ct,
                 SUM(
@@ -316,6 +318,7 @@ class TableGroup(Entity):
             groups.dq_score_profiling,
             groups.dq_score_testing,
             latest_profile.id AS latest_profile_id,
+            latest_profile.job_execution_id AS latest_profile_job_execution_id,
             latest_profile.profiling_starttime AS latest_profile_start,
             latest_profile.anomaly_ct AS latest_anomalies_ct,
             latest_profile.definite_ct AS latest_anomalies_definite_ct,
