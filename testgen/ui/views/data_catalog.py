@@ -499,12 +499,13 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         axis=1,
     )
     data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join([ f"{part.split(" | ")[1]} | {part.split(" | ")[0]}" for part in val[2:].split("\n| ") ])
+        lambda val: "\n".join([f"{part.split(' | ')[1]} | {part.split(' | ')[0]}" for part in val[2:].split("\n| ")])
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )
+    nl = "\n" # For Python 3.11 compatibility
     data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "".join([ f"{part}{'\n' if index % 2 else ' | '}" for index, part in enumerate(val.split(" | ")) ])
+        lambda val: "".join([f"{part}{nl if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )

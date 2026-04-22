@@ -1,5 +1,3 @@
-from urllib.parse import quote_plus
-
 from sqlalchemy.engine import URL
 
 from testgen import settings
@@ -17,7 +15,7 @@ class MssqlFlavorService(FlavorService):
         connection_url = URL.create(
             self.url_scheme,
             username=params.username,
-            password=quote_plus(params.password or ""),
+            password=params.password or "",
             host=params.host,
             port=int(params.port or 1443),
             database=params.dbname,

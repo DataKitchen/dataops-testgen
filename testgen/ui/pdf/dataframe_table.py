@@ -1,8 +1,5 @@
 from collections.abc import Iterable
-from math import nan
-
 import pandas
-from numpy import NaN
 from pandas.core.dtypes.common import is_numeric_dtype
 from reportlab.lib import colors, enums
 from reportlab.lib.styles import ParagraphStyle
@@ -271,7 +268,7 @@ class DataFrameTableBuilder:
         def _convert_value(value):
             if isinstance(value, Paragraph):
                 return value
-            elif value in (None, NaN, nan):
+            elif pandas.isna(value):
                 return self.null_para
             else:
                 return Paragraph(str(value), para_style)

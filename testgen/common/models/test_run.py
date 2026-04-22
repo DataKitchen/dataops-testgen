@@ -164,8 +164,8 @@ class TestRun(Entity):
         if not is_uuid4(run_id):
             return None
 
-        query = select(cls._minimal_columns).join(TestSuite).where(cls.id == run_id)
-        result = get_current_session().execute(query).first()
+        query = select(*cls._minimal_columns).join(TestSuite).where(cls.id == run_id)
+        result = get_current_session().execute(query).mappings().first()
         return TestRunMinimal(**result) if result else None
 
     @classmethod
@@ -178,7 +178,7 @@ class TestRun(Entity):
             .order_by(desc(JobExecution.started_at))
             .limit(1)
         )
-        result = get_current_session().execute(query).first()
+        result = get_current_session().execute(query).mappings().first()
         if result:
             return LatestTestRun(str(result["id"]), result["run_time"])
         return None
@@ -341,7 +341,7 @@ class TestRun(Entity):
             .group_by(*group_by)
         )
 
-        return TestRunMonitorSummary(**get_current_session().execute(query).first())
+        return TestRunMonitorSummary(**get_current_session().execute(query).mappings().first())
 
     _ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)
 

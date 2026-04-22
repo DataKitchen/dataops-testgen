@@ -1,4 +1,5 @@
 import logging
+import os
 from urllib.parse import urlparse
 
 import streamlit as st
@@ -6,6 +7,7 @@ import streamlit as st
 from testgen import settings
 from testgen.common import version_service
 from testgen.common.docker_service import check_basic_configuration
+from testgen.common.standalone_postgres import STANDALONE_URI_ENV_VAR, ensure_standalone_setup, is_standalone_mode
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.project import Project
 from testgen.ui import bootstrap
@@ -14,6 +16,8 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.services import javascript_service
 from testgen.ui.session import session
 
+if is_standalone_mode() and (standalone_uri := os.environ.get(STANDALONE_URI_ENV_VAR)):
+    ensure_standalone_setup(standalone_uri)
 
 @with_database_session
 def render(log_level: int = logging.INFO):
@@ -33,10 +37,11 @@ def render(log_level: int = logging.INFO):
         if not session.auth:
             session.auth = application.auth_class()
 
-        status_ok, message = check_basic_configuration()
-        if not status_ok:
-            st.markdown(f":red[{message}]")
-            return
+        if not is_standalone_mode():
+            status_ok, message = check_basic_configuration()
+            if not status_ok:
+                st.markdown(f":red[{message}]")
+                return
 
         set_locale()
 
