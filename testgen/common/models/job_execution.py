@@ -169,8 +169,8 @@ class JobExecution(Base):
             .where(cls.id == self.id, cls.status.in_(all_valid_from))
             .values(status=case(*cases), **values)
             .returning(cls)
-        ).first()
-        if row:
+        ).scalar_one_or_none()
+        if row is not None:
             for col in cls.__table__.columns:
                 setattr(self, col.key, getattr(row, col.key))
             return True

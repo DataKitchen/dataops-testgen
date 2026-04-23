@@ -3,6 +3,7 @@ from typing import Any
 import cron_converter
 import cron_descriptor
 import streamlit as st
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.models import Session, with_database_session
@@ -40,9 +41,11 @@ class ScheduleDialog:
         user_can_edit = session.auth.user_has_permission("edit")
 
         with Session() as db_session:
-            scheduled_jobs = (
-                db_session.query(JobSchedule)
-                .where(JobSchedule.project_code == self.project_code, JobSchedule.key == self.job_key)
+            scheduled_jobs = db_session.scalars(
+                select(JobSchedule).where(
+                    JobSchedule.project_code == self.project_code,
+                    JobSchedule.key == self.job_key,
+                )
             )
             scheduled_jobs_json = [
                 {

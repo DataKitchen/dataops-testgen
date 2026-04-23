@@ -14,7 +14,7 @@ import psycopg2.sql
 from sqlalchemy import Connection, Engine, Row, create_engine, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
-from sqlalchemy.pool import PoolProxiedConnection
+from sqlalchemy.pool import NullPool, PoolProxiedConnection
 
 from testgen import settings
 from testgen.common.credentials import (
@@ -73,6 +73,12 @@ def quote_csv_items(csv_row: str, quote_character: str = '"') -> str:
 
 
 def empty_cache() -> None:
+    # dispose() closes all idle pool connections immediately, avoiding handing
+    # out stale ones on the next checkout.
+    if engine_cache.app_db is not None:
+        engine_cache.app_db.dispose()
+    if engine_cache.target_db is not None:
+        engine_cache.target_db.dispose()
     engine_cache.app_db = None
     engine_cache.target_db = None
 
@@ -121,6 +127,10 @@ def create_database(
                 ),
                 {"database_name": database_name},
             )
+            # pg_terminate_backend just killed any pooled connections to this DB.
+            # Dispose the cached app/target engines so they don't hand out dead
+            # connections on the next checkout.
+            empty_cache()
             connection.execute(text(f"DROP DATABASE IF EXISTS {database_name}"))
             if drop_users_and_roles:
                 if user := params.get("TESTGEN_USER"):
@@ -395,6 +405,11 @@ def _init_app_db_connection(
                     # Force UTC so TIMESTAMP-without-tz inserts aren't silently shifted.
                     "options": "-c TimeZone=UTC",
                 },
+                # Admin operations (schema_admin / database_admin) are one-shot.
+                # NullPool closes the connection on `.close()` instead of parking
+                # it in a pool we never dispose — avoids leaking idle PG
+                # connections across a long CLI run.
+                poolclass=None if user_type == "normal" else NullPool,
             )
             if user_type == "normal":
                 engine_cache.app_db = engine

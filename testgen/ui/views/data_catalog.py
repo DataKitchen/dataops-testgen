@@ -918,8 +918,8 @@ def get_preview_data(
     if not results:
         return {"title": title, "status": "ND", "message": "No data found."}
 
-    columns_list = list(results[0]._mapping.keys())
-    rows = [list(row) for row in results]
+    columns_list = list(results[0].keys())
+    rows = [list(row.values()) for row in results]
     return {
         "title": title,
         "columns": columns_list,

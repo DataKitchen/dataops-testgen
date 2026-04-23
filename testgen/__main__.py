@@ -97,6 +97,12 @@ class CliGroup(click.Group):
         except Exception:
             LOG.exception("There was an unexpected error")
 
+    def format_epilog(self, ctx: Context, formatter: click.HelpFormatter) -> None:
+        # Schema revision is a DB round-trip; defer until `--help` is actually
+        # requested rather than evaluating at module-load for every CLI invocation.
+        formatter.write_paragraph()
+        formatter.write_text(f"Schema revision: {get_schema_revision()}")
+
 
 @click.group(
     cls=CliGroup,
@@ -104,8 +110,6 @@ class CliGroup(click.Group):
     {VERSION_DATA.edition} {VERSION_DATA.current or ""}
 
     {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.latest != VERSION_DATA.current else ""}
-
-    Schema revision: {get_schema_revision()}
     """
 )
 @click.option(

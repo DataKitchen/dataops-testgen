@@ -331,7 +331,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
         },
         "issue_count": sum(c.total for c in counts.values()),
         "hygiene_issues_summary": hygiene_issues_summary,
-        **dict(get_current_session().execute(labels_query).one()),
+        **get_current_session().execute(labels_query).mappings().one(),
     }
 
     for ns in notifications:
