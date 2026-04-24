@@ -284,7 +284,7 @@ def search_test_results(
         table_group_id: UUID of a table group to scope to.
         table_name: Filter by table name.
         column_name: Filter by column name.
-        test_type: Filter by test type short name (e.g. 'Pattern Match').
+        test_type: Filter by test type (e.g. 'Pattern Match').
         status: Filter by result statuses (defaults to ['Failed', 'Warning']).
         since: Include results since this point — e.g. '7 days', '2 weeks', '2026-04-01'.
         limit: Maximum results per page (default 50).
@@ -379,7 +379,7 @@ def get_failure_trend(
         test_suite_id: UUID of a test suite to scope to.
         table_group_id: UUID of a table group to scope to.
         table_name: Filter by table name.
-        test_type: Filter by test type short name.
+        test_type: Filter by test type.
         since: Include runs since this point — e.g. '30 days', '2 weeks', '2026-04-01' (default '30 days').
         bucket: Time bucket size — 'day' or 'week' (default 'day').
         exclude_today: If True (default), buckets end yesterday; set False to also compute today's incomplete data.
@@ -531,7 +531,7 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
             return
         doc.heading(2, title)
         doc.table(
-            headers=["Test Type", "Table", "Column", "A → B", "Measure A", "Measure B"],
+            headers=["Test Type", "Table", "Column", "A → B", "Measure A", "Measure B", "Threshold A", "Threshold B"],
             rows=[
                 [
                     row.test_name_short or row.test_type,
@@ -540,6 +540,8 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
                     f"{row.status_a.value if row.status_a else '—'} → {row.status_b.value if row.status_b else '—'}",
                     row.measure_a,
                     row.measure_b,
+                    row.threshold_a,
+                    row.threshold_b,
                 ]
                 for row in rows
             ],
