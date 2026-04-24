@@ -11,7 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from testgen import settings
-from testgen.commands.exec_job import JOB_DISPATCH
+from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.scheduler import JobSchedule
@@ -114,6 +114,9 @@ class CliScheduler(Scheduler):
                             self._handle_cancellation(job_exec)
                         case _:
                             LOG.error("Unexpected status '%s' for job %s", job_exec.status, job_exec.id)
+                # Scheduler-internal failure: force the JE terminal to avoid a hung row.
+                # Skip final callbacks — we don't know the real run state, and a
+                # still-live subprocess could legitimately complete after this.
                 except Exception:
                     LOG.exception("Error processing job execution %s", job_exec.id)
                     try:
@@ -132,7 +135,8 @@ class CliScheduler(Scheduler):
                 pass  # Process already exited — _proc_wrapper will finalize
         else:
             with database_session():
-                job_exec.mark_canceled()
+                if job_exec.mark_canceled():
+                    run_final_callbacks(job_exec)
 
     def _dispatch(self, job_exec: JobExecution):
         if job_exec.job_key not in JOB_DISPATCH:
@@ -164,11 +168,13 @@ class CliScheduler(Scheduler):
             LOG.info("Job PID %d ended with code %d", proc.pid, ret_code)
             if ret_code != 0:
                 with database_session():
-                    job_exec.mark_interrupted(f"Process {proc.pid} exited with code {ret_code}")
+                    if job_exec.mark_interrupted(f"Process {proc.pid} exited with code {ret_code}"):
+                        run_final_callbacks(job_exec)
         except Exception:
             LOG.exception("Error monitoring job PID %d", proc.pid)
             with database_session():
-                job_exec.mark_interrupted(f"Process monitoring error for PID {proc.pid}")
+                if job_exec.mark_interrupted(f"Process monitoring error for PID {proc.pid}"):
+                    run_final_callbacks(job_exec)
         finally:
             with self._running_jobs_cond:
                 del self._running_jobs[job_exec.id]
@@ -224,10 +230,18 @@ def run_scheduler():
     while not check_db_is_ready():
         time.sleep(10)
 
+    requested = 0
     with database_session():
-        stale_count = JobExecution.cancel_all_stale()
-        if stale_count:
-            LOG.info("Canceled %d stale job execution(s) from previous session", stale_count)
+        stale = JobExecution.find_stale()
+    for job_exec in stale:
+        with database_session():
+            if job_exec.request_cancel():
+                requested += 1
+    if stale:
+        LOG.info(
+            "Found %d stale job execution(s) from previous session; requested cancel on %d",
+            len(stale), requested,
+        )
 
     scheduler = CliScheduler()
     scheduler.run()

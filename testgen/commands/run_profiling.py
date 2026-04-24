@@ -10,9 +10,7 @@ from testgen.commands.queries.profiling_query import (
     calculate_sampling_params,
 )
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
-from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common import (
     execute_db_queries,
@@ -30,7 +28,6 @@ from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
@@ -106,8 +103,6 @@ def run_profiling(
         profiling_run.status = "Error"
         profiling_run.save()
         session.commit()
-
-        send_profiling_run_notifications(profiling_run)
         raise
     else:
         LOG.info("Setting profiling run status to Completed")
@@ -116,20 +111,17 @@ def run_profiling(
         profiling_run.save()
         session.commit()
 
-        send_profiling_run_notifications(profiling_run)
-        _rollup_profiling_scores(profiling_run, table_group)
         _generate_tests(table_group)
     finally:
         MixpanelService().send_event(
             "run-profiling",
-            source=job_context.get().source,
+            source=job_context.get().source.upper(),
             username=username,
             sql_flavor=connection.sql_flavor_code,
             sampling=table_group.profile_use_sampling,
             table_count=profiling_run.table_ct or 0,
             column_count=profiling_run.column_ct or 0,
             run_duration=(profiling_run.profiling_endtime - profiling_run.profiling_starttime).total_seconds(),
-            scoring_duration=(datetime.now(UTC) + time_delta - profiling_run.profiling_endtime).total_seconds(),
         )
 
     return profiling_run.id
@@ -309,21 +301,6 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
         profiling_run.set_progress("hygiene_issues", "Warning", error=f"Error encountered. {get_exception_message(e)}")
     else:
         profiling_run.set_progress("hygiene_issues", "Completed")
-
-
-def _rollup_profiling_scores(profiling_run: ProfilingRun, table_group: TableGroup) -> None:
-    try:
-        LOG.info("Rolling up profiling scores")
-        execute_db_queries(
-            RollupScoresSQL(profiling_run.id, table_group.id).rollup_profiling_scores(),
-        )
-        run_refresh_score_cards_results(
-            project_code=table_group.project_code,
-            add_history_entry=True,
-            refresh_date=profiling_run.profiling_starttime,
-        )
-    except Exception:
-        LOG.exception("Error rolling up profiling scores")
 
 
 @with_database_session
