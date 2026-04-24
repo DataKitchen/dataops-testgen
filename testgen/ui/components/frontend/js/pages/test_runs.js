@@ -66,9 +66,12 @@ import { Dialog } from '/app/static/js/components/dialog.js';
 import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
 import { ScheduleList } from '/app/static/js/components/schedule_list.js';
 import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
+import { enterPage, exitPage } from '/app/static/js/page_lifecycle.js';
+import { setIntervalWithSignal } from '/app/static/js/timers.js';
 
 const { b, div, i, span, strong } = van.tags;
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
+const PAGE_KEY = 'testRuns';
 
 const STARTING_STATUSES = new Set(['pending', 'claimed']);
 const RUNNING_STATUSES = new Set(['running', 'cancel_requested']);
@@ -87,8 +90,8 @@ const progressStatusIcons = {
 };
 
 const TestRuns = (/** @type Properties */ props) => {
-    const { emit } = props;
-    loadStylesheet('testRuns', stylesheet);
+    const { emit, signal } = props;
+    loadStylesheet(PAGE_KEY, stylesheet);
 
     const columns = ['5%', '28%', '17%', '40%', '10%'];
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
@@ -106,7 +109,7 @@ const TestRuns = (/** @type Properties */ props) => {
         const rate = hasStarting ? REFRESH_STARTING : hasRunning ? REFRESH_RUNNING : REFRESH_DEFAULT;
         if (rate !== currentRefreshRate) {
             if (refreshIntervalId) clearInterval(refreshIntervalId);
-            refreshIntervalId = setInterval(() => emit('RefreshData', {}), rate);
+            refreshIntervalId = setIntervalWithSignal(() => emit('RefreshData', {}), rate, signal);
             currentRefreshRate = rate;
         }
     });
@@ -642,6 +645,7 @@ export default (component) => {
         }
         parentElement.state = componentState;
         componentState.emit = createEmitter(setTriggerValue);
+        componentState.signal = enterPage(PAGE_KEY);
         van.add(parentElement, TestRuns(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -651,5 +655,8 @@ export default (component) => {
         }
     }
 
-    return () => { parentElement.state = null; };
+    return () => {
+        exitPage(PAGE_KEY);
+        parentElement.state = null;
+    };
 };
