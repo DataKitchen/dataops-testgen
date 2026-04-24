@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.test_result import TestResult, TestResultStatus
 
@@ -10,6 +11,10 @@ from testgen.common.models.test_result import TestResult, TestResultStatus
 def session_mock():
     with patch("testgen.common.models.test_result.get_current_session") as mock:
         yield mock.return_value
+
+
+def _compiled_sql(captured_query) -> str:
+    return str(captured_query.compile(dialect=postgresql.dialect()))
 
 
 def test_select_results_basic(session_mock):
@@ -101,3 +106,43 @@ def test_select_history_empty(session_mock):
     results = TestResult.select_history(test_definition_id=uuid4(), limit=10)
 
     assert results == []
+
+
+def test_select_results_excludes_monitor_suites(session_mock):
+    session_mock.scalars.return_value.all.return_value = []
+
+    TestResult.select_results(test_run_id=uuid4())
+
+    sql = _compiled_sql(session_mock.scalars.call_args[0][0])
+    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "JOIN test_suites" in sql
+
+
+def test_select_results_excludes_monitor_suites_with_project_codes(session_mock):
+    session_mock.scalars.return_value.all.return_value = []
+
+    TestResult.select_results(test_run_id=uuid4(), project_codes=["demo"])
+
+    sql = _compiled_sql(session_mock.scalars.call_args[0][0])
+    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.project_code IN" in sql
+
+
+def test_select_failures_excludes_monitor_suites(session_mock):
+    session_mock.execute.return_value.all.return_value = []
+
+    TestResult.select_failures(test_run_id=uuid4(), group_by="test_type")
+
+    sql = _compiled_sql(session_mock.execute.call_args[0][0])
+    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "JOIN test_suites" in sql
+
+
+def test_select_history_excludes_monitor_suites(session_mock):
+    session_mock.scalars.return_value.all.return_value = []
+
+    TestResult.select_history(test_definition_id=uuid4())
+
+    sql = _compiled_sql(session_mock.scalars.call_args[0][0])
+    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "JOIN test_suites" in sql

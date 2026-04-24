@@ -147,6 +147,11 @@ class TestResult(Entity):
         limit: int = 50,
         offset: int = 0,
     ) -> list[Self]:
+        """Paginated results for a single run, with optional status/table/type filters.
+
+        Monitor suites and dismissed/inactive results are always filtered out.
+        Project-level access is enforced when ``project_codes`` is set.
+        """
         clauses = [
             cls.test_run_id == test_run_id,
             func.coalesce(cls.disposition, "Confirmed") == "Confirmed",
@@ -157,11 +162,13 @@ class TestResult(Entity):
             clauses.append(cls.table_name == table_name)
         if test_type:
             clauses.append(cls.test_type == test_type)
-        query = select(cls).where(*clauses)
+        query = (
+            select(cls)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(*clauses, TestSuite.is_monitor.isnot(True))
+        )
         if project_codes is not None:
-            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
-                TestSuite.project_code.in_(project_codes)
-            )
+            query = query.where(TestSuite.project_code.in_(project_codes))
         query = query.order_by(cls.status, cls.table_name, cls.column_names).offset(offset).limit(limit)
         return get_current_session().scalars(query).all()
 
@@ -175,6 +182,11 @@ class TestResult(Entity):
         since: date | None = None,
         group_by: str = "test_type",
     ) -> list[tuple]:
+        """Failed/Warning counts scoped by run, suite, or date, grouped by test_type, table, or column.
+
+        Monitor suites and dismissed/inactive results are always filtered out.
+        Project-level access is enforced when ``project_codes`` is set.
+        """
         allowed = {"test_type", "table_name", "column_names"}
         if group_by not in allowed:
             raise ValueError(f"group_by must be one of {allowed}")
@@ -238,11 +250,18 @@ class TestResult(Entity):
         limit: int = 20,
         offset: int = 0,
     ) -> list[Self]:
-        query = select(cls).where(cls.test_definition_id == test_definition_id)
+        """Historical results for a test definition, newest first.
+
+        Monitor suites are always filtered out.
+        Project-level access is enforced when ``project_codes`` is set.
+        """
+        query = (
+            select(cls)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(cls.test_definition_id == test_definition_id, TestSuite.is_monitor.isnot(True))
+        )
         if project_codes is not None:
-            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
-                TestSuite.project_code.in_(project_codes)
-            )
+            query = query.where(TestSuite.project_code.in_(project_codes))
         query = query.order_by(desc(cls.test_time)).offset(offset).limit(limit)
         return get_current_session().scalars(query).all()
 
