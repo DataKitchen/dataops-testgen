@@ -600,6 +600,8 @@ def _mock_diff_row(status_a, status_b, **overrides):
     row.status_b = status_b
     row.measure_a = "5"
     row.measure_b = "12"
+    row.threshold_a = "0"
+    row.threshold_b = "0"
     for k, v in overrides.items():
         setattr(row, k, v)
     return row
@@ -626,7 +628,11 @@ def test_get_test_run_diff_happy_path(
     diff = MagicMock()
     diff.total_a = 100
     diff.total_b = 100
-    diff.regressions = [_mock_diff_row(TestResultStatus.Passed, TestResultStatus.Failed)]
+    diff.regressions = [
+        _mock_diff_row(
+            TestResultStatus.Passed, TestResultStatus.Failed, threshold_a="1", threshold_b="3",
+        )
+    ]
     diff.improvements = []
     diff.persistent_failures = []
     diff.new_tests = []
@@ -641,6 +647,8 @@ def test_get_test_run_diff_happy_path(
     assert "Regressions" in out
     assert "Pattern Match" in out
     assert "Passed → Failed" in out
+    assert "Threshold A" in out and "Threshold B" in out
+    assert "| 1 | 3 |" in out  # threshold columns populated when thresholds changed
 
 
 @patch("testgen.mcp.tools.test_results.TestSuite")
