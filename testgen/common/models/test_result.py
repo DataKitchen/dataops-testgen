@@ -91,6 +91,8 @@ class DiffRow:
     status_b: TestResultStatus | None
     measure_a: str | None
     measure_b: str | None
+    threshold_a: str | None
+    threshold_b: str | None
 
 
 @dataclass
@@ -425,6 +427,7 @@ class TestResult(Entity):
                     cls.column_names.label("column_names"),
                     cls.status.label("status"),
                     cls.result_measure.label("result_measure"),
+                    cls.threshold_value.label("threshold_value"),
                 )
                 .outerjoin(TestType, cls.test_type == TestType.test_type)
                 .where(
@@ -440,6 +443,7 @@ class TestResult(Entity):
                     "column_names": row.column_names,
                     "status": row.status,
                     "measure": row.result_measure,
+                    "threshold": row.threshold_value,
                 }
                 for row in get_current_session().execute(query)
             }
@@ -456,6 +460,8 @@ class TestResult(Entity):
                 status_b=info_b["status"] if info_b else None,
                 measure_a=info_a["measure"] if info_a else None,
                 measure_b=info_b["measure"] if info_b else None,
+                threshold_a=info_a["threshold"] if info_a else None,
+                threshold_b=info_b["threshold"] if info_b else None,
             )
 
         results_a = _fetch(test_run_id_a)
