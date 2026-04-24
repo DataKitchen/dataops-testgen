@@ -1,11 +1,23 @@
+from datetime import UTC, datetime, timedelta
+
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
-from testgen.common.models.test_result import TestResult
+from testgen.common.models.test_result import BucketInterval, TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import parse_result_status, parse_uuid, resolve_test_type
+from testgen.mcp.tools.common import (
+    format_page_footer,
+    format_page_info,
+    parse_result_status,
+    parse_since_arg,
+    parse_uuid,
+    resolve_test_type,
+)
 from testgen.mcp.tools.markdown import MdDoc
+
+_DEFAULT_SEARCH_STATUSES = [TestResultStatus.Failed, TestResultStatus.Warning]
 
 
 @with_database_session
@@ -89,35 +101,82 @@ def get_test_results(
 
 @with_database_session
 @mcp_permission("view")
-def get_failure_summary(job_execution_id: str, group_by: str = "test_type") -> str:
-    """Get a summary of test failures (Failed and Warning) grouped by test type, table name, or column.
+def get_failure_summary(
+    *,
+    project_code: str | None = None,
+    test_suite_id: str | None = None,
+    job_execution_id: str | None = None,
+    since: str | None = None,
+    group_by: str = "test_type",
+) -> str:
+    """Summarize test failures (Failed and Warning) grouped by test type, table, or column.
+
+    Supply a ``job_execution_id`` for a single-run summary, or combine ``project_code``,
+    ``test_suite_id``, and ``since`` to aggregate across multiple runs. At least one
+    scope parameter is required.
 
     Args:
-        job_execution_id: The UUID of the job execution for the test run.
+        project_code: Scope to a project the caller can view. Ignored if ``job_execution_id`` is set.
+        test_suite_id: UUID of a test suite to scope the aggregation to.
+        job_execution_id: UUID of a job execution to scope to a single run.
+        since: Include runs since this point in time — e.g. '7 days', '2 weeks', '2026-04-01'.
         group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
     """
-    job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-    test_run = TestRun.get_by_id_or_job(job_uuid)
-    if not test_run:
-        raise MCPUserError(f"No test run found for job execution `{job_execution_id}`.")
-
     perms = get_project_permissions()
 
-    # Map public param names to model field names
+    if not any((job_execution_id, project_code, test_suite_id, since)):
+        raise MCPUserError(
+            "Provide at least one of 'job_execution_id', 'project_code', 'test_suite_id', or 'since' to scope the summary."
+        )
+
     model_group_map = {"table": "table_name", "column": "column_names"}
     model_group_by = model_group_map.get(group_by, group_by)
-    failures = TestResult.select_failures(test_run_id=test_run.id, group_by=model_group_by, project_codes=perms.allowed_codes)
+
+    scope_label: str
+    test_run_id = None
+    test_suite_uuid = parse_uuid(test_suite_id, "test_suite_id") if test_suite_id else None
+    since_date = parse_since_arg(since) if since else None
+
+    if job_execution_id:
+        job_uuid = parse_uuid(job_execution_id, "job_execution_id")
+        test_run = TestRun.get_by_id_or_job(job_uuid)
+        if not test_run:
+            raise MCPUserError(f"No test run found for job execution `{job_execution_id}`.")
+        test_run_id = test_run.id
+        scope_label = f"run `{job_execution_id}`"
+        project_codes = perms.allowed_codes
+    else:
+        if project_code:
+            perms.verify_access(project_code, not_found=f"Project `{project_code}` not found or not accessible.")
+            project_codes = [project_code]
+        else:
+            project_codes = perms.allowed_codes
+        scope_parts = []
+        if project_code:
+            scope_parts.append(f"project `{project_code}`")
+        if test_suite_id:
+            scope_parts.append(f"suite `{test_suite_id}`")
+        if since:
+            scope_parts.append(f"since {since}")
+        scope_label = ", ".join(scope_parts) or "accessible projects"
+
+    failures = TestResult.select_failures(
+        test_run_id=test_run_id,
+        group_by=model_group_by,
+        project_codes=project_codes,
+        test_suite_id=test_suite_uuid,
+        since=since_date,
+    )
 
     if not failures:
-        return f"No confirmed failures found for run `{job_execution_id}`."
+        return f"No confirmed failures found for {scope_label}."
 
     total = sum(row[-1] for row in failures)
-
     if group_by == "test_type":
         type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
     doc = MdDoc()
-    doc.heading(1, f"Failure Summary for run `{job_execution_id}`")
+    doc.heading(1, f"Failure Summary — {scope_label}")
     doc.text(f"**Total confirmed failures (Failed + Warning):** {total}")
 
     if group_by == "test_type":
@@ -195,5 +254,301 @@ def get_test_result_history(
             for r in results
         ],
     )
+
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def search_test_results(
+    *,
+    project_code: str | None = None,
+    test_suite_id: str | None = None,
+    table_group_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    test_type: str | None = None,
+    status: list[str] | None = None,
+    since: str | None = None,
+    limit: int = 50,
+    page: int = 1,
+) -> str:
+    """Search test results across multiple runs with flexible filters.
+
+    To drill into a single run, use ``get_test_results``. For a single test's history, use
+    ``get_test_result_history``.
+
+    Args:
+        project_code: Scope to a project the caller can view.
+        test_suite_id: UUID of a test suite to scope to.
+        table_group_id: UUID of a table group to scope to.
+        table_name: Filter by table name.
+        column_name: Filter by column name.
+        test_type: Filter by test type short name (e.g. 'Pattern Match').
+        status: Filter by result statuses (defaults to ['Failed', 'Warning']).
+        since: Include results since this point — e.g. '7 days', '2 weeks', '2026-04-01'.
+        limit: Maximum results per page (default 50).
+        page: Page number, starting from 1 (default 1).
+    """
+    perms = get_project_permissions()
+    if project_code:
+        perms.verify_access(project_code, not_found=f"Project `{project_code}` not found or not accessible.")
+        project_codes = [project_code]
+    else:
+        project_codes = perms.allowed_codes
+
+    suite_uuid = parse_uuid(test_suite_id, "test_suite_id") if test_suite_id else None
+    table_group_uuid = parse_uuid(table_group_id, "table_group_id") if table_group_id else None
+    since_date = parse_since_arg(since) if since else None
+    type_code = resolve_test_type(test_type) if test_type else None
+
+    # Treat empty list the same as None — an empty IN (…) would silently match nothing.
+    if not status:
+        status_enums = list(_DEFAULT_SEARCH_STATUSES)
+    else:
+        status_enums = [parse_result_status(s) for s in status]
+
+    clauses = [
+        TestSuite.project_code.in_(project_codes),
+        TestResult.status.in_(status_enums),
+    ]
+    if suite_uuid is not None:
+        clauses.append(TestResult.test_suite_id == suite_uuid)
+    if table_group_uuid is not None:
+        clauses.append(TestResult.table_groups_id == table_group_uuid)
+    if table_name:
+        clauses.append(TestResult.table_name == table_name)
+    if column_name:
+        clauses.append(TestResult.column_names == column_name)
+    if type_code:
+        clauses.append(TestResult.test_type == type_code)
+    if since_date is not None:
+        clauses.append(TestResult.test_time >= since_date)
+
+    rows, total = TestResult.search_results(*clauses, page=page, limit=limit)
+
+    if not rows:
+        return "No test results match the supplied filters."
+
+    doc = MdDoc()
+    doc.heading(1, "Test Result Search")
+    doc.text(format_page_info(total, page, limit))
+
+    for r in rows:
+        display_name = r.test_name_short or r.test_type
+        status_str = r.status.value if r.status else "Unknown"
+        if r.column_names:
+            doc.heading(2, f"[{status_str}] {display_name} on `{r.column_names}` in `{r.table_name}`")
+        else:
+            doc.heading(2, f"[{status_str}] {display_name} on `{r.table_name}`")
+        doc.field("Run", r.job_execution_id or r.test_run_id, code=True)
+        doc.field("Run time", r.test_time)
+        doc.field("Test suite", r.test_suite_name)
+        doc.field("Test definition", r.test_definition_id, code=True)
+        if r.result_measure is not None:
+            doc.field("Measured value", r.result_measure)
+        if r.threshold_value is not None:
+            doc.field("Threshold", r.threshold_value)
+        if r.result_message:
+            doc.field("Message", r.result_message)
+
+    footer = format_page_footer(total, page, limit)
+    if footer:
+        doc.text(footer)
+
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def get_failure_trend(
+    *,
+    project_code: str | None = None,
+    test_suite_id: str | None = None,
+    table_group_id: str | None = None,
+    table_name: str | None = None,
+    test_type: str | None = None,
+    since: str = "30 days",
+    bucket: BucketInterval = BucketInterval.DAY,
+    exclude_today: bool = True,
+) -> str:
+    """Time-series of test result counts by time bucket — use this to see whether failures are trending up or down.
+
+    Args:
+        project_code: Scope to a project the caller can view.
+        test_suite_id: UUID of a test suite to scope to.
+        table_group_id: UUID of a table group to scope to.
+        table_name: Filter by table name.
+        test_type: Filter by test type short name.
+        since: Include runs since this point — e.g. '30 days', '2 weeks', '2026-04-01' (default '30 days').
+        bucket: Time bucket size — 'day' or 'week' (default 'day').
+        exclude_today: If True (default), buckets end yesterday; set False to also compute today's incomplete data.
+    """
+    try:
+        bucket = BucketInterval(bucket)
+    except ValueError as err:
+        valid = ", ".join(v.value for v in BucketInterval)
+        raise MCPUserError(f"Invalid `bucket`: `{bucket}`. Valid values: {valid}") from err
+
+    perms = get_project_permissions()
+    if project_code:
+        perms.verify_access(project_code, not_found=f"Project `{project_code}` not found or not accessible.")
+        project_codes = [project_code]
+    else:
+        project_codes = perms.allowed_codes
+
+    anchor_today = datetime.now(UTC).date()
+    if exclude_today:
+        anchor_today -= timedelta(days=1)
+
+    suite_uuid = parse_uuid(test_suite_id, "test_suite_id") if test_suite_id else None
+    table_group_uuid = parse_uuid(table_group_id, "table_group_id") if table_group_id else None
+    since_date = parse_since_arg(since, today=anchor_today)
+    type_code = resolve_test_type(test_type) if test_type else None
+
+    # Build WHERE clauses at the tool layer. Model stays agnostic to specific filter concepts.
+    clauses = [TestSuite.project_code.in_(project_codes)]
+    if suite_uuid is not None:
+        clauses.append(TestResult.test_suite_id == suite_uuid)
+    if table_group_uuid is not None:
+        clauses.append(TestResult.table_groups_id == table_group_uuid)
+    if table_name:
+        clauses.append(TestResult.table_name == table_name)
+    if type_code:
+        clauses.append(TestResult.test_type == type_code)
+
+    buckets = TestResult.failure_trend(
+        *clauses,
+        start_date=since_date,
+        end_date=anchor_today,
+        bucket=bucket,
+    )
+
+    if not buckets:
+        return f"No test results found in the selected window (since {since})."
+
+    doc = MdDoc()
+    doc.heading(1, f"Failure Trend — by {bucket}")
+    doc.text(f"Window: since {since}. Failure rate = (Failed + Warning) / Total.")
+    doc.table(
+        headers=["Bucket", "Failed", "Warning", "Total", "Failure rate"],
+        rows=[
+            [b.bucket, b.failed_ct, b.warning_ct, b.total_ct, f"{b.failure_rate:.1%}"]
+            for b in buckets
+        ],
+    )
+
+    # For weekly buckets, surface the partial-window gap if we dropped data at the oldest end.
+    if bucket == "week":
+        first_bucket_date = buckets[0].bucket
+        if first_bucket_date > since_date:
+            dropped_end = first_bucket_date - timedelta(days=1)
+            doc.text(
+                f"_Note: the partial week from {since_date} to {dropped_end} was excluded "
+                f"because it does not form a complete 7-day bucket._"
+            )
+
+    # Flag the most recent bucket as "in progress" if it contains today — its counts may grow.
+    today = datetime.now(UTC).date()
+    last_bucket_start = buckets[-1].bucket
+    last_bucket_end = last_bucket_start + timedelta(days=(0 if bucket == "day" else 6))
+    if last_bucket_start <= today <= last_bucket_end:
+        doc.text(
+            f"_Note: the most recent bucket includes today ({today}) and is still in progress; "
+            f"its counts may grow before the bucket closes._"
+        )
+
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
+    """Compare two test runs and report regressions, improvements, persistent failures, and added/removed tests.
+
+    Args:
+        job_execution_id_a: UUID of the older (baseline) run.
+        job_execution_id_b: UUID of the newer run to compare against the baseline.
+    """
+    uuid_a = parse_uuid(job_execution_id_a, "job_execution_id_a")
+    uuid_b = parse_uuid(job_execution_id_b, "job_execution_id_b")
+
+    run_a = TestRun.get_by_id_or_job(uuid_a)
+    run_b = TestRun.get_by_id_or_job(uuid_b)
+
+    # Permission check first — unify "not found" and "inaccessible" (also covers monitor suites,
+    # which are hidden from this tool the same way they're hidden from the inventory tools).
+    perms = get_project_permissions()
+    suite_ids = [r.test_suite_id for r in (run_a, run_b) if r is not None]
+    suites_by_id: dict = {}
+    if suite_ids:
+        suites_by_id = {
+            s.id: s for s in TestSuite.select_where(TestSuite.id.in_(suite_ids))
+        }
+
+    def _accessible(run) -> bool:
+        if run is None:
+            return False
+        suite = suites_by_id.get(run.test_suite_id)
+        if suite is None or suite.is_monitor:
+            return False
+        return perms.has_access(suite.project_code)
+
+    if not _accessible(run_a):
+        raise MCPUserError(f"Run `{job_execution_id_a}` not found or not accessible.")
+    if not _accessible(run_b):
+        raise MCPUserError(f"Run `{job_execution_id_b}` not found or not accessible.")
+
+    # Both runs confirmed accessible — safe to reveal suite IDs in the compatibility message.
+    if run_a.test_suite_id != run_b.test_suite_id:
+        raise MCPUserError(
+            "Both runs must belong to the same test suite to be comparable. "
+            f"Run A is in suite `{run_a.test_suite_id}`, run B is in suite `{run_b.test_suite_id}`. "
+            "Use `get_recent_test_runs(test_suite=...)` to pick two runs of the same suite."
+        )
+
+    diff = TestResult.diff_with_details(run_a.id, run_b.id)
+
+    doc = MdDoc()
+    doc.heading(1, "Test Run Diff")
+    doc.field("Run A", job_execution_id_a, code=True)
+    doc.field("Run B", job_execution_id_b, code=True)
+    doc.table(
+        headers=["Category", "Count"],
+        rows=[
+            ["Regressions (A passed → B failed/warning)", len(diff.regressions)],
+            ["Improvements (A failed/warning → B passed)", len(diff.improvements)],
+            ["Persistent failures", len(diff.persistent_failures)],
+            ["New tests (only in B)", len(diff.new_tests)],
+            ["Removed tests (only in A)", len(diff.removed_tests)],
+            ["Total in A", diff.total_a],
+            ["Total in B", diff.total_b],
+        ],
+    )
+
+    def _section(title: str, rows: list) -> None:
+        if not rows:
+            return
+        doc.heading(2, title)
+        doc.table(
+            headers=["Test Type", "Table", "Column", "A → B", "Measure A", "Measure B"],
+            rows=[
+                [
+                    row.test_name_short or row.test_type,
+                    row.table_name,
+                    row.column_names,
+                    f"{row.status_a.value if row.status_a else '—'} → {row.status_b.value if row.status_b else '—'}",
+                    row.measure_a,
+                    row.measure_b,
+                ]
+                for row in rows
+            ],
+        )
+
+    _section("Regressions", diff.regressions)
+    _section("Improvements", diff.improvements)
+    _section("Persistent Failures", diff.persistent_failures)
+    _section("New Tests", diff.new_tests)
+    _section("Removed Tests", diff.removed_tests)
 
     return doc.render()

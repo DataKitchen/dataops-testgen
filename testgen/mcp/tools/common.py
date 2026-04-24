@@ -1,5 +1,7 @@
+from datetime import date
 from uuid import UUID
 
+from testgen.common.date_service import parse_since
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPUserError
@@ -18,6 +20,13 @@ def parse_result_status(value: str) -> TestResultStatus:
     except ValueError as err:
         valid = ", ".join(s.value for s in TestResultStatus)
         raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}") from err
+
+
+def parse_since_arg(value: str, label: str = "since", *, today: date | None = None) -> date:
+    try:
+        return parse_since(value, today=today)
+    except ValueError as err:
+        raise MCPUserError(f"Invalid `{label}`: {err}") from err
 
 
 def resolve_test_type(short_name: str) -> str:
