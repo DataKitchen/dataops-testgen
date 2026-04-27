@@ -32,7 +32,7 @@ Please investigate test failures and identify root causes:{suite_filter}
 2. Call `get_recent_test_runs(...)` to find the latest run per suite{f" for suite `{test_suite}`" if test_suite else ""}.
 3. Call `get_failure_summary(job_execution_id='...')` to see failures grouped by test type.
 4. For each failure category, call `get_test_type(test_type='...')` to understand what the test checks.
-5. Call `get_test_results(job_execution_id='...', status='Failed')` to see individual failure details.
+5. Call `list_test_results(test_suite_id='...', status='Failed')` to drill into the specific failing tests in the latest run.
 6. For key failures, call `get_source_data(test_definition_id='...')` to see the actual rows violating the test criteria.
    This shows current data from the connected database — rows may have been fixed since the test ran.
 7. Analyze the patterns:
@@ -54,13 +54,12 @@ Please assess the data quality health of table `{table_name}`:
 
 1. Call `get_data_inventory()` to discover all table groups.
 2. For each table group, call `list_tables(table_group_id='...')` to check if it contains `{table_name}`.
-3. For each relevant test suite, call `get_recent_test_runs(...)` to find the latest run.
-4. Call `get_test_results(job_execution_id='...', table_name='{table_name}')` to get all results for this table.
-5. Summarize the table's health:
+3. For each relevant test suite, call `list_test_results(test_suite_id='...', table_name='{table_name}')` to see results from the latest run for this table.
+4. Summarize the table's health:
    - Which tests pass and which fail?
    - What data quality dimensions are affected?
    - Are there patterns in the failures (e.g., specific columns)?
-6. Provide recommendations for improving data quality for this table.
+5. Provide recommendations for improving data quality for this table.
 """
 
 
@@ -77,8 +76,8 @@ Please compare the two most recent test runs{suite_filter} to identify regressio
 
 1. Call `get_data_inventory()` to understand the project structure.
 2. Call `list_test_suites(project_code='...')` to find suites{suite_filter} and their latest runs.
-3. For the most recent completed run, call `get_test_results(job_execution_id='...')` to get all results.
-4. For the previous run, call `get_test_results(job_execution_id='...')` to get all results.
+3. For the most recent completed run, call `list_test_results(test_suite_id='...')` to get all results.
+4. For the previous run, call `list_test_results(job_execution_id='...')` to get all results.
 5. Compare the two runs:
    - **Regressions:** Tests that passed before but now fail.
    - **Improvements:** Tests that failed before but now pass.
