@@ -1,14 +1,16 @@
-"""Central job dispatch: exec_job() for subprocess execution, submit_and_wait() for CLI wrappers."""
+"""Subprocess entry point for the scheduler's `testgen exec-job <id>` command.
+
+Owns the end-to-end lifecycle of a single claimed job: dispatch to its handler,
+transition the JobExecution to a terminal state, and fire final callbacks.
+Concrete wiring (which handler runs for which job_key, which callbacks fire
+after termination) lives in `job_registry.py`.
+"""
 
 import logging
 import sys
-import time
-from collections.abc import Callable
 from uuid import UUID
 
-from testgen.commands.run_profiling import run_profiling
-from testgen.commands.run_test_execution import run_test_execution
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution, JobStatus
@@ -16,15 +18,8 @@ from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
-TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED})
+FINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED})
 POLL_INTERVAL = 2
-
-JOB_DISPATCH: dict[str, Callable] = {
-    "run-profile": run_profiling,
-    "run-tests": run_test_execution,
-    "run-monitors": run_test_execution,
-    "run-test-generation": run_test_generation,
-}
 
 
 def exec_job(job_execution_id: UUID) -> None:
@@ -52,91 +47,22 @@ def exec_job(job_execution_id: UUID) -> None:
         try:
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
-                job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source.upper()))
+                job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source))
                 handler(**job_exec.kwargs)
 
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
-                job_exec.mark_completed()
+                transitioned = job_exec.mark_completed()
+            if transitioned:
+                run_final_callbacks(job_exec)
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
-                job_exec.mark_interrupted(get_exception_message(e))
+                transitioned = job_exec.mark_interrupted(get_exception_message(e))
+            if transitioned:
+                run_final_callbacks(job_exec)
 
     except Exception:
         LOG.exception("Unrecoverable error executing job %s", job_execution_id)
         sys.exit(1)
-
-
-def submit_and_wait(
-    job_key: str,
-    kwargs: dict,
-    project_code: str,
-    no_wait: bool = False,
-) -> None:
-    """Submit a job to the queue and optionally wait for completion.
-
-    Manages its own session lifecycle — callers must NOT wrap this in @with_database_session.
-    The submit is committed in its own session so the scheduler can see the row immediately.
-    """
-    import click
-
-    with database_session():
-        job_exec = JobExecution.submit(
-            job_key=job_key,
-            kwargs=kwargs,
-            source="cli",
-            project_code=project_code,
-        )
-        job_id = job_exec.id
-
-    click.echo(f"Submitted job {job_id} ({job_key})")
-
-    if no_wait:
-        return
-
-    click.echo("Waiting for completion...")
-    while True:
-        time.sleep(POLL_INTERVAL)
-        with database_session():
-            job_exec = JobExecution.get(job_id)
-            if job_exec and job_exec.status in TERMINAL_STATUSES:
-                break
-
-    match job_exec.status:
-        case JobStatus.COMPLETED:
-            _print_run_summary(job_id, job_key)
-        case JobStatus.ERROR:
-            _print_run_summary(job_id, job_key)
-            click.echo(f"Job {job_id} failed: {job_exec.error_message}", err=True)
-            sys.exit(1)
-        case JobStatus.CANCELED:
-            click.echo(f"Job {job_id} was canceled.", err=True)
-            sys.exit(1)
-
-
-def _print_run_summary(job_id: UUID, job_key: str) -> None:
-    """Print the linked run record summary, matching the old CLI output format."""
-    import click
-    from sqlalchemy import select
-
-    from testgen.common.models import get_current_session
-    from testgen.common.models.profiling_run import ProfilingRun
-    from testgen.common.models.test_run import TestRun
-
-    with database_session():
-        session = get_current_session()
-        match job_key:
-            case "run-profile":
-                run = session.scalars(select(ProfilingRun).where(ProfilingRun.job_execution_id == job_id)).first()
-                if run:
-                    status_msg = "Profiling encountered an error. Check log for details." if run.status == "Error" else "Profiling completed."
-                    click.echo(f"\n        {status_msg}\n        Run ID: {run.id}\n    ")
-            case "run-tests" | "run-monitors":
-                run = session.scalars(select(TestRun).where(TestRun.job_execution_id == job_id)).first()
-                if run:
-                    status_msg = "Test execution encountered an error. Check log for details." if run.status == "Error" else "Test execution completed."
-                    click.echo(f"\n        {status_msg}\n        Run ID: {run.id}\n    ")
-            case "run-test-generation":
-                click.echo("Test generation completed.")

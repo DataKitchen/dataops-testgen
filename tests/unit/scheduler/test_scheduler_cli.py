@@ -49,7 +49,7 @@ def db_jobs(scheduler_instance):
 
 @pytest.fixture
 def job_data():
-    with patch.dict("testgen.commands.exec_job.JOB_DISPATCH", {"test-job": Mock()}):
+    with patch.dict("testgen.commands.job_registry.JOB_DISPATCH", {"test-job": Mock()}):
         yield {
             "cron_expr": "*/5 9-17 * * *",
             "cron_tz":  "UTC",

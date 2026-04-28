@@ -115,6 +115,7 @@ def resolve_test_suite(permission: str):
 def resolve_job(permission: str, *extra_filters):
     """Resolve a JobExecution by ``job_id`` path param and verify project permission.
 
+    Internally-submitted jobs (source='system') are never exposed via the API.
     Extra ORM clauses are appended to the WHERE clause, e.g. to restrict by job_key.
     Mismatches surface as the same 404 — no information leakage.
     """
@@ -123,7 +124,11 @@ def resolve_job(permission: str, *extra_filters):
     from testgen.common.models.job_execution import JobExecution
 
     def dependency(job_id: UUID, user: User = _require_user) -> JobExecution:
-        query = select(JobExecution).where(JobExecution.id == job_id, *extra_filters)
+        query = select(JobExecution).where(
+            JobExecution.id == job_id,
+            JobExecution.source != "system",
+            *extra_filters,
+        )
         job = get_current_session().scalars(query).first()
         if job and has_project_permission(user, job.project_code, permission):
             return job
