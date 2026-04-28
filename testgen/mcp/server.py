@@ -32,7 +32,7 @@ ALWAYS look them up using either the `testgen://test-types` resource or the `get
 
 INVESTIGATING FAILURES
 
-Use get_test_results to find failures, then get_source_data to see relevant data from the connected database.
+Use list_test_results to find failures, then get_source_data to see relevant data from the connected database.
 Results reflect the current state of the data — values may have changed since the test ran.
 Use get_source_data_query to preview the SQL without executing it.
 
@@ -96,8 +96,8 @@ def build_mcp_app(
         get_failure_summary,
         get_failure_trend,
         get_test_result_history,
-        get_test_results,
         get_test_run_diff,
+        list_test_results,
         search_test_results,
     )
     from testgen.mcp.tools.test_runs import get_recent_test_runs
@@ -131,7 +131,7 @@ def build_mcp_app(
     safe_tool(list_tables)
     safe_tool(list_test_suites)
     safe_tool(get_recent_test_runs)
-    safe_tool(get_test_results)
+    safe_tool(list_test_results)
     safe_tool(get_test_result_history)
     safe_tool(get_failure_summary)
     safe_tool(search_test_results)

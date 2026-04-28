@@ -52,7 +52,7 @@ def get_source_data_query(
     Some test types (e.g. Freshness Trend, Schema Drift) do not have source data lookups.
 
     Args:
-        test_definition_id: UUID of the test definition (from get_test_results output).
+        test_definition_id: UUID of a test definition, e.g. from ``list_test_results``.
         reference_date: ISO 8601 date used as the test reference point (default: now).
         limit: Maximum rows the query would return (default 100, max 500).
     """
@@ -92,7 +92,7 @@ def get_source_data(
     Some test types (e.g. Freshness Trend, Schema Drift) do not have source data lookups.
 
     Args:
-        test_definition_id: UUID of the test definition (from get_test_results output).
+        test_definition_id: UUID of a test definition, e.g. from ``list_test_results``.
         reference_date: ISO 8601 date used as the test reference point (default: now).
         limit: Maximum rows to return (default 100, max 500).
     """

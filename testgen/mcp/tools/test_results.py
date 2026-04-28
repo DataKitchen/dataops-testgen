@@ -22,35 +22,62 @@ _DEFAULT_SEARCH_STATUSES = [TestResultStatus.Failed, TestResultStatus.Warning]
 
 @with_database_session
 @mcp_permission("view")
-def get_test_results(
-    job_execution_id: str,
+def list_test_results(
+    job_execution_id: str | None = None,
+    test_suite_id: str | None = None,
     status: str | None = None,
     table_name: str | None = None,
     test_type: str | None = None,
     limit: int = 50,
     page: int = 1,
 ) -> str:
-    """Get individual test results for a test run, with optional filters.
+    """List individual test results for a test run, with optional filters.
+
+    Provide either ``job_execution_id`` for a specific run, or ``test_suite_id`` to use
+    the latest completed run of that suite.
 
     Args:
-        job_execution_id: The UUID of the job execution for the test run.
+        job_execution_id: UUID of a test run, e.g. from ``get_recent_test_runs`` or
+            ``list_test_suites``.
+        test_suite_id: UUID of a test suite. Resolves to the latest completed test run
+            for the suite. Mutually exclusive with ``job_execution_id``.
         status: Filter by result status (Passed, Failed, Warning, Error, Log).
         table_name: Filter by table name.
         test_type: Filter by test type (e.g. 'Alpha Truncation', 'Unique Percent').
         limit: Maximum number of results per page (default 50).
         page: Page number, starting from 1 (default 1).
     """
-    job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-    test_run = TestRun.get_by_id_or_job(job_uuid)
-    if not test_run:
-        raise MCPUserError(f"No test run found for job execution `{job_execution_id}`.")
+    if job_execution_id and test_suite_id:
+        raise MCPUserError("Pass either `job_execution_id` or `test_suite_id`, not both.")
+    if not job_execution_id and not test_suite_id:
+        raise MCPUserError("Provide either `job_execution_id` or `test_suite_id`.")
+
+    perms = get_project_permissions()
+
+    resolved_via_suite = False
+    if test_suite_id:
+        suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
+        suite = TestSuite.get_regular(suite_uuid)
+        if suite is None or not perms.has_access(suite.project_code):
+            raise MCPUserError(f"Test suite `{test_suite_id}` not found or not accessible.")
+        if suite.last_complete_test_run_id is None:
+            raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
+        test_run = TestRun.get_by_id_or_job(suite.last_complete_test_run_id)
+        if test_run is None:
+            raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
+        resolved_via_suite = True
+        run_id_label = str(test_run.job_execution_id)
+    else:
+        job_uuid = parse_uuid(job_execution_id, "job_execution_id")
+        test_run = TestRun.get_by_id_or_job(job_uuid)
+        suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
+        if test_run is None or suite is None or not perms.has_access(suite.project_code):
+            raise MCPUserError(f"Test run `{job_execution_id}` not found or not accessible.")
+        run_id_label = job_execution_id
 
     status_enum = parse_result_status(status) if status else None
     offset = (page - 1) * limit
-
     test_type_code = resolve_test_type(test_type) if test_type else None
-
-    perms = get_project_permissions()
 
     results = TestResult.select_results(
         test_run_id=test_run.id,
@@ -71,12 +98,14 @@ def get_test_results(
         if test_type:
             filters.append(f"type={test_type}")
         filter_str = f" (filters: {', '.join(filters)})" if filters else ""
-        return f"No test results found for run `{job_execution_id}`{filter_str}."
+        return f"No test results found for run `{run_id_label}`{filter_str}."
 
     type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
     doc = MdDoc()
-    doc.heading(1, f"Test Results for run `{job_execution_id}`")
+    doc.heading(1, f"Test Results for run `{run_id_label}`")
+    if resolved_via_suite:
+        doc.text(f"_Latest completed run of test suite `{test_suite_id}`._")
     doc.text(f"Showing {len(results)} result(s) (page {page}).")
 
     for r in results:
@@ -118,7 +147,8 @@ def get_failure_summary(
     Args:
         project_code: Scope to a project the caller can view. Ignored if ``job_execution_id`` is set.
         test_suite_id: UUID of a test suite to scope the aggregation to.
-        job_execution_id: UUID of a job execution to scope to a single run.
+        job_execution_id: UUID of a test run, e.g. from ``get_recent_test_runs``,
+            to scope the summary to a single run.
         since: Include runs since this point in time — e.g. '7 days', '2 weeks', '2026-04-01'.
         group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
     """
@@ -219,7 +249,7 @@ def get_test_result_history(
     """Get the historical results of a specific test definition across runs, showing how measure and status changed over time.
 
     Args:
-        test_definition_id: The UUID of the test definition (from get_test_results output).
+        test_definition_id: UUID of a test definition, e.g. from ``list_test_results``.
         limit: Maximum number of historical results per page (default 20).
         page: Page number, starting from 1 (default 1).
     """
@@ -275,7 +305,7 @@ def search_test_results(
 ) -> str:
     """Search test results across multiple runs with flexible filters.
 
-    To drill into a single run, use ``get_test_results``. For a single test's history, use
+    To drill into a single run, use ``list_test_results``. For a single test's history, use
     ``get_test_result_history``.
 
     Args:
@@ -467,8 +497,8 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
     """Compare two test runs and report regressions, improvements, persistent failures, and added/removed tests.
 
     Args:
-        job_execution_id_a: UUID of the older (baseline) run.
-        job_execution_id_b: UUID of the newer run to compare against the baseline.
+        job_execution_id_a: UUID of the older (baseline) test run, e.g. from ``get_recent_test_runs``.
+        job_execution_id_b: UUID of the newer test run.
     """
     uuid_a = parse_uuid(job_execution_id_a, "job_execution_id_a")
     uuid_b = parse_uuid(job_execution_id_b, "job_execution_id_b")

@@ -76,6 +76,6 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
         if run.dq_score_testing is not None:
             doc.field("Testing Score", f"{run.dq_score_testing:.1f}")
 
-    doc.text("Use `get_test_results(job_execution_id='...')` for detailed results of a specific run.")
+    doc.text("Use `list_test_results(job_execution_id='...')` for detailed results of a specific run.")
 
     return doc.render()
