@@ -101,19 +101,14 @@ class JobExecution(Base):
         return rows
 
     @classmethod
-    def cancel_all_stale(cls) -> int:
-        """Cancel job executions left in non-terminal states from a previous process."""
+    def find_stale(cls) -> list[Self]:
+        """Return job executions left in non-terminal states from a previous process."""
         session = get_current_session()
-        result = session.execute(
-            update(cls)
-            .where(cls.status.in_([JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED]))
-            .values(
-                status=JobStatus.CANCELED.value,
-                completed_at=datetime.now(UTC),
-                error_message="Canceled: stale job from previous scheduler session",
+        return list(session.scalars(
+            select(cls).where(
+                cls.status.in_([JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED])
             )
-        )
-        return result.rowcount
+        ).all())
 
     @classmethod
     def get(cls, execution_id: UUID) -> Self | None:
@@ -125,6 +120,7 @@ class JobExecution(Base):
     def list_for_project(
         cls,
         project_code: str,
+        *extra_filters,
         job_key: str | None = None,
         status: str | None = None,
         page: int = 1,
@@ -132,7 +128,7 @@ class JobExecution(Base):
     ) -> tuple[list[Self], int]:
         """List job executions for a project with optional filters and pagination."""
         session = get_current_session()
-        query = select(cls).where(cls.project_code == project_code)
+        query = select(cls).where(cls.project_code == project_code, *extra_filters)
         if job_key:
             query = query.where(cls.job_key == job_key)
         if status:

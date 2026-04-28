@@ -7,8 +7,6 @@ from typing import Literal
 from uuid import UUID
 
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
-from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.commands.test_thresholds_prediction import TestThresholdsPrediction
 from testgen.common import (
@@ -26,8 +24,6 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.notifications.monitor_run import send_monitor_notifications
-from testgen.common.notifications.test_run import send_test_run_notifications
 from testgen.utils import get_exception_message
 
 from .run_refresh_data_chars import run_data_chars_refresh
@@ -141,8 +137,6 @@ def run_test_execution(
         test_run.status = "Error"
         test_run.save()
         session.commit()
-
-        send_test_run_notifications(test_run)
         raise
     else:
         LOG.info("Setting test run status to Completed")
@@ -155,28 +149,21 @@ def run_test_execution(
         test_suite.last_complete_test_run_id = test_run.id
         test_suite.save()
         session.commit()
-
-        if not test_suite.is_monitor:
-            send_test_run_notifications(test_run)
-            _rollup_test_scores(test_run, table_group)
-        else:
-            send_monitor_notifications(test_run)
     finally:
-        scoring_endtime = datetime.now(UTC) + time_delta
+        prediction_start = datetime.now(UTC) + time_delta
         try:
             TestThresholdsPrediction(test_suite, test_run.test_starttime).run()
         except Exception:
             LOG.exception("Error predicting test thresholds")
-            
+
         MixpanelService().send_event(
             "run-monitors" if test_suite.is_monitor else "run-tests",
-            source=job_context.get().source,
+            source=job_context.get().source.upper(),
             username=username,
             sql_flavor=connection.sql_flavor_code,
             test_count=test_run.test_ct,
             run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
-            scoring_duration=(scoring_endtime - test_run.test_endtime).total_seconds(),
-            prediction_duration=(datetime.now(UTC) + time_delta - scoring_endtime).total_seconds(),
+            prediction_duration=(datetime.now(UTC) + time_delta - prediction_start).total_seconds(),
         )
 
     return test_run.id
@@ -365,17 +352,3 @@ def _run_cat_tests(
     )
 
 
-def _rollup_test_scores(test_run: TestRun, table_group: TableGroup) -> None:
-    try:
-        LOG.info("Rolling up test scores")
-        sql_generator = RollupScoresSQL(test_run.id, table_group.id)
-        execute_db_queries(
-            sql_generator.rollup_test_scores(update_prevalence=True, update_table_group=True),
-        )
-        run_refresh_score_cards_results(
-            project_code=table_group.project_code,
-            add_history_entry=True,
-            refresh_date=test_run.test_starttime,
-        )
-    except Exception:
-        LOG.exception("Error rolling up test scores")
