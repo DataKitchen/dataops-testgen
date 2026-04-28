@@ -604,6 +604,30 @@ def test_get_failure_summary_rejects_inaccessible_project(mock_compute, db_sessi
         get_failure_summary(project_code="proj_b")
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_inaccessible_test_suite(mock_compute, mock_suite_cls, db_session_mock):
+    """test_suite_id branch validates suite access — same contract as list_test_results."""
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        get_failure_summary(test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+def test_get_failure_summary_rejects_unknown_or_monitor_test_suite(mock_suite_cls, db_session_mock):
+    # TestSuite.get_regular returns None for monitor suites and unknown ids alike.
+    mock_suite_cls.get_regular.return_value = None
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        get_failure_summary(test_suite_id=str(uuid4()))
+
+
 # ----------------------------------------------------------------------
 # search_test_results
 # ----------------------------------------------------------------------
@@ -860,7 +884,7 @@ def test_get_test_run_diff_run_not_found(
 
     from testgen.mcp.tools.test_results import get_test_run_diff
 
-    with pytest.raises(MCPResourceNotAccessible, match="Run .* not found or not accessible"):
+    with pytest.raises(MCPResourceNotAccessible, match="Test run .* not found or not accessible"):
         get_test_run_diff(str(uuid4()), str(uuid4()))
 
 

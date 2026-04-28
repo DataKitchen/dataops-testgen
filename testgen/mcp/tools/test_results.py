@@ -182,6 +182,10 @@ def get_failure_summary(
             project_codes = [project_code]
         else:
             project_codes = perms.allowed_codes
+        if test_suite_uuid is not None:
+            suite = TestSuite.get_regular(test_suite_uuid)
+            if suite is None or not perms.has_access(suite.project_code):
+                raise MCPResourceNotAccessible("Test suite", test_suite_id)
         scope_parts = []
         if project_code:
             scope_parts.append(f"project `{project_code}`")
@@ -526,9 +530,9 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
         return perms.has_access(suite.project_code)
 
     if not _accessible(run_a):
-        raise MCPResourceNotAccessible("Run", job_execution_id_a)
+        raise MCPResourceNotAccessible("Test run", job_execution_id_a)
     if not _accessible(run_b):
-        raise MCPResourceNotAccessible("Run", job_execution_id_b)
+        raise MCPResourceNotAccessible("Test run", job_execution_id_b)
 
     # Both runs confirmed accessible — safe to reveal suite IDs in the compatibility message.
     if run_a.test_suite_id != run_b.test_suite_id:
