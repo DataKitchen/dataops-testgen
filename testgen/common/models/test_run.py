@@ -372,19 +372,6 @@ class TestRun(Entity):
         return get_current_session().execute(query).scalar() > 0
 
     @classmethod
-    def cancel_all_running(cls) -> list[UUID]:
-        query = (
-            update(cls)
-            .where(cls.status == "Running")
-            .values(status="Cancelled", test_endtime=datetime.now(UTC))
-            .returning(cls.id)
-        )
-        db_session = get_current_session()
-        rows = db_session.execute(query)
-        db_session.flush()
-        return [r.id for r in rows]
-
-    @classmethod
     def cancel_run(cls, run_id: str | UUID) -> None:
         query = update(cls).where(cls.id == run_id).values(status="Cancelled", test_endtime=datetime.now(UTC))
         db_session = get_current_session()

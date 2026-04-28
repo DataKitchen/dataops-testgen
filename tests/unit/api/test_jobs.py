@@ -1,7 +1,7 @@
 """Tests for testgen.api.jobs — job submission, status polling, and cancellation."""
 
 from datetime import UTC, datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -165,7 +165,7 @@ def test_list_jobs_returns_paginated_results(mock_je_cls):
     result = list_jobs(project_code="DEFAULT", job_key=None, status=None, page=1, limit=20)
 
     mock_je_cls.list_for_project.assert_called_once_with(
-        project_code="DEFAULT", job_key=None, status=None, page=1, limit=20,
+        "DEFAULT", ANY, job_key=None, status=None, page=1, limit=20,
     )
     assert result.total == 2
     assert result.page == 1
@@ -180,7 +180,7 @@ def test_list_jobs_passes_filters(mock_je_cls):
     result = list_jobs(project_code="DEFAULT", job_key="run-profile", status="completed", page=2, limit=10)
 
     mock_je_cls.list_for_project.assert_called_once_with(
-        project_code="DEFAULT", job_key="run-profile", status="completed", page=2, limit=10,
+        "DEFAULT", ANY, job_key="run-profile", status="completed", page=2, limit=10,
     )
     assert result.total == 0
     assert result.items == []
