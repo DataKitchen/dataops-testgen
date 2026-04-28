@@ -143,11 +143,9 @@ class TestDefinitionsPage(Page):
         with st.spinner("Loading data ..."):
             user_can_edit = session.auth.user_has_permission("edit")
             user_can_disposition = session.auth.user_has_permission("disposition")
-            df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
-                                       page=current_page, page_size=current_page_size,
-                                       flagged_filter=flagged)
-            total_count = get_test_definitions_count(test_suite, table_name, column_name, test_type,
-                                                      flagged_filter=flagged)
+            df, total_count = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
+                                                    page_index=current_page, page_size=current_page_size,
+                                                    flagged_filter=flagged)
             test_types = run_test_type_lookup_query().to_dict("records")
             table_columns = get_columns(str(table_group.id))
             filter_columns_df = get_test_suite_columns(test_suite_id)
@@ -532,7 +530,7 @@ class TestDefinitionsPage(Page):
         def on_export_selected(payload: dict) -> None:
             ids = payload.get("ids", [])
             if ids:
-                data = get_test_definitions(test_suite)
+                data, _ = get_test_definitions(test_suite)
                 data = data[data["id"].isin(ids)]
                 download_dialog(
                     dialog_title="Download Excel Report",
@@ -681,7 +679,7 @@ def get_excel_report_data(
     if data is not None:
         data = data.copy()
     else:
-        data = get_test_definitions(test_suite)
+        data, _ = get_test_definitions(test_suite)
 
     for key in ["test_active_display", "lock_refresh_display", "flagged_display"]:
         data[key] = data[key].apply(lambda val: val if val == "Yes" else None)
@@ -774,10 +772,17 @@ def get_test_definitions(
     column_name: str | None = None,
     test_type: str | None = None,
     sorting_columns: list[tuple] | None = None,
-    page: int = 0,
-    page_size: int = 0,
+    page_index: int | None = None,
+    page_size: int = 500,
     flagged_filter: str | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, int]:
+    """Return ``(df, total_count)`` for one page of test definitions.
+
+    When ``page_index`` is provided (0-based), fetches only that page from
+    the DB using ``TestDefinition._paginate()``; otherwise fetches all rows
+    via ``select_where()``.  ``total_count`` is the full count of matching
+    rows regardless of which page is requested.
+    """
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
         clauses.append(TestDefinition.table_name == table_name)
@@ -805,16 +810,18 @@ def get_test_definitions(
             else:
                 order_by.append(sort_funcs[direction](func.lower(getattr(TestDefinition, attribute))))
 
-    # For pagination, we need to bypass the base select_where which doesn't support offset/limit.
-    # We'll fetch all matching results and slice in Python.
-    test_definitions = TestDefinition.select_where(
-        *clauses,
-        order_by=tuple(order_by) if order_by else None,
-    )
+    order_by_tuple = tuple(order_by) if order_by else None
 
-    if page_size > 0:
-        offset = page * page_size
-        test_definitions = list(test_definitions)[offset:offset + page_size]
+    if page_index is not None:
+        test_definitions, total_count = TestDefinition._paginate(
+            *clauses,
+            order_by=order_by_tuple,
+            page_index=page_index,
+            page_size=page_size,
+        )
+    else:
+        test_definitions = TestDefinition.select_where(*clauses, order_by=order_by_tuple)
+        total_count = len(test_definitions)
 
     df = to_dataframe(test_definitions, TestDefinitionSummary.columns())
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
@@ -846,7 +853,7 @@ def get_test_definitions(
     for col in df.select_dtypes(include=["datetime"]).columns:
         df[col] = df[col].astype(str).replace("NaT", "")
 
-    return df
+    return df, total_count
 
 
 def get_test_definitions_count(
