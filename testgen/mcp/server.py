@@ -92,7 +92,14 @@ def build_mcp_app(
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
     from testgen.mcp.tools.test_definitions import get_test, list_test_notes, list_test_types, list_tests
-    from testgen.mcp.tools.test_results import get_failure_summary, get_test_result_history, get_test_results
+    from testgen.mcp.tools.test_results import (
+        get_failure_summary,
+        get_failure_trend,
+        get_test_result_history,
+        get_test_results,
+        get_test_run_diff,
+        search_test_results,
+    )
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
     if server_url is None:
@@ -127,6 +134,9 @@ def build_mcp_app(
     safe_tool(get_test_results)
     safe_tool(get_test_result_history)
     safe_tool(get_failure_summary)
+    safe_tool(search_test_results)
+    safe_tool(get_failure_trend)
+    safe_tool(get_test_run_diff)
     safe_tool(get_test_type)
     safe_tool(get_source_data)
     safe_tool(get_source_data_query)

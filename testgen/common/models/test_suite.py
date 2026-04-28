@@ -43,6 +43,7 @@ class TestSuiteSummary(EntityMinimal):
     test_ct: int
     last_complete_profile_run_id: UUID
     latest_run_id: UUID
+    latest_run_job_execution_id: UUID | None
     latest_run_start: datetime
     last_run_test_ct: int
     last_run_passed_ct: int
@@ -115,6 +116,7 @@ class TestSuite(Entity):
         WITH last_run AS (
             SELECT test_runs.test_suite_id,
                 test_runs.id,
+                test_runs.job_execution_id,
                 test_runs.test_starttime,
                 test_runs.test_ct,
                 SUM(
@@ -185,6 +187,7 @@ class TestSuite(Entity):
             test_defs.count AS test_ct,
             last_complete_profile_run_id,
             last_run.id AS latest_run_id,
+            last_run.job_execution_id AS latest_run_job_execution_id,
             last_run.test_starttime AS latest_run_start,
             last_run.test_ct AS last_run_test_ct,
             last_run.passed_ct AS last_run_passed_ct,

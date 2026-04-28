@@ -67,9 +67,12 @@ import { Dialog } from '/app/static/js/components/dialog.js';
 import { RunProfilingDialog } from '/app/static/js/components/run_profiling_dialog.js';
 import { ScheduleList } from '/app/static/js/components/schedule_list.js';
 import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
+import { enterPage, exitPage } from '/app/static/js/page_lifecycle.js';
+import { setIntervalWithSignal } from '/app/static/js/timers.js';
 
 const { b, div, i, span, strong } = van.tags;
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
+const PAGE_KEY = 'profilingRuns';
 
 const STARTING_STATUSES = new Set(['pending', 'claimed']);
 const RUNNING_STATUSES = new Set(['running', 'cancel_requested']);
@@ -88,8 +91,8 @@ const progressStatusIcons = {
 };
 
 const ProfilingRuns = (/** @type Properties */ props) => {
-    const { emit } = props;
-    loadStylesheet('profilingRuns', stylesheet);
+    const { emit, signal } = props;
+    loadStylesheet(PAGE_KEY, stylesheet);
 
     const columns = ['5%', '20%', '15%', '20%', '30%', '10%'];
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
@@ -105,7 +108,7 @@ const ProfilingRuns = (/** @type Properties */ props) => {
         const rate = hasStarting ? REFRESH_STARTING : hasRunning ? REFRESH_RUNNING : REFRESH_DEFAULT;
         if (rate !== currentRefreshRate) {
             if (refreshIntervalId) clearInterval(refreshIntervalId);
-            refreshIntervalId = setInterval(() => emit('RefreshData', {}), rate);
+            refreshIntervalId = setIntervalWithSignal(() => emit('RefreshData', {}), rate, signal);
             currentRefreshRate = rate;
         }
     });
@@ -497,7 +500,7 @@ const ProfilingRunItem = (
             item.status === 'completed' && item.column_ct && item.profiling_run_id ? Link({ emit,
                 label: 'View results',
                 href: 'profiling-runs:results',
-                params: { 'run_id': item.profiling_run_id, 'project_code': projectCode },
+                params: { 'run_id': item.job_execution_id, 'project_code': projectCode },
                 underline: true,
                 right_icon: 'chevron_right',
             }) : null,
@@ -515,7 +518,7 @@ const ProfilingRunItem = (
             item.anomaly_ct && item.profiling_run_id ? Link({ emit,
                 label: `View ${item.anomaly_ct} issues`,
                 href: 'profiling-runs:hygiene',
-                params: { 'run_id': item.profiling_run_id, 'project_code': projectCode },
+                params: { 'run_id': item.job_execution_id, 'project_code': projectCode },
                 underline: true,
                 right_icon: 'chevron_right',
                 style: 'margin-top: 4px;',
@@ -659,6 +662,7 @@ export default (component) => {
         }
         parentElement.state = componentState;
         componentState.emit = createEmitter(setTriggerValue);
+        componentState.signal = enterPage(PAGE_KEY);
         van.add(parentElement, ProfilingRuns(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -668,5 +672,8 @@ export default (component) => {
         }
     }
 
-    return () => { parentElement.state = null; };
+    return () => {
+        exitPage(PAGE_KEY);
+        parentElement.state = null;
+    };
 };

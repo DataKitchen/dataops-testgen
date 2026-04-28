@@ -303,7 +303,7 @@ class TestDefinition(Entity):
     ) -> TestDefinitionSummary | None:
         """Fetch a test definition with project-level access check.
 
-        Returns None if the definition doesn't exist or the user lacks access.
+        Returns None if the definition doesn't exist, belongs to a monitor suite, or the user lacks access.
         """
         from testgen.common.models.test_suite import TestSuite
 
@@ -314,12 +314,11 @@ class TestDefinition(Entity):
         query = (
             select(*select_columns)
             .join(TestType, cls.test_type == TestType.test_type)
-            .where(cls.id == identifier)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(cls.id == identifier, TestSuite.is_monitor.isnot(True))
         )
         if project_codes is not None:
-            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
-                TestSuite.project_code.in_(project_codes)
-            )
+            query = query.where(TestSuite.project_code.in_(project_codes))
         result = get_current_session().execute(query).first()
         return TestDefinitionSummary(**result) if result else None
 
@@ -362,7 +361,13 @@ class TestDefinition(Entity):
         page: int = 1,
         limit: int = 50,
     ) -> tuple[list[TestDefinitionSummary], int]:
-        """Paginated test definitions for a suite with project-level access check and optional filters."""
+        """Paginated test definitions for a suite, with optional filters.
+
+        Monitor suites are always filtered out — callers requesting a monitor suite get an empty page.
+        Project-level access is enforced when ``project_codes`` is set.
+        """
+        from testgen.common.models.test_suite import TestSuite
+
         select_columns = [
             getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
             for col in cls._summary_columns
@@ -370,14 +375,11 @@ class TestDefinition(Entity):
         query = (
             select(*select_columns)
             .join(TestType, cls.test_type == TestType.test_type)
-            .where(cls.test_suite_id == test_suite_id)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(cls.test_suite_id == test_suite_id, TestSuite.is_monitor.isnot(True))
         )
         if project_codes is not None:
-            from testgen.common.models.test_suite import TestSuite
-
-            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(
-                TestSuite.project_code.in_(project_codes)
-            )
+            query = query.where(TestSuite.project_code.in_(project_codes))
         if table_name:
             query = query.where(cls.table_name == table_name)
         if test_type:

@@ -141,7 +141,9 @@ class ProfilingRun(Entity):
             return None
 
         query = (
-            select(*cls._minimal_columns).join(TableGroup, cls.table_groups_id == TableGroup.id).where(cls.id == run_id)
+            select(*cls._minimal_columns)
+            .join(TableGroup, cls.table_groups_id == TableGroup.id)
+            .where((cls.id == run_id) | (cls.job_execution_id == run_id))
         )
         result = get_current_session().execute(query).mappings().first()
         return ProfilingRunMinimal(**result) if result else None

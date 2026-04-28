@@ -262,9 +262,9 @@ const TestSuites = (/** @type Properties */ props) => {
                                 Caption({ content: 'Latest Run', style: 'margin-bottom: 2px;' }),
                                 testSuite.latest_run_start
                                     ? [
-                                        Link({ emit, 
+                                        Link({ emit,
                                             href: 'test-runs:results',
-                                            params: { run_id: testSuite.latest_run_id, project_code: projectSummary.project_code },
+                                            params: { run_id: testSuite.latest_run_job_execution_id, project_code: projectSummary.project_code },
                                             label: formatTimestamp(testSuite.latest_run_start),
                                             class: 'mb-4',
                                         }),

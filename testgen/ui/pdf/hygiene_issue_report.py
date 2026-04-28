@@ -143,7 +143,7 @@ def build_summary_table(document, hi_data):
         ),
         (
             Paragraph(
-                f"""<a href="{settings.UI_BASE_URL}/profiling-runs:hygiene?run_id={hi_data["profile_run_id"]}&selected={hi_data["id"]}&project_code={hi_data["project_code"]}">
+                f"""<a href="{settings.UI_BASE_URL}/profiling-runs:hygiene?run_id={hi_data["job_execution_id"]}&selected={hi_data["id"]}&project_code={hi_data["project_code"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,
