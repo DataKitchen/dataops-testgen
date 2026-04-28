@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.mcp.exceptions import MCPPermissionDenied
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible
 from testgen.mcp.permissions import (
     _NOT_SET,
     ProjectPermissions,
@@ -179,6 +179,15 @@ def test_verify_access_no_membership_raises_not_found():
     )
     with pytest.raises(MCPPermissionDenied, match="not found"):
         perms.verify_access("secret", not_found="not found")
+
+
+def test_verify_access_accepts_typed_not_found_exception():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+    )
+    with pytest.raises(MCPResourceNotAccessible, match="Project `secret` not found or not accessible"):
+        perms.verify_access("secret", not_found=MCPResourceNotAccessible("Project", "secret"))
 
 
 # --- ProjectPermissions.has_access ---

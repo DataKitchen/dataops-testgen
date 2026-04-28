@@ -7,7 +7,7 @@ from testgen.common.source_data_service import (
     build_test_result_query,
     fetch_test_result_source_data,
 )
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import parse_uuid
 from testgen.mcp.tools.markdown import MdDoc
@@ -20,7 +20,7 @@ def _resolve_context(test_definition_id: str, reference_date: str | None) -> dic
 
     context = TestDefinition.get_source_data_context(td_uuid, project_codes=perms.allowed_codes)
     if context is None:
-        raise MCPUserError(f"Test definition `{test_definition_id}` not found or not accessible.")
+        raise MCPResourceNotAccessible("Test definition", test_definition_id)
 
     if reference_date:
         try:
