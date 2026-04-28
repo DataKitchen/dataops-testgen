@@ -61,7 +61,7 @@ def run_test_generation(
     finally:
         MixpanelService().send_event(
             "generate-tests",
-            source=job_context.get().source,
+            source=job_context.get().source.upper(),
             sql_flavor=connection.sql_flavor,
             generation_set=generation_set,
         )

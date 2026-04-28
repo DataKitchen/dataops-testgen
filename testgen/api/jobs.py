@@ -104,7 +104,8 @@ def list_jobs(
 ):
     """List job executions for a project, with optional filters and pagination."""
     items, total = JobExecution.list_for_project(
-        project_code=project_code,
+        project_code,
+        JobExecution.source != "system",
         job_key=job_key,
         status=status,
         page=page,
