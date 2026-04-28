@@ -38,12 +38,14 @@ class ProjectPermissions:
         """For filtering lists — no exception, just a bool."""
         return project_code in self.allowed_codes
 
-    def verify_access(self, project_code: str, not_found: str) -> None:
+    def verify_access(self, project_code: str, not_found: "str | MCPPermissionDenied") -> None:
         """Raise MCPPermissionDenied if user can't access this project.
 
         - Has access: passes.
         - Has membership but wrong role: raises with denial message.
-        - No membership: raises with not_found (hides project existence).
+        - No membership: raises ``not_found`` (hides project existence).
+          Pass either a free-form string or a fully-typed exception
+          instance (e.g. ``MCPResourceNotAccessible("Project", code)``).
         """
         if project_code in self.allowed_codes:
             return
@@ -51,6 +53,8 @@ class ProjectPermissions:
             raise MCPPermissionDenied(
                 "Your role on this project does not include the necessary permission for this operation."
             )
+        if isinstance(not_found, MCPPermissionDenied):
+            raise not_found
         raise MCPPermissionDenied(not_found)
 
 

@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from testgen.common.source_data_service import SourceDataResult
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
 
@@ -101,7 +101,7 @@ def test_get_source_data_query_not_found(mock_td, db_session_mock):
 
     from testgen.mcp.tools.source_data import get_source_data_query
 
-    with pytest.raises(MCPUserError, match="not found or not accessible"):
+    with pytest.raises(MCPResourceNotAccessible, match="Test definition .* not found or not accessible"):
         get_source_data_query(str(uuid4()))
 
 

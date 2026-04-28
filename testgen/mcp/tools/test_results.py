@@ -5,7 +5,7 @@ from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import BucketInterval, TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     format_page_footer,
@@ -59,7 +59,7 @@ def list_test_results(
         suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
         suite = TestSuite.get_regular(suite_uuid)
         if suite is None or not perms.has_access(suite.project_code):
-            raise MCPUserError(f"Test suite `{test_suite_id}` not found or not accessible.")
+            raise MCPResourceNotAccessible("Test suite", test_suite_id)
         if suite.last_complete_test_run_id is None:
             raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
         test_run = TestRun.get_by_id_or_job(suite.last_complete_test_run_id)
@@ -72,7 +72,7 @@ def list_test_results(
         test_run = TestRun.get_by_id_or_job(job_uuid)
         suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
         if test_run is None or suite is None or not perms.has_access(suite.project_code):
-            raise MCPUserError(f"Test run `{job_execution_id}` not found or not accessible.")
+            raise MCPResourceNotAccessible("Test run", job_execution_id)
         run_id_label = job_execution_id
 
     status_enum = parse_result_status(status) if status else None
@@ -170,17 +170,22 @@ def get_failure_summary(
     if job_execution_id:
         job_uuid = parse_uuid(job_execution_id, "job_execution_id")
         test_run = TestRun.get_by_id_or_job(job_uuid)
-        if not test_run:
-            raise MCPUserError(f"No test run found for job execution `{job_execution_id}`.")
+        suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
+        if test_run is None or suite is None or not perms.has_access(suite.project_code):
+            raise MCPResourceNotAccessible("Test run", job_execution_id)
         test_run_id = test_run.id
         scope_label = f"run `{job_execution_id}`"
         project_codes = perms.allowed_codes
     else:
         if project_code:
-            perms.verify_access(project_code, not_found=f"Project `{project_code}` not found or not accessible.")
+            perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
             project_codes = [project_code]
         else:
             project_codes = perms.allowed_codes
+        if test_suite_uuid is not None:
+            suite = TestSuite.get_regular(test_suite_uuid)
+            if suite is None or not perms.has_access(suite.project_code):
+                raise MCPResourceNotAccessible("Test suite", test_suite_id)
         scope_parts = []
         if project_code:
             scope_parts.append(f"project `{project_code}`")
@@ -322,7 +327,7 @@ def search_test_results(
     """
     perms = get_project_permissions()
     if project_code:
-        perms.verify_access(project_code, not_found=f"Project `{project_code}` not found or not accessible.")
+        perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
         project_codes = [project_code]
     else:
         project_codes = perms.allowed_codes
@@ -422,7 +427,7 @@ def get_failure_trend(
 
     perms = get_project_permissions()
     if project_code:
-        perms.verify_access(project_code, not_found=f"Project `{project_code}` not found or not accessible.")
+        perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
         project_codes = [project_code]
     else:
         project_codes = perms.allowed_codes
@@ -525,9 +530,9 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
         return perms.has_access(suite.project_code)
 
     if not _accessible(run_a):
-        raise MCPUserError(f"Run `{job_execution_id_a}` not found or not accessible.")
+        raise MCPResourceNotAccessible("Test run", job_execution_id_a)
     if not _accessible(run_b):
-        raise MCPUserError(f"Run `{job_execution_id_b}` not found or not accessible.")
+        raise MCPResourceNotAccessible("Test run", job_execution_id_b)
 
     # Both runs confirmed accessible — safe to reveal suite IDs in the compatibility message.
     if run_a.test_suite_id != run_b.test_suite_id:

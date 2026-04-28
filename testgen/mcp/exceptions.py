@@ -24,6 +24,25 @@ class MCPPermissionDenied(MCPUserError):
     """Raised when access is denied due to insufficient project permissions."""
 
 
+class MCPResourceNotAccessible(MCPPermissionDenied):
+    """Resource is unknown OR inaccessible — message must not distinguish.
+
+    Use whenever a tool looks up a specific resource by identifier and either
+    the resource doesn't exist or the caller can't access it. A unified message
+    prevents existence-leak via error wording.
+    """
+
+    def __init__(self, resource: str, identifier: str | None = None):
+        self.resource = resource
+        self.identifier = identifier
+        message = (
+            f"{resource} `{identifier}` not found or not accessible."
+            if identifier is not None
+            else f"{resource} not found or not accessible."
+        )
+        super().__init__(message)
+
+
 def mcp_error_handler(fn):
     """Wrap an MCP handler (tool, resource, or prompt) with safe error handling.
 
