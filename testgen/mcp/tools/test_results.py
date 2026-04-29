@@ -376,7 +376,7 @@ def search_test_results(
             doc.heading(2, f"[{status_str}] {display_name} on `{r.column_names}` in `{r.table_name}`")
         else:
             doc.heading(2, f"[{status_str}] {display_name} on `{r.table_name}`")
-        doc.field("Run", r.job_execution_id or r.test_run_id, code=True)
+        doc.field("Test Run", r.job_execution_id or r.test_run_id, code=True)
         doc.field("Run time", r.test_time)
         doc.field("Test suite", r.test_suite_name)
         doc.field("Test definition", r.test_definition_id, code=True)
@@ -546,8 +546,8 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
 
     doc = MdDoc()
     doc.heading(1, "Test Run Diff")
-    doc.field("Run A", job_execution_id_a, code=True)
-    doc.field("Run B", job_execution_id_b, code=True)
+    doc.field("Test Run A", job_execution_id_a, code=True)
+    doc.field("Test Run B", job_execution_id_b, code=True)
     doc.table(
         headers=["Category", "Count"],
         rows=[

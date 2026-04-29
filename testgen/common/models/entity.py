@@ -39,13 +39,18 @@ class Entity(Base):
     _default_order_by: tuple[str | InstrumentedAttribute] = ("id",)
 
     @classmethod
-    @st.cache_data(show_spinner=False)
-    def get(cls, identifier: str | int | UUID) -> Self | None:
+    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
+    def get(cls, identifier: str | int | UUID, *clauses) -> Self | None:
+        """Fetch by primary key, optionally narrowed by extra WHERE clauses.
+
+        Returns ``None`` when no row matches both the identifier and any
+        provided ``*clauses``.
+        """
         get_by_column = getattr(cls, cls._get_by)
         if isinstance(get_by_column.property.columns[0].type, postgresql.UUID) and not is_uuid4(identifier):
             return None
 
-        query = select(cls).where(get_by_column == identifier)
+        query = select(cls).where(get_by_column == identifier, *clauses)
         return get_current_session().scalars(query).first()
 
     @classmethod

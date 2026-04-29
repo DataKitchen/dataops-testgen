@@ -87,8 +87,15 @@ def build_mcp_app(
         server_url: MCP resource server URL. Defaults to ``{api_base_url}/mcp``.
     """
     from testgen.mcp.exceptions import mcp_error_handler
-    from testgen.mcp.prompts.workflows import compare_runs, health_check, investigate_failures, table_health
+    from testgen.mcp.prompts.workflows import (
+        compare_runs,
+        health_check,
+        investigate_failures,
+        profiling_overview,
+        table_health,
+    )
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
+    from testgen.mcp.tools.profiling import get_table, list_column_profiles, list_profiling_summaries
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
     from testgen.mcp.tools.test_definitions import get_test, list_test_notes, list_test_types, list_tests
@@ -144,16 +151,20 @@ def build_mcp_app(
     safe_tool(get_test)
     safe_tool(list_test_notes)
     safe_tool(list_test_types)
+    safe_tool(get_table)
+    safe_tool(list_column_profiles)
+    safe_tool(list_profiling_summaries)
 
     # Resources (2)
     safe_resource("testgen://test-types", test_types_resource)
     safe_resource("testgen://glossary", glossary_resource)
 
-    # Prompts (4)
+    # Prompts
     safe_prompt(health_check)
     safe_prompt(investigate_failures)
     safe_prompt(table_health)
     safe_prompt(compare_runs)
+    safe_prompt(profiling_overview)
 
     app = mcp.streamable_http_app()
     return app, mcp.session_manager
