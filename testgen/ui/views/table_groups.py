@@ -217,7 +217,7 @@ class TableGroupsPage(Page):
             on_DeleteTableGroupConfirmed_change=self._execute_delete,
             on_DeleteDialogDismissed_change=lambda *_: st.session_state.pop("tg_delete_dialog", None),
             on_RunProfilingClicked_change=on_run_profiling_clicked,
-            on_TableGroupsFiltered_change=lambda params: self.router.queue_navigation(
+            on_TableGroupsFiltered_change=lambda params: params is not None and self.router.queue_navigation(
                 to="table-groups",
                 with_args={"project_code": project_code, **params},
             ),

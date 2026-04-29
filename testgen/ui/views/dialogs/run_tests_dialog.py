@@ -5,6 +5,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.query_cache import get_test_run_summaries
 from testgen.ui.session import session
 
 LINK_HREF = "test-runs"
@@ -41,9 +42,10 @@ def run_tests_dialog_widget(
             message = f"Test run could not be started: {e!s}."
             show_link = False
         st.session_state[RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
-        if success and not show_link:
-            st.cache_data.clear()
-            on_close()
+        if success:
+            get_test_run_summaries.clear()
+            if not show_link:
+                on_close()
 
     def on_go_to_test_runs(payload: dict) -> None:
         st.session_state.pop(RESULT_KEY, None)
