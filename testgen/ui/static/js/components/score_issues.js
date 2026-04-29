@@ -187,6 +187,9 @@ const ColumnProfilingButton = (
     /** @type {string} */ table_group_id,
     emit,
 ) => {
+    if (!column_name) {
+        return div({ style: 'min-width: 36px;' });
+    }
     return Button({
         type: 'icon',
         icon: 'insert_chart',

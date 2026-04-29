@@ -69,7 +69,8 @@ tests AS (
         INNER JOIN score_test_runs ON (
             score_test_runs.test_run_id = test_results.test_run_id
             AND score_test_runs.table_name = test_results.table_name
-            AND score_test_runs.column_name = test_results.column_names
+            -- NULL-safe match: table-scope tests (e.g. Dupe_Rows) have column_names = NULL
+            AND score_test_runs.column_name IS NOT DISTINCT FROM test_results.column_names
         )
         INNER JOIN test_suites ON (test_suites.id = test_results.test_suite_id)
         INNER JOIN test_types ON (test_types.test_type = test_results.test_type)
