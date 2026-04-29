@@ -126,7 +126,7 @@ def test_get_by_id(mock_session):
 
 def test_mark_running(mock_session):
     job = JobExecution(id=uuid4(), status="claimed")
-    mock_session.execute.return_value.first.return_value = _returning_row(job, status="running")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="running")
 
     job.mark_running()
 
@@ -135,7 +135,7 @@ def test_mark_running(mock_session):
 
 def test_mark_completed(mock_session):
     job = JobExecution(id=uuid4(), status="running")
-    mock_session.execute.return_value.first.return_value = _returning_row(job, status="completed")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="completed")
 
     job.mark_completed()
 
@@ -144,7 +144,7 @@ def test_mark_completed(mock_session):
 
 def test_mark_interrupted_error(mock_session):
     job = JobExecution(id=uuid4(), status="running")
-    mock_session.execute.return_value.first.return_value = _returning_row(job, status="error", error_message="Something went wrong")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="error", error_message="Something went wrong")
 
     job.mark_interrupted("Something went wrong")
 
@@ -154,7 +154,7 @@ def test_mark_interrupted_error(mock_session):
 
 def test_mark_interrupted_canceled(mock_session):
     job = JobExecution(id=uuid4(), status="cancel_requested")
-    mock_session.execute.return_value.first.return_value = _returning_row(job, status="canceled")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="canceled")
 
     job.mark_interrupted("Process exited with code -15")
 

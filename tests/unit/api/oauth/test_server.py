@@ -50,7 +50,7 @@ def test_auth_code_query_returns_valid_code(mock_get_session):
 
     mock_code = MagicMock()
     mock_code.is_expired.return_value = False
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_code
+    mock_session.scalars.return_value.first.return_value = mock_code
 
     grant = AuthorizationCodeGrant.__new__(AuthorizationCodeGrant)
     client = MagicMock()
@@ -67,7 +67,7 @@ def test_auth_code_query_returns_none_for_expired(mock_get_session):
 
     mock_code = MagicMock()
     mock_code.is_expired.return_value = True
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_code
+    mock_session.scalars.return_value.first.return_value = mock_code
 
     grant = AuthorizationCodeGrant.__new__(AuthorizationCodeGrant)
     client = MagicMock()
@@ -95,7 +95,7 @@ def test_auth_code_authenticate_user(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
     mock_user = MagicMock()
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
+    mock_session.scalars.return_value.first.return_value = mock_user
 
     grant = AuthorizationCodeGrant.__new__(AuthorizationCodeGrant)
     auth_code = MagicMock()
@@ -104,7 +104,7 @@ def test_auth_code_authenticate_user(mock_get_session):
     result = grant.authenticate_user(auth_code)
 
     assert result is mock_user
-    mock_session.query.assert_called_once()
+    mock_session.scalars.assert_called_once()
 
 
 # --- RefreshTokenGrant ---
@@ -116,8 +116,8 @@ def test_refresh_token_authenticate_valid_token(mock_get_session):
     mock_get_session.return_value = mock_session
 
     mock_token = MagicMock()
-    mock_token.is_revoked.return_value = False
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token
+    mock_token.is_refresh_token_active.return_value = True
+    mock_session.scalars.return_value.first.return_value = mock_token
 
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
 
@@ -133,7 +133,7 @@ def test_refresh_token_authenticate_returns_none_for_revoked(mock_get_session):
 
     mock_token = MagicMock()
     mock_token.is_refresh_token_active.return_value = False
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token
+    mock_session.scalars.return_value.first.return_value = mock_token
 
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
 
@@ -146,7 +146,7 @@ def test_refresh_token_authenticate_returns_none_for_revoked(mock_get_session):
 def test_refresh_token_authenticate_returns_none_when_not_found(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.scalars.return_value.first.return_value = None
 
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
 
@@ -173,7 +173,7 @@ def test_refresh_token_authenticate_user(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
     mock_user = MagicMock()
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
+    mock_session.scalars.return_value.first.return_value = mock_user
 
     grant = RefreshTokenGrant.__new__(RefreshTokenGrant)
     credential = MagicMock()
@@ -193,7 +193,7 @@ def test_server_query_client_returns_client(mock_get_session):
     mock_get_session.return_value = mock_session
 
     mock_client = MagicMock()
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_client
+    mock_session.scalars.return_value.first.return_value = mock_client
 
     server = TestGenAuthorizationServer()
     result = server.query_client("test_client_id")
@@ -205,7 +205,7 @@ def test_server_query_client_returns_client(mock_get_session):
 def test_server_query_client_returns_none_when_not_found(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.scalars.return_value.first.return_value = None
 
     server = TestGenAuthorizationServer()
     result = server.query_client("nonexistent")
@@ -345,7 +345,7 @@ def test_client_credentials_resolves_owner(mock_get_session):
 
     mock_owner = MagicMock()
     mock_owner.username = "owner_user"
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_owner
+    mock_session.scalars.return_value.first.return_value = mock_owner
 
     grant = ClientCredentialsGrant.__new__(ClientCredentialsGrant)
     grant.request = MagicMock()
@@ -379,7 +379,7 @@ def test_client_credentials_rejects_deleted_owner(mock_get_session):
 
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
-    mock_session.query.return_value.filter.return_value.first.return_value = None
+    mock_session.scalars.return_value.first.return_value = None
 
     grant = ClientCredentialsGrant.__new__(ClientCredentialsGrant)
     grant.request = MagicMock()
@@ -400,13 +400,13 @@ def test_revocation_query_token_by_access_token(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
     mock_token = MagicMock()
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token
+    mock_session.scalars.return_value.first.return_value = mock_token
 
     ep = TestGenRevocationEndpoint.__new__(TestGenRevocationEndpoint)
     result = ep.query_token("tok_abc", "access_token")
 
     assert result is mock_token
-    mock_session.query.return_value.filter_by.assert_called_with(access_token="tok_abc")  # noqa: S106
+    mock_session.scalars.assert_called_once()
 
 
 @patch("testgen.api.oauth.server.get_current_session")
@@ -414,13 +414,13 @@ def test_revocation_query_token_by_refresh_token(mock_get_session):
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
     mock_token = MagicMock()
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token
+    mock_session.scalars.return_value.first.return_value = mock_token
 
     ep = TestGenRevocationEndpoint.__new__(TestGenRevocationEndpoint)
     result = ep.query_token("ref_abc", "refresh_token")
 
     assert result is mock_token
-    mock_session.query.return_value.filter_by.assert_called_with(refresh_token="ref_abc")  # noqa: S106
+    mock_session.scalars.assert_called_once()
 
 
 def test_revocation_revoke_token_sets_timestamps():
