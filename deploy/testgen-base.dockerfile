@@ -29,9 +29,7 @@ RUN apk update && apk upgrade && apk add --no-cache \
     unixodbc=2.3.14-r0 \
     unixodbc-dev=2.3.14-r0 \
     libarrow=21.0.0-r4 \
-    apache-arrow-dev=21.0.0-r4 \
-    # Pinned versions for security
-    xz=5.8.2-r0
+    apache-arrow-dev=21.0.0-r4
 
 COPY --chmod=775 ./deploy/install_linuxodbc.sh /tmp/dk/install_linuxodbc.sh
 RUN /tmp/dk/install_linuxodbc.sh
