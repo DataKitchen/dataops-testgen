@@ -4,12 +4,12 @@ import os
 from testgen import settings
 from testgen.common import create_database, execute_db_queries
 from testgen.common.credentials import get_tg_db, get_tg_schema
-from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
 from testgen.common.models import with_database_session
 from testgen.common.read_file import get_template_files
 from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
+from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
 
 LOG = logging.getLogger("testgen")
 

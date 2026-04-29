@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from testgen.common.models import Base, get_current_session
 from testgen.utils import is_uuid4, make_json_safe
 
+
 def _hash_clause(x):
     # Don't use literal_binds=True — SA 2.0 can't render UUID POSTCOMPILE IN-lists
     # that way and raises CompileError when Streamlit hashes cached args.

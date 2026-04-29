@@ -10,7 +10,6 @@ from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH
 from testgen.commands.run_launch_db_config import get_app_db_params_mapping, run_launch_db_config
 from testgen.commands.run_score_update import run_score_update
-from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
@@ -28,6 +27,7 @@ from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.base import smtp_configured
 from testgen.common.read_file import read_template_sql_file
+from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
 
 LOG = logging.getLogger("testgen")
 random.seed(42)

@@ -1,7 +1,8 @@
 from typing import Any
 
 from sqlalchemy import Column, String, select
-from sqlalchemy.dialects.postgresql import JSONB, insert as pg_insert
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from testgen.common.models import Base, get_current_session
 

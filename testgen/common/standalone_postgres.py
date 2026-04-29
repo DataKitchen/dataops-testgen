@@ -91,6 +91,7 @@ def _reinitialize_orm_engine(base_uri: str | None = None) -> None:
     must replace that engine so the ORM connects via Unix socket.
     """
     from sqlalchemy import create_engine
+
     from testgen.common import models
 
     uri = _build_connection_string(settings.DATABASE_NAME, base_uri)

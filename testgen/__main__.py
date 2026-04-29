@@ -10,7 +10,6 @@ import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version as pkg_version
-from pathlib import Path
 
 import click
 from click.core import Context
@@ -53,18 +52,22 @@ from testgen.common import (
     get_tg_schema,
     version_service,
 )
-from testgen.common.standalone_postgres import (
-    STANDALONE_URI_ENV_VAR,
-    get_home_dir as get_testgen_home,
-    get_server_uri,
-    is_standalone_mode,
-    start_server as start_standalone_postgres,
-)
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.base import smtp_configured
+from testgen.common.standalone_postgres import (
+    STANDALONE_URI_ENV_VAR,
+    get_server_uri,
+    is_standalone_mode,
+)
+from testgen.common.standalone_postgres import (
+    get_home_dir as get_testgen_home,
+)
+from testgen.common.standalone_postgres import (
+    start_server as start_standalone_postgres,
+)
 from testgen.scheduler import run_scheduler
 from testgen.utils import plugins
 
@@ -92,7 +95,7 @@ class CliGroup(click.Group):
         except Exception:
             LOG.exception("There was an unexpected error")
 
-    def format_epilog(self, ctx: Context, formatter: click.HelpFormatter) -> None:
+    def format_epilog(self, _ctx: Context, formatter: click.HelpFormatter) -> None:
         # Schema revision is a DB round-trip; defer until `--help` is actually
         # requested rather than evaluating at module-load for every CLI invocation.
         formatter.write_paragraph()
