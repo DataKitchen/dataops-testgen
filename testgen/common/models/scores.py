@@ -52,6 +52,10 @@ Categories = Literal[
 ]
 ScoreTypes = Literal["score", "cde_score"]
 
+# Sentinel passed by the breakdown UI when the user drills down into a bucket whose
+# grouping value is NULL (e.g. table-scope tests that have no column_name).
+SCORE_CARD_NULL_DRILLDOWN = "__null__"
+
 
 class ScoreCategory(enum.Enum):
     table_groups_name = "table_groups_name"
@@ -387,25 +391,33 @@ class ScoreDefinition(Base):
         value_ = value
         filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
         if group_by == "table_name":
-            table_group_id, value_ = value.split(".")
+            table_group_id, value_ = value.split(".", 1)
             filters.append(f"table_groups_id = '{table_group_id}'")
         elif group_by == "column_name":
-            table_group_id, table_name, value_ = value.split(".")
+            table_group_id, table_name, value_ = value.split(".", 2)
             filters.append(f"table_groups_id = '{table_group_id}'")
             filters.append(f"table_name = '{table_name}'")
         filters = " AND ".join(filters)
 
+        # Drilldown rows for buckets where the grouping value is NULL (e.g. table-scope
+        # tests that have no column_name) arrive as the SCORE_CARD_NULL_DRILLDOWN sentinel.
+        # Translate that to an IS NULL filter so the join still matches those rows.
+        is_null_drilldown = value_ == SCORE_CARD_NULL_DRILLDOWN
+        value_filter = f"{group_by} IS NULL" if is_null_drilldown else f"{group_by} = :value"
         dq_dimension_filter = ""
         if group_by == "dq_dimension":
-            dq_dimension_filter = " AND dq_dimension = :value"
+            dq_dimension_filter = (
+                " AND dq_dimension IS NULL" if is_null_drilldown else " AND dq_dimension = :value"
+            )
 
         query = (
             read_template_sql_file(query_template_file, sub_directory="score_cards")
             .replace("{filters}", filters)
+            .replace("{value_filter}", value_filter)
             .replace("{group_by}", group_by)
             .replace("{dq_dimension_filter}", dq_dimension_filter)
         )
-        params = {"value": value_}
+        params = {} if is_null_drilldown else {"value": value_}
         results = get_current_session().execute(text(query), params).mappings().all()
         return [dict(row) for row in results]
 

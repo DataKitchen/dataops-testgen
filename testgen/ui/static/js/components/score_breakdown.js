@@ -8,6 +8,11 @@ import { getScoreColor } from '../score_utils.js';
 
 const { div, i, span } = van.tags;
 
+// Mirrors SCORE_CARD_NULL_DRILLDOWN in testgen/common/models/scores.py — used to
+// pass through buckets whose grouping value is NULL so the backend can rewrite
+// the issues filter as `IS NULL`.
+const NULL_DRILLDOWN = '__null__';
+
 const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, emit) => {
     loadStylesheet('score-breakdown', stylesheet);
 
@@ -149,16 +154,14 @@ const ScoreCell = (value) => {
 };
 
 const IssueCountCell = (value, row, score, category, scoreType, onViewDetails) => {
-    let drilldown = row[category];
+    let drilldown = row[category] ?? NULL_DRILLDOWN;
     if (category === 'table_name') {
-        drilldown = `${row.table_groups_id}.${row.table_name}`;
+        drilldown = `${row.table_groups_id}.${row.table_name ?? NULL_DRILLDOWN}`;
     } else if (category === 'column_name') {
-        drilldown = `${row.table_groups_id}.${row.table_name}.${row.column_name}`;
+        drilldown = `${row.table_groups_id}.${row.table_name}.${row.column_name ?? NULL_DRILLDOWN}`;
     }
 
-    // Hide View for rows where the grouping value is null/empty — drilldown filtering
-    // needs a non-empty value on the backend and router, so the link would dead-end.
-    const canDrillDown = value && drilldown && onViewDetails;
+    const canDrillDown = value && onViewDetails;
 
     return div(
         { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.issue_ct}`, 'data-testid': 'score-breakdown-cell' },

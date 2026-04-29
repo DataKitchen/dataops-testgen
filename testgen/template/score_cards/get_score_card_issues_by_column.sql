@@ -4,7 +4,7 @@ WITH score_profiling_runs AS (
         table_name,
         column_name
     FROM v_dq_profile_scoring_latest_by_column
-    WHERE {filters} AND {group_by} = :value
+    WHERE {filters} AND {value_filter}
 ),
 anomalies AS (
     SELECT results.id::VARCHAR AS id,
@@ -45,7 +45,7 @@ score_test_runs AS (
         column_name
     FROM v_dq_test_scoring_latest_by_column
     WHERE {filters}
-        AND {group_by} = :value
+        AND {value_filter}
 ),
 tests AS (
     SELECT test_results.id::VARCHAR AS id,
