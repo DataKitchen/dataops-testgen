@@ -42,6 +42,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             groups.table_groups_name,
             results.disposition,
             results.profile_run_id::VARCHAR,
+            runs.job_execution_id::VARCHAR,
             types.suggested_action,
             results.table_groups_id::VARCHAR,
             results.project_code,

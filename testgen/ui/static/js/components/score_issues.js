@@ -31,6 +31,12 @@ import { colorMap, formatTimestamp, caseInsensitiveSort } from '../display_utils
 
 const { div, i, span } = van.tags;
 const PAGE_SIZE = 100;
+
+// Mirrors SCORE_CARD_NULL_DRILLDOWN in testgen/common/models/scores.py — encodes
+// drilldowns into buckets whose grouping value is NULL.
+const NULL_DRILLDOWN = '__null__';
+// Display label for the NULL bucket (e.g. table-scope tests have no column).
+const NULL_DRILLDOWN_LABEL = '(none)';
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
 const statusColors = {
     'Potential PII': colorMap.grey,
@@ -54,7 +60,10 @@ const IssuesTable = (
 ) => {
     loadStylesheet('score-issues-table', stylesheet);
 
-    const drilldownParts = drilldown.split('.');
+    // Decode any NULL_DRILLDOWN sentinels back to null so equality filters match
+    // the actual NULL values on issue rows (test_results.column_names IS NULL, etc.).
+    const drilldownParts = drilldown.split('.').map(part => part === NULL_DRILLDOWN ? null : part);
+    const drilldownDisplay = (part) => part === null ? NULL_DRILLDOWN_LABEL : part;
     const pageIndex = van.state(0);
     const filters = {
         table: van.state(['table_name', 'column_name'].includes(category) ? drilldownParts[1] : null),
@@ -95,9 +104,13 @@ const IssuesTable = (
                     span(`Hygiene / Test Issues (${issues.length ?? 0}) for`),
                     span(
                         { class: 'text-primary' },
-                        `${COLUMN_LABEL[category] ?? '-'}: ${['table_name', 'column_name'].includes(category) ? drilldownParts.slice(1).join(' > ') : drilldown}`,
+                        `${COLUMN_LABEL[category] ?? '-'}: ${
+                            ['table_name', 'column_name'].includes(category)
+                                ? drilldownParts.slice(1).map(drilldownDisplay).join(' > ')
+                                : drilldownDisplay(drilldownParts[0])
+                        }`,
                     ),
-                    category === 'column_name'
+                    category === 'column_name' && drilldownParts[2] !== null
                         ? ColumnProfilingButton(drilldownParts[2], drilldownParts[1], drilldownParts[0], emit)
                         : null,
                 ),
@@ -187,6 +200,9 @@ const ColumnProfilingButton = (
     /** @type {string} */ table_group_id,
     emit,
 ) => {
+    if (!column_name) {
+        return div({ style: 'min-width: 36px;' });
+    }
     return Button({
         type: 'icon',
         icon: 'insert_chart',

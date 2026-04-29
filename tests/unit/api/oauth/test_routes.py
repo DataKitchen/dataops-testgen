@@ -132,7 +132,7 @@ def test_get_client_name_returns_name_from_metadata(mock_get_session):
     mock_get_session.return_value = mock_session
     mock_client = MagicMock()
     mock_client.client_metadata = {"client_name": "My App"}
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_client
+    mock_session.scalars.return_value.first.return_value = mock_client
 
     assert _get_client_name("client123") == "My App"
 
@@ -143,7 +143,7 @@ def test_get_client_name_returns_empty_when_not_found(mock_get_session):
 
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.scalars.return_value.first.return_value = None
 
     assert _get_client_name("nonexistent") == ""
 

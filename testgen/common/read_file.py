@@ -4,8 +4,8 @@ import logging
 import re
 from collections.abc import Generator
 from functools import cache
-from importlib.abc import Traversable
 from importlib.resources import as_file, files
+from importlib.resources.abc import Traversable
 
 import yaml
 

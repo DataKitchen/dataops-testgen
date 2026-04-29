@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.engine import Row, RowMapping
+from sqlalchemy.engine import RowMapping
 from sqlalchemy.engine.cursor import CursorResult
 
 from testgen.common.database.database_service import get_flavor_service
@@ -54,14 +54,20 @@ def fetch_one_from_db(query: str, params: dict | None = None) -> RowMapping | No
     return result._mapping if result else None
 
 
-def fetch_from_target_db(connection: Connection, query: str, params: dict | None = None) -> list[Row]:
+def fetch_from_target_db(connection: Connection, query: str, params: dict | None = None) -> list[RowMapping]:
     connection_params = connection.to_dict()
     flavor_service = get_flavor_service(connection.sql_flavor)
     resolved = resolve_connection_params(connection_params)
     engine = flavor_service.create_engine(connection_params)
 
-    with engine.connect() as conn:
-        for pre_query, pre_params in flavor_service.get_pre_connection_queries(resolved):
-            conn.execute(text(pre_query), pre_params)
-        cursor: CursorResult = conn.execute(text(query), params)
-        return cursor.fetchall()
+    # Each call creates a fresh engine for ad-hoc target-DB access (test connection,
+    # preview, data catalog reads). Dispose on exit so the engine's pool doesn't
+    # leak an idle connection until GC — these add up over a long Streamlit session.
+    try:
+        with engine.connect() as conn:
+            for pre_query, pre_params in flavor_service.get_pre_connection_queries(resolved):
+                conn.execute(text(pre_query), pre_params)
+            cursor: CursorResult = conn.execute(text(query), params)
+            return cursor.mappings().fetchall()
+    finally:
+        engine.dispose()

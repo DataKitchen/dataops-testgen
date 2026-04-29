@@ -52,6 +52,10 @@ Categories = Literal[
 ]
 ScoreTypes = Literal["score", "cde_score"]
 
+# Sentinel passed by the breakdown UI when the user drills down into a bucket whose
+# grouping value is NULL (e.g. table-scope tests that have no column_name).
+SCORE_CARD_NULL_DRILLDOWN = "__null__"
+
 
 class ScoreCategory(enum.Enum):
     table_groups_name = "table_groups_name"
@@ -76,26 +80,29 @@ class ScoreDefinition(Base):
     cde_score: bool = Column(Boolean, default=False, nullable=False)
     category: ScoreCategory | None = Column(Enum(ScoreCategory), nullable=True)
 
-    criteria: ScoreDefinitionCriteria = relationship(
+    # Note: avoid `Mapped[...]`-style or `Iterable[...]` annotations on these —
+    # with DeclarativeBase + `__allow_unmapped__=True`, they confuse SA's
+    # uselist inference and cause `self.results` to be treated as a scalar.
+    criteria = relationship(
         "ScoreDefinitionCriteria",
         cascade="all, delete-orphan",
         lazy="select",
         uselist=False,
         single_parent=True,
     )
-    results: Iterable[ScoreDefinitionResult] = relationship(
+    results = relationship(
         "ScoreDefinitionResult",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionResult.category",
         lazy="joined",
     )
-    breakdown: Iterable[ScoreDefinitionBreakdownItem] = relationship(
+    breakdown = relationship(
         "ScoreDefinitionBreakdownItem",
         cascade="all, delete-orphan",
         order_by="ScoreDefinitionBreakdownItem.impact.desc()",
         lazy="select",
     )
-    history: Iterable[ScoreDefinitionResultHistoryEntry] = relationship(
+    history = relationship(
         "ScoreDefinitionResultHistoryEntry",
         order_by="ScoreDefinitionResultHistoryEntry.last_run_time.asc()",
         cascade="all, delete-orphan",
@@ -241,10 +248,10 @@ class ScoreDefinition(Base):
 
         filters = " AND ".join(self._get_raw_query_filters())
         overall_scores = get_current_session().execute(
-            read_template_sql_file(
+            text(read_template_sql_file(
                 overall_score_query_template_file,
                 sub_directory="score_cards",
-            ).replace("{filters}", filters)
+            ).replace("{filters}", filters))
         ).mappings().first() or {}
 
         categories_scores = []
@@ -252,10 +259,10 @@ class ScoreDefinition(Base):
             categories_scores = [
                 dict(result)
                 for result in get_current_session().execute(
-                    read_template_sql_file(
+                    text(read_template_sql_file(
                         categories_query_template_file,
                         sub_directory="score_cards",
-                    ).replace("{category}", category.value).replace("{filters}", filters)
+                    ).replace("{category}", category.value).replace("{filters}", filters))
                 ).mappings().all()
             ]
 
@@ -359,7 +366,7 @@ class ScoreDefinition(Base):
             .replace("{records_count_filters}", records_count_filters)
             .replace("{non_null_columns}", ", ".join(non_null_columns))
         )
-        results = get_current_session().execute(query).mappings().all()
+        results = get_current_session().execute(text(query)).mappings().all()
 
         return [dict(row) for row in results]
 
@@ -384,25 +391,33 @@ class ScoreDefinition(Base):
         value_ = value
         filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
         if group_by == "table_name":
-            table_group_id, value_ = value.split(".")
+            table_group_id, value_ = value.split(".", 1)
             filters.append(f"table_groups_id = '{table_group_id}'")
         elif group_by == "column_name":
-            table_group_id, table_name, value_ = value.split(".")
+            table_group_id, table_name, value_ = value.split(".", 2)
             filters.append(f"table_groups_id = '{table_group_id}'")
             filters.append(f"table_name = '{table_name}'")
         filters = " AND ".join(filters)
 
+        # Drilldown rows for buckets where the grouping value is NULL (e.g. table-scope
+        # tests that have no column_name) arrive as the SCORE_CARD_NULL_DRILLDOWN sentinel.
+        # Translate that to an IS NULL filter so the join still matches those rows.
+        is_null_drilldown = value_ == SCORE_CARD_NULL_DRILLDOWN
+        value_filter = f"{group_by} IS NULL" if is_null_drilldown else f"{group_by} = :value"
         dq_dimension_filter = ""
         if group_by == "dq_dimension":
-            dq_dimension_filter = " AND dq_dimension = :value"
+            dq_dimension_filter = (
+                " AND dq_dimension IS NULL" if is_null_drilldown else " AND dq_dimension = :value"
+            )
 
         query = (
             read_template_sql_file(query_template_file, sub_directory="score_cards")
             .replace("{filters}", filters)
+            .replace("{value_filter}", value_filter)
             .replace("{group_by}", group_by)
             .replace("{dq_dimension_filter}", dq_dimension_filter)
         )
-        params = {"value": value_}
+        params = {} if is_null_drilldown else {"value": value_}
         results = get_current_session().execute(text(query), params).mappings().all()
         return [dict(row) for row in results]
 
@@ -499,7 +514,7 @@ class ScoreDefinitionCriteria(Base):
     definition_id: str = Column(postgresql.UUID(as_uuid=True), ForeignKey("score_definitions.id", ondelete="CASCADE"))
     operand: Literal["AND", "OR"] = Column(String, nullable=False, default="AND")
     group_by_field: bool = Column(Boolean, nullable=False, default=True)
-    filters: list[ScoreDefinitionFilter] = relationship(
+    filters = relationship(
         "ScoreDefinitionFilter",
         cascade="all, delete-orphan",
         lazy="joined",
@@ -519,7 +534,7 @@ class ScoreDefinitionCriteria(Base):
                 for _, field_filters in grouped_filters:
                     field_filters_sql = [f.get_as_sql(prefix=prefix, operand="AND") for f in field_filters]
                     filters_sql.append(
-                        f"({" OR ".join(field_filters_sql)})" if len(field_filters_sql) > 1 else field_filters_sql[0]
+                        f"({' OR '.join(field_filters_sql)})" if len(field_filters_sql) > 1 else field_filters_sql[0]
                     )
             else:
                 filters_sql = [ f.get_as_sql(prefix=prefix, operand="AND") for f in self.filters ]
@@ -578,7 +593,7 @@ class ScoreDefinitionFilter(Base):
         nullable=True,
         default=None,
     )
-    next_filter: ScoreDefinitionFilter = relationship(
+    next_filter = relationship(
         "ScoreDefinitionFilter",
         cascade="all, delete-orphan",
         lazy="joined",
@@ -681,7 +696,7 @@ class ScoreDefinitionResultHistoryEntry(Base):
     score: float = Column(Float, nullable=True)
     last_run_time: datetime = Column(DateTime(timezone=False), nullable=False, primary_key=True)
 
-    definition: ScoreDefinition = relationship("ScoreDefinition", back_populates="history")
+    definition = relationship("ScoreDefinition", back_populates="history")
 
     def add_as_cutoff(self):
         """
