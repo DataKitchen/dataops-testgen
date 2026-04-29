@@ -36,7 +36,8 @@ def run_recalculate_project_scores(project_code: str) -> None:
             test_suites = session.scalars(
                 select(TestSuite).where(
                     TestSuite.table_groups_id == tg.id,
-                    TestSuite.last_complete_test_run_id != None,
+                    TestSuite.is_monitor.isnot(True),
+                    TestSuite.last_complete_test_run_id.isnot(None),
                 )
             ).all()
 

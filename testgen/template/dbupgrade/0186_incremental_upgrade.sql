@@ -1,6 +1,6 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
--- TG-1042: DQ Score Weighting
+-- DQ Score Weighting
 
 ALTER TABLE projects
     ADD COLUMN use_dq_score_weights BOOLEAN DEFAULT FALSE;

@@ -65,9 +65,9 @@ const ProjectSettings = (props) => {
                         },
                     }),
                     Checkbox({
-                        label: 'Use weighted DQ scoring',
+                        label: 'Use weighted data quality scoring',
                         checked: form.use_dq_score_weights,
-                        help: 'When enabled, DQ scores weight tables and columns by their semantic importance. Dimension tables and key columns receive higher weights.',
+                        help: 'When enabled, data quality scores weight tables and columns by their semantic importance. Dimension tables and key columns receive higher weights.',
                         onChange: (checked) => { form.use_dq_score_weights.val = checked; },
                     }),
                 ),

@@ -84,6 +84,7 @@ class ProjectSettingsPage(Page):
                 source="user",
                 project_code=project_code,
             )
+            st.toast("Scores will be recalculated in the background.")
 
     def test_observability_connection(self, project_code: str, edited_project: dict) -> "ObservabilityConnectionStatus":
         try:
