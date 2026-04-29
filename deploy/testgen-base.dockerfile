@@ -1,4 +1,4 @@
-FROM python:3.12-alpine3.23
+FROM python:3.13-alpine3.23
 
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
@@ -47,12 +47,12 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip==26.0
 # We download the wheel for the correct arch, then extract it directly into site-packages
 # (wheels are zip files). gcompat provides the glibc shim needed at runtime.
 RUN ARCH=$(uname -m) && \
-    pip download --platform manylinux2014_${ARCH} --python-version 3.12 --only-binary :all: \
+    pip download --platform manylinux2014_${ARCH} --python-version 3.13 --only-binary :all: \
         --no-deps -d /tmp/wheels hdbcli==2.25.31 && \
-    python3 -m zipfile -e /tmp/wheels/hdbcli-*.whl /dk/lib/python3.12/site-packages/ && \
+    python3 -m zipfile -e /tmp/wheels/hdbcli-*.whl /dk/lib/python3.13/site-packages/ && \
     # Copy dist-info to system site-packages so pip sees hdbcli as installed during
     # dependency resolution (sqlalchemy-hana transitively depends on hdbcli~=2.10)
-    cp -r /dk/lib/python3.12/site-packages/hdbcli-*.dist-info \
+    cp -r /dk/lib/python3.13/site-packages/hdbcli-*.dist-info \
         "$(python3 -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"/ && \
     rm -rf /tmp/wheels
 
@@ -77,5 +77,9 @@ RUN apk del \
     openblas-dev \
     unixodbc-dev \
     apache-arrow-dev
+
+# Remove interactive ODBC tools — not needed at runtime, and iusql triggers
+# false-positive secret detection in security scanners (SECRET-3010)
+RUN rm -f /usr/bin/iusql /usr/bin/isql
 
 RUN rm -rf /root/.cache/pip /tmp/dk/install_linuxodbc.sh

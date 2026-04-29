@@ -16,6 +16,7 @@ from authlib.oauth2.rfc6749 import AuthorizationServer, JsonRequest, OAuth2Reque
 from authlib.oauth2.rfc6749.errors import InvalidGrantError
 from authlib.oauth2.rfc7009 import RevocationEndpoint
 from authlib.oauth2.rfc7636 import CodeChallenge
+from sqlalchemy import select
 
 from testgen import settings
 from testgen.api.oauth.models import OAuth2AuthorizationCode, OAuth2Client, OAuth2Token
@@ -43,8 +44,11 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
 
     def query_authorization_code(self, code, client):
         session = get_current_session()
-        item = session.query(OAuth2AuthorizationCode).filter_by(
-            code=code, client_id=client.client_id,
+        item = session.scalars(
+            select(OAuth2AuthorizationCode).where(
+                OAuth2AuthorizationCode.code == code,
+                OAuth2AuthorizationCode.client_id == client.client_id,
+            )
         ).first()
         if item and not item.is_expired():
             return item
@@ -56,7 +60,7 @@ class AuthorizationCodeGrant(grants.AuthorizationCodeGrant):
 
     def authenticate_user(self, authorization_code):
         session = get_current_session()
-        return session.query(User).filter(User.id == authorization_code.user_id).first()
+        return session.scalars(select(User).where(User.id == authorization_code.user_id)).first()
 
 
 class RefreshTokenGrant(grants.RefreshTokenGrant):
@@ -64,8 +68,8 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
 
     def authenticate_refresh_token(self, refresh_token):
         session = get_current_session()
-        item = session.query(OAuth2Token).filter_by(
-            refresh_token=refresh_token,
+        item = session.scalars(
+            select(OAuth2Token).where(OAuth2Token.refresh_token == refresh_token)
         ).first()
         if item and item.is_refresh_token_active():
             return item
@@ -73,7 +77,7 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
 
     def authenticate_user(self, credential):
         session = get_current_session()
-        return session.query(User).filter(User.id == credential.user_id).first()
+        return session.scalars(select(User).where(User.id == credential.user_id)).first()
 
     def revoke_old_credential(self, credential):
         # Rotation is off (INCLUDE_NEW_REFRESH_TOKEN=False): keep the refresh token
@@ -93,7 +97,7 @@ class ClientCredentialsGrant(grants.ClientCredentialsGrant):
         if not client.user_id:
             raise InvalidGrantError(description="Client has no registered owner.")
         session = get_current_session()
-        owner = session.query(User).filter(User.id == client.user_id).first()
+        owner = session.scalars(select(User).where(User.id == client.user_id)).first()
         if owner is None:
             raise InvalidGrantError(description="Client owner no longer exists.")
         self.request.user = owner
@@ -103,12 +107,12 @@ class TestGenRevocationEndpoint(RevocationEndpoint):
     def query_token(self, token_string, token_type_hint):
         session = get_current_session()
         if token_type_hint == "access_token":  # noqa: S105
-            return session.query(OAuth2Token).filter_by(access_token=token_string).first()
+            return session.scalars(select(OAuth2Token).where(OAuth2Token.access_token == token_string)).first()
         if token_type_hint == "refresh_token":  # noqa: S105
-            return session.query(OAuth2Token).filter_by(refresh_token=token_string).first()
+            return session.scalars(select(OAuth2Token).where(OAuth2Token.refresh_token == token_string)).first()
         return (
-            session.query(OAuth2Token).filter_by(access_token=token_string).first()
-            or session.query(OAuth2Token).filter_by(refresh_token=token_string).first()
+            session.scalars(select(OAuth2Token).where(OAuth2Token.access_token == token_string)).first()
+            or session.scalars(select(OAuth2Token).where(OAuth2Token.refresh_token == token_string)).first()
         )
 
     def revoke_token(self, token, request):
@@ -126,7 +130,7 @@ class TestGenAuthorizationServer(AuthorizationServer):
 
     def query_client(self, client_id):
         session = get_current_session()
-        return session.query(OAuth2Client).filter_by(client_id=client_id).first()
+        return session.scalars(select(OAuth2Client).where(OAuth2Client.client_id == client_id)).first()
 
     def save_token(self, token, request):
         user_id = request.user.id if request.user else None

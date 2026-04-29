@@ -1,5 +1,3 @@
-from urllib.parse import quote_plus
-
 from sqlalchemy.engine import URL
 
 from testgen import settings
@@ -17,7 +15,7 @@ class MssqlFlavorService(FlavorService):
         connection_url = URL.create(
             self.url_scheme,
             username=params.username,
-            password=quote_plus(params.password or ""),
+            password=params.password or "",
             host=params.host,
             port=int(params.port or 1443),
             database=params.dbname,
@@ -38,8 +36,14 @@ class MssqlFlavorService(FlavorService):
         return connection_url.render_as_string(hide_password=False)
 
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
+        # ANSI_DEFAULTS turns on ANSI_NULLS / ANSI_PADDING / QUOTED_IDENTIFIER (good)
+        # *and* ANSI_WARNINGS (bad here). pyodbc>=5.2 escalates SQL Server's 01003
+        # "Null value is eliminated by an aggregate" warning into a pyodbc.Error,
+        # which breaks profiling/CAT queries that aggregate over nullable columns.
+        # Target connections are read-only, so disabling ANSI_WARNINGS is safe.
         return [
             ("SET ANSI_DEFAULTS ON;", None),
+            ("SET ANSI_WARNINGS OFF;", None),
             ("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;", None),
         ]
 

@@ -41,16 +41,16 @@ def authorize_token(token_str: str, username: str, session):
 
     Shared implementation for API and MCP authorization.
     """
-    from sqlalchemy import func
+    from sqlalchemy import func, select
 
     from testgen.api.oauth.models import OAuth2Token
     from testgen.common.models.user import User
 
-    user = session.query(User).filter(func.lower(User.username) == func.lower(username)).first()
+    user = session.scalars(select(User).where(func.lower(User.username) == func.lower(username))).first()
     if user is None:
         raise ValueError("User not found")
 
-    token_record = session.query(OAuth2Token).filter_by(access_token=token_str).first()
+    token_record = session.scalars(select(OAuth2Token).where(OAuth2Token.access_token == token_str)).first()
     if token_record and token_record.access_token_revoked_at:
         raise ValueError("Token has been revoked")
 

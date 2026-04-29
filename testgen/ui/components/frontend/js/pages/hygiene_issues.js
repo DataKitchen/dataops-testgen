@@ -678,11 +678,13 @@ const HygieneIssues = (/** @type Properties */ props) => {
                     { class: 'tg-hi--detail flex-column fx-gap-4' },
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
-                        Button({
-                            type: 'stroked', icon: 'query_stats', label: 'Profiling', width: 'auto',
-                            style: 'background: var(--button-generic-background-color)',
-                            onclick: () => emit('ViewProfiling', { payload: sel.id }),
-                        }),
+                        sel.table_name !== '(multi-table)' 
+                            ? Button({
+                                type: 'stroked', icon: 'query_stats', label: 'Profiling', width: 'auto',
+                                style: 'background: var(--button-generic-background-color)',
+                                onclick: () => emit('ViewProfiling', { payload: sel.id }),
+                            })
+                            : '',
                         Button({
                             type: 'stroked', icon: 'visibility', label: 'Source Data', width: 'auto',
                             style: 'background: var(--button-generic-background-color)',

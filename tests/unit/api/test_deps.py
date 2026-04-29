@@ -30,6 +30,13 @@ def _make_credentials(token):
 # --- get_authorized_user ---
 
 
+def _set_scalars_results(mock_session, *results):
+    """Configure mock_session.scalars to return successive `.first()` values per call."""
+    mock_session.scalars.side_effect = [
+        MagicMock(first=MagicMock(return_value=r)) for r in results
+    ]
+
+
 @patch("testgen.common.auth.settings")
 @patch("testgen.api.deps.get_current_session")
 def test_get_authorized_user_returns_user_for_valid_token(mock_get_session, mock_settings):
@@ -39,9 +46,8 @@ def test_get_authorized_user_returns_user_for_valid_token(mock_get_session, mock
 
     mock_user = MagicMock()
     mock_user.username = "testuser"
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
-    # No OAuth2Token record — not revoked
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    # authorize_token: 1st scalars() = User lookup, 2nd = OAuth2Token revocation lookup
+    _set_scalars_results(mock_session, mock_user, None)
 
     token = _make_token("testuser")
     result = get_authorized_user(_make_credentials(token))
@@ -82,7 +88,8 @@ def test_get_authorized_user_raises_401_when_user_not_found(mock_get_session, mo
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
     mock_session = MagicMock()
     mock_get_session.return_value = mock_session
-    mock_session.query.return_value.filter.return_value.first.return_value = None
+    # User lookup returns None — revocation lookup never reached
+    _set_scalars_results(mock_session, None)
 
     token = _make_token("nonexistent_user")
     creds = _make_credentials(token)
@@ -104,12 +111,11 @@ def test_get_authorized_user_rejects_revoked_token(mock_get_session, mock_settin
 
     mock_user = MagicMock()
     mock_user.username = "testuser"
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
 
     # Token record exists and is revoked
     mock_token_record = MagicMock()
     mock_token_record.access_token_revoked_at = 1700000000
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token_record
+    _set_scalars_results(mock_session, mock_user, mock_token_record)
 
     token = _make_token("testuser")
     creds = _make_credentials(token)

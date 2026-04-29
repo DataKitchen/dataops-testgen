@@ -14,7 +14,8 @@ class BigqueryFlavorService(FlavorService):
         return f"{self.url_scheme}://"
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
-        return f"{self.url_scheme}://{params.service_account_key["project_id"] if params.service_account_key else ""}"
+        project_id = params.service_account_key["project_id"] if params.service_account_key else ""
+        return f"{self.url_scheme}://{project_id}"
 
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:  # noqa: ARG002
         return {}

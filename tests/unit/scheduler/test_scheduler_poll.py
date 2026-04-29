@@ -78,7 +78,7 @@ def test_dispatch_unknown_job_key(scheduler_instance, mock_session):
         source="ui",
         status="claimed",
     )
-    mock_session.execute.return_value.first.return_value = _returning_row(job_exec, status="error")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
 
     with patch.dict(JOB_DISPATCH, {}, clear=True):
         scheduler_instance._dispatch(job_exec)
@@ -111,7 +111,7 @@ def test_proc_wrapper_success_is_noop(scheduler_instance, job_exec, mock_session
 
 def test_proc_wrapper_failure(scheduler_instance, job_exec, mock_session):
     job_exec.status = "running"
-    mock_session.execute.return_value.first.return_value = _returning_row(job_exec, status="error")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
     proc_mock = Mock()
     proc_mock.pid = 555
     proc_mock.wait.return_value = 1
@@ -129,7 +129,7 @@ def test_proc_wrapper_failure(scheduler_instance, job_exec, mock_session):
 
 def test_proc_wrapper_exception(scheduler_instance, job_exec, mock_session):
     job_exec.status = "running"
-    mock_session.execute.return_value.first.return_value = _returning_row(job_exec, status="error")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
     proc_mock = Mock()
     proc_mock.pid = 555
     proc_mock.wait.side_effect = OSError("broken")
