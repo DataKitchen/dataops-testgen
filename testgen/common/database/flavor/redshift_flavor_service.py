@@ -17,6 +17,7 @@ class _RedshiftDialect(PGDialect_psycopg2):
     the check so connections succeed.
     """
     name = "redshift_pg"
+    supports_statement_cache = True
 
     def _set_backslash_escapes(self, _connection):
         self._backslash_escapes = False
