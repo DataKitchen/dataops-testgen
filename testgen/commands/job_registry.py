@@ -16,6 +16,7 @@ from collections.abc import Callable
 from sqlalchemy import select
 
 from testgen.commands.run_profiling import run_profiling
+from testgen.commands.run_recalculate_project_scores import run_recalculate_project_scores
 from testgen.commands.run_score_update import run_score_update
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.test_generation import run_test_generation
@@ -37,6 +38,7 @@ JOB_DISPATCH: dict[str, Callable] = {
     "run-monitors": run_test_execution,
     "run-test-generation": run_test_generation,
     "run-score-update": run_score_update,
+    "recalculate-project-scores": run_recalculate_project_scores,
 }
 
 

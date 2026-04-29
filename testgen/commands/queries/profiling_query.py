@@ -173,6 +173,7 @@ class ProfilingSQL:
             queries.append(self._get_query("pii_flag_update.sql"))
         if self.table_group.profile_flag_cdes:
             queries.append(self._get_query("cde_flagger_query.sql"))
+        queries.append(self._get_query("dq_score_weight_update.sql"))
         return queries
 
     def update_hygiene_issue_counts(self) -> tuple[str, dict]:

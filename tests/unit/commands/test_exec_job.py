@@ -141,6 +141,7 @@ def test_job_dispatch_has_all_job_keys():
     assert "run-monitors" in JOB_DISPATCH
     assert "run-test-generation" in JOB_DISPATCH
     assert "run-score-update" in JOB_DISPATCH
+    assert "recalculate-project-scores" in JOB_DISPATCH
 
 
 def test_exec_job_fires_final_callbacks_on_success(mock_session):

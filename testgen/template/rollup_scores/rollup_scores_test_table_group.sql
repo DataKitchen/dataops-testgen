@@ -33,10 +33,22 @@ WITH score_calc
   AS (SELECT dcc.column_id,
              SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
              -- Use AVG instead of MAX because column counts may differ by test_run
-             AVG(r.dq_record_ct) as row_ct,
+             AVG(r.dq_record_ct)
+             * MAX(CASE WHEN proj.use_dq_score_weights
+               THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+               ELSE 1.0 END) as row_ct,
              -- bad data pct * record count = affected_data_points
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct)
+             * MAX(CASE WHEN proj.use_dq_score_weights
+               THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+               ELSE 1.0 END) as affected_data_points
         FROM data_column_chars dcc
+      INNER JOIN table_groups tg
+         ON (dcc.table_groups_id = tg.id)
+      INNER JOIN projects proj
+         ON (tg.project_code = proj.project_code)
+      LEFT JOIN data_table_chars dtc
+         ON (dcc.table_id = dtc.table_id)
       LEFT JOIN (test_results r
                   INNER JOIN test_suites ts
                      ON (r.test_suite_id = ts.id
@@ -64,10 +76,20 @@ UPDATE data_table_chars
 WITH score_detail
   AS (SELECT dtc.table_id, r.column_names,
              -- Use AVG instead of MAX because column counts may differ by test_run
-             AVG(r.dq_record_ct) as row_ct,
+             AVG(r.dq_record_ct)
+             * MAX(CASE WHEN proj.use_dq_score_weights
+               THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+               ELSE 1.0 END) as row_ct,
              -- bad data pct * record count = affected_data_points
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct) as affected_data_points
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * AVG(r.dq_record_ct)
+             * MAX(CASE WHEN proj.use_dq_score_weights
+               THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+               ELSE 1.0 END) as affected_data_points
         FROM data_table_chars dtc
+      INNER JOIN table_groups tg
+         ON (dtc.table_groups_id = tg.id)
+      INNER JOIN projects proj
+         ON (tg.project_code = proj.project_code)
       LEFT JOIN (test_results r
                   INNER JOIN test_suites ts
                      ON (r.test_suite_id = ts.id
@@ -75,6 +97,11 @@ WITH score_detail
          ON (dtc.table_groups_id = ts.table_groups_id
         AND  dtc.schema_name = r.schema_name
         AND  dtc.table_name = r.table_name)
+      LEFT JOIN data_column_chars dcc
+         ON (dtc.table_groups_id = dcc.table_groups_id
+        AND  dtc.schema_name = dcc.schema_name
+        AND  dtc.table_name = dcc.table_name
+        AND  r.column_names = dcc.column_name)
        WHERE dtc.table_groups_id = :TABLE_GROUPS_ID
          AND COALESCE(ts.dq_score_exclude, FALSE) = FALSE
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'

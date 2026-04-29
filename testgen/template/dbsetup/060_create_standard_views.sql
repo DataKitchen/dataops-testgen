@@ -127,6 +127,11 @@ SELECT
        pr.profiling_starttime as profiling_run_date,
        dcc.valid_profile_issue_ct as issue_ct,
        dtc.last_profile_record_ct as record_ct,
+       (dtc.last_profile_record_ct
+        * CASE WHEN proj.use_dq_score_weights
+          THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+          ELSE 1.0 END
+       ) AS weighted_record_ct,
        dcc.dq_score_profiling AS good_data_pct
   FROM data_column_chars dcc
 INNER JOIN table_groups tg
@@ -135,6 +140,8 @@ INNER JOIN data_table_chars dtc
    ON (dcc.table_id = dtc.table_id)
 INNER JOIN profiling_runs pr
    ON (tg.last_complete_profile_run_id = pr.id)
+INNER JOIN projects proj
+   ON (tg.project_code = proj.project_code)
 WHERE dcc.drop_date IS NULL;
 
 
@@ -161,6 +168,11 @@ SELECT tg.project_code,
        pr.column_name,
        pr.run_date,
        MAX(pr.record_ct) as record_ct,
+       MAX(pr.record_ct
+           * CASE WHEN proj.use_dq_score_weights
+             THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+             ELSE 1.0 END
+       ) AS weighted_record_ct,
        COUNT(p.anomaly_id) as issue_ct,
        SUM_LN(COALESCE(p.dq_prevalence, 0.0)) as good_data_pct
   FROM profile_results pr
@@ -172,6 +184,8 @@ INNER JOIN data_column_chars dcc
   AND  pr.column_name = dcc.column_name)
 INNER JOIN data_table_chars dtc
    ON (dcc.table_id = dtc.table_id)
+INNER JOIN projects proj
+   ON (tg.project_code = proj.project_code)
 LEFT JOIN (profile_anomaly_results p
    INNER JOIN profile_anomaly_types t
       ON p.anomaly_id = t.id)
@@ -201,7 +215,7 @@ GROUP BY pr.profile_run_id, pr.table_groups_id,
 
 DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_column;
 
-CREATE OR REPLACE VIEW v_dq_test_scoring_latest_by_column
+CREATE VIEW v_dq_test_scoring_latest_by_column
 AS
 SELECT
        tg.project_code,
@@ -224,12 +238,19 @@ SELECT
        SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
        SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
+       MAX(r.dq_record_ct
+           * CASE WHEN proj.use_dq_score_weights
+             THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+             ELSE 1.0 END
+       ) AS weighted_dq_record_ct,
        SUM_LN(COALESCE(r.dq_prevalence, 0.0)) as good_data_pct
   FROM test_results r
 INNER JOIN test_suites s
    ON (r.test_run_id = s.last_complete_test_run_id)
 INNER JOIN table_groups tg
    ON r.table_groups_id = tg.id
+INNER JOIN projects proj
+   ON (tg.project_code = proj.project_code)
 LEFT JOIN data_table_chars dtc
    ON (r.table_groups_id = dtc.table_groups_id
   AND  r.table_name = dtc.table_name)
@@ -256,7 +277,7 @@ GROUP BY r.table_groups_id, r.table_name, r.column_names,
 
 DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_dimension;
 
-CREATE OR REPLACE VIEW v_dq_test_scoring_latest_by_dimension
+CREATE VIEW v_dq_test_scoring_latest_by_dimension
 AS
 WITH dimension_rollup
    AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
@@ -298,10 +319,17 @@ SELECT
        SUM(r.passed_ct) as passed_ct,
        SUM(r.issue_ct) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
+       MAX(r.dq_record_ct
+           * CASE WHEN proj.use_dq_score_weights
+             THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+             ELSE 1.0 END
+       ) AS weighted_dq_record_ct,
        SUM_LN(COALESCE(1.0-r.good_data_pct, 0)) as good_data_pct
   FROM dimension_rollup r
 INNER JOIN table_groups tg
    ON r.table_groups_id = tg.id
+INNER JOIN projects proj
+   ON (tg.project_code = proj.project_code)
 LEFT JOIN data_table_chars dtc
    ON (r.table_groups_id = dtc.table_groups_id
   AND  r.table_name = dtc.table_name)
@@ -326,7 +354,9 @@ GROUP BY r.table_groups_id, r.test_run_id, r.test_suite_id,
 -- ==============================================================================
 -- |   Scoring History Views
 -- ==============================================================================
-CREATE OR REPLACE VIEW v_dq_profile_scoring_history_by_column
+DROP VIEW IF EXISTS v_dq_profile_scoring_history_by_column;
+
+CREATE VIEW v_dq_profile_scoring_history_by_column
 AS
 SELECT tg.project_code,
        sr.definition_id,
@@ -348,6 +378,11 @@ SELECT tg.project_code,
        pr.column_name,
        pr.run_date,
        MAX(pr.record_ct) as record_ct,
+       MAX(pr.record_ct
+           * CASE WHEN proj.use_dq_score_weights
+             THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+             ELSE 1.0 END
+       ) AS weighted_record_ct,
        COUNT(p.anomaly_id) as issue_ct,
        SUM_LN(COALESCE(p.dq_prevalence, 0.0)) as good_data_pct
   FROM profile_results pr
@@ -361,6 +396,8 @@ INNER JOIN data_table_chars dtc
    ON (dcc.table_id = dtc.table_id)
 INNER JOIN table_groups tg
    ON (pr.table_groups_id = tg.id)
+INNER JOIN projects proj
+   ON (tg.project_code = proj.project_code)
 LEFT JOIN (profile_anomaly_results p
    INNER JOIN profile_anomaly_types t
       ON p.anomaly_id = t.id)
@@ -385,7 +422,9 @@ GROUP BY pr.profile_run_id,
          dcc.functional_data_type, pr.run_date,
          tg.project_code ;
 
-CREATE OR REPLACE VIEW v_dq_test_scoring_history_by_column
+DROP VIEW IF EXISTS v_dq_test_scoring_history_by_column;
+
+CREATE VIEW v_dq_test_scoring_history_by_column
 AS
 SELECT
        tg.project_code,
@@ -410,6 +449,11 @@ SELECT
        SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
        SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
        MAX(r.dq_record_ct) as dq_record_ct,
+       MAX(r.dq_record_ct
+           * CASE WHEN proj.use_dq_score_weights
+             THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+             ELSE 1.0 END
+       ) AS weighted_dq_record_ct,
        SUM_LN(COALESCE(r.dq_prevalence, 0.0)) as good_data_pct
   FROM test_results r
 INNER JOIN test_suites s
@@ -418,6 +462,8 @@ INNER JOIN score_history_latest_runs sr
    ON (r.test_run_id = sr.last_test_run_id)
 INNER JOIN table_groups tg
    ON r.table_groups_id = tg.id
+INNER JOIN projects proj
+   ON (tg.project_code = proj.project_code)
 LEFT JOIN data_table_chars dtc
    ON (r.table_groups_id = dtc.table_groups_id
   AND  r.table_name = dtc.table_name)

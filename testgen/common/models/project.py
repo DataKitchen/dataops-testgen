@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, asc, func, select, text
+from sqlalchemy import Boolean, Column, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
@@ -39,6 +39,7 @@ class Project(Entity):
     project_name: str = Column(String)
     observability_api_url: str = Column(NullIfEmptyString)
     observability_api_key: str = Column(NullIfEmptyString)
+    use_dq_score_weights: bool = Column(Boolean, default=True)
 
     _get_by = "project_code"
     _default_order_by = (asc(func.lower(project_name)),)

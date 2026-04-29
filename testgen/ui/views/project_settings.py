@@ -6,6 +6,7 @@ import streamlit as st
 
 from testgen.commands.run_observability_exporter import test_observability_exporter
 from testgen.common.models import with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -50,6 +51,7 @@ class ProjectSettingsPage(Page):
             key="project_settings",
             data={
                 "name": self.project.project_name,
+                "use_dq_score_weights": self.project.use_dq_score_weights,
                 "observability_api_url": self.project.observability_api_url,
                 "observability_api_key": self.project.observability_api_key,
                 "observability_test_results": get_test_results(),
@@ -67,10 +69,21 @@ class ProjectSettingsPage(Page):
         if new_project_name.lower() in existing_names:
             raise ValueError(f"Another project named {new_project_name} exists")
 
+        weights_changed = self.project.use_dq_score_weights != edited_project.get("use_dq_score_weights", True)
+
         self.project.project_name = new_project_name
+        self.project.use_dq_score_weights = edited_project.get("use_dq_score_weights", True)
         self.project.observability_api_url = edited_project.get("observability_api_url")
         self.project.observability_api_key = edited_project.get("observability_api_key")
         self.project.save()
+
+        if weights_changed:
+            JobExecution.submit(
+                job_key="recalculate-project-scores",
+                kwargs={"project_code": project_code},
+                source="user",
+                project_code=project_code,
+            )
 
     def test_observability_connection(self, project_code: str, edited_project: dict) -> "ObservabilityConnectionStatus":
         try:
