@@ -74,12 +74,19 @@ def test_verify_password_wrong():
 # --- authorize_token ---
 
 
+def _set_scalars_results(mock_session, *results):
+    """Configure mock_session.scalars to return successive `.first()` values per call."""
+    mock_session.scalars.side_effect = [
+        MagicMock(first=MagicMock(return_value=r)) for r in results
+    ]
+
+
 def test_authorize_token_returns_user():
     mock_session = MagicMock()
     mock_user = MagicMock()
     mock_user.username = "testuser"
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    # 1st scalars() = User lookup, 2nd = OAuth2Token revocation lookup
+    _set_scalars_results(mock_session, mock_user, None)
 
     result = authorize_token("some_token", "testuser", mock_session)
     assert result is mock_user
@@ -88,11 +95,9 @@ def test_authorize_token_returns_user():
 def test_authorize_token_rejects_revoked():
     mock_session = MagicMock()
     mock_user = MagicMock()
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
-
     mock_token_record = MagicMock()
     mock_token_record.access_token_revoked_at = 1700000000
-    mock_session.query.return_value.filter_by.return_value.first.return_value = mock_token_record
+    _set_scalars_results(mock_session, mock_user, mock_token_record)
 
     with pytest.raises(ValueError, match="Token has been revoked"):
         authorize_token("revoked_token", "testuser", mock_session)
@@ -102,8 +107,7 @@ def test_authorize_token_allows_unknown_token():
     """When no OAuth2Token record exists (e.g. session cookie), authorization passes."""
     mock_session = MagicMock()
     mock_user = MagicMock()
-    mock_session.query.return_value.filter.return_value.first.return_value = mock_user
-    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    _set_scalars_results(mock_session, mock_user, None)
 
     result = authorize_token("session_cookie_jwt", "testuser", mock_session)
     assert result is mock_user
@@ -111,7 +115,8 @@ def test_authorize_token_allows_unknown_token():
 
 def test_authorize_token_raises_when_user_not_found():
     mock_session = MagicMock()
-    mock_session.query.return_value.filter.return_value.first.return_value = None
+    # User lookup returns None — token check is never reached
+    _set_scalars_results(mock_session, None)
 
     with pytest.raises(ValueError, match="User not found"):
         authorize_token("some_token", "ghost", mock_session)

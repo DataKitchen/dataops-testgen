@@ -246,6 +246,7 @@ class TestSuitesPage(Page):
                         "selected": str(table_group_id) == str(table_group.id),
                     } for table_group in table_groups
                 ],
+                "test_suite_name": test_suite_name,
                 "permissions": {
                     "can_edit": user_can_edit,
                 },

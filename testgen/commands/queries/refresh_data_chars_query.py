@@ -113,7 +113,7 @@ class RefreshDataCharsSQL:
         schema = self.table_group.table_group_schema
         quote = self.flavor_service.quote_character
         count_queries = [
-            f"SELECT '{table}', COUNT(*) FROM {quote}{schema}{quote}.{quote}{table}{quote}"
+            f"SELECT '{table}' AS table_name, COUNT(*) AS row_count FROM {quote}{schema}{quote}.{quote}{table}{quote}"
             for table in table_names
         ]
         chunked_queries = chunk_queries(count_queries, " UNION ALL ", self.connection.max_query_chars)

@@ -119,11 +119,11 @@ def test_send_profiling_run_notification(
     for hi, _ in hi_list:
         hi_count_dict[hi.priority].total += 1
     hi_count_mock.return_value = hi_count_dict
-    db_session_mock.execute().one.return_value = (
-        ("project_name", "proj-name"),
-        ("table_groups_name", "t-group-name"),
-        ("table_group_schema", "t-group-schema"),
-    )
+    db_session_mock.execute().mappings().one.return_value = {
+        "project_name": "proj-name",
+        "table_groups_name": "t-group-name",
+        "table_group_schema": "t-group-schema",
+    }
 
     send_profiling_run_notifications(profiling_run)
 

@@ -862,11 +862,12 @@ const TestResults = (/** @type Properties */ props) => {
                                 style: 'background: var(--button-generic-background-color);',
                                 onclick: () => emit('NotesClicked', { payload: { id: row.test_definition_id, table_name: row.table_name, column_name: row.column_names, test_name_short: row.test_name_short } }),
                             }) : '',
-                            Button({
+                            row.column_names ? Button({
                                 type: 'stroked', icon: 'query_stats', label: 'Profiling', width: 'auto',
                                 style: 'background: var(--button-generic-background-color);',
                                 onclick: () => emit('ProfilingClicked', { payload: row.test_result_id }),
-                            }),
+                            })
+                            : '',
                             Button({
                                 type: 'stroked', icon: 'visibility', label: 'Source Data', width: 'auto',
                                 style: 'background: var(--button-generic-background-color);',

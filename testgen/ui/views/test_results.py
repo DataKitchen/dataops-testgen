@@ -379,7 +379,8 @@ class TestResultsPage(Page):
                 lookup["column_names"], lookup["table_name"], lookup["table_groups_id"],
             )
             if column:
-                mask_profiling_pii(column, get_pii_columns(lookup["table_groups_id"], table_name=lookup["table_name"]))
+                if not session.auth.user_has_permission("view_pii"):
+                    mask_profiling_pii(column, get_pii_columns(lookup["table_groups_id"], table_name=lookup["table_name"]))
                 st.session_state[PROFILING_KEY] = make_json_safe(column)
 
         def on_profiling_closed(*_) -> None:

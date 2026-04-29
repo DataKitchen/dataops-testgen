@@ -16,6 +16,7 @@ from authlib.oauth2.rfc6749 import OAuth2Request
 from authlib.oauth2.rfc6749.requests import BasicOAuth2Payload
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from sqlalchemy import select
 
 from testgen import settings
 from testgen.api.deps import db_session
@@ -87,7 +88,7 @@ def _get_existing_user(request: Request) -> User | None:
 def _get_client_name(client_id: str) -> str:
     """Look up the OAuth client's display name from its metadata."""
     session = get_current_session()
-    client = session.query(OAuth2Client).filter_by(client_id=client_id).first()
+    client = session.scalars(select(OAuth2Client).where(OAuth2Client.client_id == client_id)).first()
     if client:
         return client.client_metadata.get("client_name", "")
     return ""

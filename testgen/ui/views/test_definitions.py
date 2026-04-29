@@ -503,7 +503,8 @@ class TestDefinitionsPage(Page):
                 return
             column = profiling_queries.get_column_by_name(column_name, table_name, table_groups_id)
             if column:
-                mask_profiling_pii(column, get_pii_columns(table_groups_id, table_name=table_name))
+                if not session.auth.user_has_permission("view_pii"):
+                    mask_profiling_pii(column, get_pii_columns(table_groups_id, table_name=table_name))
                 st.session_state[TD_PROFILING_KEY] = make_json_safe(column)
 
         def on_profiling_closed(*_) -> None:
