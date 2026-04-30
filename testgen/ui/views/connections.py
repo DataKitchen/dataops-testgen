@@ -15,8 +15,8 @@ except ImportError:
     PyODBCError = None
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
-from testgen import settings
 import testgen.ui.services.database_service as db
+from testgen import settings
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models import get_current_session, with_database_session
