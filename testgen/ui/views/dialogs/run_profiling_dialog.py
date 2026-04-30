@@ -40,9 +40,10 @@ def run_profiling_dialog_widget(
             message = f"Profiling run could not be started: {error!s}."
             show_link = False
         st.session_state[RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
-        if success and not show_link:
+        if success:
             get_profiling_run_summaries.clear()
-            on_close()
+            if not show_link:
+                on_close()
 
     def on_go_to_profiling_runs_clicked(payload: dict) -> None:
         st.session_state.pop(RESULT_KEY, None)
