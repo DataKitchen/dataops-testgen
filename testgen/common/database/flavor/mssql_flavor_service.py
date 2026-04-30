@@ -35,7 +35,13 @@ class MssqlFlavorService(FlavorService):
 
         return connection_url.render_as_string(hide_password=False)
 
-    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
+    def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:
+        # Synapse dedicated SQL pool rejects these SET commands: ANSI_DEFAULTS isn't
+        # implemented, ANSI_WARNINGS can't be turned off, and only READ UNCOMMITTED
+        # isolation is allowed (and is the default). Each one would log a warning.
+        if params.sql_flavor_code == "synapse_mssql":
+            return []
+
         # ANSI_DEFAULTS turns on ANSI_NULLS / ANSI_PADDING / QUOTED_IDENTIFIER (good)
         # *and* ANSI_WARNINGS (bad here). pyodbc>=5.2 escalates SQL Server's 01003
         # "Null value is eliminated by an aggregate" warning into a pyodbc.Error,

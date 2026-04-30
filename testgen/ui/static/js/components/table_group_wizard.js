@@ -49,7 +49,7 @@ import { WizardProgressIndicator } from './wizard_progress_indicator.js';
 
 const { div, span, strong } = van.tags;
 const lastStepCustomButtonText = {
-  monitorSuite: (_, states) => states?.runProfiling?.val === true ? 'Save & Run' : 'Save',
+  monitorSuite: (_, states) => states?.runProfiling?.val === true ? 'Finish Setup' : 'Add',
 };
 const defaultSteps = [
   'tableGroup',
@@ -217,7 +217,7 @@ const TableGroupWizard = (props) => {
       return TableGroupTest(
         tableGroupPreview,
         {
-          onVerifyAcess: () => {
+          onVerifyAccess: () => {
             emit('PreviewTableGroupClicked', {
               payload: {
                 table_group: stepsState.tableGroup.rawVal,

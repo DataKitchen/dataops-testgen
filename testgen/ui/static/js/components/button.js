@@ -20,6 +20,7 @@
 import { getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
 import { withTooltip } from './tooltip.js';
+import { Spinner } from './spinner.js';
 
 const { button, i, span } = van.tags;
 const BUTTON_TYPE = {
@@ -56,7 +57,7 @@ const Button = (/** @type Properties */ props) => {
                 style: () => `font-size: ${getValue(props.iconSize) ?? DEFAULT_ICON_SIZE}px;`
             }, props.icon) : undefined,
             !isIconOnly ? span(props.label) : undefined,
-            () => getValue(props.loading) ? span({ class: 'tg-button-spinner' }) : '',
+            () => getValue(props.loading) ? Spinner({ classes: 'ml-2' }) : '',
         ), { text: props.tooltip, position: props.tooltipPosition },
     );
 };
@@ -198,22 +199,6 @@ button.tg-button.tg-warn-button.tg-stroked-button {
     background: var(--button-warn-stroked-background);
 }
 /* ... */
-
-/* Loading spinner */
-.tg-button-spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid transparent;
-    border-top-color: currentColor;
-    border-radius: 50%;
-    animation: tg-spin 0.6s linear infinite;
-    margin-left: 8px;
-    flex-shrink: 0;
-}
-
-@keyframes tg-spin {
-    to { transform: rotate(360deg); }
-}
 `);
 
 export { Button };

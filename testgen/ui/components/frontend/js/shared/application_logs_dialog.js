@@ -85,7 +85,7 @@ const ApplicationLogsDialog = (props) => {
                         Input({
                             label: 'Filter by Text',
                             value: filterText,
-                            oninput: (e) => { filterText.val = e.target.value; },
+                            onChange: (value) => { filterText.val = value; },
                         }),
                     ),
                     div(
