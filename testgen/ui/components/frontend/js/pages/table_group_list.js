@@ -126,18 +126,41 @@ const TableGroupList = (props) => {
         }
     });
 
+    // Toolbar must persist across reruns: filter inputs debounce on `oninput`,
+    // and recreating the input element while a debounce timer is pending drops
+    // the user's typed value (the timer commits to a discarded derive). We
+    // mount it once into a stable container and tear down only when the page
+    // transitions out of the populated state.
+    const toolbarContainer = div({ style: 'display: contents' });
+    let toolbarMounted = false;
+    van.derive(() => {
+        const connections = getValue(props.connections) ?? [];
+        const projectSummary = getValue(props.project_summary);
+        const shouldShow = connections.length > 0 && (projectSummary?.table_group_count ?? 0) > 0;
+        if (shouldShow && !toolbarMounted) {
+            van.add(toolbarContainer, Toolbar(
+                getValue(props.permissions) ?? {can_edit: false},
+                props.connections,
+                getValue(props.connection_id),
+                getValue(props.table_group_name),
+                emit,
+            ));
+            toolbarMounted = true;
+        } else if (!shouldShow && toolbarMounted) {
+            toolbarContainer.innerHTML = '';
+            toolbarMounted = false;
+        }
+    });
+
     return div(
         { id: wrapperId, 'data-testid': 'table-group-list', class: 'tg-tablegroups' },
         () => {
             const permissions = getValue(props.permissions) ?? {can_edit: false};
             const connections = getValue(props.connections) ?? [];
-            const connectionId = getValue(props.connection_id);
-            const tableGroupNameFilter = getValue(props.table_group_name);
-            const tableGroups = getValue(props.table_groups) ?? [];
             const projectSummary = getValue(props.project_summary);
 
             if (connections.length <= 0) {
-                return EmptyState({ emit, 
+                return EmptyState({ emit,
                     icon: 'table_view',
                     label: 'Your project is empty',
                     message: EMPTY_STATE_MESSAGE.connection,
@@ -150,13 +173,41 @@ const TableGroupList = (props) => {
                 });
             }
 
-            return projectSummary.table_group_count > 0
-            ? div(
-                Toolbar(permissions, connections, connectionId, tableGroupNameFilter, emit),
-                tableGroups.length
-                    ? div(
-                        { class: 'flex-column fx-gap-4' },
-                        ...tableGroups.map((tableGroup) => Card({
+            if ((projectSummary?.table_group_count ?? 0) <= 0) {
+                return EmptyState({ emit,
+                    icon: 'table_view',
+                    label: 'No table groups yet',
+                    class: 'mt-4',
+                    message: EMPTY_STATE_MESSAGE.tableGroup,
+                    button: Button({
+                        type: 'stroked',
+                        icon: 'add',
+                        label: 'Add Table Group',
+                        color: 'primary',
+                        style: 'width: unset;',
+                        disabled: !permissions.can_edit,
+                        onclick: () => emit('AddTableGroupClicked', {}),
+                    }),
+                });
+            }
+
+            return '';
+        },
+        toolbarContainer,
+        () => {
+            const connections = getValue(props.connections) ?? [];
+            const projectSummary = getValue(props.project_summary);
+            if (connections.length <= 0 || (projectSummary?.table_group_count ?? 0) <= 0) {
+                return '';
+            }
+
+            const permissions = getValue(props.permissions) ?? {can_edit: false};
+            const tableGroups = getValue(props.table_groups) ?? [];
+
+            return tableGroups.length
+                ? div(
+                    { class: 'flex-column fx-gap-4' },
+                    ...tableGroups.map((tableGroup) => Card({
                         testId: 'table-group-card',
                         class: '',
                         title: div(
@@ -268,27 +319,11 @@ const TableGroupList = (props) => {
                             )
                             : undefined,
                     })),
-                    )
-                    : div(
-                        { class: 'mt-7 text-secondary', style: 'text-align: center;' },
-                        'No table groups found matching filters',
-                    ),
                 )
-            : EmptyState({ emit,
-                icon: 'table_view',
-                label: 'No table groups yet',
-                class: 'mt-4',
-                message: EMPTY_STATE_MESSAGE.tableGroup,
-                button: Button({
-                    type: 'stroked',
-                    icon: 'add',
-                    label: 'Add Table Group',
-                    color: 'primary',
-                    style: 'width: unset;',
-                    disabled: !permissions.can_edit,
-                    onclick: () => emit('AddTableGroupClicked', {}),
-                }),
-            });
+                : div(
+                    { class: 'mt-7 text-secondary', style: 'text-align: center;' },
+                    'No table groups found matching filters',
+                );
         },
         () => {
             const info = deleteDialogInfo.val;
@@ -391,9 +426,19 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
     const connection = van.state(selectedConnection || null);
     const tableGroupFilter = van.state(tableGroupNameFilter || null);
 
+    // Track last value sent to Streamlit so the comparison stays correct across
+    // reruns (Toolbar is now mounted once; captured initial values would go stale).
+    let lastSent = {
+        connection_id: selectedConnection || null,
+        table_group_name: tableGroupNameFilter || null,
+    };
     van.derive(() => {
-        if (connection.val !== selectedConnection || tableGroupFilter.val !== tableGroupNameFilter) {
-            emit('TableGroupsFiltered', { payload: { connection_id: connection.val || null, table_group_name: tableGroupFilter.val || null } });
+        const newConnection = connection.val || null;
+        const newFilter = tableGroupFilter.val || null;
+        if (newConnection !== lastSent.connection_id || newFilter !== lastSent.table_group_name) {
+            const payload = { connection_id: newConnection, table_group_name: newFilter };
+            emit('TableGroupsFiltered', { payload });
+            lastSent = payload;
         }
     });
 
@@ -401,16 +446,16 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
         { class: 'flex-row fx-align-flex-end fx-justify-space-between fx-gap-4 fx-flex-wrap mb-4' },
         div(
             {class: 'flex-row fx-align-flex-end fx-gap-3'},
-            (getValue(connections) ?? [])?.length > 1
+            () => (getValue(connections) ?? [])?.length > 1
                 ? Select({
                     testId: 'connection-select',
                     label: 'Connection',
                     allowNull: true,
                     value: connection,
-                    options: getValue(connections)?.map((connection) => ({
-                        label: connection.connection_name,
-                        value: String(connection.connection_id),
-                    })) ?? [],
+                    options: (getValue(connections) ?? []).map((conn) => ({
+                        label: conn.connection_name,
+                        value: String(conn.connection_id),
+                    })),
                     onChange: (value) => connection.val = value,
                 })
                 : '',

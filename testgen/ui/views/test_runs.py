@@ -297,6 +297,7 @@ def on_cancel_run(payload: dict) -> None:
         # Stopgap: also update the run status so the UI reflects cancellation immediately.
         if test_run_id := payload.get("test_run_id"):
             TestRun.cancel_run(test_run_id)
+        get_test_run_summaries.clear()
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
         fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
