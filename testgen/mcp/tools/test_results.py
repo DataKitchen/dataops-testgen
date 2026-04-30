@@ -140,9 +140,13 @@ def get_failure_summary(
 ) -> str:
     """Summarize test failures (Failed and Warning) grouped by test type, table, or column.
 
-    Supply a ``job_execution_id`` for a single-run summary, or combine ``project_code``,
-    ``test_suite_id``, and ``since`` to aggregate across multiple runs. At least one
-    scope parameter is required.
+    Supply a ``job_execution_id`` for a single-run summary. Alternatively, provide
+    ``test_suite_id`` or ``project_code`` to aggregate across multiple runs. Use
+    ``since`` to narrow the results by recency (required when ``test_suite_id`` is
+    not provided).
+
+    Table- and column-grouped summaries require a single-suite scope
+    (``job_execution_id`` or ``test_suite_id``).
 
     Args:
         project_code: Scope to a project the caller can view. Ignored if ``job_execution_id`` is set.
@@ -154,9 +158,15 @@ def get_failure_summary(
     """
     perms = get_project_permissions()
 
-    if not any((job_execution_id, project_code, test_suite_id, since)):
+    if not any((job_execution_id, test_suite_id, since)):
         raise MCPUserError(
-            "Provide at least one of 'job_execution_id', 'project_code', 'test_suite_id', or 'since' to scope the summary."
+            "Provide 'job_execution_id' for a single run, or 'test_suite_id' or 'project_code' "
+            "to aggregate across runs. 'since' is required when 'test_suite_id' is not provided."
+        )
+    if group_by in ("table", "column") and not (job_execution_id or test_suite_id):
+        raise MCPUserError(
+            f"'{group_by}' grouping requires a single-suite scope. "
+            "Provide 'job_execution_id' or 'test_suite_id'."
         )
 
     model_group_map = {"table": "table_name", "column": "column_names"}
