@@ -1270,7 +1270,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                 Button({
                     type: 'flat',
                     color: 'primary',
-                    label: 'Save',
+                    label: mode === 'edit' ? 'Save' : 'Add',
                     width: 'auto',
                     onclick: onSave,
                 }),
