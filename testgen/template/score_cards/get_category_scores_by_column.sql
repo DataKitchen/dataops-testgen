@@ -4,7 +4,7 @@ SELECT
 FROM (
     SELECT
         {category} AS category,
-        SUM(COALESCE(good_data_pct * record_ct, 0)) / NULLIF(SUM(COALESCE(record_ct, 0)), 0) AS score
+        SUM(COALESCE(good_data_pct * weighted_record_ct, 0)) / NULLIF(SUM(COALESCE(weighted_record_ct, 0)), 0) AS score
     FROM v_dq_profile_scoring_latest_by_column
     WHERE NULLIF({category}, '') IS NOT NULL AND {filters}
     GROUP BY {category}
@@ -12,7 +12,7 @@ FROM (
 FULL OUTER JOIN (
     SELECT
         {category} AS category,
-        SUM(COALESCE(good_data_pct * dq_record_ct, 0)) / NULLIF(SUM(COALESCE(dq_record_ct, 0)), 0) AS score
+        SUM(COALESCE(good_data_pct * weighted_dq_record_ct, 0)) / NULLIF(SUM(COALESCE(weighted_dq_record_ct, 0)), 0) AS score
     FROM v_dq_test_scoring_latest_by_column
     WHERE NULLIF({category}, '') IS NOT NULL AND {filters}
     GROUP BY {category}

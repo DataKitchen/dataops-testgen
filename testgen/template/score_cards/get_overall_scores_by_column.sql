@@ -6,9 +6,9 @@ SELECT
 FROM (
     SELECT
         project_code,
-        SUM(good_data_pct * record_ct) / NULLIF(SUM(record_ct), 0) AS score,
-        SUM(CASE critical_data_element WHEN true THEN (good_data_pct * record_ct) ELSE 0 END)
-            / NULLIF(SUM(CASE critical_data_element WHEN true THEN record_ct ELSE 0 END), 0) AS cde_score
+        SUM(good_data_pct * weighted_record_ct) / NULLIF(SUM(weighted_record_ct), 0) AS score,
+        SUM(CASE critical_data_element WHEN true THEN (good_data_pct * weighted_record_ct) ELSE 0 END)
+            / NULLIF(SUM(CASE critical_data_element WHEN true THEN weighted_record_ct ELSE 0 END), 0) AS cde_score
     FROM v_dq_profile_scoring_latest_by_column
     WHERE {filters}
     GROUP BY project_code
@@ -16,9 +16,9 @@ FROM (
 FULL OUTER JOIN (
     SELECT
         project_code,
-        SUM(good_data_pct * dq_record_ct) / NULLIF(SUM(dq_record_ct), 0) AS score,
-            SUM(CASE critical_data_element WHEN true THEN (good_data_pct * dq_record_ct) ELSE 0 END)
-                / NULLIF(SUM(CASE critical_data_element WHEN true THEN dq_record_ct ELSE 0 END), 0) AS cde_score
+        SUM(good_data_pct * weighted_dq_record_ct) / NULLIF(SUM(weighted_dq_record_ct), 0) AS score,
+            SUM(CASE critical_data_element WHEN true THEN (good_data_pct * weighted_dq_record_ct) ELSE 0 END)
+                / NULLIF(SUM(CASE critical_data_element WHEN true THEN weighted_dq_record_ct ELSE 0 END), 0) AS cde_score
     FROM v_dq_test_scoring_latest_by_column
     WHERE {filters}
     GROUP BY project_code

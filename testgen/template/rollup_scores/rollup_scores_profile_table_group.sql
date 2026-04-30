@@ -32,9 +32,18 @@ UPDATE data_column_chars
 WITH score_detail
   AS (SELECT dcc.column_id,
              COUNT(p.id) as valid_issue_ct,
-             MAX(pr.record_ct) as row_ct,
-             COALESCE( (1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0))) * MAX(pr.record_ct), 0) as affected_data_points
+             MAX(pr.record_ct
+                 * CASE WHEN proj.use_dq_score_weights
+                   THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+                   ELSE 1.0 END) as row_ct,
+             COALESCE( (1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0)))
+                       * MAX(pr.record_ct
+                             * CASE WHEN proj.use_dq_score_weights
+                               THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+                               ELSE 1.0 END), 0) as affected_data_points
         FROM table_groups tg
+      INNER JOIN projects proj
+         ON (tg.project_code = proj.project_code)
       INNER JOIN profiling_runs r
          ON (tg.last_complete_profile_run_id = r.id)
       INNER JOIN profile_results pr
@@ -44,6 +53,8 @@ WITH score_detail
         AND  pr.schema_name = dcc.schema_name
         AND  pr.table_name = dcc.table_name
         AND  pr.column_name = dcc.column_name)
+      LEFT JOIN data_table_chars dtc
+         ON (dcc.table_id = dtc.table_id)
       LEFT JOIN profile_anomaly_results p
         ON (pr.profile_run_id = p.profile_run_id
        AND  pr.column_name = p.column_name
@@ -69,9 +80,19 @@ UPDATE data_table_chars
 -- Roll up latest scores to data_table_chars
 WITH score_detail
   AS (SELECT dcc.column_id, dcc.table_id,
-             MAX(pr.record_ct) as row_ct,
-             COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0))) * MAX(pr.record_ct), 0) as affected_data_points
+             MAX(pr.record_ct) as raw_row_ct,
+             MAX(pr.record_ct
+                 * CASE WHEN proj.use_dq_score_weights
+                   THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+                   ELSE 1.0 END) as row_ct,
+             COALESCE((1.0 - SUM_LN(COALESCE(p.dq_prevalence, 0.0)))
+                      * MAX(pr.record_ct
+                            * CASE WHEN proj.use_dq_score_weights
+                              THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+                              ELSE 1.0 END), 0) as affected_data_points
         FROM table_groups tg
+      INNER JOIN projects proj
+         ON (tg.project_code = proj.project_code)
       INNER JOIN profiling_runs r
          ON (tg.last_complete_profile_run_id = r.id)
       INNER JOIN profile_results pr
@@ -81,6 +102,8 @@ WITH score_detail
         AND  pr.schema_name = dcc.schema_name
         AND  pr.table_name = dcc.table_name
         AND  pr.column_name = dcc.column_name)
+      LEFT JOIN data_table_chars dtc
+         ON (dcc.table_id = dtc.table_id)
       LEFT JOIN profile_anomaly_results p
         ON (pr.profile_run_id = p.profile_run_id
        AND  pr.column_name = p.column_name
@@ -92,7 +115,7 @@ score_calc
   AS ( SELECT table_id,
               SUM(affected_data_points) as sum_affected_data_points,
               SUM(row_ct) as sum_data_points,
-              MAX(row_ct) as record_ct
+              MAX(raw_row_ct) as record_ct
          FROM score_detail
        GROUP BY table_id )
 UPDATE data_table_chars
