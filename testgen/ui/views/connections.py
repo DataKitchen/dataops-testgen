@@ -15,6 +15,7 @@ except ImportError:
     PyODBCError = None
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
+from testgen import settings
 import testgen.ui.services.database_service as db
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
@@ -208,7 +209,7 @@ class ConnectionsPage(Page):
                 "project_code": project_code,
                 "connection": self._format_connection(connection, should_test=should_check_status()),
                 "has_table_groups": has_table_groups,
-                "flavors": [asdict(flavor) for flavor in FLAVOR_OPTIONS],
+                "flavors": [asdict(flavor) for flavor in VISIBLE_FLAVOR_OPTIONS],
                 "permissions": {
                     "is_admin": user_is_admin,
                 },
@@ -644,4 +645,10 @@ FLAVOR_OPTIONS = [
         flavor="snowflake",
         icon=get_asset_data_url("flavors/snowflake.svg"),
     ),
+]
+
+# SAP HANA is hidden in the Docker image because pyhdbcli is glibc-only and fails to load on Alpine/musl.
+VISIBLE_FLAVOR_OPTIONS = [
+    f for f in FLAVOR_OPTIONS
+    if not (settings.CHECK_FOR_LATEST_VERSION == "docker" and f.value == "sap_hana")
 ]
