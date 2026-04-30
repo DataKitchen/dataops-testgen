@@ -122,7 +122,7 @@ class DataProfilingPage(Page):
                 message = f"Profiling run could not be started: {error!s}."
                 show_link = False
             st.session_state[RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
-            if success and not show_link:
+            if success:
                 get_profiling_run_summaries.clear()
                 Router().set_query_params({"page": 1})
                 st.session_state.pop(RUN_PROFILING_DIALOG_KEY, None)
@@ -285,6 +285,7 @@ def on_cancel_run(payload: dict) -> None:
         # Stopgap: also update the run status so the UI reflects cancellation immediately.
         if profiling_run_id := payload.get("profiling_run_id"):
             ProfilingRun.cancel_run(profiling_run_id)
+        get_profiling_run_summaries.clear()
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
         fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)

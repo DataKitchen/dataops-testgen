@@ -151,7 +151,7 @@ function calculateBottomPosition(anchor, align, fixed = false) {
     const top  = fixed ? r.bottom               : r.bottom + window.scrollY;
     const left = fixed ? r.left                 : r.left   + window.scrollX;
     const right = window.innerWidth - r.right;
-    const constrain = fixed ? `max-height: calc(100vh - ${r.bottom}px - 8px);` : '';
+    const constrain = fixed ? `max-height: calc(100vh - ${r.bottom}px - 8px); overflow-y: auto;` : '';
     return `min-width: ${r.width}px; top: ${top}px; ${constrain} ${align === 'left' ? `left: ${left}px;` : `right: ${right}px;`}`;
 }
 
