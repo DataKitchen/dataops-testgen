@@ -48,11 +48,12 @@ WITH mults AS (   SELECT p.project_code,
     )
 INSERT INTO profile_anomaly_results
    (project_code, table_groups_id, profile_run_id, anomaly_id,
-    schema_name, table_name, column_name, column_type, db_data_type, detail)
+    schema_name, table_name, column_name, column_type, db_data_type, detail, impact_dimension)
 SELECT project_code, table_groups_id, profile_run_id, anomaly_id,
        schema_name, '(multi-table)' as table_name,
        column_name, '(multiple)' as column_type, '(multiple)' as db_data_type,
-       detail  || ' , Tables: ' || table_list AS detail
+       detail  || ' , Tables: ' || table_list AS detail,
+       (SELECT impact_dimension FROM profile_anomaly_types WHERE id = :ANOMALY_ID)
 FROM subset
 GROUP BY project_code, table_groups_id, profile_run_id, anomaly_id,
          schema_name, column_name, table_list, detail;

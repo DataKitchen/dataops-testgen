@@ -871,6 +871,7 @@ def get_excel_report_data(
         "test_name_short": {"header": "Test type"},
         "test_description": {"header": "Description", "wrap": True},
         "dq_dimension": {"header": "Quality dimension"},
+        "impact_dimension": {"header": "Impact dimension"},
         "measure_uom": {"header": "Unit of measure (UOM)"},
         "measure_uom_description": {"header": "UOM description"},
         "threshold_value": {},

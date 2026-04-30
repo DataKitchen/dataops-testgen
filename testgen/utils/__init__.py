@@ -166,6 +166,7 @@ def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
         "transform_level": "Transform Level",
         "aggregation_level": "Aggregation Level",
         "dq_dimension": "Quality Dimension",
+        "impact_dimension": "Impact Dimension",
         "data_product": "Data Product",
     }
     if not score_card:

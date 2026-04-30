@@ -27,6 +27,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Timeliness
+  impact_dimension: Conformance
   health_dimension: Recency
   threshold_description: |-
     Expected count of future dates

@@ -493,6 +493,8 @@ def get_excel_report_data(
         "anomaly_name": {"header": "Issue Type"},
         "issue_likelihood": {"header": "Likelihood"},
         "anomaly_description": {"header": "Description", "wrap": True},
+        "dq_dimension": {"header": "Quality dimension"},
+        "impact_dimension": {"header": "Impact dimension"},
         "action": {},
         "detail": {},
         "suggested_action": {"wrap": True},

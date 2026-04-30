@@ -111,6 +111,7 @@ def build_summary_table(document, hi_data):
         ("Database/Schema", hi_data["schema_name"], "Action", hi_data["disposition"] or "No Decision"),
         ("Table", hi_data["table_name"], "Data Type", hi_data["db_data_type"]),
         ("Column", hi_data["column_name"], "Semantic Data Type", hi_data["functional_data_type"]),
+        ("DQ Dimension", hi_data.get("dq_dimension"), "Impact Dimension", hi_data.get("impact_dimension")),
         (
             "Column Tags",
             (

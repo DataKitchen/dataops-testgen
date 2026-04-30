@@ -28,6 +28,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Uniqueness
+  impact_dimension: Conformance
   health_dimension: Data Drift
   threshold_description: |-
     Expected maximum Cohen's H Difference

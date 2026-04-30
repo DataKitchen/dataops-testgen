@@ -28,6 +28,7 @@ test_types:
   run_type: QUERY
   test_scope: referential
   dq_dimension: Validity
+  impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
     Expected count of non-matching value combinations

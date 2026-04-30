@@ -1,6 +1,6 @@
 INSERT INTO profile_anomaly_results
    (project_code, table_groups_id, profile_run_id, anomaly_id,
-    schema_name, table_name, column_name, column_type, db_data_type, detail)
+    schema_name, table_name, column_name, column_type, db_data_type, detail, impact_dimension)
 WITH all_matches
    AS ( SELECT p.project_code,
                p.table_groups_id,
@@ -38,5 +38,6 @@ WITH all_matches
 SELECT project_code, table_groups_id, profile_run_id,
        :ANOMALY_ID  AS anomaly_id,
        schema_name, table_name, column_name, column_type, db_data_type,
-       {DETAIL_EXPRESSION} AS detail
+       {DETAIL_EXPRESSION} AS detail,
+       (SELECT impact_dimension FROM profile_anomaly_types WHERE id = :ANOMALY_ID)
   FROM all_matches;

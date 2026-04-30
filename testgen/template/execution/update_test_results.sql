@@ -47,7 +47,8 @@ SET test_description = COALESCE(r.test_description, d.test_description, tt.test_
     ),
     table_groups_id = d.table_groups_id,
     test_suite_id = s.id,
-    auto_gen = d.last_auto_gen_date IS NOT NULL
+    auto_gen = d.last_auto_gen_date IS NOT NULL,
+    impact_dimension = COALESCE(d.impact_dimension, tt.impact_dimension)
 FROM test_results r
 INNER JOIN test_suites s ON r.test_suite_id = s.id
 INNER JOIN test_definitions d ON r.test_definition_id = d.id

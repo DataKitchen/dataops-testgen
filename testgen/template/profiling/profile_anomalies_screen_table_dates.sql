@@ -1,6 +1,6 @@
 INSERT INTO profile_anomaly_results
    (project_code, table_groups_id, profile_run_id, anomaly_id,
-    schema_name, table_name, column_name, detail)
+    schema_name, table_name, column_name, detail, impact_dimension)
 SELECT p.project_code,
        p.table_groups_id,
        p.profile_run_id,
@@ -15,7 +15,8 @@ SELECT p.project_code,
          || CASE
               WHEN COUNT(p.column_name) > 2 THEN ', Columns: ' || STRING_AGG(p.column_name, ', ' ORDER BY p.position)
               ELSE ''
-            END as detail
+            END as detail,
+       (SELECT impact_dimension FROM profile_anomaly_types WHERE id = :ANOMALY_ID)
   FROM profile_results p
 LEFT JOIN v_inactive_anomalies i
   ON (p.table_groups_id = i.table_groups_id

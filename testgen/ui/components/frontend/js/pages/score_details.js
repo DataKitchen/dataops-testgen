@@ -17,7 +17,7 @@
  *
  * @typedef Properties
  * @type {object}
- * @property {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension')} category
+ * @property {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension')} category
  * @property {('score' | 'cde_score')} score_type
  * @property {any} drilldown
  * @property {Score} score
@@ -146,7 +146,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 },
                 width: '65rem',
             },
-            NotificationSettings({ emit, 
+            NotificationSettings({ emit,
                 smtp_configured: smtpConfigured,
                 event: event,
                 items: items,
