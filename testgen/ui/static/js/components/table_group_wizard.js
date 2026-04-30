@@ -217,7 +217,7 @@ const TableGroupWizard = (props) => {
       return TableGroupTest(
         tableGroupPreview,
         {
-          onVerifyAcess: () => {
+          onVerifyAccess: () => {
             emit('PreviewTableGroupClicked', {
               payload: {
                 table_group: stepsState.tableGroup.rawVal,
