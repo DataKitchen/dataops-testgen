@@ -8,9 +8,29 @@ UPDATE test_runs
 -- Roll up scoring to test run
 WITH score_detail
   AS (SELECT r.test_run_id, r.table_name, r.column_names,
-             MAX(r.dq_record_ct) as row_ct,
-             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0))) * MAX(r.dq_record_ct) as affected_data_points
+             MAX(r.dq_record_ct
+                 * CASE WHEN proj.use_dq_score_weights
+                   THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+                   ELSE 1.0 END) as row_ct,
+             (1.0 - SUM_LN(COALESCE(r.dq_prevalence, 0.0)))
+             * MAX(r.dq_record_ct
+                   * CASE WHEN proj.use_dq_score_weights
+                     THEN COALESCE(dtc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_weight, 1.0) * COALESCE(dcc.dq_score_pii_weight, 1.0)
+                     ELSE 1.0 END) as affected_data_points
         FROM test_results r
+      INNER JOIN table_groups tg
+         ON (r.table_groups_id = tg.id)
+      INNER JOIN projects proj
+         ON (tg.project_code = proj.project_code)
+      LEFT JOIN data_table_chars dtc
+         ON (r.table_groups_id = dtc.table_groups_id
+        AND  r.schema_name = dtc.schema_name
+        AND  r.table_name = dtc.table_name)
+      LEFT JOIN data_column_chars dcc
+         ON (r.table_groups_id = dcc.table_groups_id
+        AND  r.schema_name = dcc.schema_name
+        AND  r.table_name = dcc.table_name
+        AND  r.column_names = dcc.column_name)
        WHERE r.test_run_id = :RUN_ID
          AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
       GROUP BY r.test_run_id, r.table_name, r.column_names ),

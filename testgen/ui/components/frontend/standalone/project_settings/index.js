@@ -7,6 +7,7 @@ import { Input } from '/app/static/js/components/input.js';
 import { Button } from '/app/static/js/components/button.js';
 import { required } from '/app/static/js/form_validators.js';
 import { Alert } from '/app/static/js/components/alert.js';
+import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { createEmitter, getValue, isEqual } from '/app/static/js/utils.js';
 
 const { div, span } = van.tags;
@@ -17,20 +18,22 @@ const { div, span } = van.tags;
  * @property {boolean} successful
  * @property {string} message
  * @property {string?} details
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {VanState<string>} name
+ * @property {VanState<boolean>} use_dq_score_weights
  * @property {VanState<string?>} observability_api_url
  * @property {VanState<string?>} observability_api_key
  * @property {VanState<ObsTestResults?>} observability_test_results
- * 
+ *
  * @param {Properties} props
  */
 const ProjectSettings = (props) => {
     const { emit } = props;
     const /** @type Properties */ form = {
         name: van.state(props.name.rawVal ?? ''),
+        use_dq_score_weights: van.state(props.use_dq_score_weights.rawVal ?? true),
         observability_api_key: van.state(props.observability_api_key.rawVal ?? ''),
         observability_api_url: van.state(props.observability_api_url.rawVal ?? ''),
     };
@@ -60,6 +63,12 @@ const ProjectSettings = (props) => {
                             form.name.val = value;
                             formValidity.name.val = validity.valid;
                         },
+                    }),
+                    Checkbox({
+                        label: 'Use weighted data quality scoring',
+                        checked: form.use_dq_score_weights,
+                        help: 'When enabled, data quality scores weight tables and columns by their semantic importance. Dimension tables and key columns receive higher weights.',
+                        onChange: (checked) => { form.use_dq_score_weights.val = checked; },
                     }),
                 ),
             }),
