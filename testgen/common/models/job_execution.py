@@ -180,7 +180,10 @@ class JobExecution(Base):
         return self._transition(JobStatus.CANCELED, completed_at=datetime.now(UTC))
 
     def request_cancel(self) -> bool:
-        return self._transition(JobStatus.CANCEL_REQUESTED)
+        # Idempotent: a re-request on an already-cancel-requested job succeeds
+        # without re-issuing the transition, so the caller doesn't have to
+        # special-case "cancel pressed twice."
+        return self.status == JobStatus.CANCEL_REQUESTED.value or self._transition(JobStatus.CANCEL_REQUESTED)
 
     def mark_completed(self) -> bool:
         return self._transition(JobStatus.COMPLETED, completed_at=datetime.now(UTC))

@@ -9,6 +9,7 @@ from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 TEST_PERM_MATRIX = {
     "view": ["role_a", "role_b"],
     "catalog": ["role_a", "role_b", "role_c"],
+    "edit": ["role_a"],
 }
 
 
