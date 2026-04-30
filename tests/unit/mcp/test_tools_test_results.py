@@ -568,8 +568,35 @@ def test_get_test_result_history_passes_project_codes(
 def test_get_failure_summary_requires_some_scope(db_session_mock):
     from testgen.mcp.tools.test_results import get_failure_summary
 
-    with pytest.raises(MCPUserError, match="at least one of"):
+    with pytest.raises(MCPUserError, match="single run"):
         get_failure_summary()
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_project_code_alone(mock_compute, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+    )
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPUserError, match="'since' is required"):
+        get_failure_summary(project_code="proj_a")
+
+
+@pytest.mark.parametrize("group_by", ["table", "column"])
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_cross_suite_table_or_column_grouping(mock_compute, db_session_mock, group_by):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+    )
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPUserError, match="single-suite scope"):
+        get_failure_summary(project_code="proj_a", since="7 days", group_by=group_by)
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")
@@ -591,6 +618,30 @@ def test_get_failure_summary_cross_run_by_project(mock_compute, mock_result, db_
     assert call_kwargs["since"] is not None
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_cross_run_by_project_and_suite(
+    mock_compute, mock_result, mock_suite_cls, db_session_mock
+):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+    )
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
+    mock_result.select_failures.return_value = []
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    get_failure_summary(project_code="proj_a", test_suite_id=str(uuid4()))
+
+    call_kwargs = mock_result.select_failures.call_args.kwargs
+    assert call_kwargs["project_codes"] == ["proj_a"]
+    assert call_kwargs["test_suite_id"] is not None
+    assert call_kwargs["test_run_id"] is None
+    assert call_kwargs["since"] is None
+
+
 @patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_failure_summary_rejects_inaccessible_project(mock_compute, db_session_mock):
     mock_compute.return_value = ProjectPermissions(
@@ -601,7 +652,7 @@ def test_get_failure_summary_rejects_inaccessible_project(mock_compute, db_sessi
     from testgen.mcp.tools.test_results import get_failure_summary
 
     with pytest.raises(MCPResourceNotAccessible, match="Project .* not found or not accessible"):
-        get_failure_summary(project_code="proj_b")
+        get_failure_summary(project_code="proj_b", since="7 days")
 
 
 @patch("testgen.mcp.tools.test_results.TestSuite")
