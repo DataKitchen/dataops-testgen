@@ -324,7 +324,7 @@ class TestDefinition(Entity):
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
-        result = get_current_session().execute(query).first()
+        result = get_current_session().execute(query).mappings().first()
         return TestDefinitionSummary(**result) if result else None
 
     @classmethod
