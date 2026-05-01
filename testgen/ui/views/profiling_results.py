@@ -9,7 +9,13 @@ from testgen.common import date_service
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
+from testgen.common.pii_masking import (
+    PII_REDACTED,
+    get_pii_columns,
+    mask_hygiene_detail,
+    mask_profiling_pii,
+    mask_source_data_pii,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -20,11 +26,14 @@ from testgen.ui.components.widgets.download_dialog import (
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
+from testgen.ui.views.data_catalog import get_preview_data
+from testgen.utils import make_json_safe
 
 PAGE_SIZE = 500
 
 SELECTED_ITEM_KEY = "prf:selected_item"
 EXPORT_FILTERS_KEY = "prf:export_filters"
+DATA_PREVIEW_DIALOG_KEY = "prf:data_preview_dialog"
 
 # Maps JS column names to SQL ORDER BY expressions
 SORT_FIELD_MAP = {
@@ -231,6 +240,25 @@ class ProfilingResultsPage(Page):
             st.session_state.pop(SELECTED_ITEM_KEY, None)
             Router().set_query_params({"sort": sort_value, "page": "0", "selected": None})
 
+        @with_database_session
+        def on_data_preview_clicked(item: dict) -> None:
+            preview_data = get_preview_data(
+                item["table_group_id"],
+                item["schema_name"],
+                item["table_name"],
+                item.get("column_name"),
+            )
+            if preview_data.get("rows") and not session.auth.user_has_permission("view_pii"):
+                pii_columns = get_pii_columns(item["table_group_id"], item["schema_name"], item["table_name"])
+                if pii_columns:
+                    preview_df = pd.DataFrame(preview_data["rows"], columns=preview_data["columns"])
+                    mask_source_data_pii(preview_df, pii_columns)
+                    preview_data["rows"] = make_json_safe(preview_df.values.tolist())
+            st.session_state[DATA_PREVIEW_DIALOG_KEY] = preview_data
+
+        def on_data_preview_dialog_closed(*_) -> None:
+            st.session_state.pop(DATA_PREVIEW_DIALOG_KEY, None)
+
         testgen.profiling_results_widget(
             key="profiling_results",
             data={
@@ -245,6 +273,7 @@ class ProfilingResultsPage(Page):
                 "page_size": current_page_size,
                 "sort_state": sort_state,
                 "filter_options": filter_options,
+                "data_preview_dialog": st.session_state.get(DATA_PREVIEW_DIALOG_KEY),
             },
             on_RowSelected_change=on_row_selected,
             on_FilterChanged_change=on_filter_changed,
@@ -253,6 +282,8 @@ class ProfilingResultsPage(Page):
             on_ExportSelected_change=on_export_selected,
             on_PageChanged_change=on_page_changed,
             on_SortChanged_change=on_sort_changed,
+            on_DataPreviewClicked_change=on_data_preview_clicked,
+            on_DataPreviewDialogClosed_change=on_data_preview_dialog_closed,
         )
 
 

@@ -22,6 +22,7 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import table_group_queries
 from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
+from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
@@ -568,11 +569,10 @@ class TableGroupsPage(Page):
                             save_data_chars(table_group.id)
                         except Exception:
                             LOG.exception("Data characteristics refresh encountered errors")
-                    TableGroup.select_minimal_where.clear()
                     st.toast(f"Table group '{table_group.table_groups_name}' saved.", icon=":material/check:")
                     for key in ["tg_wizard_mode", "tg_wizard_table_group_id"]:
                         st.session_state.pop(key, None)
-                    return None, {}
+                    safe_rerun()
             else:
                 result = {"success": False, "message": "Verify the table group before saving."}
 
