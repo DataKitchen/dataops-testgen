@@ -20,6 +20,14 @@ latest_results AS (
       -- Ignore dropped tables
       AND dtc.drop_date IS NULL
     )
+    INNER JOIN data_column_chars dcc ON (
+      dcc.table_groups_id = p.table_groups_id
+      AND dcc.schema_name = p.schema_name
+      AND dcc.table_name = p.table_name
+      AND dcc.column_name = p.column_name
+      -- Ignore dropped columns
+      AND dcc.drop_date IS NULL
+    )
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
 ),
 -- IDs - TOP 2

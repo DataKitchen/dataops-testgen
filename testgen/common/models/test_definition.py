@@ -193,8 +193,9 @@ class TestType(ParamFieldsMixin, Entity):
     # Unmapped columns: generation_template, result_visualization, result_visualization_params
 
     _summary_columns = (
-        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
+        *[key for key in TestTypeSummary.__annotations__.keys() if key not in ("default_test_description", "default_impact_dimension")],
         test_description.label("default_test_description"),
+        impact_dimension.label("default_impact_dimension"),
     )
 
     @classmethod
