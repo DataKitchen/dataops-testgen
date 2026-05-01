@@ -2,12 +2,20 @@ from datetime import date
 from uuid import UUID
 
 from testgen.common.date_service import parse_since
+from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
+
+VALID_DQ_DIMENSIONS = {"Accuracy", "Completeness", "Consistency", "Recency", "Timeliness", "Uniqueness", "Validity"}
+# DB stores "Inactive"; user-facing label is "Muted".
+_DISPOSITION_USER_TO_DB = {"Confirmed": "Confirmed", "Dismissed": "Dismissed", "Muted": "Inactive"}
+_DISPOSITION_DB_TO_USER = {v: k for k, v in _DISPOSITION_USER_TO_DB.items()}
+_VALID_ISSUE_LIKELIHOODS = {"Definite", "Likely", "Possible"}
+_VALID_PII_RISKS = {"High", "Moderate"}
 
 
 def parse_uuid(value: str, label: str = "ID") -> UUID:
@@ -42,6 +50,46 @@ def parse_since_arg(value: str, label: str = "since", *, today: date | None = No
         raise MCPUserError(f"Invalid `{label}`: {err}") from err
 
 
+def parse_quality_dimension(value: str) -> str:
+    if value not in VALID_DQ_DIMENSIONS:
+        valid = ", ".join(sorted(VALID_DQ_DIMENSIONS))
+        raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}")
+    return value
+
+
+def parse_disposition(value: str) -> str:
+    """Validate a user-facing disposition label and return the DB value.
+
+    Accepts ``Confirmed``, ``Dismissed``, ``Muted`` and returns ``Confirmed``,
+    ``Dismissed``, ``Inactive`` respectively (the DB encodes the legacy ``Inactive``).
+    """
+    if value not in _DISPOSITION_USER_TO_DB:
+        valid = ", ".join(sorted(_DISPOSITION_USER_TO_DB))
+        raise MCPUserError(f"Invalid disposition `{value}`. Valid values: {valid}")
+    return _DISPOSITION_USER_TO_DB[value]
+
+
+def format_disposition(value: str) -> str:
+    """Map a DB disposition value to its user-facing label (``Inactive`` → ``Muted``)."""
+    return _DISPOSITION_DB_TO_USER.get(value, value)
+
+
+def parse_issue_likelihood_list(values: list[str]) -> list[str]:
+    invalid = [v for v in values if v not in _VALID_ISSUE_LIKELIHOODS]
+    if invalid:
+        valid = ", ".join(sorted(_VALID_ISSUE_LIKELIHOODS))
+        raise MCPUserError(f"Invalid issue_likelihood values {invalid}. Valid values: {valid}")
+    return values
+
+
+def parse_pii_risk_list(values: list[str]) -> list[str]:
+    invalid = [v for v in values if v not in _VALID_PII_RISKS]
+    if invalid:
+        valid = ", ".join(sorted(_VALID_PII_RISKS))
+        raise MCPUserError(f"Invalid pii_risk values {invalid}. Valid values: {valid}")
+    return values
+
+
 def resolve_test_type(short_name: str) -> str:
     """Resolve a test type short name to its internal code."""
     matches = TestType.select_where(TestType.test_name_short == short_name)
@@ -50,6 +98,17 @@ def resolve_test_type(short_name: str) -> str:
             f"Unknown test type: `{short_name}`. Use the testgen://test-types resource to see available types."
         )
     return matches[0].test_type
+
+
+def resolve_issue_type(name: str) -> str:
+    """Resolve a hygiene issue type human label to its internal id (case-sensitive exact match)."""
+    matches = HygieneIssueType.select_where(HygieneIssueType.name == name)
+    if not matches:
+        raise MCPUserError(
+            f"Unknown hygiene issue type: `{name}`. "
+            "Use the testgen://hygiene-issue-types resource to see available types."
+        )
+    return matches[0].id
 
 
 def format_page_info(total: int, page: int, limit: int) -> str:

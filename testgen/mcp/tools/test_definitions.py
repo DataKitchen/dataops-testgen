@@ -4,6 +4,7 @@ from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
+    VALID_DQ_DIMENSIONS,
     format_page_footer,
     format_page_info,
     parse_uuid,
@@ -15,7 +16,6 @@ from testgen.mcp.tools.markdown import MdDoc
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
 _VALID_IMPACT_DIMENSIONS = {"Reliability", "Conformance", "Regularity", "Usability"}
-_VALID_DQ_DIMENSIONS = {"Accuracy", "Completeness", "Consistency", "Recency", "Timeliness", "Uniqueness", "Validity"}
 
 
 @with_database_session
@@ -303,8 +303,8 @@ def list_test_types(
     if impact_dimension and impact_dimension not in _VALID_IMPACT_DIMENSIONS:
         valid = ", ".join(sorted(_VALID_IMPACT_DIMENSIONS))
         raise MCPUserError(f"Invalid impact_dimension `{impact_dimension}`. Valid values: {valid}")
-    if quality_dimension and quality_dimension not in _VALID_DQ_DIMENSIONS:
-        valid = ", ".join(sorted(_VALID_DQ_DIMENSIONS))
+    if quality_dimension and quality_dimension not in VALID_DQ_DIMENSIONS:
+        valid = ", ".join(sorted(VALID_DQ_DIMENSIONS))
         raise MCPUserError(f"Invalid quality_dimension `{quality_dimension}`. Valid values: {valid}")
 
     clauses = [TestType.active == "Y"]

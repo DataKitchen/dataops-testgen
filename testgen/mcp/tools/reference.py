@@ -1,4 +1,5 @@
 from testgen.common.models import with_database_session
+from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.test_definition import TestType
 from testgen.mcp.tools.markdown import MdDoc
 
@@ -74,6 +75,27 @@ def test_types_resource() -> str:
         rows=[
             [tt.test_name_short, tt.impact_dimension, tt.dq_dimension, tt.test_scope, tt.test_description]
             for tt in test_types
+        ],
+    )
+
+    return doc.render()
+
+
+@with_database_session
+def hygiene_issue_types_resource() -> str:
+    """Reference table of all hygiene issue types with their data quality dimensions, descriptions, and suggested actions."""
+    issue_types = HygieneIssueType.select_where(order_by=(HygieneIssueType.name,))
+
+    if not issue_types:
+        return "No hygiene issue types found."
+
+    doc = MdDoc()
+    doc.heading(1, "TestGen Hygiene Issue Types Reference")
+    doc.table(
+        headers=["Issue Type", "Quality Dimension", "Impact Dimension", "Description", "Suggested Action"],
+        rows=[
+            [it.name, it.dq_dimension, it.impact_dimension, it.description, it.suggested_action]
+            for it in issue_types
         ],
     )
 

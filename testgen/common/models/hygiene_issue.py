@@ -1,10 +1,11 @@
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, ForeignKey, String, and_, case, null, select
+from sqlalchemy import Boolean, Column, ForeignKey, String, and_, case, null, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import aliased, relationship
@@ -12,6 +13,10 @@ from sqlalchemy.sql.functions import func
 
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.entity import Entity
+from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.profile_result import ProfileResult
+from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.table_group import TableGroup
 
 PII_RISK_RE = re.compile(r"Risk: (MODERATE|HIGH),")
 
@@ -36,14 +41,96 @@ class IssueCount:
         return self.total - self.inactive
 
 
+@dataclass
+class HygieneIssueListRow:
+    """Row shape for ``list_hygiene_issues``."""
+
+    id: UUID
+    project_code: str
+    issue_type_name: str
+    schema_name: str
+    table_name: str
+    column_name: str
+    dq_dimension: str | None
+    disposition: str
+    priority: str | None
+    detail: str
+    detail_redactable: bool | None
+    pii_flag: str | None
+
+
+@dataclass
+class HygieneIssueSearchRow:
+    """Row shape for ``search_hygiene_issues``. Adds run + table-group context vs the list row."""
+
+    id: UUID
+    project_code: str
+    issue_type_name: str
+    table_groups_name: str
+    job_execution_id: UUID | None
+    started_at: datetime | None
+    schema_name: str
+    table_name: str
+    column_name: str
+    dq_dimension: str | None
+    disposition: str
+    priority: str | None
+    detail: str
+    detail_redactable: bool | None
+    pii_flag: str | None
+
+
+@dataclass
+class HygieneIssueDetail:
+    """Full row + type definition + column-profile context for ``get_hygiene_issue``."""
+
+    id: UUID
+    project_code: str
+    issue_type_name: str
+    type_description: str | None
+    suggested_action: str | None
+    schema_name: str
+    table_name: str
+    column_name: str
+    db_data_type: str | None
+    dq_dimension: str | None
+    impact_dimension: str | None
+    disposition: str
+    priority: str | None
+    detail: str
+    detail_redactable: bool | None
+    pii_flag: str | None
+    job_execution_id: UUID | None
+    started_at: datetime | None
+    column_general_type: str | None
+    column_db_data_type: str | None
+    column_record_ct: int | None
+    column_null_value_ct: int | None
+    column_distinct_value_ct: int | None
+
+
 class HygieneIssueType(Base):
     __tablename__ = "profile_anomaly_types"
 
     id: str = Column(String, primary_key=True)
     likelihood: str = Column("issue_likelihood", String)
     name: str = Column("anomaly_name", String)
+    description: str = Column("anomaly_description", String)
+    suggested_action: str = Column(String)
+    dq_dimension: str = Column(String)
+    impact_dimension: str = Column(String)
+    data_object: str = Column(String)
+    detail_redactable: bool = Column(Boolean)
 
-    # Note: not all table columns are implemented by this entity
+    # Unmapped: anomaly_type, anomaly_criteria, detail_expression,
+    # dq_score_prevalence_formula, dq_score_risk_factor.
+
+    @classmethod
+    def select_where(cls, *clauses, order_by=None) -> list[Self]:
+        query = select(cls).where(*clauses)
+        if order_by is not None:
+            query = query.order_by(*order_by)
+        return list(get_current_session().scalars(query))
 
 
 class HygieneIssue(Entity):
@@ -58,14 +145,18 @@ class HygieneIssue(Entity):
     type_id: str = Column("anomaly_id", String, ForeignKey("profile_anomaly_types.id"), nullable=False)
     type_ = relationship(HygieneIssueType)
 
+    column_id: UUID = Column(postgresql.UUID(as_uuid=True))
+
     schema_name: str = Column(String, nullable=False)
     table_name: str = Column(String, nullable=False)
     column_name: str = Column(String, nullable=False)
+    db_data_type: str = Column(String)
 
     detail: str = Column(String, nullable=False)
     disposition: str = Column(String)
+    impact_dimension: str = Column(String)
 
-    # Note: not all table columns are implemented by this entity
+    # Unmapped: column_type, dq_prevalence.
 
     @hybrid_property
     def priority(self):
@@ -131,6 +222,174 @@ class HygieneIssue(Entity):
 
         row = get_current_session().execute(query).first()
         return IssueLikelihoodCounts(**{k: v for k, v in row._mapping.items() if v is not None})
+
+    @classmethod
+    def _priority_order(cls):
+        return case(
+            (cls.priority == "Definite", 1),
+            (cls.priority == "Likely", 2),
+            (cls.priority == "Possible", 3),
+            (cls.priority == "High", 4),
+            (cls.priority == "Moderate", 5),
+            else_=6,
+        )
+
+    @classmethod
+    def list_for_run(
+        cls,
+        profile_run_id: UUID,
+        *clauses,
+        page: int = 1,
+        limit: int = 50,
+    ) -> tuple[list[HygieneIssueListRow], int]:
+        """Paginated hygiene issues for a single profiling run.
+
+        Caller-supplied ``*clauses`` carry every WHERE filter (project scoping, disposition,
+        likelihood / pii_risk, table / column / dq_dimension / issue_type filters).
+        """
+        query = (
+            select(
+                cls.id.label("id"),
+                cls.project_code.label("project_code"),
+                HygieneIssueType.name.label("issue_type_name"),
+                cls.schema_name.label("schema_name"),
+                cls.table_name.label("table_name"),
+                cls.column_name.label("column_name"),
+                HygieneIssueType.dq_dimension.label("dq_dimension"),
+                func.coalesce(cls.disposition, "Confirmed").label("disposition"),
+                cls.priority.label("priority"),
+                cls.detail.label("detail"),
+                HygieneIssueType.detail_redactable.label("detail_redactable"),
+                ProfileResult.pii_flag.label("pii_flag"),
+            )
+            .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
+            .outerjoin(
+                ProfileResult,
+                and_(
+                    ProfileResult.profile_run_id == cls.profile_run_id,
+                    ProfileResult.schema_name == cls.schema_name,
+                    ProfileResult.table_name == cls.table_name,
+                    ProfileResult.column_name == cls.column_name,
+                ),
+            )
+            .where(cls.profile_run_id == profile_run_id, *clauses)
+            .order_by(cls._priority_order(), cls.table_name, cls.column_name, cls.id)
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=HygieneIssueListRow)
+
+    @classmethod
+    def search(
+        cls,
+        *clauses,
+        page: int = 1,
+        limit: int = 50,
+    ) -> tuple[list[HygieneIssueSearchRow], int]:
+        """Cross-run paginated search over hygiene issues.
+
+        Always JOINs ``ProfilingRun`` + ``JobExecution`` (for ``started_at`` + ``job_execution_id``)
+        and ``TableGroup`` (for ``table_groups_name``). Caller-supplied ``*clauses`` carry every
+        WHERE filter (project scoping, ``JobExecution.started_at`` window, all user filters).
+        """
+        query = (
+            select(
+                cls.id.label("id"),
+                cls.project_code.label("project_code"),
+                HygieneIssueType.name.label("issue_type_name"),
+                TableGroup.table_groups_name.label("table_groups_name"),
+                ProfilingRun.job_execution_id.label("job_execution_id"),
+                JobExecution.started_at.label("started_at"),
+                cls.schema_name.label("schema_name"),
+                cls.table_name.label("table_name"),
+                cls.column_name.label("column_name"),
+                HygieneIssueType.dq_dimension.label("dq_dimension"),
+                func.coalesce(cls.disposition, "Confirmed").label("disposition"),
+                cls.priority.label("priority"),
+                cls.detail.label("detail"),
+                HygieneIssueType.detail_redactable.label("detail_redactable"),
+                ProfileResult.pii_flag.label("pii_flag"),
+            )
+            .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
+            .join(ProfilingRun, ProfilingRun.id == cls.profile_run_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .join(TableGroup, TableGroup.id == cls.table_groups_id)
+            .outerjoin(
+                ProfileResult,
+                and_(
+                    ProfileResult.profile_run_id == cls.profile_run_id,
+                    ProfileResult.schema_name == cls.schema_name,
+                    ProfileResult.table_name == cls.table_name,
+                    ProfileResult.column_name == cls.column_name,
+                ),
+            )
+            .where(*clauses)
+            .order_by(JobExecution.started_at.desc(), cls._priority_order(), cls.id)
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=HygieneIssueSearchRow)
+
+    @classmethod
+    def get_with_context(cls, issue_id: UUID, *clauses) -> HygieneIssueDetail | None:
+        """Fetch one hygiene issue with type definition + column-profile context.
+
+        Returns ``None`` when no row matches the id and ``*clauses`` together — the
+        caller decides whether that's "missing", "not accessible", or both collapsed
+        into one error.
+
+        Joins ``ProfileResult`` outer-style: table-level issues may have no matching
+        column profile row, in which case the column_* fields stay ``None``.
+        """
+        query = (
+            select(
+                cls.id.label("id"),
+                cls.project_code.label("project_code"),
+                HygieneIssueType.name.label("issue_type_name"),
+                HygieneIssueType.description.label("type_description"),
+                HygieneIssueType.suggested_action.label("suggested_action"),
+                cls.schema_name.label("schema_name"),
+                cls.table_name.label("table_name"),
+                cls.column_name.label("column_name"),
+                cls.db_data_type.label("db_data_type"),
+                HygieneIssueType.dq_dimension.label("dq_dimension"),
+                cls.impact_dimension.label("impact_dimension"),
+                func.coalesce(cls.disposition, "Confirmed").label("disposition"),
+                cls.priority.label("priority"),
+                cls.detail.label("detail"),
+                HygieneIssueType.detail_redactable.label("detail_redactable"),
+                ProfileResult.pii_flag.label("pii_flag"),
+                ProfilingRun.job_execution_id.label("job_execution_id"),
+                JobExecution.started_at.label("started_at"),
+                ProfileResult.general_type.label("column_general_type"),
+                ProfileResult.db_data_type.label("column_db_data_type"),
+                ProfileResult.record_ct.label("column_record_ct"),
+                ProfileResult.null_value_ct.label("column_null_value_ct"),
+                ProfileResult.distinct_value_ct.label("column_distinct_value_ct"),
+            )
+            .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
+            .join(ProfilingRun, ProfilingRun.id == cls.profile_run_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .outerjoin(
+                ProfileResult,
+                and_(
+                    ProfileResult.profile_run_id == cls.profile_run_id,
+                    ProfileResult.schema_name == cls.schema_name,
+                    ProfileResult.table_name == cls.table_name,
+                    ProfileResult.column_name == cls.column_name,
+                ),
+            )
+            .where(cls.id == issue_id, *clauses)
+        )
+        row = get_current_session().execute(query).mappings().first()
+        return HygieneIssueDetail(**row) if row else None
+
+    @classmethod
+    def update_disposition(cls, issue_id: UUID, disposition: str, *clauses) -> bool:
+        """Update disposition on a single hygiene issue, scoped by caller-supplied clauses.
+
+        Returns ``True`` if a row was updated, ``False`` if no row matched the id and
+        ``*clauses`` together.
+        """
+        stmt = update(cls).where(cls.id == issue_id, *clauses).values(disposition=disposition)
+        result = get_current_session().execute(stmt)
+        return result.rowcount > 0
 
     @classmethod
     def select_with_diff(
