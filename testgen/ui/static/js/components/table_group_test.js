@@ -17,7 +17,7 @@
  * 
  * @typedef ComponentOptions
  * @type {object}
- * @property {(() => void)?} onVerifyAcess
+ * @property {(() => void)?} onVerifyAccess
  */
 import van from '../van.min.js';
 import { getValue } from '../utils.js';
@@ -25,6 +25,7 @@ import { formatNumber } from '../display_utils.js';
 import { Alert } from '../components/alert.js';
 import { Icon } from '../components/icon.js';
 import { Button } from '../components/button.js';
+import { Spinner } from '../components/spinner.js';
 import { TableGroupStats } from './table_group_stats.js';
 
 const { div, span } = van.tags;
@@ -45,28 +46,28 @@ const TableGroupTest = (preview, options) => {
 
     return div(
         { class: 'flex-column fx-gap-2' },
-        div(
-            { class: 'flex-row fx-justify-space-between fx-align-flex-end' },
-            span({ class: 'text-caption text-right' }, '* Approximate row counts based on server statistics'),
-            () => {
-                const p = getValue(preview);
-                if (!options.onVerifyAcess || !p) return '';
-                return div(
-                    { class: 'flex-row' },
-                    span({ class: 'fx-flex' }),
-                    Button({
+        () => getValue(preview)
+            ? div(
+                { class: 'flex-row fx-justify-space-between fx-align-flex-end' },
+                span({ class: 'text-caption text-right' }, '* Approximate row counts based on server statistics'),
+                options.onVerifyAccess
+                    ? Button({
                         label: 'Verify Access',
                         width: 'fit-content',
                         type: 'stroked',
                         loading: verifyingAccess,
                         onclick: () => {
                             verifyingAccess.val = true;
-                            options.onVerifyAcess();
+                            options.onVerifyAccess();
                         },
-                    }),
-                );
-            },
-        ),
+                    })
+                    : '',
+            )
+            : div(
+                { class: 'flex-row fx-justify-center fx-align-center fx-gap-2 p-3 text-secondary' },
+                Spinner({ size: 20 }),
+                span('Loading preview...'),
+            ),
         () => getValue(preview)
             ? TableGroupStats({ hideWarning: true, hideApproxCaption: true }, getValue(preview).stats)
             : '',

@@ -104,7 +104,7 @@ const TableGroupEditDialog = (props) => {
             div(
                 { style: () => phase.val === 'verify' ? '' : 'display:none' },
                 TableGroupTest(tableGroupPreview, {
-                    onVerifyAcess: () => {
+                    onVerifyAccess: () => {
                         emit('PreviewEditTableGroupClicked', {
                             payload: {
                                 table_group: tableGroupState.val,

@@ -1049,7 +1049,7 @@ const SnowflakeForm = (
     const isValid = van.state(false);
     const clearPrivateKeyPhrase = van.state(connection.rawVal?.private_key_passphrase === clearSentinel);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
-    const connectByKey = van.state(connection.rawVal?.connect_by_key ?? false);
+    const connectByKey = van.state(originalConnection?.connection_id ? (connection.rawVal?.connect_by_key ?? false) : true);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
     const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
@@ -1206,13 +1206,32 @@ const SnowflakeForm = (
             RadioGroup({
                 label: 'Connection Strategy',
                 options: [
-                    {label: 'Connect By Password', value: false},
                     {label: 'Connect By Key-Pair', value: true},
+                    {label: 'Connect By Password', value: false},
                 ],
                 value: connectByKey,
                 onChange: (value) => connectByKey.val = value,
                 layout: 'inline',
             }),
+
+            () => !connectByKey.val
+                ? Alert(
+                    { type: 'warn', icon: 'warning', class: 'mt-1' },
+                    span(
+                        'Snowflake is phasing out password authentication for service accounts and will block it between August and October 2026. ',
+                        'Use key-pair authentication to ensure uninterrupted access. ',
+                        van.tags.a(
+                            {
+                                href: 'https://docs.snowflake.com/en/user-guide/security-mfa-rollout',
+                                target: '_blank',
+                                rel: 'noopener noreferrer',
+                                style: 'color: inherit; text-decoration: underline;',
+                            },
+                            'Learn more',
+                        ),
+                    ),
+                )
+                : '',
 
             Input({
                 name: 'db_user',

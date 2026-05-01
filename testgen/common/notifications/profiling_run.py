@@ -152,7 +152,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
 
     def get_result_table_template(self):
         return """
-          {{#if count.total}}
+          {{#if (len issues)}}
           <div class="summary" style="padding-left: 4px;">
             <table
               role="presentation"
@@ -169,7 +169,6 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 {{#if (eq priority 'Moderate')}} text-orange {{/if}}
                 ">{{label}}</td>
               </tr>
-              {{#if (len issues)}}
               <tr class="text-caption">
                 <td></td>
                 <td>Table</td>
@@ -203,7 +202,6 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   indicates new issues
                 </td>
               </tr>
-              {{/if}}
             </table>
           </div>
           {{/if}}
