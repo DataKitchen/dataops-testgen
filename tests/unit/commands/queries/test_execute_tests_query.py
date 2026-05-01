@@ -21,6 +21,7 @@ def _make_td(**overrides) -> TestExecutionDef:
         "schema_name": "public",
         "table_name": "orders",
         "column_name": "amount",
+        "lock_refresh": "N",
         "skip_errors": 0,
         "history_calculation": "NONE",
         "custom_query": "",
