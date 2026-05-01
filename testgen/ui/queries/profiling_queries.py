@@ -142,7 +142,7 @@ def get_table_by_id(
 ) -> dict | None:
     if not is_uuid4(table_id):
         return None
-    
+
     condition = "WHERE table_id = :table_id"
     params = {"table_id": table_id}
     return get_tables_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
@@ -172,7 +172,7 @@ def get_tables_by_table_group(
 ) -> list[dict]:
     if not is_uuid4(table_group_id):
         return None
-    
+
     condition = "WHERE table_chars.table_groups_id = :table_group_id"
     params = {"table_group_id": table_group_id}
     return get_tables_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
@@ -605,6 +605,7 @@ def get_profiling_anomalies(
             WHEN t.issue_likelihood = 'Definite'  THEN 1
         END AS likelihood_order,
         t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
+        t.dq_dimension, r.impact_dimension,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
         tg.table_groups_name, tg.project_code,
 
@@ -674,6 +675,7 @@ def get_profiling_anomalies_by_ids(anomaly_ids: list[str]) -> pd.DataFrame:
             WHEN t.issue_likelihood = 'Definite'  THEN 1
         END AS likelihood_order,
         t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
+        t.dq_dimension, r.impact_dimension,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
         p.job_execution_id::VARCHAR as job_execution_id,
         tg.table_groups_name, tg.project_code,

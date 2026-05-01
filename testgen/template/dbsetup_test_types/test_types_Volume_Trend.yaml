@@ -25,6 +25,7 @@ test_types:
   run_type: CAT
   test_scope: table
   dq_dimension: Completeness
+  impact_dimension: Reliability
   health_dimension: Volume
   threshold_description: |-
     Expected row count range.

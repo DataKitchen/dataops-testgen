@@ -29,6 +29,7 @@ test_types:
   run_type: QUERY
   test_scope: referential
   dq_dimension: Consistency
+  impact_dimension: Regularity
   health_dimension: Data Drift
   threshold_description: |-
     Expected maximum divergence level between 0 and 1

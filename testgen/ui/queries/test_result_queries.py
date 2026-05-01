@@ -85,7 +85,7 @@ def get_test_results(
             )
     SELECT r.table_name,
             p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
-            tt.dq_dimension, tt.test_scope,
+            tt.dq_dimension, r.impact_dimension, tt.test_scope,
             r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
             tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
             c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
@@ -173,7 +173,7 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
     query = """
     SELECT r.table_name,
             p.project_name, ts.test_suite, tg.table_groups_name, cn.connection_name, cn.project_host, cn.sql_flavor,
-            tt.dq_dimension, tt.test_scope,
+            tt.dq_dimension, r.impact_dimension, tt.test_scope,
             r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
             tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
             c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,

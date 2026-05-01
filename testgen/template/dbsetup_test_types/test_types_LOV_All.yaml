@@ -25,6 +25,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Validity
+  impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
     List of values expected, in form ('Val1','Val2)

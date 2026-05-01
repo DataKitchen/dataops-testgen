@@ -138,6 +138,8 @@ def test_get_test_basic(mock_td, mock_tr, mock_notes, db_session_mock):
     td.test_type = "Alpha_Trunc"
     td.test_name_short = "Alpha Truncation"
     td.display_name = "Alpha Truncation"
+    td.impact_dimension = "Reliability"
+    td.default_impact_dimension = "Conformance"
     td.dq_dimension = "Accuracy"
     td.table_name = "orders"
     td.column_name = "customer_name"
@@ -178,6 +180,7 @@ def test_get_test_basic(mock_td, mock_tr, mock_notes, db_session_mock):
     assert "Alpha Truncation" in result
     assert "`customer_name`" in result
     assert "`orders`" in result
+    assert "Reliability" in result
     assert "Accuracy" in result
     assert "Checks for truncated alpha values" in result
     assert "No results recorded" in result
@@ -207,6 +210,8 @@ def test_get_test_with_last_result(mock_td, mock_tr, mock_notes, db_session_mock
     td.test_type = "Row_Ct"
     td.test_name_short = "Row Count"
     td.display_name = "Row Count"
+    td.impact_dimension = None
+    td.default_impact_dimension = "Conformance"
     td.dq_dimension = "Completeness"
     td.table_name = "orders"
     td.column_name = None
@@ -267,6 +272,8 @@ def test_get_test_with_parameters(mock_td, mock_tr, mock_notes, db_session_mock)
     td.test_type = "Alpha_Trunc"
     td.test_name_short = "Alpha Truncation"
     td.display_name = "Alpha Truncation"
+    td.impact_dimension = None
+    td.default_impact_dimension = "Conformance"
     td.dq_dimension = None
     td.table_name = "orders"
     td.column_name = "name"
@@ -327,6 +334,8 @@ def test_get_test_flagged_with_notes(mock_td, mock_tr, mock_notes, db_session_mo
     td.test_type = "Alpha_Trunc"
     td.test_name_short = "Alpha Truncation"
     td.display_name = "Alpha Truncation"
+    td.impact_dimension = None
+    td.default_impact_dimension = "Conformance"
     td.dq_dimension = None
     td.table_name = "orders"
     td.column_name = "name"
@@ -465,6 +474,7 @@ def test_list_test_notes_invalid_uuid(db_session_mock):
 def test_list_test_types_basic(mock_tt, db_session_mock):
     tt = MagicMock()
     tt.test_name_short = "Alpha Truncation"
+    tt.impact_dimension = "Conformance"
     tt.dq_dimension = "Accuracy"
     tt.test_scope = "column"
     tt.test_description = "Checks for truncated values"
@@ -475,6 +485,7 @@ def test_list_test_types_basic(mock_tt, db_session_mock):
     result = list_test_types()
 
     assert "Alpha Truncation" in result
+    assert "Conformance" in result
     assert "Accuracy" in result
     assert "column" in result
 
@@ -522,6 +533,7 @@ def test_list_test_types_invalid_quality_dimension(db_session_mock):
 def test_list_test_types_filter_description(mock_tt, db_session_mock):
     tt = MagicMock()
     tt.test_name_short = "Row Count"
+    tt.impact_dimension = "Regularity"
     tt.dq_dimension = "Completeness"
     tt.test_scope = "table"
     tt.test_description = "Checks row count"

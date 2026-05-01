@@ -89,7 +89,7 @@ class ScoreDetailsPage(Page):
             category = (
                 score_definition.category.value
                 if score_definition.category
-                else ScoreCategory.dq_dimension.value
+                else ScoreCategory.impact_dimension.value
             )
 
         if not score_type or score_type not in typing.get_args(ScoreTypes):

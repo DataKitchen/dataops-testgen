@@ -16,6 +16,7 @@ profile_anomaly_types:
   dq_score_prevalence_formula: null
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
+  impact_dimension: Usability
   target_data_lookups:
   - id: '1363'
     test_id: '1025'

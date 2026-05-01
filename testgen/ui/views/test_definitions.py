@@ -18,6 +18,7 @@ from testgen.common.models.test_definition import (
     TestDefinitionMinimal,
     TestDefinitionNote,
     TestDefinitionSummary,
+    TestType,
 )
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
@@ -721,7 +722,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         tt.test_name_short, tt.test_name_long, tt.test_description,
         tt.measure_uom, COALESCE(tt.measure_uom_description, '') as measure_uom_description,
         tt.default_parm_columns, tt.default_severity,
-        tt.run_type, tt.test_scope, tt.dq_dimension, tt.threshold_description,
+        tt.run_type, tt.test_scope, tt.dq_dimension, tt.impact_dimension, tt.threshold_description,
         tt.column_name_prompt, tt.column_name_help,
         tt.default_parm_prompts, tt.default_parm_help, tt.usage_notes,
         CASE tt.test_scope
@@ -791,6 +792,7 @@ def get_test_definitions(
 
     sort_expressions = {
         "flagged": lambda d: sort_funcs[d](case((TestDefinition.flagged == True, 0), else_=1)),
+        "test_name_short": lambda d: sort_funcs[d](func.lower(TestType.test_name_short)),
     }
 
     order_by = []

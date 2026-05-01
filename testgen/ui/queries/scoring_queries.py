@@ -58,7 +58,9 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             COALESCE(column_chars.stakeholder_group, table_chars.stakeholder_group, groups.stakeholder_group) as stakeholder_group,
             COALESCE(column_chars.transform_level, table_chars.transform_level, groups.transform_level) as transform_level,
             COALESCE(column_chars.aggregation_level, table_chars.aggregation_level) as aggregation_level,
-            COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product
+            COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product,
+            types.impact_dimension,
+            types.dq_dimension
         FROM profile_anomaly_results results
         INNER JOIN profile_anomaly_types types
             ON results.anomaly_id = types.id
@@ -106,6 +108,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
                 ELSE 'Passed'
             END as disposition,
             results.test_run_id::VARCHAR,
+            test_runs.job_execution_id::VARCHAR,
             types.usage_notes,
             types.test_type,
             results.auto_gen,
@@ -124,14 +127,16 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             COALESCE(column_chars.stakeholder_group, table_chars.stakeholder_group, groups.stakeholder_group) as stakeholder_group,
             COALESCE(column_chars.transform_level, table_chars.transform_level, groups.transform_level) as transform_level,
             COALESCE(column_chars.aggregation_level, table_chars.aggregation_level) as aggregation_level,
-            COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product
-        FROM test_results results
+            COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product,
+            COALESCE(results.impact_dimension, types.impact_dimension) as impact_dimension        FROM test_results results
         INNER JOIN test_types types
             ON (results.test_type = types.test_type)
         INNER JOIN test_suites suites
             ON (results.test_suite_id = suites.id)
         INNER JOIN table_groups groups
             ON (results.table_groups_id = groups.id)
+        LEFT JOIN test_runs
+            ON (results.test_run_id = test_runs.id)
         LEFT JOIN data_column_chars column_chars
             ON (groups.id = column_chars.table_groups_id
             AND results.schema_name = column_chars.schema_name
@@ -156,6 +161,12 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
             "Timeliness",
             "Uniqueness",
             "Validity",
+        ],
+        "impact_dimension": [
+            "Reliability",
+            "Conformance",
+            "Regularity",
+            "Usability",
         ],
     })
     categories = [

@@ -53,7 +53,7 @@ const IssuesTable = (
     /** @type string[] */ columns,
     /** @type Score */ score,
     /** @type ('score' | 'cde_score') */ scoreType,
-    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension') */ category,
+    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension') */ category,
     /** @type string */ drilldown,
     /** @type function */ onBack,
     emit,
@@ -217,7 +217,7 @@ const ColumnProfilingButton = (
 const Toolbar = (
     /** @type {object} */ filters,
     /** @type Issue[] */ issues,
-    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension') */ category,
+    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension') */ category,
 ) => {
     const filterOptions = {
         table: [ ...new Set(issues.map(({ table }) => table)) ]
@@ -357,6 +357,7 @@ const COLUMN_LABEL = {
     column_name: 'Table > Column',
     semantic_data_type: 'Semantic Data Type',
     dq_dimension: 'Quality Dimension',
+    impact_dimension: 'Impact Dimension',
 };
 
 const ISSUES_COLUMN_LABEL = {

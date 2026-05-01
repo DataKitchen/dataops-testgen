@@ -24,6 +24,7 @@ profile_anomaly_types:
     (p.null_value_ct + filled_value_ct + zero_length_ct)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '0.33'
   dq_dimension: Completeness
+  impact_dimension: Regularity
   target_data_lookups:
   - id: '1285'
     test_id: '1013'

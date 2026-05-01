@@ -28,6 +28,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Consistency
+  impact_dimension: Regularity
   health_dimension: Data Drift
   threshold_description: |-
     Standardized Difference Measure
