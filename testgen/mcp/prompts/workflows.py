@@ -63,6 +63,20 @@ Please assess the data quality health of table `{table_name}`:
 """
 
 
+def profiling_overview() -> str:
+    """Explore the profiling results for a table group — understand data shapes, types, null rates, and hygiene issues."""
+    return """\
+Please perform a profiling exploration:
+
+1. Call `get_data_inventory()` to see projects and table groups, with profiling status per group.
+2. Pick a table group that has been profiled.
+3. Call `list_profiling_summaries(table_group_id='...')` for the quality health overview (scores, hygiene issue counts, last profiled).
+4. Call `get_table(table_group_id='...', table_name='...')` for structural metadata, the column list, and table-level highlights.
+5. Call `list_column_profiles(table_group_id='...', table_name='...')` to scan all columns — datatype, null rates, distinct counts, quality scores, and hygiene issue counts per column.
+6. Summarize findings: which tables/columns have quality concerns, and which trends are worth investigating further.
+"""
+
+
 def compare_runs(test_suite: str | None = None) -> str:
     """Compare the two most recent test runs to identify regressions and improvements.
 

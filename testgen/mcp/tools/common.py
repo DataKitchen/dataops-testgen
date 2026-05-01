@@ -2,9 +2,11 @@ from datetime import date
 from uuid import UUID
 
 from testgen.common.date_service import parse_since
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResultStatus
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.permissions import get_project_permissions
 
 
 def parse_uuid(value: str, label: str = "ID") -> UUID:
@@ -64,3 +66,17 @@ def format_page_footer(total: int, page: int, limit: int) -> str:
     if page >= total_pages:
         return ""
     return f"_Page {page} of {total_pages}. Use `page={page + 1}` for more._"
+
+
+# Entity resolution helpers — see mcp-roadmap.md "Entity Resolution Helpers" guideline.
+# Extract a new resolve_<entity> here when a second caller needs the same parse-uuid +
+# perm-scoped lookup + collapsed-error pattern.
+
+def resolve_table_group(table_group_id: str) -> TableGroup:
+    """Resolve a TG ID, collapsing missing-or-inaccessible into one error path."""
+    tg_uuid = parse_uuid(table_group_id, "table_group_id")
+    perms = get_project_permissions()
+    tg = TableGroup.get(tg_uuid, TableGroup.project_code.in_(perms.allowed_codes))
+    if tg is None:
+        raise MCPResourceNotAccessible("Table group", table_group_id)
+    return tg

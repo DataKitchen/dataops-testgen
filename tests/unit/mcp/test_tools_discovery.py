@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.mcp.exceptions import MCPPermissionDenied
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible
 from testgen.mcp.permissions import ProjectPermissions
 
 
@@ -196,23 +196,31 @@ def test_list_test_suites_raises_denial_for_insufficient_permission(
         list_test_suites("secret_project")
 
 
-@patch("testgen.mcp.tools.discovery.DataTable")
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_list_tables_returns_not_found_for_inaccessible_group(
-    mock_compute, mock_dt, db_session_mock,
-):
-    mock_compute.return_value = ProjectPermissions(
-        memberships={"proj_a": "role_a"},
-        permission="catalog",
-    )
-    mock_dt.select_table_names.return_value = []
-    mock_dt.count_tables.return_value = 0
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_tables_rejects_inaccessible_group(mock_tg_cls, db_session_mock):
+    """Inaccessible or non-existent TG raises MCPResourceNotAccessible — same path."""
+    mock_tg_cls.get.return_value = None
 
     from testgen.mcp.tools.discovery import list_tables
 
-    result = list_tables(str(uuid4()))
+    with pytest.raises(MCPResourceNotAccessible, match="Table group .* not found or not accessible"):
+        list_tables(str(uuid4()))
 
-    assert "No tables found" in result
-    mock_dt.select_table_names.assert_called_once()
+
+@patch("testgen.mcp.tools.discovery.DataTable")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_tables_scopes_data_lookup_to_resolved_tg_project(mock_tg_cls, mock_dt, db_session_mock):
+    """After resolution, data lookup is scoped to just the TG's project, not all allowed projects."""
+    tg = MagicMock()
+    tg.id = uuid4()
+    tg.project_code = "proj_a"
+    mock_tg_cls.get.return_value = tg
+    mock_dt.select_table_names.return_value = ["customers"]
+    mock_dt.count_tables.return_value = 1
+
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(uuid4()))
+
     call_kwargs = mock_dt.select_table_names.call_args
     assert call_kwargs.kwargs["project_codes"] == ["proj_a"]

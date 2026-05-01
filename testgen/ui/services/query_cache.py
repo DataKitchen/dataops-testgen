@@ -112,7 +112,8 @@ def get_table_group_summaries(
     project_code: str,
     for_dashboard: bool = False,
 ) -> Iterable[TableGroupSummary]:
-    return TableGroup.select_summary(project_code, for_dashboard)
+    items, _ = TableGroup.select_summary(project_code, for_dashboard=for_dashboard)
+    return items
 
 
 # -- ProfilingRun -------------------------------------------------------------

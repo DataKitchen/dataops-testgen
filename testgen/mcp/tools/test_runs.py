@@ -67,7 +67,7 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
         errors = run.error_ct or 0
 
         doc.heading(3, f"{run.created_at} — {run.status_label}")
-        doc.field("Run ID", run.job_execution_id, code=True)
+        doc.field("Test Run", run.job_execution_id, code=True)
         doc.field("Started", run.created_at)
         doc.field("Ended", run.completed_at or "In progress")
         doc.field("Results", f"{run.test_ct or 0} tests — {passed} passed, {failed} failed, {warning} warnings, {errors} errors")
