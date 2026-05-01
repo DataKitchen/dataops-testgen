@@ -4,7 +4,7 @@ from testgen.common.models.project import Project
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import resolve_table_group
+from testgen.mcp.tools.common import resolve_table_group, validate_limit, validate_page
 from testgen.mcp.tools.markdown import MdDoc
 
 
@@ -106,9 +106,12 @@ def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
 
     Args:
         table_group_id: The table group UUID.
-        limit: Maximum number of tables per page (default 200).
+        limit: Maximum number of tables per page (default 200, max 500).
         page: Page number, starting from 1 (default 1).
     """
+    validate_page(page)
+    validate_limit(limit, 500)
+
     tg = resolve_table_group(table_group_id)
     project_codes = [tg.project_code]
 

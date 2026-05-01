@@ -14,6 +14,8 @@ from testgen.mcp.tools.common import (
     parse_since_arg,
     parse_uuid,
     resolve_test_type,
+    validate_limit,
+    validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
 
@@ -44,13 +46,15 @@ def list_test_results(
         status: Filter by result status (Passed, Failed, Warning, Error, Log).
         table_name: Filter by table name.
         test_type: Filter by test type (e.g. 'Alpha Truncation', 'Unique Percent').
-        limit: Maximum number of results per page (default 50).
+        limit: Maximum number of test results per page (default 50, max 200).
         page: Page number, starting from 1 (default 1).
     """
     if job_execution_id and test_suite_id:
         raise MCPUserError("Pass either `job_execution_id` or `test_suite_id`, not both.")
     if not job_execution_id and not test_suite_id:
         raise MCPUserError("Provide either `job_execution_id` or `test_suite_id`.")
+    validate_page(page)
+    validate_limit(limit, 200)
 
     perms = get_project_permissions()
 
@@ -265,10 +269,12 @@ def get_test_result_history(
 
     Args:
         test_definition_id: UUID of a test definition, e.g. from ``list_test_results``.
-        limit: Maximum number of historical results per page (default 20).
+        limit: Maximum number of historical results per page (default 20, max 200).
         page: Page number, starting from 1 (default 1).
     """
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
+    validate_page(page)
+    validate_limit(limit, 200)
     offset = (page - 1) * limit
 
     perms = get_project_permissions()
@@ -332,9 +338,12 @@ def search_test_results(
         test_type: Filter by test type (e.g. 'Pattern Match').
         status: Filter by result statuses (defaults to ['Failed', 'Warning']).
         since: Include results since this point — e.g. '7 days', '2 weeks', '2026-04-01'.
-        limit: Maximum results per page (default 50).
+        limit: Maximum number of test results per page (default 50, max 200).
         page: Page number, starting from 1 (default 1).
     """
+    validate_page(page)
+    validate_limit(limit, 200)
+
     perms = get_project_permissions()
     if project_code:
         perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
