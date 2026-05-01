@@ -107,7 +107,19 @@ def check_identifiers(
     return errors
 
 
-def run_test_validation(sql_generator: TestExecutionSQL, test_defs: list[TestExecutionDef]) -> list[TestExecutionDef]:
+def run_test_validation(
+    sql_generator: TestExecutionSQL,
+    test_defs: list[TestExecutionDef],
+    defer_persistence: bool = False,
+) -> list[TestExecutionDef]:
+    """Validate test definitions against the current target schema.
+
+    Populates ``td.errors`` on test_defs that reference missing tables or columns.
+    By default, also writes Error results and deactivates the failing tests; pass
+    ``defer_persistence=True`` to skip those side effects (e.g. when the caller
+    will attempt a regeneration first and let a later validation pass persist
+    whatever is still broken).
+    """
     quote = sql_generator.flavor_service.quote_character
 
     identifiers_to_check, target_schemas, collection_errors = collect_test_identifiers(test_defs, quote)
@@ -141,15 +153,16 @@ def run_test_validation(sql_generator: TestExecutionSQL, test_defs: list[TestExe
                 # Skip "Deactivated" prefix since it's already there from collection_errors or we add it
                 test_defs_by_id[test_id].errors.extend(error_list[1:] if test_defs_by_id[test_id].errors else error_list)
 
-    error_results = sql_generator.get_test_errors(test_defs_by_id.values())
-    if error_results:
-        LOG.warning(f"Tests in test suite failed validation: {len(error_results)}")
-        LOG.info("Writing test validation errors to test results")
-        write_to_app_db(error_results, sql_generator.result_columns, sql_generator.test_results_table)
+    if not defer_persistence:
+        error_results = sql_generator.get_test_errors(test_defs_by_id.values())
+        if error_results:
+            LOG.warning(f"Tests in test suite failed validation: {len(error_results)}")
+            LOG.info("Writing test validation errors to test results")
+            write_to_app_db(error_results, sql_generator.result_columns, sql_generator.test_results_table)
 
-        LOG.info("Disabling tests in test suite that failed validation")
-        execute_db_queries([sql_generator.disable_invalid_test_definitions()])
-    else:
-        LOG.info("No tests in test suite failed validation")
+            LOG.info("Disabling tests in test suite that failed validation")
+            execute_db_queries([sql_generator.disable_invalid_test_definitions()])
+        else:
+            LOG.info("No tests in test suite failed validation")
 
     return [td for td in test_defs if not td.errors]

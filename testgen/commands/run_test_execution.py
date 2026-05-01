@@ -186,14 +186,22 @@ def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
             table_names = [row["table_name"] for row in missing_monitors]
             run_monitor_generation(test_suite_id, ["Freshness_Trend"], mode="insert", table_names=table_names)
 
-    # Regenerate monitors that errored in previous run
+    # Regenerate monitors that errored in previous run or fail validation
+    regen_tables_by_type: dict[str, set[str]] = defaultdict(set)
+
     errored_monitors = fetch_dict_from_db(*sql_generator.get_errored_autogen_monitors())
-    if errored_monitors:
-        errored_by_type: dict[str, list[str]] = defaultdict(list)
-        for row in errored_monitors:
-            errored_by_type[row["test_type"]].append(row["table_name"])
-        for test_type, table_names in errored_by_type.items():
-            run_monitor_generation(test_suite_id, [test_type], mode="upsert", table_names=table_names)
+    for row in errored_monitors:
+        regen_tables_by_type[row["test_type"]].add(row["table_name"])
+
+    active_defs = [TestExecutionDef(**item) for item in fetch_dict_from_db(*sql_generator.get_active_test_definitions())]
+    if active_defs:
+        run_test_validation(sql_generator, active_defs, defer_persistence=True)
+        for td in active_defs:
+            if td.errors and td.test_type in ("Freshness_Trend", "Volume_Trend") and td.lock_refresh != "Y":
+                regen_tables_by_type[td.test_type].add(td.table_name)
+
+    for test_type, table_names in regen_tables_by_type.items():
+        run_monitor_generation(test_suite_id, [test_type], mode="upsert", table_names=list(table_names))
 
 
 def _run_tests(

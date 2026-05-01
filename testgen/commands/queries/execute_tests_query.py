@@ -56,6 +56,7 @@ class TestExecutionDef(InputParameters):
     schema_name: str
     table_name: str
     column_name: str
+    lock_refresh: str
     skip_errors: int
     history_calculation: str
     custom_query: str
