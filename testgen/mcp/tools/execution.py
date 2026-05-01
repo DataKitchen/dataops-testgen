@@ -5,11 +5,9 @@ from sqlalchemy import select
 from testgen.api.schemas import JobKey, JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import parse_uuid
+from testgen.mcp.tools.common import parse_uuid, resolve_table_group, resolve_test_suite
 from testgen.mcp.tools.markdown import MdDoc
 
 
@@ -22,13 +20,7 @@ def run_tests(test_suite_id: str) -> str:
     Args:
         test_suite_id: UUID of the test suite to run, e.g. from ``list_test_suites``.
     """
-    suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
-
-    suite = TestSuite.get_regular(suite_uuid)
-    perms = get_project_permissions()
-    if suite is None or not perms.has_access(suite.project_code):
-        raise MCPResourceNotAccessible("Test suite", test_suite_id)
-
+    suite = resolve_test_suite(test_suite_id)
     job = JobExecution.submit(
         job_key=JobKey.run_tests,
         kwargs={"test_suite_id": str(suite.id)},
@@ -47,13 +39,7 @@ def run_profiling(table_group_id: str) -> str:
     Args:
         table_group_id: UUID of the table group to profile, e.g. from ``get_data_inventory``.
     """
-    group_uuid = parse_uuid(table_group_id, "table_group_id")
-
-    table_group = TableGroup.get(group_uuid)
-    perms = get_project_permissions()
-    if table_group is None or not perms.has_access(table_group.project_code):
-        raise MCPResourceNotAccessible("Table group", table_group_id)
-
+    table_group = resolve_table_group(table_group_id)
     job = JobExecution.submit(
         job_key=JobKey.run_profile,
         kwargs={"table_group_id": str(table_group.id)},
@@ -75,13 +61,7 @@ def generate_tests(test_suite_id: str) -> str:
     Args:
         test_suite_id: UUID of the test suite to generate tests for, e.g. from ``list_test_suites``.
     """
-    suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
-
-    suite = TestSuite.get_regular(suite_uuid)
-    perms = get_project_permissions()
-    if suite is None or not perms.has_access(suite.project_code):
-        raise MCPResourceNotAccessible("Test suite", test_suite_id)
-
+    suite = resolve_test_suite(test_suite_id)
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,
         kwargs={"test_suite_id": str(suite.id), "generation_set": "Standard"},
@@ -106,7 +86,8 @@ def cancel_test_run(job_execution_id: str) -> str:
     Args:
         job_execution_id: UUID of a test run, e.g. from ``get_recent_test_runs``.
     """
-    return _cancel_job(job_execution_id, JobKey.run_tests, "Test run", "get_recent_test_runs")
+    job = _resolve_job_execution(job_execution_id, JobKey.run_tests, "Test run")
+    return _render_cancel(job, "Test run", "get_recent_test_runs")
 
 
 @with_database_session
@@ -117,7 +98,27 @@ def cancel_profiling_run(job_execution_id: str) -> str:
     Args:
         job_execution_id: UUID of a profiling run, e.g. from ``list_profiling_summaries``.
     """
-    return _cancel_job(job_execution_id, JobKey.run_profile, "Profiling run", "list_profiling_summaries")
+    job = _resolve_job_execution(job_execution_id, JobKey.run_profile, "Profiling run")
+    return _render_cancel(job, "Profiling run", "list_profiling_summaries")
+
+
+def _resolve_job_execution(job_execution_id: str, expected_job_key: JobKey, kind: str) -> JobExecution:
+    """Resolve a user-submitted job by ID + expected job_key, collapsing missing-or-inaccessible
+    into one error path. Filters out source='system' jobs (internal rollups, never user-cancelable).
+    """
+    job_uuid = parse_uuid(job_execution_id, "job_execution_id")
+    perms = get_project_permissions()
+    job = get_current_session().scalars(
+        select(JobExecution).where(
+            JobExecution.id == job_uuid,
+            JobExecution.job_key == expected_job_key,
+            JobExecution.source != "system",
+            JobExecution.project_code.in_(perms.allowed_codes),
+        )
+    ).first()
+    if job is None:
+        raise MCPResourceNotAccessible(kind, job_execution_id)
+    return job
 
 
 def _render_submission(
@@ -137,26 +138,11 @@ def _render_submission(
     return doc.render()
 
 
-def _cancel_job(job_execution_id: str, expected_job_key: JobKey, kind: str, poll_tool: str) -> str:
-    job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-
-    job = get_current_session().scalars(
-        select(JobExecution).where(
-            JobExecution.id == job_uuid,
-            JobExecution.job_key == expected_job_key,
-            JobExecution.source != "system",
-        )
-    ).first()
-
-    perms = get_project_permissions()
-    if job is None or not perms.has_access(job.project_code):
-        raise MCPResourceNotAccessible(kind, job_execution_id)
-
+def _render_cancel(job: JobExecution, kind: str, poll_tool: str) -> str:
     if not job.request_cancel():
         raise MCPUserError(
             f"Cannot cancel — current status is `{job.status}`. Only queued or running jobs can be canceled."
         )
-
     doc = MdDoc()
     doc.heading(1, f"{kind} cancellation requested")
     doc.field("Job ID", job.id, code=True)

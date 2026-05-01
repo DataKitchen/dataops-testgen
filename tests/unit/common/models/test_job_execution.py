@@ -170,12 +170,12 @@ def test_request_cancel_pending_to_cancel_requested(mock_session):
 
 
 def test_request_cancel_idempotent_when_already_requested(mock_session):
-    """A re-request on a job already in cancel_requested returns True without hitting the DB."""
+    """A re-request on a job already in cancel_requested succeeds via the CANCEL_REQUESTED self-loop."""
     job = JobExecution(id=uuid4(), status="cancel_requested")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="cancel_requested")
 
     assert job.request_cancel() is True
     assert job.status == "cancel_requested"
-    mock_session.execute.assert_not_called()
 
 
 def test_request_cancel_terminal_state_returns_false(mock_session):

@@ -5,6 +5,7 @@ from testgen.common.date_service import parse_since
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResultStatus
+from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
 
@@ -80,3 +81,17 @@ def resolve_table_group(table_group_id: str) -> TableGroup:
     if tg is None:
         raise MCPResourceNotAccessible("Table group", table_group_id)
     return tg
+
+
+def resolve_test_suite(test_suite_id: str) -> TestSuite:
+    """Resolve a regular (non-monitor) test suite ID, collapsing missing-or-inaccessible into one error path."""
+    suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
+    perms = get_project_permissions()
+    suite = TestSuite.get(
+        suite_uuid,
+        TestSuite.is_monitor.isnot(True),
+        TestSuite.project_code.in_(perms.allowed_codes),
+    )
+    if suite is None:
+        raise MCPResourceNotAccessible("Test suite", test_suite_id)
+    return suite

@@ -26,7 +26,8 @@ _VALID_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED}),
     JobStatus.CLAIMED: frozenset({JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
     JobStatus.RUNNING: frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
-    JobStatus.CANCEL_REQUESTED: frozenset({JobStatus.CANCELED}),
+    # CANCEL_REQUESTED self-loop makes request_cancel() idempotent
+    JobStatus.CANCEL_REQUESTED: frozenset({JobStatus.CANCELED, JobStatus.CANCEL_REQUESTED}),
 }
 
 
@@ -180,10 +181,7 @@ class JobExecution(Base):
         return self._transition(JobStatus.CANCELED, completed_at=datetime.now(UTC))
 
     def request_cancel(self) -> bool:
-        # Idempotent: a re-request on an already-cancel-requested job succeeds
-        # without re-issuing the transition, so the caller doesn't have to
-        # special-case "cancel pressed twice."
-        return self.status == JobStatus.CANCEL_REQUESTED.value or self._transition(JobStatus.CANCEL_REQUESTED)
+        return self._transition(JobStatus.CANCEL_REQUESTED)
 
     def mark_completed(self) -> bool:
         return self._transition(JobStatus.COMPLETED, completed_at=datetime.now(UTC))

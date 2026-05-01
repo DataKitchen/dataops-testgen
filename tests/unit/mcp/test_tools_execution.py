@@ -32,8 +32,8 @@ def _mock_job(job_id=None, project_code="demo", status="pending", request_cancel
     return job
 
 
-def _patch_cancel_lookup(job):
-    """Patch the SQLAlchemy lookup chain inside _cancel_job to return ``job``."""
+def _patch_job_lookup(job):
+    """Patch the SQLAlchemy lookup chain inside _resolve_job_execution to return ``job``."""
     session = MagicMock()
     session.scalars.return_value.first.return_value = job
     return patch("testgen.mcp.tools.execution.get_current_session", return_value=session)
@@ -43,11 +43,11 @@ def _patch_cancel_lookup(job):
 
 
 @patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TestSuite")
+@patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mock):
     suite_id = uuid4()
     suite = _mock_test_suite(suite_id=suite_id)
-    mock_suite_cls.get_regular.return_value = suite
+    mock_suite_cls.get.return_value = suite
     submitted = MagicMock(id=uuid4())
     mock_job_exec.submit.return_value = submitted
 
@@ -76,11 +76,11 @@ def test_run_tests_invalid_uuid(db_session_mock):
 
 
 @patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TestSuite")
-def test_run_tests_suite_not_found(mock_suite_cls, mock_job_exec, db_session_mock):
-    """Both a missing suite and a monitor suite resolve to None via get_regular —
-    same unified error in both cases."""
-    mock_suite_cls.get_regular.return_value = None
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job_exec, db_session_mock):
+    """Unknown UUID, monitor suite, and forbidden project all collapse to the same SQL-side
+    miss inside resolve_test_suite."""
+    mock_suite_cls.get.return_value = None
 
     from testgen.mcp.tools.execution import run_tests
 
@@ -89,28 +89,11 @@ def test_run_tests_suite_not_found(mock_suite_cls, mock_job_exec, db_session_moc
     mock_job_exec.submit.assert_not_called()
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TestSuite")
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_run_tests_forbidden_project_unified_error(
-    mock_compute, mock_suite_cls, mock_job_exec, db_session_mock
-):
-    """Suite exists but user lacks edit on its project — same 'not found or not accessible'."""
-    mock_compute.return_value = ProjectPermissions(memberships={"other": "role_a"}, permission="edit")
-    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden")
-
-    from testgen.mcp.tools.execution import run_tests
-
-    with pytest.raises(MCPResourceNotAccessible, match="not found or not accessible"):
-        run_tests(str(uuid4()))
-    mock_job_exec.submit.assert_not_called()
-
-
 # --- run_profiling ----------------------------------------------------------
 
 
 @patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TableGroup")
+@patch("testgen.mcp.tools.common.TableGroup")
 def test_run_profiling_submits_job(mock_tg_cls, mock_job_exec, db_session_mock):
     group_id = uuid4()
     tg = _mock_table_group(group_id=group_id)
@@ -142,8 +125,8 @@ def test_run_profiling_invalid_uuid(db_session_mock):
 
 
 @patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TableGroup")
-def test_run_profiling_table_group_not_found(mock_tg_cls, mock_job_exec, db_session_mock):
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_run_profiling_table_group_not_found_or_inaccessible(mock_tg_cls, mock_job_exec, db_session_mock):
     mock_tg_cls.get.return_value = None
 
     from testgen.mcp.tools.execution import run_profiling
@@ -153,31 +136,15 @@ def test_run_profiling_table_group_not_found(mock_tg_cls, mock_job_exec, db_sess
     mock_job_exec.submit.assert_not_called()
 
 
-@patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TableGroup")
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_run_profiling_forbidden_project_unified_error(
-    mock_compute, mock_tg_cls, mock_job_exec, db_session_mock
-):
-    mock_compute.return_value = ProjectPermissions(memberships={"other": "role_a"}, permission="edit")
-    mock_tg_cls.get.return_value = _mock_table_group(project_code="forbidden")
-
-    from testgen.mcp.tools.execution import run_profiling
-
-    with pytest.raises(MCPResourceNotAccessible, match="not found or not accessible"):
-        run_profiling(str(uuid4()))
-    mock_job_exec.submit.assert_not_called()
-
-
 # --- generate_tests ---------------------------------------------------------
 
 
 @patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TestSuite")
+@patch("testgen.mcp.tools.common.TestSuite")
 def test_generate_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mock):
     suite_id = uuid4()
     suite = _mock_test_suite(suite_id=suite_id)
-    mock_suite_cls.get_regular.return_value = suite
+    mock_suite_cls.get.return_value = suite
     submitted = MagicMock(id=uuid4())
     mock_job_exec.submit.return_value = submitted
 
@@ -205,29 +172,13 @@ def test_generate_tests_invalid_uuid(db_session_mock):
 
 
 @patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TestSuite")
-def test_generate_tests_suite_not_found(mock_suite_cls, mock_job_exec, db_session_mock):
-    mock_suite_cls.get_regular.return_value = None
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_generate_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job_exec, db_session_mock):
+    mock_suite_cls.get.return_value = None
 
     from testgen.mcp.tools.execution import generate_tests
 
     with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
-        generate_tests(str(uuid4()))
-    mock_job_exec.submit.assert_not_called()
-
-
-@patch("testgen.mcp.tools.execution.JobExecution")
-@patch("testgen.mcp.tools.execution.TestSuite")
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_generate_tests_forbidden_project_unified_error(
-    mock_compute, mock_suite_cls, mock_job_exec, db_session_mock
-):
-    mock_compute.return_value = ProjectPermissions(memberships={"other": "role_a"}, permission="edit")
-    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden")
-
-    from testgen.mcp.tools.execution import generate_tests
-
-    with pytest.raises(MCPResourceNotAccessible, match="not found or not accessible"):
         generate_tests(str(uuid4()))
     mock_job_exec.submit.assert_not_called()
 
@@ -250,7 +201,7 @@ def test_decorator_denies_when_user_has_no_edit_on_any_project(
     mock_compute, tool_name, args, db_session_mock
 ):
     """@mcp_permission('edit') raises MCPPermissionDenied — distinct from the
-    per-tool MCPResourceNotAccessible — when the user has no edit on any project."""
+    resolver-level MCPResourceNotAccessible — when the user has no edit on any project."""
     mock_compute.return_value = ProjectPermissions(memberships={"some_project": "role_c"}, permission="edit")
 
     from testgen.mcp.tools import execution
@@ -270,25 +221,14 @@ def test_cancel_test_run_invalid_uuid(db_session_mock):
         cancel_test_run("not-a-uuid")
 
 
-def test_cancel_test_run_not_found(db_session_mock):
+def test_cancel_test_run_not_found_or_inaccessible(db_session_mock):
+    """Unknown UUID, wrong job_key (e.g. profiling run UUID), forbidden project, and
+    source='system' all collapse to the same SQL-side miss inside _resolve_job_execution."""
     from testgen.mcp.tools.execution import cancel_test_run
 
-    with _patch_cancel_lookup(None):
+    with _patch_job_lookup(None):
         with pytest.raises(MCPResourceNotAccessible, match="Test run .* not found or not accessible"):
             cancel_test_run(str(uuid4()))
-
-
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_cancel_test_run_forbidden_project_unified_error(mock_compute, db_session_mock):
-    mock_compute.return_value = ProjectPermissions(memberships={"other": "role_a"}, permission="edit")
-    job = _mock_job(project_code="forbidden")
-
-    from testgen.mcp.tools.execution import cancel_test_run
-
-    with _patch_cancel_lookup(job):
-        with pytest.raises(MCPResourceNotAccessible, match="not found or not accessible"):
-            cancel_test_run(str(uuid4()))
-    job.request_cancel.assert_not_called()
 
 
 def test_cancel_test_run_terminal_status(db_session_mock):
@@ -296,7 +236,7 @@ def test_cancel_test_run_terminal_status(db_session_mock):
 
     from testgen.mcp.tools.execution import cancel_test_run
 
-    with _patch_cancel_lookup(job):
+    with _patch_job_lookup(job):
         with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is `completed`"):
             cancel_test_run(str(uuid4()))
 
@@ -313,7 +253,7 @@ def test_cancel_test_run_success(db_session_mock):
 
     from testgen.mcp.tools.execution import cancel_test_run
 
-    with _patch_cancel_lookup(job):
+    with _patch_job_lookup(job):
         result = cancel_test_run(str(job_id))
 
     assert "Test run cancellation requested" in result
@@ -356,25 +296,12 @@ def test_cancel_profiling_run_invalid_uuid(db_session_mock):
         cancel_profiling_run("not-a-uuid")
 
 
-def test_cancel_profiling_run_not_found(db_session_mock):
+def test_cancel_profiling_run_not_found_or_inaccessible(db_session_mock):
     from testgen.mcp.tools.execution import cancel_profiling_run
 
-    with _patch_cancel_lookup(None):
+    with _patch_job_lookup(None):
         with pytest.raises(MCPResourceNotAccessible, match="Profiling run .* not found or not accessible"):
             cancel_profiling_run(str(uuid4()))
-
-
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_cancel_profiling_run_forbidden_project_unified_error(mock_compute, db_session_mock):
-    mock_compute.return_value = ProjectPermissions(memberships={"other": "role_a"}, permission="edit")
-    job = _mock_job(project_code="forbidden")
-
-    from testgen.mcp.tools.execution import cancel_profiling_run
-
-    with _patch_cancel_lookup(job):
-        with pytest.raises(MCPResourceNotAccessible, match="not found or not accessible"):
-            cancel_profiling_run(str(uuid4()))
-    job.request_cancel.assert_not_called()
 
 
 def test_cancel_profiling_run_terminal_status(db_session_mock):
@@ -382,7 +309,7 @@ def test_cancel_profiling_run_terminal_status(db_session_mock):
 
     from testgen.mcp.tools.execution import cancel_profiling_run
 
-    with _patch_cancel_lookup(job):
+    with _patch_job_lookup(job):
         with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is `error`"):
             cancel_profiling_run(str(uuid4()))
 
@@ -399,7 +326,7 @@ def test_cancel_profiling_run_success(db_session_mock):
 
     from testgen.mcp.tools.execution import cancel_profiling_run
 
-    with _patch_cancel_lookup(job):
+    with _patch_job_lookup(job):
         result = cancel_profiling_run(str(job_id))
 
     assert "Profiling run cancellation requested" in result
