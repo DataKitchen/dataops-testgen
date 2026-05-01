@@ -88,7 +88,7 @@ def get_test_results(
             tt.dq_dimension, r.impact_dimension, tt.test_scope,
             r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
             tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
-            c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
+            c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure, r.result_status,
             CASE
                 WHEN r.result_code = 0 THEN r.disposition
                 ELSE 'Passed'
