@@ -11,7 +11,7 @@ from testgen.api.deps import (
     resolve_test_suite,
 )
 from testgen.api.schemas import ErrorResponse, JobKey, JobListResponse, JobResponse, JobSource, JobSubmittedResponse
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 
@@ -98,7 +98,7 @@ def cancel_job(job: JobExecution = resolve_job("edit")):  # noqa: B008
 def list_jobs(
     project_code: str = resolve_project_code("view"),
     job_key: JobKey | None = Query(default=None),  # noqa: B008
-    status: str | None = Query(default=None),
+    status: JobStatus | None = Query(default=None),  # noqa: B008
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
 ):

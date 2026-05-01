@@ -39,6 +39,7 @@ class SourceDataResult:
     message: str | None
     query: str | None
     df: pd.DataFrame | None
+    pii_redacted: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -76,16 +77,17 @@ def fetch_test_result_source_data(
             df = to_dataframe(results)
             if limit:
                 df = df.sample(n=min(len(df), limit)).sort_index()
+            redacted = False
             if mask_pii:
                 if is_custom:
-                    _mask_lookup_pii(df, issue_data["table_groups_id"], issue_data["table_name"])
+                    redacted = _mask_lookup_pii(df, issue_data["table_groups_id"], issue_data["table_name"])
                     # Mask user-defined redactable columns from the test definition
                     lookup_data = _get_lookup_data_custom(issue_data["test_definition_id"])
                     if lookup_data and lookup_data.lookup_redactable_columns:
                         redactable = {col.strip() for col in lookup_data.lookup_redactable_columns.split(",")}
-                        mask_source_data_pii(df, redactable)
+                        redacted = mask_source_data_pii(df, redactable) or redacted
                 else:
-                    _mask_lookup_pii(
+                    redacted = _mask_lookup_pii(
                         df,
                         issue_data["table_groups_id"],
                         issue_data["table_name"],
@@ -93,7 +95,7 @@ def fetch_test_result_source_data(
                         test_type_id=issue_data.get("test_type_id"),
                         error_type="Test Results",
                     )
-            return SourceDataResult("OK", None, lookup_query, df)
+            return SourceDataResult("OK", None, lookup_query, df, pii_redacted=redacted)
         else:
             return SourceDataResult(
                 "ND", "Data that violates test criteria is not present in the current dataset.", lookup_query, None,
@@ -155,8 +157,9 @@ def fetch_hygiene_source_data(
             df = to_dataframe(results)
             if limit:
                 df = df.sample(n=min(len(df), limit)).sort_index()
+            redacted = False
             if mask_pii:
-                _mask_lookup_pii(
+                redacted = _mask_lookup_pii(
                     df,
                     issue_data["table_groups_id"],
                     issue_data["table_name"],
@@ -164,7 +167,7 @@ def fetch_hygiene_source_data(
                     test_type_id=issue_data.get("anomaly_id"),
                     error_type="Profile Anomaly",
                 )
-            return SourceDataResult("OK", None, lookup_query, df)
+            return SourceDataResult("OK", None, lookup_query, df, pii_redacted=redacted)
         else:
             return SourceDataResult(
                 "ND",
@@ -336,10 +339,10 @@ def _mask_lookup_pii(
     column_name: str | None = None,
     test_type_id: str | None = None,
     error_type: Literal["Profile Anomaly", "Test Results"] | None = None,
-) -> None:
-    """Apply PII masking to a source data lookup DataFrame."""
+) -> bool:
+    """Apply PII masking to a source data lookup DataFrame. Returns True if any masking occurred."""
     pii_columns = get_pii_columns(table_group_id, table_name=table_name)
-    mask_source_data_pii(df, pii_columns)
+    masked = mask_source_data_pii(df, pii_columns)
 
     # Row-level masking: if result has a column_name column listing which source column
     # each row is about (e.g., table-level recency queries), mask value columns in rows
@@ -348,10 +351,12 @@ def _mask_lookup_pii(
         pii_lower = {c.lower() for c in pii_columns}
         value_cols = [c for c in df.columns if c != "column_name"]
         pii_rows = df["column_name"].str.lower().isin(pii_lower)
-        for col in value_cols:
-            if df[col].dtype != object:
-                df[col] = df[col].astype(object)
-            df.loc[pii_rows, col] = PII_REDACTED
+        if pii_rows.any() and value_cols:
+            for col in value_cols:
+                if df[col].dtype != object:
+                    df[col] = df[col].astype(object)
+                df.loc[pii_rows, col] = PII_REDACTED
+            masked = True
 
     # Also mask redactable columns if the test's target column is PII
     if column_name and test_type_id and error_type and column_name.lower() in {c.lower() for c in pii_columns}:
@@ -370,4 +375,5 @@ def _mask_lookup_pii(
         ).mappings().first()
         if result and result["lookup_redactable_columns"]:
             redactable = {col.strip() for col in result["lookup_redactable_columns"].split(",")}
-            mask_source_data_pii(df, redactable)
+            masked = mask_source_data_pii(df, redactable) or masked
+    return masked

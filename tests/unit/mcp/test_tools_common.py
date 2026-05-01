@@ -4,7 +4,7 @@ import pytest
 
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.tools.common import parse_result_status, parse_uuid
+from testgen.mcp.tools.common import parse_result_status, parse_uuid, validate_limit, validate_page
 
 # --- parse_uuid ---
 
@@ -55,3 +55,36 @@ def test_parse_result_status_invalid_lists_valid_values():
         parse_result_status("nope")
     for status in TestResultStatus:
         assert status.value in str(exc_info.value)
+
+
+# --- validate_page ---
+
+
+@pytest.mark.parametrize("ok", [1, 2, 99])
+def test_validate_page_accepts_positive(ok):
+    validate_page(ok)  # does not raise
+
+
+@pytest.mark.parametrize("bad", [0, -1, -100])
+def test_validate_page_rejects_below_one(bad):
+    with pytest.raises(MCPUserError, match=f"Invalid page `{bad}`"):
+        validate_page(bad)
+
+
+# --- validate_limit ---
+
+
+@pytest.mark.parametrize("ok", [1, 50, 100])
+def test_validate_limit_accepts_in_range(ok):
+    validate_limit(ok, 100)  # does not raise
+
+
+@pytest.mark.parametrize("bad", [0, -1, 101, 1000])
+def test_validate_limit_rejects_out_of_range(bad):
+    with pytest.raises(MCPUserError, match=f"Invalid limit `{bad}`"):
+        validate_limit(bad, 100)
+
+
+def test_validate_limit_message_includes_max():
+    with pytest.raises(MCPUserError, match="between 1 and 200"):
+        validate_limit(0, 200)

@@ -3,7 +3,14 @@ from testgen.common.models.test_definition import TestDefinition, TestDefinition
 from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import format_page_footer, format_page_info, parse_uuid, resolve_test_type
+from testgen.mcp.tools.common import (
+    format_page_footer,
+    format_page_info,
+    parse_uuid,
+    resolve_test_type,
+    validate_limit,
+    validate_page,
+)
 from testgen.mcp.tools.markdown import MdDoc
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
@@ -27,10 +34,12 @@ def list_tests(
         table_name: Filter by table name (exact match).
         test_type: Filter by test type (e.g. 'Alpha Truncation', 'Row Count').
         test_active: Filter by active status (true/false). Omit to show all.
-        limit: Maximum number of results per page (default 50).
+        limit: Maximum number of tests per page (default 50, max 200).
         page: Page number, starting from 1 (default 1).
     """
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
+    validate_page(page)
+    validate_limit(limit, 200)
     test_type_code = resolve_test_type(test_type) if test_type else None
     perms = get_project_permissions()
 

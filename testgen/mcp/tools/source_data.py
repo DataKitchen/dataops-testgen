@@ -9,7 +9,7 @@ from testgen.common.source_data_service import (
 )
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import parse_uuid
+from testgen.mcp.tools.common import parse_uuid, validate_limit
 from testgen.mcp.tools.markdown import MdDoc
 
 
@@ -56,7 +56,7 @@ def get_source_data_query(
         reference_date: ISO 8601 date used as the test reference point (default: now).
         limit: Maximum rows the query would return (default 100, max 500).
     """
-    limit = min(max(limit, 1), 500)
+    validate_limit(limit, 500)
     context = _resolve_context(test_definition_id, reference_date)
 
     query = build_test_result_query(context, limit)
@@ -96,7 +96,7 @@ def get_source_data(
         reference_date: ISO 8601 date used as the test reference point (default: now).
         limit: Maximum rows to return (default 100, max 500).
     """
-    limit = min(max(limit, 1), 500)
+    validate_limit(limit, 500)
     context = _resolve_context(test_definition_id, reference_date)
 
     perms = get_project_permissions()
@@ -114,7 +114,7 @@ def get_source_data(
     if result.status == "OK":
         row_count = len(result.df) if result.df is not None else 0
         doc.field("Rows returned", row_count)
-        if mask_pii:
+        if result.pii_redacted:
             doc.text("_PII columns have been redacted._")
         doc.table_from_dataframe(result.df)
         if result.query:
