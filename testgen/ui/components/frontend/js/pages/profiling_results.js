@@ -53,6 +53,7 @@ import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
 import { HygieneIssuesCard } from '../data_profiling/data_issues.js';
+import { DataPreviewDialog } from '../shared/data_preview_dialog.js';
 
 const { div, span, h2 } = van.tags;
 
@@ -287,7 +288,7 @@ const ProfilingResults = (/** @type Properties */ props) => {
                         ),
                     ),
                     DataCharacteristicsCard({ emit,  border: true }, selectedRow.val),
-                    ColumnDistributionCard({ emit,  border: true, dataPreview: false }, selectedRow.val),
+                    ColumnDistributionCard({ emit,  border: true, dataPreview: true }, selectedRow.val),
                     () => {
                         const si = selectedItemData.val;
                         if (!si || si.id !== selectedRowId.rawVal) return '';
@@ -297,6 +298,11 @@ const ProfilingResults = (/** @type Properties */ props) => {
                 )
                 : '',
         ),
+        DataPreviewDialog({
+            emit,
+            previewData: props.data_preview_dialog,
+            onClose: () => emit('DataPreviewDialogClosed', {}),
+        }),
     );
 };
 

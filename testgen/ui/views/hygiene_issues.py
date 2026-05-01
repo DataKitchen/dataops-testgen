@@ -204,14 +204,20 @@ class HygieneIssuesPage(Page):
         def on_row_selected(item_id: str) -> None:
             Router().set_query_params({"selected": item_id})
 
+        def _clear_disposition_caches() -> None:
+            _get_anomaly_disposition.clear()
+            _get_profiling_anomaly_summary.clear()
+            profiling_queries.get_profiling_anomalies.clear()
+            profiling_queries.get_profiling_anomalies_count.clear()
+            profiling_queries.get_profiling_anomaly_ids.clear()
+
         @with_database_session
         def on_disposition_changed(payload: dict) -> None:
             ids = payload.get("ids", [])
             status = payload.get("status", "No Decision")
             if ids:
                 _update_anomaly_disposition(ids, status)
-                _get_anomaly_disposition.clear()
-                _get_profiling_anomaly_summary.clear()
+                _clear_disposition_caches()
 
         @with_database_session
         def on_disposition_all(payload: dict) -> None:
@@ -228,8 +234,7 @@ class HygieneIssuesPage(Page):
             )
             if all_ids:
                 _update_anomaly_disposition(all_ids, disposition)
-                _get_anomaly_disposition.clear()
-                _get_profiling_anomaly_summary.clear()
+                _clear_disposition_caches()
 
         def on_filter_changed(payload: dict) -> None:
             Router().set_query_params({
