@@ -11,6 +11,7 @@ def test_get_test_type_found(mock_tt_cls, db_session_mock):
     tt.measure_uom = "Pct"
     tt.measure_uom_description = "Percentage of truncated values"
     tt.threshold_description = "Maximum allowed truncation rate"
+    tt.impact_dimension = "Conformance"
     tt.dq_dimension = "Accuracy"
     tt.test_scope = "column"
     tt.except_message = "Alpha truncation detected"
@@ -23,6 +24,7 @@ def test_get_test_type_found(mock_tt_cls, db_session_mock):
 
     assert "Alpha Truncation" in result
     assert "Alpha_Trunc" not in result
+    assert "Conformance" in result
     assert "Accuracy" in result
     assert "column" in result
     assert "truncated" in result.lower()
@@ -44,12 +46,14 @@ def test_test_types_resource(mock_tt_cls, db_session_mock):
     tt1 = MagicMock()
     tt1.test_type = "Alpha_Trunc"
     tt1.test_name_short = "Alpha Truncation"
+    tt1.impact_dimension = "Conformance"
     tt1.dq_dimension = "Accuracy"
     tt1.test_scope = "column"
     tt1.test_description = "Checks truncation"
     tt2 = MagicMock()
     tt2.test_type = "Unique_Pct"
     tt2.test_name_short = "Unique Percent"
+    tt2.impact_dimension = "Usability"
     tt2.dq_dimension = "Uniqueness"
     tt2.test_scope = "column"
     tt2.test_description = "Checks unique percentage"
@@ -63,6 +67,8 @@ def test_test_types_resource(mock_tt_cls, db_session_mock):
     assert "Unique Percent" in result
     assert "Alpha_Trunc" not in result
     assert "Unique_Pct" not in result
+    assert "Conformance" in result
+    assert "Usability" in result
     assert "Accuracy" in result
     assert "Uniqueness" in result
 

@@ -80,6 +80,7 @@ const TRANSLATIONS = {
     transform_level: 'Transform Level',
     aggregation_level: 'Aggregation Level',
     dq_dimension: 'Quality Dimension',
+    impact_dimension: 'Impact Dimension',
     data_product: 'Data Product',
 };
 
@@ -113,14 +114,14 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
             const isEmpty = getValue(props.is_new) && getValue(props.definition)?.filters?.length <= 0;
 
             if (isEmpty) {
-                return EmptyState({ emit, 
+                return EmptyState({ emit,
                     class: 'explorer-empty-state',
                     label: 'No filters or columns selected yet',
                     icon: 'readiness_score',
                     message: EMPTY_STATE_MESSAGE.explorer,
                 });
             }
-            
+
             return div(
                 {class: 'flex-column'},
                 ScoreCard(props.score_card),
@@ -128,7 +129,7 @@ const ScoreExplorer = (/** @type {Properties} */ props) => {
                 () => {
                     const drilldown = getValue(props.drilldown);
                     const issuesValue = getValue(props.issues);
-        
+
                     return (
                         (issuesValue && getValue(props.drilldown))
                         ? IssuesTable(
@@ -185,16 +186,17 @@ const Toolbar = (
         'stakeholder_group',
         'transform_level',
         'dq_dimension',
+        'impact_dimension',
         'data_product',
     ];
-    const filterableFields = categories.filter((c) => c !== 'dq_dimension');
+    const filterableFields = categories.filter((c) => c !== 'dq_dimension' && c !== 'impact_dimension');
     const filters = van.state(definition.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value), others: f.others ?? [] })));
     const filterByColumns = van.state(definition.filter_by_columns);
     const filterSelectorOpened = van.state(false);
     const displayTotalScore = van.state(definition.total_score ?? true);
     const displayCDEScore = van.state(definition.cde_score ?? true);
     const displayCategory = van.state(!!definition.category);
-    const selectedCategory = van.state(definition.category ?? undefined);
+    const selectedCategory = van.state(definition.category ?? 'impact_dimension');
     const scoreName = van.state(definition.name ?? '');
     const disableSave = van.derive(() => {
         const appliedFilters = getValue(filters);
@@ -298,7 +300,7 @@ const Toolbar = (
                         if (filters_?.length <= 0) {
                             return '';
                         }
-    
+
                         return div(
                             { class: 'flex-row fx-flex-wrap fx-gap-3' },
                             filters_.map(({ key, field, value, others }, idx) => {
@@ -338,15 +340,15 @@ const Toolbar = (
                             span({class: 'text-caption'}, 'Or'),
                             columnsSelectorTrigger,
                         );
-    
+
                         if (filters_?.length <= 0 && filterByColumns_ == undefined) {
                             return combinedTrigger;
                         }
-    
+
                         if (filterByColumns_) {
                             return columnsSelectorTrigger;
                         }
-    
+
                         return fieldFilterTrigger;
                     },
                     Portal(

@@ -28,6 +28,7 @@ test_types:
   run_type: QUERY
   test_scope: referential
   dq_dimension: Accuracy
+  impact_dimension: Conformance
   health_dimension: Data Drift
   threshold_description: |-
     Expected count of group totals below aggregate value

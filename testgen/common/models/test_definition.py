@@ -72,6 +72,7 @@ class TestTypeSummary(ParamFieldsMixin, EntityMinimal):
     default_severity: str
     test_scope: TestScope
     dq_dimension: str
+    default_impact_dimension: str
     usage_notes: str
 
 
@@ -122,6 +123,7 @@ class TestDefinitionSummary(TestTypeSummary):
     export_to_observability: bool
     prediction: dict[str, dict[str, float]] | None
     flagged: bool
+    impact_dimension: str | None
 
     @property
     def display_name(self) -> str:
@@ -182,6 +184,7 @@ class TestType(ParamFieldsMixin, Entity):
     run_type: TestRunType = Column(String)
     test_scope: TestScope = Column(String)
     dq_dimension: str = Column(String)
+    impact_dimension: str = Column(String)
     health_dimension: str = Column(String)
     threshold_description: str = Column(String)
     usage_notes: str = Column(String)
@@ -254,6 +257,7 @@ class TestDefinition(Entity):
     prediction: dict[str, dict[str, float]] | None = Column(postgresql.JSONB)
     flagged: bool = Column(Boolean, default=False, nullable=False)
     external_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
+    impact_dimension: str | None = Column(String, nullable=True)
 
     _default_order_by = (
         asc(func.lower(schema_name)),
@@ -263,8 +267,9 @@ class TestDefinition(Entity):
     )
     _summary_columns = (
         *TestDefinitionSummary.__annotations__.keys(),
-        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
+        *[key for key in TestTypeSummary.__annotations__.keys() if key not in ("default_test_description", "default_impact_dimension")],
         TestType.test_description.label("default_test_description"),
+        TestType.impact_dimension.label("default_impact_dimension"),
     )
     _minimal_columns = TestDefinitionMinimal.__annotations__.keys()
     _update_exclude_columns = (

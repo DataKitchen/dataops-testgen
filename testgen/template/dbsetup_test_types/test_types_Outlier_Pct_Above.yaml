@@ -27,6 +27,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Accuracy
+  impact_dimension: Regularity
   health_dimension: Data Drift
   threshold_description: |-
     Expected maximum pct records over upper 2 SD limit

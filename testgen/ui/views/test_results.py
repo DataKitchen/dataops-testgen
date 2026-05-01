@@ -870,6 +870,7 @@ def get_excel_report_data(
         "column_names": {"header": "Columns/Focus"},
         "test_name_short": {"header": "Test type"},
         "test_description": {"header": "Description", "wrap": True},
+        "impact_dimension": {"header": "Impact dimension"},
         "dq_dimension": {"header": "Quality dimension"},
         "measure_uom": {"header": "Unit of measure (UOM)"},
         "measure_uom_description": {"header": "UOM description"},

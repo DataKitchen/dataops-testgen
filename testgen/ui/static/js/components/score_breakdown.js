@@ -83,7 +83,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, em
  * Translate the column names for the table.
  *
  * @param {Array<string>} columns
- * @param {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension')} category
+ * @param {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension')} category
  * @param {('score' | 'cde_score')} scoreType
  * @returns {<string>}
  */
@@ -186,6 +186,7 @@ const CATEGORIES = {
     column_name: 'Columns',
     semantic_data_type: 'Semantic Data Types',
     dq_dimension: 'Quality Dimensions',
+    impact_dimension: 'Impact Dimensions',
     table_groups_name: 'Table Group',
     data_location: 'Data Location',
     data_source: 'Data Source',
@@ -203,6 +204,7 @@ const BREAKDOWN_COLUMN_LABEL = {
     column_name: 'Table | Column',
     semantic_data_type: 'Semantic Data Type',
     dq_dimension: 'Quality Dimension',
+    impact_dimension: 'Impact Dimension',
     impact: '',
     score: 'Individual Score',
     issue_ct: 'Issue Count',

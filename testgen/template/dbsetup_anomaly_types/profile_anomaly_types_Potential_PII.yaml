@@ -16,6 +16,7 @@ profile_anomaly_types:
   dq_score_risk_factor: CASE LEFT(p.pii_flag, 1) WHEN 'A' THEN 1 WHEN 'B' THEN 0.66
     WHEN 'C' THEN 0.33 END
   dq_dimension: Validity
+  impact_dimension: Conformance
   target_data_lookups:
   - id: '1408'
     test_id: '1100'

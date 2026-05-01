@@ -64,11 +64,12 @@ def build_summary_table(document, hi_data):
             ("SPAN", (3, 3), (4, 3)),
             ("SPAN", (3, 4), (4, 4)),
             ("SPAN", (3, 5), (4, 5)),
-            ("SPAN", (1, 6), (4, 6)),
-            ("SPAN", (0, 7), (4, 7)),
+            ("SPAN", (3, 6), (4, 6)),
+            ("SPAN", (1, 7), (4, 7)),
+            ("SPAN", (0, 8), (4, 8)),
 
             # Link cell
-            ("BACKGROUND", (0, 7), (4, 7), colors.white),
+            ("BACKGROUND", (0, 8), (4, 8), colors.white),
 
             # Status cell
             *[
@@ -108,9 +109,10 @@ def build_summary_table(document, hi_data):
         ),
 
         ("Profiling Date", profiling_timestamp, "Table Group", hi_data["table_groups_name"]),
-        ("Database/Schema", hi_data["schema_name"], "Action", hi_data["disposition"] or "No Decision"),
-        ("Table", hi_data["table_name"], "Data Type", hi_data["db_data_type"]),
-        ("Column", hi_data["column_name"], "Semantic Data Type", hi_data["functional_data_type"]),
+        ("Database/Schema", hi_data["schema_name"], "Data Type", hi_data["db_data_type"]),
+        ("Table", hi_data["table_name"], "Semantic Data Type", hi_data["functional_data_type"]),
+        ("Column", hi_data["column_name"], "Impact Dimension", hi_data.get("impact_dimension")),
+        ("Action", hi_data["disposition"] or "No Decision","Quality Dimension", hi_data.get("dq_dimension")),
         (
             "Column Tags",
             (

@@ -24,6 +24,7 @@ test_types:
   run_type: METADATA
   test_scope: tablegroup
   dq_dimension: null
+  impact_dimension: Reliability
   health_dimension: null
   threshold_description: null
   result_visualization: binary_chart

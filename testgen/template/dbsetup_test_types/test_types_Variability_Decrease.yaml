@@ -28,6 +28,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Accuracy
+  impact_dimension: Regularity
   health_dimension: Data Drift
   threshold_description: |-
     Expected minimum pct of baseline Standard Deviation (SD)

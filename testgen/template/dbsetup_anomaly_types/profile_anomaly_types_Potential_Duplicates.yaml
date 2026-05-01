@@ -17,6 +17,7 @@ profile_anomaly_types:
     (p.value_ct - p.distinct_value_ct)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '0.33'
   dq_dimension: Uniqueness
+  impact_dimension: Regularity
   target_data_lookups:
   - id: '1354'
     test_id: '1016'

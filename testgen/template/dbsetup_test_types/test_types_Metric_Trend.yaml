@@ -24,6 +24,7 @@ test_types:
   run_type: CAT
   test_scope: table
   dq_dimension: Validity
+  impact_dimension: Regularity
   health_dimension: null
   threshold_description: |-
     Expected aggregate metric range.

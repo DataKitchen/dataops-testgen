@@ -28,6 +28,7 @@ test_types:
   run_type: QUERY
   test_scope: table
   dq_dimension: Recency
+  impact_dimension: Reliability
   health_dimension: Recency
   threshold_description: |-
     Most recent prior table fingerprint

@@ -144,8 +144,8 @@ class ScoreExplorerPage(Page):
             if not breakdown_category or breakdown_category not in typing.get_args(Categories):
                 breakdown_category = (
                     score_definition.category.value
-                    if score_definition.category 
-                    else ScoreCategory.dq_dimension.value
+                    if score_definition.category
+                    else ScoreCategory.impact_dimension.value
                 )
 
             if not breakdown_score_type or breakdown_score_type not in typing.get_args(ScoreTypes):
@@ -288,7 +288,7 @@ def export_issue_reports(selected_issues: list[SelectedIssue]) -> None:
         page=PAGE_PATH,
         issue_count=len(selected_issues),
     )
-    
+
     issues_data = get_score_card_issue_reports(selected_issues)
     dialog_title = "Download Issue Reports"
     if len(issues_data) == 1:

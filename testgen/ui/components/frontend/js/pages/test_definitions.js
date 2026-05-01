@@ -660,7 +660,7 @@ const TestDefinitions = (/** @type object */ props) => {
             () => {
                 const data = getValue(props.notes_dialog);
                 if (!data) return span();
-                return TestDefinitionNotes({ emit, 
+                return TestDefinitionNotes({ emit,
                     test_label: data.test_label,
                     notes: data.notes,
                     current_user: data.current_user,
@@ -1062,6 +1062,16 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         { label: 'No', value: false },
     ];
 
+    const inheritedImpactDimension = formValues.default_impact_dimension ?? 'Conformance';
+    const impactDimensionOptions = [
+        { label: `Inherited (${inheritedImpactDimension})`, value: null },
+        { label: 'Reliability', value: 'Reliability' },
+        { label: 'Conformance', value: 'Conformance' },
+        { label: 'Regularity', value: 'Regularity' },
+        { label: 'Usability', value: 'Usability' },
+    ];
+    const showImpactDimensionOverride = testType === 'CUSTOM' || testType === 'Condition_Flag' || testScope === 'referential';
+
     const tableNameOptions = [
         ...new Set((tableColumns ?? []).map(c => c.table_name).filter(Boolean))
     ].sort((a, b) => a.localeCompare(b)).map(t => ({ label: t, value: t }));
@@ -1129,7 +1139,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             }),
         ),
 
-        // Severity + Observability selects
+        // Severity + Observability + Impact Dimension selects
         div(
             { class: 'flex-row fx-gap-3 fx-flex-wrap' },
             div(
@@ -1152,6 +1162,17 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     onChange: (value) => updateField('export_to_observability', value),
                 }),
             ),
+            showImpactDimensionOverride ? div(
+                { style: 'flex: calc(50% - 8px) 0 0;' },
+                () => Select({
+                    label: 'Impact Dimension Override',
+                    value: fv.val.impact_dimension ?? null,
+                    options: impactDimensionOptions,
+                    allowNull: false,
+                    helpText: 'Override the default impact classification for this test. Affects how the test result is categorized in score breakdowns.',
+                    onChange: (value) => updateField('impact_dimension', value),
+                }),
+            ) : null,
         ),
 
         // Schema (read-only)

@@ -242,6 +242,7 @@ CREATE TABLE test_definitions (
    export_to_observability VARCHAR(5),
    flagged                BOOLEAN DEFAULT FALSE NOT NULL,
    external_id            UUID,
+   impact_dimension       VARCHAR(20),
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -351,7 +352,8 @@ CREATE TABLE profile_anomaly_types (
    suggested_action    VARCHAR(1000),
    dq_score_prevalence_formula TEXT,
    dq_score_risk_factor        TEXT,
-   dq_dimension        VARCHAR(50)
+   dq_dimension        VARCHAR(50),
+   impact_dimension    VARCHAR(20)
 );
 
 CREATE TABLE profile_anomaly_results (
@@ -370,7 +372,8 @@ CREATE TABLE profile_anomaly_results (
    anomaly_id      VARCHAR(10),
    detail          VARCHAR,
    disposition     VARCHAR(20), -- Confirmed, Dismissed, Inactive
-   dq_prevalence   FLOAT
+   dq_prevalence    FLOAT,
+   impact_dimension VARCHAR(20)
 );
 
 
@@ -572,6 +575,7 @@ CREATE TABLE test_types (
    run_type                      VARCHAR(10),
    test_scope                    VARCHAR,
    dq_dimension                  VARCHAR(50),
+   impact_dimension              VARCHAR(20),
    health_dimension              VARCHAR(50),
    threshold_description         VARCHAR(200),
    result_visualization          VARCHAR(50) DEFAULT 'line_chart',
@@ -656,6 +660,7 @@ CREATE TABLE test_results (
    dq_prevalence          FLOAT,
    dq_record_ct           BIGINT,
    observability_status   VARCHAR(10),
+   impact_dimension       VARCHAR(20),
    CONSTRAINT test_results_test_suites_project_code_test_suite_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -835,6 +840,7 @@ CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
     table_name           TEXT                DEFAULT NULL,
     column_name          TEXT                DEFAULT NULL,
     dq_dimension         TEXT                DEFAULT NULL,
+    impact_dimension     TEXT                DEFAULT NULL,
     semantic_data_type   TEXT                DEFAULT NULL,
     table_groups_name    TEXT                DEFAULT NULL,
     data_location        TEXT                DEFAULT NULL,
