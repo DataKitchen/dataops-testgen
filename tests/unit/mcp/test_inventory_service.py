@@ -152,7 +152,7 @@ def test_get_inventory_with_view_shows_all_details(mock_select, session_mock):
 # ----------------------------------------------------------------------
 
 
-def _profiling_summary(tg_id, *, profiled=True, anomalies=(2, 2, 11)):
+def _profiling_summary(tg_id, *, profiled=True, hygiene_issues=(2, 2, 11)):
     s = MagicMock()
     s.id = tg_id
     s.dq_score_profiling = 95.0
@@ -161,10 +161,10 @@ def _profiling_summary(tg_id, *, profiled=True, anomalies=(2, 2, 11)):
     s.latest_profile_job_execution_id = uuid4() if profiled else None
     s.latest_profile_start = MagicMock()
     s.latest_profile_start.strftime.return_value = "2026-04-23"
-    definite, likely, possible = anomalies
-    s.latest_anomalies_definite_ct = definite
-    s.latest_anomalies_likely_ct = likely
-    s.latest_anomalies_possible_ct = possible
+    definite, likely, possible = hygiene_issues
+    s.latest_hygiene_issues_definite_ct = definite
+    s.latest_hygiene_issues_likely_ct = likely
+    s.latest_hygiene_issues_possible_ct = possible
     return s
 
 
@@ -182,7 +182,7 @@ def test_get_inventory_includes_profiling_fragment_when_view(
     result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "Score" in result
-    assert "anomalies 15" in result  # 2+2+11
+    assert "hygiene issues 15" in result  # 2+2+11
     assert "last profiled 2026-04-23" in result
     assert f"profiling run `{summary.latest_profile_job_execution_id}`" in result
 
@@ -198,7 +198,7 @@ def test_get_inventory_omits_profiling_fragment_without_view(
     from testgen.mcp.services.inventory_service import get_inventory
     result = get_inventory(project_codes=["demo"], view_project_codes=[])
 
-    assert "anomalies" not in result
+    assert "hygiene issues" not in result
     assert "last profiled" not in result
     assert "profiling run" not in result
     # select_summary should not be called for projects we can't view.
@@ -209,7 +209,7 @@ def test_get_inventory_omits_profiling_fragment_without_view(
 def test_get_inventory_never_profiled_fragment(
     mock_select, session_mock, table_group_select_summary_mock,
 ):
-    """Never-profiled TG renders 'not profiled yet' instead of score/anomaly counts."""
+    """Never-profiled TG renders 'not profiled yet' instead of score/hygiene issue counts."""
     tg_id = uuid4()
     table_group_select_summary_mock.return_value = (
         [_profiling_summary(tg_id, profiled=False)], 1,
@@ -220,5 +220,5 @@ def test_get_inventory_never_profiled_fragment(
     result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "not profiled yet" in result
-    assert "anomalies" not in result
+    assert "hygiene issues" not in result
     assert "Score" not in result

@@ -157,7 +157,7 @@ def get_inventory(
         "---\n"
         "Use `list_tables(table_group_id='...')` to see tables in a group.\n"
         "Use `list_test_suites(project_code='...')` for suite details and latest run stats.\n"
-        "Use `list_profiling_summaries(table_group_id='...')` for the quality score rollup and anomaly counts."
+        "Use `list_profiling_summaries(table_group_id='...')` for the quality score rollup and hygiene issue counts."
     )
 
     return "\n".join(lines)
@@ -168,10 +168,10 @@ def _profiling_summary_fragment(summary: TableGroupSummary) -> str:
     if not summary.latest_profile_id:
         return "not profiled yet"
 
-    anomaly_total = (
-        (summary.latest_anomalies_definite_ct or 0)
-        + (summary.latest_anomalies_likely_ct or 0)
-        + (summary.latest_anomalies_possible_ct or 0)
+    hygiene_issue_total = (
+        (summary.latest_hygiene_issues_definite_ct or 0)
+        + (summary.latest_hygiene_issues_likely_ct or 0)
+        + (summary.latest_hygiene_issues_possible_ct or 0)
     )
     combined = friendly_score(score(summary.dq_score_profiling, summary.dq_score_testing))
     profiled_at = (
@@ -179,7 +179,7 @@ def _profiling_summary_fragment(summary: TableGroupSummary) -> str:
         if summary.latest_profile_start else "—"
     )
     return (
-        f"Score {combined}, anomalies {anomaly_total}, "
+        f"Score {combined}, hygiene issues {hygiene_issue_total}, "
         f"last profiled {profiled_at}, "
         f"profiling run `{summary.latest_profile_job_execution_id}`"
     )

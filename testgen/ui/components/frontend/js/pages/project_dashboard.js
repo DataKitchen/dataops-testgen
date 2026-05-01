@@ -19,11 +19,11 @@
  * @property {string?} latest_profile_id
  * @property {string?} latest_profile_job_execution_id
  * @property {number?} latest_profile_start
- * @property {number} latest_anomalies_ct
- * @property {number} latest_anomalies_definite_ct
- * @property {number} latest_anomalies_likely_ct
- * @property {number} latest_anomalies_possible_ct
- * @property {number} latest_anomalies_dismissed_ct
+ * @property {number} latest_hygiene_issues_ct
+ * @property {number} latest_hygiene_issues_definite_ct
+ * @property {number} latest_hygiene_issues_likely_ct
+ * @property {number} latest_hygiene_issues_possible_ct
+ * @property {number} latest_hygiene_issues_dismissed_ct
  * @property {number?} latest_tests_start
  * @property {TestSuiteSummary[]} test_suites
  * @property {MonitorSummary?} monitoring_summary
@@ -239,7 +239,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
         div(
             { class: 'flex-row fx-gap-5', style: 'flex: 1 1 50%;' },
             Link({ emit,
-                label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
+                label: `${tableGroup.latest_hygiene_issues_ct} hygiene issues`,
                 href: 'profiling-runs:hygiene',
                 params: {
                     run_id: tableGroup.latest_profile_job_execution_id,
@@ -248,13 +248,13 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
                 width: 150,
                 style: 'flex: 0 0 auto;',
             }),
-            tableGroup.latest_anomalies_ct
+            tableGroup.latest_hygiene_issues_ct
             ? SummaryCounts({
                 items: [
-                    { label: 'Definite', value: parseInt(tableGroup.latest_anomalies_definite_ct), color: 'red' },
-                    { label: 'Likely', value: parseInt(tableGroup.latest_anomalies_likely_ct), color: 'orange' },
-                    { label: 'Possible', value: parseInt(tableGroup.latest_anomalies_possible_ct), color: 'yellow' },
-                    { label: 'Dismissed', value: parseInt(tableGroup.latest_anomalies_dismissed_ct), color: 'grey' },
+                    { label: 'Definite', value: parseInt(tableGroup.latest_hygiene_issues_definite_ct), color: 'red' },
+                    { label: 'Likely', value: parseInt(tableGroup.latest_hygiene_issues_likely_ct), color: 'orange' },
+                    { label: 'Possible', value: parseInt(tableGroup.latest_hygiene_issues_possible_ct), color: 'yellow' },
+                    { label: 'Dismissed', value: parseInt(tableGroup.latest_hygiene_issues_dismissed_ct), color: 'grey' },
                 ],
             })
             : '',

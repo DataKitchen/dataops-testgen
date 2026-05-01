@@ -30,7 +30,7 @@ def _mock_overview(**overrides):
     overview.cde_count = 2
     overview.dq_score_profiling = 95.0
     overview.dq_score_testing = 90.0
-    overview.anomaly_count = 3
+    overview.hygiene_issue_count = 3
     overview.latest_profile_id = uuid4()
     overview.latest_profile_started_at = "2026-04-23 12:00:00"
     overview.latest_profile_job_execution_id = uuid4()
@@ -64,7 +64,7 @@ def _column_summary(**overrides) -> ColumnProfileSummary:
         "filled_value_ct": 0,
         "dq_score_profiling": 100.0,
         "dq_score_testing": 98.5,
-        "anomaly_count": 1,
+        "hygiene_issue_count": 1,
     }
     defaults.update(overrides)
     return ColumnProfileSummary(**defaults)
@@ -83,9 +83,9 @@ def _mock_summary(**overrides):
     s.latest_profile_id = uuid4()
     s.latest_profile_job_execution_id = uuid4()
     s.latest_profile_start = "2026-04-23 23:24"
-    s.latest_anomalies_definite_ct = 2
-    s.latest_anomalies_likely_ct = 2
-    s.latest_anomalies_possible_ct = 11
+    s.latest_hygiene_issues_definite_ct = 2
+    s.latest_hygiene_issues_likely_ct = 2
+    s.latest_hygiene_issues_possible_ct = 11
     s.monitor_lookback_end = None
     for k, v in overrides.items():
         setattr(s, k, v)
@@ -329,49 +329,26 @@ def test_list_column_profiles_inaccessible_tg(mock_tg_cls, db_session_mock):
 
 
 # ----------------------------------------------------------------------
-# list_column_profiles — PII redaction
+# _format_pii — parser mirroring PiiDisplay in metadata_tags.js
 # ----------------------------------------------------------------------
 
 
-@patch("testgen.mcp.tools.profiling.DataColumnChars")
-@patch("testgen.mcp.tools.common.TableGroup")
-def test_list_column_profiles_redacts_pii_without_view_pii(mock_tg_cls, mock_dcc_cls, db_session_mock):
-    """User without view_pii sees a coarse 'Y'/'—' for pii_flag, never the category string."""
-    mock_tg_cls.get.return_value = _mock_table_group()
-    mock_dcc_cls.list_for_table_group.return_value = (
-        [_column_summary(column_name="first_name", pii_flag="B/NAME/Individual")], 1,
-    )
-
-    from testgen.mcp.tools.profiling import list_column_profiles
-    result = list_column_profiles(str(uuid4()))
-
-    # The default conftest user has role_a, which the test perm matrix grants 'view'
-    # and 'catalog' but NOT 'view_pii' — so redaction kicks in.
-    assert "B/NAME/Individual" not in result
-    assert "Individual" not in result
-    # The redacted "Y" should be present for the pii row.
-    assert "| Y |" in result
-
-
-@patch("testgen.mcp.tools.profiling.get_project_permissions")
-@patch("testgen.mcp.tools.profiling.DataColumnChars")
-@patch("testgen.mcp.tools.common.TableGroup")
-def test_list_column_profiles_shows_full_pii_with_view_pii(
-    mock_tg_cls, mock_dcc_cls, mock_perms, db_session_mock,
-):
-    mock_tg_cls.get.return_value = _mock_table_group()
-    mock_dcc_cls.list_for_table_group.return_value = (
-        [_column_summary(column_name="first_name", pii_flag="B/NAME/Individual")], 1,
-    )
-
-    perms = MagicMock()
-    perms.codes_allowed_to.return_value = ["demo"]
-    mock_perms.return_value = perms
-
-    from testgen.mcp.tools.profiling import list_column_profiles
-    result = list_column_profiles(str(uuid4()))
-
-    assert "B/NAME/Individual" in result
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (None, None),
+        ("", None),
+        ("MANUAL", "PII"),
+        ("A/ID/Passport", "PII (High Risk - ID / Passport)"),
+        ("B/NAME/Individual", "PII (Moderate Risk - Name / Individual)"),
+        ("C/CONTACT", "PII (Low Risk - Contact)"),
+        ("B/ID/ID", "PII (Moderate Risk - ID)"),  # detail collapses when equal to type label
+        ("X/UNKNOWN/Detail", "PII (Moderate Risk / Detail)"),  # unknown risk falls back; unknown type drops label
+    ],
+)
+def test_format_pii(value, expected):
+    from testgen.mcp.tools.profiling import _format_pii
+    assert _format_pii(value) == expected
 
 
 # ----------------------------------------------------------------------
@@ -379,29 +356,21 @@ def test_list_column_profiles_shows_full_pii_with_view_pii(
 # ----------------------------------------------------------------------
 
 
-def test_render_row_redacts_pii_when_permission_missing():
+def test_render_row_renders_parsed_pii_label():
     from testgen.mcp.tools.profiling import _render_column_profile_row
-    row = _render_column_profile_row(_column_summary(pii_flag="B/NAME/Individual"), has_view_pii=False)
-    assert row[5] == "Y"
-    assert "Individual" not in (row[5] or "")
+    row = _render_column_profile_row(_column_summary(pii_flag="B/NAME/Individual"))
+    assert row[5] == "PII (Moderate Risk - Name / Individual)"
 
 
-def test_render_row_shows_full_pii_with_permission():
+def test_render_row_falsy_pii_renders_none():
     from testgen.mcp.tools.profiling import _render_column_profile_row
-    row = _render_column_profile_row(_column_summary(pii_flag="B/NAME/Individual"), has_view_pii=True)
-    assert row[5] == "B/NAME/Individual"
-
-
-def test_render_row_falsy_pii_renders_none_in_either_mode():
-    from testgen.mcp.tools.profiling import _render_column_profile_row
-    assert _render_column_profile_row(_column_summary(pii_flag=None), has_view_pii=False)[5] is None
-    assert _render_column_profile_row(_column_summary(pii_flag=None), has_view_pii=True)[5] is None
+    assert _render_column_profile_row(_column_summary(pii_flag=None))[5] is None
 
 
 def test_render_row_cde_collapsed_to_y_or_none():
     from testgen.mcp.tools.profiling import _render_column_profile_row
-    row_yes = _render_column_profile_row(_column_summary(critical_data_element=True), has_view_pii=False)
-    row_no = _render_column_profile_row(_column_summary(critical_data_element=False), has_view_pii=False)
+    row_yes = _render_column_profile_row(_column_summary(critical_data_element=True))
+    row_no = _render_column_profile_row(_column_summary(critical_data_element=False))
     assert row_yes[6] == "Y"
     assert row_no[6] is None
 
@@ -441,7 +410,7 @@ def test_list_profiling_summaries_never_profiled_tg(mock_common_tg, mock_profili
     assert "_Not profiled yet._" in result
     # Field block omitted when never profiled.
     assert "Profiling Score" not in result
-    assert "Anomalies" not in result
+    assert "Hygiene issues" not in result
 
 
 @patch("testgen.mcp.tools.profiling.TableGroup")

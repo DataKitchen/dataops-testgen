@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     and_,
     asc,
+    case,
     func,
     select,
 )
@@ -36,7 +37,7 @@ class ColumnProfileSummary(EntityMinimal):
     filled_value_ct: int | None
     dq_score_profiling: float | None
     dq_score_testing: float | None
-    anomaly_count: int
+    hygiene_issue_count: int
 
 
 class DataColumnChars(Entity):
@@ -75,25 +76,36 @@ class DataColumnChars(Entity):
     def list_for_table_group(
         cls,
         *clauses,
+        table_groups_id: UUID,
         profiling_run_id: UUID | None = None,
         page: int,
         limit: int,
     ) -> tuple[list[ColumnProfileSummary], int]:
+        # Local import: data_table imports DataColumnChars at module top.
+        from testgen.common.models.data_table import DataTable
+
         profile_run_filter = (
             ProfileResult.profile_run_id == profiling_run_id
             if profiling_run_id is not None
             else ProfileResult.profile_run_id == cls.last_complete_profile_run_id
         )
 
-        anomaly_subq = (
+        hygiene_subq_clauses = [
+            HygieneIssue.table_groups_id == table_groups_id,
+            func.coalesce(HygieneIssue.disposition, "Confirmed") == "Confirmed",
+        ]
+        if profiling_run_id is not None:
+            hygiene_subq_clauses.append(HygieneIssue.profile_run_id == profiling_run_id)
+
+        hygiene_subq = (
             select(
                 HygieneIssue.profile_run_id.label("profile_run_id"),
                 HygieneIssue.schema_name.label("schema_name"),
                 HygieneIssue.table_name.label("table_name"),
                 HygieneIssue.column_name.label("column_name"),
-                func.count().label("anomaly_count"),
+                func.count().label("hygiene_issue_count"),
             )
-            .where(func.coalesce(HygieneIssue.disposition, "Confirmed") == "Confirmed")
+            .where(*hygiene_subq_clauses)
             .group_by(
                 HygieneIssue.profile_run_id,
                 HygieneIssue.schema_name,
@@ -103,6 +115,12 @@ class DataColumnChars(Entity):
             .subquery()
         )
 
+        cde_coalesced = case(
+            (cls.critical_data_element.is_(True), True),
+            (DataTable.critical_data_element.is_(True), True),
+            else_=False,
+        ).label("critical_data_element")
+
         query = (
             select(
                 cls.column_name,
@@ -111,15 +129,16 @@ class DataColumnChars(Entity):
                 cls.functional_data_type,
                 ProfileResult.datatype_suggestion,
                 cls.pii_flag,
-                cls.critical_data_element,
+                cde_coalesced,
                 ProfileResult.record_ct,
                 ProfileResult.null_value_ct,
                 ProfileResult.distinct_value_ct,
                 ProfileResult.filled_value_ct,
                 cls.dq_score_profiling,
                 cls.dq_score_testing,
-                func.coalesce(anomaly_subq.c.anomaly_count, 0).label("anomaly_count"),
+                func.coalesce(hygiene_subq.c.hygiene_issue_count, 0).label("hygiene_issue_count"),
             )
+            .outerjoin(DataTable, DataTable.id == cls.table_id)
             .outerjoin(
                 ProfileResult,
                 and_(
@@ -130,15 +149,19 @@ class DataColumnChars(Entity):
                 ),
             )
             .outerjoin(
-                anomaly_subq,
+                hygiene_subq,
                 and_(
-                    anomaly_subq.c.profile_run_id == ProfileResult.profile_run_id,
-                    anomaly_subq.c.schema_name == cls.schema_name,
-                    anomaly_subq.c.table_name == cls.table_name,
-                    anomaly_subq.c.column_name == cls.column_name,
+                    hygiene_subq.c.profile_run_id == ProfileResult.profile_run_id,
+                    hygiene_subq.c.schema_name == cls.schema_name,
+                    hygiene_subq.c.table_name == cls.table_name,
+                    hygiene_subq.c.column_name == cls.column_name,
                 ),
             )
-            .where(cls.drop_date.is_(None), *clauses)
+            .where(
+                cls.table_groups_id == table_groups_id,
+                cls.drop_date.is_(None),
+                *clauses,
+            )
             .order_by(asc(cls.table_name), asc(cls.ordinal_position), asc(cls.column_name))
         )
 

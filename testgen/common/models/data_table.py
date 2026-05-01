@@ -47,7 +47,7 @@ class TableProfilingOverview:
     dq_score_profiling: float | None
     dq_score_testing: float | None
     cde_count: int
-    anomaly_count: int
+    hygiene_issue_count: int
     latest_profile_id: UUID | None
     latest_profile_started_at: datetime | None
     latest_profile_job_execution_id: UUID | None
@@ -169,9 +169,9 @@ class DataTable(Entity):
             )
         ) or 0
 
-        anomaly_count = 0
+        hygiene_issue_count = 0
         if header["latest_profile_id"]:
-            anomaly_count = session.scalar(
+            hygiene_issue_count = session.scalar(
                 select(func.count())
                 .select_from(HygieneIssue)
                 .where(
@@ -184,6 +184,6 @@ class DataTable(Entity):
         return TableProfilingOverview(
             **header,
             cde_count=cde_count,
-            anomaly_count=anomaly_count,
+            hygiene_issue_count=hygiene_issue_count,
             columns=columns,
         )

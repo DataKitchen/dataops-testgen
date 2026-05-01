@@ -20,7 +20,7 @@ from testgen.utils import friendly_score
 @with_database_session
 @mcp_permission("catalog")
 def get_table(table_group_id: str, table_name: str) -> str:
-    """Get an overview of a table with profiling highlights: structural metadata, column list, quality scores, and anomaly count from the latest profiling run.
+    """Get an overview of a table with profiling highlights: structural metadata, column list, quality scores, and hygiene issue count from the latest profiling run.
 
     Args:
         table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
@@ -41,7 +41,7 @@ def get_table(table_group_id: str, table_name: str) -> str:
     doc.field("Critical data elements", overview.cde_count)
     doc.field("Profiling Score", friendly_score(overview.dq_score_profiling))
     doc.field("Testing Score", friendly_score(overview.dq_score_testing))
-    doc.field("Anomalies (confirmed)", overview.anomaly_count)
+    doc.field("Hygiene issues (confirmed)", overview.hygiene_issue_count)
     doc.field("Last profiled", overview.latest_profile_started_at)
     doc.field("Profiling Run", overview.latest_profile_job_execution_id, code=True)
 
@@ -71,10 +71,7 @@ def list_column_profiles(
     limit: int = 100,
     page: int = 1,
 ) -> str:
-    """List per-column profile headers (~14 fields each) — the Layer 1 scan of profiling results so an LLM can pick which columns to drill into.
-
-    PII details (category, full value) require `view_pii` permission; otherwise the
-    PII flag is redacted to a boolean-like value.
+    """List per-column profile headers (~14 fields each) — the Layer 1 scan of profiling results across columns in a table group.
 
     Args:
         table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
@@ -96,7 +93,7 @@ def list_column_profiles(
             raise MCPResourceNotAccessible("Profiling run", job_execution_id)
         profiling_run_id = profiling_run.id
 
-    clauses = [DataColumnChars.table_groups_id == tg.id]
+    clauses = []
     if table_name:
         clauses.append(DataColumnChars.table_name == table_name)
     if columns:
@@ -104,6 +101,7 @@ def list_column_profiles(
 
     data, total = DataColumnChars.list_for_table_group(
         *clauses,
+        table_groups_id=tg.id,
         profiling_run_id=profiling_run_id,
         page=page,
         limit=limit,
@@ -113,8 +111,6 @@ def list_column_profiles(
         if page > 1:
             return f"No column profiles on page {page} (total: {total})."
         return f"No column profiles found for table group `{table_group_id}`."
-
-    has_view_pii = tg.project_code in get_project_permissions().codes_allowed_to("view_pii")
 
     doc = MdDoc()
     scope_descriptor = f"table group `{table_group_id}`"
@@ -130,9 +126,9 @@ def list_column_profiles(
         "Column", "Table", "Type", "Functional type", "Suggestion",
         "PII", "CDE",
         "Records", "Nulls", "Distinct", "Filled",
-        "Profiling Score", "Testing Score", "Anomalies",
+        "Profiling Score", "Testing Score", "Hygiene issues",
     ]
-    rows = [_render_column_profile_row(c, has_view_pii=has_view_pii) for c in data]
+    rows = [_render_column_profile_row(c) for c in data]
     doc.table(headers, rows, code=[0, 1])
 
     footer = format_page_footer(total, page, limit)
@@ -150,7 +146,7 @@ def list_profiling_summaries(
     limit: int = 20,
     page: int = 1,
 ) -> str:
-    """List aggregated profiling health summaries for a table group or across a project — quality scores, anomaly counts, record counts, last profiled date.
+    """List aggregated profiling health summaries for a table group or across a project — quality scores, hygiene issue counts, record counts, last profiled date.
 
     Args:
         table_group_id: UUID of a specific table group, e.g. from
@@ -203,19 +199,36 @@ def list_profiling_summaries(
     return doc.render()
 
 
-def _render_column_profile_row(c: ColumnProfileSummary, *, has_view_pii: bool) -> list:
-    if has_view_pii:
-        pii_display = c.pii_flag
-    else:
-        pii_display = "Y" if c.pii_flag else None
+_PII_RISK_MAP = {"A": "High", "B": "Moderate", "C": "Low"}
+_PII_TYPE_MAP = {"ID": "ID", "NAME": "Name", "DEMO": "Demographic", "CONTACT": "Contact"}
 
+
+def _format_pii(value: str | None) -> str | None:
+    """Render a `pii_flag` value as a human label. Mirrors `PiiDisplay` in metadata_tags.js."""
+    if not value:
+        return None
+    if value == "MANUAL":
+        return "PII"
+    risk, _, rest = value.partition("/")
+    type_code, _, detail = rest.partition("/")
+    risk_label = _PII_RISK_MAP.get(risk, "Moderate")
+    type_label = _PII_TYPE_MAP.get(type_code)
+    caption = f"{risk_label} Risk"
+    if type_label:
+        caption += f" - {type_label}"
+    if detail and detail != type_label:
+        caption += f" / {detail}"
+    return f"PII ({caption})"
+
+
+def _render_column_profile_row(c: ColumnProfileSummary) -> list:
     return [
         c.column_name,
         c.table_name,
         c.general_type,
         c.functional_data_type,
         c.datatype_suggestion,
-        pii_display,
+        _format_pii(c.pii_flag),
         "Y" if c.critical_data_element else None,
         c.record_ct,
         c.null_value_ct,
@@ -223,7 +236,7 @@ def _render_column_profile_row(c: ColumnProfileSummary, *, has_view_pii: bool) -
         c.filled_value_ct,
         friendly_score(c.dq_score_profiling),
         friendly_score(c.dq_score_testing),
-        c.anomaly_count,
+        c.hygiene_issue_count,
     ]
 
 
@@ -243,11 +256,11 @@ def _render_table_group_summary(doc: MdDoc, s: TableGroupSummary) -> None:
     doc.field("Profiling Score", friendly_score(s.dq_score_profiling))
     doc.field("Testing Score", friendly_score(s.dq_score_testing))
     doc.field(
-        "Anomalies (confirmed)",
-        f"{(s.latest_anomalies_definite_ct or 0) + (s.latest_anomalies_likely_ct or 0) + (s.latest_anomalies_possible_ct or 0)} total "
-        f"— {s.latest_anomalies_definite_ct or 0} definite, "
-        f"{s.latest_anomalies_likely_ct or 0} likely, "
-        f"{s.latest_anomalies_possible_ct or 0} possible",
+        "Hygiene issues (confirmed)",
+        f"{(s.latest_hygiene_issues_definite_ct or 0) + (s.latest_hygiene_issues_likely_ct or 0) + (s.latest_hygiene_issues_possible_ct or 0)} total "
+        f"— {s.latest_hygiene_issues_definite_ct or 0} definite, "
+        f"{s.latest_hygiene_issues_likely_ct or 0} likely, "
+        f"{s.latest_hygiene_issues_possible_ct or 0} possible",
     )
     doc.field("Last profiled", s.latest_profile_start)
     doc.field("Profiling Run", s.latest_profile_job_execution_id, code=True)

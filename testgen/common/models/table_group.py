@@ -64,11 +64,11 @@ class TableGroupSummary(EntityMinimal):
     latest_profile_id: UUID | None
     latest_profile_job_execution_id: UUID | None
     latest_profile_start: datetime | None
-    latest_anomalies_ct: int
-    latest_anomalies_definite_ct: int
-    latest_anomalies_likely_ct: int
-    latest_anomalies_possible_ct: int
-    latest_anomalies_dismissed_ct: int
+    latest_hygiene_issues_ct: int
+    latest_hygiene_issues_definite_ct: int
+    latest_hygiene_issues_likely_ct: int
+    latest_hygiene_issues_possible_ct: int
+    latest_hygiene_issues_dismissed_ct: int
     monitor_test_suite_id: UUID | None
     monitor_lookback: int | None
     monitor_lookback_start: datetime | None
@@ -339,11 +339,11 @@ class TableGroup(Entity):
             latest_profile.id AS latest_profile_id,
             latest_profile.job_execution_id AS latest_profile_job_execution_id,
             latest_profile.started_at AS latest_profile_start,
-            latest_profile.anomaly_ct AS latest_anomalies_ct,
-            latest_profile.definite_ct AS latest_anomalies_definite_ct,
-            latest_profile.likely_ct AS latest_anomalies_likely_ct,
-            latest_profile.possible_ct AS latest_anomalies_possible_ct,
-            latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct,
+            latest_profile.anomaly_ct AS latest_hygiene_issues_ct,
+            latest_profile.definite_ct AS latest_hygiene_issues_definite_ct,
+            latest_profile.likely_ct AS latest_hygiene_issues_likely_ct,
+            latest_profile.possible_ct AS latest_hygiene_issues_possible_ct,
+            latest_profile.dismissed_ct AS latest_hygiene_issues_dismissed_ct,
             groups.monitor_test_suite_id AS monitor_test_suite_id,
             lookback_windows.lookback AS monitor_lookback,
             lookback_windows.lookback_start AS monitor_lookback_start,
