@@ -159,3 +159,29 @@ def test_mark_interrupted_canceled(mock_session):
     job.mark_interrupted("Process exited with code -15")
 
     assert job.status == "canceled"
+
+
+def test_request_cancel_pending_to_cancel_requested(mock_session):
+    job = JobExecution(id=uuid4(), status="pending")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="cancel_requested")
+
+    assert job.request_cancel() is True
+    assert job.status == "cancel_requested"
+
+
+def test_request_cancel_idempotent_when_already_requested(mock_session):
+    """A re-request on a job already in cancel_requested succeeds via the CANCEL_REQUESTED self-loop."""
+    job = JobExecution(id=uuid4(), status="cancel_requested")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="cancel_requested")
+
+    assert job.request_cancel() is True
+    assert job.status == "cancel_requested"
+
+
+def test_request_cancel_terminal_state_returns_false(mock_session):
+    """Truly uncancelable states (completed/error/canceled) still return False."""
+    job = JobExecution(id=uuid4(), status="completed")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = None
+
+    assert job.request_cancel() is False
+    assert job.status == "completed"

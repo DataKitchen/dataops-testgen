@@ -22,7 +22,7 @@ def _compiled_sql(captured_query) -> str:
 
 
 def test_get_for_project_excludes_monitor_suites(session_mock):
-    session_mock.execute.return_value.first.return_value = None
+    session_mock.execute.return_value.mappings.return_value.first.return_value = None
 
     TestDefinition.get_for_project(uuid4())
 
@@ -32,7 +32,7 @@ def test_get_for_project_excludes_monitor_suites(session_mock):
 
 
 def test_get_for_project_excludes_monitor_suites_with_project_codes(session_mock):
-    session_mock.execute.return_value.first.return_value = None
+    session_mock.execute.return_value.mappings.return_value.first.return_value = None
 
     TestDefinition.get_for_project(uuid4(), project_codes=["demo"])
 

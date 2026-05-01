@@ -141,7 +141,7 @@ class Entity(Base):
             raise ValueError("Paginated queries require ORDER BY for stable page distribution.")
         session = get_current_session()
         total = session.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
-        rows = session.execute(query.offset((page - 1) * limit).limit(limit)).all()
+        rows = session.execute(query.offset((page - 1) * limit).limit(limit)).mappings().all()
         if data_class is not None:
             return [data_class(**row) for row in rows], total
         return list(rows), total

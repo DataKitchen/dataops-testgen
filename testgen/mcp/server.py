@@ -95,6 +95,13 @@ def build_mcp_app(
         table_health,
     )
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
+    from testgen.mcp.tools.execution import (
+        cancel_profiling_run,
+        cancel_test_run,
+        generate_tests,
+        run_profiling,
+        run_tests,
+    )
     from testgen.mcp.tools.profiling import get_table, list_column_profiles, list_profiling_summaries
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
@@ -154,6 +161,11 @@ def build_mcp_app(
     safe_tool(get_table)
     safe_tool(list_column_profiles)
     safe_tool(list_profiling_summaries)
+    safe_tool(run_tests)
+    safe_tool(run_profiling)
+    safe_tool(cancel_test_run)
+    safe_tool(cancel_profiling_run)
+    safe_tool(generate_tests)
 
     # Resources (2)
     safe_resource("testgen://test-types", test_types_resource)

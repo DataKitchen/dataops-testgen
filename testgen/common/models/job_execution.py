@@ -26,7 +26,8 @@ _VALID_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED}),
     JobStatus.CLAIMED: frozenset({JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
     JobStatus.RUNNING: frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
-    JobStatus.CANCEL_REQUESTED: frozenset({JobStatus.CANCELED}),
+    # CANCEL_REQUESTED self-loop makes request_cancel() idempotent
+    JobStatus.CANCEL_REQUESTED: frozenset({JobStatus.CANCELED, JobStatus.CANCEL_REQUESTED}),
 }
 
 
