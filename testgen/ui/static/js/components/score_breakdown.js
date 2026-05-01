@@ -83,7 +83,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, em
  * Translate the column names for the table.
  *
  * @param {Array<string>} columns
- * @param {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension')} category
+ * @param {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension')} category
  * @param {('score' | 'cde_score')} scoreType
  * @returns {<string>}
  */

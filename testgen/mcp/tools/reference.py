@@ -28,6 +28,8 @@ def get_test_type(test_type: str) -> str:
         doc.field("Measure Description", tt.measure_uom_description)
     if tt.threshold_description:
         doc.field("Threshold", tt.threshold_description)
+    if tt.impact_dimension:
+        doc.field("Impact Dimension", tt.impact_dimension)
     if tt.dq_dimension:
         doc.field("Quality Dimension", tt.dq_dimension)
     if tt.test_scope:
@@ -68,9 +70,9 @@ def test_types_resource() -> str:
     doc = MdDoc()
     doc.heading(1, "TestGen Test Types Reference")
     doc.table(
-        headers=["Test Type", "Quality Dimension", "Scope", "Description"],
+        headers=["Test Type", "Impact Dimension", "Quality Dimension", "Scope", "Description"],
         rows=[
-            [tt.test_name_short, tt.dq_dimension, tt.test_scope, tt.test_description]
+            [tt.test_name_short, tt.impact_dimension, tt.dq_dimension, tt.test_scope, tt.test_description]
             for tt in test_types
         ],
     )

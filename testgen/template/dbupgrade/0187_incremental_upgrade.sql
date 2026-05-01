@@ -1,6 +1,6 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
--- TG-1045: Add impact_dimension as second classification axis for DQ scoring
+-- Add impact_dimension as second classification axis for DQ scoring
 
 ALTER TABLE test_types
     ADD COLUMN IF NOT EXISTS impact_dimension VARCHAR(20);

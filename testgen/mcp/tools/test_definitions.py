@@ -14,7 +14,8 @@ from testgen.mcp.tools.common import (
 from testgen.mcp.tools.markdown import MdDoc
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
-_VALID_DIMENSIONS = {"Accuracy", "Completeness", "Consistency", "Recency", "Timeliness", "Uniqueness", "Validity"}
+_VALID_IMPACT_DIMENSIONS = {"Reliability", "Conformance", "Regularity", "Usability"}
+_VALID_DQ_DIMENSIONS = {"Accuracy", "Completeness", "Consistency", "Recency", "Timeliness", "Uniqueness", "Validity"}
 
 
 @with_database_session
@@ -131,6 +132,8 @@ def get_test(test_definition_id: str) -> str:
     doc.field("Schema", td.schema_name, code=True)
     if td.test_scope:
         doc.field("Scope", td.test_scope)
+    if td.impact_dimension or td.default_impact_dimension:
+        doc.field("Impact Dimension", td.impact_dimension or td.default_impact_dimension)
     if td.dq_dimension:
         doc.field("Quality Dimension", td.dq_dimension)
 
@@ -284,24 +287,31 @@ def _append_match_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
 @with_database_session
 def list_test_types(
     scope: str | None = None,
+    impact_dimension: str | None = None,
     quality_dimension: str | None = None,
 ) -> str:
     """List available test types with optional filtering.
 
     Args:
         scope: Filter by test scope ('column', 'table', 'referential', 'custom').
+        impact_dimension: Filter by impact dimension ('Reliability', 'Conformance', 'Regularity', 'Usability').
         quality_dimension: Filter by quality dimension ('Accuracy', 'Completeness', 'Consistency', 'Recency', 'Timeliness', 'Uniqueness', 'Validity').
     """
     if scope and scope not in _VALID_SCOPES:
         valid = ", ".join(sorted(_VALID_SCOPES))
         raise MCPUserError(f"Invalid scope `{scope}`. Valid values: {valid}")
-    if quality_dimension and quality_dimension not in _VALID_DIMENSIONS:
-        valid = ", ".join(sorted(_VALID_DIMENSIONS))
+    if impact_dimension and impact_dimension not in _VALID_IMPACT_DIMENSIONS:
+        valid = ", ".join(sorted(_VALID_IMPACT_DIMENSIONS))
+        raise MCPUserError(f"Invalid impact_dimension `{impact_dimension}`. Valid values: {valid}")
+    if quality_dimension and quality_dimension not in _VALID_DQ_DIMENSIONS:
+        valid = ", ".join(sorted(_VALID_DQ_DIMENSIONS))
         raise MCPUserError(f"Invalid quality_dimension `{quality_dimension}`. Valid values: {valid}")
 
     clauses = [TestType.active == "Y"]
     if scope:
         clauses.append(TestType.test_scope == scope)
+    if impact_dimension:
+        clauses.append(TestType.impact_dimension == impact_dimension)
     if quality_dimension:
         clauses.append(TestType.dq_dimension == quality_dimension)
 
@@ -327,9 +337,9 @@ def list_test_types(
     doc.heading(1, "Test Types")
     doc.text(f"Showing {len(test_types)} test type(s){filter_suffix}.")
     doc.table(
-        headers=["Test Type", "Quality Dimension", "Scope", "Description"],
+        headers=["Test Type", "Impact Dimension", "Quality Dimension", "Scope", "Description"],
         rows=[
-            [tt.test_name_short, tt.dq_dimension, tt.test_scope, tt.test_description]
+            [tt.test_name_short, tt.impact_dimension, tt.dq_dimension, tt.test_scope, tt.test_description]
             for tt in test_types
         ],
     )

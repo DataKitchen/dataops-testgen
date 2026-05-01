@@ -722,7 +722,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         tt.test_name_short, tt.test_name_long, tt.test_description,
         tt.measure_uom, COALESCE(tt.measure_uom_description, '') as measure_uom_description,
         tt.default_parm_columns, tt.default_severity,
-        tt.run_type, tt.test_scope, tt.dq_dimension, tt.threshold_description,
+        tt.run_type, tt.test_scope, tt.dq_dimension, tt.impact_dimension, tt.threshold_description,
         tt.column_name_prompt, tt.column_name_help,
         tt.default_parm_prompts, tt.default_parm_help, tt.usage_notes,
         CASE tt.test_scope
