@@ -27,6 +27,7 @@ def test_get_data_inventory_passes_project_codes_for_scoped_user(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_c"},
         permission="catalog",
+        username="test_user",
     )
     mock_get_inventory.return_value = "# Data Inventory"
 
@@ -46,6 +47,7 @@ def test_get_data_inventory_view_codes_for_scoped_user(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_c", "proj_b": "role_a"},
         permission="catalog",
+        username="test_user",
     )
     mock_get_inventory.return_value = "# Data Inventory"
 
@@ -95,6 +97,7 @@ def test_list_projects_filters_for_scoped_user(mock_compute, mock_project, db_se
     mock_compute.return_value = ProjectPermissions(
         memberships={"demo": "role_a"},
         permission="catalog",
+        username="test_user",
     )
 
     proj1 = MagicMock()
@@ -173,6 +176,7 @@ def test_list_test_suites_raises_not_found_for_inaccessible_project(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.discovery import list_test_suites
@@ -188,6 +192,7 @@ def test_list_test_suites_raises_denial_for_insufficient_permission(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a", "secret_project": "role_c"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.discovery import list_test_suites

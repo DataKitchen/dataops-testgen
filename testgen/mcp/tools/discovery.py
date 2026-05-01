@@ -1,3 +1,4 @@
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
@@ -20,6 +21,7 @@ def get_data_inventory() -> str:
     from testgen.mcp.services.inventory_service import get_inventory
 
     perms = get_project_permissions()
+    MixpanelService().send_event("mcp-get-data-inventory", username=perms.username)
     return get_inventory(
         project_codes=perms.allowed_codes,
         view_project_codes=perms.codes_allowed_to("view"),

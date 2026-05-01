@@ -117,6 +117,7 @@ def test_codes_allowed_to_filters_by_role():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_c"},
         permission="catalog",
+        username="test_user",
     )
     # "view" includes role_a but not role_c
     result = perms.codes_allowed_to("view")
@@ -127,6 +128,7 @@ def test_codes_allowed_to_all_matching():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_b"},
         permission="catalog",
+        username="test_user",
     )
     # "catalog" includes all roles
     result = perms.codes_allowed_to("catalog")
@@ -137,6 +139,7 @@ def test_codes_allowed_to_none_matching():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_c"},
         permission="catalog",
+        username="test_user",
     )
     # "view" excludes role_c
     result = perms.codes_allowed_to("view")
@@ -150,6 +153,7 @@ def test_allowed_codes_uses_decorator_permission():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_c"},
         permission="view",
+        username="test_user",
     )
     # "view" includes role_a but not role_c
     assert perms.allowed_codes == ["proj_a"]
@@ -159,7 +163,7 @@ def test_allowed_codes_uses_decorator_permission():
 
 
 def test_verify_access_allowed_passes():
-    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     perms.verify_access("proj_a", not_found="not found")
 
 
@@ -167,6 +171,7 @@ def test_verify_access_membership_but_wrong_role_raises():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_c"},
         permission="view",
+        username="test_user",
     )
     with pytest.raises(MCPPermissionDenied, match="necessary permission"):
         perms.verify_access("proj_b", not_found="not found")
@@ -176,6 +181,7 @@ def test_verify_access_no_membership_raises_not_found():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     with pytest.raises(MCPPermissionDenied, match="not found"):
         perms.verify_access("secret", not_found="not found")
@@ -185,6 +191,7 @@ def test_verify_access_accepts_typed_not_found_exception():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     with pytest.raises(MCPResourceNotAccessible, match="Project `secret` not found or not accessible"):
         perms.verify_access("secret", not_found=MCPResourceNotAccessible("Project", "secret"))
@@ -194,7 +201,7 @@ def test_verify_access_accepts_typed_not_found_exception():
 
 
 def test_has_access():
-    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     assert perms.has_access("proj_a") is True
     assert perms.has_access("proj_b") is False
 
@@ -208,7 +215,7 @@ def test_get_project_permissions_raises_without_decorator():
 
 
 def test_get_project_permissions_returns_set_value():
-    perms = ProjectPermissions(memberships={}, permission="view")
+    perms = ProjectPermissions(memberships={}, permission="view", username="test_user")
     token = _mcp_project_permissions.set(perms)
     try:
         assert get_project_permissions() is perms

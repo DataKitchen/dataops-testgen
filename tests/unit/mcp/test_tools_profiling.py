@@ -464,6 +464,7 @@ def test_list_profiling_summaries_neither_arg_rejected(db_session_mock):
 def test_list_profiling_summaries_rejects_inaccessible_project(mock_compute, db_session_mock):
     mock_compute.return_value = ProjectPermissions(
         memberships={"demo": "role_a"}, permission="catalog",
+        username="test_user",
     )
 
     from testgen.mcp.tools.profiling import list_profiling_summaries

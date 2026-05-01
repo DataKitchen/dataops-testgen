@@ -115,6 +115,7 @@ def test_get_source_data_query_passes_project_codes(mock_compute, mock_td, mock_
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     context = _make_context()
     mock_td.get_source_data_context.return_value = context
@@ -266,6 +267,7 @@ def test_get_source_data_passes_project_codes(mock_compute, mock_td, mock_fetch,
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     context = _make_context(project_code="proj_a")
     mock_td.get_source_data_context.return_value = context
