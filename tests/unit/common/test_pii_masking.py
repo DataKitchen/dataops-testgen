@@ -10,10 +10,26 @@ class Test_mask_source_data_pii:
             "ssn": ["123-45-6789", "987-65-4321"],
             "age": [30, 25],
         })
-        mask_source_data_pii(df, {"ssn"})
+        result = mask_source_data_pii(df, {"ssn"})
+        assert result is True
         assert df["ssn"].tolist() == [PII_REDACTED, PII_REDACTED]
         assert df["age"].tolist() == [30, 25]
         assert df["name"].tolist() == ["Alice", "Bob"]
+
+    def test_returns_false_when_no_pii_columns_in_df(self):
+        df = pd.DataFrame({"name": ["Alice"], "age": [30]})
+        result = mask_source_data_pii(df, {"ssn", "email"})
+        assert result is False
+
+    def test_returns_false_for_empty_dataframe(self):
+        df = pd.DataFrame(columns=["name", "ssn"])
+        result = mask_source_data_pii(df, {"ssn"})
+        assert result is False
+
+    def test_returns_false_for_empty_pii_set(self):
+        df = pd.DataFrame({"col_a": [1, 2]})
+        result = mask_source_data_pii(df, set())
+        assert result is False
 
     def test_preserves_non_pii_columns(self):
         df = pd.DataFrame({"col_a": [1, 2], "col_b": ["x", "y"]})

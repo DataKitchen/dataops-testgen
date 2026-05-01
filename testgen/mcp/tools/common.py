@@ -22,6 +22,16 @@ def parse_result_status(value: str) -> TestResultStatus:
         raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}") from err
 
 
+def validate_page(value: int) -> None:
+    if value < 1:
+        raise MCPUserError(f"Invalid page `{value}`: must be >= 1.")
+
+
+def validate_limit(value: int, max_limit: int) -> None:
+    if not 1 <= value <= max_limit:
+        raise MCPUserError(f"Invalid limit `{value}`: must be between 1 and {max_limit}.")
+
+
 def parse_since_arg(value: str, label: str = "since", *, today: date | None = None) -> date:
     try:
         return parse_since(value, today=today)

@@ -73,19 +73,12 @@ def test_get_source_data_query_no_column(mock_td, mock_build, db_session_mock):
     assert "Column" not in result
 
 
-@patch("testgen.mcp.tools.source_data.build_test_result_query")
-@patch("testgen.mcp.tools.source_data.TestDefinition")
-def test_get_source_data_query_clamps_limit(mock_td, mock_build, db_session_mock):
-    context = _make_context()
-    mock_td.get_source_data_context.return_value = context
-    mock_build.return_value = "SELECT 1"
-
+@pytest.mark.parametrize("bad_limit", [-1, 0, 9999])
+def test_get_source_data_query_rejects_out_of_range_limit(bad_limit, db_session_mock):
     from testgen.mcp.tools.source_data import get_source_data_query
 
-    get_source_data_query(str(uuid4()), limit=9999)
-
-    _, call_args = mock_build.call_args
-    assert call_args == {"limit": 500} if call_args else mock_build.call_args[0][1] <= 500
+    with pytest.raises(MCPUserError, match="Invalid limit"):
+        get_source_data_query(str(uuid4()), limit=bad_limit)
 
 
 def test_get_source_data_query_invalid_uuid(db_session_mock):
@@ -177,6 +170,41 @@ def test_get_source_data_ok_with_pii_masking(mock_td, mock_fetch, db_session_moc
     call_args = mock_fetch.call_args
     # mask_pii is the third positional arg
     assert isinstance(call_args[0][2], bool)
+
+
+@patch("testgen.mcp.tools.source_data.fetch_test_result_source_data")
+@patch("testgen.mcp.tools.source_data.TestDefinition")
+def test_get_source_data_banner_only_when_redaction_happened(mock_td, mock_fetch, db_session_mock):
+    """The PII banner must key on whether masking actually changed the df, not on the mask_pii flag."""
+    mock_td.get_source_data_context.return_value = _make_context()
+
+    df = pd.DataFrame({"col": ["unredacted"]})
+    mock_fetch.return_value = SourceDataResult(
+        status="OK", message=None, query="SELECT 1", df=df, pii_redacted=False,
+    )
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    result = get_source_data(str(uuid4()))
+
+    assert "PII columns have been redacted" not in result
+
+
+@patch("testgen.mcp.tools.source_data.fetch_test_result_source_data")
+@patch("testgen.mcp.tools.source_data.TestDefinition")
+def test_get_source_data_banner_shown_when_redaction_happened(mock_td, mock_fetch, db_session_mock):
+    mock_td.get_source_data_context.return_value = _make_context()
+
+    df = pd.DataFrame({"col": ["[PII Redacted]"]})
+    mock_fetch.return_value = SourceDataResult(
+        status="OK", message=None, query="SELECT 1", df=df, pii_redacted=True,
+    )
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    result = get_source_data(str(uuid4()))
+
+    assert "PII columns have been redacted" in result
 
 
 @patch("testgen.mcp.tools.source_data.fetch_test_result_source_data")

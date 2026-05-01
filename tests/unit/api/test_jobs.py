@@ -5,12 +5,15 @@ from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
+from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.jobs import (
     cancel_job,
     get_job_status,
     list_jobs,
+    router,
     submit_profiling,
     submit_test_generation,
     submit_test_run,
@@ -194,3 +197,42 @@ def test_list_jobs_empty_project(mock_je_cls):
 
     assert result.total == 0
     assert result.items == []
+
+
+# --- list_jobs HTTP-level query validation ---
+
+
+def _client_with_overrides() -> TestClient:
+    """Build a TestClient that bypasses auth and db_session so query validation runs unimpeded."""
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[db_session] = lambda: iter([None])
+    app.dependency_overrides[get_authorized_user] = lambda: MagicMock(id=uuid4())
+    return app
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.JobExecution")
+def test_list_jobs_rejects_unknown_status(mock_je_cls, _mock_perm):
+    mock_je_cls.list_for_project.return_value = ([], 0)
+    client = TestClient(_client_with_overrides())
+
+    resp = client.get("/api/v1/projects/DEFAULT/jobs?status=BOGUS")
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["detail"][0]["loc"] == ["query", "status"]
+    assert body["detail"][0]["type"] == "enum"
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.JobExecution")
+def test_list_jobs_accepts_valid_status(mock_je_cls, _mock_perm):
+    mock_je_cls.list_for_project.return_value = ([], 0)
+    client = TestClient(_client_with_overrides())
+
+    resp = client.get("/api/v1/projects/DEFAULT/jobs?status=completed")
+
+    assert resp.status_code == 200
+    # Verify the status string was forwarded to the model layer.
+    assert mock_je_cls.list_for_project.call_args.kwargs["status"] == "completed"
