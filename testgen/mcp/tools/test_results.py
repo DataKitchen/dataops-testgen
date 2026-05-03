@@ -7,6 +7,7 @@ from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.tools import DocGroup
 from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
@@ -18,6 +19,8 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.INVESTIGATE
 
 _DEFAULT_SEARCH_STATUSES = [TestResultStatus.Failed, TestResultStatus.Warning]
 

@@ -7,7 +7,10 @@ from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.tools import DocGroup
 from testgen.mcp.tools.common import parse_uuid, resolve_table_group, resolve_test_suite
+
+_DOC_GROUP = DocGroup.TRIGGER
 from testgen.mcp.tools.markdown import MdDoc
 
 

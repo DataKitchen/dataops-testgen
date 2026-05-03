@@ -2,8 +2,11 @@ from testgen.common.models import with_database_session
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.tools import DocGroup
 from testgen.mcp.tools.common import validate_limit
 from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.INVESTIGATE
 
 
 @with_database_session
