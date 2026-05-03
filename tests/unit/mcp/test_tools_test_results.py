@@ -173,7 +173,7 @@ def test_list_test_results_run_in_monitor_suite_rejected(mock_test_run_cls, mock
 def test_list_test_results_run_in_forbidden_project(
     mock_compute, mock_test_run_cls, mock_suite_cls, db_session_mock
 ):
-    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
 
@@ -193,6 +193,7 @@ def test_list_test_results_passes_project_codes(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
@@ -265,7 +266,7 @@ def test_list_test_results_by_suite_id_monitor_or_missing(mock_suite_cls, db_ses
 @patch("testgen.mcp.tools.test_results.TestSuite")
 @patch("testgen.mcp.permissions._compute_project_permissions")
 def test_list_test_results_by_suite_id_inaccessible_project(mock_compute, mock_suite_cls, db_session_mock):
-    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -437,7 +438,7 @@ def test_get_failure_summary_run_not_found(mock_test_run_cls, db_session_mock):
 def test_get_failure_summary_run_in_forbidden_project(
     mock_compute, mock_test_run_cls, mock_suite_cls, db_session_mock,
 ):
-    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
 
@@ -470,6 +471,7 @@ def test_get_failure_summary_passes_project_codes(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
@@ -549,6 +551,7 @@ def test_get_test_result_history_passes_project_codes(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_result.select_history.return_value = []
 
@@ -577,6 +580,7 @@ def test_get_failure_summary_rejects_project_code_alone(mock_compute, db_session
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_results import get_failure_summary
@@ -591,6 +595,7 @@ def test_get_failure_summary_rejects_cross_suite_table_or_column_grouping(mock_c
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_results import get_failure_summary
@@ -605,6 +610,7 @@ def test_get_failure_summary_cross_run_by_project(mock_compute, mock_result, db_
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_result.select_failures.return_value = []
 
@@ -627,6 +633,7 @@ def test_get_failure_summary_cross_run_by_project_and_suite(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
     mock_result.select_failures.return_value = []
@@ -647,6 +654,7 @@ def test_get_failure_summary_rejects_inaccessible_project(mock_compute, db_sessi
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_results import get_failure_summary
@@ -659,7 +667,7 @@ def test_get_failure_summary_rejects_inaccessible_project(mock_compute, db_sessi
 @patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_failure_summary_rejects_inaccessible_test_suite(mock_compute, mock_suite_cls, db_session_mock):
     """test_suite_id branch validates suite access — same contract as list_test_results."""
-    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
 
     from testgen.mcp.tools.test_results import get_failure_summary
@@ -711,6 +719,7 @@ def test_search_test_results_happy_path(mock_compute, mock_search_results, db_se
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_search_results.return_value = ([_mock_search_row()], 1)
 
@@ -734,6 +743,7 @@ def test_search_test_results_empty(mock_compute, mock_search_results, db_session
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_search_results.return_value = ([], 0)
 
@@ -749,6 +759,7 @@ def test_search_test_results_rejects_unknown_project(mock_compute, db_session_mo
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_results import search_test_results
@@ -763,6 +774,7 @@ def test_search_test_results_paginates(mock_compute, mock_search_results, db_ses
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     # total > limit → footer expected
     rows = [_mock_search_row() for _ in range(2)]
@@ -786,6 +798,7 @@ def test_get_failure_trend_happy_path(mock_compute, mock_failure_trend, db_sessi
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     b1 = MagicMock(failed_ct=3, warning_ct=1, total_ct=10)
     b1.bucket = date(2026, 4, 1)
@@ -810,6 +823,7 @@ def test_get_failure_trend_empty(mock_compute, mock_failure_trend, db_session_mo
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_failure_trend.return_value = []
 
@@ -834,6 +848,7 @@ def test_get_failure_trend_exclude_today_shifts_end_date(mock_compute, mock_fail
 
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"}, permission="view",
+        username="test_user",
     )
     mock_failure_trend.return_value = []
 
@@ -883,6 +898,7 @@ def test_get_test_run_diff_happy_path(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     suite_id = uuid4()
     run_a = MagicMock(id=uuid4(), test_suite_id=suite_id)
@@ -927,6 +943,7 @@ def test_get_test_run_diff_run_not_found(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     suite_id = uuid4()
     mock_test_run_cls.get_by_id_or_job.side_effect = [None, MagicMock(id=uuid4(), test_suite_id=suite_id)]
@@ -949,6 +966,7 @@ def test_get_test_run_diff_rejects_inaccessible_project(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     suite_id = uuid4()
     run = MagicMock(id=uuid4(), test_suite_id=suite_id)
@@ -972,6 +990,7 @@ def test_get_test_run_diff_rejects_different_suites(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     suite_id_a = uuid4()
     suite_id_b = uuid4()
@@ -1007,6 +1026,7 @@ def test_get_test_run_diff_rejects_monitor_suite(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     suite_id = uuid4()
     run = MagicMock(id=uuid4(), test_suite_id=suite_id)

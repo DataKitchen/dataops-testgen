@@ -163,6 +163,7 @@ def test_get_recent_test_runs_raises_not_found_for_inaccessible_project(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
@@ -178,6 +179,7 @@ def test_get_recent_test_runs_raises_denial_for_insufficient_permission(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a", "secret_project": "role_c"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs

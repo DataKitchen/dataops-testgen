@@ -495,7 +495,7 @@ defaults to: auto-detect
 """
 
 
-MIXPANEL_URL: str = "https://api.mixpanel.com"
+MIXPANEL_URL: str = getenv("TG_MIXPANEL_URL", "https://api.mixpanel.com")
 MIXPANEL_TIMEOUT: int = 3
 MIXPANEL_TOKEN: str = "973680ddf8c2b512e6f6d1f2959149eb"
 """

@@ -202,7 +202,7 @@ def test_decorator_denies_when_user_has_no_edit_on_any_project(
 ):
     """@mcp_permission('edit') raises MCPPermissionDenied — distinct from the
     resolver-level MCPResourceNotAccessible — when the user has no edit on any project."""
-    mock_compute.return_value = ProjectPermissions(memberships={"some_project": "role_c"}, permission="edit")
+    mock_compute.return_value = ProjectPermissions(memberships={"some_project": "role_c"}, permission="edit", username="test_user")
 
     from testgen.mcp.tools import execution
 

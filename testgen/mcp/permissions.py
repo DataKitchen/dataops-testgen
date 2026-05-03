@@ -23,6 +23,7 @@ _mcp_project_permissions: contextvars.ContextVar["ProjectPermissions | object"] 
 class ProjectPermissions:
     memberships: dict[str, str]  # {project_code: role}
     permission: str
+    username: str
 
     def codes_allowed_to(self, permission: str) -> list[str]:
         """Project codes where the user's role includes the given permission."""
@@ -92,6 +93,7 @@ def _compute_project_permissions(user: User, permission: str) -> ProjectPermissi
     return ProjectPermissions(
         memberships={m.project_code: m.role for m in memberships_list},
         permission=permission,
+        username=user.username,
     )
 
 
