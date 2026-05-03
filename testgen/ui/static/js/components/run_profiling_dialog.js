@@ -18,10 +18,8 @@
 import van from '/app/static/js/van.min.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
-import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
-import { Code } from '/app/static/js/components/code.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Select } from '/app/static/js/components/select.js';
 import { TableGroupStats } from '/app/static/js/components/table_group_stats.js';
@@ -55,7 +53,6 @@ const RunProfilingDialog = (props) => {
     const allowSelection = getValue(props.allow_selection);
     const selectedId = van.state(getValue(props.selected_id));
     const selectedTableGroup = van.derive(() => tableGroups.find(({ id }) => id === selectedId.val));
-    const showCLICommand = van.state(false);
 
     const content = div(
         { id: wrapperId },
@@ -74,20 +71,7 @@ const RunProfilingDialog = (props) => {
                     '?',
                 ),
             () => selectedTableGroup.val
-                ? div(
-                    TableGroupStats({ class: 'mt-1 mb-3' }, selectedTableGroup.val),
-                    ExpanderToggle({
-                        default: showCLICommand,
-                        collapseLabel: 'Collapse',
-                        expandLabel: 'Show CLI command',
-                        onCollapse: () => showCLICommand.val = false,
-                        onExpand: () => showCLICommand.val = true,
-                    }),
-                    div(
-                        { style: () => showCLICommand.val ? '' : 'display: none' },
-                        Code({}, `testgen run-profile --table-group-id ${selectedTableGroup.val.id}`),
-                    ),
-                )
+                ? TableGroupStats({ class: 'mt-1 mb-3' }, selectedTableGroup.val)
                 : div({ style: 'margin: auto;' }, 'Select a table group to profile.'),
             () => {
                 const result = getValue(props.result) ?? {};
@@ -144,7 +128,7 @@ const RunProfilingDialog = (props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .run-profiling--allow-selection {
-    min-height: 225px;
+    min-height: 190px;
 }
 
 .run-profiling--select {

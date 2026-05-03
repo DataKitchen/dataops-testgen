@@ -53,8 +53,6 @@ const RunTestsDialog = (/** @type Properties */ props) => {
     const selectedId = van.state(defaultId ?? (testSuites.length === 1 ? testSuites[0].value : null));
     const selectedTestSuite = van.derive(() => testSuites.find(ts => ts.value === selectedId.val) ?? null);
 
-    const showCLI = van.state(false);
-
     const content = div(
         { class: 'flex-column fx-gap-3 run-tests--wrapper' },
         testSuites.length !== 1
@@ -67,19 +65,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
             })
             : () => span('Run tests for the test suite ', strong({}, selectedTestSuite.val?.label ?? ''), '?'),
         () => selectedTestSuite.val
-            ? div(
-                ExpanderToggle({
-                    default: showCLI,
-                    expandLabel: 'Show CLI command',
-                    collapseLabel: 'Collapse',
-                    onExpand: () => showCLI.val = true,
-                    onCollapse: () => showCLI.val = false,
-                }),
-                div(
-                    { style: () => showCLI.val ? '' : 'display: none' },
-                    Code({}, `testgen run-tests --test-suite-id ${selectedTestSuite.val.value}`),
-                ),
-            )
+            ? ''
             : div({ style: 'margin: auto;' }, 'Select a test suite to run.'),
         () => {
             const result = getValue(props.result) ?? {};
@@ -146,7 +132,7 @@ const RunTestsDialog = (/** @type Properties */ props) => {
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .run-tests--wrapper {
-    min-height: 120px;
+    min-height: 85px;
 }
 
 .run-tests--select {
