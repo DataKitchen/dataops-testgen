@@ -230,6 +230,12 @@ class TestSuite(Entity):
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
         query = """
+        DELETE FROM job_executions
+        WHERE id IN (
+            SELECT job_execution_id FROM test_runs
+            WHERE test_suite_id IN :test_suite_ids AND job_execution_id IS NOT NULL
+        );
+
         DELETE FROM test_runs
         WHERE test_suite_id IN :test_suite_ids;
 

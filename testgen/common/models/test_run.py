@@ -382,6 +382,12 @@ class TestRun(Entity):
         query = """
         DELETE FROM test_results
         WHERE test_run_id IN :test_run_ids;
+
+        DELETE FROM job_executions
+        WHERE id IN (
+            SELECT job_execution_id FROM test_runs
+            WHERE id IN :test_run_ids AND job_execution_id IS NOT NULL
+        );
         """
         db_session = get_current_session()
         db_session.execute(text(query), {"test_run_ids": tuple(ids)})

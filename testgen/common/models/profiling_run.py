@@ -289,6 +289,12 @@ class ProfilingRun(Entity):
 
         DELETE FROM profile_results
         WHERE profile_run_id IN :profiling_run_ids;
+
+        DELETE FROM job_executions
+        WHERE id IN (
+            SELECT job_execution_id FROM profiling_runs
+            WHERE id IN :profiling_run_ids AND job_execution_id IS NOT NULL
+        );
         """
         db_session = get_current_session()
         db_session.execute(text(query), {"profiling_run_ids": tuple(ids)})

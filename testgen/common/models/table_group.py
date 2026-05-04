@@ -418,6 +418,12 @@ class TableGroup(Entity):
         USING table_groups tg
         WHERE tg.id = pr.table_groups_id AND tg.id IN :table_group_ids;
 
+        DELETE FROM job_executions
+        WHERE id IN (
+            SELECT pr.job_execution_id FROM profiling_runs pr
+            WHERE pr.table_groups_id IN :table_group_ids AND pr.job_execution_id IS NOT NULL
+        );
+
         DELETE FROM profiling_runs pr
         USING table_groups tg
         WHERE tg.id = pr.table_groups_id AND tg.id IN :table_group_ids;
