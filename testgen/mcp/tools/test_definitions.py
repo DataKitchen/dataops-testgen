@@ -4,6 +4,7 @@ from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
+    DocGroup,
     format_page_footer,
     format_page_info,
     parse_uuid,
@@ -12,6 +13,8 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.DISCOVER
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
 _VALID_IMPACT_DIMENSIONS = {"Reliability", "Conformance", "Regularity", "Usability"}

@@ -5,8 +5,10 @@ from testgen.common.models.project import Project
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import resolve_table_group, validate_limit, validate_page
+from testgen.mcp.tools.common import DocGroup, resolve_table_group, validate_limit, validate_page
 from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.DISCOVER
 
 
 @with_database_session

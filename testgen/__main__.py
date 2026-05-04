@@ -2,6 +2,7 @@ import base64
 import importlib
 import logging
 import os
+import pathlib
 import platform
 import secrets
 import signal
@@ -94,6 +95,7 @@ class CliGroup(click.Group):
             raise
         except Exception:
             LOG.exception("There was an unexpected error")
+            sys.exit(1)
 
     def format_epilog(self, _ctx: Context, formatter: click.HelpFormatter) -> None:
         # Schema revision is a DB round-trip; defer until `--help` is actually
@@ -551,6 +553,14 @@ def setup_standalone(username: str, password: str):
         "TG_TARGET_DB_TRUST_SERVER_CERTIFICATE=yes",
         "TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL=no",
     ]
+
+    # Persist caller-supplied runtime overrides (ports, TLS) so they apply to
+    # subsequent `testgen run-app` invocations.
+    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "SSL_CERT_FILE", "SSL_KEY_FILE")
+    persisted_lines = [f"{name}={os.environ[name]}" for name in persisted_env_vars if os.environ.get(name)]
+    if persisted_lines:
+        config_lines.extend(["", "# Runtime overrides from installer", *persisted_lines])
+
     config_path.write_text("\n".join(config_lines) + "\n")
     click.echo(f"Config written to {config_path}")
 
@@ -563,6 +573,14 @@ def setup_standalone(username: str, password: str):
     click.echo("Patching Streamlit...")
     from testgen.ui.scripts.patch_streamlit import patch as patch_streamlit
     patch_streamlit(dev=True)
+
+    # Seed Streamlit's first-run credentials file so `run-app` doesn't block
+    # on the interactive email prompt. We don't care about the value — just
+    # that the file exists so Streamlit skips the prompt.
+    streamlit_creds = pathlib.Path.home() / ".streamlit" / "credentials.toml"
+    if not streamlit_creds.exists():
+        streamlit_creds.parent.mkdir(parents=True, exist_ok=True)
+        streamlit_creds.write_text('[general]\nemail = ""\n')
 
     # Start embedded PostgreSQL (standalone mode is now active via config)
     start_standalone_postgres()
@@ -860,7 +878,9 @@ def run_ui():
             child_env = {**os.environ, "TG_JOB_SOURCE": "UI", STANDALONE_URI_ENV_VAR: server_uri}
 
     process= subprocess.Popen(
-        [  # noqa: S607
+        [
+            sys.executable,
+            "-m",
             "streamlit",
             "run",
             app_file,
@@ -868,6 +888,7 @@ def run_ui():
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
+            f"--server.port={settings.UI_PORT}",
             f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
             f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
             "--",
@@ -905,7 +926,7 @@ def run_app(module):
 
         case "all":
             children = [
-                subprocess.Popen([sys.executable, sys.argv[0], "run-app", m], start_new_session=True)
+                subprocess.Popen([sys.executable, "-m", "testgen", "run-app", m], start_new_session=True)
                 for m in APP_MODULES
             ]
 

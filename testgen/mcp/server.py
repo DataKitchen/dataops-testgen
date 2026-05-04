@@ -72,15 +72,11 @@ def _configure_mcp_logging() -> None:
         logging.getLogger(name).parent = testgen_logger
 
 
-def build_mcp_app(
+def build_mcp_server(
     api_base_url: str,
     server_url: str | None = None,
-) -> tuple[Starlette, StreamableHTTPSessionManager]:
-    """Create the MCP Starlette app with tools, resources, and prompts registered.
-
-    Returns the Starlette app and its session manager. The caller must run
-    ``session_manager.run()`` as an async context manager (e.g. in the host
-    app's lifespan) to initialize the task group before requests arrive.
+) -> FastMCP:
+    """Create the FastMCP server with tools, resources, and prompts registered.
 
     Args:
         api_base_url: OAuth issuer URL (the API server).
@@ -178,5 +174,23 @@ def build_mcp_app(
     safe_prompt(compare_runs)
     safe_prompt(profiling_overview)
 
+    return mcp
+
+
+def build_mcp_app(
+    api_base_url: str,
+    server_url: str | None = None,
+) -> tuple[Starlette, StreamableHTTPSessionManager]:
+    """Create the MCP Starlette app with tools, resources, and prompts registered.
+
+    Returns the Starlette app and its session manager. The caller must run
+    ``session_manager.run()`` as an async context manager (e.g. in the host
+    app's lifespan) to initialize the task group before requests arrive.
+
+    Args:
+        api_base_url: OAuth issuer URL (the API server).
+        server_url: MCP resource server URL. Defaults to ``{api_base_url}/mcp``.
+    """
+    mcp = build_mcp_server(api_base_url, server_url)
     app = mcp.streamable_http_app()
     return app, mcp.session_manager
