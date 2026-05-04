@@ -78,6 +78,16 @@ APP_MODULES = ["ui", "scheduler", "server"]
 VERSION_DATA = version_service.get_version()
 CHILDREN_POLL_INTERVAL = 10
 
+
+def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
+    # On POSIX, forward the signal verbatim. On Windows, subprocess.send_signal
+    # rejects everything except SIGTERM / CTRL_C_EVENT / CTRL_BREAK_EVENT, so
+    # fall back to terminate() — equivalent to TerminateProcess().
+    if sys.platform == "win32":
+        child.terminate()
+    else:
+        child.send_signal(signum)
+
 @dataclass
 class Configuration:
     verbose: bool = field(default=False)
@@ -898,7 +908,7 @@ def run_ui():
     )
     def term_ui(signum, _):
         LOG.info(f"Sending termination signal {signum} to Testgen UI")
-        process.send_signal(signum)
+        _forward_signal_to_child(process, signum)
     signal.signal(signal.SIGINT, term_ui)
     signal.signal(signal.SIGTERM, term_ui)
     status_code = process.wait()
@@ -932,7 +942,7 @@ def run_app(module):
 
             def term_children(signum, _):
                 for child in children:
-                    child.send_signal(signum)
+                    _forward_signal_to_child(child, signum)
 
             signal.signal(signal.SIGINT, term_children)
             signal.signal(signal.SIGTERM, term_children)
