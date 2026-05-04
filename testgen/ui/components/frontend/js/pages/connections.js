@@ -66,7 +66,7 @@ const Connections = (props) => {
                     label: 'Setup Table Groups',
                     width: 'auto',
                     disabled: !getValue(props.permissions).is_admin,
-                    tooltip: 'You do not have permissions to perform this action. Contact your administrator.',
+                    tooltip: () => !getValue(props.permissions).is_admin ? 'You do not have permissions to perform this action. Contact your administrator.' : '',
                     onclick: () => emit('SetupTableGroupClicked', {}),
                 }),
         ),

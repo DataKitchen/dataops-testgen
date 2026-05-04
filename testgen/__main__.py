@@ -2,6 +2,7 @@ import base64
 import importlib
 import logging
 import os
+import pathlib
 import platform
 import secrets
 import signal
@@ -573,6 +574,14 @@ def setup_standalone(username: str, password: str):
     from testgen.ui.scripts.patch_streamlit import patch as patch_streamlit
     patch_streamlit(dev=True)
 
+    # Seed Streamlit's first-run credentials file so `run-app` doesn't block
+    # on the interactive email prompt. We don't care about the value — just
+    # that the file exists so Streamlit skips the prompt.
+    streamlit_creds = pathlib.Path.home() / ".streamlit" / "credentials.toml"
+    if not streamlit_creds.exists():
+        streamlit_creds.parent.mkdir(parents=True, exist_ok=True)
+        streamlit_creds.write_text('[general]\nemail = ""\n')
+
     # Start embedded PostgreSQL (standalone mode is now active via config)
     start_standalone_postgres()
 
@@ -917,7 +926,7 @@ def run_app(module):
 
         case "all":
             children = [
-                subprocess.Popen([sys.executable, sys.argv[0], "run-app", m], start_new_session=True)
+                subprocess.Popen([sys.executable, "-m", "testgen", "run-app", m], start_new_session=True)
                 for m in APP_MODULES
             ]
 
