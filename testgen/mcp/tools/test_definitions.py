@@ -3,8 +3,8 @@ from testgen.common.models.test_definition import TestDefinition, TestDefinition
 from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools import DocGroup
 from testgen.mcp.tools.common import (
+    DocGroup,
     format_page_footer,
     format_page_info,
     parse_uuid,

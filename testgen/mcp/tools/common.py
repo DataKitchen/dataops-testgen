@@ -1,4 +1,5 @@
 from datetime import date
+from enum import StrEnum
 from uuid import UUID
 
 from testgen.common.date_service import parse_since
@@ -8,6 +9,20 @@ from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
+
+
+class DocGroup(StrEnum):
+    """User-facing groupings for tools on the supported-tools doc page.
+
+    Each tool module declares ``_DOC_GROUP = DocGroup.<member>``; the
+    ``deploy/build_mcp_docs.py`` script reads these values to organize
+    the page.
+    """
+
+    DISCOVER = "Discover what TestGen knows about"
+    INVESTIGATE = "Investigate quality issues"
+    BROWSE_PROFILING = "Browse profiling results"
+    TRIGGER = "Trigger profiling, tests, and test generation"
 
 
 def parse_uuid(value: str, label: str = "ID") -> UUID:

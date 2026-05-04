@@ -1,6 +1,6 @@
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestType
-from testgen.mcp.tools import DocGroup
+from testgen.mcp.tools.common import DocGroup
 from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.DISCOVER

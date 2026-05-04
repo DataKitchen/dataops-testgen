@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from testgen.mcp.server import build_mcp_server
-from testgen.mcp.tools import DocGroup
+from testgen.mcp.tools.common import DocGroup
 
 _DEFAULT_OUTPUT = Path("docs/mcp/supported-tools.md")
 _ARGS_HEADER_RE = re.compile(r"^\s*Args:\s*$", re.MULTILINE)
