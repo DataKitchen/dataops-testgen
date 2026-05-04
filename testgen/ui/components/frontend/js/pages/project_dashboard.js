@@ -1,7 +1,7 @@
 /**
  * @import { FilterOption, ProjectSummary } from '../types.js';
  * @import { TestSuiteSummary } from '../types.js';
- * @import { MonitorSummary } from '../components/monitor_anomalies_summary.js';
+ * @import { MonitorSummary } from '/app/static/js/components/monitor_anomalies_summary.js';
  * 
  * @typedef TableGroupSummary
  * @type {object}
@@ -17,12 +17,13 @@
  * @property {string?} dq_score_profiling
  * @property {string?} dq_score_testing
  * @property {string?} latest_profile_id
+ * @property {string?} latest_profile_job_execution_id
  * @property {number?} latest_profile_start
- * @property {number} latest_anomalies_ct
- * @property {number} latest_anomalies_definite_ct
- * @property {number} latest_anomalies_likely_ct
- * @property {number} latest_anomalies_possible_ct
- * @property {number} latest_anomalies_dismissed_ct
+ * @property {number} latest_hygiene_issues_ct
+ * @property {number} latest_hygiene_issues_definite_ct
+ * @property {number} latest_hygiene_issues_likely_ct
+ * @property {number} latest_hygiene_issues_possible_ct
+ * @property {number} latest_hygiene_issues_dismissed_ct
  * @property {number?} latest_tests_start
  * @property {TestSuiteSummary[]} test_suites
  * @property {MonitorSummary?} monitoring_summary
@@ -39,28 +40,26 @@
  * @property {TableGroupSummary[]} table_groups
  * @property {SortOption[]} table_groups_sort_options
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { getValue, loadStylesheet, resizeFrameHeightOnDOMChange, resizeFrameHeightToElement } from '../utils.js';
-import { formatNumber, formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '../display_utils.js';
-import { Card } from '../components/card.js';
-import { Select } from '../components/select.js';
-import { Input } from '../components/input.js';
-import { Link } from '../components/link.js';
-import { SummaryBar } from '../components/summary_bar.js';
-import { EmptyState, EMPTY_STATE_MESSAGE } from '../components/empty_state.js';
-import { ScoreMetric } from '../components/score_metric.js';
-import { SummaryCounts } from '../components/summary_counts.js';
-import { AnomaliesSummary } from '../components/monitor_anomalies_summary.js';
+import van from '/app/static/js/van.min.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { formatNumber, formatTimestamp, caseInsensitiveSort, caseInsensitiveIncludes } from '/app/static/js/display_utils.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Input } from '/app/static/js/components/input.js';
+import { Link } from '/app/static/js/components/link.js';
+import { SummaryBar } from '/app/static/js/components/summary_bar.js';
+import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
+import { ScoreMetric } from '/app/static/js/components/score_metric.js';
+import { SummaryCounts } from '/app/static/js/components/summary_counts.js';
+import { AnomaliesSummary } from '/app/static/js/components/monitor_anomalies_summary.js';
 
 const { div, h3, hr, span } = van.tags;
 
 const staleProfileDays = 60;
 
 const ProjectDashboard = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('project-dashboard', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
 
     const tableGroups = van.derive(() => getValue(props.table_groups));
     const tableGroupsSearchTerm = van.state('');
@@ -89,11 +88,9 @@ const ProjectDashboard = (/** @type Properties */ props) => {
     van.derive(onFiltersChange);
 
     const wrapperId = 'overview-wrapper';
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId, class: 'flex-column tg-overview' },
+        { id: wrapperId, 'data-testid': 'project-dashboard', class: 'flex-column tg-overview' },
         () => getValue(tableGroups).length
             ? div(
                 { class: 'flex-row fx-align-flex-end fx-gap-3' },
@@ -118,22 +115,22 @@ const ProjectDashboard = (/** @type Properties */ props) => {
         () => getValue(tableGroups).length
             ? getValue(filteredTableGroups).length
                 ? div(
-                    { class: 'flex-column mt-4' },
+                    { class: 'flex-column mt-4 fx-gap-3' },
                     getValue(filteredTableGroups).map(tableGroup =>
                         tableGroup.monitoring_summary
-                            ? TableGroupCardWithMonitor(tableGroup, getValue(props.project_summary)?.project_code)
-                            : TableGroupCard(tableGroup, getValue(props.project_summary)?.project_code)
+                            ? TableGroupCardWithMonitor(tableGroup, getValue(props.project_summary)?.project_code, emit)
+                            : TableGroupCard(tableGroup, getValue(props.project_summary)?.project_code, emit)
                     )
                 )
                 : div(
                     { class: 'mt-7 text-secondary', style: 'text-align: center;' },
                     'No table groups found matching filters',
                 )
-            : ConditionalEmptyState(getValue(props.project_summary)),
+            : ConditionalEmptyState(getValue(props.project_summary), emit),
     );
 }
 
-const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
+const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode, emit) => {
     const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
 
     return Card({
@@ -158,12 +155,12 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type str
                         ${formatNumber(useApprox ? tableGroup.approx_data_point_ct : tableGroup.data_point_ct)} data points
                         ${useApprox ? '*' : ''}`,
                     ),
-                    TableGroupTestSuiteSummary(tableGroup.test_suites, projectCode),
+                    TableGroupTestSuiteSummary(tableGroup.test_suites, projectCode, emit),
                 ),
                 ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),
             hr({ class: 'tg-overview--table-group-divider' }),
-            TableGroupLatestProfile(tableGroup, projectCode),
+            TableGroupLatestProfile(tableGroup, projectCode, emit),
             useApprox
                 ? span({ class: 'text-caption text-right' }, '* Approximate counts based on server statistics')
                 : null,
@@ -171,7 +168,7 @@ const TableGroupCard = (/** @type TableGroupSummary */ tableGroup, /** @type str
     });
 };
 
-const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
+const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode, emit) => {
     const useApprox = tableGroup.record_ct === null || tableGroup.record_ct === undefined;
     return Card({
         testId: 'table-group-summary-card',
@@ -199,15 +196,15 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /*
                             ${useApprox ? '*' : ''}`,
                         ),
                     ),
-                    AnomaliesSummary(tableGroup.monitoring_summary, 'Monitor anomalies'),
+                    AnomaliesSummary(tableGroup.monitoring_summary, 'Monitor anomalies', {}, emit),
                 ),
                 ScoreMetric(tableGroup.dq_score, tableGroup.dq_score_profiling, tableGroup.dq_score_testing),
             ),
 
             hr({ class: 'tg-overview--table-group-divider' }),
-            TableGroupTestSuiteSummary(tableGroup.test_suites, projectCode),
+            TableGroupTestSuiteSummary(tableGroup.test_suites, projectCode, emit),
             hr({ class: 'tg-overview--table-group-divider' }),
-            TableGroupLatestProfile(tableGroup, projectCode),
+            TableGroupLatestProfile(tableGroup, projectCode, emit),
             useApprox
                 ? span({ class: 'text-caption text-right' }, '* Approximate counts based on server statistics')
                 : null,
@@ -215,7 +212,7 @@ const TableGroupCardWithMonitor = (/** @type TableGroupSummary */ tableGroup, /*
     });
 };
 
-const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode) => {
+const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** @type string */ projectCode, emit) => {
     if (!tableGroup.latest_profile_start) {
         return div(
             { class: 'mt-1 mb-1 text-secondary' },
@@ -230,10 +227,10 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
         div(
             { class: 'flex-row fx-gap-2', style: 'flex: 1 1 50%;' },
             span('Latest profile:'),
-            Link({
+            Link({ emit,
                 label: formatTimestamp(tableGroup.latest_profile_start),
                 href: 'profiling-runs:results',
-                params: { run_id: tableGroup.latest_profile_id, project_code: projectCode },
+                params: { run_id: tableGroup.latest_profile_job_execution_id, project_code: projectCode },
             }),
             daysAgo > staleProfileDays
                 ? span({ class: 'text-error' }, `(${daysAgo} days ago)`)
@@ -241,23 +238,23 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
         ),
         div(
             { class: 'flex-row fx-gap-5', style: 'flex: 1 1 50%;' },
-            Link({
-                label: `${tableGroup.latest_anomalies_ct} hygiene issues`,
+            Link({ emit,
+                label: `${tableGroup.latest_hygiene_issues_ct} hygiene issues`,
                 href: 'profiling-runs:hygiene',
                 params: {
-                    run_id: tableGroup.latest_profile_id,
+                    run_id: tableGroup.latest_profile_job_execution_id,
                     project_code: projectCode,
                 },
                 width: 150,
                 style: 'flex: 0 0 auto;',
             }),
-            tableGroup.latest_anomalies_ct
+            tableGroup.latest_hygiene_issues_ct
             ? SummaryCounts({
                 items: [
-                    { label: 'Definite', value: parseInt(tableGroup.latest_anomalies_definite_ct), color: 'red' },
-                    { label: 'Likely', value: parseInt(tableGroup.latest_anomalies_likely_ct), color: 'orange' },
-                    { label: 'Possible', value: parseInt(tableGroup.latest_anomalies_possible_ct), color: 'yellow' },
-                    { label: 'Dismissed', value: parseInt(tableGroup.latest_anomalies_dismissed_ct), color: 'grey' },
+                    { label: 'Definite', value: parseInt(tableGroup.latest_hygiene_issues_definite_ct), color: 'red' },
+                    { label: 'Likely', value: parseInt(tableGroup.latest_hygiene_issues_likely_ct), color: 'orange' },
+                    { label: 'Possible', value: parseInt(tableGroup.latest_hygiene_issues_possible_ct), color: 'yellow' },
+                    { label: 'Dismissed', value: parseInt(tableGroup.latest_hygiene_issues_dismissed_ct), color: 'grey' },
                 ],
             })
             : '',
@@ -265,7 +262,7 @@ const TableGroupLatestProfile = (/** @type TableGroupSummary */ tableGroup, /** 
     );
 };
 
-const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites, /** @type string */ projectCode) => {
+const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites, /** @type string */ projectCode, emit) => {
     if (!testSuites?.length) {
         return div(
             { class: 'mt-1 mb-1 text-secondary' },
@@ -285,7 +282,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites, /
             { class: 'flex-row fx-align-flex-start mt-2 tg-overview--row' },
             div(
                 { class: 'flex-column', style: 'flex: 1 1 25%; word-break: break-word;' },
-                Link({
+                Link({ emit, 
                     label: suite.test_suite,
                     href: 'test-suites:definitions',
                     params: { test_suite_id: suite.id, project_code: projectCode },
@@ -293,10 +290,10 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites, /
                 span({ class: 'text-caption' }, `${suite.test_ct ?? 0} tests`),
             ),
             suite.latest_run_id
-                ? Link({
+                ? Link({ emit,
                     label: formatTimestamp(suite.latest_run_start),
                     href: 'test-runs:results',
-                    params: { run_id: suite.latest_run_id, project_code: projectCode },
+                    params: { run_id: suite.latest_run_job_execution_id, project_code: projectCode },
                     style: 'flex: 1 1 25%;',
                 })
                 : span({ style: 'flex: 1 1 25%;' }, '--'),
@@ -319,7 +316,7 @@ const TableGroupTestSuiteSummary = (/** @type TestSuiteSummary[] */testSuites, /
     );
 };
 
-const ConditionalEmptyState = (/** @type ProjectSummary */ project) => {
+const ConditionalEmptyState = (/** @type ProjectSummary */ project, emit) => {
     const forConnections = {
         message: EMPTY_STATE_MESSAGE.connection,
         link: {
@@ -339,7 +336,7 @@ const ConditionalEmptyState = (/** @type ProjectSummary */ project) => {
 
     const args = project.connection_count > 0 ? forTablegroups : forConnections;
 
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'home',
         label: 'Your project is empty',
         ...args,
@@ -382,3 +379,28 @@ hr.tg-overview--table-group-divider {
 `);
 
 export { ProjectDashboard };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
+        van.add(parentElement, ProjectDashboard(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => {
+        parentElement.state = null;
+    };
+};

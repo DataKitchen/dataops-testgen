@@ -27,7 +27,7 @@ const Card = (/** @type Properties */ props) => {
                 }
 
                 if (!!props.class) {
-                    classes.push(...props.class);
+                    classes.push(props.class);
                     if (!props.class.includes('mb-') && !props.class.includes('m-')) {
                         classes.push('mb-4');
                     }

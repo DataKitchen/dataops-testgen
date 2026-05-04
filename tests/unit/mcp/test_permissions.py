@@ -3,15 +3,16 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.mcp.exceptions import MCPPermissionDenied
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible
 from testgen.mcp.permissions import (
     _NOT_SET,
     ProjectPermissions,
     _compute_project_permissions,
     _mcp_project_permissions,
-    get_current_mcp_user,
+    get_authorized_mcp_user,
     get_project_permissions,
     mcp_permission,
+    set_mcp_token,
     set_mcp_username,
 )
 
@@ -19,39 +20,58 @@ from testgen.mcp.permissions import (
 @pytest.fixture(autouse=True)
 def _reset_contextvars():
     set_mcp_username(None)
+    set_mcp_token(None)
     tok = _mcp_project_permissions.set(_NOT_SET)
     yield
     set_mcp_username(None)
+    set_mcp_token(None)
     _mcp_project_permissions.reset(tok)
 
 
-# --- get_current_mcp_user ---
+# --- get_authorized_mcp_user ---
 
 
-def test_get_current_mcp_user_raises_when_no_username():
+def test_get_authorized_mcp_user_raises_when_no_username():
     with pytest.raises(RuntimeError, match="No authenticated user"):
-        get_current_mcp_user()
+        get_authorized_mcp_user()
 
 
-@patch("testgen.mcp.permissions.User")
-def test_get_current_mcp_user_raises_when_user_not_found(mock_user):
-    mock_user.get.return_value = None
+@patch("testgen.common.models.get_current_session")
+@patch("testgen.common.auth.authorize_token")
+def test_get_authorized_mcp_user_raises_when_user_not_found(mock_authorize, mock_get_session):
+    mock_authorize.side_effect = ValueError("User not found")
     set_mcp_username("ghost")
+    set_mcp_token("some_token")
 
-    with pytest.raises(ValueError, match="Authenticated user not found: ghost"):
-        get_current_mcp_user()
+    with pytest.raises(ValueError, match="User not found"):
+        get_authorized_mcp_user()
 
 
-@patch("testgen.mcp.permissions.User")
-def test_get_current_mcp_user_returns_user(mock_user):
+@patch("testgen.common.models.get_current_session")
+@patch("testgen.common.auth.authorize_token")
+def test_get_authorized_mcp_user_returns_user(mock_authorize, mock_get_session):
     user = MagicMock()
-    mock_user.get.return_value = user
+    mock_authorize.return_value = user
+    mock_session = MagicMock()
+    mock_get_session.return_value = mock_session
     set_mcp_username("admin")
+    set_mcp_token("bearer_token")
 
-    result = get_current_mcp_user()
+    result = get_authorized_mcp_user()
 
     assert result is user
-    mock_user.get.assert_called_once_with("admin")
+    mock_authorize.assert_called_once_with("bearer_token", "admin", mock_session)
+
+
+@patch("testgen.common.models.get_current_session")
+@patch("testgen.common.auth.authorize_token")
+def test_get_authorized_mcp_user_rejects_revoked_token(mock_authorize, mock_get_session):
+    mock_authorize.side_effect = ValueError("Token has been revoked")
+    set_mcp_username("admin")
+    set_mcp_token("revoked_token")
+
+    with pytest.raises(ValueError, match="Token has been revoked"):
+        get_authorized_mcp_user()
 
 
 # --- _compute_project_permissions ---
@@ -97,6 +117,7 @@ def test_codes_allowed_to_filters_by_role():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_c"},
         permission="catalog",
+        username="test_user",
     )
     # "view" includes role_a but not role_c
     result = perms.codes_allowed_to("view")
@@ -107,6 +128,7 @@ def test_codes_allowed_to_all_matching():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_b"},
         permission="catalog",
+        username="test_user",
     )
     # "catalog" includes all roles
     result = perms.codes_allowed_to("catalog")
@@ -117,6 +139,7 @@ def test_codes_allowed_to_none_matching():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_c"},
         permission="catalog",
+        username="test_user",
     )
     # "view" excludes role_c
     result = perms.codes_allowed_to("view")
@@ -130,6 +153,7 @@ def test_allowed_codes_uses_decorator_permission():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_c"},
         permission="view",
+        username="test_user",
     )
     # "view" includes role_a but not role_c
     assert perms.allowed_codes == ["proj_a"]
@@ -139,7 +163,7 @@ def test_allowed_codes_uses_decorator_permission():
 
 
 def test_verify_access_allowed_passes():
-    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     perms.verify_access("proj_a", not_found="not found")
 
 
@@ -147,6 +171,7 @@ def test_verify_access_membership_but_wrong_role_raises():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a", "proj_b": "role_c"},
         permission="view",
+        username="test_user",
     )
     with pytest.raises(MCPPermissionDenied, match="necessary permission"):
         perms.verify_access("proj_b", not_found="not found")
@@ -156,16 +181,27 @@ def test_verify_access_no_membership_raises_not_found():
     perms = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     with pytest.raises(MCPPermissionDenied, match="not found"):
         perms.verify_access("secret", not_found="not found")
+
+
+def test_verify_access_accepts_typed_not_found_exception():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    with pytest.raises(MCPResourceNotAccessible, match="Project `secret` not found or not accessible"):
+        perms.verify_access("secret", not_found=MCPResourceNotAccessible("Project", "secret"))
 
 
 # --- ProjectPermissions.has_access ---
 
 
 def test_has_access():
-    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view")
+    perms = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
     assert perms.has_access("proj_a") is True
     assert perms.has_access("proj_b") is False
 
@@ -179,7 +215,7 @@ def test_get_project_permissions_raises_without_decorator():
 
 
 def test_get_project_permissions_returns_set_value():
-    perms = ProjectPermissions(memberships={}, permission="view")
+    perms = ProjectPermissions(memberships={}, permission="view", username="test_user")
     token = _mcp_project_permissions.set(perms)
     try:
         assert get_project_permissions() is perms

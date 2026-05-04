@@ -37,6 +37,7 @@ import { Link } from './link.js';
 const { div, span } = van.tags;
 
 const CrontabInput = (/** @type Options */ props) => {
+    const emit = props.emit;
     loadStylesheet('crontab-input', stylesheet);
 
     const domId = van.derive(() => props.id?.val ?? `tg-crontab-wrapper-${getRandomId()}`);
@@ -96,6 +97,7 @@ const CrontabInput = (/** @type Options */ props) => {
                     hideExpression: props.hideExpression,
                 },
                 expression,
+                emit,
             ),
         ),
   );
@@ -106,7 +108,7 @@ const CrontabInput = (/** @type Options */ props) => {
  * @param {import('../van.min.js').VanState<string>} expr
  * @returns {HTMLElement}
  */
-const CrontabEditorPortal = ({sample, ...options}, expr) => {
+const CrontabEditorPortal = ({sample, ...options}, expr, emit) => {
     const mode = van.state(expr.rawVal ? determineMode(expr.rawVal) : 'x_hours');
 
     const xHoursState = {
@@ -433,7 +435,7 @@ const CrontabEditorPortal = ({sample, ...options}, expr) => {
                     () => div(
                         {class: `flex-row fx-gap-1 text-caption ${mode.val === 'custom' ? '': 'hidden'}`},
                         span({}, 'Learn more about'),
-                        Link({
+                        Link({ emit, 
                             open_new: true,
                             label: 'cron expressions',
                             href: 'https://crontab.guru/',

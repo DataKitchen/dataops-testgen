@@ -1,11 +1,8 @@
 import logging
-import subprocess
-import threading
+import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-import testgen.common.process_service as process_service
-from testgen import settings
 from testgen.commands.queries.profiling_query import (
     HygieneIssueType,
     ProfilingSQL,
@@ -13,9 +10,7 @@ from testgen.commands.queries.profiling_query import (
     calculate_sampling_params,
 )
 from testgen.commands.queries.refresh_data_chars_query import ColumnChars
-from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_data_chars import run_data_chars_refresh
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common import (
     execute_db_queries,
@@ -24,7 +19,8 @@ from testgen.common import (
     set_target_db_params,
     write_to_app_db,
 )
-from testgen.common.database.database_service import ThreadedProgress, empty_cache
+from testgen.common.database.database_service import ThreadedProgress
+from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -32,31 +28,17 @@ from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.notifications.profiling_run import send_profiling_run_notifications
-from testgen.ui.session import session
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
 
-def run_profiling_in_background(table_group_id: str | UUID) -> None:
-    msg = f"Triggering profiling run for table group {table_group_id}"
-    if settings.IS_DEBUG:
-        LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
-        empty_cache()
-        background_thread = threading.Thread(
-            target=run_profiling,
-            args=(table_group_id, session.auth.user_display if session.auth else None),
-        )
-        background_thread.start()
-    else:
-        LOG.info(msg)
-        script = ["testgen", "run-profile", "-tg", str(table_group_id)]
-        subprocess.Popen(script)  # NOQA S603
-
-
 @with_database_session
-def run_profiling(table_group_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
+def run_profiling(
+    table_group_id: str | UUID,
+    username: str | None = None,
+    run_date: datetime | None = None,
+) -> UUID:
     if table_group_id is None:
         raise ValueError("Table Group ID was not specified")
 
@@ -74,14 +56,19 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         connection_id=connection.connection_id,
         table_groups_id=table_group.id,
         profiling_starttime=datetime.now(UTC) + time_delta,
-        process_id=process_service.get_current_process_id(),
+        process_id=os.getpid(),
     )
+    if job_id := job_context.get().job_id:
+        profiling_run.job_execution_id = job_id
+
+    # This runs in a subprocess — commit after every save so progress is visible
+    # to the UI (separate session) and to execute_db_queries (independent connection).
+    session = get_current_session()
+
     profiling_run.init_progress()
     profiling_run.set_progress("data_chars", "Running")
     profiling_run.save()
-    # This runs in a subprocess — commit after every save so progress is visible
-    # to the UI (separate session) and to execute_db_queries (independent connection).
-    get_current_session().commit()
+    session.commit()
 
     LOG.info(f"Profiling run: {profiling_run.id}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
     try:
@@ -115,36 +102,29 @@ def run_profiling(table_group_id: str | UUID, username: str | None = None, run_d
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Error"
         profiling_run.save()
-        get_current_session().commit()
-
-        send_profiling_run_notifications(profiling_run)
+        session.commit()
+        raise
     else:
         LOG.info("Setting profiling run status to Completed")
         profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
         profiling_run.status = "Complete"
         profiling_run.save()
-        get_current_session().commit()
+        session.commit()
 
-        send_profiling_run_notifications(profiling_run)
-        _rollup_profiling_scores(profiling_run, table_group)
         _generate_tests(table_group)
     finally:
         MixpanelService().send_event(
             "run-profiling",
-            source=settings.ANALYTICS_JOB_SOURCE,
+            source=job_context.get().source.upper(),
             username=username,
             sql_flavor=connection.sql_flavor_code,
             sampling=table_group.profile_use_sampling,
             table_count=profiling_run.table_ct or 0,
             column_count=profiling_run.column_ct or 0,
             run_duration=(profiling_run.profiling_endtime - profiling_run.profiling_starttime).total_seconds(),
-            scoring_duration=(datetime.now(UTC) + time_delta - profiling_run.profiling_endtime).total_seconds(),
         )
 
-    return f"""
-        {"Profiling encountered an error. Check log for details." if profiling_run.status == "Error" else "Profiling completed."}
-        Run ID: {profiling_run.id}
-    """
+    return profiling_run.id
 
 
 def _exclude_xde_columns(data_chars: list[ColumnChars], table_group_id: UUID) -> list[ColumnChars]:
@@ -321,21 +301,6 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
         profiling_run.set_progress("hygiene_issues", "Warning", error=f"Error encountered. {get_exception_message(e)}")
     else:
         profiling_run.set_progress("hygiene_issues", "Completed")
-
-
-def _rollup_profiling_scores(profiling_run: ProfilingRun, table_group: TableGroup) -> None:
-    try:
-        LOG.info("Rolling up profiling scores")
-        execute_db_queries(
-            RollupScoresSQL(profiling_run.id, table_group.id).rollup_profiling_scores(),
-        )
-        run_refresh_score_cards_results(
-            project_code=table_group.project_code,
-            add_history_entry=True,
-            refresh_date=profiling_run.profiling_starttime,
-        )
-    except Exception:
-        LOG.exception("Error rolling up profiling scores")
 
 
 @with_database_session

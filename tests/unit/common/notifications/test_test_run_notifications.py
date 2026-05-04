@@ -134,6 +134,7 @@ def test_send_test_run_notification(
 
     test_run = TestRun(
         id="tr-id",
+        job_execution_id="tr-id",
         status=test_run_status,
         test_suite_id="ts-id",
         failed_ct=failed_ct,
@@ -158,7 +159,7 @@ def test_send_test_run_notification(
         diff_mock.return_value = create_diff(**diff_mock_args)
         get_prev_mock.return_value = TestRun(id="tr-prev-id")
     summary = Mock(project_code="test_project")
-    select_summary_mock.return_value = [summary]
+    select_summary_mock.return_value = ([summary], 1)
 
     send_test_run_notifications(test_run)
 

@@ -3,7 +3,7 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
-from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db
+from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_one_from_db
 from testgen.utils import is_uuid4
 
 TAG_FIELDS = [
@@ -71,12 +71,17 @@ boolean_true_ct
 
 
 @st.cache_data(show_spinner=False)
-def get_profiling_results(profiling_run_id: str, table_name: str | None = None, column_name: str | None = None, sorting_columns = None) -> pd.DataFrame:
+def get_profiling_results(profiling_run_id: str, table_name: str | None = None, column_name: str | None = None, sorting_columns = None, page: int = 0, page_size: int = 0) -> pd.DataFrame:
     order_by = ""
     if sorting_columns is None:
         order_by = "ORDER BY LOWER(schema_name), LOWER(table_name), position"
     elif len(sorting_columns):
         order_by = "ORDER BY " + ", ".join(" ".join(col) for col in sorting_columns)
+
+    pagination_clause = ""
+    if page_size > 0:
+        offset = page * page_size
+        pagination_clause = f"OFFSET {offset} LIMIT {page_size}"
 
     query = f"""
     SELECT
@@ -115,7 +120,8 @@ def get_profiling_results(profiling_run_id: str, table_name: str | None = None, 
     WHERE profile_run_id = :profiling_run_id
         AND table_name ILIKE :table_name
         AND column_name ILIKE :column_name
-    {order_by};
+    {order_by}
+    {pagination_clause};
     """
     params = {
         "profiling_run_id": profiling_run_id,
@@ -136,7 +142,7 @@ def get_table_by_id(
 ) -> dict | None:
     if not is_uuid4(table_id):
         return None
-    
+
     condition = "WHERE table_id = :table_id"
     params = {"table_id": table_id}
     return get_tables_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
@@ -166,7 +172,7 @@ def get_tables_by_table_group(
 ) -> list[dict]:
     if not is_uuid4(table_group_id):
         return None
-    
+
     condition = "WHERE table_chars.table_groups_id = :table_group_id"
     params = {"table_group_id": table_group_id}
     return get_tables_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
@@ -295,7 +301,8 @@ def get_column_by_id(
 
     condition = "WHERE column_chars.column_id = :column_id"
     params = {"column_id": column_id}
-    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
+    results = get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    return results[0] if results else None
 
 
 @st.cache_data(show_spinner="Loading data ...")
@@ -318,7 +325,8 @@ def get_column_by_name(
         "table_name": table_name,
         "table_group_id": table_group_id,
     }
-    return get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)[0]
+    results = get_columns_by_condition(condition, params, include_tags, include_has_test_runs, include_active_tests, include_scores)
+    return results[0] if results else None
 
 
 def get_columns_by_id(
@@ -507,6 +515,49 @@ def get_hygiene_issues(profile_run_id: str, table_name: str, column_name: str | 
     return [ dict(row) for row in results ]
 
 
+def _build_anomaly_where_clause(
+    likelihood: str | None = None,
+    issue_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> str:
+    clauses = []
+    if likelihood:
+        clauses.append("AND t.issue_likelihood = :likelihood")
+    if issue_type_id:
+        clauses.append("AND t.id = :issue_type_id")
+    if table_name:
+        clauses.append("AND r.table_name = :table_name")
+    if column_name:
+        clauses.append("AND r.column_name ILIKE :column_name")
+    if action == "No Action":
+        clauses.append("AND r.disposition IS NULL")
+    elif action:
+        clauses.append("AND r.disposition = :disposition")
+    return "\n        ".join(clauses)
+
+
+def _build_anomaly_params(
+    profile_run_id: str,
+    likelihood: str | None = None,
+    issue_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> dict:
+    return {
+        "profile_run_id": profile_run_id,
+        "likelihood": likelihood,
+        "issue_type_id": issue_type_id,
+        "table_name": table_name,
+        "column_name": column_name,
+        "disposition": {
+            "Muted": "Inactive",
+        }.get(action, action),
+    }
+
+
 @st.cache_data(show_spinner=False)
 def get_profiling_anomalies(
     profile_run_id: str,
@@ -516,7 +567,20 @@ def get_profiling_anomalies(
     column_name: str | None = None,
     action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
     sorting_columns: list[str] | None = None,
+    page: int = 0,
+    page_size: int = 0,
 ) -> pd.DataFrame:
+    where_clause = _build_anomaly_where_clause(likelihood, issue_type_id, table_name, column_name, action)
+    order_clause = (
+        f"ORDER BY {', '.join(' '.join(col) for col in sorting_columns)}"
+        if sorting_columns
+        else ""
+    )
+    pagination_clause = ""
+    if page_size > 0:
+        offset = page * page_size
+        pagination_clause = f"OFFSET {offset} LIMIT {page_size}"
+
     query = f"""
     SELECT
         r.table_name,
@@ -541,6 +605,7 @@ def get_profiling_anomalies(
             WHEN t.issue_likelihood = 'Definite'  THEN 1
         END AS likelihood_order,
         t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
+        t.dq_dimension, r.impact_dimension,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
         tg.table_groups_name, tg.project_code,
 
@@ -572,25 +637,215 @@ def get_profiling_anomalies(
     LEFT JOIN data_table_chars dtc
         ON dcc.table_id = dtc.table_id
     WHERE r.profile_run_id = :profile_run_id
-        {"AND t.issue_likelihood = :likelihood" if likelihood else ""}
-        {"AND t.id = :issue_type_id" if issue_type_id else ""}
-        {"AND r.table_name = :table_name" if table_name else ""}
-        {"AND r.column_name ILIKE :column_name" if column_name else ""}
-        {"AND r.disposition IS NULL" if action == "No Action" else "AND r.disposition = :disposition" if action else ""}
-    {f"ORDER BY {', '.join(' '.join(col) for col in sorting_columns)}" if sorting_columns else ""}
+        {where_clause}
+    {order_clause}
+    {pagination_clause};
     """
-    params = {
-        "profile_run_id": profile_run_id,
-        "likelihood": likelihood,
-        "issue_type_id": issue_type_id,
-        "table_name": table_name,
-        "column_name": column_name,
-        "disposition": {
-            "Muted": "Inactive",
-        }.get(action, action),
-    }
+    params = _build_anomaly_params(profile_run_id, likelihood, issue_type_id, table_name, column_name, action)
     df = fetch_df_from_db(query, params)
     dct_replace = {"Confirmed": "✓", "Dismissed": "✘", "Inactive": "🔇"}
     df["action"] = df["disposition"].replace(dct_replace)
 
     return df
+
+
+def get_profiling_anomalies_by_ids(anomaly_ids: list[str]) -> pd.DataFrame:
+    """Fetch full profiling anomaly rows by IDs, with all joins needed for source data and PDF reports."""
+    query = """
+    SELECT
+        r.table_name,
+        r.column_name,
+        r.schema_name,
+        r.db_data_type,
+        t.anomaly_name,
+        t.issue_likelihood,
+        r.disposition,
+        null as action,
+        CASE
+            WHEN t.issue_likelihood = 'Possible' THEN 'Possible: speculative test that often identifies problems'
+            WHEN t.issue_likelihood = 'Likely'   THEN 'Likely: typically indicates a data problem'
+            WHEN t.issue_likelihood = 'Definite'  THEN 'Definite: indicates a highly-likely data problem'
+            WHEN t.issue_likelihood = 'Potential PII'
+            THEN 'Potential PII: may require privacy policies, standards and procedures for access, storage and transmission.'
+        END AS likelihood_explanation,
+        CASE
+            WHEN t.issue_likelihood = 'Potential PII' THEN 4
+            WHEN t.issue_likelihood = 'Possible' THEN 3
+            WHEN t.issue_likelihood = 'Likely'   THEN 2
+            WHEN t.issue_likelihood = 'Definite'  THEN 1
+        END AS likelihood_order,
+        t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
+        t.dq_dimension, r.impact_dimension,
+        r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
+        p.job_execution_id::VARCHAR as job_execution_id,
+        tg.table_groups_name, tg.project_code,
+        dcc.functional_data_type,
+        dcc.description as column_description,
+        COALESCE(dcc.critical_data_element, dtc.critical_data_element) as critical_data_element,
+        dcc.pii_flag,
+        COALESCE(dcc.data_source, dtc.data_source, tg.data_source) as data_source,
+        COALESCE(dcc.source_system, dtc.source_system, tg.source_system) as source_system,
+        COALESCE(dcc.source_process, dtc.source_process, tg.source_process) as source_process,
+        COALESCE(dcc.business_domain, dtc.business_domain, tg.business_domain) as business_domain,
+        COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
+        COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
+        COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
+        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+    FROM profile_anomaly_results r
+    INNER JOIN profile_anomaly_types t
+        ON r.anomaly_id = t.id
+    INNER JOIN profiling_runs p
+        ON r.profile_run_id = p.id
+    INNER JOIN table_groups tg
+        ON r.table_groups_id = tg.id
+    LEFT JOIN data_column_chars dcc
+        ON (tg.id = dcc.table_groups_id
+        AND r.schema_name = dcc.schema_name
+        AND r.table_name = dcc.table_name
+        AND r.column_name = dcc.column_name)
+    LEFT JOIN data_table_chars dtc
+        ON dcc.table_id = dtc.table_id
+    WHERE r.id = ANY(CAST(:ids AS UUID[]));
+    """
+    df = fetch_df_from_db(query, {"ids": anomaly_ids})
+    if not df.empty:
+        dct_replace = {"Confirmed": "✓", "Dismissed": "✘", "Inactive": "🔇"}
+        df["action"] = df["disposition"].replace(dct_replace)
+    return df
+
+
+def get_profiling_anomaly_lookup(anomaly_id: str) -> dict | None:
+    """Return key fields for a single profiling anomaly (for profiling lookups)."""
+    query = """
+    SELECT r.column_name, r.table_name, r.table_groups_id::VARCHAR
+    FROM profile_anomaly_results r
+    WHERE r.id = :id;
+    """
+    return fetch_one_from_db(query, {"id": anomaly_id})
+
+
+@st.cache_data(show_spinner=False)
+def get_profiling_anomalies_count(
+    profile_run_id: str,
+    likelihood: str | None = None,
+    issue_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> int:
+    where_clause = _build_anomaly_where_clause(likelihood, issue_type_id, table_name, column_name, action)
+    query = f"""
+    SELECT COUNT(*) as cnt
+    FROM profile_anomaly_results r
+    INNER JOIN profile_anomaly_types t ON r.anomaly_id = t.id
+    WHERE r.profile_run_id = :profile_run_id
+        {where_clause};
+    """
+    params = _build_anomaly_params(profile_run_id, likelihood, issue_type_id, table_name, column_name, action)
+    result = fetch_one_from_db(query, params)
+    return int(result["cnt"]) if result else 0
+
+
+@st.cache_data(show_spinner=False)
+def get_profiling_anomaly_ids(
+    profile_run_id: str,
+    likelihood: str | None = None,
+    issue_type_id: str | None = None,
+    table_name: str | None = None,
+    column_name: str | None = None,
+    action: Literal["Confirmed", "Dismissed", "Muted", "No Action"] | None = None,
+) -> list[str]:
+    where_clause = _build_anomaly_where_clause(likelihood, issue_type_id, table_name, column_name, action)
+    query = f"""
+    SELECT r.id::VARCHAR
+    FROM profile_anomaly_results r
+    INNER JOIN profile_anomaly_types t ON r.anomaly_id = t.id
+    WHERE r.profile_run_id = :profile_run_id
+        {where_clause};
+    """
+    params = _build_anomaly_params(profile_run_id, likelihood, issue_type_id, table_name, column_name, action)
+    df = fetch_df_from_db(query, params)
+    return df["id"].tolist()
+
+
+@st.cache_data(show_spinner=False)
+def get_hygiene_filter_options(profile_run_id: str) -> dict:
+    query = """
+    SELECT DISTINCT r.table_name
+    FROM profile_anomaly_results r
+    WHERE r.profile_run_id = :run_id
+    ORDER BY r.table_name;
+    """
+    df_tables = fetch_df_from_db(query, {"run_id": profile_run_id})
+
+    query = """
+    SELECT DISTINCT r.column_name
+    FROM profile_anomaly_results r
+    WHERE r.profile_run_id = :run_id AND r.column_name IS NOT NULL AND r.column_name != ''
+    ORDER BY r.column_name;
+    """
+    df_columns = fetch_df_from_db(query, {"run_id": profile_run_id})
+
+    query = """
+    SELECT DISTINCT t.id AS anomaly_id, t.anomaly_name
+    FROM profile_anomaly_results r
+    INNER JOIN profile_anomaly_types t ON r.anomaly_id = t.id
+    WHERE r.profile_run_id = :run_id
+    ORDER BY t.anomaly_name;
+    """
+    df_types = fetch_df_from_db(query, {"run_id": profile_run_id})
+
+    return {
+        "table_names": df_tables["table_name"].tolist(),
+        "column_names": df_columns["column_name"].tolist(),
+        "issue_types": [
+            {"anomaly_id": row["anomaly_id"], "anomaly_name": row["anomaly_name"]}
+            for _, row in df_types.iterrows()
+        ],
+    }
+
+
+@st.cache_data(show_spinner=False)
+def get_profiling_results_count(
+    profiling_run_id: str,
+    table_name: str | None = None,
+    column_name: str | None = None,
+) -> int:
+    query = """
+    SELECT COUNT(*) as cnt
+    FROM profile_results
+    WHERE profile_run_id = :profiling_run_id
+        AND table_name ILIKE :table_name
+        AND column_name ILIKE :column_name;
+    """
+    params = {
+        "profiling_run_id": profiling_run_id,
+        "table_name": table_name or "%%",
+        "column_name": column_name or "%%",
+    }
+    result = fetch_one_from_db(query, params)
+    return int(result["cnt"]) if result else 0
+
+
+@st.cache_data(show_spinner=False)
+def get_profiling_filter_options(profiling_run_id: str) -> dict:
+    query = """
+    SELECT DISTINCT table_name
+    FROM profile_results
+    WHERE profile_run_id = :run_id
+    ORDER BY table_name;
+    """
+    df_tables = fetch_df_from_db(query, {"run_id": profiling_run_id})
+
+    query = """
+    SELECT DISTINCT column_name
+    FROM profile_results
+    WHERE profile_run_id = :run_id AND column_name IS NOT NULL AND column_name != ''
+    ORDER BY column_name;
+    """
+    df_columns = fetch_df_from_db(query, {"run_id": profiling_run_id})
+
+    return {
+        "table_names": df_tables["table_name"].tolist(),
+        "column_names": df_columns["column_name"].tolist(),
+    }

@@ -5,6 +5,7 @@
  * @property {string} value
  * @property {string?} icon
  * @property {string?} caption
+ * @property {string?} rawLabel
  *
  * @typedef Properties
  * @type {object}
@@ -24,6 +25,7 @@
  * @property {number?} portalClass
  * @property {('top' | 'bottom')?} portalPosition
  * @property {boolean?} filterable
+ * @property {boolean?} acceptNewOptions
  * @property {('normal' | 'inline')?} triggerStyle
  */
 import van from '../van.min.js';
@@ -31,7 +33,7 @@ import { getRandomId, getValue, loadStylesheet, isState, isEqual } from '../util
 import { Portal } from './portal.js';
 import { Icon } from './icon.js';
 
-const { div, i, input, label, span } = van.tags;
+const { div, i, input, span } = van.tags;
 
 const Select = (/** @type {Properties} */ props) => {
     loadStylesheet('select', stylesheet);
@@ -64,11 +66,11 @@ const Select = (/** @type {Properties} */ props) => {
             const filteredOptions_ = [];
             for (let i = 0; i < allOptions.length; i++) {
                 const option = allOptions[i];
-                if (option.label === filterTerm) {
+                if ((option.rawLabel ?? option.label) === filterTerm) {
                     return allOptions;
                 }
 
-                if (option.label.toLowerCase().includes(filterTerm.toLowerCase())) {
+                if ((option.rawLabel ?? option.label).toLowerCase().includes(filterTerm.toLowerCase())) {
                     filteredOptions_.push(option);
                 }
             }
@@ -79,7 +81,10 @@ const Select = (/** @type {Properties} */ props) => {
 
     const value = isState(props.value) ? props.value : van.state(props.value ?? null);
     const initialSelection = options.val?.find((op) => op.value === value.val);
-    const valueLabel = van.state(initialSelection?.label ?? '');
+    const initialCustomLabel = getValue(props.acceptNewOptions) && !initialSelection && typeof value.val === 'string'
+        ? value.val.replace(/^%|%$/g, '')
+        : '';
+    const valueLabel = van.state(initialSelection?.rawLabel ?? initialSelection?.label ?? initialCustomLabel);
     const valueIcon = van.state(initialSelection?.icon ?? undefined);
 
     const changeSelection = (/** @type SelectOption */ option) => {
@@ -91,10 +96,55 @@ const Select = (/** @type {Properties} */ props) => {
         optionsFilter.val = event.target.value;
     };
 
-    // Reset filtering when closed
+    const handleInputKeydown = (/** @type KeyboardEvent */ event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            event.stopPropagation();
+            const typed = event.target.value.trim();
+            if (!typed) {
+                changeSelection({ value: null, label: '' });
+                return;
+            }
+            const match = getValue(options).find(op => (op.rawLabel ?? op.label)?.toLowerCase() === typed.toLowerCase());
+            if (match) {
+                changeSelection(match);
+            } else if (getValue(props.acceptNewOptions)) {
+                opened.val = false;
+                valueLabel.val = typed;
+                props.onChange?.(typed, { isCustom: true, valid: true });
+            }
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            opened.val = false;
+        }
+    };
+
+    // Create stable filter input once (not inside reactive closure to preserve focus)
+    const inputEl = getValue(props.filterable) ? input({
+        id: `tg-select--field--${domId.val}`,
+        value: valueLabel.val,
+        onkeyup: filterOptions,
+        onkeydown: handleInputKeydown,
+        onclick: (event) => {
+            event.stopPropagation();
+            if (!opened.val) {
+                opened.val = true;
+            }
+        },
+    }) : null;
+
+    // Focus input when opened, reset filter and input text when closed
     van.derive(() => {
-        if (!opened.val) {
+        if (opened.val) {
+            if (inputEl) {
+                setTimeout(() => { inputEl.focus(); inputEl.select(); }, 0);
+            }
+        } else {
             optionsFilter.val = '';
+            if (inputEl) {
+                inputEl.value = valueLabel.val;
+            }
         }
     });
 
@@ -105,19 +155,36 @@ const Select = (/** @type {Properties} */ props) => {
         const selectedOption = currentOptions.find((op) => op.value === currentValue);
 
         if (selectedOption === undefined) {
+            if (getValue(props.acceptNewOptions) && currentValue) {
+                // Custom value (e.g. "%addr%"): keep it, strip % for display
+                if (!isEqual(currentValue, previousValue)) {
+                    const display = typeof currentValue === 'string'
+                        ? currentValue.replace(/^%|%$/g, '')
+                        : '';
+                    valueLabel.val = display;
+                    valueIcon.val = undefined;
+                    if (inputEl) {
+                        inputEl.value = display;
+                    }
+                }
+                return;
+            }
             currentValue = null;
             setTimeout(() => value.val = null, 0.1);
         }
 
         if (!isEqual(currentValue, previousValue)) {
-            valueLabel.val = selectedOption?.label ?? '';
+            valueLabel.val = selectedOption?.rawLabel ?? selectedOption?.label ?? '';
             valueIcon.val = selectedOption?.icon ?? undefined;
+            if (inputEl) {
+                inputEl.value = selectedOption?.rawLabel ?? selectedOption?.label ?? '';
+            }
 
             props.onChange?.(currentValue, { valid: !!currentValue || !getValue(props.required) });
         }
     });
 
-    return label(
+    return div(
         {
             id: domId,
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
@@ -156,24 +223,11 @@ const Select = (/** @type {Properties} */ props) => {
                     style: () => getValue(props.height) ? `height: ${getValue(props.height)}px;` : '',
                     'data-testid': 'select-input',
                 },
-                () => {
-                    // Hack to display value again when closed
-                    // For some reason, it goes away when opened
-                    opened.val;
-                    return div(
-                        { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
-                        valueIcon.val
-                            ? Icon({ classes: 'mr-2' }, valueIcon.val)
-                            : undefined,
-                        getValue(props.filterable)
-                            ? input({
-                                id: `tg-select--field--${getRandomId()}`,
-                                value: valueLabel.val,
-                                onkeyup: filterOptions,
-                            })
-                            : valueLabel.val,
-                    );
-                },
+                div(
+                    { class: 'tg-select--field--content', 'data-testid': 'select-input-display' },
+                    () => valueIcon.val ? Icon({ classes: 'mr-2' }, valueIcon.val) : '',
+                    inputEl ?? (() => valueLabel.val),
+                ),
                 div(
                     { class: 'tg-select--field--icon', 'data-testid': 'select-input-trigger' },
                     i(
@@ -205,7 +259,7 @@ const Select = (/** @type {Properties} */ props) => {
                         div(
                             {class: 'flex-row fx-gap-2'}, 
                             option.icon ? Icon({}, option.icon) : '',
-                            span(option.label),
+                            option.label ? span(option.label) : span(option.rawLabel),
                         ),
                         option.caption ? span({class: 'text-small text-secondary'}, option.caption) : '',
                     )
@@ -301,7 +355,7 @@ const MultiSelect = (props) => {
                     const isSelected = van.derive(() => (getValue(selectedValues) ?? []).includes(option.value));
                     return div(
                         {
-                            class: () => `tg-select--option fx-gap-2 ${isSelected.val ? 'selected' : ''}`,
+                            class: () => `tg-select--option fx-gap-2 flex-row ${isSelected.val ? 'selected' : ''}`,
                             onclick: (/** @type Event */ event) => {
                                 event.stopPropagation();
                                 toggleOption(option.value);
@@ -325,6 +379,7 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-select--label {
     position: relative;
+    cursor: pointer;
 }
 .tg-select--label.disabled {
     cursor: not-allowed;

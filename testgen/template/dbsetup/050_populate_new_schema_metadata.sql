@@ -6,9 +6,9 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
 -- Drop constraints that prohibit record deletion
-ALTER TABLE test_templates DROP CONSTRAINT test_templates_test_types_test_type_fk;
-ALTER TABLE test_results DROP CONSTRAINT test_results_test_types_test_type_fk;
-ALTER TABLE cat_test_conditions DROP CONSTRAINT cat_test_conditions_cat_tests_test_type_fk;
+ALTER TABLE test_templates DROP CONSTRAINT IF EXISTS test_templates_test_types_test_type_fk;
+ALTER TABLE test_results DROP CONSTRAINT IF EXISTS test_results_test_types_test_type_fk;
+ALTER TABLE cat_test_conditions DROP CONSTRAINT IF EXISTS cat_test_conditions_cat_tests_test_type_fk;
 
 TRUNCATE TABLE profile_anomaly_types;
 

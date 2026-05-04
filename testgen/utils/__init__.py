@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
 from functools import wraps
@@ -84,10 +85,25 @@ def get_exception_message(exception: Exception) -> str:
 
 
 def make_json_safe(value: Any) -> str | bool | int | float | None:
-    if isinstance(value, UUID):
+    import numpy as np
+
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return None
+    if isinstance(value, np.integer):
+        return int(value)
+    elif isinstance(value, np.floating):
+        v = float(value)
+        return None if (math.isnan(v) or math.isinf(v)) else v
+    elif isinstance(value, np.bool_):
+        return bool(value)
+    elif isinstance(value, np.ndarray):
+        return [make_json_safe(item) for item in value.tolist()]
+    elif isinstance(value, UUID):
         return str(value)
     elif isinstance(value, datetime):
         return int(value.replace(tzinfo=UTC).timestamp())
+    elif isinstance(value, date):
+        return value.isoformat()
     elif isinstance(value, Decimal):
         return float(value)
     elif isinstance(value, Enum):
@@ -150,6 +166,7 @@ def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
         "transform_level": "Transform Level",
         "aggregation_level": "Aggregation Level",
         "dq_dimension": "Quality Dimension",
+        "impact_dimension": "Impact Dimension",
         "data_product": "Data Product",
     }
     if not score_card:

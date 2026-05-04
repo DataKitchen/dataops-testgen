@@ -33,7 +33,7 @@
  * @property {(sch: Schedule, ts: MonitorSuite, state: FormState) => void} onChange
  */
 import van from '../van.min.js';
-import { getValue, isEqual, loadStylesheet, emitEvent } from '../utils.js';
+import { getValue, isEqual, loadStylesheet } from '../utils.js';
 import { Input } from './input.js';
 import { RadioGroup } from './radio_group.js';
 import { Caption } from './caption.js';
@@ -66,6 +66,7 @@ const predictLookbackConfig = {
  * @returns 
  */
 const MonitorSettingsForm = (props) => {
+    const emit = props.emit;
     loadStylesheet('monitor-settings-form', stylesheet);
 
     const schedule = getValue(props.schedule) ?? {};
@@ -80,6 +81,7 @@ const MonitorSettingsForm = (props) => {
     const predictMinLookback = van.state(monitorSuite.predict_min_lookback ?? predictLookbackConfig.default);
     const predictExcludeWeekends = van.state(monitorSuite.predict_exclude_weekends ?? false);
     const predictHolidayCodes = van.state(monitorSuite.predict_holiday_codes);
+    const excludeHolidays = van.state(!!monitorSuite.predict_holiday_codes);
 
     const updatedSchedule = van.derive(() => {
         return {
@@ -98,7 +100,7 @@ const MonitorSettingsForm = (props) => {
             predict_sensitivity: predictSensitivity.val,
             predict_min_lookback: predictMinLookback.val,
             predict_exclude_weekends: predictExcludeWeekends.val,
-            predict_holiday_codes: predictHolidayCodes.val,
+            predict_holiday_codes: excludeHolidays.val ? predictHolidayCodes.val : null,
         };
     });
 
@@ -115,6 +117,12 @@ const MonitorSettingsForm = (props) => {
     const setFieldValidity = (field, validity) => {
         validityPerField.val = {...validityPerField.rawVal, [field]: validity};
     }
+
+    van.derive(() => {
+        if (!excludeHolidays.val) {
+            setFieldValidity('predict_holiday_codes', true);
+        }
+    });
 
     return div(
         { class: 'flex-column fx-gap-4' },
@@ -134,6 +142,7 @@ const MonitorSettingsForm = (props) => {
             cronTimezone,
             cronExpression,
             scheduleActive,
+            emit,
         ),
         PredictionForm(
             { setValidity: setFieldValidity },
@@ -141,6 +150,8 @@ const MonitorSettingsForm = (props) => {
             predictMinLookback,
             predictExcludeWeekends,
             predictHolidayCodes,
+            excludeHolidays,
+            emit,
         ),
     );
 };
@@ -211,10 +222,11 @@ const ScheduleForm = (
     cronTimezone,
     cronExpression,
     scheduleActive,
+    emit,
 ) => {
     const cronEditorValue = van.derive(() => {
         if (cronExpression.val && cronTimezone.val) {
-            emitEvent('GetCronSample', {payload: {cron_expr: cronExpression.val, tz: cronTimezone.val}});
+            emit('GetCronSample', {payload: {cron_expr: cronExpression.val, tz: cronTimezone.val}});
         }
         return {
             timezone: cronTimezone.val,
@@ -236,7 +248,7 @@ const ScheduleForm = (
                 onChange: (value) => cronTimezone.val = value,
                 portalClass: 'short-select-portal',
             }),
-            CrontabInput({
+            CrontabInput({ emit, 
                 name: 'monitor_settings_schedule',
                 sample: options.cronSample,
                 value: cronEditorValue,
@@ -275,8 +287,9 @@ const PredictionForm = (
     predictMinLookback,
     predictExcludeWeekends,
     predictHolidayCodes,
+    excludeHolidays,
+    emit,
 ) => {
-    const excludeHolidays = van.state(!!predictHolidayCodes.val);
     return div(
         { class: 'flex-column fx-gap-4 border border-radius-1 p-3', style: 'position: relative;' },
         Caption({content: 'Prediction Model', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),        
@@ -344,7 +357,7 @@ const PredictionForm = (
                 div(
                     { class: 'flex-row fx-gap-1 mt-1 text-caption' },
                     span({}, 'See supported'),
-                    Link({
+                    Link({ emit, 
                         open_new: true,
                         label: 'codes',
                         href: 'https://holidays.readthedocs.io/en/latest/#available-countries',

@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "5.9.5"
+version = "5.32.2"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -75,7 +75,7 @@ dependencies = [
     "matplotlib==3.9.2",
     "scipy==1.14.1",
     "jinja2==3.1.6",
-    "pillow==12.1.1",
+    "pillow==12.2.0",
     "protobuf==6.33.5",
 
     # MCP server
@@ -133,7 +133,7 @@ include-package-data = true
 "testgen.template" = ["*.sql", "*.yaml", "**/*.sql", "**/*.yaml"]
 "testgen.ui.static" = ["**/*.js", "**/*.css", "**/*.woff2"]
 "testgen.ui.assets" = ["*.svg", "*.png", "*.js", "*.css", "*.ico", "flavors/*.svg"]
-"testgen.ui.components.frontend" = ["*.html", "**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
+"testgen.ui.components.frontend" = ["**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
 
 [tool.setuptools.packages.find]
 # see the important note for why we glob. TL;DR: Otherwise you don't get submodules
@@ -271,6 +271,7 @@ ignore = ["TRY003", "S608", "S404", "F841", "B023"]
 "tasks.py" = ["F403"]
 "tests*" = ["S101", "T201", "ARG001"]
 "invocations/**" = ["ARG001", "T201"]
+"deploy/**" = ["T201"]
 "testgen/common/encrypt.py" = ["S413"]
 "testgen/ui/pdf/dk_logo.py" = ["T201"]
 
@@ -320,3 +321,79 @@ asset_dir = "ui/components/frontend/js"
 [[tool.streamlit.component.components]]
 name = "project_settings"
 asset_dir = "ui/components/frontend/standalone/project_settings"
+
+[[tool.streamlit.component.components]]
+name = "quality_dashboard"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "connections"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "project_dashboard"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_suites"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_runs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "profiling_runs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "table_group_list"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "data_catalog"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "monitors_dashboard"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "score_details"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "score_explorer"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_definitions"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "profiling_results"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "hygiene_issues"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "test_results"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "application_logs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "help_menu"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "breadcrumbs"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "sidebar"
+asset_dir = "ui/components/frontend/js"

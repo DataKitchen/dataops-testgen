@@ -2,32 +2,39 @@ import logging
 import typing
 from collections.abc import Iterable
 from dataclasses import asdict
-from functools import partial
 
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.commands.run_profiling import run_profiling_in_background
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.project import Project
+from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.notification_settings import ProfilingRunNotificationSettings
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.navigation.router import Router
 from testgen.ui.queries import table_group_queries
+from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 from testgen.ui.views.connections import FLAVOR_OPTIONS, format_connection
-from testgen.ui.views.dialogs.run_profiling_dialog import run_profiling_dialog
-from testgen.ui.views.profiling_runs import ProfilingScheduleDialog, manage_notifications
+from testgen.ui.views.profiling_runs import ProfilingRunNotificationSettingsDialog, ProfilingScheduleDialog
 
 LOG = logging.getLogger("testgen")
 PAGE_TITLE = "Table Groups"
+
+TG_RUN_PROFILING_DIALOG_KEY = "tg:run_profiling_dialog"
+TG_RUN_PROFILING_RESULT_KEY = "tg:run_profiling_result"
+TG_RUN_SCHEDULES_DIALOG_KEY = "tg:run_schedules_dialog"
+TG_RUN_NOTIFICATIONS_DIALOG_KEY = "tg:run_notifications_dialog"
 
 
 class TableGroupsPage(Page):
@@ -50,10 +57,10 @@ class TableGroupsPage(Page):
         table_group_name: str | None = None,
         **_kwargs,
     ) -> None:
-        testgen.page_header(PAGE_TITLE, "connect-your-database/manage-table-groups/")
+        testgen.page_header(PAGE_TITLE, "manage-table-groups")
 
         user_can_edit = session.auth.user_has_permission("edit")
-        project_summary = Project.get_summary(project_code)
+        project_summary = get_project_summary(project_code)
         if connection_id and not connection_id.isdigit():
             connection_id = None
 
@@ -69,75 +76,187 @@ class TableGroupsPage(Page):
         table_groups = TableGroup.select_minimal_where(*table_group_filters)
         connections = self._get_connections(project_code)
 
+        wizard_mode = st.session_state.get("tg_wizard_mode")
+        delete_dialog = st.session_state.get("tg_delete_dialog")
+
         def on_add_table_group_clicked(*_args) -> None:
             table_group_queries.reset_table_group_preview()
-            self.add_table_group_dialog(project_code, connection_id)
+            st.session_state["tg_wizard_mode"] = "add"
+            st.session_state["tg_wizard_connection_id"] = connection_id
 
         def on_edit_table_group_clicked(table_group_id: str) -> None:
             table_group_queries.reset_table_group_preview()
-            self.edit_table_group_dialog(project_code, table_group_id)
+            st.session_state["tg_wizard_mode"] = "edit"
+            st.session_state["tg_wizard_table_group_id"] = table_group_id
 
-        return testgen.testgen_component(
-            "table_group_list",
-            props={
+        def on_run_profiling_clicked(table_group_id: str) -> None:
+            st.session_state[TG_RUN_PROFILING_DIALOG_KEY] = table_group_id
+
+        def on_run_schedules_clicked(*_) -> None:
+            st.session_state[TG_RUN_SCHEDULES_DIALOG_KEY] = True
+
+        def on_run_notifications_clicked(*_) -> None:
+            st.session_state[TG_RUN_NOTIFICATIONS_DIALOG_KEY] = True
+
+        schedule_obj = ProfilingScheduleDialog(project_code)
+        ns_obj = ProfilingRunNotificationSettingsDialog(
+            ProfilingRunNotificationSettings, {"project_code": project_code}
+        )
+
+        run_profiling_data = None
+        if run_profiling_tg_id := st.session_state.get(TG_RUN_PROFILING_DIALOG_KEY):
+            table_groups_stats = get_table_group_stats(
+                project_code=project_code,
+                table_group_id=run_profiling_tg_id,
+            )
+            run_profiling_data = {
+                "title": "Run Profiling",
+                "table_groups": [tg.to_dict(json_safe=True) for tg in table_groups_stats],
+                "selected_id": str(run_profiling_tg_id),
+                "allow_selection": False,
+                "result": st.session_state.get(TG_RUN_PROFILING_RESULT_KEY),
+            }
+
+        schedule_data = None
+        if st.session_state.get(TG_RUN_SCHEDULES_DIALOG_KEY):
+            schedule_data = schedule_obj.build_data()
+            schedule_data["open"] = True
+
+        notifications_data = None
+        if st.session_state.get(TG_RUN_NOTIFICATIONS_DIALOG_KEY):
+            notifications_data = ns_obj.build_data()
+            notifications_data["open"] = True
+
+        @with_database_session
+        def on_run_profiling_confirmed(table_group: dict) -> None:
+            success = True
+            message = f"Profiling run started for table group '{table_group['table_groups_name']}'."
+            show_link = session.current_page != "profiling-runs"
+            try:
+                JobExecution.submit(
+                    job_key="run-profile",
+                    kwargs={"table_group_id": str(table_group["id"])},
+                    source="ui",
+                    project_code=project_code,
+                )
+            except Exception as error:
+                success = False
+                message = f"Profiling run could not be started: {error!s}."
+                show_link = False
+            st.session_state[TG_RUN_PROFILING_RESULT_KEY] = {"success": success, "message": message, "show_link": show_link}
+            if success and not show_link:
+                get_profiling_run_summaries.clear()
+                st.session_state.pop(TG_RUN_PROFILING_DIALOG_KEY, None)
+                st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
+
+        def on_go_to_profiling_runs_clicked(tg_id: str) -> None:
+            st.session_state.pop(TG_RUN_PROFILING_DIALOG_KEY, None)
+            st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
+            Router().queue_navigation(to="profiling-runs", with_args={"project_code": project_code, "table_group_id": tg_id})
+
+        def on_run_profiling_dialog_closed(*_) -> None:
+            st.session_state.pop(TG_RUN_PROFILING_DIALOG_KEY, None)
+            st.session_state.pop(TG_RUN_PROFILING_RESULT_KEY, None)
+
+        def on_schedule_dialog_closed(*_) -> None:
+            schedule_obj.clear_state()
+            st.session_state.pop(TG_RUN_SCHEDULES_DIALOG_KEY, None)
+
+        def on_notifications_dialog_closed(*_) -> None:
+            ns_obj.clear_state()
+            st.session_state.pop(TG_RUN_NOTIFICATIONS_DIALOG_KEY, None)
+
+        # --- Wizard data (add mode only) ---
+        wizard_data = None
+        wizard_handlers = {}
+        wizard_cron_handler = None
+        if wizard_mode == "add":
+            wizard_data, wizard_handlers, wizard_cron_handler = self._build_wizard_data(
+                project_code,
+                connections,
+                connection_id=connection_id,
+            )
+
+        # --- Edit dialog data ---
+        edit_dialog_data = None
+        edit_dialog_handlers = {}
+        if wizard_mode == "edit":
+            edit_dialog_data, edit_dialog_handlers = self._build_edit_data(
+                project_code,
+                connections,
+            )
+
+        def on_get_cron_sample(payload):
+            schedule_obj.on_cron_sample(payload)
+            if wizard_cron_handler:
+                wizard_cron_handler(payload)
+
+        testgen.table_group_list_widget(
+            key="table_group_list",
+            data={
                 "project_summary": project_summary.to_dict(json_safe=True),
                 "connection_id": connection_id,
                 "table_group_name": table_group_name,
                 "permissions": {
                     "can_edit": user_can_edit,
+                    "can_view_pii": session.auth.user_has_permission("view_pii"),
                 },
                 "connections": connections,
                 "table_groups": self._format_table_group_list(table_groups, connections),
+                "delete_dialog": delete_dialog,
+                "run_profiling_dialog": run_profiling_data,
+                "schedule_dialog": schedule_data,
+                "notifications_dialog": notifications_data,
+                "wizard": wizard_data,
+                "edit_dialog": edit_dialog_data,
             },
-            on_change_handlers={
-                "RunSchedulesClicked": lambda *_: ProfilingScheduleDialog().open(project_code),
-                "RunNotificationsClicked": manage_notifications(project_code),
-                "AddTableGroupClicked": on_add_table_group_clicked,
-                "EditTableGroupClicked": on_edit_table_group_clicked,
-                "DeleteTableGroupClicked": partial(self.delete_table_group_dialog, project_code),
-                "RunProfilingClicked": partial(run_profiling_dialog, project_code),
-                "TableGroupsFiltered": lambda params: self.router.queue_navigation(
-                    to="table-groups",
-                    with_args={"project_code": project_code, **params},
-                ),
-            },
+            on_RunSchedulesClicked_change=on_run_schedules_clicked,
+            on_RunNotificationsClicked_change=on_run_notifications_clicked,
+            on_AddTableGroupClicked_change=on_add_table_group_clicked,
+            on_EditTableGroupClicked_change=on_edit_table_group_clicked,
+            on_DeleteTableGroupClicked_change=self._prepare_delete_dialog,
+            on_DeleteTableGroupConfirmed_change=self._execute_delete,
+            on_DeleteDialogDismissed_change=lambda *_: st.session_state.pop("tg_delete_dialog", None),
+            on_RunProfilingClicked_change=on_run_profiling_clicked,
+            on_TableGroupsFiltered_change=lambda params: params is not None and self.router.queue_navigation(
+                to="table-groups",
+                with_args={"project_code": project_code, **params},
+            ),
+            # RunProfilingDialog events
+            on_RunProfilingConfirmed_change=on_run_profiling_confirmed,
+            on_GoToProfilingRunsClicked_change=on_go_to_profiling_runs_clicked,
+            on_RunProfilingDialogClosed_change=on_run_profiling_dialog_closed,
+            # ScheduleList events
+            on_PauseSchedule_change=schedule_obj.on_pause,
+            on_ResumeSchedule_change=schedule_obj.on_resume,
+            on_DeleteSchedule_change=schedule_obj.on_delete,
+            on_GetCronSample_change=on_get_cron_sample,
+            on_AddSchedule_change=schedule_obj.on_add,
+            on_ScheduleDialogClosed_change=on_schedule_dialog_closed,
+            # NotificationSettings events
+            on_AddNotification_change=ns_obj.on_add_item,
+            on_UpdateNotification_change=ns_obj.on_update_item,
+            on_DeleteNotification_change=ns_obj.on_delete_item,
+            on_PauseNotification_change=ns_obj.on_pause_item,
+            on_ResumeNotification_change=ns_obj.on_resume_item,
+            on_NotificationsDialogClosed_change=on_notifications_dialog_closed,
+            # Wizard events (add mode)
+            **wizard_handlers,
+            # Edit dialog events
+            **edit_dialog_handlers,
         )
 
-    @st.dialog(title="Add Table Group")
-    @with_database_session
-    def add_table_group_dialog(self, project_code: str, connection_id: str | None):
-        return self._table_group_wizard(
-            project_code,
-            connection_id=connection_id,
-            steps=[
-                "tableGroup",
-                "testTableGroup",
-                "runProfiling",
-                "testSuite",
-                "monitorSuite",
-            ],
-        )
-
-    @st.dialog(title="Edit Table Group")
-    @with_database_session
-    def edit_table_group_dialog(self, project_code: str, table_group_id: str):
-        return self._table_group_wizard(
-            project_code,
-            table_group_id=table_group_id,
-            steps=[
-                "tableGroup",
-                "testTableGroup",
-            ],
-        )
-
-    def _table_group_wizard(
+    def _build_wizard_data(
         self,
         project_code: str,
+        connections: list[dict],
         *,
-        steps: list[str] | None = None,
         connection_id: str | None = None,
-        table_group_id: str | None = None,
-    ):
+    ) -> tuple[dict, dict, typing.Callable]:
+        steps = ["tableGroup", "testTableGroup", "runProfiling", "testSuite", "monitorSuite"]
+        dialog = {"open": True, "title": "Add Table Group"}
+        table_group_id = None
+
         def on_preview_table_group_clicked(payload: dict):
             table_group = payload["table_group"]
             verify_table_access = payload.get("verify_access") or False
@@ -162,11 +281,9 @@ class TableGroupsPage(Page):
             set_run_profiling(run_profiling)
 
         def on_close_clicked(_params: dict) -> None:
-            set_close_dialog(True)
-
-        get_close_dialog, set_close_dialog = temp_value("table_groups:close:new", default=False)
-        if (get_close_dialog()):
-            safe_rerun()
+            TableGroup.select_minimal_where.clear()
+            for key in ["tg_wizard_mode", "tg_wizard_connection_id", "tg_wizard_table_group_id"]:
+                st.session_state.pop(key, None)
 
         should_preview, mark_for_preview = temp_value("table_groups:preview:new", default=False)
         should_verify_access, mark_for_access_preview = temp_value("table_groups:preview_access:new", default=False)
@@ -206,7 +323,7 @@ class TableGroupsPage(Page):
         monitor_cron_sample_result, on_get_monitor_cron_sample = get_cron_sample_handler("table_groups:new:monitor_cron_expr_validation")
 
         is_table_group_used = False
-        connections = self._get_connections(project_code)
+        wizard_connections = connections
         table_group = TableGroup(project_code=project_code)
         original_table_group_schema = None
         if table_group_id:
@@ -227,17 +344,17 @@ class TableGroupsPage(Page):
         if is_table_group_used:
             table_group.table_group_schema = original_table_group_schema
 
-        if len(connections) == 1:
-            table_group.connection_id = connections[0]["connection_id"]
+        if len(wizard_connections) == 1:
+            table_group.connection_id = wizard_connections[0]["connection_id"]
 
         if not table_group.connection_id:
             if connection_id:
                 table_group.connection_id = int(connection_id)
-            elif len(connections) == 1:
-                table_group.connection_id = connections[0]["connection_id"]
+            elif len(wizard_connections) == 1:
+                table_group.connection_id = wizard_connections[0]["connection_id"]
         elif table_group.id:
-            connections = [
-                conn for conn in connections
+            wizard_connections = [
+                conn for conn in wizard_connections
                 if int(conn["connection_id"]) == int(table_group.connection_id)
             ]
 
@@ -330,53 +447,149 @@ class TableGroupsPage(Page):
                     if should_run_profiling():
                         run_profiling = True
                         try:
-                            run_profiling_in_background(table_group.id)
+                            JobExecution.submit(
+                                job_key="run-profile",
+                                kwargs={"table_group_id": str(table_group.id)},
+                                source="ui",
+                                project_code=table_group.project_code,
+                            )
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception:
                             success = False
                             message = "Profiling run encountered errors"
                             LOG.exception(message)
 
-                    if table_group_id and success:
-                        safe_rerun()
-
-                except IntegrityError:
+                except IntegrityError as error:
                     get_current_session().rollback()
                     success = False
-                    message = "A Table Group with the same name already exists."
+                    if "table_groups_name_unique" in str(error.orig):
+                        message = "A Table Group with the same name already exists."
+                    else:
+                        message = "Something went wrong while creating the table group."
+                        LOG.exception(message)
             else:
                 success = False
                 message = "Verify the table group before saving"
 
-        return testgen.table_group_wizard(
-            key="add_tg_wizard",
-            data={
-                "project_code": project_code,
-                "connections": connections,
-                "table_group": table_group.to_dict(json_safe=True),
-                "is_in_use": is_table_group_used,
-                "permissions": {
-                    "can_view_pii": session.auth.user_has_permission("view_pii"),
-                },
-                "table_group_preview": table_group_preview,
-                "steps": steps,
-                "results": {
-                    "success": success,
-                    "message": message,
-                    "run_profiling": run_profiling,
-                    "generate_test_suite": generate_test_suite,
-                    "generate_monitor_suite": generate_monitor_suite,
-                    "test_suite_name": standard_test_suite.test_suite if standard_test_suite else None,
-                } if success is not None else None,
-                "standard_cron_sample": standard_cron_sample_result(),
-                "monitor_cron_sample": monitor_cron_sample_result(),
-            },
-            on_PreviewTableGroupClicked_change=on_preview_table_group_clicked,
-            on_GetCronSample_change=on_get_monitor_cron_sample,
-            on_GetCronSampleAux_change=on_get_standard_cron_sample,
-            on_SaveTableGroupClicked_change=on_save_table_group_clicked,
-            on_CloseClicked_change=on_close_clicked,
-        )
+        data = {
+            "project_code": project_code,
+            "connections": wizard_connections,
+            "table_group": table_group.to_dict(json_safe=True),
+            "is_in_use": is_table_group_used,
+            "table_group_preview": table_group_preview,
+            "steps": steps,
+            "dialog": dialog,
+            "results": {
+                "success": success,
+                "message": message,
+                "run_profiling": run_profiling,
+                "generate_test_suite": generate_test_suite,
+                "generate_monitor_suite": generate_monitor_suite,
+                "test_suite_name": standard_test_suite.test_suite if standard_test_suite else None,
+            } if success is not None else None,
+            "standard_cron_sample": standard_cron_sample_result(),
+            "monitor_cron_sample": monitor_cron_sample_result(),
+        }
+
+        handlers = {
+            "on_PreviewTableGroupClicked_change": on_preview_table_group_clicked,
+            "on_GetCronSampleAux_change": on_get_standard_cron_sample,
+            "on_SaveTableGroupClicked_change": on_save_table_group_clicked,
+            "on_CloseClicked_change": on_close_clicked,
+        }
+
+        return data, handlers, on_get_monitor_cron_sample
+
+    def _build_edit_data(
+        self,
+        _project_code: str,
+        connections: list[dict],
+    ) -> tuple[dict, dict]:
+        table_group_id = st.session_state.get("tg_wizard_table_group_id")
+
+        should_preview, mark_for_preview = temp_value("table_groups:edit:preview", default=False)
+        should_verify_access, mark_for_verify_access = temp_value("table_groups:edit:verify_access", default=False)
+        should_save, mark_for_save = temp_value("table_groups:edit:save", default=False)
+        get_edit_tg, set_edit_tg = temp_value("table_groups:edit:tg_data", default={})
+
+        def on_preview_edit(payload: dict) -> None:
+            set_edit_tg(payload["table_group"])
+            mark_for_preview(True)
+            mark_for_verify_access(payload.get("verify_access") or False)
+
+        def on_save_edit(payload: dict) -> None:
+            set_edit_tg(payload["table_group"])
+            mark_for_preview(True)
+            mark_for_save(True)
+
+        def on_close_edit(_params: dict) -> None:
+            for key in ["tg_wizard_mode", "tg_wizard_table_group_id"]:
+                st.session_state.pop(key, None)
+
+        table_group = TableGroup.get(table_group_id)
+        original_schema = table_group.table_group_schema
+        is_in_use = TableGroup.is_in_use([table_group_id])
+
+        edit_tg_data = get_edit_tg()
+        add_scorecard_definition = False
+        for key, value in edit_tg_data.items():
+            if key == "add_scorecard_definition":
+                add_scorecard_definition = value
+            else:
+                setattr(table_group, key, value)
+
+        if is_in_use:
+            table_group.table_group_schema = original_schema
+
+        edit_connections = connections
+        if table_group.connection_id and table_group.id:
+            edit_connections = [
+                c for c in connections
+                if int(c["connection_id"]) == int(table_group.connection_id)
+            ]
+
+        table_group_preview = None
+        save_data_chars = None
+        if should_preview():
+            table_group_preview, save_data_chars = table_group_queries.get_table_group_preview(
+                table_group,
+                verify_table_access=should_verify_access(),
+            )
+
+        result = None
+        if should_save():
+            if table_group_preview and table_group_preview.get("success"):
+                try:
+                    table_group.save(add_scorecard_definition)
+                except IntegrityError:
+                    result = {"success": False, "message": "A Table Group with the same name already exists."}
+                else:
+                    if save_data_chars:
+                        try:
+                            save_data_chars(table_group.id)
+                        except Exception:
+                            LOG.exception("Data characteristics refresh encountered errors")
+                    st.toast(f"Table group '{table_group.table_groups_name}' saved.", icon=":material/check:")
+                    for key in ["tg_wizard_mode", "tg_wizard_table_group_id"]:
+                        st.session_state.pop(key, None)
+                    safe_rerun()
+            else:
+                result = {"success": False, "message": "Verify the table group before saving."}
+
+        data = {
+            "dialog": {"open": True, "title": "Edit Table Group"},
+            "connections": edit_connections,
+            "table_group": table_group.to_dict(json_safe=True),
+            "is_in_use": is_in_use,
+            "table_group_preview": table_group_preview,
+            "result": result,
+        }
+        handlers = {
+            "on_PreviewEditTableGroupClicked_change": on_preview_edit,
+            "on_SaveEditTableGroupClicked_change": on_save_edit,
+            "on_CloseEditClicked_change": on_close_edit,
+        }
+        return data, handlers
 
     def _get_connections(self, project_code: str, connection_id: str | None = None) -> list[dict]:
         if connection_id:
@@ -408,40 +621,23 @@ class TableGroupsPage(Page):
 
         return formatted_list
 
-    @st.dialog(title="Delete Table Group")
     @with_database_session
-    def delete_table_group_dialog(self, project_code: str, table_group_id: str):
-        def on_delete_confirmed(*_args):
-            confirm_deletion(True)
-
+    def _prepare_delete_dialog(self, table_group_id: str) -> None:
         table_group = TableGroup.get_minimal(table_group_id)
         can_be_deleted = not TableGroup.is_in_use([table_group_id])
-        is_deletion_confirmed, confirm_deletion = temp_value(
-            f"table_groups:confirm_delete:{table_group_id}",
-            default=False,
-        )
-        success = False
-        message = None
+        st.session_state["tg_delete_dialog"] = {
+            "open": True,
+            "table_group": table_group.to_dict(json_safe=True),
+            "can_be_deleted": can_be_deleted,
+        }
 
-        result = None
-        if is_deletion_confirmed():
-            if not TableGroup.has_running_process([table_group_id]):
-                TableGroup.cascade_delete([table_group_id])
-                message = f"Table Group {table_group.table_groups_name} has been deleted. "
-                safe_rerun()
-            else:
-                message = "This Table Group is in use by a running process and cannot be deleted."
-            result = {"success": success, "message": message}
-
-        testgen.testgen_component(
-            "table_group_delete",
-            props={
-                "project_code": project_code,
-                "table_group": table_group.to_dict(json_safe=True),
-                "can_be_deleted": can_be_deleted,
-                "result": result,
-            },
-            on_change_handlers={
-                "DeleteTableGroupConfirmed": on_delete_confirmed,
-            },
-        )
+    @with_database_session
+    def _execute_delete(self, table_group_id: str) -> None:
+        table_group_name = st.session_state.get("tg_delete_dialog", {}).get("table_group", {}).get("table_groups_name", "")
+        if not (ProfilingRun.has_active_job_for(TableGroup, table_group_id) or TestRun.has_active_job_for(TableGroup, table_group_id)):
+            TableGroup.cascade_delete([table_group_id])
+            TableGroup.select_minimal_where.clear()
+            st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
+        else:
+            st.toast("This Table Group is in use by a running process and cannot be deleted.", icon=":material/error:")
+        st.session_state.pop("tg_delete_dialog", None)

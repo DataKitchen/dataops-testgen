@@ -11,7 +11,7 @@
 import van from '../van.min.js';
 import { loadStylesheet } from '../utils.js';
 
-const { input, label } = van.tags;
+const { input, label, span } = van.tags;
 
 const Toggle = (/** @type Properties */ props) => {
     loadStylesheet('toggle', stylesheet);

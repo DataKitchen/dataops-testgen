@@ -13,6 +13,7 @@ from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.test_suite import TestSuite
+from testgen.utils import is_uuid4
 
 
 @dataclass
@@ -51,6 +52,7 @@ class TableGroupStats(EntityMinimal):
 class TableGroupSummary(EntityMinimal):
     id: UUID
     table_groups_name: str
+    connection_name: str | None
     table_ct: int
     column_ct: int
     approx_record_ct: int
@@ -59,13 +61,14 @@ class TableGroupSummary(EntityMinimal):
     data_point_ct: int
     dq_score_profiling: float
     dq_score_testing: float
-    latest_profile_id: UUID
-    latest_profile_start: datetime
-    latest_anomalies_ct: int
-    latest_anomalies_definite_ct: int
-    latest_anomalies_likely_ct: int
-    latest_anomalies_possible_ct: int
-    latest_anomalies_dismissed_ct: int
+    latest_profile_id: UUID | None
+    latest_profile_job_execution_id: UUID | None
+    latest_profile_start: datetime | None
+    latest_hygiene_issues_ct: int
+    latest_hygiene_issues_definite_ct: int
+    latest_hygiene_issues_likely_ct: int
+    latest_hygiene_issues_possible_ct: int
+    latest_hygiene_issues_dismissed_ct: int
     monitor_test_suite_id: UUID | None
     monitor_lookback: int | None
     monitor_lookback_start: datetime | None
@@ -85,6 +88,7 @@ class TableGroupSummary(EntityMinimal):
     monitor_volume_is_pending: bool | None
     monitor_schema_is_pending: bool | None
     monitor_metric_is_pending: bool | None
+    total_count: int = 0
 
 
 class TableGroup(Entity):
@@ -159,9 +163,8 @@ class TableGroup(Entity):
     ) -> Iterable[TableGroupMinimal]:
         results = cls._select_columns_where(cls._minimal_columns, *clauses, order_by=order_by)
         return [TableGroupMinimal(**row) for row in results]
-    
+
     @classmethod
-    @st.cache_data(show_spinner=False)
     def select_stats(cls, project_code: str, table_group_id: str | UUID | None = None) -> Iterable[TableGroupStats]:
         query = f"""
         WITH stats AS (
@@ -196,8 +199,19 @@ class TableGroup(Entity):
         return [TableGroupStats(**row) for row in results]
 
     @classmethod
-    @st.cache_data(show_spinner=False)
-    def select_summary(cls, project_code: str, for_dashboard: bool = False) -> Iterable[TableGroupSummary]:
+    def select_summary(
+        cls,
+        project_code: str,
+        table_group_id: str | UUID | None = None,
+        for_dashboard: bool = False,
+        page: int | None = None,
+        page_size: int | None = None,
+    ) -> tuple[list[TableGroupSummary], int]:
+        if table_group_id is not None and not is_uuid4(table_group_id):
+            return [], 0
+
+        paginate = page is not None and page_size is not None
+
         query = f"""
         WITH stats AS (
             SELECT table_groups_id,
@@ -213,7 +227,8 @@ class TableGroup(Entity):
         latest_profile AS (
             SELECT latest_run.table_groups_id,
                 latest_run.id,
-                latest_run.profiling_starttime,
+                latest_run.job_execution_id,
+                MAX(latest_je.started_at) AS started_at,
                 latest_run.anomaly_ct,
                 SUM(
                     CASE
@@ -245,6 +260,9 @@ class TableGroup(Entity):
             FROM table_groups groups
                 LEFT JOIN profiling_runs latest_run ON (
                     groups.last_complete_profile_run_id = latest_run.id
+                )
+                LEFT JOIN job_executions latest_je ON (
+                    latest_run.job_execution_id = latest_je.id
                 )
                 LEFT JOIN profile_anomaly_results latest_anomalies ON (
                     latest_run.id = latest_anomalies.profile_run_id
@@ -309,6 +327,7 @@ class TableGroup(Entity):
         )
         SELECT groups.id,
             groups.table_groups_name,
+            connections.connection_name,
             stats.table_ct,
             stats.column_ct,
             stats.approx_record_ct,
@@ -318,12 +337,13 @@ class TableGroup(Entity):
             groups.dq_score_profiling,
             groups.dq_score_testing,
             latest_profile.id AS latest_profile_id,
-            latest_profile.profiling_starttime AS latest_profile_start,
-            latest_profile.anomaly_ct AS latest_anomalies_ct,
-            latest_profile.definite_ct AS latest_anomalies_definite_ct,
-            latest_profile.likely_ct AS latest_anomalies_likely_ct,
-            latest_profile.possible_ct AS latest_anomalies_possible_ct,
-            latest_profile.dismissed_ct AS latest_anomalies_dismissed_ct,
+            latest_profile.job_execution_id AS latest_profile_job_execution_id,
+            latest_profile.started_at AS latest_profile_start,
+            latest_profile.anomaly_ct AS latest_hygiene_issues_ct,
+            latest_profile.definite_ct AS latest_hygiene_issues_definite_ct,
+            latest_profile.likely_ct AS latest_hygiene_issues_likely_ct,
+            latest_profile.possible_ct AS latest_hygiene_issues_possible_ct,
+            latest_profile.dismissed_ct AS latest_hygiene_issues_dismissed_ct,
             groups.monitor_test_suite_id AS monitor_test_suite_id,
             lookback_windows.lookback AS monitor_lookback,
             lookback_windows.lookback_start AS monitor_lookback_start,
@@ -342,40 +362,31 @@ class TableGroup(Entity):
             monitor_tables.freshness_is_pending AS monitor_freshness_is_pending,
             monitor_tables.volume_is_pending AS monitor_volume_is_pending,
             monitor_tables.schema_is_pending AS monitor_schema_is_pending,
-            monitor_tables.metric_is_pending AS monitor_metric_is_pending
+            monitor_tables.metric_is_pending AS monitor_metric_is_pending,
+            COUNT(*) OVER() AS total_count
         FROM table_groups AS groups
+            LEFT JOIN connections ON (groups.connection_id = connections.connection_id)
             LEFT JOIN stats ON (groups.id = stats.table_groups_id)
             LEFT JOIN latest_profile ON (groups.id = latest_profile.table_groups_id)
             LEFT JOIN monitor_tables ON (groups.id = monitor_tables.table_group_id)
             LEFT JOIN lookback_windows ON (groups.id = lookback_windows.table_group_id)
         WHERE groups.project_code = :project_code
-            {"AND groups.include_in_dashboard IS TRUE" if for_dashboard else ""};
+            {"AND groups.id = :table_group_id" if table_group_id else ""}
+            {"AND groups.include_in_dashboard IS TRUE" if for_dashboard else ""}
+        ORDER BY LOWER(groups.table_groups_name)
+        {"LIMIT :limit OFFSET :offset" if paginate else ""};
         """
-        params = {"project_code": project_code}
-        db_session = get_current_session()
-        results = db_session.execute(text(query), params).mappings().all()
-        return [TableGroupSummary(**row) for row in results]
+        params: dict = {"project_code": project_code}
+        if table_group_id:
+            params["table_group_id"] = str(table_group_id)
+        if paginate:
+            params["limit"] = page_size
+            params["offset"] = (page - 1) * page_size
 
-    @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool | None:
-        query = """
-        SELECT DISTINCT profiling_runs.id
-        FROM profiling_runs
-        INNER JOIN table_groups
-            ON table_groups.id = profiling_runs.table_groups_id
-        WHERE table_groups.id IN :table_group_ids
-            AND profiling_runs.status = 'Running';
-        """
-        params = {"table_group_ids": tuple(ids)}
-        process_count = get_current_session().execute(text(query), params).rowcount
-        if process_count:
-            return True
-
-        test_suites = TestSuite.select_minimal_where(TestSuite.table_groups_id.in_(ids))
-        if test_suites:
-            return TestSuite.has_running_process([item.id for item in test_suites])
-
-        return False
+        results = get_current_session().execute(text(query), params).mappings().all()
+        items = [TableGroupSummary(**row) for row in results]
+        total = items[0].total_count if items else 0
+        return items, total
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
@@ -407,6 +418,12 @@ class TableGroup(Entity):
         USING table_groups tg
         WHERE tg.id = pr.table_groups_id AND tg.id IN :table_group_ids;
 
+        DELETE FROM job_executions
+        WHERE id IN (
+            SELECT pr.job_execution_id FROM profiling_runs pr
+            WHERE pr.table_groups_id IN :table_group_ids AND pr.job_execution_id IS NOT NULL
+        );
+
         DELETE FROM profiling_runs pr
         USING table_groups tg
         WHERE tg.id = pr.table_groups_id AND tg.id IN :table_group_ids;
@@ -426,13 +443,6 @@ class TableGroup(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), params)
         cls.delete_where(cls.id.in_(ids))
-
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_minimal.clear()
-        cls.select_minimal_where.clear()
-        cls.select_summary.clear()
 
     def save(self, add_scorecard_definition: bool = False) -> None:
         if self.id:

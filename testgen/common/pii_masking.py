@@ -1,7 +1,8 @@
-"""PII masking utilities for redacting sensitive data in the UI."""
+"""PII masking utilities for redacting sensitive data."""
 import pandas as pd
+from sqlalchemy import text
 
-from testgen.ui.services.database_service import fetch_all_from_db
+from testgen.common.models import get_current_session
 
 PII_REDACTED = "[PII Redacted]"
 
@@ -29,19 +30,26 @@ def get_pii_columns(table_group_id: str, schema: str | None = None, table_name: 
         "table_name": table_name,
     }
 
-    results = fetch_all_from_db(query, params)
-    return {row.column_name for row in results}
+    session = get_current_session()
+    results = session.execute(text(query), params).mappings().all()
+    return {row["column_name"] for row in results}
 
 
-def mask_source_data_pii(df: pd.DataFrame, pii_columns: set[str]) -> None:
-    """In-place mask values in PII columns with PII_REDACTED."""
+def mask_source_data_pii(df: pd.DataFrame, pii_columns: set[str]) -> bool:
+    """In-place mask values in PII columns with PII_REDACTED.
+
+    Returns True if at least one column was rewritten, False otherwise.
+    """
     if df.empty or not pii_columns:
-        return
+        return False
+    masked = False
     for col in pii_columns:
         # Match case-insensitively since column names may differ in case
         for df_col in df.columns:
             if df_col.lower() == col.lower():
                 df[df_col] = PII_REDACTED
+                masked = True
+    return masked
 
 
 def mask_hygiene_detail(data: pd.DataFrame | list[dict], pii_columns: set[str] | None = None) -> None:

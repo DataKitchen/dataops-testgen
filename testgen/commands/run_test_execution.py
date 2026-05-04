@@ -1,17 +1,12 @@
 import logging
-import subprocess
-import threading
+import os
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
 from typing import Literal
 from uuid import UUID
 
-import testgen.common.process_service as process_service
-from testgen import settings
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
-from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
-from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.commands.test_thresholds_prediction import TestThresholdsPrediction
 from testgen.common import (
@@ -21,16 +16,14 @@ from testgen.common import (
     set_target_db_params,
     write_to_app_db,
 )
-from testgen.common.database.database_service import ThreadedProgress, empty_cache
+from testgen.common.database.database_service import ThreadedProgress
+from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.notifications.monitor_run import send_monitor_notifications
-from testgen.common.notifications.test_run import send_test_run_notifications
-from testgen.ui.session import session
 from testgen.utils import get_exception_message
 
 from .run_refresh_data_chars import run_data_chars_refresh
@@ -39,24 +32,12 @@ from .run_test_validation import run_test_validation
 LOG = logging.getLogger("testgen")
 
 
-def run_test_execution_in_background(test_suite_id: str | UUID):
-    msg = f"Triggering test run for test suite {test_suite_id}"
-    if settings.IS_DEBUG:
-        LOG.info(msg + ". Running in debug mode (new thread instead of new process).")
-        empty_cache()
-        background_thread = threading.Thread(
-            target=run_test_execution,
-            args=(test_suite_id, session.auth.user_display if session.auth else None),
-        )
-        background_thread.start()
-    else:
-        LOG.info(msg)
-        script = ["testgen", "run-tests", "--test-suite-id", str(test_suite_id)]
-        subprocess.Popen(script)  # NOQA S603
-
-
 @with_database_session
-def run_test_execution(test_suite_id: str | UUID, username: str | None = None, run_date: datetime | None = None) -> str:
+def run_test_execution(
+    test_suite_id: str | UUID,
+    username: str | None = None,
+    run_date: datetime | None = None,
+) -> UUID:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
 
@@ -73,14 +54,18 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
     test_run = TestRun(
         test_suite_id=test_suite_id,
         test_starttime=datetime.now(UTC) + time_delta,
-        process_id=process_service.get_current_process_id(),
+        process_id=os.getpid(),
     )
-    test_run.init_progress()
-    test_run.set_progress("data_chars", "Running")
-    test_run.save()
+    if job_id := job_context.get().job_id:
+        test_run.job_execution_id = job_id
+
     # This runs in a subprocess — commit after every save so progress is visible
     # to the UI (separate session) and to execute_db_queries (independent connection).
     session = get_current_session()
+
+    test_run.init_progress()
+    test_run.set_progress("data_chars", "Running")
+    test_run.save()
     session.commit()
 
     try:
@@ -152,8 +137,7 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_run.status = "Error"
         test_run.save()
         session.commit()
-
-        send_test_run_notifications(test_run)
+        raise
     else:
         LOG.info("Setting test run status to Completed")
         test_run.test_endtime = datetime.now(UTC) + time_delta
@@ -165,34 +149,24 @@ def run_test_execution(test_suite_id: str | UUID, username: str | None = None, r
         test_suite.last_complete_test_run_id = test_run.id
         test_suite.save()
         session.commit()
-
-        if not test_suite.is_monitor:
-            send_test_run_notifications(test_run)
-            _rollup_test_scores(test_run, table_group)
-        else:
-            send_monitor_notifications(test_run)
     finally:
-        scoring_endtime = datetime.now(UTC) + time_delta
+        prediction_start = datetime.now(UTC) + time_delta
         try:
             TestThresholdsPrediction(test_suite, test_run.test_starttime).run()
         except Exception:
             LOG.exception("Error predicting test thresholds")
-            
+
         MixpanelService().send_event(
             "run-monitors" if test_suite.is_monitor else "run-tests",
-            source=settings.ANALYTICS_JOB_SOURCE,
+            source=job_context.get().source.upper(),
             username=username,
             sql_flavor=connection.sql_flavor_code,
             test_count=test_run.test_ct,
             run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
-            scoring_duration=(scoring_endtime - test_run.test_endtime).total_seconds(),
-            prediction_duration=(datetime.now(UTC) + time_delta - scoring_endtime).total_seconds(),
+            prediction_duration=(datetime.now(UTC) + time_delta - prediction_start).total_seconds(),
         )
 
-    return f"""
-        {"Test execution encountered an error. Check log for details." if test_run.status == "Error" else "Test execution completed."}
-        Run ID: {test_run.id}
-    """
+    return test_run.id
 
 
 def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
@@ -212,14 +186,22 @@ def _sync_monitor_definitions(sql_generator: TestExecutionSQL) -> None:
             table_names = [row["table_name"] for row in missing_monitors]
             run_monitor_generation(test_suite_id, ["Freshness_Trend"], mode="insert", table_names=table_names)
 
-    # Regenerate monitors that errored in previous run
+    # Regenerate monitors that errored in previous run or fail validation
+    regen_tables_by_type: dict[str, set[str]] = defaultdict(set)
+
     errored_monitors = fetch_dict_from_db(*sql_generator.get_errored_autogen_monitors())
-    if errored_monitors:
-        errored_by_type: dict[str, list[str]] = defaultdict(list)
-        for row in errored_monitors:
-            errored_by_type[row["test_type"]].append(row["table_name"])
-        for test_type, table_names in errored_by_type.items():
-            run_monitor_generation(test_suite_id, [test_type], mode="upsert", table_names=table_names)
+    for row in errored_monitors:
+        regen_tables_by_type[row["test_type"]].add(row["table_name"])
+
+    active_defs = [TestExecutionDef(**item) for item in fetch_dict_from_db(*sql_generator.get_active_test_definitions())]
+    if active_defs:
+        run_test_validation(sql_generator, active_defs, defer_persistence=True)
+        for td in active_defs:
+            if td.errors and td.test_type in ("Freshness_Trend", "Volume_Trend") and td.lock_refresh != "Y":
+                regen_tables_by_type[td.test_type].add(td.table_name)
+
+    for test_type, table_names in regen_tables_by_type.items():
+        run_monitor_generation(test_suite_id, [test_type], mode="upsert", table_names=list(table_names))
 
 
 def _run_tests(
@@ -378,17 +360,3 @@ def _run_cat_tests(
     )
 
 
-def _rollup_test_scores(test_run: TestRun, table_group: TableGroup) -> None:
-    try:
-        LOG.info("Rolling up test scores")
-        sql_generator = RollupScoresSQL(test_run.id, table_group.id)
-        execute_db_queries(
-            sql_generator.rollup_test_scores(update_prevalence=True, update_table_group=True),
-        )
-        run_refresh_score_cards_results(
-            project_code=table_group.project_code,
-            add_history_entry=True,
-            refresh_date=test_run.test_starttime,
-        )
-    except Exception:
-        LOG.exception("Error rolling up test scores")

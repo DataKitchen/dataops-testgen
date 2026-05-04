@@ -4,13 +4,14 @@ from typing import Any, Self
 from uuid import UUID
 
 import streamlit as st
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from testgen.common.models import Base, get_current_session
 from testgen.utils import is_uuid4, make_json_safe
+
 
 def _hash_clause(x):
     # Don't use literal_binds=True — SA 2.0 can't render UUID POSTCOMPILE IN-lists
@@ -45,13 +46,18 @@ class Entity(Base):
     _default_order_by: tuple[str | InstrumentedAttribute] = ("id",)
 
     @classmethod
-    @st.cache_data(show_spinner=False)
-    def get(cls, identifier: str | int | UUID) -> Self | None:
+    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
+    def get(cls, identifier: str | int | UUID, *clauses) -> Self | None:
+        """Fetch by primary key, optionally narrowed by extra WHERE clauses.
+
+        Returns ``None`` when no row matches both the identifier and any
+        provided ``*clauses``.
+        """
         get_by_column = getattr(cls, cls._get_by)
         if isinstance(get_by_column.property.columns[0].type, postgresql.UUID) and not is_uuid4(identifier):
             return None
 
-        query = select(cls).where(get_by_column == identifier)
+        query = select(cls).where(get_by_column == identifier, *clauses)
         return get_current_session().scalars(query).first()
 
     @classmethod
@@ -116,6 +122,31 @@ class Entity(Base):
         return get_current_session().execute(query).mappings().all()
 
     @classmethod
+    def _paginate(
+        cls,
+        query,
+        *,
+        page: int,
+        limit: int,
+        data_class: type | None = None,
+    ) -> tuple[list, int]:
+        """Count + paginate a pre-built query.
+
+        Returns (items, total). If *data_class* is given, each row is
+        unpacked into an instance of that class.
+
+        The caller must supply ORDER BY on the query for stable pagination.
+        """
+        if not query._order_by_clauses:
+            raise ValueError("Paginated queries require ORDER BY for stable page distribution.")
+        session = get_current_session()
+        total = session.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
+        rows = session.execute(query.offset((page - 1) * limit).limit(limit)).mappings().all()
+        if data_class is not None:
+            return [data_class(**row) for row in rows], total
+        return list(rows), total
+
+    @classmethod
     def has_running_process(cls, ids: list[str]) -> bool:
         raise NotImplementedError
 
@@ -134,14 +165,9 @@ class Entity(Base):
         raise NotImplementedError
 
     @classmethod
-    def clear_cache(cls) -> None:
-        cls.get.clear()
-        cls.select_where.clear()
-
-    @classmethod
     def columns(cls) -> list[str]:
         return list(cls.__annotations__.keys())
-    
+
     def refresh(self) -> None:
         db_session = get_current_session()
         db_session.refresh(self)

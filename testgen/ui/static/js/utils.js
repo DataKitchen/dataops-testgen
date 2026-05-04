@@ -1,42 +1,4 @@
 import van from './van.min.js';
-import { Streamlit } from './streamlit.js';
-
-function enforceElementWidth(
-    /** @type Element */element,
-    /** @type number */width,
-) {
-    const observer = new ResizeObserver(() => {
-        element.width = width;
-    });
-
-    observer.observe(element);
-}
-
-function resizeFrameHeightToElement(/** @type string */elementId) {
-    const observer = new ResizeObserver(() => {
-        const element = document.getElementById(elementId);
-        if (element) {
-            const height = element.offsetHeight;
-            if (height) {
-                Streamlit.setFrameHeight(height);
-            }
-        }
-    });
-    observer.observe(window.frameElement);
-}
-
-function resizeFrameHeightOnDOMChange(/** @type string */elementId) {
-    const observer = new MutationObserver(() => {
-        const element = document.getElementById(elementId);
-        if (element) {
-            const height = element.offsetHeight;
-            if (height) {
-                Streamlit.setFrameHeight(height);
-            }
-        }
-    });
-    observer.observe(window.frameElement.contentDocument.body, {subtree: true, childList: true});
-}
 
 /**
  * @param {string} elementId
@@ -63,13 +25,6 @@ function loadStylesheet(
         document.adoptedStyleSheets.push(stylesheet);
         window.testgen.loadedStylesheets[key] = true;
     }
-}
-
-function emitEvent(
-    /** @type string */event,
-    /** @type object */data = {},
-) {
-    Streamlit.sendData({ event, ...data, _id: Math.random() }) // Identify the event so its handler is called once
 }
 
 // Replacement for van.val()
@@ -197,6 +152,26 @@ function isEqual(value, other) {
     return true;
 }
 
+/**
+ * Makes an element fill the viewport height from its current top position.
+ * Sets `height: calc(100vh - <top>px - <bottomPadding>px)` and re-applies on resize.
+ * @param {HTMLElement} element
+ * @param {{ bottomPadding?: number }} [options]
+ * @returns {() => void} Cleanup function that disconnects the observer
+ */
+function fillViewportHeight(element, { bottomPadding = 16 } = {}) {
+    const apply = () => {
+        const top = element.getBoundingClientRect().top;
+        if (top > 0) {
+            element.style.height = `calc(100vh - ${top + bottomPadding}px)`;
+        }
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(document.body);
+    return () => observer.disconnect();
+}
+
 function afterMount(/** @ype Function */ callback) {
     const trigger = van.state(false);
     van.derive(() => trigger.val && callback());
@@ -239,4 +214,18 @@ function parseDate(value) {
     return value;
 }
 
-export { afterMount, debounce, emitEvent, enforceElementWidth, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };
+/**
+ * Create a component-scoped emit function bound to a specific V2 component's
+ * setTriggerValue.  Use this instead of the global Streamlit singleton so that
+ * events always route to the correct widget.
+ *
+ * @param {Function} setTriggerValue - The setTriggerValue provided by Streamlit to the V2 component
+ * @returns {Function}
+ */
+function createEmitter(setTriggerValue) {
+    return (event, data = {}) => {
+        setTriggerValue(event, { ...data, _id: Math.random() });
+    };
+}
+
+export { afterMount, createEmitter, debounce, fillViewportHeight, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };

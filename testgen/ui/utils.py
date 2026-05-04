@@ -62,17 +62,6 @@ def get_cron_sample_handler(key: str, *, sample_count: int = 3) -> tuple[dict | 
     return cron_sample_result, on_cron_sample
 
 
-def parse_fuzzy_date(value: str | int) -> datetime | None:
-    if type(value) == str:
-        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
-    elif type(value) == int or type(value) == float:
-        ts = int(value)
-        if ts >= 1e11:
-            ts /= 1000
-        return datetime.fromtimestamp(ts)
-    return value
-
-
 def dict_from_kv(value: str | None, pairs_seprator: str = ";", kv_separator: str = "=") -> dict:
     if not value:
         return {}

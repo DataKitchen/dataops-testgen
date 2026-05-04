@@ -203,7 +203,7 @@ function generateShadowPath(data, chartHeight) {
  */
 const MonitoringSparklineMarkers = (options, points) => {
     return g(
-        {transform: options.transform ?? undefined},
+        {transform: options.transform ?? ''},
         ...points.map((point) => {
             if (point.isPending || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
                 return null;

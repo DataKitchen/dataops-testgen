@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import streamlit as st
-from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, text
+from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -43,6 +43,7 @@ class TestSuiteSummary(EntityMinimal):
     test_ct: int
     last_complete_profile_run_id: UUID
     latest_run_id: UUID
+    latest_run_job_execution_id: UUID | None
     latest_run_start: datetime
     last_run_test_ct: int
     last_run_passed_ct: int
@@ -86,6 +87,13 @@ class TestSuite(Entity):
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
 
     @classmethod
+    def get_regular(cls, identifier: str | UUID) -> "TestSuite | None":
+        """Like get(), but returns None for monitor suites."""
+        query = select(cls).where(cls.id == identifier, cls.is_monitor.isnot(True))
+        return get_current_session().scalars(query).first()
+
+
+    @classmethod
     @st.cache_data(show_spinner=False)
     def get_minimal(cls, identifier: int) -> TestSuiteMinimal | None:
         result = cls._get_columns(identifier, cls._minimal_columns)
@@ -100,7 +108,6 @@ class TestSuite(Entity):
         return [TestSuiteMinimal(**row) for row in results]
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def select_summary(cls, project_code: str, table_group_id: str | UUID | None = None, test_suite_name: str | None = None) -> Iterable[TestSuiteSummary]:
         if table_group_id and not is_uuid4(table_group_id):
             return []
@@ -109,6 +116,7 @@ class TestSuite(Entity):
         WITH last_run AS (
             SELECT test_runs.test_suite_id,
                 test_runs.id,
+                test_runs.job_execution_id,
                 test_runs.test_starttime,
                 test_runs.test_ct,
                 SUM(
@@ -179,6 +187,7 @@ class TestSuite(Entity):
             test_defs.count AS test_ct,
             last_complete_profile_run_id,
             last_run.id AS latest_run_id,
+            last_run.job_execution_id AS latest_run_job_execution_id,
             last_run.test_starttime AS latest_run_start,
             last_run.test_ct AS last_run_test_ct,
             last_run.passed_ct AS last_run_passed_ct,
@@ -208,18 +217,6 @@ class TestSuite(Entity):
         return [TestSuiteSummary(**row) for row in results]
 
     @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool:
-        query = """
-        SELECT DISTINCT test_suite_id
-        FROM test_runs
-        WHERE test_suite_id IN :test_suite_ids
-            AND status = 'Running';
-        """
-        params = {"test_suite_ids": tuple(ids)}
-        process_count = get_current_session().execute(text(query), params).rowcount
-        return process_count > 0
-
-    @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
         query = """
         SELECT DISTINCT test_suite_id FROM test_definitions WHERE test_suite_id IN :test_suite_ids
@@ -233,6 +230,12 @@ class TestSuite(Entity):
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
         query = """
+        DELETE FROM job_executions
+        WHERE id IN (
+            SELECT job_execution_id FROM test_runs
+            WHERE test_suite_id IN :test_suite_ids AND job_execution_id IS NOT NULL
+        );
+
         DELETE FROM test_runs
         WHERE test_suite_id IN :test_suite_ids;
 
@@ -249,9 +252,3 @@ class TestSuite(Entity):
         db_session.execute(text(query), {"test_suite_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
 
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_minimal.clear()
-        cls.select_minimal_where.clear()
-        cls.select_summary.clear()

@@ -7,6 +7,7 @@
  * @property {string?} class
  * @property {'info'|'success'|'warn'|'error'} type
  * @property {Function?} onClose
+ * @property {string?} testId
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet, getRandomId } from '../utils.js';
@@ -31,6 +32,7 @@ const Alert = (/** @type Properties */ props, /** @type Array<HTMLElement> */ ..
         {
             ...props,
             id: elementId,
+            'data-testid': getValue(props.testId) ?? '',
             class: () => `tg-alert flex-row ${getValue(props.class) ?? ''} tg-alert-${getValue(props.type)}`,
             role: 'alert',
         },

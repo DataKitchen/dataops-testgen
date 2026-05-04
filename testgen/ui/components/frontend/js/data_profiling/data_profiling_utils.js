@@ -191,9 +191,9 @@
  * * Test Suites
  * @property {TestSuite[]?} test_suites
  */
-import van from '../van.min.js';
-import { Link } from '../components/link.js';
-import { formatTimestamp } from '../display_utils.js';
+import van from '/app/static/js/van.min.js';
+import { Link } from '/app/static/js/components/link.js';
+import { formatTimestamp } from '/app/static/js/display_utils.js';
 
 const { span, b } = van.tags;
 
@@ -219,11 +219,12 @@ const getColumnIcon = (/** @type Column */ column) => {
  * @property {boolean?} noLinks
  */
 const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const emit = props.emit;
     let text = [
         'as of latest profiling run on ',
         props.noLinks ? b(formatTimestamp(item.profile_run_date)) : null,
     ];
-    let link = Link({
+    let link = Link({ emit, 
         href: 'profiling-runs:results',
         params: {
             run_id: item.profile_run_id,
@@ -240,7 +241,7 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
             link = null;
         } else {
             text = `No profiling results yet for ${item.type}.`;
-            link = Link({
+            link = Link({ emit, 
                 href: 'table-groups',
                 params: { project_code: item.project_code, connection_id: item.connection_id },
                 open_new: true,

@@ -28,6 +28,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Timeliness
+  impact_dimension: Reliability
   health_dimension: Recency
   threshold_description: |-
     Minimum distinct date count expected

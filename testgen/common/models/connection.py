@@ -75,7 +75,6 @@ class Connection(Entity):
         return ConnectionMinimal(**result) if result else None
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_by_table_group(cls, table_group_id: str | UUID) -> Self | None:
         if not is_uuid4(table_group_id):
             return None
@@ -92,13 +91,6 @@ class Connection(Entity):
         return [ConnectionMinimal(**row) for row in results]
 
     @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool:
-        table_groups = TableGroup.select_minimal_where(TableGroup.connection_id.in_(ids))
-        if table_groups:
-            return TableGroup.has_running_process([item.id for item in table_groups])
-        return False
-
-    @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
         table_groups = TableGroup.select_minimal_where(TableGroup.connection_id.in_(ids))
         return len(table_groups) > 0
@@ -109,13 +101,6 @@ class Connection(Entity):
         if table_groups:
             TableGroup.cascade_delete([item.id for item in table_groups])
         cls.delete_where(cls.connection_id.in_(ids))
-
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_minimal.clear()
-        cls.get_by_table_group.clear()
-        cls.select_minimal_where.clear()
 
     def save(self) -> None:
         if self.connect_by_url and self.url:

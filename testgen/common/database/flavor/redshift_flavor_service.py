@@ -2,14 +2,10 @@ from urllib.parse import quote_plus
 
 from sqlalchemy.dialects import registry as _dialect_registry
 from sqlalchemy.dialects.postgresql.psycopg2 import PGDialect_psycopg2
-from sqlalchemy.engine import Engine
-from sqlalchemy.engine import create_engine as sqlalchemy_create_engine
 
 from testgen.common.database.flavor.flavor_service import (
-    ConnectionParams,
     FlavorService,
     ResolvedConnectionParams,
-    resolve_connection_params,
 )
 
 
@@ -21,8 +17,9 @@ class _RedshiftDialect(PGDialect_psycopg2):
     the check so connections succeed.
     """
     name = "redshift_pg"
+    supports_statement_cache = True
 
-    def _set_backslash_escapes(self, connection):
+    def _set_backslash_escapes(self, _connection):
         self._backslash_escapes = False
 
 

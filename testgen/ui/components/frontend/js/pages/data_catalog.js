@@ -1,6 +1,6 @@
 /**
  * @import { Column, Table } from '../data_profiling/data_profiling_utils.js';
- * @import { TreeNode, SelectedNode } from '../components/tree.js';
+ * @import { TreeNode, SelectedNode } from '/app/static/js/components/tree.js';
  * @import { FilterOption, ProjectSummary } from '../types.js';
  * 
  * @typedef ColumnPath
@@ -59,28 +59,40 @@
  * @property {string} last_saved_timestamp
  * @property {Permissions} permissions
  * @property {AutoflagSettings} autoflag_settings
+ * @property {object?} run_profiling_dialog
+ * @property {object?} import_metadata_dialog
+ * @property {object?} create_script_dialog
  */
-import van from '../van.min.js';
-import { Tree } from '../components/tree.js';
-import { Icon } from '../components/icon.js';
-import { withTooltip } from '../components/tooltip.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getRandomId, getValue, loadStylesheet } from '../utils.js';
+import van from '/app/static/js/van.min.js';
+import { Tree } from '/app/static/js/components/tree.js';
+import { EditableCard } from '/app/static/js/components/editable_card.js';
+import { Attribute } from '/app/static/js/components/attribute.js';
+import { Input } from '/app/static/js/components/input.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { createEmitter, fillViewportHeight, getRandomId, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { ColumnDistributionCard } from '../data_profiling/column_distribution.js';
 import { DataCharacteristicsCard } from '../data_profiling/data_characteristics.js';
 import { HygieneIssuesCard, TestIssuesCard } from '../data_profiling/data_issues.js';
 import { getColumnIcon, TABLE_ICON, LatestProfilingTime } from '../data_profiling/data_profiling_utils.js';
-import { Checkbox } from '../components/checkbox.js';
-import { Select } from '../components/select.js';
-import { capitalize, caseInsensitiveIncludes, DISABLED_ACTION_TEXT } from '../display_utils.js';
+import { RadioGroup } from '/app/static/js/components/radio_group.js';
+import { Checkbox } from '/app/static/js/components/checkbox.js';
+import { Select } from '/app/static/js/components/select.js';
+import { capitalize, caseInsensitiveIncludes, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
 import { TableSizeCard } from '../data_profiling/table_size.js';
-import { Card } from '../components/card.js';
-import { Button } from '../components/button.js';
-import { Link } from '../components/link.js';
-import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
-import { Portal } from '../components/portal.js';
+import { Card } from '/app/static/js/components/card.js';
+import { Button } from '/app/static/js/components/button.js';
+import { Link } from '/app/static/js/components/link.js';
+import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
+import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TableCreateScriptCard } from '../data_profiling/table_create_script.js';
 import { MetadataTagsCard, MetadataTagsMultiEdit, TAG_KEYS } from '../data_profiling/metadata_tags.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { RunProfilingDialog } from '/app/static/js/components/run_profiling_dialog.js';
+import { ImportMetadataDialog } from './import_metadata_dialog.js';
+import { ColumnHistoryDialog } from '../shared/column_history_dialog.js';
+import { DataPreviewDialog } from '../shared/data_preview_dialog.js';
+import { TableCreateScriptDialog } from '/app/static/js/components/table_create_script_dialog.js';
 
 const { div, h2, span } = van.tags;
 
@@ -90,10 +102,12 @@ EMPTY_IMAGE.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAA
 
 
 const DataCatalog = (/** @type Properties */ props) => {
+    const { emit } = props;
     loadStylesheet('data-catalog', stylesheet);
-    Streamlit.setFrameHeight(1); // Non-zero value is needed to render
-    window.frameElement.style.setProperty('height', 'calc(100vh - 85px)');
-    window.testgen.isPage = true;
+
+    // Import dialog: persistent local state + one-time sync from Python prop
+    const importDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.import_metadata_dialog)) importDialogOpen.val = true; });
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
@@ -169,7 +183,7 @@ const DataCatalog = (/** @type Properties */ props) => {
         if (event.screenX && dragState.val) {
             const dragWidth = dragState.val.startWidth + event.screenX - dragState.val.startX;
             const constrainedWidth = Math.min(dragConstraints.max, Math.max(dragWidth, dragConstraints.min));
-            document.getElementById(treeDomId).style.minWidth = `${constrainedWidth}px`;
+            document.getElementById(treeDomId)?.style.setProperty('min-width', `${constrainedWidth}px`);
         }
     };
 
@@ -198,7 +212,7 @@ const DataCatalog = (/** @type Properties */ props) => {
 
     return projectSummary.table_group_count > 0
         ? div(
-            { class: 'flex-column tg-dh' },
+            { 'data-testid': 'data-catalog', class: 'flex-column tg-dh' },
             div(
                 { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-2' },
                 () => Select({
@@ -207,7 +221,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     options: getValue(props.table_group_filter_options) ?? [],
                     style: 'font-size: 14px;',
                     testId: 'table-group-filter',
-                    onChange: (value) => emitEvent('TableGroupSelected', {payload: value}),
+                    onChange: (value) => emit('TableGroupSelected', {payload: value}),
                 }),
                 div(
                     { class: 'flex-row fx-gap-2' },
@@ -220,10 +234,10 @@ const DataCatalog = (/** @type Properties */ props) => {
                             tooltipPosition: 'left',
                             width: 'fit-content',
                             style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emitEvent('ImportClicked', {}),
+                            onclick: () => emit('ImportClicked', {}),
                         })
                         : null,
-                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit),
+                    ExportOptions(treeNodes, multiSelectedItems, userCanEdit, emit),
                 ),
             ),
             () => treeNodes.val.length
@@ -234,12 +248,13 @@ const DataCatalog = (/** @type Properties */ props) => {
                     },
                     Tree(
                         {
+                            emit,
                             id: treeDomId,
                             classes: 'tg-dh--tree',
                             nodes: treeNodes,
                             // Use .rawVal, so only initial value from query params is passed to tree
                             selected: selectedItem.rawVal ? `${selectedItem.rawVal.type}_${selectedItem.rawVal.id}` : null,
-                            onSelect: (/** @type string */ selected) => emitEvent('ItemSelected', { payload: selected }),
+                            onSelect: (/** @type string */ selected) => emit('ItemSelected', { payload: selected }),
                             multiSelect: multiEditMode,
                             multiSelectToggle: userCanEdit,
                             multiSelectToggleLabel: 'Edit multiple',
@@ -337,7 +352,8 @@ const DataCatalog = (/** @type Properties */ props) => {
                             ondragstart: (event) => {
                                 event.dataTransfer.effectAllowed = 'move';
                                 event.dataTransfer.setDragImage(EMPTY_IMAGE, 0, 0);
-                                dragState.val = { startX: event.screenX, startWidth: document.getElementById(treeDomId).offsetWidth };
+                                const treeEl = document.getElementById(treeDomId);
+                                dragState.val = { startX: event.screenX, startWidth: treeEl ? treeEl.offsetWidth : dragConstraints.min };
                             },
                             ondragend: (event) => {
                                 dragResize(event);
@@ -352,6 +368,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                             () => multiSelectedItems.val?.length
                                 ? MetadataTagsMultiEdit(
                                     {
+                                        emit,
                                         tagOptions: getValue(props.tag_values),
                                         piiEditable: userCanViewPii,
                                         autoflagSettings: getValue(props.autoflag_settings) ?? {},
@@ -366,114 +383,140 @@ const DataCatalog = (/** @type Properties */ props) => {
                         )
                         : SelectedDetails(props, selectedItem.val),
                 )
-                : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate),
+                : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate, emit),
+            () => {
+                const info = getValue(props.run_profiling_dialog);
+                if (!info) return div();
+                return RunProfilingDialog({ emit,
+                    dialog: { title: info.title ?? 'Run Profiling', open: true },
+                    table_groups: info.table_groups ?? [],
+                    allow_selection: info.allow_selection ?? false,
+                    selected_id: info.selected_id,
+                    result: info.result,
+                    onClose: () => emit('RunProfilingDialogClosed', {}),
+                });
+            },
+            ColumnHistoryDialog({ emit,
+                historyData: props.history_dialog,
+                onClose: () => emit('HistoryDialogClosed', {}),
+                onRunSelected: (runId) => emit('HistoryRunSelected', { payload: runId }),
+            }),
+            DataPreviewDialog({ emit,
+                previewData: props.data_preview_dialog,
+                onClose: () => emit('DataPreviewDialogClosed', {}),
+            }),
+            () => {
+                const data = getValue(props.create_script_dialog);
+                if (!data) return div();
+                return TableCreateScriptDialog({ emit,
+                    dialog: { open: true, title: data.title },
+                    table_name: data.table_name,
+                    script: data.script,
+                    onClose: () => emit('CreateScriptDialogClosed', {}),
+                });
+            },
+            Dialog(
+                {
+                    title: 'Import Metadata',
+                    open: importDialogOpen,
+                    onClose: () => {
+                        importDialogOpen.val = false;
+                        emit('ImportDialogClosed', {});
+                    },
+                    width: '50rem',
+                },
+                () => {
+                    const data = getValue(props.import_metadata_dialog);
+                    if (!data) return span();
+                    return ImportMetadataDialog({ emit,
+                        preview: data.preview,
+                        result: data.result,
+                        onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
+                        onFileCleared: () => emit('ImportFileCleared', {}),
+                        onImportConfirmed: () => emit('ImportConfirmed', {}),
+                        onAutoClose: () => {
+                            importDialogOpen.val = false;
+                            emit('ImportDialogClosed', {});
+                        },
+                    });
+                },
+            ),
         )
-        : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate);
+        : ConditionalEmptyState(projectSummary, userCanEdit, userCanNavigate, emit);
 };
 
-const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes, /** @type boolean */ userCanEdit) => {
-    const exportOptionsDomId = `data-catalog-export-${getRandomId()}`;
-    const exportOptionsOpened = van.state(false);
 
-    return [
-        Button({
-            id: exportOptionsDomId,
-            icon: 'download',
-            type: 'stroked',
-            label: 'Export',
-            tooltip: 'Download columns to Excel or CSV',
-            tooltipPosition: 'left',
-            width: 'fit-content',
-            style: 'background: var(--button-generic-background-color);',
-            onclick: () => exportOptionsOpened.val = !exportOptionsOpened.val,
-        }),
-        Portal(
-            { target: exportOptionsDomId, opened: exportOptionsOpened, align: 'right' },
-            () => div(
-                { class: 'tg-dh--export-portal' },
-                div(
-                    {
-                        class: 'tg-dh--export-option',
-                        onclick: () => {
-                            emitEvent('ExportClicked', { payload: null });
-                            exportOptionsOpened.val = false;
-                        },
-                    },
-                    'All columns',
-                ),
-                div(
-                    {
-                        class: 'tg-dh--export-option',
-                        onclick: () => {
-                            const payload = treeNodes.val.reduce((array, table) => {
-                                if (!table.hidden.val) {
-                                    const [ type, id ] = table.id.split('_');
-                                    array.push({ type, id, selected: table.selected.val });
+const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode[] */ selectedNodes, _userCanEdit, emit) => {
+    return DropdownButton({
+        icon: 'download',
+        label: 'Export',
+        items: () => {
+            const items = [
+                {
+                    label: 'All columns',
+                    onclick: () => emit('ExportClicked', { payload: null }),
+                },
+                {
+                    label: 'Filtered columns',
+                    onclick: () => {
+                        const payload = treeNodes.val.reduce((array, table) => {
+                            if (!table.hidden.val) {
+                                const [ type, id ] = table.id.split('_');
+                                array.push({ type, id, selected: table.selected.val });
 
-                                    table.children.forEach(column => {
-                                        if (!column.hidden.val) {
-                                            const [ type, id ] = column.id.split('_');
-                                            array.push({ type, id, selected: column.selected.val });
-                                        }
-                                    });
-                                }
-                                return array;
-                            }, []);
-                            emitEvent('ExportClicked', { payload });
-                            exportOptionsOpened.val = false;
-                        },
-                    },
-                    'Filtered columns',
-                ),
-                selectedNodes.val?.length
-                    ? div(
-                        {
-                            class: 'tg-dh--export-option',
-                            onclick: () => {
-                                const payload = selectedNodes.val.reduce((array, table) => {
-                                    const [ type, id ] = table.id.split('_');
-                                    array.push({ type, id });
-
-                                    table.children.forEach(column => {
+                                table.children.forEach(column => {
+                                    if (!column.hidden.val) {
                                         const [ type, id ] = column.id.split('_');
-                                        array.push({ type, id });
-                                    });
-
-                                    return array;
-                                }, []);
-                                emitEvent('ExportClicked', { payload });
-                                exportOptionsOpened.val = false;
-                            },
-                        },
-                        'Selected columns',
-                    )
-                    : null,
-                div(
-                    {
-                        class: 'tg-dh--export-option',
-                        style: 'border-top: var(--button-stroked-border);',
-                        onclick: () => {
-                            emitEvent('ExportCsvClicked', {});
-                            exportOptionsOpened.val = false;
-                        },
+                                        array.push({ type, id, selected: column.selected.val });
+                                    }
+                                });
+                            }
+                            return array;
+                        }, []);
+                        emit('ExportClicked', { payload });
                     },
-                    'Metadata CSV',
-                ),
-            ),
-        ),
-    ];
+                },
+            ];
+            if (selectedNodes.val?.length) {
+                items.push({
+                    label: 'Selected columns',
+                    onclick: () => {
+                        const payload = selectedNodes.val.reduce((array, table) => {
+                            const [ type, id ] = table.id.split('_');
+                            array.push({ type, id });
+
+                            table.children.forEach(column => {
+                                const [ type, id ] = column.id.split('_');
+                                array.push({ type, id });
+                            });
+
+                            return array;
+                        }, []);
+                        emit('ExportClicked', { payload });
+                    },
+                });
+            }
+            items.push({
+                label: 'Metadata CSV',
+                separator: true,
+                onclick: () => emit('ExportCsvClicked', {}),
+            });
+            return items;
+        },
+    });
 };
 
 const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const emit = props.emit;
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
     const userCanNavigate = getValue(props.permissions)?.can_navigate ?? false;
     const userCanViewPii = getValue(props.permissions)?.can_view_pii ?? false;
 
     return item
         ? div(
-            { class: 'tg-dh--details' },
+            { class: 'tg-dh--details flex-column fx-gap-2' },
             div(
-                { class: 'mb-2' },
+                { },
                 h2(
                     { class: 'tg-dh--title' },
                     item.type === 'column' ? [
@@ -484,14 +527,14 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
                         item.column_name,
                     ] : item.table_name,
                 ),
-                LatestProfilingTime({ noLinks: !userCanNavigate }, item),
+                LatestProfilingTime({ emit, noLinks: !userCanNavigate }, item),
             ),
-            DataCharacteristicsCard({ scores: true, allowRemove: true }, item),
+            DataCharacteristicsCard({ emit,  scores: true, allowRemove: true }, item),
             item.type === 'column'
-                ? ColumnDistributionCard({ dataPreview: true, history: true }, item)
-                : TableSizeCard({}, item),
+                ? ColumnDistributionCard({ emit,  dataPreview: true, history: true }, item)
+                : TableSizeCard({ emit,}, item),
             MetadataTagsCard(
-                {
+                { emit,
                     tagOptions: getValue(props.tag_values),
                     editable: userCanEdit,
                     piiEditable: userCanViewPii,
@@ -499,11 +542,11 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
                 },
                 item,
             ),
-            HygieneIssuesCard({ noLinks: !userCanNavigate }, item),
-            TestIssuesCard({ noLinks: !userCanNavigate }, item),
-            TestSuitesCard({ noLinks: !userCanNavigate }, item),
+            HygieneIssuesCard({ emit,  noLinks: !userCanNavigate }, item),
+            TestIssuesCard({ emit, noLinks: !userCanNavigate }, item),
+            TestSuitesCard({ emit, noLinks: !userCanNavigate }, item),
             item.type === 'table'
-                ? TableCreateScriptCard({}, item)
+                ? TableCreateScriptCard({ emit,}, item)
                 : null,
         )
         : ItemEmptyState(
@@ -513,6 +556,7 @@ const SelectedDetails = (/** @type Properties */ props, /** @type Table | Column
 };
 
 const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column */ item) => {
+    const emit = props.emit;
     return Card({
         title: 'Related Test Suites',
         content: div(
@@ -521,7 +565,7 @@ const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column 
                 { class: 'flex-row fx-gap-1' },
                 props.noLinks
                     ? span(name)
-                    : Link({
+                    : Link({ emit, 
                         href: 'test-suites:definitions',
                         params: {
                             test_suite_id: id,
@@ -544,7 +588,7 @@ const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column 
                 `No test definitions yet for ${item.type}.`,
                 props.noLinks
                     ? null
-                    : Link({
+                    : Link({ emit, 
                         href: 'test-suites',
                         params: {
                             project_code: item.project_code,
@@ -556,6 +600,121 @@ const TestSuitesCard = (/** @type Properties */ props, /** @type Table | Column 
                     }),
             ),
     });
+};
+
+const MultiEdit = (/** @type Properties */ props, /** @type Object */ selectedItems, /** @type Object */ multiEditMode) => {
+    const emit = props.emit;
+    const hasSelection = van.derive(() => selectedItems.val?.length);
+    const columnCount = van.derive(() => selectedItems.val?.reduce((count, { children }) => count + children.length, 0));
+
+    const attributes = [
+        'critical_data_element',
+        ...TAG_KEYS,
+    ].map(key => ({
+        key,
+        help: TAG_HELP[key],
+        label: capitalize(key.replaceAll('_', ' ')),
+        checkedState: van.state(null),
+        valueState: van.state(null),
+    }));
+
+    const cdeOptions = [
+        { label: 'Yes', value: true },
+        { label: 'No', value: false },
+        { label: 'Inherit', value: null },
+    ];
+    const tagOptions = getValue(props.tag_values) ?? {};
+    const width = 400;
+
+    return div(
+        { class: 'tg-dh--details flex-column' },
+        () => hasSelection.val
+            ? Card({
+                title: 'Edit Tags for Selection',
+                actionContent: span(
+                    { class: 'text-secondary mr-4' },
+                    span({ style: 'font-weight: 500' }, columnCount),
+                    () => ` column${columnCount.val > 1 ? 's' : ''} selected`
+                ),
+                content: div(
+                    { class: 'flex-column' },
+                    attributes.map(({ key, label, help, checkedState, valueState }) => div(
+                        { class: 'flex-row fx-gap-3' },
+                        Checkbox({
+                            checked: checkedState,
+                            onChange: (checked) => checkedState.val = checked,
+                        }),
+                        div(
+                            {
+                                class: 'pb-4 flex-row',
+                                style: `min-width: ${width}px`,
+                                onclick: () => checkedState.val = true,
+                            },
+                            key === 'critical_data_element'
+                                ? RadioGroup({
+                                    label, width,
+                                    options: cdeOptions,
+                                    onChange: (value) => valueState.val = value,
+                                })
+                                : Input({
+                                    label, help, width,
+                                    height: 32,
+                                    placeholder: () => checkedState.val ? null : '(keep current values)',
+                                    autocompleteOptions: tagOptions[key],
+                                    onChange: (value) => valueState.val = value || null,
+                                }),
+                        ),
+                    )),
+                    div(
+                        { class: 'flex-row fx-justify-content-flex-end fx-gap-3 mt-4' },
+                        Button({
+                            type: 'stroked',
+                            label: 'Cancel',
+                            width: 'auto',
+                            onclick: () => multiEditMode.val = false,
+                        }),
+                        Button({
+                            type: 'stroked',
+                            color: 'primary',
+                            label: 'Save',
+                            width: 'auto',
+                            disabled: () => attributes.every(({ checkedState }) => !checkedState.val),
+                            onclick: () => {
+                                const items = selectedItems.val.reduce((array, table) => {
+                                    if (table.all) {
+                                        const [ type, id ] = table.id.split('_');
+                                        array.push({ type, id });
+                                    }
+
+                                    table.children.forEach(column => {
+                                        const [ type, id ] = column.id.split('_');
+                                        array.push({ type, id });
+                                    });
+
+                                    return array;
+                                }, []);
+
+                                const tags = attributes.reduce((object, { key, checkedState, valueState }) => {
+                                    if (checkedState.val) {
+                                        object[key] = valueState.rawVal;
+                                    }
+                                    return object;
+                                }, {});
+
+                                emit('TagsChanged', { payload: { items, tags } });
+                                // Don't set multiEditMode to false here
+                                // Otherwise this event gets superseded by the ItemSelected event
+                                // Let the Streamlit rerun handle the state reset with 'last_saved_timestamp'
+                            },
+                        }),
+                    ),
+                ),
+            })
+            : ItemEmptyState(
+                'Select tables or columns on the left to edit their tags.',
+                'edit_document',
+            ),
+    );
 };
 
 const ItemEmptyState = (/** @type string */ message, /** @type string */ icon) => {
@@ -570,6 +729,7 @@ const ConditionalEmptyState = (
     /** @type ProjectSummary */ projectSummary,
     /** @type boolean */ userCanEdit,
     /** @type boolean */ userCanNavigate,
+    emit,
 ) => {
     let args = {
         label: 'No profiling data yet',
@@ -584,7 +744,7 @@ const ConditionalEmptyState = (
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',
-            onclick: () => emitEvent('RunProfilingClicked', {}),
+            onclick: () => emit('RunProfilingClicked', {}),
         }),
     }
     if (projectSummary.connection_count <= 0) {
@@ -614,7 +774,7 @@ const ConditionalEmptyState = (
         };
     }
     
-    return EmptyState({
+    return EmptyState({ emit, 
         icon: 'dataset',
         ...args,
     });
@@ -684,33 +844,34 @@ stylesheet.replace(`
     text-align: center;
 }
 
-.tg-dh--export-portal {
-    border-radius: 8px;
-    background: var(--dk-card-background);
-    box-shadow: var(--portal-box-shadow);
-    overflow: visible;
-    z-index: 99;
-}
 
-.tg-dh--export-option {
-    padding: 12px 16px;
-    cursor: pointer;
-    color: var(--primary-text-color);
-}
-
-.tg-dh--export-option:first-child {
-    border-top-left-radius: 8px;
-    border-top-right-radius: 8px;
-}
-
-.tg-dh--export-option:last-child {
-    border-bottom-left-radius: 8px;
-    border-bottom-right-radius: 8px;
-}
-
-.tg-dh--export-option:hover {
-    background: var(--select-hover-background);
-}
 `);
 
 export { DataCatalog };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
+        van.add(parentElement, DataCatalog(componentState));
+        parentElement._cleanup = fillViewportHeight(parentElement);
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => {
+        parentElement._cleanup?.();
+        parentElement.state = null;
+    };
+};

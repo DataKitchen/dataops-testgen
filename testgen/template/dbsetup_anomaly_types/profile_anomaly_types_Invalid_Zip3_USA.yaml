@@ -19,6 +19,7 @@ profile_anomaly_types:
     (NULLIF(p.record_ct, 0)::INT - SPLIT_PART(p.top_patterns, ' | ', 1)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '1'
   dq_dimension: Validity
+  impact_dimension: Conformance
   target_data_lookups:
   - id: '1362'
     test_id: '1024'

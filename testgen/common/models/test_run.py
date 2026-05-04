@@ -1,4 +1,3 @@
-from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
@@ -11,7 +10,9 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
 from testgen.common.models import get_current_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
+from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus
@@ -44,29 +45,38 @@ class TestRunMinimal(EntityMinimal):
 
 @dataclass
 class TestRunSummary(EntityMinimal):
-    test_run_id: UUID
-    test_starttime: datetime
-    test_endtime: datetime
-    table_groups_name: str
-    test_suite: str
+    job_execution_id: UUID
+    test_run_id: UUID | None
+    status: JobStatus
+    created_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_message: str | None
+    progress: list[ProgressStep]
+    table_groups_name: str | None
+    test_suite: str | None
     project_code: str
     project_name: str
-    status: TestRunStatus
-    progress: list[ProgressStep]
-    process_id: int
-    log_message: str
-    test_ct: int
-    passed_ct: int
-    warning_ct: int
-    failed_ct: int
-    error_ct: int
-    log_ct: int
-    dismissed_ct: int
-    dq_score_testing: float
+    process_id: int | None
+    log_message: str | None
+    test_ct: int | None
+    passed_ct: int | None
+    warning_ct: int | None
+    failed_ct: int | None
+    error_ct: int | None
+    log_ct: int | None
+    dismissed_ct: int | None
+    dq_score_testing: float | None
+    total_count: int
 
     STATUS_LABEL: ClassVar[dict[str, str]] = {
-        "Complete": "Completed",
-        "Cancelled": "Canceled",
+        JobStatus.COMPLETED: "Completed",
+        JobStatus.CANCELED: "Canceled",
+        JobStatus.CANCEL_REQUESTED: "Canceling",
+        JobStatus.PENDING: "Pending",
+        JobStatus.CLAIMED: "Starting",
+        JobStatus.RUNNING: "Running",
+        JobStatus.ERROR: "Error",
     }
 
     @property
@@ -116,6 +126,7 @@ class TestRun(Entity):
     dq_total_data_points: int = Column(BigInteger)
     dq_score_test_run: float = Column(Float)
     process_id: int = Column(Integer)
+    job_execution_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
 
     _default_order_by = (desc(test_starttime),)
     _minimal_columns = (
@@ -133,39 +144,59 @@ class TestRun(Entity):
     )
 
     @classmethod
+    def get_by_id_or_job(cls, identifier: UUID) -> Self | None:
+        """Look up a test run by its own ID or by job_execution_id."""
+        query = select(cls).where((cls.id == identifier) | (cls.job_execution_id == identifier))
+        return get_current_session().scalars(query).first()
+
+    @classmethod
+    def get_job_execution_ids(cls, test_run_ids: list[UUID]) -> dict[UUID, UUID | None]:
+        """Map test_run PKs to their job_execution_ids (batch lookup)."""
+        if not test_run_ids:
+            return {}
+        query = select(cls.id, cls.job_execution_id).where(cls.id.in_(test_run_ids))
+        rows = get_current_session().execute(query).all()
+        return {row.id: row.job_execution_id for row in rows}
+
+    @classmethod
     @st.cache_data(show_spinner=False)
     def get_minimal(cls, run_id: str | UUID) -> TestRunMinimal | None:
         if not is_uuid4(run_id):
             return None
 
-        query = select(*cls._minimal_columns).join(TestSuite).where(cls.id == run_id)
+        query = (
+            select(*cls._minimal_columns)
+            .join(TestSuite)
+            .where((cls.id == run_id) | (cls.job_execution_id == run_id))
+        )
         result = get_current_session().execute(query).mappings().first()
         return TestRunMinimal(**result) if result else None
 
     @classmethod
     def get_latest_run(cls, project_code: str) -> LatestTestRun | None:
         query = (
-            select(TestRun.id, TestRun.test_starttime)
+            select(TestRun.id, JobExecution.started_at.label("run_time"))
+            .join(JobExecution, TestRun.job_execution_id == JobExecution.id)
             .join(TestSuite)
-            .where(TestSuite.project_code == project_code, TestRun.status == "Complete")
-            .order_by(desc(TestRun.test_starttime))
+            .where(TestSuite.project_code == project_code, JobExecution.status == JobStatus.COMPLETED)
+            .order_by(desc(JobExecution.started_at))
             .limit(1)
         )
         result = get_current_session().execute(query).mappings().first()
         if result:
-            return LatestTestRun(str(result["id"]), result["test_starttime"])
+            return LatestTestRun(str(result["id"]), result["run_time"])
         return None
 
     def get_previous(self) -> Self | None:
         query = (
             select(TestRun)
-            .join(TestSuite)
+            .join(JobExecution, TestRun.job_execution_id == JobExecution.id)
             .where(
                 TestRun.test_suite_id == self.test_suite_id,
-                TestRun.status == "Complete",
-                TestRun.test_starttime < self.test_starttime,
+                JobExecution.status == JobStatus.COMPLETED,
+                JobExecution.started_at < self.test_starttime,
             )
-            .order_by(desc(TestRun.test_starttime))
+            .order_by(desc(JobExecution.started_at))
             .limit(1)
         )
         return get_current_session().scalar(query)
@@ -181,108 +212,92 @@ class TestRun(Entity):
         }
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def select_summary(
         cls,
         project_code: str | None = None,
         table_group_id: str | None = None,
         test_suite_id: str | None = None,
-        test_run_ids: list[str] | None = None,
-    ) -> Iterable[TestRunSummary]:
+        test_run_ids: list[str | UUID] | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[list[TestRunSummary], int]:
         if (
             (table_group_id and not is_uuid4(table_group_id))
             or (test_suite_id and not is_uuid4(test_suite_id))
             or (test_run_ids and not all(is_uuid4(run_id) for run_id in test_run_ids))
         ):
-            return []
+            return [], 0
 
         query = f"""
         WITH run_results AS (
             SELECT test_run_id,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Passed' THEN 1
-                        ELSE 0
-                    END
-                ) AS passed_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Warning' THEN 1
-                        ELSE 0
-                    END
-                ) AS warning_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Failed' THEN 1
-                        ELSE 0
-                    END
-                ) AS failed_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Error' THEN 1
-                        ELSE 0
-                    END
-                ) AS error_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
-                        AND result_status = 'Log' THEN 1
-                        ELSE 0
-                    END
-                ) AS log_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
-                        ELSE 0
-                    END
-                ) AS dismissed_ct
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Passed' THEN 1 ELSE 0 END) AS passed_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Warning' THEN 1 ELSE 0 END) AS warning_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Failed' THEN 1 ELSE 0 END) AS failed_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Error' THEN 1 ELSE 0 END) AS error_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') = 'Confirmed'
+                    AND result_status = 'Log' THEN 1 ELSE 0 END) AS log_ct,
+                SUM(CASE WHEN COALESCE(disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
+                    THEN 1 ELSE 0 END) AS dismissed_ct
             FROM test_results
             GROUP BY test_run_id
         )
-        SELECT test_runs.id AS test_run_id,
-            test_runs.test_starttime,
-            test_runs.test_endtime,
-            table_groups.table_groups_name,
-            test_suites.test_suite,
-            test_suites.project_code,
-            projects.project_name,
-            test_runs.status,
-            test_runs.progress,
-            test_runs.process_id,
-            test_runs.log_message,
-            test_runs.test_ct,
-            run_results.passed_ct,
-            run_results.warning_ct,
-            run_results.failed_ct,
-            run_results.error_ct,
-            run_results.log_ct,
-            run_results.dismissed_ct,
-            test_runs.dq_score_test_run AS dq_score_testing
-        FROM test_runs
-            LEFT JOIN run_results ON (test_runs.id = run_results.test_run_id)
-            INNER JOIN test_suites ON (test_runs.test_suite_id = test_suites.id)
-            INNER JOIN table_groups ON (test_suites.table_groups_id = table_groups.id)
-            INNER JOIN projects ON (test_suites.project_code = projects.project_code)
-        WHERE test_suites.is_monitor IS NOT TRUE
-            {" AND test_suites.project_code = :project_code" if project_code else ""}
-            {" AND test_suites.table_groups_id = :table_group_id" if table_group_id else ""}
-            {" AND test_suites.id = :test_suite_id" if test_suite_id else ""}
-            {" AND test_runs.id IN :test_run_ids" if test_run_ids else ""}
-        ORDER BY test_runs.test_starttime DESC;
+        SELECT
+            je.id AS job_execution_id,
+            tr.id AS test_run_id,
+            je.status,
+            je.created_at,
+            je.started_at,
+            je.completed_at,
+            je.error_message,
+            COALESCE(tr.progress, '[]'::jsonb) AS progress,
+            tg.table_groups_name,
+            ts.test_suite,
+            je.project_code,
+            p.project_name,
+            tr.process_id,
+            tr.log_message,
+            tr.test_ct,
+            rr.passed_ct,
+            rr.warning_ct,
+            rr.failed_ct,
+            rr.error_ct,
+            rr.log_ct,
+            rr.dismissed_ct,
+            tr.dq_score_test_run AS dq_score_testing,
+            COUNT(*) OVER() AS total_count
+        FROM job_executions je
+            LEFT JOIN test_runs tr ON tr.job_execution_id = je.id
+            LEFT JOIN test_suites ts ON ts.id = tr.test_suite_id
+            LEFT JOIN table_groups tg ON tg.id = ts.table_groups_id
+            LEFT JOIN projects p ON p.project_code = je.project_code
+            LEFT JOIN run_results rr ON rr.test_run_id = tr.id
+        WHERE je.job_key = 'run-tests'
+            AND (ts.is_monitor IS NOT TRUE OR ts.id IS NULL)
+            {" AND je.project_code = :project_code" if project_code else ""}
+            {" AND ts.table_groups_id = :table_group_id" if table_group_id else ""}
+            {" AND ts.id = :test_suite_id" if test_suite_id else ""}
+            {" AND tr.id IN :test_run_ids" if test_run_ids else ""}
+        ORDER BY je.created_at DESC
+        LIMIT :limit OFFSET :offset;
         """
         params = {
             "project_code": project_code,
             "table_group_id": table_group_id,
             "test_suite_id": test_suite_id,
             "test_run_ids": tuple(test_run_ids or []),
+            "limit": page_size,
+            "offset": (page - 1) * page_size,
         }
         db_session = get_current_session()
         results = db_session.execute(text(query), params).mappings().all()
-        return [TestRunSummary(**row) for row in results]
+        items = [TestRunSummary(**row) for row in results]
+        total = items[0].total_count if items else 0
+        return items, total
 
     def get_monitoring_summary(self, table_name: str | None = None) -> TestRunMonitorSummary:
         freshness_anomalies = func.sum(case(
@@ -332,24 +347,29 @@ class TestRun(Entity):
 
         return TestRunMonitorSummary(**get_current_session().execute(query).mappings().first())
 
-    @classmethod
-    def has_running_process(cls, ids: list[str]) -> bool:
-        query = select(func.count(cls.id)).where(cls.id.in_(ids), cls.status == "Running")
-        process_count = get_current_session().execute(query).scalar()
-        return process_count > 0
+    _ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)
 
     @classmethod
-    def cancel_all_running(cls) -> list[UUID]:
+    def has_active_job_for(cls, entity_cls: type[Entity], *entity_ids: str | int | UUID) -> bool:
+        """Check whether any active test run job exists for the given entity or entities."""
         query = (
-            update(cls)
-            .where(cls.status == "Running")
-            .values(status="Cancelled", test_endtime=datetime.now(UTC))
-            .returning(cls.id)
+            select(func.count(cls.id))
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .where(JobExecution.status.in_(cls._ACTIVE_JOB_STATUSES))
         )
-        db_session = get_current_session()
-        rows = db_session.execute(query)
-        db_session.flush()
-        return [r.id for r in rows]
+        if entity_cls is cls:
+            query = query.where(cls.id.in_(entity_ids))
+        elif entity_cls is TestSuite:
+            query = query.where(cls.test_suite_id.in_(entity_ids))
+        elif entity_cls is TableGroup:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(TestSuite.table_groups_id.in_(entity_ids))
+        elif entity_cls is Connection:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(TestSuite.connection_id.in_(entity_ids))
+        elif entity_cls is Project:
+            query = query.join(TestSuite, cls.test_suite_id == TestSuite.id).where(TestSuite.project_code.in_(entity_ids))
+        else:
+            raise ValueError(f"Unsupported entity: {entity_cls.__name__}")
+        return get_current_session().execute(query).scalar() > 0
 
     @classmethod
     def cancel_run(cls, run_id: str | UUID) -> None:
@@ -362,16 +382,16 @@ class TestRun(Entity):
         query = """
         DELETE FROM test_results
         WHERE test_run_id IN :test_run_ids;
+
+        DELETE FROM job_executions
+        WHERE id IN (
+            SELECT job_execution_id FROM test_runs
+            WHERE id IN :test_run_ids AND job_execution_id IS NOT NULL
+        );
         """
         db_session = get_current_session()
         db_session.execute(text(query), {"test_run_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
-
-    @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.get_minimal.clear()
-        cls.select_summary.clear()
 
     def init_progress(self) -> None:
         self._progress = {

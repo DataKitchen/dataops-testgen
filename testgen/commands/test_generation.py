@@ -4,13 +4,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
-from testgen import settings
 from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
     get_flavor_service,
     replace_params,
 )
+from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
@@ -23,6 +23,7 @@ LOG = logging.getLogger("testgen")
 GenerationSet = Literal["Standard", "Monitor"]
 MonitorTestType = Literal["Freshness_Trend", "Volume_Trend", "Schema_Drift"]
 MonitorGenerationMode = Literal["upsert", "insert", "delete"]
+
 
 @dataclasses.dataclass
 class TestTypeParams:
@@ -38,7 +39,7 @@ def run_test_generation(
     test_suite_id: str | UUID,
     generation_set: GenerationSet = "Standard",
     test_types: list[str] | None = None,
-) -> str:
+) -> None:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
 
@@ -60,12 +61,11 @@ def run_test_generation(
     finally:
         MixpanelService().send_event(
             "generate-tests",
-            source=settings.ANALYTICS_JOB_SOURCE,
+            source=job_context.get().source.upper(),
             sql_flavor=connection.sql_flavor,
             generation_set=generation_set,
         )
 
-    return "Test generation completed." if success else "Test generation encountered an error. Check log for details."
 
 
 def run_monitor_generation(

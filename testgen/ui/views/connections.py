@@ -16,11 +16,12 @@ except ImportError:
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
 import testgen.ui.services.database_service as db
-from testgen.commands.run_profiling import run_profiling_in_background
+from testgen import settings
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -28,7 +29,6 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
-from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -170,7 +170,7 @@ class ConnectionsPage(Page):
 
         def on_setup_table_group_clicked(*_args) -> None:
             table_group_queries.reset_table_group_preview()
-            self.setup_data_configuration(project_code, connection.connection_id)
+            st.session_state["connections:setup_dialog"] = connection.connection_id
 
         results = None
         for key, value in get_updated_connection().items():
@@ -185,6 +185,8 @@ class ConnectionsPage(Page):
             success = True
             try:
                 connection.save()
+                Connection.select_where.clear()
+                Connection.get.clear()
                 message = "Changes have been saved successfully."
             except Exception as error:
                 message = "Something went wrong while creating the connection."
@@ -196,25 +198,30 @@ class ConnectionsPage(Page):
                 "message": message,
             }
 
-        return testgen.testgen_component(
-            "connections",
-            props={
+        setup_wizard_data = None
+        setup_wizard_handlers = {}
+        if setup_connection_id := st.session_state.get("connections:setup_dialog"):
+            setup_wizard_data, setup_wizard_handlers = self.setup_data_configuration(project_code, setup_connection_id)
+
+        testgen.connections_widget(
+            key="connections",
+            data={
                 "project_code": project_code,
                 "connection": self._format_connection(connection, should_test=should_check_status()),
                 "has_table_groups": has_table_groups,
-                "flavors": [asdict(flavor) for flavor in FLAVOR_OPTIONS],
+                "flavors": [asdict(flavor) for flavor in VISIBLE_FLAVOR_OPTIONS],
                 "permissions": {
                     "is_admin": user_is_admin,
                 },
                 "generated_connection_url": connection_string,
                 "results": results,
+                "setup_wizard": setup_wizard_data,
             },
-            on_change_handlers={
-                "TestConnectionClicked": on_test_connection_clicked,
-                "SaveConnectionClicked": on_save_connection_clicked,
-                "SetupTableGroupClicked": on_setup_table_group_clicked,
-                "ConnectionUpdated": on_connection_updated,
-            },
+            on_TestConnectionClicked_change=on_test_connection_clicked,
+            on_SaveConnectionClicked_change=on_save_connection_clicked,
+            on_SetupTableGroupClicked_change=on_setup_table_group_clicked,
+            on_ConnectionUpdated_change=on_connection_updated,
+            **setup_wizard_handlers,
         )
 
     def _get_sql_flavor_from_value(self, value: str) -> "ConnectionFlavor | None":
@@ -281,7 +288,6 @@ class ConnectionsPage(Page):
             LOG.exception("Error testing database connection")
             return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
 
-    @st.dialog(title="Data Configuration Setup")
     @with_database_session
     def setup_data_configuration(self, project_code: str, connection_id: str) -> None:
         def on_save_table_group_clicked(payload: dict) -> None:
@@ -308,11 +314,7 @@ class ConnectionsPage(Page):
             mark_for_access_preview(verify_table_access)
 
         def on_close_clicked(_params: dict) -> None:
-            set_close_dialog(True)
-
-        get_close_dialog, set_close_dialog = temp_value(f"connections:{connection_id}:close", default=False)
-        if (get_close_dialog()):
-            safe_rerun()
+            st.session_state.pop("connections:setup_dialog", None)
 
         get_new_table_group, set_new_table_group = temp_value(
             f"connections:{connection_id}:table_group",
@@ -468,7 +470,12 @@ class ConnectionsPage(Page):
                     if should_run_profiling:
                         try:
                             run_profiling = True
-                            run_profiling_in_background(table_group.id)
+                            JobExecution.submit(
+                                job_key="run-profile",
+                                kwargs={"table_group_id": str(table_group.id)},
+                                source="ui",
+                                project_code=table_group.project_code,
+                            )
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
                         except Exception as error:
                             message = "Profiling run encountered errors"
@@ -476,7 +483,6 @@ class ConnectionsPage(Page):
                             LOG.exception(message)
                     else:
                         LOG.info("Table group %s created", table_group.id)
-                        safe_rerun()
                 except Exception as error:
                     message = "Something went wrong while creating the table group."
                     success = False
@@ -500,32 +506,33 @@ class ConnectionsPage(Page):
                     "test_suite_name": None,
                 }
 
-        return testgen.table_group_wizard(
-            key="setup_data_configuration",
-            data={
-                "project_code": project_code,
-                "table_group": table_group.to_dict(json_safe=True),
-                "permissions": {
-                    "can_view_pii": session.auth.user_has_permission("view_pii"),
-                },
-                "table_group_preview": table_group_preview,
-                "steps": [
-                    "tableGroup",
-                    "testTableGroup",
-                    "runProfiling",
-                    "testSuite",
-                    "monitorSuite",
-                ],
-                "results": results,
-                "standard_cron_sample": standard_cron_sample_result(),
-                "monitor_cron_sample": monitor_cron_sample_result(),
+        wizard_data = {
+            "dialog": {"open": True, "title": "Data Configuration Setup"},
+            "project_code": project_code,
+            "table_group": table_group.to_dict(json_safe=True),
+            "permissions": {
+                "can_view_pii": session.auth.user_has_permission("view_pii"),
             },
-            on_SaveTableGroupClicked_change=on_save_table_group_clicked,
-            on_PreviewTableGroupClicked_change=on_preview_table_group,
-            on_CloseClicked_change=on_close_clicked,
-            on_GetCronSample_change=on_get_monitor_cron_sample,
-            on_GetCronSampleAux_change=on_get_standard_cron_sample,
-        )
+            "table_group_preview": table_group_preview,
+            "steps": [
+                "tableGroup",
+                "testTableGroup",
+                "runProfiling",
+                "testSuite",
+                "monitorSuite",
+            ],
+            "results": results,
+            "standard_cron_sample": standard_cron_sample_result(),
+            "monitor_cron_sample": monitor_cron_sample_result(),
+        }
+        wizard_handlers = {
+            "on_SaveTableGroupClicked_change": on_save_table_group_clicked,
+            "on_PreviewTableGroupClicked_change": on_preview_table_group,
+            "on_CloseClicked_change": on_close_clicked,
+            "on_GetCronSample_change": on_get_monitor_cron_sample,
+            "on_GetCronSampleAux_change": on_get_standard_cron_sample,
+        }
+        return wizard_data, wizard_handlers
 
 
 @dataclass(frozen=True, slots=True)
@@ -638,4 +645,10 @@ FLAVOR_OPTIONS = [
         flavor="snowflake",
         icon=get_asset_data_url("flavors/snowflake.svg"),
     ),
+]
+
+# SAP HANA is hidden in the Docker image because pyhdbcli is glibc-only and fails to load on Alpine/musl.
+VISIBLE_FLAVOR_OPTIONS = [
+    f for f in FLAVOR_OPTIONS
+    if not (settings.CHECK_FOR_LATEST_VERSION == "docker" and f.value == "sap_hana")
 ]

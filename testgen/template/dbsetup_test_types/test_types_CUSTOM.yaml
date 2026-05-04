@@ -29,6 +29,7 @@ test_types:
   run_type: QUERY
   test_scope: custom
   dq_dimension: Accuracy
+  impact_dimension: Conformance
   health_dimension: Data Drift
   threshold_description: |-
     Expected count of errors found by custom query

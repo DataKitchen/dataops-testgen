@@ -17,6 +17,7 @@
 * @property {Link?} link
 * @property {any?} button
 * @property {string?} class
+* @property {string?} testId
 */
 import van from '../van.min.js';
 import { Card } from '../components/card.js';
@@ -65,9 +66,11 @@ const EMPTY_STATE_MESSAGE = {
 };
 
 const EmptyState = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('empty-state', stylesheet);
 
     return Card({
+        testId: getValue(props.testId),
         class: `tg-empty-state flex-column fx-align-flex-center ${getValue(props.class ?? '')}`,
         content: [
             span({ class: 'tg-empty-state--title mb-5' }, props.label),
@@ -78,7 +81,7 @@ const EmptyState = (/** @type Properties */ props) => {
                 getValue(props.button) ??
                 (
                     getValue(props.link)
-                    ? Link({
+                    ? Link({ emit, 
                         class: 'tg-empty-state--link',
                         right_icon: 'chevron_right',
                         ...(getValue(props.link)),

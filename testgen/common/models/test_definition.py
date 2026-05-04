@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from itertools import zip_longest
 from typing import ClassVar, Literal
 from uuid import UUID, uuid4
 
@@ -25,7 +26,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
 from testgen.common.models import Base, get_current_session
-from testgen.common.models.custom_types import NullIfEmptyString, UpdateTimestamp, YNString, ZeroIfEmptyInteger
+from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
@@ -34,8 +35,32 @@ TestScope = Literal["column", "referential", "table", "tablegroup", "custom"]
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 
 
+class ParamFieldsMixin:
+    """Parsed access to default_parm_columns/prompts/help metadata.
+
+    Mixed into both TestTypeSummary (dataclass) and TestType (ORM model).
+    """
+
+    @property
+    def param_columns(self) -> set[str]:
+        """Column names declared as editable parameters for this test type."""
+        return {column for column, _, _ in self.param_fields}
+
+    @property
+    def param_fields(self) -> list[tuple[str, str, str]]:
+        """Parsed parameter metadata as (column, prompt, help) tuples, preserving order."""
+        if not self.default_parm_columns:
+            return []
+        columns = [c.strip() for c in self.default_parm_columns.split(",")]
+        prompts = [p.strip() for p in self.default_parm_prompts.split(",")] if self.default_parm_prompts else []
+        helps = [h.strip() for h in self.default_parm_help.split("|")] if self.default_parm_help else []
+        # Pad prompts with column names (sensible fallback) and helps with ""
+        prompts.extend(columns[len(prompts):])
+        return list(zip_longest(columns, prompts, helps, fillvalue=""))
+
+
 @dataclass
-class TestTypeSummary(EntityMinimal):
+class TestTypeSummary(ParamFieldsMixin, EntityMinimal):
     test_name_short: str
     default_test_description: str
     measure_uom: str
@@ -46,6 +71,8 @@ class TestTypeSummary(EntityMinimal):
     default_parm_required: str
     default_severity: str
     test_scope: TestScope
+    dq_dimension: str
+    default_impact_dimension: str
     usage_notes: str
 
 
@@ -96,6 +123,12 @@ class TestDefinitionSummary(TestTypeSummary):
     export_to_observability: bool
     prediction: dict[str, dict[str, float]] | None
     flagged: bool
+    impact_dimension: str | None
+
+    @property
+    def display_name(self) -> str:
+        """Human-readable test type name, falling back to the internal code."""
+        return self.test_name_short or self.test_type
 
 
 @dataclass
@@ -124,7 +157,7 @@ class QueryString(TypeDecorator):
         return value or None
 
 
-class TestType(Entity):
+class TestType(ParamFieldsMixin, Entity):
     __tablename__ = "test_types"
 
     _get_by = "test_type"
@@ -151,6 +184,7 @@ class TestType(Entity):
     run_type: TestRunType = Column(String)
     test_scope: TestScope = Column(String)
     dq_dimension: str = Column(String)
+    impact_dimension: str = Column(String)
     health_dimension: str = Column(String)
     threshold_description: str = Column(String)
     usage_notes: str = Column(String)
@@ -159,12 +193,12 @@ class TestType(Entity):
     # Unmapped columns: generation_template, result_visualization, result_visualization_params
 
     _summary_columns = (
-        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
+        *[key for key in TestTypeSummary.__annotations__.keys() if key not in ("default_test_description", "default_impact_dimension")],
         test_description.label("default_test_description"),
+        impact_dimension.label("default_impact_dimension"),
     )
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_summary_where(cls, *clauses) -> Iterable[TestTypeSummary]:
         results = cls._select_columns_where(cls._summary_columns, *clauses)
         return [TestTypeSummary(**row) for row in results]
@@ -173,7 +207,9 @@ class TestType(Entity):
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), server_default=text("gen_random_uuid()"), primary_key=True)
+    # default=uuid4: Python-side ID for ORM inserts (enables batch flush without per-row round-trips).
+    # server_default: fallback for raw SQL inserts in test generation templates that omit the id column.
+    id: UUID = Column(postgresql.UUID(as_uuid=True), default=uuid4, server_default=text("gen_random_uuid()"), primary_key=True)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True))
     profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     test_type: str = Column(String)
@@ -217,16 +253,24 @@ class TestDefinition(Entity):
     lock_refresh: bool = Column(YNString, default="N", nullable=False)
     last_auto_gen_date: datetime = Column(postgresql.TIMESTAMP)
     profiling_as_of_date: datetime = Column(postgresql.TIMESTAMP)
-    last_manual_update: datetime = Column(UpdateTimestamp, nullable=False)
+    last_manual_update: datetime = Column(postgresql.TIMESTAMP)
     export_to_observability: bool = Column(YNString)
     prediction: dict[str, dict[str, float]] | None = Column(postgresql.JSONB)
     flagged: bool = Column(Boolean, default=False, nullable=False)
+    external_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
+    impact_dimension: str | None = Column(String, nullable=True)
 
-    _default_order_by = (asc(func.lower(schema_name)), asc(func.lower(table_name)), asc(func.lower(column_name)), asc(test_type))
+    _default_order_by = (
+        asc(func.lower(schema_name)),
+        asc(func.lower(table_name)),
+        asc(func.lower(column_name)),
+        asc(test_type),
+    )
     _summary_columns = (
         *TestDefinitionSummary.__annotations__.keys(),
-        *[key for key in TestTypeSummary.__annotations__.keys() if key != "default_test_description"],
+        *[key for key in TestTypeSummary.__annotations__.keys() if key not in ("default_test_description", "default_impact_dimension")],
         TestType.test_description.label("default_test_description"),
+        TestType.impact_dimension.label("default_impact_dimension"),
     )
     _minimal_columns = TestDefinitionMinimal.__annotations__.keys()
     _update_exclude_columns = (
@@ -242,6 +286,7 @@ class TestDefinition(Entity):
         last_auto_gen_date,
         profiling_as_of_date,
         prediction,
+        external_id,
     )
 
     @classmethod
@@ -256,6 +301,31 @@ class TestDefinition(Entity):
             join_target=TestType,
             join_clause=cls.test_type == TestType.test_type,
         )
+        return TestDefinitionSummary(**result) if result else None
+
+    @classmethod
+    def get_for_project(
+        cls, identifier: UUID, project_codes: list[str] | None = None,
+    ) -> TestDefinitionSummary | None:
+        """Fetch a test definition with project-level access check.
+
+        Returns None if the definition doesn't exist, belongs to a monitor suite, or the user lacks access.
+        """
+        from testgen.common.models.test_suite import TestSuite
+
+        select_columns = [
+            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
+            for col in cls._summary_columns
+        ]
+        query = (
+            select(*select_columns)
+            .join(TestType, cls.test_type == TestType.test_type)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(cls.id == identifier, TestSuite.is_monitor.isnot(True))
+        )
+        if project_codes is not None:
+            query = query.where(TestSuite.project_code.in_(project_codes))
+        result = get_current_session().execute(query).mappings().first()
         return TestDefinitionSummary(**result) if result else None
 
     @classmethod
@@ -285,6 +355,45 @@ class TestDefinition(Entity):
             order_by=order_by,
         )
         return [TestDefinitionMinimal(**row) for row in results]
+
+    @classmethod
+    def list_for_suite(
+        cls,
+        test_suite_id: UUID,
+        project_codes: list[str] | None = None,
+        table_name: str | None = None,
+        test_type: str | None = None,
+        test_active: bool | None = None,
+        page: int = 1,
+        limit: int = 50,
+    ) -> tuple[list[TestDefinitionSummary], int]:
+        """Paginated test definitions for a suite, with optional filters.
+
+        Monitor suites are always filtered out — callers requesting a monitor suite get an empty page.
+        Project-level access is enforced when ``project_codes`` is set.
+        """
+        from testgen.common.models.test_suite import TestSuite
+
+        select_columns = [
+            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
+            for col in cls._summary_columns
+        ]
+        query = (
+            select(*select_columns)
+            .join(TestType, cls.test_type == TestType.test_type)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(cls.test_suite_id == test_suite_id, TestSuite.is_monitor.isnot(True))
+        )
+        if project_codes is not None:
+            query = query.where(TestSuite.project_code.in_(project_codes))
+        if table_name:
+            query = query.where(cls.table_name == table_name)
+        if test_type:
+            query = query.where(cls.test_type == test_type)
+        if test_active is not None:
+            query = query.where(cls.test_active == test_active)
+        query = query.order_by(*cls._default_order_by)
+        return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
     _yn_columns: ClassVar = {"test_active", "lock_refresh"}
 
@@ -357,9 +466,10 @@ class TestDefinition(Entity):
         target_table_name: str | None = None,
         target_column_name: str | None = None,
     ) -> None:
-        modified_columns = [cls.table_groups_id, cls.profile_run_id, cls.test_suite_id, cls.last_auto_gen_date]
+        modified_columns = [cls.id, cls.table_groups_id, cls.profile_run_id, cls.test_suite_id, cls.last_auto_gen_date]
 
         select_columns = [
+            func.gen_random_uuid().label("id"),
             literal(target_table_group_id).label("table_groups_id"),
             case(
                 (cls.table_groups_id == target_table_group_id, cls.profile_run_id),
@@ -389,9 +499,39 @@ class TestDefinition(Entity):
         db_session.execute(query)
 
     @classmethod
-    def clear_cache(cls) -> bool:
-        super().clear_cache()
-        cls.select_minimal_where.clear()
+    def get_source_data_context(cls, test_definition_id: UUID, project_codes: list[str] | None = None) -> dict | None:
+        """Get the fields needed by the source data service for a given test definition."""
+        session = get_current_session()
+
+        sql = """
+            SELECT
+                d.table_groups_id,
+                tt.id AS test_type_id,
+                d.id AS test_definition_id,
+                d.test_type,
+                d.schema_name,
+                d.table_name,
+                d.column_name AS column_names,
+                dcc.column_type,
+                ts.project_code
+            FROM test_definitions d
+            INNER JOIN test_types tt ON d.test_type = tt.test_type
+            INNER JOIN test_suites ts ON d.test_suite_id = ts.id
+            LEFT JOIN data_column_chars dcc
+                ON d.table_groups_id = dcc.table_groups_id
+                AND d.schema_name = dcc.schema_name
+                AND d.table_name = dcc.table_name
+                AND d.column_name = dcc.column_name
+            WHERE d.id = :test_definition_id
+        """
+        params: dict = {"test_definition_id": str(test_definition_id)}
+
+        if project_codes is not None:
+            sql += " AND ts.project_code = ANY(:project_codes)"
+            params["project_codes"] = project_codes
+
+        result = session.execute(text(sql), params).first()
+        return dict(result._mapping) if result else None
 
     def save(self) -> None:
         if self.id:
@@ -429,9 +569,7 @@ class TestDefinitionNote(Base):
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:
         db_session = get_current_session()
-        db_session.execute(
-            update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now())
-        )
+        db_session.execute(update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now()))
 
     @classmethod
     def delete_note(cls, note_id: str | UUID) -> None:
@@ -456,9 +594,13 @@ class TestDefinitionNote(Base):
     @classmethod
     def get_notes(cls, test_definition_id: str | UUID) -> list[dict]:
         db_session = get_current_session()
-        results = db_session.execute(
-            select(cls).where(cls.test_definition_id == test_definition_id).order_by(cls.created_at.desc())
-        ).scalars().all()
+        results = (
+            db_session.execute(
+                select(cls).where(cls.test_definition_id == test_definition_id).order_by(cls.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
         return [
             {
                 "id": str(note.id),

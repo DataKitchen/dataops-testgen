@@ -55,8 +55,9 @@ CREATE TABLE projects (
       CONSTRAINT projects_project_code_pk
          PRIMARY KEY,
    project_name          VARCHAR(50),
-   observability_api_key TEXT,
-   observability_api_url TEXT DEFAULT ''
+   observability_api_key    TEXT,
+   observability_api_url    TEXT DEFAULT '',
+   use_dq_score_weights     BOOLEAN DEFAULT TRUE
 );
 
 CREATE TABLE connections (
@@ -154,7 +155,8 @@ CREATE TABLE profiling_runs (
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
    dq_score_profiling      FLOAT,
-   process_id              INTEGER
+   process_id              INTEGER,
+   job_execution_id        UUID
 );
 
 CREATE TABLE test_suites (
@@ -239,6 +241,8 @@ CREATE TABLE test_definitions (
    last_manual_update     TIMESTAMP DEFAULT NULL,
    export_to_observability VARCHAR(5),
    flagged                BOOLEAN DEFAULT FALSE NOT NULL,
+   external_id            UUID,
+   impact_dimension       VARCHAR(20),
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -348,7 +352,8 @@ CREATE TABLE profile_anomaly_types (
    suggested_action    VARCHAR(1000),
    dq_score_prevalence_formula TEXT,
    dq_score_risk_factor        TEXT,
-   dq_dimension        VARCHAR(50)
+   dq_dimension        VARCHAR(50),
+   impact_dimension    VARCHAR(20)
 );
 
 CREATE TABLE profile_anomaly_results (
@@ -367,7 +372,8 @@ CREATE TABLE profile_anomaly_results (
    anomaly_id      VARCHAR(10),
    detail          VARCHAR,
    disposition     VARCHAR(20), -- Confirmed, Dismissed, Inactive
-   dq_prevalence   FLOAT
+   dq_prevalence    FLOAT,
+   impact_dimension VARCHAR(20)
 );
 
 
@@ -431,7 +437,8 @@ CREATE TABLE data_table_chars (
    last_complete_profile_run_id UUID,
    last_profile_record_ct       BIGINT,
    dq_score_profiling    FLOAT,
-   dq_score_testing      FLOAT
+   dq_score_testing      FLOAT,
+   dq_score_weight       FLOAT DEFAULT 1.0
 );
 
 CREATE TABLE data_column_chars (
@@ -478,8 +485,69 @@ CREATE TABLE data_column_chars (
    valid_profile_issue_ct BIGINT DEFAULT 0,
    valid_test_issue_ct    BIGINT DEFAULT 0,
    dq_score_profiling     FLOAT,
-   dq_score_testing       FLOAT
+   dq_score_testing       FLOAT,
+   dq_score_weight        FLOAT DEFAULT 1.0,
+   dq_score_pii_weight    FLOAT DEFAULT 1.0
 );
+
+CREATE TABLE dq_score_weight_defaults (
+    id             UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    weight_scope   VARCHAR(10)  NOT NULL,
+    semantic_type  VARCHAR(50)  NOT NULL,
+    default_weight FLOAT        NOT NULL DEFAULT 1.0,
+    UNIQUE (weight_scope, semantic_type)
+);
+
+-- Table-level defaults (matched via ILIKE on functional_table_type suffix)
+INSERT INTO dq_score_weight_defaults (weight_scope, semantic_type, default_weight) VALUES
+    ('table', '%entity',      10.0),
+    ('table', '%domain',       5.0),
+    ('table', '%bridge',       5.0),
+    ('table', '%summary',      1.5),
+    ('table', '%transaction',  1.0);
+
+-- Column-level defaults (exact match on functional_data_type)
+INSERT INTO dq_score_weight_defaults (weight_scope, semantic_type, default_weight) VALUES
+    ('column', 'ID',                     3.0),
+    ('column', 'ID-SK',                  3.0),
+    ('column', 'ID-Unique',              3.0),
+    ('column', 'ID-Unique-SK',           3.0),
+    ('column', 'ID-FK',                  2.5),
+    ('column', 'ID-Secondary',           2.0),
+    ('column', 'ID-Group',               1.5),
+    ('column', 'Email',                  2.0),
+    ('column', 'Phone',                  2.0),
+    ('column', 'Person Full Name',       2.0),
+    ('column', 'Person Given Name',      1.5),
+    ('column', 'Person Last Name',       1.5),
+    ('column', 'Entity Name',            2.0),
+    ('column', 'Address',                1.5),
+    ('column', 'City',                   1.5),
+    ('column', 'State',                  1.5),
+    ('column', 'Zip',                    1.5),
+    ('column', 'Date Stamp',             1.5),
+    ('column', 'DateTime Stamp',         1.5),
+    ('column', 'Process Date Stamp',     1.0),
+    ('column', 'Process DateTime Stamp', 1.0),
+    ('column', 'Transactional Date',     1.5),
+    ('column', 'Measurement',            1.5),
+    ('column', 'Measurement Pct',        1.5),
+    ('column', 'Code',                   1.5),
+    ('column', 'Boolean',                1.0),
+    ('column', 'Category',               1.0),
+    ('column', 'Flag',                   0.75),
+    ('column', 'Attribute',              0.75),
+    ('column', 'Description',            0.5),
+    ('column', 'Constant',               0.5),
+    ('column', 'Sequence',               0.5);
+
+-- PII-level defaults (matched on LEFT(pii_flag, 1))
+-- A/B/C = auto-detected risk tiers; M = user-set 'MANUAL'
+INSERT INTO dq_score_weight_defaults (weight_scope, semantic_type, default_weight) VALUES
+    ('pii', 'A', 3.0),
+    ('pii', 'B', 2.0),
+    ('pii', 'C', 1.5),
+    ('pii', 'M', 3.0);
 
 CREATE TABLE test_types (
    id                            VARCHAR,
@@ -507,6 +575,7 @@ CREATE TABLE test_types (
    run_type                      VARCHAR(10),
    test_scope                    VARCHAR,
    dq_dimension                  VARCHAR(50),
+   impact_dimension              VARCHAR(20),
    health_dimension              VARCHAR(50),
    threshold_description         VARCHAR(200),
    result_visualization          VARCHAR(50) DEFAULT 'line_chart',
@@ -557,6 +626,7 @@ CREATE TABLE test_runs (
    dq_total_data_points    BIGINT,
    dq_score_test_run       FLOAT,
    process_id              INTEGER,
+   job_execution_id        UUID,
    CONSTRAINT test_runs_test_suites_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -590,6 +660,7 @@ CREATE TABLE test_results (
    dq_prevalence          FLOAT,
    dq_record_ct           BIGINT,
    observability_status   VARCHAR(10),
+   impact_dimension       VARCHAR(20),
    CONSTRAINT test_results_test_suites_project_code_test_suite_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -670,6 +741,48 @@ CREATE INDEX ix_pm_user_id ON project_memberships(user_id);
 CREATE INDEX ix_pm_project_code ON project_memberships(project_code);
 CREATE INDEX ix_pm_role ON project_memberships(role);
 
+CREATE TABLE oauth2_clients (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID REFERENCES auth_users(id) ON DELETE SET NULL,
+    client_id       VARCHAR(48) NOT NULL UNIQUE,
+    client_secret   VARCHAR(120),
+    client_id_issued_at     INTEGER NOT NULL DEFAULT 0,
+    client_secret_expires_at INTEGER NOT NULL DEFAULT 0,
+    client_metadata TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX idx_oauth2_clients_client_id ON oauth2_clients(client_id);
+
+CREATE TABLE oauth2_authorization_codes (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
+    code            VARCHAR(120) NOT NULL UNIQUE,
+    client_id       VARCHAR(48) NOT NULL,
+    redirect_uri    TEXT DEFAULT '',
+    response_type   TEXT DEFAULT '',
+    scope           TEXT DEFAULT '',
+    nonce           TEXT,
+    auth_time       INTEGER NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::INTEGER,
+    acr             TEXT,
+    amr             TEXT,
+    code_challenge  TEXT,
+    code_challenge_method VARCHAR(48)
+);
+
+CREATE TABLE oauth2_tokens (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id         UUID REFERENCES auth_users(id) ON DELETE CASCADE,
+    client_id       VARCHAR(48) NOT NULL,
+    token_type      VARCHAR(40),
+    access_token    VARCHAR(2048) NOT NULL UNIQUE,
+    refresh_token   VARCHAR(255),
+    scope           TEXT DEFAULT '',
+    issued_at       INTEGER NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::INTEGER,
+    access_token_revoked_at  INTEGER NOT NULL DEFAULT 0,
+    refresh_token_revoked_at INTEGER NOT NULL DEFAULT 0,
+    expires_in      INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_oauth2_tokens_refresh_token ON oauth2_tokens(refresh_token);
+
 CREATE TABLE tg_revision (
    component     VARCHAR(50) NOT NULL
       CONSTRAINT tg_revision_component_pk
@@ -727,6 +840,7 @@ CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
     table_name           TEXT                DEFAULT NULL,
     column_name          TEXT                DEFAULT NULL,
     dq_dimension         TEXT                DEFAULT NULL,
+    impact_dimension     TEXT                DEFAULT NULL,
     semantic_data_type   TEXT                DEFAULT NULL,
     table_groups_name    TEXT                DEFAULT NULL,
     data_location        TEXT                DEFAULT NULL,
@@ -803,6 +917,10 @@ CREATE UNIQUE INDEX uix_td_autogen_column
    WHERE last_auto_gen_date IS NOT NULL
       AND table_name IS NOT NULL
       AND column_name IS NOT NULL;
+
+CREATE UNIQUE INDEX uix_td_external_id
+   ON test_definitions (test_suite_id, external_id)
+   WHERE external_id IS NOT NULL;
 
 -- Index test_runs
 CREATE INDEX ix_trun_ts_fk
@@ -957,6 +1075,26 @@ CREATE TABLE job_schedules (
 );
 
 CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
+
+CREATE TABLE job_executions (
+    id              UUID            NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    job_key         VARCHAR(100)    NOT NULL,
+    args            JSONB           NOT NULL DEFAULT '[]'::jsonb,
+    kwargs          JSONB           NOT NULL DEFAULT '{}'::jsonb,
+    source          VARCHAR(20)     NOT NULL,
+    status          VARCHAR(20)     NOT NULL DEFAULT 'pending',
+    project_code    VARCHAR(30)     NOT NULL,
+    job_schedule_id UUID            REFERENCES job_schedules(id) ON DELETE SET NULL,
+    error_message   TEXT,
+    created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    claimed_at      TIMESTAMPTZ,
+    started_at      TIMESTAMPTZ,
+    completed_at    TIMESTAMPTZ
+);
+
+CREATE INDEX idx_job_executions_poll ON job_executions (status, created_at) WHERE status = 'pending';
+CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
+CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
 
 CREATE TABLE settings (
     key VARCHAR(50) NOT NULL PRIMARY KEY,

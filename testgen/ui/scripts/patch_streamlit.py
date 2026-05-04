@@ -21,9 +21,12 @@ STATIC_FILES = [
     "css/shared.css",
     "css/roboto-font-faces.css",
     "css/material-symbols-rounded.css",
+    "css/highlight-default-theme.min.css",
+    "css/highlight-dark-theme.min.css",
     "js/scripts.js",
     "js/sidebar.js",
     "js/van.min.js",
+    "js/highlight.min.js",
 ]
 
 
@@ -205,7 +208,7 @@ def _find_first_package_dir(project_path: Path) -> Path | None:
     to_replace = """    if not package_root:
         package_root = pyproject_path.parent"""
     new_value = """    if not package_root:
-        if _is_editable_package(dist):
+        if not (pyproject_path.parent / "__init__.py").exists():
             package_root = _find_first_package_dir(pyproject_path.parent)
 
     if not package_root:

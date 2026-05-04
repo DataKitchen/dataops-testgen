@@ -13,6 +13,7 @@ from testgen.utils.plugins import PluginHook
 _NOT_SET = object()
 
 _mcp_username: contextvars.ContextVar[str | None] = contextvars.ContextVar("mcp_username", default=None)
+_mcp_token: contextvars.ContextVar[str | None] = contextvars.ContextVar("mcp_token", default=None)
 _mcp_project_permissions: contextvars.ContextVar["ProjectPermissions | object"] = contextvars.ContextVar(
     "mcp_project_permissions", default=_NOT_SET
 )
@@ -22,6 +23,7 @@ _mcp_project_permissions: contextvars.ContextVar["ProjectPermissions | object"] 
 class ProjectPermissions:
     memberships: dict[str, str]  # {project_code: role}
     permission: str
+    username: str
 
     def codes_allowed_to(self, permission: str) -> list[str]:
         """Project codes where the user's role includes the given permission."""
@@ -37,12 +39,14 @@ class ProjectPermissions:
         """For filtering lists — no exception, just a bool."""
         return project_code in self.allowed_codes
 
-    def verify_access(self, project_code: str, not_found: str) -> None:
+    def verify_access(self, project_code: str, not_found: "str | MCPPermissionDenied") -> None:
         """Raise MCPPermissionDenied if user can't access this project.
 
         - Has access: passes.
         - Has membership but wrong role: raises with denial message.
-        - No membership: raises with not_found (hides project existence).
+        - No membership: raises ``not_found`` (hides project existence).
+          Pass either a free-form string or a fully-typed exception
+          instance (e.g. ``MCPResourceNotAccessible("Project", code)``).
         """
         if project_code in self.allowed_codes:
             return
@@ -50,6 +54,8 @@ class ProjectPermissions:
             raise MCPPermissionDenied(
                 "Your role on this project does not include the necessary permission for this operation."
             )
+        if isinstance(not_found, MCPPermissionDenied):
+            raise not_found
         raise MCPPermissionDenied(not_found)
 
 
@@ -58,18 +64,27 @@ def set_mcp_username(username: str | None) -> None:
     _mcp_username.set(username)
 
 
-def get_current_mcp_user() -> User:
-    """Get the authenticated User for the current MCP request.
+def set_mcp_token(token: str | None) -> None:
+    """Store the raw bearer token (called by JWTTokenVerifier)."""
+    _mcp_token.set(token)
 
+
+def get_authorized_mcp_user() -> User:
+    """Get the authenticated and authorized User for the current MCP request.
+
+    Checks user existence and token revocation status.
     Must be called within @with_database_session scope.
     """
+    from testgen.common.auth import authorize_token
+    from testgen.common.models import get_current_session
+
     username = _mcp_username.get()
     if not username:
         raise RuntimeError("No authenticated user in MCP context")
-    user = User.get(username)
-    if user is None:
-        raise ValueError(f"Authenticated user not found: {username}")
-    return user
+
+    token_str = _mcp_token.get()
+    session = get_current_session()
+    return authorize_token(token_str or "", username, session)
 
 
 def _compute_project_permissions(user: User, permission: str) -> ProjectPermissions:
@@ -78,6 +93,7 @@ def _compute_project_permissions(user: User, permission: str) -> ProjectPermissi
     return ProjectPermissions(
         memberships={m.project_code: m.role for m in memberships_list},
         permission=permission,
+        username=user.username,
     )
 
 
@@ -110,7 +126,7 @@ def mcp_permission(permission: str) -> Callable:
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
-            user = get_current_mcp_user()
+            user = get_authorized_mcp_user()
             perms = _compute_project_permissions(user, permission)
             if not perms.allowed_codes:
                 raise MCPPermissionDenied(

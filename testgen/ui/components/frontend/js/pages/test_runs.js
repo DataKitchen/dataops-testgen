@@ -10,23 +10,27 @@
  *
  * @typedef TestRun
  * @type {object}
- * @property {string} test_run_id
- * @property {number} test_starttime
- * @property {number} test_endtime
+ * @property {string} job_execution_id
+ * @property {string?} test_run_id
+ * @property {string} status
+ * @property {string} status_label
+ * @property {number} created_at
+ * @property {number?} started_at
+ * @property {number?} completed_at
+ * @property {string?} error_message
+ * @property {ProgressStep[]} progress
  * @property {string} table_groups_name
  * @property {string} test_suite
- * @property {'Running'|'Complete'|'Error'|'Cancelled'} status
- * @property {ProgressStep[]} progress
- * @property {string} log_message
- * @property {string} process_id
- * @property {number} test_ct
- * @property {number} passed_ct
- * @property {number} warning_ct
- * @property {number} failed_ct
- * @property {number} error_ct
- * @property {number} log_ct
- * @property {number} dismissed_ct
- * @property {string} dq_score_testing
+ * @property {string?} log_message
+ * @property {string?} process_id
+ * @property {number?} test_ct
+ * @property {number?} passed_ct
+ * @property {number?} warning_ct
+ * @property {number?} failed_ct
+ * @property {number?} error_ct
+ * @property {number?} log_ct
+ * @property {number?} dismissed_ct
+ * @property {string?} dq_score_testing
  *
  * @typedef Permissions
  * @type {object}
@@ -36,28 +40,47 @@
  * @type {object}
  * @property {ProjectSummary} project_summary
  * @property {TestRun[]} test_runs
+ * @property {number} total_count
+ * @property {number} page
+ * @property {number} page_size
  * @property {FilterOption[]} table_group_options
  * @property {FilterOption[]} test_suite_options
  * @property {Permissions} permissions
+ * @property {object?} run_tests_dialog
+ * @property {object?} schedule_dialog
+ * @property {object?} notifications_dialog
  */
-import van from '../van.min.js';
-import { withTooltip } from '../components/tooltip.js';
-import { SummaryBar } from '../components/summary_bar.js';
-import { Link } from '../components/link.js';
-import { Button } from '../components/button.js';
-import { Streamlit } from '../streamlit.js';
-import { emitEvent, getValue, loadStylesheet, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange } from '../utils.js';
-import { formatTimestamp, formatDuration, DISABLED_ACTION_TEXT } from '../display_utils.js';
-import { Checkbox } from '../components/checkbox.js';
-import { Select } from '../components/select.js';
-import { Paginator } from '../components/paginator.js';
-import { EMPTY_STATE_MESSAGE, EmptyState } from '../components/empty_state.js';
-import { Icon } from '../components/icon.js';
+import van from '/app/static/js/van.min.js';
+import { withTooltip } from '/app/static/js/components/tooltip.js';
+import { SummaryBar } from '/app/static/js/components/summary_bar.js';
+import { Link } from '/app/static/js/components/link.js';
+import { Button } from '/app/static/js/components/button.js';
+import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { formatTimestamp, formatDuration, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
+import { Checkbox } from '/app/static/js/components/checkbox.js';
+import { Select } from '/app/static/js/components/select.js';
+import { Paginator } from '/app/static/js/components/paginator.js';
+import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
+import { Icon } from '/app/static/js/components/icon.js';
+import { Dialog } from '/app/static/js/components/dialog.js';
+import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
+import { ScheduleList } from '/app/static/js/components/schedule_list.js';
+import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
+import { enterPage, exitPage } from '/app/static/js/page_lifecycle.js';
+import { setIntervalWithSignal } from '/app/static/js/timers.js';
 
-const { div, i, span, strong } = van.tags;
-const PAGE_SIZE = 100;
+const { b, div, i, span, strong } = van.tags;
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
-const REFRESH_INTERVAL = 15000 // 15 seconds
+const PAGE_KEY = 'testRuns';
+
+const STARTING_STATUSES = new Set(['pending', 'claimed']);
+const RUNNING_STATUSES = new Set(['running', 'cancel_requested']);
+const ACTIVE_STATUSES = new Set([...STARTING_STATUSES, ...RUNNING_STATUSES]);
+const CANCELABLE_STATUSES = new Set(['pending', 'claimed', 'running']);
+
+const REFRESH_STARTING = 6000;
+const REFRESH_RUNNING = 30000;
+const REFRESH_DEFAULT = 60000;
 
 const progressStatusIcons = {
     Pending: { color: 'grey', icon: 'more_horiz', size: 22 },
@@ -67,48 +90,59 @@ const progressStatusIcons = {
 };
 
 const TestRuns = (/** @type Properties */ props) => {
-    loadStylesheet('testRuns', stylesheet);
-    Streamlit.setFrameHeight(1);
-    window.testgen.isPage = true;
+    const { emit, signal } = props;
+    loadStylesheet(PAGE_KEY, stylesheet);
 
     const columns = ['5%', '28%', '17%', '40%', '10%'];
     const userCanEdit = getValue(props.permissions)?.can_edit ?? false;
 
-    const pageIndex = van.state(0);
-    const testRuns = van.derive(() => {
-        pageIndex.val = 0;
-        return getValue(props.test_runs);
-    });
+    const testRuns = van.derive(() => getValue(props.test_runs));
     let refreshIntervalId = null;
+    let runTestsNode = null;
+    const runTestsResult = van.state(null);
 
-    const paginatedRuns = van.derive(() => {
-        const paginated = testRuns.val.slice(PAGE_SIZE * pageIndex.val, PAGE_SIZE * (pageIndex.val + 1));
-        const hasActiveRuns = paginated.some(({ status }) => status === 'Running');
-        if (!refreshIntervalId && hasActiveRuns) {
-            refreshIntervalId = setInterval(() => emitEvent('RefreshData', {}), REFRESH_INTERVAL);
-        } else if (refreshIntervalId && !hasActiveRuns) {
-            clearInterval(refreshIntervalId);
+    let currentRefreshRate = null;
+    van.derive(() => {
+        const items = testRuns.val;
+        const hasStarting = items.some(({ status }) => STARTING_STATUSES.has(status));
+        const hasRunning = items.some(({ status }) => RUNNING_STATUSES.has(status));
+        const rate = hasStarting ? REFRESH_STARTING : hasRunning ? REFRESH_RUNNING : REFRESH_DEFAULT;
+        if (rate !== currentRefreshRate) {
+            if (refreshIntervalId) clearInterval(refreshIntervalId);
+            refreshIntervalId = setIntervalWithSignal(() => emit('RefreshData', {}), rate, signal);
+            currentRefreshRate = rate;
         }
-        return paginated;
     });
 
     const selectedRuns = {};
     const initializeSelectedStates = (items) => {
         for (const testRun of items) {
-            if (selectedRuns[testRun.test_run_id] == undefined) {
-                selectedRuns[testRun.test_run_id] = van.state(false);
+            if (selectedRuns[testRun.job_execution_id] == undefined) {
+                selectedRuns[testRun.job_execution_id] = van.state(false);
             }
         }
     };
     initializeSelectedStates(testRuns.val);
     van.derive(() => initializeSelectedStates(testRuns.val));
 
+    const runsToDelete = van.state([]);
+    const deleteConstraintChecked = van.state(false);
+
+    const closeDeleteDialog = () => {
+        runsToDelete.val = [];
+        deleteConstraintChecked.val = false;
+    };
+
+    const scheduleDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.schedule_dialog)?.open === true) scheduleDialogOpen.val = true; });
+
+    const notificationsDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.notifications_dialog)?.open === true) notificationsDialogOpen.val = true; });
+
     const wrapperId = 'test-runs-list-wrapper';
-    resizeFrameHeightToElement(wrapperId);
-    resizeFrameHeightOnDOMChange(wrapperId);
 
     return div(
-        { id: wrapperId, class: 'tg-test-runs' },
+        { id: wrapperId, 'data-testid': 'test-runs', class: 'tg-test-runs' },
         () => {
             const projectSummary = getValue(props.project_summary);
             return projectSummary.test_run_count > 0
@@ -119,7 +153,7 @@ const TestRuns = (/** @type Properties */ props) => {
                     div(
                         { class: 'table pb-0' },
                         () => {
-                            const selectedItems = testRuns.val.filter(i => selectedRuns[i.test_run_id]?.val ?? false);
+                            const selectedItems = testRuns.val.filter(i => selectedRuns[i.job_execution_id]?.val ?? false);
                             const someRunSelected = selectedItems.length > 0;
                             const tooltipText = !someRunSelected ? 'No runs selected' : undefined;
 
@@ -139,15 +173,18 @@ const TestRuns = (/** @type Properties */ props) => {
                                     tooltipPosition: 'bottom-left',
                                     disabled: !someRunSelected,
                                     width: 'auto',
-                                    onclick: () => emitEvent('RunsDeleted', { payload: selectedItems.map(i => i.test_run_id) }),
+                                    onclick: () => {
+                                        runsToDelete.val = [...selectedItems];
+                                    },
                                 }),
                             );
                         },
+
                         div(
                             { class: 'table-header flex-row' },
                             () => {
                                 const items = testRuns.val;
-                                const selectedItems = items.filter(i => selectedRuns[i.test_run_id]?.val ?? false);
+                                const selectedItems = items.filter(i => selectedRuns[i.job_execution_id]?.val ?? false);
                                 const allSelected = selectedItems.length === items.length;
                                 const partiallySelected = selectedItems.length > 0 && selectedItems.length < items.length;
 
@@ -161,7 +198,7 @@ const TestRuns = (/** @type Properties */ props) => {
                                         ? Checkbox({
                                             checked: allSelected,
                                             indeterminate: partiallySelected,
-                                            onChange: (checked) => items.forEach(item => selectedRuns[item.test_run_id].val = checked),
+                                            onChange: (checked) => items.forEach(item => selectedRuns[item.job_execution_id].val = checked),
                                             testId: 'select-all-test-run',
                                         })
                                         : '',
@@ -185,28 +222,121 @@ const TestRuns = (/** @type Properties */ props) => {
                             ),
                         ),
                         div(
-                            paginatedRuns.val.map(item => TestRunItem(item, columns, selectedRuns[item.test_run_id], userCanEdit, projectSummary.project_code)),
+                            testRuns.val.map(item => TestRunItem(item, columns, selectedRuns[item.job_execution_id], userCanEdit, projectSummary.project_code, emit)),
                         ),
                     ),
-                    Paginator({
-                        pageIndex,
-                        count: testRuns.val.length,
-                        pageSize: PAGE_SIZE,
-                        onChange: (newIndex) => {
-                            if (newIndex !== pageIndex.val) {
-                                pageIndex.val = newIndex;
-                                SCROLL_CONTAINER.scrollTop = 0;
-                            }
-                        },
-                    }),
+                    () => {
+                        const totalCount = getValue(props.total_count) ?? 0;
+                        const pageSize = getValue(props.page_size) ?? 100;
+                        const currentPage = (getValue(props.page) ?? 1) - 1;
+                        return Paginator({
+                            pageIndex: van.state(currentPage),
+                            count: totalCount,
+                            pageSize,
+                            onChange: (newIndex) => {
+                                if (newIndex !== currentPage) {
+                                    emit('PageChanged', { payload: newIndex + 1 });
+                                    SCROLL_CONTAINER.scrollTop = 0;
+                                }
+                            },
+                        });
+                    },
                 )
                 : div(
                     { class: 'pt-7 text-secondary', style: 'text-align: center;' },
                     'No test runs found matching filters',
                 ),
             )
-            : ConditionalEmptyState(projectSummary, userCanEdit);
-        }
+            : ConditionalEmptyState(projectSummary, userCanEdit, emit);
+        },
+        Dialog(
+            { title: 'Delete Test Runs', open: van.derive(() => runsToDelete.val.length > 0), onClose: closeDeleteDialog },
+            div(
+                { class: 'flex-column fx-gap-4' },
+                () => {
+                    const runs = runsToDelete.val;
+                    const hasRunning = runs.some(r => ACTIVE_STATUSES.has(r.status));
+                    return div(
+                        { class: 'flex-column fx-gap-3' },
+                        div('Are you sure you want to delete ', b(runs.length), ` test run${runs.length !== 1 ? 's' : ''}?`),
+                        hasRunning
+                            ? div(
+                                { class: 'flex-column fx-gap-2' },
+                                div({ style: 'color: var(--orange);' }, 'Any running processes will be canceled.'),
+                                Checkbox({
+                                    label: runs.length === 1
+                                        ? 'Yes, cancel and delete the test run'
+                                        : 'Yes, cancel and delete the test runs',
+                                    checked: deleteConstraintChecked,
+                                    onChange: (checked) => { deleteConstraintChecked.val = checked; },
+                                }),
+                            )
+                            : null,
+                    );
+                },
+                div(
+                    { class: 'flex-row fx-justify-flex-end' },
+                    () => {
+                        const isDisabled = runsToDelete.val.some(r => ACTIVE_STATUSES.has(r.status)) && !deleteConstraintChecked.val;
+                        return Button({
+                            label: 'Delete',
+                            color: isDisabled ? 'basic' : 'warn',
+                            type: isDisabled ? 'stroked' : 'flat',
+                            width: 'auto',
+                            style: 'margin-left: auto;',
+                            disabled: isDisabled,
+                            onclick: () => {
+                                emit('RunsDeleted', { payload: runsToDelete.val.map(r => r.job_execution_id) });
+                                closeDeleteDialog();
+                            },
+                        });
+                    },
+                ),
+            ),
+        ),
+        () => {
+            const info = getValue(props.run_tests_dialog);
+            if (!info) { runTestsNode = null; runTestsResult.val = null; return div(); }
+            runTestsResult.val = info.result ?? null;
+            return (runTestsNode ??= RunTestsDialog({ emit,
+                dialog: { title: info.title ?? 'Run Tests', open: true },
+                project_code: info.project_code,
+                test_suites: info.test_suites ?? [],
+                default_test_suite_id: info.default_test_suite_id,
+                result: runTestsResult,
+                onClose: () => emit('RunTestsDialogClosed', {}),
+            }));
+        },
+        ScheduleList({ emit,
+            dialog: van.derive(() => ({
+                title: getValue(props.schedule_dialog)?.title ?? 'Schedules',
+                open: scheduleDialogOpen,
+            })),
+            items: van.derive(() => getValue(props.schedule_dialog)?.items ?? []),
+            permissions: van.derive(() => getValue(props.schedule_dialog)?.permissions ?? { can_edit: false }),
+            arg_label: van.derive(() => getValue(props.schedule_dialog)?.arg_label ?? ''),
+            arg_values: van.derive(() => getValue(props.schedule_dialog)?.arg_values ?? []),
+            sample: van.derive(() => getValue(props.schedule_dialog)?.sample),
+            results: van.derive(() => getValue(props.schedule_dialog)?.results),
+            onClose: () => emit('ScheduleDialogClosed', {}),
+        }),
+        NotificationSettings({ emit,
+            dialog: van.derive(() => ({
+                title: getValue(props.notifications_dialog)?.title ?? 'Notifications',
+                open: notificationsDialogOpen,
+            })),
+            smtp_configured: van.derive(() => getValue(props.notifications_dialog)?.smtp_configured ?? false),
+            event: van.derive(() => getValue(props.notifications_dialog)?.event),
+            items: van.derive(() => getValue(props.notifications_dialog)?.items ?? []),
+            permissions: van.derive(() => getValue(props.notifications_dialog)?.permissions ?? { can_edit: false }),
+            scope_label: van.derive(() => getValue(props.notifications_dialog)?.scope_label),
+            scope_options: van.derive(() => getValue(props.notifications_dialog)?.scope_options ?? []),
+            trigger_options: van.derive(() => getValue(props.notifications_dialog)?.trigger_options ?? []),
+            cde_enabled: van.derive(() => getValue(props.notifications_dialog)?.cde_enabled ?? false),
+            total_enabled: van.derive(() => getValue(props.notifications_dialog)?.total_enabled ?? false),
+            result: van.derive(() => getValue(props.notifications_dialog)?.result),
+            onClose: () => emit('NotificationsDialogClosed', {}),
+        }),
     );
 };
 
@@ -214,6 +344,7 @@ const Toolbar = (
     /** @type Properties */ props,
     /** @type boolean */ userCanEdit,
 ) => {
+    const emit = props.emit;
     return div(
         { class: 'flex-row fx-align-flex-end fx-justify-space-between mb-4 fx-gap-4 fx-flex-wrap' },
         div(
@@ -225,7 +356,7 @@ const Toolbar = (
                 allowNull: true,
                 style: 'font-size: 14px;',
                 testId: 'table-group-filter',
-                onChange: (value) => emitEvent('FilterApplied', { payload: { table_group_id: value } }),
+                onChange: (value) => emit('FilterApplied', { payload: { table_group_id: value } }),
             }),
             () => Select({
                 label: 'Test Suite',
@@ -234,7 +365,7 @@ const Toolbar = (
                 allowNull: true,
                 style: 'font-size: 14px;',
                 testId: 'test-suite-filter',
-                onChange: (value) => emitEvent('FilterApplied', { payload: { test_suite_id: value } }),
+                onChange: (value) => emit('FilterApplied', { payload: { test_suite_id: value } }),
             }),
         ),
         div(
@@ -247,7 +378,7 @@ const Toolbar = (
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RunNotificationsClicked', {}),
+                onclick: () => emit('RunNotificationsClicked', {}),
             }),
             Button({
                 icon: 'today',
@@ -257,7 +388,7 @@ const Toolbar = (
                 tooltipPosition: 'bottom',
                 width: 'fit-content',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RunSchedulesClicked', {}),
+                onclick: () => emit('RunSchedulesClicked', {}),
             }),
             userCanEdit
                 ? Button({
@@ -266,7 +397,7 @@ const Toolbar = (
                     label: 'Run Tests',
                     width: 'fit-content',
                     style: 'background: var(--button-generic-background-color);',
-                    onclick: () => emitEvent('RunTestsClicked', {}),
+                    onclick: () => emit('RunTestsClicked', {}),
                 })
                 : '',
             Button({
@@ -275,7 +406,7 @@ const Toolbar = (
                 tooltip: 'Refresh test runs list',
                 tooltipPosition: 'left',
                 style: 'background: var(--button-generic-background-color);',
-                onclick: () => emitEvent('RefreshData', {}),
+                onclick: () => emit('RefreshData', {}),
                 testId: 'test-runs-refresh',
             }),
         ),
@@ -288,8 +419,11 @@ const TestRunItem = (
     /** @type boolean */ selected,
     /** @type boolean */ userCanEdit,
     /** @type string */ projectCode,
+    emit,
 ) => {
-    const runningStep = item.progress?.find((item) => item.status === 'Running');
+    const hasResults = !!item.test_ct;
+    const runningStep = item.progress?.find((step) => step.status === 'Running');
+    const displayTime = item.created_at;
 
     return div(
         { class: 'table-row flex-row' },
@@ -305,15 +439,19 @@ const TestRunItem = (
             : '',
         div(
             { style: `flex: ${columns[1]}` },
-            Link({
-                label: formatTimestamp(item.test_starttime),
-                href: 'test-runs:results',
-                params: { 'run_id': item.test_run_id, 'project_code': projectCode },
-                underline: true,
-            }),
+            hasResults
+                ? Link({ emit,
+                    label: formatTimestamp(displayTime),
+                    href: 'test-runs:results',
+                    params: { 'run_id': item.job_execution_id, 'project_code': projectCode },
+                    underline: true,
+                })
+                : span(formatTimestamp(displayTime)),
             div(
                 { class: 'text-caption mt-1' },
-                `${item.table_groups_name} > ${item.test_suite}`,
+                item.table_groups_name && item.test_suite
+                    ? `${item.table_groups_name} > ${item.test_suite}`
+                    : item.test_suite || '--',
             ),
         ),
         div(
@@ -321,21 +459,23 @@ const TestRunItem = (
             div(
                 { class: 'flex-row' },
                 TestRunStatus(item),
-                item.status === 'Running' && item.process_id && userCanEdit ? Button({
+                CANCELABLE_STATUSES.has(item.status) && userCanEdit ? Button({
                     type: 'stroked',
                     label: 'Cancel',
                     style: 'width: 64px; height: 28px; color: var(--purple); margin-left: 12px;',
-                    onclick: () => emitEvent('RunCanceled', { payload: item }),
+                    onclick: () => {
+                        emit('RunCanceled', { payload: { job_execution_id: item.job_execution_id, test_run_id: item.test_run_id } });
+                    },
                 }) : null,
             ),
-            item.test_endtime
+            item.completed_at && item.started_at
                 ? div(
                     { class: 'text-caption mt-1' },
-                    formatDuration(item.test_starttime, item.test_endtime),
+                    formatDuration(item.started_at, item.completed_at),
                 )
                 : div(
                     { class: 'text-caption mt-1' },
-                    item.status === 'Running' && runningStep
+                    item.status === 'running' && runningStep
                         ? [
                             div(
                                 runningStep.label,
@@ -374,30 +514,34 @@ const TestRunItem = (
 };
 
 const TestRunStatus = (/** @type TestRun */ item) => {
-    const attributeMap = {
-        Running: { label: 'Running', color: 'blue' },
-        Complete: { label: 'Completed', color: '' },
-        Error: { label: 'Error', color: 'red' },
-        Cancelled: { label: 'Canceled', color: 'purple' },
+    const statusColorMap = {
+        pending: 'grey',
+        claimed: 'grey',
+        running: 'blue',
+        completed: '',
+        error: 'red',
+        canceled: 'purple',
+        cancel_requested: 'grey',
     };
-    const attributes = attributeMap[item.status] || { label: 'Unknown', color: 'grey' };
+    const color = statusColorMap[item.status] ?? 'grey';
     const hasProgressError = item.progress?.some(({error}) => !!error);
+    const errorMessage = item.error_message || item.log_message;
     return span(
         {
             class: 'flex-row',
-            style: `color: var(--${attributes.color});`,
+            style: `color: var(--${color});`,
         },
-        attributes.label,
-        item.status === 'Complete' && hasProgressError
+        item.status_label,
+        item.status === 'completed' && hasProgressError
             ? withTooltip(
                 Icon({ style: 'font-size: 18px; margin-left: 4px; vertical-align: middle; color: var(--orange);' }, 'warning' ),
                 { text: ProgressTooltip(item) },
             )
             : null,
-        item.status === 'Error' && item.log_message
+        item.status === 'error' && errorMessage
             ? withTooltip(
                 Icon({ style: 'font-size: 18px; margin-left: 4px;' }, 'info'),
-                { text: item.log_message, width: 250, style: 'word-break: break-word;' },
+                { text: errorMessage, width: 250, style: 'word-break: break-word;' },
             )
             : null,
     );
@@ -427,6 +571,7 @@ const ProgressTooltip = (/** @type TestRun */ item) => {
 const ConditionalEmptyState = (
     /** @type ProjectSummary */ projectSummary,
     /** @type boolean */ userCanEdit,
+    emit,
 ) => {
     let args = {
         message: EMPTY_STATE_MESSAGE.testExecution,
@@ -440,7 +585,7 @@ const ConditionalEmptyState = (
             disabled: !userCanEdit,
             tooltip: userCanEdit ? null : DISABLED_ACTION_TEXT,
             tooltipPosition: 'bottom',
-            onclick: () => emitEvent('RunTestsClicked', {}),
+            onclick: () => emit('RunTestsClicked', {}),
         }),
     };
 
@@ -473,7 +618,7 @@ const ConditionalEmptyState = (
         };
     }
 
-    return EmptyState({
+    return EmptyState({ emit,
         icon: 'labs',
         label: 'No test runs yet',
         ...args,
@@ -488,3 +633,30 @@ stylesheet.replace(`
 `);
 
 export { TestRuns };
+
+export default (component) => {
+    const { data, setStateValue, setTriggerValue, parentElement } = component;
+
+    let componentState = parentElement.state;
+    if (componentState === undefined) {
+        componentState = {};
+        for (const [key, value] of Object.entries(data)) {
+            componentState[key] = van.state(value);
+        }
+        parentElement.state = componentState;
+        componentState.emit = createEmitter(setTriggerValue);
+        componentState.signal = enterPage(PAGE_KEY);
+        van.add(parentElement, TestRuns(componentState));
+    } else {
+        for (const [key, value] of Object.entries(data)) {
+            if (!isEqual(componentState[key].val, value)) {
+                componentState[key].val = value;
+            }
+        }
+    }
+
+    return () => {
+        exitPage(PAGE_KEY);
+        parentElement.state = null;
+    };
+};

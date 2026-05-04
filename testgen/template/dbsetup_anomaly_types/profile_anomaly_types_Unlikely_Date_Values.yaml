@@ -19,6 +19,7 @@ profile_anomaly_types:
     (COALESCE(p.before_100yr_date_ct,0)+COALESCE(p.distant_future_date_ct, 0))::FLOAT/NULLIF(p.record_ct, 0)
   dq_score_risk_factor: '0.66'
   dq_dimension: Accuracy
+  impact_dimension: Regularity
   target_data_lookups:
   - id: '1356'
     test_id: '1018'

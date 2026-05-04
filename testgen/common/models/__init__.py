@@ -69,6 +69,7 @@ def database_session():
 def with_database_session(func):
     """Decorator form of :func:`database_session`."""
 
+
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         with database_session():

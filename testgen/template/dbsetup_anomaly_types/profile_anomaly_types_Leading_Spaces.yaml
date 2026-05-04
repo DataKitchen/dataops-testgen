@@ -16,6 +16,7 @@ profile_anomaly_types:
     p.lead_space_ct::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
+  impact_dimension: Usability
   target_data_lookups:
   - id: '1347'
     test_id: '1009'

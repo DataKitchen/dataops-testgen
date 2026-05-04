@@ -1,11 +1,14 @@
-from uuid import UUID
-
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
+from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
-from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.tools.common import DocGroup, resolve_table_group, validate_limit, validate_page
+from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.DISCOVER
 
 
 @with_database_session
@@ -20,6 +23,7 @@ def get_data_inventory() -> str:
     from testgen.mcp.services.inventory_service import get_inventory
 
     perms = get_project_permissions()
+    MixpanelService().send_event("mcp-get-data-inventory", username=perms.username)
     return get_inventory(
         project_codes=perms.allowed_codes,
         view_project_codes=perms.codes_allowed_to("view"),
@@ -39,11 +43,12 @@ def list_projects() -> str:
     if not projects:
         return "No projects found."
 
-    lines = ["# Projects\n"]
+    doc = MdDoc()
+    doc.heading(1, "Projects")
     for project in projects:
-        lines.append(f"- **{project.project_name}** (`{project.project_code}`)")
+        doc.field(project.project_name, project.project_code, code=True)
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -65,31 +70,37 @@ def list_test_suites(project_code: str) -> str:
     if not summaries:
         return f"No test suites found for project `{project_code}`."
 
-    lines = [f"# Test Suites for `{project_code}`\n"]
+    # Batch-lookup job_execution_ids for latest runs
+    run_ids = [s.latest_run_id for s in summaries if s.latest_run_id]
+    job_exec_map = TestRun.get_job_execution_ids(run_ids) if run_ids else {}
+
+    doc = MdDoc()
+    doc.heading(1, f"Test Suites for `{project_code}`")
     for s in summaries:
-        lines.append(f"## {s.test_suite} (id: `{s.id}`)")
-        lines.append(f"- Connection: {s.connection_name}")
-        lines.append(f"- Table Group: {s.table_groups_name}")
+        doc.heading(2, f"{s.test_suite} (id: `{s.id}`)")
+        doc.field("Connection", s.connection_name)
+        doc.field("Table Group", s.table_groups_name)
         if s.test_suite_description:
-            lines.append(f"- Description: {s.test_suite_description}")
-        lines.append(f"- Test definitions: {s.test_ct or 0}")
+            doc.field("Description", s.test_suite_description)
+        doc.field("Test definitions", s.test_ct or 0)
 
         if s.latest_run_id:
-            lines.append(f"- Latest run: `{s.latest_run_id}` ({s.latest_run_start})")
-            lines.append(
-                f"  - {s.last_run_test_ct or 0} tests: "
+            run_id = job_exec_map.get(s.latest_run_id) or s.latest_run_id
+            doc.field("Latest run", f"`{run_id}` ({s.latest_run_start})")
+            results_summary = (
+                f"{s.last_run_test_ct or 0} tests: "
                 f"{s.last_run_passed_ct or 0} passed, "
                 f"{s.last_run_failed_ct or 0} failed, "
                 f"{s.last_run_warning_ct or 0} warnings, "
                 f"{s.last_run_error_ct or 0} errors"
             )
+            doc.field("Results", results_summary)
             if s.last_run_dismissed_ct:
-                lines.append(f"  - {s.last_run_dismissed_ct} dismissed")
+                doc.field("Dismissed", s.last_run_dismissed_ct)
         else:
-            lines.append("- _No completed runs._")
-        lines.append("")
+            doc.text("_No completed runs._")
 
-    return "\n".join(lines)
+    return doc.render()
 
 
 @with_database_session
@@ -99,34 +110,31 @@ def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
 
     Args:
         table_group_id: The table group UUID.
-        limit: Maximum number of tables per page (default 200).
+        limit: Maximum number of tables per page (default 200, max 500).
         page: Page number, starting from 1 (default 1).
     """
-    try:
-        group_uuid = UUID(table_group_id)
-    except (ValueError, AttributeError) as err:
-        raise MCPUserError(f"Invalid table_group_id: `{table_group_id}` is not a valid UUID.") from err
+    validate_page(page)
+    validate_limit(limit, 500)
 
-    perms = get_project_permissions()
-    project_codes = perms.allowed_codes
+    tg = resolve_table_group(table_group_id)
+    project_codes = [tg.project_code]
 
     offset = (page - 1) * limit
-    table_names = DataTable.select_table_names(group_uuid, limit=limit, offset=offset, project_codes=project_codes)
-    total = DataTable.count_tables(group_uuid, project_codes=project_codes)
+    table_names = DataTable.select_table_names(tg.id, limit=limit, offset=offset, project_codes=project_codes)
+    total = DataTable.count_tables(tg.id, project_codes=project_codes)
 
     if not table_names:
         if page > 1:
             return f"No tables on page {page} (total: {total})."
         return f"No tables found for table group `{table_group_id}`."
 
-    lines = [f"# Tables in Table Group `{table_group_id}`\n"]
-    lines.append(f"Total tables: {total}. Showing {len(table_names)} (page {page}).\n")
-
-    for name in table_names:
-        lines.append(f"- `{name}`")
+    doc = MdDoc()
+    doc.heading(1, f"Tables in Table Group `{table_group_id}`")
+    doc.text(f"Total tables: {total}. Showing {len(table_names)} (page {page}).")
+    doc.bullets([f"`{name}`" for name in table_names])
 
     total_pages = (total + limit - 1) // limit
     if page < total_pages:
-        lines.append(f"\n_Page {page} of {total_pages}. Use `page={page + 1}` for more._")
+        doc.text(f"_Page {page} of {total_pages}. Use `page={page + 1}` for more._")
 
-    return "\n".join(lines)
+    return doc.render()

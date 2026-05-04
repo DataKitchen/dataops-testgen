@@ -1,4 +1,5 @@
 from collections.abc import Iterable
+
 import pandas
 from pandas.core.dtypes.common import is_numeric_dtype
 from reportlab.lib import colors, enums

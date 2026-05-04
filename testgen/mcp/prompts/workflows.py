@@ -30,14 +30,16 @@ Please investigate test failures and identify root causes:{suite_filter}
 
 1. Call `get_data_inventory()` to understand the project structure.
 2. Call `get_recent_test_runs(...)` to find the latest run per suite{f" for suite `{test_suite}`" if test_suite else ""}.
-3. Call `get_failure_summary(test_run_id='...')` to see failures grouped by test type.
+3. Call `get_failure_summary(job_execution_id='...')` to see failures grouped by test type.
 4. For each failure category, call `get_test_type(test_type='...')` to understand what the test checks.
-5. Call `get_test_results(test_run_id='...', status='Failed')` to see individual failure details.
-6. Analyze the patterns:
+5. Call `list_test_results(test_suite_id='...', status='Failed')` to drill into the specific failing tests in the latest run.
+6. For key failures, call `get_source_data(test_definition_id='...')` to see the actual rows violating the test criteria.
+   This shows current data from the connected database — rows may have been fixed since the test ran.
+7. Analyze the patterns:
    - Are failures concentrated in specific tables or columns?
    - Do certain test types fail consistently?
    - What do the measured values vs thresholds tell us about the root cause?
-7. Provide a root cause analysis and recommended remediation steps.
+8. Provide a root cause analysis and recommended remediation steps.
 """
 
 
@@ -52,13 +54,26 @@ Please assess the data quality health of table `{table_name}`:
 
 1. Call `get_data_inventory()` to discover all table groups.
 2. For each table group, call `list_tables(table_group_id='...')` to check if it contains `{table_name}`.
-3. For each relevant test suite, call `get_recent_test_runs(...)` to find the latest run.
-4. Call `get_test_results(test_run_id='...', table_name='{table_name}')` to get all results for this table.
-5. Summarize the table's health:
+3. For each relevant test suite, call `list_test_results(test_suite_id='...', table_name='{table_name}')` to see results from the latest run for this table.
+4. Summarize the table's health:
    - Which tests pass and which fail?
    - What data quality dimensions are affected?
    - Are there patterns in the failures (e.g., specific columns)?
-6. Provide recommendations for improving data quality for this table.
+5. Provide recommendations for improving data quality for this table.
+"""
+
+
+def profiling_overview() -> str:
+    """Explore the profiling results for a table group — understand data shapes, types, null rates, and hygiene issues."""
+    return """\
+Please perform a profiling exploration:
+
+1. Call `get_data_inventory()` to see projects and table groups, with profiling status per group.
+2. Pick a table group that has been profiled.
+3. Call `list_profiling_summaries(table_group_id='...')` for the quality health overview (scores, hygiene issue counts, last profiled).
+4. Call `get_table(table_group_id='...', table_name='...')` for structural metadata, the column list, and table-level highlights.
+5. Call `list_column_profiles(table_group_id='...', table_name='...')` to scan all columns — datatype, null rates, distinct counts, quality scores, and hygiene issue counts per column.
+6. Summarize findings: which tables/columns have quality concerns, and which trends are worth investigating further.
 """
 
 
@@ -75,8 +90,8 @@ Please compare the two most recent test runs{suite_filter} to identify regressio
 
 1. Call `get_data_inventory()` to understand the project structure.
 2. Call `list_test_suites(project_code='...')` to find suites{suite_filter} and their latest runs.
-3. For the most recent completed run, call `get_test_results(test_run_id='...')` to get all results.
-4. For the previous run, call `get_test_results(test_run_id='...')` to get all results.
+3. For the most recent completed run, call `list_test_results(test_suite_id='...')` to get all results.
+4. For the previous run, call `list_test_results(job_execution_id='...')` to get all results.
 5. Compare the two runs:
    - **Regressions:** Tests that passed before but now fail.
    - **Improvements:** Tests that failed before but now pass.

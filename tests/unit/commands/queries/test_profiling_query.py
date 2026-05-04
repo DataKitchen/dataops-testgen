@@ -1,8 +1,80 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 
-from testgen.commands.queries.profiling_query import calculate_sampling_params
+from testgen.commands.queries.profiling_query import ProfilingSQL, calculate_sampling_params
 
 pytestmark = pytest.mark.unit
+
+
+# --- ProfilingSQL.update_profiling_results ---
+
+
+def _make_profiling_sql(profile_flag_pii=False, profile_flag_cdes=False):
+    connection = MagicMock()
+    table_group = MagicMock()
+    table_group.profile_flag_pii = profile_flag_pii
+    table_group.profile_flag_cdes = profile_flag_cdes
+    profiling_run = MagicMock()
+    return ProfilingSQL(connection, table_group, profiling_run)
+
+
+@pytest.mark.parametrize("profile_flag_pii,profile_flag_cdes", [
+    (False, False),
+    (True, False),
+    (False, True),
+    (True, True),
+])
+def test_update_profiling_results_weight_query_is_always_last(profile_flag_pii, profile_flag_cdes):
+    sql = _make_profiling_sql(profile_flag_pii=profile_flag_pii, profile_flag_cdes=profile_flag_cdes)
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        queries = sql.update_profiling_results()
+
+    templates = [q[0] for q in queries]
+    assert templates[-1] == "dq_score_weight_update.sql"
+
+
+def test_update_profiling_results_includes_pii_queries_when_flag_set():
+    sql = _make_profiling_sql(profile_flag_pii=True)
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        queries = sql.update_profiling_results()
+
+    templates = [q[0] for q in queries]
+    assert "pii_flag.sql" in templates
+    assert "pii_flag_update.sql" in templates
+
+
+def test_update_profiling_results_excludes_pii_queries_when_flag_unset():
+    sql = _make_profiling_sql(profile_flag_pii=False)
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        queries = sql.update_profiling_results()
+
+    templates = [q[0] for q in queries]
+    assert "pii_flag.sql" not in templates
+    assert "pii_flag_update.sql" not in templates
+
+
+def test_update_profiling_results_includes_cde_query_when_flag_set():
+    sql = _make_profiling_sql(profile_flag_cdes=True)
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        queries = sql.update_profiling_results()
+
+    templates = [q[0] for q in queries]
+    assert "cde_flagger_query.sql" in templates
+
+
+def test_update_profiling_results_excludes_cde_query_when_flag_unset():
+    sql = _make_profiling_sql(profile_flag_cdes=False)
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        queries = sql.update_profiling_results()
+
+    templates = [q[0] for q in queries]
+    assert "cde_flagger_query.sql" not in templates
 
 
 # --- calculate_sampling_params ---

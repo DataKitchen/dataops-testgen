@@ -9,9 +9,12 @@ from testgen.mcp.permissions import ProjectPermissions
 
 def _make_run_summary(**overrides):
     defaults = {
-        "test_run_id": uuid4(), "test_suite": "Quality Suite", "project_name": "Demo",
-        "table_groups_name": "core_tables", "status": "Complete",
-        "test_starttime": "2024-01-15T10:00:00", "test_endtime": "2024-01-15T10:05:00",
+        "test_run_id": uuid4(), "job_execution_id": uuid4(),
+        "test_suite": "Quality Suite", "project_name": "Demo",
+        "table_groups_name": "core_tables", "status": "completed",
+        "status_label": "Completed",
+        "created_at": "2024-01-15T10:00:00",
+        "started_at": "2024-01-15T10:00:00", "completed_at": "2024-01-15T10:05:00",
         "test_ct": 50, "passed_ct": 45, "failed_ct": 3, "warning_ct": 2, "error_ct": 0,
         "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": 92.5,
     }
@@ -24,7 +27,7 @@ def _make_run_summary(**overrides):
 def test_get_recent_test_runs_default_limit(mock_suite, mock_run, db_session_mock):
     """Default limit=1 returns one run per suite."""
     runs = [_make_run_summary(test_run_id=uuid4()) for _ in range(7)]
-    mock_run.select_summary.return_value = runs
+    mock_run.select_summary.return_value = (runs, len(runs))
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
@@ -34,7 +37,7 @@ def test_get_recent_test_runs_default_limit(mock_suite, mock_run, db_session_moc
     assert "1 run(s)" in result
     assert "Quality Suite" in result
     assert "92.5" in result
-    mock_run.select_summary.assert_called_once_with(project_code="demo", test_suite_id=None)
+    mock_run.select_summary.assert_called_once_with(project_code="demo", test_suite_id=None, page_size=1000)
 
 
 @patch("testgen.mcp.tools.test_runs.TestRun")
@@ -42,7 +45,7 @@ def test_get_recent_test_runs_default_limit(mock_suite, mock_run, db_session_moc
 def test_get_recent_test_runs_custom_limit(mock_suite, mock_run, db_session_mock):
     """Custom limit returns up to N runs per suite."""
     runs = [_make_run_summary() for _ in range(3)]
-    mock_run.select_summary.return_value = runs
+    mock_run.select_summary.return_value = (runs, len(runs))
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
@@ -61,7 +64,7 @@ def test_get_recent_test_runs_per_suite_grouping(mock_suite, mock_run, db_sessio
         _make_run_summary(test_suite="Suite B", test_run_id=uuid4()),
         _make_run_summary(test_suite="Suite B", test_run_id=uuid4()),
     ]
-    mock_run.select_summary.return_value = runs
+    mock_run.select_summary.return_value = (runs, len(runs))
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
@@ -80,13 +83,13 @@ def test_get_recent_test_runs_with_suite_name(mock_suite, mock_run, db_session_m
     suite_minimal = MagicMock()
     suite_minimal.id = suite_id
     mock_suite.select_minimal_where.return_value = [suite_minimal]
-    mock_run.select_summary.return_value = [_make_run_summary(test_suite="My Suite")]
+    mock_run.select_summary.return_value = ([_make_run_summary(test_suite="My Suite")], 1)
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
     result = get_recent_test_runs("demo", test_suite="My Suite")
 
-    mock_run.select_summary.assert_called_once_with(project_code="demo", test_suite_id=str(suite_id))
+    mock_run.select_summary.assert_called_once_with(project_code="demo", test_suite_id=str(suite_id), page_size=1000)
     assert "My Suite" in result
 
 
@@ -106,7 +109,7 @@ def test_get_recent_test_runs_suite_not_found(mock_suite, mock_run, db_session_m
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
 def test_get_recent_test_runs_no_runs(mock_suite, mock_run, db_session_mock):
-    mock_run.select_summary.return_value = []
+    mock_run.select_summary.return_value = ([], 0)
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
@@ -118,7 +121,7 @@ def test_get_recent_test_runs_no_runs(mock_suite, mock_run, db_session_mock):
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
 def test_get_recent_test_runs_shows_failure_counts(mock_suite, mock_run, db_session_mock):
-    mock_run.select_summary.return_value = [_make_run_summary(failed_ct=5, warning_ct=2)]
+    mock_run.select_summary.return_value = ([_make_run_summary(failed_ct=5, warning_ct=2)], 1)
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
 
@@ -126,6 +129,22 @@ def test_get_recent_test_runs_shows_failure_counts(mock_suite, mock_run, db_sess
 
     assert "5 failed" in result
     assert "2 warnings" in result
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_get_recent_test_runs_outputs_job_execution_id(mock_suite, mock_run, db_session_mock):
+    """Output should contain job_execution_id, not test_run_id."""
+    job_exec_id = uuid4()
+    run = _make_run_summary(job_execution_id=job_exec_id)
+    mock_run.select_summary.return_value = ([run], 1)
+
+    from testgen.mcp.tools.test_runs import get_recent_test_runs
+
+    result = get_recent_test_runs("demo")
+
+    assert str(job_exec_id) in result
+    assert "job_execution_id" in result
 
 
 def test_get_recent_test_runs_empty_project_code(db_session_mock):
@@ -144,6 +163,7 @@ def test_get_recent_test_runs_raises_not_found_for_inaccessible_project(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs
@@ -159,6 +179,7 @@ def test_get_recent_test_runs_raises_denial_for_insufficient_permission(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a", "secret_project": "role_c"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.test_runs import get_recent_test_runs

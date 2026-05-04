@@ -6,11 +6,11 @@ import pytest
 from testgen.ui.views.dialogs.import_metadata_dialog import (
     DESCRIPTION_MAX_LENGTH,
     TAG_MAX_LENGTH,
-    _build_preview_props,
     _extract_metadata_fields,
     _parse_csv,
     _set_row_status,
     _truncate_fields,
+    build_import_preview_props,
 )
 
 pytestmark = pytest.mark.unit
@@ -253,7 +253,7 @@ def test_set_row_status_error_precedence():
     assert "truncated" in row["_status_detail"]
 
 
-# --- _build_preview_props ---
+# --- build_import_preview_props ---
 
 
 def test_preview_props_basic():
@@ -268,7 +268,7 @@ def test_preview_props_basic():
         "matched_columns": 0,
         "skipped_count": 0,
     }
-    result = _build_preview_props(preview)
+    result = build_import_preview_props(preview)
     assert result["table_count"] == 1
     assert result["column_count"] == 0
     assert result["skipped_count"] == 0
@@ -285,7 +285,7 @@ def test_preview_props_cde_true():
         ],
         "metadata_columns": ["critical_data_element"],
     }
-    result = _build_preview_props(preview)
+    result = build_import_preview_props(preview)
     assert result["preview_rows"][0]["critical_data_element"] == "Yes"
 
 
@@ -298,7 +298,7 @@ def test_preview_props_cde_false():
         ],
         "metadata_columns": ["critical_data_element"],
     }
-    result = _build_preview_props(preview)
+    result = build_import_preview_props(preview)
     assert result["preview_rows"][0]["critical_data_element"] == "No"
 
 
@@ -311,7 +311,7 @@ def test_preview_props_cde_none():
         ],
         "metadata_columns": ["critical_data_element"],
     }
-    result = _build_preview_props(preview)
+    result = build_import_preview_props(preview)
     assert result["preview_rows"][0]["critical_data_element"] == ""
 
 
@@ -324,5 +324,5 @@ def test_preview_props_unmatched_preserved():
         ],
         "metadata_columns": ["description"],
     }
-    result = _build_preview_props(preview)
+    result = build_import_preview_props(preview)
     assert result["preview_rows"][0]["_status"] == "unmatched"

@@ -22,6 +22,7 @@ testgen:
       port:
       username:
       password:
+  uiBaseUrl:
   labels:
 
 cliHooks:

@@ -10,7 +10,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-from testgen.common.models.settings import PersistedSetting
+from testgen import settings
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import TABLE_STYLE_DATA, DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -125,8 +125,9 @@ def build_summary_table(document, tr_data):
 
         ("Test Run Date", test_timestamp, None, "Test Suite", tr_data["test_suite"]),
         ("Database/Schema", tr_data["schema_name"], None, "Table Group", tr_data["table_groups_name"]),
-        ("Table", tr_data["table_name"], None, "Data Quality Dimension", tr_data["dq_dimension"]),
-        ("Column", tr_data["column_names"], None, "Action", tr_data["disposition"] or "No Decision"),
+        ("Table", tr_data["table_name"], None, "Impact Dimension", tr_data["impact_dimension"]),
+        ("Column", tr_data["column_names"], None, "Quality Dimension", tr_data["dq_dimension"]),
+        ("Action", tr_data["disposition"] or "No Decision", None, None),
         (
             "Column Tags",
             (
@@ -159,7 +160,7 @@ def build_summary_table(document, tr_data):
         ),
         (
             Paragraph(
-                f"""<a href="{PersistedSetting.get("BASE_URL")}/test-runs:results?run_id={tr_data["test_run_id"]}&selected={tr_data["test_result_id"]}&project_code={tr_data["project_code"]}">
+                f"""<a href="{settings.UI_BASE_URL}/test-runs:results?run_id={tr_data["job_execution_id"]}&selected={tr_data["test_result_id"]}&project_code={tr_data["project_code"]}">
                     View on TestGen >
                 </a>""",
                 style=PARA_STYLE_LINK,

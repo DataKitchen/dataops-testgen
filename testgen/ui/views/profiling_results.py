@@ -1,16 +1,21 @@
 import json
 import typing
-from functools import partial
 
 import pandas as pd
 import streamlit as st
 
 import testgen.ui.queries.profiling_queries as profiling_queries
-import testgen.ui.services.form_service as fm
 from testgen.common import date_service
+from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import with_database_session
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_hygiene_detail, mask_profiling_pii
+from testgen.common.pii_masking import (
+    PII_REDACTED,
+    get_pii_columns,
+    mask_hygiene_detail,
+    mask_profiling_pii,
+    mask_source_data_pii,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -18,15 +23,49 @@ from testgen.ui.components.widgets.download_dialog import (
     download_dialog,
     get_excel_file_data,
 )
-from testgen.ui.components.widgets.page import css_class, flex_row_end
-from testgen.ui.components.widgets.testgen_component import testgen_component
 from testgen.ui.navigation.page import Page
-from testgen.ui.services.database_service import fetch_df_from_db
+from testgen.ui.navigation.router import Router
 from testgen.ui.session import session
-from testgen.ui.utils import parse_fuzzy_date
-from testgen.ui.views.dialogs.data_preview_dialog import data_preview_dialog
+from testgen.ui.views.data_catalog import get_preview_data
+from testgen.utils import make_json_safe
 
-FORM_DATA_WIDTH = 400
+PAGE_SIZE = 500
+
+SELECTED_ITEM_KEY = "prf:selected_item"
+EXPORT_FILTERS_KEY = "prf:export_filters"
+DATA_PREVIEW_DIALOG_KEY = "prf:data_preview_dialog"
+
+# Maps JS column names to SQL ORDER BY expressions
+SORT_FIELD_MAP = {
+    "table_name": "LOWER(table_name)",
+    "column_name": "LOWER(column_name)",
+    "db_data_type": "LOWER(db_data_type)",
+    "semantic_data_type": "LOWER(functional_data_type)",
+}
+
+
+def _parse_sort_param(sort: str | None) -> tuple[list | None, list[dict]]:
+    if not sort:
+        return None, []
+
+    sorting_columns = []
+    sort_state = []
+    for part in sort.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        tokens = part.split(":")
+        field = tokens[0]
+        order = tokens[1] if len(tokens) > 1 else "asc"
+        if order not in ("asc", "desc"):
+            order = "asc"
+
+        sql_expr = SORT_FIELD_MAP.get(field)
+        if sql_expr:
+            sorting_columns.append([sql_expr, order])
+            sort_state.append({"field": field, "order": order})
+
+    return sorting_columns if sorting_columns else None, sort_state
 
 
 class ProfilingResultsPage(Page):
@@ -36,7 +75,17 @@ class ProfilingResultsPage(Page):
         lambda: "run_id" in st.query_params or "profiling-runs",
     ]
 
-    def render(self, run_id: str, table_name: str | None = None, column_name: str | None = None, **_kwargs) -> None:
+    def render(
+        self,
+        run_id: str,
+        table_name: str | None = None,
+        column_name: str | None = None,
+        selected: str | None = None,
+        page: str | None = None,
+        page_size: str | None = None,
+        sort: str | None = None,
+        **_kwargs,
+    ) -> None:
         run = ProfilingRun.get_minimal(run_id)
         if not run:
             self.router.navigate_with_warning(
@@ -52,142 +101,190 @@ class ProfilingResultsPage(Page):
             )
             return
 
+        run_id = str(run.id)
+
         run_date = date_service.get_timezoned_timestamp(st.session_state, run.profiling_starttime)
         session.set_sidebar_project(run.project_code)
 
         testgen.page_header(
             "Data Profiling Results",
-            "data-profiling/investigate-profiling-results/",
+            "investigate-profiling-results",
             breadcrumbs=[
                 { "label": "Profiling Runs", "path": "profiling-runs", "params": { "project_code": run.project_code } },
                 { "label": f"{run.table_groups_name} | {run_date}" },
             ],
         )
 
-        table_filter_column, column_filter_column, sort_column, export_button_column = st.columns(
-            [.3, .3, .08, .32], vertical_alignment="bottom"
-        )
-
-        filters_changed = False
-        current_filters = (table_name, column_name)
-        if (query_filters := st.session_state.get("profiling_results:filters")) != current_filters:
-            if query_filters:
-                filters_changed = True
-            st.session_state["profiling_results:filters"] = current_filters
-
-        run_columns_df = get_profiling_run_columns(run_id)
-        with table_filter_column:
-            table_name = testgen.select(
-                options=list(run_columns_df["table_name"].unique()),
-                default_value=table_name,
-                bind_to_query="table_name",
-                label="Table",
-            )
-
-        with column_filter_column:
-            if table_name:
-                column_options = (
-                    run_columns_df
-                    .loc[run_columns_df["table_name"] == table_name]
-                    ["column_name"]
-                    .dropna()
-                    .unique()
-                    .tolist()
-                )
-            else:
-                column_options = (
-                    run_columns_df
-                    .groupby("column_name")
-                    .first()
-                    .reset_index()
-                    .sort_values("column_name", key=lambda x: x.str.lower())
-                )
-            column_name = testgen.select(
-                options=column_options,
-                default_value=column_name,
-                bind_to_query="column_name",
-                label="Column",
-                accept_new_options=True,
-            )
-
-        with sort_column:
-            sortable_columns = (
-                ("Table", "LOWER(table_name)"),
-                ("Column", "LOWER(column_name)"),
-                ("Data Type", "LOWER(db_data_type)"),
-                ("Semantic Data Type", "semantic_data_type"),
-                ("Hygiene Issues", "hygiene_issues"),
-            )
-            default_sorting = [(sortable_columns[i][1], "ASC") for i in (0, 1, 2)]
-            sorting_columns = testgen.sorting_selector(sortable_columns, default_sorting)
-
-        # Display main results grid
-        with st.container():
+        export_filters = st.session_state.pop(EXPORT_FILTERS_KEY, None)
+        if export_filters is not None:
             with st.spinner("Loading data ..."):
-                df = profiling_queries.get_profiling_results(
-                    run_id,
-                    table_name=table_name,
-                    column_name=column_name,
-                    sorting_columns=sorting_columns,
-                )
-
-            if not session.auth.user_has_permission("view_pii"):
-                pii_columns = get_pii_columns(str(run.table_groups_id))
-                mask_profiling_pii(df, pii_columns)
-
-        selected, selected_row = fm.render_grid_select(
-            df,
-            ["table_name", "column_name", "db_data_type", "semantic_data_type", "hygiene_issues", "result_details"],
-            ["Table", "Column", "Data Type", "Semantic Data Type", "Hygiene Issues", "Details"],
-            id_column="id",
-            reset_pagination=filters_changed,
-            bind_to_query=True,
-        )
-
-        popover_container = export_button_column.empty()
-
-        def open_download_dialog(data: pd.DataFrame | None = None) -> None:
-            # Hack to programmatically close popover: https://github.com/streamlit/streamlit/issues/8265#issuecomment-3001655849
-            with popover_container.container():
-                flex_row_end()
-                st.button(label="Export", icon=":material/download:", disabled=True)
-
+                export_type = export_filters.get("type", "all")
+                if export_type == "selected":
+                    selected_id = export_filters.get("id")
+                    export_df = profiling_queries.get_profiling_results(run_id)
+                    export_df = export_df[export_df["id"] == selected_id]
+                elif export_type == "filtered":
+                    export_df = profiling_queries.get_profiling_results(
+                        run_id,
+                        table_name=export_filters.get("table_name"),
+                        column_name=export_filters.get("column_name"),
+                    )
+                else:
+                    export_df = profiling_queries.get_profiling_results(run_id)
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(run.table_groups_name, run.table_group_schema, run_date, run_id, data),
+                args=(run.table_groups_name, run.table_group_schema, run_date, run_id, export_df),
             )
 
-        with popover_container.container(key="tg--export-popover"):
-            flex_row_end()
-            with st.popover(label="Export", icon=":material/download:", help="Download profiling results to Excel"):
-                css_class("tg--export-wrapper")
-                st.button(label="All results", type="tertiary", on_click=open_download_dialog)
-                st.button(label="Filtered results", type="tertiary", on_click=partial(open_download_dialog, df))
-                if selected:
-                    st.button(label="Selected results", type="tertiary", on_click=partial(open_download_dialog, pd.DataFrame(selected)))
+        # Parse pagination and sorting params
+        current_page = int(page) if page else 0
+        current_page_size = int(page_size) if page_size else PAGE_SIZE
+        sorting_columns, sort_state = _parse_sort_param(sort)
 
+        with st.spinner("Loading data ..."):
+            df = profiling_queries.get_profiling_results(
+                run_id,
+                table_name=table_name,
+                column_name=column_name,
+                sorting_columns=sorting_columns,
+                page=current_page,
+                page_size=current_page_size,
+            )
 
-        # Display profiling for selected row
-        if not selected_row:
-            st.markdown(":orange[Select a row to see profiling details.]")
-        else:
-            selected_row["hygiene_issues"] = profiling_queries.get_hygiene_issues(run_id, selected_row["table_name"], selected_row.get("column_name"))
+            total_count = profiling_queries.get_profiling_results_count(
+                run_id, table_name=table_name, column_name=column_name,
+            )
+
+            filter_options = profiling_queries.get_profiling_filter_options(run_id)
+
+        if not session.auth.user_has_permission("view_pii"):
+            pii_columns = get_pii_columns(str(run.table_groups_id))
+            mask_profiling_pii(df, pii_columns)
+
+        # Use pandas JSON serialization to safely handle NaN/NaT -> null, timestamps -> epoch seconds
+        items = json.loads(df.to_json(orient="records", date_unit="s"))
+
+        selected_item = st.session_state.get(SELECTED_ITEM_KEY)
+        # Load selected item if URL has a selection but session cache is missing or stale
+        if selected and (selected_item is None or selected_item.get("id") != selected):
+            row_df = df[df["id"] == selected]
+            if not row_df.empty:
+                row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+                row["hygiene_issues"] = profiling_queries.get_hygiene_issues(
+                    run_id, row["table_name"], row.get("column_name")
+                )
+                if not session.auth.user_has_permission("view_pii"):
+                    pii_cols = get_pii_columns(row["table_group_id"], table_name=row["table_name"])
+                    mask_hygiene_detail(row["hygiene_issues"], pii_cols)
+                st.session_state[SELECTED_ITEM_KEY] = row
+                selected_item = row
+        elif not selected:
+            st.session_state.pop(SELECTED_ITEM_KEY, None)
+            selected_item = None
+
+        @with_database_session
+        def on_row_selected(item_id: str) -> None:
+            row_df = df[df["id"] == item_id]
+            if row_df.empty:
+                return
+            row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+            row["hygiene_issues"] = profiling_queries.get_hygiene_issues(
+                run_id, row["table_name"], row.get("column_name")
+            )
             if not session.auth.user_has_permission("view_pii"):
-                pii_cols = get_pii_columns(selected_row["table_group_id"], table_name=selected_row["table_name"])
-                mask_hygiene_detail(selected_row["hygiene_issues"], pii_cols)
-            testgen_component(
-                "column_profiling_results",
-                props={ "column": json.dumps(selected_row), "data_preview": True },
-                on_change_handlers={
-                    "DataPreviewClicked": lambda item: data_preview_dialog(
-                        item["table_group_id"],
-                        item["schema_name"],
-                        item["table_name"],
-                        item.get("column_name"),
-                    ),
-                },
+                pii_cols = get_pii_columns(row["table_group_id"], table_name=row["table_name"])
+                mask_hygiene_detail(row["hygiene_issues"], pii_cols)
+            st.session_state[SELECTED_ITEM_KEY] = row
+            Router().set_query_params({"selected": item_id})
+
+        def on_filter_changed(filters: dict) -> None:
+            st.session_state.pop(SELECTED_ITEM_KEY, None)
+            Router().set_query_params({
+                "selected": None,
+                "page": "0",
+                "table_name": filters.get("table_name"),
+                "column_name": filters.get("column_name"),
+            })
+
+        def on_export_all(*_) -> None:
+            st.session_state[EXPORT_FILTERS_KEY] = {"type": "all"}
+
+        def on_export_filtered(filters: dict) -> None:
+            st.session_state[EXPORT_FILTERS_KEY] = {
+                "type": "filtered",
+                "table_name": filters.get("table_name"),
+                "column_name": filters.get("column_name"),
+            }
+
+        def on_export_selected(item_id: str) -> None:
+            st.session_state[EXPORT_FILTERS_KEY] = {"type": "selected", "id": item_id}
+
+        def on_page_changed(payload: dict) -> None:
+            new_page = payload.get("page", 0)
+            new_page_size = payload.get("page_size")
+            st.session_state.pop(SELECTED_ITEM_KEY, None)
+            params: dict = {"page": str(new_page), "selected": None}
+            if new_page_size is not None:
+                params["page_size"] = str(int(new_page_size))
+            Router().set_query_params(params)
+
+        def on_sort_changed(payload: dict) -> None:
+            columns = payload.get("columns", [])
+            sort_parts = []
+            for col in columns:
+                field = col.get("field", "")
+                order = col.get("order", "asc")
+                sort_parts.append(f"{field}:{order}")
+            sort_value = ",".join(sort_parts) if sort_parts else None
+            st.session_state.pop(SELECTED_ITEM_KEY, None)
+            Router().set_query_params({"sort": sort_value, "page": "0", "selected": None})
+
+        @with_database_session
+        def on_data_preview_clicked(item: dict) -> None:
+            preview_data = get_preview_data(
+                item["table_group_id"],
+                item["schema_name"],
+                item["table_name"],
+                item.get("column_name"),
             )
+            if preview_data.get("rows") and not session.auth.user_has_permission("view_pii"):
+                pii_columns = get_pii_columns(item["table_group_id"], item["schema_name"], item["table_name"])
+                if pii_columns:
+                    preview_df = pd.DataFrame(preview_data["rows"], columns=preview_data["columns"])
+                    mask_source_data_pii(preview_df, pii_columns)
+                    preview_data["rows"] = make_json_safe(preview_df.values.tolist())
+            st.session_state[DATA_PREVIEW_DIALOG_KEY] = preview_data
+
+        def on_data_preview_dialog_closed(*_) -> None:
+            st.session_state.pop(DATA_PREVIEW_DIALOG_KEY, None)
+
+        testgen.profiling_results_widget(
+            key="profiling_results",
+            data={
+                "run_id": run_id,
+                "items": items,
+                "filters": {"table_name": table_name, "column_name": column_name},
+                "selected_id": selected,
+                "selected_item": json.dumps(selected_item, default=str) if selected_item else None,
+                "permissions": {"can_edit": session.auth.user_has_permission("edit")},
+                "page": current_page,
+                "total_count": total_count,
+                "page_size": current_page_size,
+                "sort_state": sort_state,
+                "filter_options": filter_options,
+                "data_preview_dialog": st.session_state.get(DATA_PREVIEW_DIALOG_KEY),
+            },
+            on_RowSelected_change=on_row_selected,
+            on_FilterChanged_change=on_filter_changed,
+            on_ExportAll_change=on_export_all,
+            on_ExportFiltered_change=on_export_filtered,
+            on_ExportSelected_change=on_export_selected,
+            on_PageChanged_change=on_page_changed,
+            on_SortChanged_change=on_sort_changed,
+            on_DataPreviewClicked_change=on_data_preview_clicked,
+            on_DataPreviewDialogClosed_change=on_data_preview_dialog_closed,
+        )
 
 
 @with_database_session
@@ -308,14 +405,3 @@ def get_excel_report_data(
         columns=columns,
         update_progress=update_progress,
     )
-
-
-@st.cache_data(show_spinner=False)
-def get_profiling_run_columns(profiling_run_id: str) -> pd.DataFrame:
-    query = """
-    SELECT table_name, column_name
-    FROM profile_results
-    WHERE profile_run_id = :profiling_run_id
-    ORDER BY LOWER(table_name), LOWER(column_name);
-    """
-    return fetch_df_from_db(query, {"profiling_run_id": profiling_run_id})

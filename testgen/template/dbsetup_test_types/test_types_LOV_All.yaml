@@ -25,6 +25,7 @@ test_types:
   run_type: CAT
   test_scope: column
   dq_dimension: Validity
+  impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
     List of values expected, in form ('Val1','Val2)
@@ -54,7 +55,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: mssql
     measure: |-
-      STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+      (SELECT STRING_AGG(sub_val, '|') WITHIN GROUP (ORDER BY sub_val) FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WHERE {SUBSET_CONDITION}) AS sub_lov)
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -62,7 +63,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: postgresql
     measure: |-
-      STRING_AGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+      STRING_AGG(DISTINCT {COLUMN_NAME}, '|' ORDER BY {COLUMN_NAME})
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -110,7 +111,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: sap_hana
     measure: |-
-      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
+      (SELECT STRING_AGG(sub_val, '|' ORDER BY sub_val) FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WHERE {SUBSET_CONDITION}))
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -127,7 +128,7 @@ test_types:
         SELECT STRING_AGG(DISTINCT CAST(`{COLUMN_NAME}` AS STRING), '|' ORDER BY `{COLUMN_NAME}`) AS lov
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       )
-      WHERE lov <> '{THRESHOLD_VALUE}'
+      WHERE lov <> {THRESHOLD_VALUE}
       LIMIT {LIMIT};
     error_type: Test Results
   - id: '1310'
@@ -137,7 +138,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT ARRAY_JOIN(ARRAY_SORT(COLLECT_SET(`{COLUMN_NAME}`)), '|') AS lov FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` HAVING ARRAY_JOIN(ARRAY_SORT(COLLECT_SET(`{COLUMN_NAME}`)), '|') <> '{THRESHOLD_VALUE}' LIMIT {LIMIT};
+      SELECT ARRAY_JOIN(ARRAY_SORT(COLLECT_SET(`{COLUMN_NAME}`)), '|') AS lov FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` HAVING ARRAY_JOIN(ARRAY_SORT(COLLECT_SET(`{COLUMN_NAME}`)), '|') <> {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1152'
     test_id: '1018'
@@ -146,7 +147,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      WITH CTE AS  (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT TOP {LIMIT} STRING_AGG( "{COLUMN_NAME}", '|' ) WITHIN GROUP (ORDER BY "{COLUMN_NAME}" ASC) AS lov FROM CTE HAVING STRING_AGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}" ASC) <> '{THRESHOLD_VALUE}';
+      WITH CTE AS  (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT TOP {LIMIT} STRING_AGG( "{COLUMN_NAME}", '|' ) WITHIN GROUP (ORDER BY "{COLUMN_NAME}" ASC) AS lov FROM CTE HAVING STRING_AGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}" ASC) <> {THRESHOLD_VALUE};
     error_type: Test Results
   - id: '1095'
     test_id: '1018'
@@ -155,7 +156,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT STRING_AGG(DISTINCT "{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}" ASC) AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING STRING_AGG(DISTINCT "{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}" ASC) <> '{THRESHOLD_VALUE}' LIMIT {LIMIT};
+      SELECT STRING_AGG(DISTINCT "{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}" ASC) AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING STRING_AGG(DISTINCT "{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}" ASC) <> {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1013'
     test_id: '1018'
@@ -164,7 +165,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT {LIMIT};
+      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1413'
     test_id: '1018'
@@ -173,7 +174,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT {LIMIT};
+      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '1209'
     test_id: '1018'
@@ -182,7 +183,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT {LIMIT};
+      SELECT LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" HAVING LISTAGG(DISTINCT "{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   - id: '8013'
     test_id: '1018'
@@ -191,7 +192,7 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Test Results
   - id: '8013'
     test_id: '1018'
@@ -200,6 +201,6 @@ test_types:
     lookup_type: null
     lookup_redactable_columns: lov
     lookup_query: |-
-      SELECT LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING LISTAGG("{COLUMN_NAME}", '|') WITHIN GROUP (ORDER BY "{COLUMN_NAME}") <> '{THRESHOLD_VALUE}' LIMIT {LIMIT}
+      SELECT STRING_AGG("{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}") AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING STRING_AGG("{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} LIMIT {LIMIT}
     error_type: Test Results
   test_templates: []

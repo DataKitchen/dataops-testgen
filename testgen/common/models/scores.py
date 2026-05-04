@@ -24,6 +24,7 @@ SCORE_CATEGORIES = [
     "column_name",
     "table_name",
     "dq_dimension",
+    "impact_dimension",
     "semantic_data_type",
     "table_groups_name",
     "data_location",
@@ -39,6 +40,7 @@ Categories = Literal[
     "column_name",
     "table_name",
     "dq_dimension",
+    "impact_dimension",
     "semantic_data_type",
     "table_groups_name",
     "data_location",
@@ -52,6 +54,10 @@ Categories = Literal[
 ]
 ScoreTypes = Literal["score", "cde_score"]
 
+# Sentinel passed by the breakdown UI when the user drills down into a bucket whose
+# grouping value is NULL (e.g. table-scope tests that have no column_name).
+SCORE_CARD_NULL_DRILLDOWN = "__null__"
+
 
 class ScoreCategory(enum.Enum):
     table_groups_name = "table_groups_name"
@@ -63,6 +69,7 @@ class ScoreCategory(enum.Enum):
     stakeholder_group = "stakeholder_group"
     transform_level = "transform_level"
     dq_dimension = "dq_dimension"
+    impact_dimension = "impact_dimension"
     data_product = "data_product"
 
 
@@ -113,7 +120,7 @@ class ScoreDefinition(Base):
         definition.name = table_group.table_groups_name
         definition.total_score = True
         definition.cde_score = True
-        definition.category = ScoreCategory.dq_dimension
+        definition.category = ScoreCategory.impact_dimension
         definition.criteria = ScoreDefinitionCriteria(
             operand="AND",
             filters=[
@@ -241,6 +248,8 @@ class ScoreDefinition(Base):
         categories_query_template_file = "get_category_scores_by_column.sql"
         if self.category == ScoreCategory.dq_dimension:
             categories_query_template_file = "get_category_scores_by_dimension.sql"
+        elif self.category == ScoreCategory.impact_dimension:
+            categories_query_template_file = "get_category_scores_by_impact_dimension.sql"
 
         filters = " AND ".join(self._get_raw_query_filters())
         overall_scores = get_current_session().execute(
@@ -326,6 +335,8 @@ class ScoreDefinition(Base):
         query_template_file = "get_score_card_breakdown_by_column.sql"
         if group_by == "dq_dimension":
             query_template_file = "get_score_card_breakdown_by_dimension.sql"
+        elif group_by == "impact_dimension":
+            query_template_file = "get_score_card_breakdown_by_impact_dimension.sql"
 
         columns = {
             "table_name": ["table_groups_id", "table_name"],
@@ -337,7 +348,7 @@ class ScoreDefinition(Base):
             join_condition = " AND ".join([f"test_records.{column} = profiling_records.{column}" for column in columns])
         else:
             join_condition = f"""(test_records.{group_by} = profiling_records.{group_by}
-                OR (test_records.{group_by} IS NULL 
+                OR (test_records.{group_by} IS NULL
                 AND profiling_records.{group_by} IS NULL))"""
 
         profile_records_filters = self._get_raw_query_filters(
@@ -383,29 +394,50 @@ class ScoreDefinition(Base):
         query_template_file = "get_score_card_issues_by_column.sql"
         if group_by == "dq_dimension":
             query_template_file = "get_score_card_issues_by_dimension.sql"
+        elif group_by == "impact_dimension":
+            query_template_file = "get_score_card_issues_by_impact_dimension.sql"
 
         value_ = value
         filters = self._get_raw_query_filters(cde_only=score_type == "cde_score")
         if group_by == "table_name":
-            table_group_id, value_ = value.split(".")
+            table_group_id, value_ = value.split(".", 1)
             filters.append(f"table_groups_id = '{table_group_id}'")
         elif group_by == "column_name":
-            table_group_id, table_name, value_ = value.split(".")
+            table_group_id, table_name, value_ = value.split(".", 2)
             filters.append(f"table_groups_id = '{table_group_id}'")
             filters.append(f"table_name = '{table_name}'")
         filters = " AND ".join(filters)
 
+        # Drilldown rows for buckets where the grouping value is NULL (e.g. table-scope
+        # tests that have no column_name) arrive as the SCORE_CARD_NULL_DRILLDOWN sentinel.
+        # Translate that to an IS NULL filter so the join still matches those rows.
+        is_null_drilldown = value_ == SCORE_CARD_NULL_DRILLDOWN
+        value_filter = f"{group_by} IS NULL" if is_null_drilldown else f"{group_by} = :value"
         dq_dimension_filter = ""
         if group_by == "dq_dimension":
-            dq_dimension_filter = " AND dq_dimension = :value"
+            dq_dimension_filter = (
+                " AND dq_dimension IS NULL" if is_null_drilldown else " AND dq_dimension = :value"
+            )
+        profiling_impact_dimension_filter = ""
+        test_impact_dimension_filter = ""
+        if group_by == "impact_dimension":
+            profiling_impact_dimension_filter = (
+                " AND types.impact_dimension IS NULL" if is_null_drilldown else " AND types.impact_dimension = :value"
+            )
+            test_impact_dimension_filter = (
+                " AND test_results.impact_dimension IS NULL" if is_null_drilldown else " AND test_results.impact_dimension = :value"
+            )
 
         query = (
             read_template_sql_file(query_template_file, sub_directory="score_cards")
             .replace("{filters}", filters)
+            .replace("{value_filter}", value_filter)
             .replace("{group_by}", group_by)
             .replace("{dq_dimension_filter}", dq_dimension_filter)
+            .replace("{profiling_impact_dimension_filter}", profiling_impact_dimension_filter)
+            .replace("{test_impact_dimension_filter}", test_impact_dimension_filter)
         )
-        params = {"value": value_}
+        params = {} if is_null_drilldown else {"value": value_}
         results = get_current_session().execute(text(query), params).mappings().all()
         return [dict(row) for row in results]
 
@@ -627,6 +659,7 @@ class ScoreDefinitionBreakdownItem(Base):
     table_name: str = Column(String, nullable=True)
     column_name: str = Column(String, nullable=True)
     dq_dimension: str = Column(String, nullable=True)
+    impact_dimension: str = Column(String, nullable=True)
     semantic_data_type: str = Column(String, nullable=True)
     table_groups_name: str = Column(String, nullable=True)
     data_location: str = Column(String, nullable=True)

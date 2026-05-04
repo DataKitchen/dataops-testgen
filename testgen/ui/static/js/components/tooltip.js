@@ -89,8 +89,10 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
     });
 
     component.addEventListener('mouseenter', () => {
-        positionStyle.val = computeTooltipStyle(component.getBoundingClientRect(), getValue(tooltipProps.position) || defaultPosition);
-        showTooltip.val = true;
+        if (getValue(tooltipProps.text)) {
+            positionStyle.val = computeTooltipStyle(component.getBoundingClientRect(), getValue(tooltipProps.position) || defaultPosition);
+            showTooltip.val = true;
+        }
     });
     component.addEventListener('mouseleave', () => {
         showTooltip.val = false;
@@ -102,7 +104,7 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
 function hasStreamlitDialogAncestor(el) {
     let node = el.parentElement;
     while (node && node !== document.body) {
-        if (node.classList.contains(STREAMLIT_DIALOG_CLASS)) return true;
+        if (node.classList.contains(STREAMLIT_DIALOG_CLASS) || node.classList.contains('tg-dialog-overlay')) return true;
         node = node.parentElement;
     }
     return false;
@@ -127,6 +129,7 @@ stylesheet.replace(`
 
 .tg-tooltip.portal {
     position: fixed;
+    z-index: 1000001;
     top: unset;
     bottom: unset;
     left: unset;

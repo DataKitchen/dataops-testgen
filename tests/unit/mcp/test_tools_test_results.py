@@ -1,17 +1,30 @@
+from datetime import date
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
 from testgen.common.models.test_result import TestResultStatus
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
 
+def _mock_test_run(test_run_id=None):
+    """Create a mock TestRun with an id attribute."""
+    run = MagicMock()
+    run.id = test_run_id or uuid4()
+    return run
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_results_basic(mock_result, mock_tt_cls, db_session_mock):
-    run_id = str(uuid4())
+def test_list_test_results_basic(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
+    job_id = str(uuid4())
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite()
+
     r1 = MagicMock()
     r1.status = TestResultStatus.Failed
     r1.test_type = "Alpha_Trunc"
@@ -28,9 +41,9 @@ def test_get_test_results_basic(mock_result, mock_tt_cls, db_session_mock):
     tt.test_name_short = "Alpha Truncation"
     mock_tt_cls.select_where.return_value = [tt]
 
-    from testgen.mcp.tools.test_results import get_test_results
+    from testgen.mcp.tools.test_results import list_test_results
 
-    result = get_test_results(run_id)
+    result = list_test_results(job_id)
 
     assert "Alpha Truncation" in result
     assert "Alpha_Trunc" not in result
@@ -39,10 +52,14 @@ def test_get_test_results_basic(mock_result, mock_tt_cls, db_session_mock):
     assert "Truncation detected" in result
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_results_table_level_title(mock_result, mock_tt_cls, db_session_mock):
-    run_id = str(uuid4())
+def test_list_test_results_table_level_title(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite()
+
     r1 = MagicMock()
     r1.status = TestResultStatus.Passed
     r1.test_type = "Row_Ct"
@@ -59,77 +76,269 @@ def test_get_test_results_table_level_title(mock_result, mock_tt_cls, db_session
     tt.test_name_short = "Row Count"
     mock_tt_cls.select_where.return_value = [tt]
 
-    from testgen.mcp.tools.test_results import get_test_results
+    from testgen.mcp.tools.test_results import list_test_results
 
-    result = get_test_results(run_id)
+    result = list_test_results(str(uuid4()))
 
     assert "Row Count on `orders`" in result
     assert "` in `" not in result
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_results_empty(mock_result, db_session_mock):
+def test_list_test_results_empty(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite()
     mock_result.select_results.return_value = []
 
-    from testgen.mcp.tools.test_results import get_test_results
+    from testgen.mcp.tools.test_results import list_test_results
 
-    result = get_test_results(str(uuid4()))
+    result = list_test_results(str(uuid4()))
 
     assert "No test results found" in result
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.common.TestType")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_results_with_filters(mock_result, mock_tt_cls, db_session_mock):
+def test_list_test_results_with_filters(
+    mock_result, mock_tt_cls, mock_test_run_cls, mock_tt_common, mock_suite_cls, db_session_mock
+):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite()
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
     tt.test_name_short = "Alpha Truncation"
     mock_tt_cls.select_where.return_value = [tt]
+    mock_tt_common.select_where.return_value = [tt]
     mock_result.select_results.return_value = []
 
-    from testgen.mcp.tools.test_results import get_test_results
+    from testgen.mcp.tools.test_results import list_test_results
 
-    result = get_test_results(str(uuid4()), status="Failed", table_name="orders", test_type="Alpha Truncation")
+    result = list_test_results(str(uuid4()), status="Failed", table_name="orders", test_type="Alpha Truncation")
 
     assert "status=Failed" in result
     assert "table=orders" in result
     assert "type=Alpha Truncation" in result
 
 
-def test_get_test_results_invalid_uuid(db_session_mock):
-    from testgen.mcp.tools.test_results import get_test_results
+def test_list_test_results_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.test_results import list_test_results
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
-        get_test_results("not-a-uuid")
+        list_test_results("not-a-uuid")
 
 
-def test_get_test_results_invalid_status(db_session_mock):
-    from testgen.mcp.tools.test_results import get_test_results
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+def test_list_test_results_invalid_status(mock_test_run_cls, mock_suite_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite()
+
+    from testgen.mcp.tools.test_results import list_test_results
 
     with pytest.raises(MCPUserError, match="Invalid status"):
-        get_test_results(str(uuid4()), status="BadStatus")
+        list_test_results(str(uuid4()), status="BadStatus")
 
 
+@patch("testgen.mcp.tools.test_results.TestRun")
+def test_list_test_results_run_not_found(mock_test_run_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = None
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test run .* not found or not accessible"):
+        list_test_results(str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+def test_list_test_results_run_in_monitor_suite_rejected(mock_test_run_cls, mock_suite_cls, db_session_mock):
+    # Run exists, but the resolved suite is monitor → TestSuite.get_regular returns None.
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = None
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        list_test_results(job_execution_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_list_test_results_run_in_forbidden_project(
+    mock_compute, mock_test_run_cls, mock_suite_cls, db_session_mock
+):
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        list_test_results(job_execution_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
 @patch("testgen.mcp.permissions._compute_project_permissions")
-def test_get_test_results_passes_project_codes(mock_compute, mock_result, db_session_mock):
+def test_list_test_results_passes_project_codes(
+    mock_compute, mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock
+):
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
     mock_result.select_results.return_value = []
 
-    from testgen.mcp.tools.test_results import get_test_results
+    from testgen.mcp.tools.test_results import list_test_results
 
-    get_test_results(str(uuid4()))
+    list_test_results(str(uuid4()))
 
     call_kwargs = mock_result.select_results.call_args.kwargs
     assert call_kwargs["project_codes"] == ["proj_a"]
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.tools.test_results.TestType")
+def test_list_test_results_resolves_via_get_by_id_or_job(
+    mock_tt_cls, mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock
+):
+    """Verify the resolved test_run.id is passed to select_results."""
+    resolved_run_id = uuid4()
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run(resolved_run_id)
+    mock_suite_cls.get_regular.return_value = _mock_test_suite()
+    mock_result.select_results.return_value = []
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    job_id = str(uuid4())
+    list_test_results(job_id)
+
+    call_kwargs = mock_result.select_results.call_args.kwargs
+    assert call_kwargs["test_run_id"] == resolved_run_id
+
+
+def _mock_test_suite(suite_id=None, project_code="demo", last_complete_test_run_id=None):
+    """Create a mock TestSuite for the test_suite_id branch tests."""
+    suite = MagicMock()
+    suite.id = suite_id or uuid4()
+    suite.project_code = project_code
+    suite.last_complete_test_run_id = last_complete_test_run_id
+    return suite
+
+
+def test_list_test_results_both_args_rejected(db_session_mock):
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPUserError, match="Pass either"):
+        list_test_results(job_execution_id=str(uuid4()), test_suite_id=str(uuid4()))
+
+
+def test_list_test_results_neither_arg_rejected(db_session_mock):
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPUserError, match="Provide either"):
+        list_test_results()
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+def test_list_test_results_by_suite_id_monitor_or_missing(mock_suite_cls, db_session_mock):
+    # TestSuite.get_regular returns None for monitor suites and unknown ids alike.
+    mock_suite_cls.get_regular.return_value = None
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        list_test_results(test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_list_test_results_by_suite_id_inaccessible_project(mock_compute, mock_suite_cls, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        list_test_results(test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+def test_list_test_results_by_suite_id_no_completed_runs(mock_suite_cls, db_session_mock):
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(last_complete_test_run_id=None)
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    with pytest.raises(MCPUserError, match="No completed test runs"):
+        list_test_results(test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_failure_summary_by_test_type(mock_result, mock_tt_cls, db_session_mock):
+def test_list_test_results_by_suite_id_resolves_latest_run(
+    mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock
+):
+    last_run_id = uuid4()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(last_complete_test_run_id=last_run_id)
+
+    resolved_run_id = uuid4()
+    resolved_je_id = uuid4()
+    resolved_run = _mock_test_run(resolved_run_id)
+    resolved_run.job_execution_id = resolved_je_id
+    mock_test_run_cls.get_by_id_or_job.return_value = resolved_run
+
+    r1 = MagicMock()
+    r1.status = TestResultStatus.Failed
+    r1.test_type = "Alpha_Trunc"
+    r1.test_definition_id = uuid4()
+    r1.table_name = "orders"
+    r1.column_names = "name"
+    r1.result_measure = "5"
+    r1.threshold_value = "1"
+    r1.message = None
+    mock_result.select_results.return_value = [r1]
+
+    tt = MagicMock()
+    tt.test_type = "Alpha_Trunc"
+    tt.test_name_short = "Alpha Truncation"
+    mock_tt_cls.select_where.return_value = [tt]
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    suite_id = str(uuid4())
+    result = list_test_results(test_suite_id=suite_id)
+
+    # Resolution chain: suite.last_complete_test_run_id → TestRun.get_by_id_or_job → test_run.id → select_results
+    mock_test_run_cls.get_by_id_or_job.assert_called_once_with(last_run_id)
+    assert mock_result.select_results.call_args.kwargs["test_run_id"] == resolved_run_id
+    # Output indicates which run the suite was resolved to.
+    assert str(resolved_je_id) in result
+    assert f"Latest completed run of test suite `{suite_id}`" in result
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestResult")
+def test_get_failure_summary_by_test_type(
+    mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock,
+):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = [
         ("Alpha_Trunc", TestResultStatus.Failed, 5),
         ("Unique_Pct", TestResultStatus.Warning, 3),
@@ -144,7 +353,7 @@ def test_get_failure_summary_by_test_type(mock_result, mock_tt_cls, db_session_m
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
-    result = get_failure_summary(str(uuid4()))
+    result = get_failure_summary(job_execution_id=str(uuid4()))
 
     assert "Failed + Warning" in result
     assert "8" in result
@@ -156,37 +365,49 @@ def test_get_failure_summary_by_test_type(mock_result, mock_tt_cls, db_session_m
     assert "get_test_type" in result
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_failure_summary_empty(mock_result, db_session_mock):
+def test_get_failure_summary_empty(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = []
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
-    result = get_failure_summary(str(uuid4()))
+    result = get_failure_summary(job_execution_id=str(uuid4()))
 
     assert "No confirmed failures" in result
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_failure_summary_by_table(mock_result, db_session_mock):
+def test_get_failure_summary_by_table(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = [("orders", 10)]
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
-    result = get_failure_summary(str(uuid4()), group_by="table")
+    result = get_failure_summary(job_execution_id=str(uuid4()), group_by="table")
 
     assert "Table Name" in result
     assert "orders" in result
     assert "get_test_type" not in result
 
 
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_failure_summary_by_column(mock_result, db_session_mock):
+def test_get_failure_summary_by_column(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = [("orders", "total_value", 34), ("orders", None, 2)]
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
-    result = get_failure_summary(str(uuid4()), group_by="column")
+    result = get_failure_summary(job_execution_id=str(uuid4()), group_by="column")
 
     assert "Column" in result
     assert "`total_value` in `orders`" in result
@@ -198,23 +419,67 @@ def test_get_failure_summary_invalid_uuid(db_session_mock):
     from testgen.mcp.tools.test_results import get_failure_summary
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
-        get_failure_summary("bad-uuid")
+        get_failure_summary(job_execution_id="bad-uuid")
 
 
+@patch("testgen.mcp.tools.test_results.TestRun")
+def test_get_failure_summary_run_not_found(mock_test_run_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = None
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test run .* not found or not accessible"):
+        get_failure_summary(job_execution_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_run_in_forbidden_project(
+    mock_compute, mock_test_run_cls, mock_suite_cls, db_session_mock,
+):
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test run .* not found or not accessible"):
+        get_failure_summary(job_execution_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+def test_get_failure_summary_run_in_monitor_suite_rejected(mock_test_run_cls, mock_suite_cls, db_session_mock):
+    # Run exists, but the resolved suite is monitor → TestSuite.get_regular returns None.
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = None
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test run .* not found or not accessible"):
+        get_failure_summary(job_execution_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
 @patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_failure_summary_passes_project_codes(
-    mock_compute, mock_result, db_session_mock,
+    mock_compute, mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock,
 ):
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
     mock_result.select_failures.return_value = []
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
-    get_failure_summary(str(uuid4()))
+    get_failure_summary(job_execution_id=str(uuid4()))
 
     call_kwargs = mock_result.select_failures.call_args.kwargs
     assert call_kwargs["project_codes"] == ["proj_a"]
@@ -286,6 +551,7 @@ def test_get_test_result_history_passes_project_codes(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_a"},
         permission="view",
+        username="test_user",
     )
     mock_result.select_history.return_value = []
 
@@ -295,3 +561,482 @@ def test_get_test_result_history_passes_project_codes(
 
     call_kwargs = mock_result.select_history.call_args.kwargs
     assert call_kwargs["project_codes"] == ["proj_a"]
+
+
+# ----------------------------------------------------------------------
+# get_failure_summary — cross-run additions
+# ----------------------------------------------------------------------
+
+
+def test_get_failure_summary_requires_some_scope(db_session_mock):
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPUserError, match="single run"):
+        get_failure_summary()
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_project_code_alone(mock_compute, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPUserError, match="'since' is required"):
+        get_failure_summary(project_code="proj_a")
+
+
+@pytest.mark.parametrize("group_by", ["table", "column"])
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_cross_suite_table_or_column_grouping(mock_compute, db_session_mock, group_by):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPUserError, match="single-suite scope"):
+        get_failure_summary(project_code="proj_a", since="7 days", group_by=group_by)
+
+
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_cross_run_by_project(mock_compute, mock_result, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    mock_result.select_failures.return_value = []
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    get_failure_summary(project_code="proj_a", since="7 days")
+
+    call_kwargs = mock_result.select_failures.call_args.kwargs
+    assert call_kwargs["project_codes"] == ["proj_a"]
+    assert call_kwargs["test_run_id"] is None
+    assert call_kwargs["since"] is not None
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_cross_run_by_project_and_suite(
+    mock_compute, mock_result, mock_suite_cls, db_session_mock
+):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
+    mock_result.select_failures.return_value = []
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    get_failure_summary(project_code="proj_a", test_suite_id=str(uuid4()))
+
+    call_kwargs = mock_result.select_failures.call_args.kwargs
+    assert call_kwargs["project_codes"] == ["proj_a"]
+    assert call_kwargs["test_suite_id"] is not None
+    assert call_kwargs["test_run_id"] is None
+    assert call_kwargs["since"] is None
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_inaccessible_project(mock_compute, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Project .* not found or not accessible"):
+        get_failure_summary(project_code="proj_b", since="7 days")
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_inaccessible_test_suite(mock_compute, mock_suite_cls, db_session_mock):
+    """test_suite_id branch validates suite access — same contract as list_test_results."""
+    mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
+    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        get_failure_summary(test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+def test_get_failure_summary_rejects_unknown_or_monitor_test_suite(mock_suite_cls, db_session_mock):
+    # TestSuite.get_regular returns None for monitor suites and unknown ids alike.
+    mock_suite_cls.get_regular.return_value = None
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        get_failure_summary(test_suite_id=str(uuid4()))
+
+
+# ----------------------------------------------------------------------
+# search_test_results
+# ----------------------------------------------------------------------
+
+
+def _mock_search_row(**overrides):
+    row = MagicMock()
+    row.test_definition_id = uuid4()
+    row.test_run_id = uuid4()
+    row.job_execution_id = uuid4()
+    row.test_time = "2026-04-15T10:00:00"
+    row.test_suite_id = uuid4()
+    row.test_suite_name = "Sales Suite"
+    row.test_type = "Pattern_Match"
+    row.test_name_short = "Pattern Match"
+    row.table_name = "orders"
+    row.column_names = "customer_id"
+    row.status = TestResultStatus.Failed
+    row.result_measure = "12"
+    row.threshold_value = "0"
+    row.result_message = "Bad pattern"
+    for k, v in overrides.items():
+        setattr(row, k, v)
+    return row
+
+
+@patch("testgen.mcp.tools.test_results.TestResult.search_results")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_search_test_results_happy_path(mock_compute, mock_search_results, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    mock_search_results.return_value = ([_mock_search_row()], 1)
+
+    from testgen.mcp.tools.test_results import search_test_results
+
+    out = search_test_results(project_code="proj_a", since="7 days")
+
+    assert "Pattern Match" in out
+    assert "Sales Suite" in out
+    assert "on `customer_id` in `orders`" in out
+    # Defaults to Failed + Warning — result_status clause present in *args.
+    args_repr = " ".join(str(c) for c in mock_search_results.call_args.args).lower()
+    assert "result_status in" in args_repr
+    # project_codes scoping present
+    assert "project_code in" in args_repr
+
+
+@patch("testgen.mcp.tools.test_results.TestResult.search_results")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_search_test_results_empty(mock_compute, mock_search_results, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    mock_search_results.return_value = ([], 0)
+
+    from testgen.mcp.tools.test_results import search_test_results
+
+    out = search_test_results()
+
+    assert "No test results match" in out
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_search_test_results_rejects_unknown_project(mock_compute, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+
+    from testgen.mcp.tools.test_results import search_test_results
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        search_test_results(project_code="proj_b")
+
+
+@patch("testgen.mcp.tools.test_results.TestResult.search_results")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_search_test_results_paginates(mock_compute, mock_search_results, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    # total > limit → footer expected
+    rows = [_mock_search_row() for _ in range(2)]
+    mock_search_results.return_value = (rows, 100)
+
+    from testgen.mcp.tools.test_results import search_test_results
+
+    out = search_test_results(limit=2, page=1)
+    assert "Showing 1" in out and "2 of 100" in out
+    assert "Use `page=2` for more" in out
+
+
+# ----------------------------------------------------------------------
+# get_failure_trend
+# ----------------------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_results.TestResult.failure_trend")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_trend_happy_path(mock_compute, mock_failure_trend, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    b1 = MagicMock(failed_ct=3, warning_ct=1, total_ct=10)
+    b1.bucket = date(2026, 4, 1)
+    b1.failure_rate = 0.4
+    mock_failure_trend.return_value = [b1]
+
+    from testgen.mcp.tools.test_results import get_failure_trend
+
+    out = get_failure_trend(since="30 days")
+
+    assert "Failure Trend" in out
+    assert "40.0%" in out
+    assert mock_failure_trend.call_args.kwargs["bucket"] == "day"
+    # project_codes is now a caller-built clause, not a kwarg.
+    clauses = mock_failure_trend.call_args.args
+    assert any("project_code" in str(c) for c in clauses)
+
+
+@patch("testgen.mcp.tools.test_results.TestResult.failure_trend")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_trend_empty(mock_compute, mock_failure_trend, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    mock_failure_trend.return_value = []
+
+    from testgen.mcp.tools.test_results import get_failure_trend
+
+    out = get_failure_trend(since="30 days")
+    assert "No test results found" in out
+
+
+def test_get_failure_trend_invalid_bucket(db_session_mock):
+    from testgen.mcp.tools.test_results import get_failure_trend
+
+    with pytest.raises(MCPUserError, match="Invalid"):
+        get_failure_trend(bucket="month")
+
+
+@patch("testgen.mcp.tools.test_results.TestResult.failure_trend")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_trend_exclude_today_shifts_end_date(mock_compute, mock_failure_trend, db_session_mock):
+    """exclude_today=True (default) passes yesterday as end_date; False passes today."""
+    from datetime import UTC, datetime, timedelta
+
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"}, permission="view",
+        username="test_user",
+    )
+    mock_failure_trend.return_value = []
+
+    from testgen.mcp.tools.test_results import get_failure_trend
+
+    real_today = datetime.now(UTC).date()
+
+    # Default: exclude_today=True → end_date is yesterday.
+    get_failure_trend(since="14 days")
+    assert mock_failure_trend.call_args.kwargs["end_date"] == real_today - timedelta(days=1)
+
+    # Explicit exclude_today=False → end_date is today.
+    get_failure_trend(since="14 days", exclude_today=False)
+    assert mock_failure_trend.call_args.kwargs["end_date"] == real_today
+
+
+# ----------------------------------------------------------------------
+# get_test_run_diff
+# ----------------------------------------------------------------------
+
+
+def _mock_diff_row(status_a, status_b, **overrides):
+    row = MagicMock()
+    row.test_definition_id = uuid4()
+    row.test_type = "Pattern_Match"
+    row.test_name_short = "Pattern Match"
+    row.table_name = "orders"
+    row.column_names = "customer_id"
+    row.status_a = status_a
+    row.status_b = status_b
+    row.measure_a = "5"
+    row.measure_b = "12"
+    row.threshold_a = "0"
+    row.threshold_b = "0"
+    for k, v in overrides.items():
+        setattr(row, k, v)
+    return row
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_test_run_diff_happy_path(
+    mock_compute, mock_test_run_cls, mock_result, mock_test_suite_cls, db_session_mock,
+):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    suite_id = uuid4()
+    run_a = MagicMock(id=uuid4(), test_suite_id=suite_id)
+    run_b = MagicMock(id=uuid4(), test_suite_id=suite_id)
+    mock_test_run_cls.get_by_id_or_job.side_effect = [run_a, run_b]
+    mock_test_suite_cls.id = MagicMock()  # support .in_(...) on attribute mock
+    mock_test_suite_cls.select_where.return_value = [MagicMock(id=suite_id, project_code="proj_a", is_monitor=False)]
+
+    diff = MagicMock()
+    diff.total_a = 100
+    diff.total_b = 100
+    diff.regressions = [
+        _mock_diff_row(
+            TestResultStatus.Passed, TestResultStatus.Failed, threshold_a="1", threshold_b="3",
+        )
+    ]
+    diff.improvements = []
+    diff.persistent_failures = []
+    diff.new_tests = []
+    diff.removed_tests = []
+    mock_result.diff_with_details.return_value = diff
+
+    from testgen.mcp.tools.test_results import get_test_run_diff
+
+    out = get_test_run_diff(str(uuid4()), str(uuid4()))
+
+    assert "Test Run Diff" in out
+    assert "Regressions" in out
+    assert "Pattern Match" in out
+    assert "Passed → Failed" in out
+    assert "Threshold A" in out and "Threshold B" in out
+    assert "| 1 | 3 |" in out  # threshold columns populated when thresholds changed
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_test_run_diff_run_not_found(
+    mock_compute, mock_test_run_cls, mock_test_suite_cls, db_session_mock,
+):
+    """One run missing, other accessible — unified error without leaking which side failed."""
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    suite_id = uuid4()
+    mock_test_run_cls.get_by_id_or_job.side_effect = [None, MagicMock(id=uuid4(), test_suite_id=suite_id)]
+    mock_test_suite_cls.id = MagicMock()
+    mock_test_suite_cls.select_where.return_value = [MagicMock(id=suite_id, project_code="proj_a", is_monitor=False)]
+
+    from testgen.mcp.tools.test_results import get_test_run_diff
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test run .* not found or not accessible"):
+        get_test_run_diff(str(uuid4()), str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_test_run_diff_rejects_inaccessible_project(
+    mock_compute, mock_test_run_cls, mock_test_suite_cls, db_session_mock,
+):
+    """Runs in an inaccessible project produce the same unified message, not a separate one."""
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    suite_id = uuid4()
+    run = MagicMock(id=uuid4(), test_suite_id=suite_id)
+    mock_test_run_cls.get_by_id_or_job.side_effect = [run, run]
+    mock_test_suite_cls.id = MagicMock()
+    mock_test_suite_cls.select_where.return_value = [MagicMock(id=suite_id, project_code="proj_forbidden", is_monitor=False)]
+
+    from testgen.mcp.tools.test_results import get_test_run_diff
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        get_test_run_diff(str(uuid4()), str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_test_run_diff_rejects_different_suites(
+    mock_compute, mock_test_run_cls, mock_test_suite_cls, db_session_mock,
+):
+    """Both runs accessible but in different suites → suite-mismatch error."""
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    suite_id_a = uuid4()
+    suite_id_b = uuid4()
+    run_a = MagicMock(id=uuid4(), test_suite_id=suite_id_a)
+    run_b = MagicMock(id=uuid4(), test_suite_id=suite_id_b)
+    mock_test_run_cls.get_by_id_or_job.side_effect = [run_a, run_b]
+    mock_test_suite_cls.id = MagicMock()
+    mock_test_suite_cls.select_where.return_value = [
+        MagicMock(id=suite_id_a, project_code="proj_a", is_monitor=False),
+        MagicMock(id=suite_id_b, project_code="proj_a", is_monitor=False),
+    ]
+
+    from testgen.mcp.tools.test_results import get_test_run_diff
+
+    with pytest.raises(MCPUserError, match="must belong to the same test suite"):
+        get_test_run_diff(str(uuid4()), str(uuid4()))
+
+
+def test_get_test_run_diff_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.test_results import get_test_run_diff
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        get_test_run_diff("bad-uuid", str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_test_run_diff_rejects_monitor_suite(
+    mock_compute, mock_test_run_cls, mock_test_suite_cls, db_session_mock,
+):
+    """Monitor suites are hidden from this tool, same as inaccessible projects — unified message."""
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="view",
+        username="test_user",
+    )
+    suite_id = uuid4()
+    run = MagicMock(id=uuid4(), test_suite_id=suite_id)
+    mock_test_run_cls.get_by_id_or_job.side_effect = [run, run]
+    mock_test_suite_cls.id = MagicMock()
+    mock_test_suite_cls.select_where.return_value = [
+        MagicMock(id=suite_id, project_code="proj_a", is_monitor=True)
+    ]
+
+    from testgen.mcp.tools.test_results import get_test_run_diff
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        get_test_run_diff(str(uuid4()), str(uuid4()))

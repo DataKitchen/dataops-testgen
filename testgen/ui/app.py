@@ -7,9 +7,9 @@ import streamlit as st
 from testgen import settings
 from testgen.common import version_service
 from testgen.common.docker_service import check_basic_configuration
-from testgen.common.standalone_postgres import STANDALONE_URI_ENV_VAR, ensure_standalone_setup, is_standalone_mode
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.project import Project
+from testgen.common.standalone_postgres import STANDALONE_URI_ENV_VAR, ensure_standalone_setup, is_standalone_mode
 from testgen.ui import bootstrap
 from testgen.ui.assets import get_asset_path
 from testgen.ui.components import widgets as testgen
@@ -76,7 +76,7 @@ def render(log_level: int = logging.INFO):
                         ],
                         current_project=None if is_global_context else session.sidebar_project,
                         menu=application.menu,
-                        current_page=session.current_page,
+                        current_page=current_page,
                         version=version_service.get_version(),
                         support_email=settings.SUPPORT_EMAIL,
                         global_context=is_global_context,
@@ -89,7 +89,12 @@ def render(log_level: int = logging.INFO):
         # before RerunException propagates and bypasses database_session()'s normal commit.
         db_session = get_current_session()
         if db_session:
-            db_session.commit()
+            try:
+                db_session.commit()
+            except Exception:
+                # Session may be in a bad state (e.g., broken connection from pool).
+                # Roll back so the connection is returned clean and the next rerun works.
+                db_session.rollback()
 
 
 @st.cache_resource(validate=lambda _: not settings.IS_DEBUG, show_spinner=False)

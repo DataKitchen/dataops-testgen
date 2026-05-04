@@ -61,7 +61,7 @@
 import van from '../van.min.js';
 import { Button } from './button.js';
 import { Alert } from './alert.js';
-import { getValue, emitEvent, loadStylesheet, isEqual } from '../utils.js';
+import { getValue, loadStylesheet, isEqual } from '../utils.js';
 import { Input } from './input.js';
 import { Slider } from './slider.js';
 import { Select } from './select.js';
@@ -94,6 +94,7 @@ const defaultPorts = {
  * @returns {HTMLElement}
  */
 const ConnectionForm = (props, saveButton) => {
+    const emit = props.emit;
     loadStylesheet('connectionform', stylesheet);
 
     const connection = getValue(props.connection);
@@ -101,8 +102,13 @@ const ConnectionForm = (props, saveButton) => {
     const defaultPort = defaultPorts[connection?.sql_flavor];
 
     const connectionStatus = van.state(undefined);
+    const testingConnection = van.state(false);
     van.derive(() => {
-        connectionStatus.val = getValue(props.connection)?.status;
+        const status = getValue(props.connection)?.status;
+        connectionStatus.val = status;
+        if (status !== undefined) {
+            testingConnection.val = false;
+        }
     });
 
     const connectionFlavor = van.state(connection?.sql_flavor_code);
@@ -142,7 +148,7 @@ const ConnectionForm = (props, saveButton) => {
         const currentValue = updatedConnection.rawVal;
 
         if (shouldRefreshUrl(previousValue, currentValue)) {
-            emitEvent('ConnectionUpdated', {payload: updatedConnection.rawVal});
+            emit('ConnectionUpdated', {payload: updatedConnection.rawVal});
         }
     });
 
@@ -373,7 +379,12 @@ const ConnectionForm = (props, saveButton) => {
                 color: 'basic',
                 type: 'stroked',
                 width: 'auto',
-                onclick: () => emitEvent('TestConnectionClicked', { payload: updatedConnection.val }),
+                loading: testingConnection,
+                onclick: () => {
+                    testingConnection.val = true;
+                    connectionStatus.val = undefined;
+                    emit('TestConnectionClicked', { payload: updatedConnection.val });
+                },
             }),
             saveButton,
         ),
@@ -1038,7 +1049,7 @@ const SnowflakeForm = (
     const isValid = van.state(false);
     const clearPrivateKeyPhrase = van.state(connection.rawVal?.private_key_passphrase === clearSentinel);
     const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
-    const connectByKey = van.state(connection.rawVal?.connect_by_key ?? false);
+    const connectByKey = van.state(originalConnection?.connection_id ? (connection.rawVal?.connect_by_key ?? false) : true);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
     const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
@@ -1195,13 +1206,32 @@ const SnowflakeForm = (
             RadioGroup({
                 label: 'Connection Strategy',
                 options: [
-                    {label: 'Connect By Password', value: false},
                     {label: 'Connect By Key-Pair', value: true},
+                    {label: 'Connect By Password', value: false},
                 ],
                 value: connectByKey,
                 onChange: (value) => connectByKey.val = value,
                 layout: 'inline',
             }),
+
+            () => !connectByKey.val
+                ? Alert(
+                    { type: 'warn', icon: 'warning', class: 'mt-1' },
+                    span(
+                        'Snowflake is phasing out password authentication for service accounts and will block it between August and October 2026. ',
+                        'Use key-pair authentication to ensure uninterrupted access. ',
+                        van.tags.a(
+                            {
+                                href: 'https://docs.snowflake.com/en/user-guide/security-mfa-rollout',
+                                target: '_blank',
+                                rel: 'noopener noreferrer',
+                                style: 'color: inherit; text-decoration: underline;',
+                            },
+                            'Learn more',
+                        ),
+                    ),
+                )
+                : '',
 
             Input({
                 name: 'db_user',

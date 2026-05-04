@@ -26,11 +26,17 @@ import { Button } from '../components/button.js';
 import { Checkbox } from '../components/checkbox.js';
 import { Select } from './select.js';
 import { Paginator } from '../components/paginator.js';
-import { emitEvent, loadStylesheet } from '../utils.js';
+import { loadStylesheet } from '../utils.js';
 import { colorMap, formatTimestamp, caseInsensitiveSort } from '../display_utils.js';
 
 const { div, i, span } = van.tags;
 const PAGE_SIZE = 100;
+
+// Mirrors SCORE_CARD_NULL_DRILLDOWN in testgen/common/models/scores.py — encodes
+// drilldowns into buckets whose grouping value is NULL.
+const NULL_DRILLDOWN = '__null__';
+// Display label for the NULL bucket (e.g. table-scope tests have no column).
+const NULL_DRILLDOWN_LABEL = '(none)';
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
 const statusColors = {
     'Potential PII': colorMap.grey,
@@ -47,13 +53,17 @@ const IssuesTable = (
     /** @type string[] */ columns,
     /** @type Score */ score,
     /** @type ('score' | 'cde_score') */ scoreType,
-    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension') */ category,
+    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension') */ category,
     /** @type string */ drilldown,
     /** @type function */ onBack,
+    emit,
 ) => {
     loadStylesheet('score-issues-table', stylesheet);
 
-    const drilldownParts = drilldown.split('.');
+    // Decode any NULL_DRILLDOWN sentinels back to null so equality filters match
+    // the actual NULL values on issue rows (test_results.column_names IS NULL, etc.).
+    const drilldownParts = drilldown.split('.').map(part => part === NULL_DRILLDOWN ? null : part);
+    const drilldownDisplay = (part) => part === null ? NULL_DRILLDOWN_LABEL : part;
     const pageIndex = van.state(0);
     const filters = {
         table: van.state(['table_name', 'column_name'].includes(category) ? drilldownParts[1] : null),
@@ -94,10 +104,14 @@ const IssuesTable = (
                     span(`Hygiene / Test Issues (${issues.length ?? 0}) for`),
                     span(
                         { class: 'text-primary' },
-                        `${COLUMN_LABEL[category] ?? '-'}: ${['table_name', 'column_name'].includes(category) ? drilldownParts.slice(1).join(' > ') : drilldown}`,
+                        `${COLUMN_LABEL[category] ?? '-'}: ${
+                            ['table_name', 'column_name'].includes(category)
+                                ? drilldownParts.slice(1).map(drilldownDisplay).join(' > ')
+                                : drilldownDisplay(drilldownParts[0])
+                        }`,
                     ),
-                    category === 'column_name'
-                        ? ColumnProfilingButton(drilldownParts[2], drilldownParts[1], drilldownParts[0])
+                    category === 'column_name' && drilldownParts[2] !== null
+                        ? ColumnProfilingButton(drilldownParts[2], drilldownParts[1], drilldownParts[0], emit)
                         : null,
                 ),
             ),
@@ -119,20 +133,20 @@ const IssuesTable = (
                     label: 'Issue Reports',
                     width: 'fit-content',
                     style: 'margin-left: auto; background-color: var(--dk-card-background)',
-                    onclick: () => emitEvent('IssueReportsExported', { payload: selectedIssues.val }),
+                    onclick: () => emit('IssueReportsExported', { payload: selectedIssues.val }),
                     disabled: () => !selectedIssues.val.length,
                     tooltip: () => selectedIssues.val.length ? '' : 'No issues selected',
                 }),
             ),
         ),
-        () => Toolbar(filters, issues, category),
+        () => Toolbar(filters, issues, category, emit),
         () => displayedIssues.val.length
         ? div(
             div(
                 { class: 'table-header issues-columns flex-row' },
                 Checkbox({
-                    checked: () => selectedIssues.val.length === PAGE_SIZE,
-                    indeterminate: () => !!selectedIssues.val.length,
+                    checked: () => selectedIssues.val.length > 0,
+                    indeterminate: () => selectedIssues.val.length > 0 && selectedIssues.val.length < displayedIssues.val.length,
                     onChange: (checked) => {
                         if (checked) {
                             selectedIssues.val = displayedIssues.val.map(({ id, issue_type }) => ({ id, issue_type }));
@@ -158,10 +172,10 @@ const IssuesTable = (
                 }),
                 category === 'column_name'
                     ? span({ class: 'ml-2' })
-                    : ColumnProfilingButton(row.column, row.table, row.table_group_id),
-                columns.map((columnName) => TableCell(row, columnName, score.project_code)),
+                    : ColumnProfilingButton(row.column, row.table, row.table_group_id, emit),
+                columns.map((columnName) => TableCell(row, columnName, score.project_code, emit)),
             )),
-            () => Paginator({
+            () => Paginator({ emit, 
                 pageIndex,
                 count: filteredIssues.val.length,
                 pageSize: PAGE_SIZE,
@@ -184,7 +198,11 @@ const ColumnProfilingButton = (
     /** @type {string} */ column_name,
     /** @type {string} */ table_name,
     /** @type {string} */ table_group_id,
+    emit,
 ) => {
+    if (!column_name) {
+        return div({ style: 'min-width: 36px;' });
+    }
     return Button({
         type: 'icon',
         icon: 'insert_chart',
@@ -192,14 +210,14 @@ const ColumnProfilingButton = (
         style: 'color: var(--secondary-text-color);',
         tooltip: 'View profiling for column',
         tooltipPosition: 'top-right',
-        onclick: () => emitEvent('ColumnProfilingClicked', { payload: { column_name, table_name, table_group_id } }),
+        onclick: () => emit('ColumnProfilingClicked', { payload: { column_name, table_name, table_group_id } }),
     });
 };
 
 const Toolbar = (
     /** @type {object} */ filters,
     /** @type Issue[] */ issues,
-    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension') */ category,
+    /** @type ('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension') */ category,
 ) => {
     const filterOptions = {
         table: [ ...new Set(issues.map(({ table }) => table)) ]
@@ -253,13 +271,13 @@ const Toolbar = (
  * @param {string} column
  * @returns {<string>}
  */
-const TableCell = (row, column, projectCode) => {
+const TableCell = (row, column, projectCode, emit) => {
     const componentByColumn = {
         column: IssueColumnCell,
         type: IssueCell,
         status: StatusCell,
         detail: DetailCell,
-        time: (value, row) => TimeCell(value, row, projectCode),
+        time: (value, row) => TimeCell(value, row, projectCode, emit),
     };
 
     if (componentByColumn[column]) {
@@ -306,13 +324,13 @@ const DetailCell = (value, row) => {
     );
 };
 
-const TimeCell = (value, row, projectCode) => {
+const TimeCell = (value, row, projectCode, emit) => {
     return div(
         { class: 'flex-column', style: `flex: 0 0 ${ISSUES_COLUMNS_SIZES.time}` },
         row.issue_type === 'test'
             ? Caption({ content: row.name, style: 'font-size: 12px;' })
             : '',
-        Link({
+        Link({ emit, 
             label: formatTimestamp(value),
             open_new: true,
             href: row.issue_type === 'test' ? 'test-runs:results' : 'profiling-runs:hygiene',
@@ -339,6 +357,7 @@ const COLUMN_LABEL = {
     column_name: 'Table > Column',
     semantic_data_type: 'Semantic Data Type',
     dq_dimension: 'Quality Dimension',
+    impact_dimension: 'Impact Dimension',
 };
 
 const ISSUES_COLUMN_LABEL = {

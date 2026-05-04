@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Literal, Self
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import Column, ForeignKey, String, asc, select
 from sqlalchemy.dialects import postgresql
 
@@ -33,7 +32,6 @@ class ProjectMembership(Entity):
     _default_order_by = (asc(project_code),)
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_by_user_and_project(cls, user_id: UUID, project_code: str) -> Self | None:
         """Get a specific membership for a user in a project."""
         query = select(cls).where(
@@ -43,20 +41,17 @@ class ProjectMembership(Entity):
         return get_current_session().scalars(query).first()
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_projects_for_user(cls, user_id: UUID) -> list[str]:
         """Get all project codes a user has access to."""
         query = select(cls.project_code).where(cls.user_id == user_id)
         return list(get_current_session().scalars(query).all())
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_memberships_for_user(cls, user_id: UUID) -> list[Self]:
         """Get all memberships for a user."""
         return list(cls.select_where(cls.user_id == user_id))
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_memberships_for_project(cls, project_code: str) -> list[Self]:
         """Get all memberships for a project."""
         return list(cls.select_where(cls.project_code == project_code))
@@ -73,10 +68,3 @@ class ProjectMembership(Entity):
         membership = cls.get_by_user_and_project(user_id, project_code)
         return membership.role if membership else None
 
-    @classmethod
-    def clear_cache(cls) -> None:
-        super().clear_cache()
-        cls.get_by_user_and_project.clear()
-        cls.get_projects_for_user.clear()
-        cls.get_memberships_for_user.clear()
-        cls.get_memberships_for_project.clear()

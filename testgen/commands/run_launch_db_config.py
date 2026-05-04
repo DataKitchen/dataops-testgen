@@ -4,12 +4,12 @@ import os
 from testgen import settings
 from testgen.common import create_database, execute_db_queries
 from testgen.common.credentials import get_tg_db, get_tg_schema
-from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
 from testgen.common.models import with_database_session
 from testgen.common.read_file import get_template_files
 from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
+from testgen.common.standalone_postgres import get_target_host_port, is_standalone_mode
 
 LOG = logging.getLogger("testgen")
 
@@ -24,10 +24,13 @@ def _get_params_mapping() -> dict:
     ui_user_encrypted_password = encrypt_ui_password(settings.PASSWORD)
 
     project_host = settings.PROJECT_DATABASE_HOST
+    project_port = settings.PROJECT_DATABASE_PORT
     project_user = settings.PROJECT_DATABASE_USER
     project_password = settings.PROJECT_DATABASE_PASSWORD
     if is_standalone_mode():
-        project_host = str(get_home_dir() / "pgdata")
+        project_host, server_port = get_target_host_port()
+        if server_port:
+            project_port = server_port
         project_user = "postgres"
         project_password = ""
 
@@ -43,7 +46,7 @@ def _get_params_mapping() -> dict:
         "PROJECT_NAME": settings.PROJECT_NAME,
         "PROJECT_DB": settings.PROJECT_DATABASE_NAME,
         "PROJECT_USER": project_user,
-        "PROJECT_PORT": settings.PROJECT_DATABASE_PORT,
+        "PROJECT_PORT": project_port,
         "PROJECT_HOST": project_host,
         "PROJECT_PW_ENCRYPTED": EncryptText(project_password),
         "PROJECT_HTTP_PATH": "",

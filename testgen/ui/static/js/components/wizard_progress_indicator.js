@@ -48,7 +48,7 @@ const WizardProgressIndicator = (steps, currentStep, onStepClick) => {
     width: ${progressWidth.val};
     background: ${colorMap.green};
     transition: width 0.3s ease-out;
-    z-index: -4;
+    z-index: 1;
   `;
 
   const currentStepIndicator = (title, stepIndex, step) => div(
@@ -58,13 +58,13 @@ const WizardProgressIndicator = (steps, currentStep, onStepClick) => {
       onclick: () => onStepClick?.(step.includedSteps[0]),
     },
     stepIndex === 0
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     stepIndex === steps.length - 1
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     div(
-      { class: 'flex-row fx-justify-center', style: `border: 2px solid var(--secondary-text-color); background: var(--dk-dialog-background); border-radius: 50%; height: 24px; width: 24px;` },
+      { class: 'flex-row fx-justify-center', style: `position: relative; z-index: 3; border: 2px solid var(--secondary-text-color); background: var(--portal-background, white); border-radius: 50%; height: 24px; width: 24px;` },
       div({ style: 'width: 14px; height: 14px; border-radius: 50%; background: var(--secondary-text-color);' }, ''),
     ),
     span({}, title),
@@ -76,13 +76,13 @@ const WizardProgressIndicator = (steps, currentStep, onStepClick) => {
       style: 'position: relative; cursor: default;',
     },
     stepIndex === 0
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     stepIndex === steps.length - 1
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     div(
-      { class: 'flex-row', style: `color: var(--empty-light); border: 2px solid var(--disabled-text-color); background: var(--dk-dialog-background); border-radius: 50%;` },
+      { class: 'flex-row', style: `position: relative; z-index: 3; color: var(--empty-light); border: 2px solid var(--disabled-text-color); background: var(--portal-background, white); border-radius: 50%;` },
       i({style: 'width: 20px; height: 20px;'}, ''),
     ),
     span({}, title),
@@ -95,13 +95,13 @@ const WizardProgressIndicator = (steps, currentStep, onStepClick) => {
       onclick: () => onStepClick?.(step.includedSteps[0]),
     },
     stepIndex === 0
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     stepIndex === steps.length - 1
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     div(
-      { class: 'flex-row', style: `color: var(--empty-light); border: 2px solid ${colorMap.green}; background: ${colorMap.green}; border-radius: 50%;` },
+      { class: 'flex-row', style: `position: relative; z-index: 3; color: var(--empty-light); border: 2px solid ${colorMap.green}; background: ${colorMap.green}; border-radius: 50%;` },
       i(
         {
             class: 'material-symbols-rounded',
@@ -116,13 +116,13 @@ const WizardProgressIndicator = (steps, currentStep, onStepClick) => {
   const skippedStepIndicator = (title, stepIndex) => div(
     { class: `flex-column fx-align-flex-center fx-gap-1 ${currentPhysicalIndex === stepIndex ? 'step-icon-current' : 'text-secondary'}`, style: 'position: relative;' },
     stepIndex === 0
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; left: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     stepIndex === steps.length - 1
-      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--dk-dialog-background); z-index: -1;' }, '')
+      ? div({ style: 'position: absolute; width: 50%; height: 50%; right: 0px; background: var(--portal-background, white); z-index: 2;' }, '')
       : '',
     div(
-      { class: 'flex-row', style: `color: var(--empty-light); border: 2px solid var(--grey); background: var(--grey); border-radius: 50%;` },
+      { class: 'flex-row', style: `position: relative; z-index: 3; color: var(--empty-light); border: 2px solid var(--grey); background: var(--grey); border-radius: 50%;` },
       i(
         {
             class: 'material-symbols-rounded',
@@ -138,9 +138,9 @@ const WizardProgressIndicator = (steps, currentStep, onStepClick) => {
     {
       id: 'wizard-progress-container',
       class: 'flex-row fx-justify-space-between mb-5',
-      style: 'position: relative; margin-top: -20px;'
+      style: 'position: relative; isolation: isolate;'
     },
-    div({ style: `position: absolute; top: 10px; left: 0; width: 100%; height: 4px; background: var(--disabled-text-color); z-index: -5;` }),
+    div({ style: `position: absolute; top: 10px; left: 0; width: 100%; height: 4px; background: var(--disabled-text-color); z-index: 0;` }),
     div({ style: progressLineStyle }),
 
     ...steps.map((step, physicalIdx) => {

@@ -2,6 +2,7 @@ import base64
 import importlib
 import logging
 import os
+import pathlib
 import platform
 import secrets
 import signal
@@ -10,12 +11,13 @@ import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from importlib.metadata import version as pkg_version
-from pathlib import Path
 
 import click
 from click.core import Context
 
 from testgen import settings
+from testgen.commands.exec_job import exec_job
+from testgen.commands.job_runner import submit_and_wait
 from testgen.commands.run_get_entities import (
     run_get_results,
     run_get_test_suite,
@@ -33,9 +35,12 @@ from testgen.commands.run_get_entities import (
 )
 from testgen.commands.run_launch_db_config import run_launch_db_config
 from testgen.commands.run_observability_exporter import run_observability_exporter
-from testgen.commands.run_profiling import run_profiling
-from testgen.commands.run_quick_start import run_monitor_increment, run_quick_start, run_quick_start_increment
-from testgen.commands.run_test_execution import run_test_execution
+from testgen.commands.run_quick_start import (
+    run_monitor_increment,
+    run_quick_start,
+    run_quick_start_increment,
+    run_with_job_execution,
+)
 from testgen.commands.run_test_metadata_exporter import run_test_metadata_exporter
 from testgen.commands.run_upgrade_db_config import get_schema_revision, is_db_revision_up_to_date, run_upgrade_db_config
 from testgen.commands.test_generation import run_monitor_generation, run_test_generation
@@ -48,31 +53,40 @@ from testgen.common import (
     get_tg_schema,
     version_service,
 )
-from testgen.common.standalone_postgres import (
-    STANDALONE_URI_ENV_VAR,
-    get_home_dir as get_testgen_home,
-    get_server_uri,
-    is_standalone_mode,
-    start_server as start_standalone_postgres,
-)
-from testgen.common.models import with_database_session
-from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.settings import PersistedSetting
-from testgen.common.models.test_run import TestRun
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.base import smtp_configured
-from testgen.common.notifications.profiling_run import send_profiling_run_notifications
-from testgen.common.notifications.test_run import send_test_run_notifications
-from testgen.scheduler import register_scheduler_job, run_scheduler
+from testgen.common.standalone_postgres import (
+    STANDALONE_URI_ENV_VAR,
+    get_server_uri,
+    is_standalone_mode,
+)
+from testgen.common.standalone_postgres import (
+    get_home_dir as get_testgen_home,
+)
+from testgen.common.standalone_postgres import (
+    start_server as start_standalone_postgres,
+)
+from testgen.scheduler import run_scheduler
 from testgen.utils import plugins
 
 LOG = logging.getLogger("testgen")
 
-APP_MODULES = ["ui", "scheduler"]
-if settings.MCP_ENABLED:
-    APP_MODULES.append("mcp")
+APP_MODULES = ["ui", "scheduler", "server"]
 VERSION_DATA = version_service.get_version()
 CHILDREN_POLL_INTERVAL = 10
+
+
+def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
+    # On POSIX, forward the signal verbatim. On Windows, subprocess.send_signal
+    # rejects everything except SIGTERM / CTRL_C_EVENT / CTRL_BREAK_EVENT, so
+    # fall back to terminate() — equivalent to TerminateProcess().
+    if sys.platform == "win32":
+        child.terminate()
+    else:
+        child.send_signal(signum)
 
 @dataclass
 class Configuration:
@@ -91,6 +105,13 @@ class CliGroup(click.Group):
             raise
         except Exception:
             LOG.exception("There was an unexpected error")
+            sys.exit(1)
+
+    def format_epilog(self, _ctx: Context, formatter: click.HelpFormatter) -> None:
+        # Schema revision is a DB round-trip; defer until `--help` is actually
+        # requested rather than evaluating at module-load for every CLI invocation.
+        formatter.write_paragraph()
+        formatter.write_text(f"Schema revision: {get_schema_revision()}")
 
 
 @click.group(
@@ -99,8 +120,6 @@ class CliGroup(click.Group):
     {VERSION_DATA.edition} {VERSION_DATA.current or ""}
 
     {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.latest != VERSION_DATA.current else ""}
-
-    Schema revision: {get_schema_revision()}
     """
 )
 @click.option(
@@ -138,7 +157,6 @@ def cli(ctx: Context, verbose: bool):
     LOG.debug("Current Step: Main Program")
 
 
-@register_scheduler_job
 @cli.command("run-profile", help="Generates a new profile of the table group.")
 @click.option(
     "-tg",
@@ -147,10 +165,11 @@ def cli(ctx: Context, verbose: bool):
     type=click.STRING,
     help="ID of the table group to profile. Use a table_group_id shown in list-table-groups.",
 )
-def run_profile(table_group_id: str):
-    click.echo(f"run-profile with table_group_id: {table_group_id}")
-    message = run_profiling(table_group_id)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_profile(table_group_id: str, no_wait: bool):
+    with database_session():
+        project_code = TableGroup.get(table_group_id).project_code
+    submit_and_wait("run-profile", {"table_group_id": str(table_group_id)}, project_code, no_wait)
 
 
 @cli.command("run-test-generation", help="Generates or refreshes the tests for a table group.")
@@ -182,19 +201,19 @@ def run_profile(table_group_id: str):
     required=False,
     default="Standard",
 )
-@with_database_session
-def run_generation(test_suite_id: str | None = None, table_group_id: str | None = None, test_suite_key: str | None = None, generation_set: str | None = None):
-    click.echo(f"run-test-generation for suite: {test_suite_id or test_suite_key}")
-    # For backward compatibility
-    if not test_suite_id:
-        test_suites = TestSuite.select_minimal_where(
-            TestSuite.table_groups_id == table_group_id,
-            TestSuite.test_suite == test_suite_key,
-        )
-        if test_suites:
-            test_suite_id = test_suites[0].id
-    message = run_test_generation(test_suite_id, generation_set)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_generation(test_suite_id: str | None = None, table_group_id: str | None = None, test_suite_key: str | None = None, generation_set: str | None = None, no_wait: bool = False):
+    with database_session():
+        # For backward compatibility
+        if not test_suite_id:
+            test_suites = TestSuite.select_minimal_where(
+                TestSuite.table_groups_id == table_group_id,
+                TestSuite.test_suite == test_suite_key,
+            )
+            if test_suites:
+                test_suite_id = test_suites[0].id
+        project_code = TestSuite.get(test_suite_id).project_code
+    submit_and_wait("run-test-generation", {"test_suite_id": str(test_suite_id), "generation_set": generation_set}, project_code, no_wait)
 
 
 @cli.command("run-monitor-generation", help="Generates or refreshes the monitors for a table group.")
@@ -211,7 +230,6 @@ def generate_monitors(test_suite_id: str):
     run_monitor_generation(test_suite_id, ["Freshness_Trend", "Volume_Trend", "Schema_Drift"])
 
 
-@register_scheduler_job
 @cli.command("run-tests", help="Performs tests defined for a test suite.")
 @click.option(
     "-t",
@@ -235,22 +253,21 @@ def generate_monitors(test_suite_id: str):
     required=False,
     default=settings.DEFAULT_TEST_SUITE_KEY,
 )
-@with_database_session
-def run_tests(test_suite_id: str | None = None, project_key: str | None = None, test_suite_key: str | None = None):
-    click.echo(f"run-tests for suite: {test_suite_id or test_suite_key}")
-    # For backward compatibility
-    if not test_suite_id:
-        test_suites = TestSuite.select_minimal_where(
-            TestSuite.project_code == project_key,
-            TestSuite.test_suite == test_suite_key,
-        )
-        if test_suites:
-            test_suite_id = test_suites[0].id
-    message = run_test_execution(test_suite_id)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_tests(test_suite_id: str | None = None, project_key: str | None = None, test_suite_key: str | None = None, no_wait: bool = False):
+    with database_session():
+        # For backward compatibility
+        if not test_suite_id:
+            test_suites = TestSuite.select_minimal_where(
+                TestSuite.project_code == project_key,
+                TestSuite.test_suite == test_suite_key,
+            )
+            if test_suites:
+                test_suite_id = test_suites[0].id
+        project_code = TestSuite.get(test_suite_id).project_code
+    submit_and_wait("run-tests", {"test_suite_id": str(test_suite_id)}, project_code, no_wait)
 
 
-@register_scheduler_job
 @cli.command("run-monitors", help="Performs tests defined for a monitor suite.")
 @click.option(
     "-t",
@@ -259,11 +276,17 @@ def run_tests(test_suite_id: str | None = None, project_key: str | None = None, 
     type=click.STRING,
     help="ID of the monitor suite to run.",
 )
-@with_database_session
-def run_monitors(test_suite_id: str):
-    click.echo(f"run-monitors for suite: {test_suite_id}")
-    message = run_test_execution(test_suite_id)
-    click.echo("\n" + message)
+@click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
+def run_monitors(test_suite_id: str, no_wait: bool = False):
+    with database_session():
+        project_code = TestSuite.get(test_suite_id).project_code
+    submit_and_wait("run-monitors", {"test_suite_id": str(test_suite_id)}, project_code, no_wait)
+
+
+@cli.command("exec-job", hidden=True, help="Execute a queued job. Internal use by the scheduler.")
+@click.argument("job_execution_id", type=click.UUID)
+def exec_job_cmd(job_execution_id):
+    exec_job(job_execution_id)
 
 
 @cli.command("list-profiles", help="Lists all profile runs for a table group.")
@@ -454,21 +477,19 @@ def quick_start(
     test_suite_id = "9df7489d-92b3-49f9-95ca-512160d7896f"
 
     click.echo(f"run-profile with table_group_id: {table_group_id}")
-    message = run_profiling(table_group_id, run_date=now_date + time_delta)
-    click.echo("\n" + message)
+    run_with_job_execution("run-profile", now_date + time_delta, table_group_id=table_group_id)
 
     LOG.info(f"run-test-generation with test_suite_id: {test_suite_id}")
-    message = with_database_session(run_test_generation)(test_suite_id, "Standard")
-    click.echo("\n" + message)
+    with_database_session(run_test_generation)(test_suite_id, "Standard")
 
-    run_test_execution(test_suite_id, run_date=now_date + time_delta)
+    run_with_job_execution("run-tests", now_date + time_delta, test_suite_id=test_suite_id)
 
     total_iterations = 3
     for iteration in range(1, total_iterations + 1):
         click.echo(f"Running iteration: {iteration} / {total_iterations}")
         run_date = now_date + timedelta(days=-10 * (total_iterations - iteration)) # 10 day increments
         run_quick_start_increment(iteration)
-        run_test_execution(test_suite_id, run_date=run_date)
+        run_with_job_execution("run-tests", run_date, test_suite_id=test_suite_id)
 
     monitor_iterations = 68  # ~5 weeks
     monitor_interval = timedelta(hours=12)
@@ -483,7 +504,7 @@ def quick_start(
         if monitor_run_date.weekday() < 5 and monitor_run_date.hour < 12:
             weekday_morning_count += 1
         run_monitor_increment(monitor_run_date, iteration, weekday_morning_count)
-        run_test_execution(monitor_test_suite_id, run_date=monitor_run_date)
+        run_with_job_execution("run-monitors", monitor_run_date, test_suite_id=monitor_test_suite_id)
         monitor_run_date += monitor_interval
 
     click.echo("Quick start has successfully finished.")
@@ -542,6 +563,14 @@ def setup_standalone(username: str, password: str):
         "TG_TARGET_DB_TRUST_SERVER_CERTIFICATE=yes",
         "TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL=no",
     ]
+
+    # Persist caller-supplied runtime overrides (ports, TLS) so they apply to
+    # subsequent `testgen run-app` invocations.
+    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "SSL_CERT_FILE", "SSL_KEY_FILE")
+    persisted_lines = [f"{name}={os.environ[name]}" for name in persisted_env_vars if os.environ.get(name)]
+    if persisted_lines:
+        config_lines.extend(["", "# Runtime overrides from installer", *persisted_lines])
+
     config_path.write_text("\n".join(config_lines) + "\n")
     click.echo(f"Config written to {config_path}")
 
@@ -554,6 +583,14 @@ def setup_standalone(username: str, password: str):
     click.echo("Patching Streamlit...")
     from testgen.ui.scripts.patch_streamlit import patch as patch_streamlit
     patch_streamlit(dev=True)
+
+    # Seed Streamlit's first-run credentials file so `run-app` doesn't block
+    # on the interactive email prompt. We don't care about the value — just
+    # that the file exists so Streamlit skips the prompt.
+    streamlit_creds = pathlib.Path.home() / ".streamlit" / "credentials.toml"
+    if not streamlit_creds.exists():
+        streamlit_creds.parent.mkdir(parents=True, exist_ok=True)
+        streamlit_creds.write_text('[general]\nemail = ""\n')
 
     # Start embedded PostgreSQL (standalone mode is now active via config)
     start_standalone_postgres()
@@ -829,21 +866,13 @@ def list_ui_plugins():
 def run_ui():
     from testgen.ui.scripts import patch_streamlit
 
-    use_ssl = os.path.isfile(settings.SSL_CERT_FILE) and os.path.isfile(settings.SSL_KEY_FILE)
+    use_ssl = settings.UI_TLS_ENABLED
 
     if settings.IS_DEBUG:
         patch_streamlit.patch(dev=True)
 
     @with_database_session
     def init_ui():
-        try:
-            for profiling_run_id in ProfilingRun.cancel_all_running():
-                send_profiling_run_notifications(ProfilingRun.get(profiling_run_id))
-            for test_run_id in TestRun.cancel_all_running():
-                send_test_run_notifications(TestRun.get(test_run_id))
-        except Exception:
-            LOG.warning("Failed to cancel 'Running' profiling/test runs")
-
         PersistedSetting.set("SMTP_CONFIGURED", smtp_configured())
 
     init_ui()
@@ -859,7 +888,9 @@ def run_ui():
             child_env = {**os.environ, "TG_JOB_SOURCE": "UI", STANDALONE_URI_ENV_VAR: server_uri}
 
     process= subprocess.Popen(
-        [  # noqa: S607
+        [
+            sys.executable,
+            "-m",
             "streamlit",
             "run",
             app_file,
@@ -867,6 +898,7 @@ def run_ui():
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
+            f"--server.port={settings.UI_PORT}",
             f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
             f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
             "--",
@@ -876,7 +908,7 @@ def run_ui():
     )
     def term_ui(signum, _):
         LOG.info(f"Sending termination signal {signum} to Testgen UI")
-        process.send_signal(signum)
+        _forward_signal_to_child(process, signum)
     signal.signal(signal.SIGINT, term_ui)
     signal.signal(signal.SIGTERM, term_ui)
     status_code = process.wait()
@@ -898,19 +930,19 @@ def run_app(module):
         case "scheduler":
             run_scheduler()
 
-        case "mcp":
-            from testgen.mcp.server import run_mcp
-            run_mcp()
+        case "server":
+            from testgen.server import run_server
+            run_server()
 
         case "all":
             children = [
-                subprocess.Popen([sys.executable, sys.argv[0], "run-app", m], start_new_session=True)
+                subprocess.Popen([sys.executable, "-m", "testgen", "run-app", m], start_new_session=True)
                 for m in APP_MODULES
             ]
 
             def term_children(signum, _):
                 for child in children:
-                    child.send_signal(signum)
+                    _forward_signal_to_child(child, signum)
 
             signal.signal(signal.SIGINT, term_children)
             signal.signal(signal.SIGTERM, term_children)
@@ -929,34 +961,6 @@ def run_app(module):
                             terminating = True
                             term_children(signal.SIGTERM, None)
 
-
-
-@cli.command("mcp-token", help="Generate a JWT token for MCP server authentication.")
-@click.option("--username", required=True, help="TestGen username")
-@click.option("--password", required=True, hide_input=True, help="TestGen password")
-@with_database_session
-def mcp_token(username: str, password: str):
-    from testgen.mcp import get_server_url
-    from testgen.mcp.auth import authenticate_user
-    try:
-        token = authenticate_user(username, password)
-    except ValueError as e:
-        click.secho(str(e), fg="red")
-        sys.exit(1)
-
-    mcp_url = f"{get_server_url()}/mcp"
-
-    click.echo()
-    click.echo(token)
-    click.echo()
-    click.secho("MCP server URL:", bold=True)
-    click.echo(f"  {mcp_url}")
-    click.echo()
-    click.secho("Pass the token as a Bearer header when connecting from any MCP client.", dim=True)
-    click.echo()
-    click.secho("Example — Claude Code:", bold=True)
-    click.echo(f'  claude mcp add --transport http testgen {mcp_url} --header "Authorization: Bearer {token}"')
-    click.echo()
 
 
 if __name__ == "__main__":

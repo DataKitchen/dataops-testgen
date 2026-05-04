@@ -2,13 +2,18 @@ import van from '../van.min.js';
 import { dot } from '../components/dot.js';
 import { Caption } from '../components/caption.js';
 import { Select } from '../components/select.js';
-import { emitEvent, getValue, loadStylesheet } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import { caseInsensitiveSort } from '../display_utils.js';
 import { getScoreColor } from '../score_utils.js';
 
 const { div, i, span } = van.tags;
 
-const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) => {
+// Mirrors SCORE_CARD_NULL_DRILLDOWN in testgen/common/models/scores.py — used to
+// pass through buckets whose grouping value is NULL so the backend can rewrite
+// the issues filter as `IS NULL`.
+const NULL_DRILLDOWN = '__null__';
+
+const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, emit) => {
     loadStylesheet('score-breakdown', stylesheet);
 
     return div(
@@ -27,7 +32,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                             .sort((A, B) => caseInsensitiveSort(A[1], B[1]))
                             .map(([value, label]) => ({ value, label })),
                         height: 32,
-                        onChange: (value) => emitEvent('CategoryChanged', { payload: value }),
+                        onChange: (value) => emit('CategoryChanged', { payload: value }),
                         testId: 'groupby-selector',
                     });
                 },
@@ -44,7 +49,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
                         value: selectedScoreType,
                         options: scoreTypeOptions.map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s })),
                         height: 32,
-                        onChange: (value) => emitEvent('ScoreTypeChanged', { payload: value }),
+                        onChange: (value) => emit('ScoreTypeChanged', { payload: value }),
                         testId: 'score-type-selector',
                     });
                 },
@@ -67,7 +72,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
             return div(
                 breakdownValue?.items?.map((row) => div(
                     { class: 'table-row flex-row', 'data-testid': 'score-breakdown-row' },
-                    columns.map((columnName) => TableCell(row, columnName, scoreValue, categoryValue, scoreTypeValue, onViewDetails)),
+                    columns.map((columnName) => TableCell(row, columnName, scoreValue, categoryValue, scoreTypeValue, onViewDetails, emit)),
                 )),
             );
         },
@@ -78,7 +83,7 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails) =>
  * Translate the column names for the table.
  *
  * @param {Array<string>} columns
- * @param {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension')} category
+ * @param {('table_name' | 'column_name' | 'semantic_data_type' | 'dq_dimension' | 'impact_dimension')} category
  * @param {('score' | 'cde_score')} scoreType
  * @returns {<string>}
  */
@@ -149,16 +154,14 @@ const ScoreCell = (value) => {
 };
 
 const IssueCountCell = (value, row, score, category, scoreType, onViewDetails) => {
-    let drilldown = row[category];
+    let drilldown = row[category] ?? NULL_DRILLDOWN;
     if (category === 'table_name') {
-        drilldown = `${row.table_groups_id}.${row.table_name}`;
+        drilldown = `${row.table_groups_id}.${row.table_name ?? NULL_DRILLDOWN}`;
     } else if (category === 'column_name') {
-        drilldown = `${row.table_groups_id}.${row.table_name}.${row.column_name}`;
+        drilldown = `${row.table_groups_id}.${row.table_name}.${row.column_name ?? NULL_DRILLDOWN}`;
     }
 
-    // Hide View for rows where the grouping value is null/empty — drilldown filtering
-    // needs a non-empty value on the backend and router, so the link would dead-end.
-    const canDrillDown = value && drilldown && onViewDetails;
+    const canDrillDown = value && onViewDetails;
 
     return div(
         { class: 'flex-row', style: `flex: ${BREAKDOWN_COLUMNS_SIZES.issue_ct}`, 'data-testid': 'score-breakdown-cell' },
@@ -183,6 +186,7 @@ const CATEGORIES = {
     column_name: 'Columns',
     semantic_data_type: 'Semantic Data Types',
     dq_dimension: 'Quality Dimensions',
+    impact_dimension: 'Impact Dimensions',
     table_groups_name: 'Table Group',
     data_location: 'Data Location',
     data_source: 'Data Source',
@@ -200,6 +204,7 @@ const BREAKDOWN_COLUMN_LABEL = {
     column_name: 'Table | Column',
     semantic_data_type: 'Semantic Data Type',
     dq_dimension: 'Quality Dimension',
+    impact_dimension: 'Impact Dimension',
     impact: '',
     score: 'Individual Score',
     issue_ct: 'Issue Count',

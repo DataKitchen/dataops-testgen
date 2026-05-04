@@ -17,6 +17,7 @@ profile_anomaly_types:
     0.25
   dq_score_risk_factor: '1.0'
   dq_dimension: Validity
+  impact_dimension: Conformance
   target_data_lookups:
   - id: '1412'
     test_id: '1030'

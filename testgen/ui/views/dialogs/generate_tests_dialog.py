@@ -1,85 +1,80 @@
-import time
-
 import streamlit as st
 
-from testgen.commands.test_generation import run_test_generation
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
-from testgen.ui.services.rerun_service import safe_rerun
+
+RESULT_KEY = "generate_tests_dialog:result"
+LOCK_RESULT_KEY = "generate_tests_dialog:lock_result"
 
 
-@st.dialog(title="Generate Tests")
-@with_database_session
-def generate_tests_dialog(test_suite: TestSuiteMinimal) -> None:
-    test_suite_id = test_suite.id
+def generate_tests_dialog_widget(
+    test_suite: TestSuiteMinimal,
+    dialog: dict,
+    on_close: callable,
+) -> None:
+    test_suite_id = str(test_suite.id)
     test_suite_name = test_suite.test_suite
 
-    selected_set = ""
     generation_sets = get_generation_set_choices()
+    default_set = "Standard" if "Standard" in generation_sets else (generation_sets[0] if generation_sets else "")
 
-    if generation_sets:
-        try:
-            default_generation_set = generation_sets.index("Standard")
-        except ValueError:
-            default_generation_set = 0
-        with st.container():
-            selected_set = st.selectbox("Generation Set", generation_sets, index=default_generation_set)
-
+    refresh_warning = None
     test_ct, unlocked_test_ct, unlocked_edits_ct = get_test_suite_refresh_warning(test_suite_id)
     if test_ct:
-        unlocked_message = ""
-        if unlocked_edits_ct > 0:
-            unlocked_message = "Manual changes have been made to auto-generated tests in this test suite that have not been locked. "
-        elif unlocked_test_ct > 0:
-            unlocked_message = "Auto-generated tests are present in this test suite that have not been locked. "
+        refresh_warning = {
+            "test_ct": test_ct,
+            "unlocked_test_ct": unlocked_test_ct or 0,
+            "unlocked_edits_ct": unlocked_edits_ct or 0,
+        }
 
-        warning_message = f"""
-            {unlocked_message}
-            Generating tests now will overwrite unlocked tests subject to auto-generation based on the latest profiling.
-            \n\n_Auto-generated Tests: {test_ct}, Unlocked: {unlocked_test_ct}, Edited Unlocked: {unlocked_edits_ct}_
-            """
+    def on_lock_edited_tests(*_) -> None:
+        lock_edited_tests(test_suite_id)
+        st.session_state[LOCK_RESULT_KEY] = "Edited tests have been successfully locked."
 
-        with st.container():
-            st.warning(warning_message, icon=":material/warning:")
-            if unlocked_edits_ct > 0:
-                if st.button("Lock Edited Tests"):
-                    lock_edited_tests(test_suite_id)
-                    st.info("Edited tests have been successfully locked.")
-
-    with st.container():
-        st.markdown(f"Execute test generation for the test suite **{test_suite_name}**?")
-
-    if testgen.expander_toggle(expand_label="Show CLI command", key="test_suite:keys:generate-tests-show-cli"):
-        st.code(
-            f"testgen run-test-generation --test-suite-id {test_suite_id} --generation-set '{selected_set}'",
-            language="shellSession",
-        )
-
-    button_container = st.empty()
-    status_container = st.empty()
-
-    test_generation_button = None
-    with button_container:
-        _, button_column = st.columns([.75, .25])
-        with button_column:
-            test_generation_button = st.button("Generate Tests", use_container_width=True)
-
-    if test_generation_button:
-        button_container.empty()
-        status_container.info("Generating tests ...")
-
+    def on_generate_tests_confirmed(data: dict) -> None:
+        selected_id = data.get("test_suite_id")
+        selected_set = data.get("generation_set", "")
         try:
-            run_test_generation(test_suite_id, selected_set)
+            with database_session():
+                JobExecution.submit(
+                    job_key="run-test-generation",
+                    kwargs={"test_suite_id": str(test_suite_id), "generation_set": selected_set},
+                    source="ui",
+                    project_code=test_suite.project_code,
+                )
+            st.session_state[RESULT_KEY] = {"success": True, "message": f"Test generation started for test suite '{test_suite_name}'."}
+            st.cache_data.clear()
+            on_close()
         except Exception as e:
-            status_container.error(f"Test generation encountered errors: {e!s}.")
+            st.session_state[RESULT_KEY] = {"success": False, "message": f"Test generation encountered errors: {e!s}."}
 
-        status_container.success(f"Test generation completed for test suite **{test_suite_name}**.")
-        time.sleep(1)
-        safe_rerun()
+    def on_close_clicked(*_) -> None:
+        st.session_state.pop(RESULT_KEY, None)
+        st.session_state.pop(LOCK_RESULT_KEY, None)
+        on_close()
+
+    testgen.generate_tests_dialog_widget(
+        key="generate_tests_dialog",
+        data={
+            "dialog": dialog,
+            "test_suite_id": test_suite_id,
+            "test_suite_name": test_suite_name,
+            "generation_sets": generation_sets,
+            "default_generation_set": default_set,
+            "refresh_warning": refresh_warning,
+            "lock_result": st.session_state.get(LOCK_RESULT_KEY),
+            "result": st.session_state.get(RESULT_KEY),
+        },
+        on_LockEditedTests_change=on_lock_edited_tests,
+        on_GenerateTestsConfirmed_change=on_generate_tests_confirmed,
+        on_CloseClicked_change=on_close_clicked,
+    )
 
 
+@with_database_session
 def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:
     result = fetch_one_from_db(
         """
@@ -100,6 +95,7 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> tuple[int, int, int]:
     return None, None, None
 
 
+@with_database_session
 def get_generation_set_choices() -> list[str]:
     results = fetch_all_from_db(
         """
@@ -108,9 +104,10 @@ def get_generation_set_choices() -> list[str]:
         ORDER BY generation_set;
         """
     )
-    return [ row.generation_set for row in results ]
+    return [row.generation_set for row in results]
 
 
+@with_database_session
 def lock_edited_tests(test_suite_id: str) -> None:
     execute_db_query(
         """

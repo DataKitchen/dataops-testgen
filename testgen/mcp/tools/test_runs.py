@@ -2,6 +2,10 @@ from testgen.common.models import with_database_session
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.tools.common import DocGroup, validate_limit
+from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.INVESTIGATE
 
 
 @with_database_session
@@ -12,10 +16,11 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
     Args:
         project_code: The project code to query.
         test_suite: Optional test suite name to filter by.
-        limit: Maximum runs per test suite (default 1).
+        limit: Maximum runs per test suite (default 1, max 100).
     """
     if not project_code:
         return "Missing required parameter `project_code`."
+    validate_limit(limit, 100)
 
     perms = get_project_permissions()
     perms.verify_access(project_code, not_found=f"No completed test runs found in project `{project_code}`.")
@@ -30,7 +35,7 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
             return f"Test suite `{test_suite}` not found in project `{project_code}`."
         test_suite_id = str(suites[0].id)
 
-    summaries = TestRun.select_summary(project_code=project_code, test_suite_id=test_suite_id)
+    summaries, _ = TestRun.select_summary(project_code=project_code, test_suite_id=test_suite_id, page_size=1000)
 
     if not summaries:
         scope = f" for suite `{test_suite}`" if test_suite else ""
@@ -45,35 +50,36 @@ def get_recent_test_runs(project_code: str, test_suite: str | None = None, limit
             runs.append(s)
             seen[s.test_suite] = count + 1
 
-    lines = [f"# Recent Test Runs for `{project_code}`\n"]
+    doc = MdDoc()
     if test_suite:
-        lines[0] = f"# Recent Test Runs for `{project_code}` / `{test_suite}`\n"
-    lines.append(f"Showing {len(runs)} run(s) ({limit} per suite).\n")
+        doc.heading(1, f"Recent Test Runs for `{project_code}` / `{test_suite}`")
+    else:
+        doc.heading(1, f"Recent Test Runs for `{project_code}`")
+    doc.text(f"Showing {len(runs)} run(s) ({limit} per suite).")
 
     current_suite = None
     for run in runs:
         if run.test_suite != current_suite:
             current_suite = run.test_suite
-            lines.append(f"## {current_suite}\n")
+            doc.heading(2, current_suite)
 
         passed = run.passed_ct or 0
         failed = run.failed_ct or 0
         warning = run.warning_ct or 0
         errors = run.error_ct or 0
 
-        lines.append(f"### {run.test_starttime} — {run.status_label}")
-        lines.append(f"- **Run ID:** `{run.test_run_id}`")
-        lines.append(f"- **Started:** {run.test_starttime}  |  **Ended:** {run.test_endtime}")
-        lines.append(f"- **Results:** {run.test_ct or 0} tests — {passed} passed, {failed} failed, {warning} warnings, {errors} errors")
+        doc.heading(3, f"{run.created_at} — {run.status_label}")
+        doc.field("Test Run", run.job_execution_id, code=True)
+        doc.field("Started", run.created_at)
+        doc.field("Ended", run.completed_at or "In progress")
+        doc.field("Results", f"{run.test_ct or 0} tests — {passed} passed, {failed} failed, {warning} warnings, {errors} errors")
 
         if run.dismissed_ct:
-            lines.append(f"- **Dismissed:** {run.dismissed_ct}")
+            doc.field("Dismissed", run.dismissed_ct)
 
         if run.dq_score_testing is not None:
-            lines.append(f"- **Testing Score:** {run.dq_score_testing:.1f}")
+            doc.field("Testing Score", f"{run.dq_score_testing:.1f}")
 
-        lines.append("")
+    doc.text("Use `list_test_results(job_execution_id='...')` for detailed results of a specific run.")
 
-    lines.append("Use `get_test_results(test_run_id='...')` for detailed results of a specific run.")
-
-    return "\n".join(lines)
+    return doc.render()

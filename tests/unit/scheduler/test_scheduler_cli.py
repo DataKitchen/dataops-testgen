@@ -3,9 +3,11 @@ import threading
 import time
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, Mock, patch
+from uuid import uuid4
 
 import pytest
 
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy
 from testgen.scheduler.cli_scheduler import CliJob, CliScheduler
@@ -46,20 +48,8 @@ def db_jobs(scheduler_instance):
 
 
 @pytest.fixture
-def cmd_mock():
-    opt_mock = Mock()
-    opt_mock.opts = ["-b"]
-    opt_mock.name = "b"
-
-    cmd_mock = Mock()
-    cmd_mock.params = [opt_mock]
-    cmd_mock.name = "test-job"
-    return cmd_mock
-
-
-@pytest.fixture
-def job_data(cmd_mock):
-    with patch.dict("testgen.scheduler.cli_scheduler.JOB_REGISTRY", {"test-job": cmd_mock}):
+def job_data():
+    with patch.dict("testgen.commands.job_registry.JOB_DISPATCH", {"test-job": Mock()}):
         yield {
             "cron_expr": "*/5 9-17 * * *",
             "cron_tz":  "UTC",
@@ -90,34 +80,73 @@ def test_get_jobs(scheduler_instance, db_jobs, job_sched):
         assert getattr(jobs[0], attr) == getattr(job_sched, attr), f"Attribute '{attr}' does not match"
 
 
-def test_job_start(scheduler_instance, cli_job, cmd_mock, popen_mock, popen_proc_mock):
-    with patch("testgen.scheduler.cli_scheduler.threading.Thread") as thread_mock:
+def test_job_start(scheduler_instance, cli_job):
+    mock_session = MagicMock()
+    mock_session.__enter__ = Mock(return_value=mock_session)
+    mock_session.__exit__ = Mock(return_value=False)
+    with patch("testgen.common.models.Session", return_value=mock_session):
         scheduler_instance.start_job(cli_job, datetime.now(UTC))
 
-    call_args = popen_mock.call_args[0][0]
-    assert call_args[2] == cmd_mock.name
-    assert call_args[3] == cli_job.args[0]
-    assert call_args[4], call_args[5] == cli_job.kwargs.items()[0]
+    mock_session.add.assert_called_once()
+    added = mock_session.add.call_args[0][0]
+    assert added.job_key == cli_job.key
+    assert added.kwargs == cli_job.kwargs
+    assert added.source == "scheduler"
+    assert added.job_schedule_id == cli_job.job_schedule_id
+    mock_session.commit.assert_called_once()
 
-    thread_mock.assert_called_once_with(target=scheduler_instance._proc_wrapper, args=(popen_proc_mock,))
 
-
-@pytest.mark.parametrize("proc_side_effect", (lambda: None, RuntimeError))
-def test_proc_wrapper(proc_side_effect, scheduler_instance):
+@pytest.mark.parametrize("proc_exit_code", [0, 1])
+def test_proc_wrapper_status(proc_exit_code, scheduler_instance):
+    mock_session = MagicMock()
+    mock_session.__enter__ = Mock(return_value=mock_session)
+    mock_session.__exit__ = Mock(return_value=False)
     with (
         patch.object(scheduler_instance, "_running_jobs_cond") as cond_mock,
-        patch.object(scheduler_instance, "_running_jobs") as set_mock,
+        patch.object(scheduler_instance, "_running_jobs") as dict_mock,
+        patch("testgen.common.models.Session", return_value=mock_session),
     ):
-        cond_mock.__enter__.return_value = True
+        cond_mock.__enter__ = Mock(return_value=True)
+        cond_mock.__exit__ = Mock(return_value=False)
         proc_mock = Mock()
         proc_mock.pid = 555
-        proc_mock.wait = Mock(side_effect=proc_side_effect)
+        proc_mock.wait.return_value = proc_exit_code
+        job_exec_mock = Mock(spec=JobExecution)
 
-        scheduler_instance._proc_wrapper(proc_mock)
+        scheduler_instance._proc_wrapper(proc_mock, job_exec_mock)
 
-        set_mock.add.assert_called_once()
-        set_mock.remove.assert_called_once()
+        dict_mock.__setitem__.assert_called_once()
+        dict_mock.__delitem__.assert_called_once()
         cond_mock.notify.assert_called_once()
+        if proc_exit_code == 0:
+            # exec_job owns mark_completed — wrapper is a no-op on success
+            job_exec_mock.mark_completed.assert_not_called()
+        else:
+            # Crash recovery: wrapper calls mark_interrupted on nonzero exit
+            job_exec_mock.mark_interrupted.assert_called_once()
+
+
+def test_proc_wrapper_exception(scheduler_instance):
+    mock_session = MagicMock()
+    mock_session.__enter__ = Mock(return_value=mock_session)
+    mock_session.__exit__ = Mock(return_value=False)
+    with (
+        patch.object(scheduler_instance, "_running_jobs_cond") as cond_mock,
+        patch.object(scheduler_instance, "_running_jobs") as dict_mock,
+        patch("testgen.common.models.Session", return_value=mock_session),
+    ):
+        cond_mock.__enter__ = Mock(return_value=True)
+        cond_mock.__exit__ = Mock(return_value=False)
+        proc_mock = Mock()
+        proc_mock.pid = 555
+        proc_mock.wait.side_effect = RuntimeError
+        job_exec_mock = Mock(spec=JobExecution)
+
+        scheduler_instance._proc_wrapper(proc_mock, job_exec_mock)
+
+        dict_mock.__setitem__.assert_called_once()
+        dict_mock.__delitem__.assert_called_once()
+        job_exec_mock.mark_interrupted.assert_called_once()
 
 
 def test_shutdown_no_jobs(scheduler_instance):
@@ -125,6 +154,7 @@ def test_shutdown_no_jobs(scheduler_instance):
         patch.object(scheduler_instance, "start") as start_mock,
         patch.object(scheduler_instance, "shutdown") as shutdown_mock,
         patch.object(scheduler_instance, "wait") as wait_mock,
+        patch.object(scheduler_instance, "_poll_loop"),
         patch("testgen.scheduler.cli_scheduler.signal.signal") as signal_mock,
     ):
         start_called = threading.Event()
@@ -152,12 +182,13 @@ def test_shutdown(scheduler_instance, sig):
         patch.object(scheduler_instance, "start") as start_mock,
         patch.object(scheduler_instance, "shutdown") as shutdown_mock,
         patch.object(scheduler_instance, "wait") as wait_mock,
+        patch.object(scheduler_instance, "_poll_loop"),
         patch("testgen.scheduler.cli_scheduler.signal.signal") as signal_mock,
     ):
         start_called = threading.Event()
         start_mock.side_effect = lambda *_: start_called.set()
 
-        jobs = [MagicMock() for _ in range(5)]
+        procs = [MagicMock() for _ in range(5)]
 
         thread = threading.Thread(target=scheduler_instance.run)
         thread.start()
@@ -166,16 +197,16 @@ def test_shutdown(scheduler_instance, sig):
         sig_handler = signal_mock.call_args[0][1]
         shutdown_mock.assert_not_called()
 
-        for job in jobs:
-            scheduler_instance._running_jobs.add(job)
+        for proc in procs:
+            scheduler_instance._running_jobs[uuid4()] = proc
 
         for send_sig_count in range(3):
             sig_handler(sig, None)
             time.sleep(0.05)
-            for job in jobs:
-                assert job.send_signal.call_count == send_sig_count
+            for proc in procs:
+                assert proc.send_signal.call_count == send_sig_count
                 if send_sig_count:
-                    job.send_signal.assert_called_with(sig)
+                    proc.send_signal.assert_called_with(sig)
 
         scheduler_instance._running_jobs.clear()
         with scheduler_instance._running_jobs_cond:

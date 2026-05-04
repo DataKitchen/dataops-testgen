@@ -5,6 +5,7 @@
  * @property {import('../van.min.js').State<boolean>} open - Reactive open state
  * @property {Function} onClose - Called when the dialog is closed (backdrop click or X button)
  * @property {string} [width] - CSS width value, default '30rem'
+ * @property {string?} testId
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -28,18 +29,22 @@ const { button, div, i, span } = van.tags;
  * @param {DialogProps} props
  * @param {...(Element | string)} children - Content rendered in the dialog body
  */
-const Dialog = ({ title, open, onClose, width = '30rem' }, ...children) => {
+const Dialog = ({ title, open, onClose, width = '30rem', testId }, ...children) => {
     loadStylesheet('dialog', stylesheet);
 
-    return div(
+    const testIdValue = getValue(testId) ?? '';
+
+    const overlay = div(
         {
             class: 'tg-dialog-overlay',
+            'data-testid': testIdValue ? `${testIdValue}-backdrop` : '',
             style: () => open.val ? '' : 'display: none',
             onclick: () => onClose(),
         },
         div(
             {
                 class: 'tg-dialog',
+                'data-testid': testIdValue,
                 role: 'dialog',
                 'aria-modal': 'true',
                 tabindex: '-1',
@@ -48,12 +53,13 @@ const Dialog = ({ title, open, onClose, width = '30rem' }, ...children) => {
             },
             div(
                 { class: 'tg-dialog-header' },
-                span({ class: 'tg-dialog-title' }, title),
+                span({ 'data-testid': testIdValue ? `${testIdValue}-title` : '', class: 'tg-dialog-title' }, title),
             ),
             div({ class: 'tg-dialog-content' }, ...children),
             button(
                 {
                     class: 'tg-dialog-close',
+                    'data-testid': testIdValue ? `${testIdValue}-close` : '',
                     'aria-label': 'Close',
                     onclick: () => onClose(),
                 },
@@ -61,6 +67,23 @@ const Dialog = ({ title, open, onClose, width = '30rem' }, ...children) => {
             ),
         ),
     );
+
+    document.body.appendChild(overlay);
+
+    const placeholder = div({ style: 'display: none' });
+
+    requestAnimationFrame(() => {
+        if (!placeholder.isConnected) return;
+        const observer = new MutationObserver(() => {
+            if (!placeholder.isConnected) {
+                overlay.remove();
+                observer.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    });
+
+    return placeholder;
 };
 
 const stylesheet = new CSSStyleSheet();
@@ -68,7 +91,8 @@ stylesheet.replace(`
 .tg-dialog-overlay {
     position: fixed;
     inset: 0;
-    z-index: 1000;
+    /* Streamlit's sidebar native z-index is header+1 = 999991; must exceed it */
+    z-index: 1000000;
     background: rgba(49, 51, 63, 0.5);
     display: flex;
     align-items: center;
@@ -81,7 +105,7 @@ stylesheet.replace(`
     border-radius: 8px;
     box-shadow: var(--portal-box-shadow, 0 4px 32px rgba(0, 0, 0, 0.25));
     max-width: calc(100vw - 2rem);
-    max-height: 80vh;
+    max-height: 90vh;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -101,6 +125,8 @@ stylesheet.replace(`
     padding: 0.75rem 1.5rem 1.5rem;
     overflow-y: auto;
     color: var(--primary-text-color);
+    flex: 1;
+    min-height: 0;
 }
 
 .tg-dialog-close {

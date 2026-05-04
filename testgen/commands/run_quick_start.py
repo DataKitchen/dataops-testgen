@@ -1,14 +1,15 @@
 import logging
 import math
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import click
 
 from testgen import settings
+from testgen.commands.job_registry import JOB_DISPATCH
 from testgen.commands.run_launch_db_config import get_app_db_params_mapping, run_launch_db_config
-from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
+from testgen.commands.run_score_update import run_score_update
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.credentials import get_tg_schema
 from testgen.common.database.database_service import (
@@ -18,15 +19,63 @@ from testgen.common.database.database_service import (
     set_target_db_params,
 )
 from testgen.common.database.flavor.flavor_service import ConnectionParams
-from testgen.common.models import with_database_session
+from testgen.common.job_context import JobContext, job_context
+from testgen.common.models import database_session, with_database_session
+from testgen.common.models.job_execution import JobExecution, JobStatus
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.base import smtp_configured
 from testgen.common.read_file import read_template_sql_file
+from testgen.common.standalone_postgres import get_target_host_port, is_standalone_mode
 
 LOG = logging.getLogger("testgen")
 random.seed(42)
+
+SCOREABLE_JOB_KEYS = frozenset({"run-profile", "run-tests"})
+
+
+def run_with_job_execution(
+    job_key: str,
+    run_date: datetime | None = None,
+    **handler_kwargs: Any,
+) -> None:
+    """Run a handler inline under a synthetic JE, then roll up DQ scores.
+
+    Quick-start doesn't have a scheduler, so we bypass exec_job's subprocess
+    flow: create the JE directly, call the handler (which links the run row
+    to the JE via job_context), then invoke `run_score_update` inline for the
+    run/profile job types. No notifications — this is seed data, nobody's
+    watching an inbox.
+    """
+    effective_date = run_date or datetime.now(UTC)
+    wall_start = datetime.now(UTC)
+    # Match the source a real trigger would use so demo data mirrors production attribution.
+    source = "scheduler" if job_key == "run-monitors" else "ui"
+
+    with database_session() as session:
+        je = JobExecution(
+            job_key=job_key,
+            kwargs={k: str(v) for k, v in handler_kwargs.items()},
+            source=source,
+            project_code=settings.PROJECT_KEY,
+            status=JobStatus.COMPLETED.value,
+            started_at=effective_date,
+        )
+        session.add(je)
+        session.flush([je])
+        je_id = je.id
+
+    job_context.set(JobContext(job_id=je_id, source=source))
+    JOB_DISPATCH[job_key](**handler_kwargs, run_date=run_date)
+
+    with database_session():
+        je = JobExecution.get(je_id)
+        je.completed_at = effective_date + (datetime.now(UTC) - wall_start)
+
+    if job_key in SCOREABLE_JOB_KEYS:
+        run_score_update(parent_job_id=str(je_id), parent_job_key=job_key)
+
 
 def _get_max_date(iteration: int):
     if iteration == 0:
@@ -95,10 +144,13 @@ def _prepare_connection_to_target_database(params_mapping):
 
 def _get_settings_params_mapping() -> dict:
     host = settings.PROJECT_DATABASE_HOST
+    port = settings.PROJECT_DATABASE_PORT
     admin_user = settings.DATABASE_ADMIN_USER
     admin_password = settings.DATABASE_ADMIN_PASSWORD
     if is_standalone_mode():
-        host = str(get_home_dir() / "pgdata")
+        host, server_port = get_target_host_port()
+        if server_port:
+            port = server_port
         admin_user = "postgres"
         admin_password = ""
 
@@ -110,7 +162,7 @@ def _get_settings_params_mapping() -> dict:
         "PROJECT_SCHEMA": settings.PROJECT_DATABASE_SCHEMA,
         "PROJECT_KEY": settings.PROJECT_KEY,
         "PROJECT_DB_HOST": host,
-        "PROJECT_DB_PORT": settings.PROJECT_DATABASE_PORT,
+        "PROJECT_DB_PORT": port,
         "SQL_FLAVOR": settings.PROJECT_SQL_FLAVOR,
     }
 

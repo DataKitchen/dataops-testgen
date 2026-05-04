@@ -3,7 +3,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.mcp.exceptions import MCPPermissionDenied
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible
 from testgen.mcp.permissions import ProjectPermissions
 
 
@@ -27,6 +27,7 @@ def test_get_data_inventory_passes_project_codes_for_scoped_user(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_c"},
         permission="catalog",
+        username="test_user",
     )
     mock_get_inventory.return_value = "# Data Inventory"
 
@@ -46,6 +47,7 @@ def test_get_data_inventory_view_codes_for_scoped_user(
     mock_compute.return_value = ProjectPermissions(
         memberships={"proj_a": "role_c", "proj_b": "role_a"},
         permission="catalog",
+        username="test_user",
     )
     mock_get_inventory.return_value = "# Data Inventory"
 
@@ -95,6 +97,7 @@ def test_list_projects_filters_for_scoped_user(mock_compute, mock_project, db_se
     mock_compute.return_value = ProjectPermissions(
         memberships={"demo": "role_a"},
         permission="catalog",
+        username="test_user",
     )
 
     proj1 = MagicMock()
@@ -113,8 +116,11 @@ def test_list_projects_filters_for_scoped_user(mock_compute, mock_project, db_se
     assert "Secret" not in result
 
 
+@patch("testgen.mcp.tools.discovery.TestRun")
 @patch("testgen.mcp.tools.discovery.TestSuite")
-def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
+def test_list_test_suites_returns_stats(mock_suite, mock_test_run, db_session_mock):
+    run_id = uuid4()
+    job_exec_id = uuid4()
     summary = MagicMock()
     summary.id = uuid4()
     summary.test_suite = "Quality Suite"
@@ -122,7 +128,7 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     summary.table_groups_name = "core_tables"
     summary.test_suite_description = "Main quality checks"
     summary.test_ct = 50
-    summary.latest_run_id = uuid4()
+    summary.latest_run_id = run_id
     summary.latest_run_start = "2024-01-15T10:00:00"
     summary.last_run_test_ct = 50
     summary.last_run_passed_ct = 45
@@ -131,6 +137,7 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     summary.last_run_error_ct = 0
     summary.last_run_dismissed_ct = 0
     mock_suite.select_summary.return_value = [summary]
+    mock_test_run.get_job_execution_ids.return_value = {run_id: job_exec_id}
 
     from testgen.mcp.tools.discovery import list_test_suites
 
@@ -139,6 +146,7 @@ def test_list_test_suites_returns_stats(mock_suite, db_session_mock):
     assert "Quality Suite" in result
     assert "45 passed" in result
     assert "3 failed" in result
+    assert str(job_exec_id) in result
 
 
 @patch("testgen.mcp.tools.discovery.TestSuite")
@@ -168,6 +176,7 @@ def test_list_test_suites_raises_not_found_for_inaccessible_project(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.discovery import list_test_suites
@@ -183,6 +192,7 @@ def test_list_test_suites_raises_denial_for_insufficient_permission(
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a", "secret_project": "role_c"},
         permission="view",
+        username="test_user",
     )
 
     from testgen.mcp.tools.discovery import list_test_suites
@@ -191,23 +201,31 @@ def test_list_test_suites_raises_denial_for_insufficient_permission(
         list_test_suites("secret_project")
 
 
-@patch("testgen.mcp.tools.discovery.DataTable")
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_list_tables_returns_not_found_for_inaccessible_group(
-    mock_compute, mock_dt, db_session_mock,
-):
-    mock_compute.return_value = ProjectPermissions(
-        memberships={"proj_a": "role_a"},
-        permission="catalog",
-    )
-    mock_dt.select_table_names.return_value = []
-    mock_dt.count_tables.return_value = 0
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_tables_rejects_inaccessible_group(mock_tg_cls, db_session_mock):
+    """Inaccessible or non-existent TG raises MCPResourceNotAccessible — same path."""
+    mock_tg_cls.get.return_value = None
 
     from testgen.mcp.tools.discovery import list_tables
 
-    result = list_tables(str(uuid4()))
+    with pytest.raises(MCPResourceNotAccessible, match="Table group .* not found or not accessible"):
+        list_tables(str(uuid4()))
 
-    assert "No tables found" in result
-    mock_dt.select_table_names.assert_called_once()
+
+@patch("testgen.mcp.tools.discovery.DataTable")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_tables_scopes_data_lookup_to_resolved_tg_project(mock_tg_cls, mock_dt, db_session_mock):
+    """After resolution, data lookup is scoped to just the TG's project, not all allowed projects."""
+    tg = MagicMock()
+    tg.id = uuid4()
+    tg.project_code = "proj_a"
+    mock_tg_cls.get.return_value = tg
+    mock_dt.select_table_names.return_value = ["customers"]
+    mock_dt.count_tables.return_value = 1
+
+    from testgen.mcp.tools.discovery import list_tables
+
+    list_tables(str(uuid4()))
+
     call_kwargs = mock_dt.select_table_names.call_args
     assert call_kwargs.kwargs["project_codes"] == ["proj_a"]

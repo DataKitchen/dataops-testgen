@@ -33,6 +33,24 @@ def is_standalone_mode() -> bool:
     return settings.getenv(STANDALONE_MODE_ENV_VAR, "no").lower() in ("yes", "true", "1")
 
 
+def get_target_host_port() -> tuple[str, str | None]:
+    """Return ``(host, port)`` for connecting to the embedded server's *target* DB.
+
+    On Linux/macOS pgserver listens on a Unix socket; we return the data dir
+    path as the host so the PostgreSQL flavor's ``host.startswith("/")`` socket
+    detection kicks in (port is unused for sockets). On Windows pgserver uses
+    TCP, so we return the live ``hostname:port`` parsed from the pgserver URI —
+    otherwise the Windows path ends up shoved into the URL parser as a hostname
+    and trips on the drive-letter colon.
+    """
+    server_uri = get_server_uri() or os.environ.get(STANDALONE_URI_ENV_VAR)
+    if server_uri:
+        parsed = urlparse(server_uri)
+        if parsed.hostname:
+            return parsed.hostname, str(parsed.port) if parsed.port else None
+    return str(get_home_dir() / "pgdata"), None
+
+
 def start_server(data_dir: Path | None = None) -> None:
     """Start the embedded PostgreSQL server.
 
@@ -91,6 +109,7 @@ def _reinitialize_orm_engine(base_uri: str | None = None) -> None:
     must replace that engine so the ORM connects via Unix socket.
     """
     from sqlalchemy import create_engine
+
     from testgen.common import models
 
     uri = _build_connection_string(settings.DATABASE_NAME, base_uri)

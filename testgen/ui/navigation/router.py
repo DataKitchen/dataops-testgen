@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import logging
 import time
-from urllib.parse import urlparse
 
 import streamlit as st
 
 import testgen.ui.navigation.page
 from testgen.common.mixpanel_service import MixpanelService
-from testgen.common.models.settings import PersistedSetting
 from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
 
@@ -29,12 +27,6 @@ class Router(Singleton):
     def _init_session(self, url: str):
         # Clear cache on initial load or page refresh
         st.cache_data.clear()
-
-        try:
-            parsed_url = urlparse(st.context.url)
-            PersistedSetting.set("BASE_URL", f"{parsed_url.scheme}://{parsed_url.netloc}")
-        except Exception as e:
-            LOG.exception("Error capturing the base URL")
 
         source = st.query_params.pop("source", None)
         MixpanelService().send_event(f"nav-{url}", page_load=True, source=source)
@@ -115,6 +107,9 @@ class Router(Singleton):
                 }
                 if not session.current_page.startswith("quality-dashboard") and not to.startswith("quality-dashboard"):
                     st.cache_data.clear()
+
+                if is_different_page:
+                    st.session_state.pop("app_logs:dialog", None)
 
                 session.current_page = to
                 st.switch_page(route.streamlit_page)

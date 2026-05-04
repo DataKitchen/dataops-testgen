@@ -19,7 +19,7 @@ const SummaryCounts = (/** @type Properties */ props) => {
     loadStylesheet('summaryCounts', stylesheet);
 
     return div(
-        { class: 'flex-row fx-gap-5' },
+        { class: 'flex-row fx-gap-5 fx-flex-wrap' },
         getValue(props.items).map(item => div(
             { class: 'flex-row fx-align-stretch fx-gap-2' },
             div({ class: 'tg-summary-counts--bar', style: `background-color: ${colorMap[item.color] || item.color};` }),

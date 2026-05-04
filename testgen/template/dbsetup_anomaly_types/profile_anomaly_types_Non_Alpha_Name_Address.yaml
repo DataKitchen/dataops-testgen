@@ -16,6 +16,7 @@ profile_anomaly_types:
     (non_alpha_ct - zero_length_ct)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '1.0'
   dq_dimension: Validity
+  impact_dimension: Conformance
   target_data_lookups:
   - id: '1411'
     test_id: '1029'

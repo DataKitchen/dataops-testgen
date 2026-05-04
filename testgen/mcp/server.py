@@ -3,11 +3,11 @@ import logging
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from starlette.applications import Starlette
 
-from testgen import settings
 from testgen.common.auth import decode_jwt_token
-from testgen.common.models import with_database_session
-from testgen.mcp.permissions import set_mcp_username
+from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 
 LOG = logging.getLogger("testgen")
 
@@ -30,6 +30,12 @@ into specific entities.
 Test types have specific, non-obvious meanings (e.g., Alpha_Trunc). Do not guess what a test checks.
 ALWAYS look them up using either the `testgen://test-types` resource or the `get_test_type()` tool.
 
+INVESTIGATING FAILURES
+
+Use list_test_results to find failures, then get_source_data to see relevant data from the connected database.
+Results reflect the current state of the data — values may have changed since the test ran.
+Use get_source_data_query to preview the SQL without executing it.
+
 CONVENTIONS
 - Identifiers are UUIDs passed as strings.
 - Dates are ISO 8601 format.
@@ -43,26 +49,15 @@ class JWTTokenVerifier:
         try:
             payload = decode_jwt_token(token)
             set_mcp_username(payload["username"])
+            set_mcp_token(token)
             return AccessToken(
                 token=token,
                 client_id=payload["username"],
                 scopes=[],
-                expires_at=int(payload["exp_date"]),
+                expires_at=int(payload["exp"]),
             )
         except (ValueError, KeyError):
             return None
-
-
-# Uvicorn log config: strip default handlers so logs propagate to the testgen logger.
-_UVICORN_LOG_CONFIG: dict = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "loggers": {
-        "uvicorn": {"handlers": [], "propagate": True},
-        "uvicorn.access": {"handlers": [], "propagate": True},
-        "uvicorn.error": {"handlers": [], "propagate": True},
-    },
-}
 
 
 def _configure_mcp_logging() -> None:
@@ -77,29 +72,54 @@ def _configure_mcp_logging() -> None:
         logging.getLogger(name).parent = testgen_logger
 
 
-def run_mcp() -> None:
-    """Start the MCP server with streamable HTTP transport."""
-    from testgen.mcp import get_server_url
+def build_mcp_server(
+    api_base_url: str,
+    server_url: str | None = None,
+) -> FastMCP:
+    """Create the FastMCP server with tools, resources, and prompts registered.
+
+    Args:
+        api_base_url: OAuth issuer URL (the API server).
+        server_url: MCP resource server URL. Defaults to ``{api_base_url}/mcp``.
+    """
     from testgen.mcp.exceptions import mcp_error_handler
-    from testgen.mcp.prompts.workflows import compare_runs, health_check, investigate_failures, table_health
+    from testgen.mcp.prompts.workflows import (
+        compare_runs,
+        health_check,
+        investigate_failures,
+        profiling_overview,
+        table_health,
+    )
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
+    from testgen.mcp.tools.execution import (
+        cancel_profiling_run,
+        cancel_test_run,
+        generate_tests,
+        run_profiling,
+        run_tests,
+    )
+    from testgen.mcp.tools.profiling import get_table, list_column_profiles, list_profiling_summaries
     from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
-    from testgen.mcp.tools.test_results import get_failure_summary, get_test_result_history, get_test_results
+    from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
+    from testgen.mcp.tools.test_definitions import get_test, list_test_notes, list_test_types, list_tests
+    from testgen.mcp.tools.test_results import (
+        get_failure_summary,
+        get_failure_trend,
+        get_test_result_history,
+        get_test_run_diff,
+        list_test_results,
+        search_test_results,
+    )
     from testgen.mcp.tools.test_runs import get_recent_test_runs
-    from testgen.utils.plugins import discover
 
-    for plugin in discover():
-        plugin.load()
-
-    server_url = with_database_session(get_server_url)()
+    if server_url is None:
+        server_url = f"{api_base_url}/mcp"
 
     mcp = FastMCP(
         "TestGen",
-        host=settings.MCP_HOST,
-        port=settings.MCP_PORT,
         instructions=SERVER_INSTRUCTIONS,
         auth=AuthSettings(
-            issuer_url=server_url,
+            issuer_url=api_base_url,
             resource_server_url=server_url,
         ),
         token_verifier=JWTTokenVerifier(),
@@ -115,42 +135,62 @@ def run_mcp() -> None:
     def safe_prompt(fn):
         mcp.prompt()(mcp_error_handler(fn))
 
-    # Tools (9)
+    # Tools
     safe_tool(get_data_inventory)
     safe_tool(list_projects)
     safe_tool(list_tables)
     safe_tool(list_test_suites)
     safe_tool(get_recent_test_runs)
-    safe_tool(get_test_results)
+    safe_tool(list_test_results)
     safe_tool(get_test_result_history)
     safe_tool(get_failure_summary)
+    safe_tool(search_test_results)
+    safe_tool(get_failure_trend)
+    safe_tool(get_test_run_diff)
     safe_tool(get_test_type)
+    safe_tool(get_source_data)
+    safe_tool(get_source_data_query)
+    safe_tool(list_tests)
+    safe_tool(get_test)
+    safe_tool(list_test_notes)
+    safe_tool(list_test_types)
+    safe_tool(get_table)
+    safe_tool(list_column_profiles)
+    safe_tool(list_profiling_summaries)
+    safe_tool(run_tests)
+    safe_tool(run_profiling)
+    safe_tool(cancel_test_run)
+    safe_tool(cancel_profiling_run)
+    safe_tool(generate_tests)
 
     # Resources (2)
     safe_resource("testgen://test-types", test_types_resource)
     safe_resource("testgen://glossary", glossary_resource)
 
-    # Prompts (4)
+    # Prompts
     safe_prompt(health_check)
     safe_prompt(investigate_failures)
     safe_prompt(table_health)
     safe_prompt(compare_runs)
+    safe_prompt(profiling_overview)
 
-    LOG.info("Starting MCP server on %s:%s (auth issuer: %s)", settings.MCP_HOST, settings.MCP_PORT, server_url)
+    return mcp
 
-    import uvicorn
 
+def build_mcp_app(
+    api_base_url: str,
+    server_url: str | None = None,
+) -> tuple[Starlette, StreamableHTTPSessionManager]:
+    """Create the MCP Starlette app with tools, resources, and prompts registered.
+
+    Returns the Starlette app and its session manager. The caller must run
+    ``session_manager.run()`` as an async context manager (e.g. in the host
+    app's lifespan) to initialize the task group before requests arrive.
+
+    Args:
+        api_base_url: OAuth issuer URL (the API server).
+        server_url: MCP resource server URL. Defaults to ``{api_base_url}/mcp``.
+    """
+    mcp = build_mcp_server(api_base_url, server_url)
     app = mcp.streamable_http_app()
-
-    if settings.IS_DEBUG:
-        from starlette.middleware.cors import CORSMiddleware
-
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-            expose_headers=["Mcp-Session-Id"],
-        )
-
-    uvicorn.run(app, host=settings.MCP_HOST, port=settings.MCP_PORT, log_config=_UVICORN_LOG_CONFIG)
+    return app, mcp.session_manager

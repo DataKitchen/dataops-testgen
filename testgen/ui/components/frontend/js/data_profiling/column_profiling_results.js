@@ -6,9 +6,8 @@
  * @property {Column} column
  * @property {boolean?} data_preview
  */
-import van from '../van.min.js';
-import { Streamlit } from '../streamlit.js';
-import { getValue, resizeFrameHeightToElement, resizeFrameHeightOnDOMChange, loadStylesheet } from '../utils.js';
+import van from '/app/static/js/van.min.js';
+import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { ColumnDistributionCard } from './column_distribution.js';
 import { DataCharacteristicsCard } from './data_characteristics.js';
 import { LatestProfilingTime } from './data_profiling_utils.js';
@@ -17,9 +16,8 @@ import { HygieneIssuesCard } from './data_issues.js';
 const { div, h2, span } = van.tags;
 
 const ColumnProfilingResults = (/** @type Properties */ props) => {
+    const emit = props.emit;
     loadStylesheet('column-profiling-results', stylesheet);
-    Streamlit.setFrameHeight(1); // Non-zero value is needed to render
-    window.testgen.isPage = true;
 
     const column = van.derive(() => {
         try {
@@ -30,29 +28,29 @@ const ColumnProfilingResults = (/** @type Properties */ props) => {
         }
     });
 
-    const domId = 'column-profiling-results';
-    resizeFrameHeightToElement(domId);
-    resizeFrameHeightOnDOMChange(domId);
-
     return div(
-        { id: domId },
-        () => div(
-            div(
-                { class: 'mb-2' },
-                h2(
-                    { class: 'tg-column-profiling--title' },
-                    span(
-                        { class: 'text-secondary' },
-                        `${column.val.table_name} > `,
+        {},
+        () => {
+            if (!column.val) return '';
+            return div(
+                {class: 'flex-column fx-gap-2' },
+                div(
+                    {},
+                    h2(
+                        { class: 'tg-column-profiling--title' },
+                        span(
+                            { class: 'text-secondary' },
+                            `${column.val.table_name} > `,
+                        ),
+                        column.val.column_name,
                     ),
-                    column.val.column_name,
+                    column.val.is_latest_profile ? LatestProfilingTime({ emit,}, column.val) : null,
                 ),
-                column.val.is_latest_profile ? LatestProfilingTime({}, column.val) : null,
-            ),
-            DataCharacteristicsCard({ border: true }, column.val),
-            ColumnDistributionCard({ border: true, dataPreview: !!props.data_preview?.val }, column.val),
-            column.val.hygiene_issues ? HygieneIssuesCard({ border: true }, column.val) : null,
-        ),
+                DataCharacteristicsCard({ emit,  border: true }, column.val),
+                ColumnDistributionCard({ emit,  border: true, dataPreview: !!props.data_preview?.val }, column.val),
+                column.val.hygiene_issues ? HygieneIssuesCard({ emit,  border: true }, column.val) : null,
+            );
+        },
     );
 }
 

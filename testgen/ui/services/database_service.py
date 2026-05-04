@@ -60,8 +60,14 @@ def fetch_from_target_db(connection: Connection, query: str, params: dict | None
     resolved = resolve_connection_params(connection_params)
     engine = flavor_service.create_engine(connection_params)
 
-    with engine.connect() as conn:
-        for pre_query, pre_params in flavor_service.get_pre_connection_queries(resolved):
-            conn.execute(text(pre_query), pre_params)
-        cursor: CursorResult = conn.execute(text(query), params)
-        return cursor.mappings().fetchall()
+    # Each call creates a fresh engine for ad-hoc target-DB access (test connection,
+    # preview, data catalog reads). Dispose on exit so the engine's pool doesn't
+    # leak an idle connection until GC — these add up over a long Streamlit session.
+    try:
+        with engine.connect() as conn:
+            for pre_query, pre_params in flavor_service.get_pre_connection_queries(resolved):
+                conn.execute(text(pre_query), pre_params)
+            cursor: CursorResult = conn.execute(text(query), params)
+            return cursor.mappings().fetchall()
+    finally:
+        engine.dispose()

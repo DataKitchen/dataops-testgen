@@ -21,6 +21,7 @@ profile_anomaly_types:
     (p.record_ct - fn_parsefreq(p.top_freq_values, 1, 2)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '0.33'
   dq_dimension: Validity
+  impact_dimension: Regularity
   target_data_lookups:
   - id: '1286'
     test_id: '1014'
