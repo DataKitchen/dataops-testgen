@@ -568,6 +568,14 @@ from env variable: `TG_MCP_ENABLED`
 defaults to: `yes`
 """
 
+UI_PORT: int = int(os.getenv("TG_UI_PORT", "8501"))
+"""
+Port for the UI server.
+
+from env variable: `TG_UI_PORT`
+defaults to: `8501`
+"""
+
 API_PORT: int = int(os.getenv("TG_API_PORT", "8530"))
 """
 Port for the API server.

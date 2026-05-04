@@ -94,6 +94,7 @@ class CliGroup(click.Group):
             raise
         except Exception:
             LOG.exception("There was an unexpected error")
+            sys.exit(1)
 
     def format_epilog(self, _ctx: Context, formatter: click.HelpFormatter) -> None:
         # Schema revision is a DB round-trip; defer until `--help` is actually
@@ -551,6 +552,14 @@ def setup_standalone(username: str, password: str):
         "TG_TARGET_DB_TRUST_SERVER_CERTIFICATE=yes",
         "TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL=no",
     ]
+
+    # Persist caller-supplied runtime overrides (ports, TLS) so they apply to
+    # subsequent `testgen run-app` invocations.
+    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "SSL_CERT_FILE", "SSL_KEY_FILE")
+    persisted_lines = [f"{name}={os.environ[name]}" for name in persisted_env_vars if os.environ.get(name)]
+    if persisted_lines:
+        config_lines.extend(["", "# Runtime overrides from installer", *persisted_lines])
+
     config_path.write_text("\n".join(config_lines) + "\n")
     click.echo(f"Config written to {config_path}")
 
@@ -860,7 +869,9 @@ def run_ui():
             child_env = {**os.environ, "TG_JOB_SOURCE": "UI", STANDALONE_URI_ENV_VAR: server_uri}
 
     process= subprocess.Popen(
-        [  # noqa: S607
+        [
+            sys.executable,
+            "-m",
             "streamlit",
             "run",
             app_file,
@@ -868,6 +879,7 @@ def run_ui():
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
+            f"--server.port={settings.UI_PORT}",
             f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
             f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
             "--",
