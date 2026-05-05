@@ -66,7 +66,7 @@ test_types:
         fingerprint AS result_measure,
         CASE
           -- Training mode: tolerances not yet calculated
-          WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
+          WHEN CAST({LOWER_TOLERANCE} AS FLOAT64) IS NULL AND CAST({UPPER_TOLERANCE} AS FLOAT64) IS NULL THEN -1
           -- No change and excluded day: suppress
           WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 1 THEN 1
           -- No change, beyond time range (business time): LATE
@@ -75,14 +75,14 @@ test_types:
           -- Table changed outside time range (business time): UNEXPECTED
           WHEN fingerprint <> '{BASELINE_VALUE}'
             AND NOT (interval_minutes - {EXCLUDED_MINUTES})
-              BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN 0
+              BETWEEN CAST({LOWER_TOLERANCE} AS FLOAT64) AND CAST({UPPER_TOLERANCE} AS FLOAT64) THEN 0
           ELSE 1
         END AS result_code,
         'Table update detected: ' || CASE WHEN fingerprint <> '{BASELINE_VALUE}' THEN 'Yes' ELSE 'No' END
           || CASE
-            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN {LOWER_TOLERANCE} AND {UPPER_TOLERANCE} THEN '. On time.'
-            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < {LOWER_TOLERANCE} THEN '. Earlier than expected.'
-            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > {UPPER_TOLERANCE} THEN '. Later than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) BETWEEN CAST({LOWER_TOLERANCE} AS FLOAT64) AND CAST({UPPER_TOLERANCE} AS FLOAT64) THEN '. On time.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) < CAST({LOWER_TOLERANCE} AS FLOAT64) THEN '. Earlier than expected.'
+            WHEN fingerprint <> '{BASELINE_VALUE}' AND (interval_minutes - {EXCLUDED_MINUTES}) > CAST({UPPER_TOLERANCE} AS FLOAT64) THEN '. Later than expected.'
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
