@@ -1,3 +1,40 @@
+# Silence streamlit's "missing ScriptRunContext" / "No runtime found" /
+# "Session state does not function" warnings, which fire whenever streamlit-
+# decorated code runs outside an active script run (our CLI, scheduler, server,
+# and any import that touches @st.cache_data). Must run before the first
+# streamlit-using import, so it sits at the top of the module.
+#
+# We replace ``set_log_level`` itself, after seeding it to "error". Streamlit's
+# own ``_update_logger`` callback fires on config parse and would otherwise
+# downgrade us back to "info"; the cap floors any later call at ERROR.
+def _silence_streamlit_logs() -> None:
+    import logging as _logging
+
+    try:
+        from streamlit import logger as _st_logger
+    except ImportError:
+        return
+
+    _original = _st_logger.set_log_level
+    _original("error")
+
+    def _capped(level):
+        if isinstance(level, str):
+            try:
+                level_num = getattr(_logging, level.upper())
+            except AttributeError:
+                _original(level)
+                return
+        else:
+            level_num = level
+        _original(max(level_num, _logging.ERROR))
+
+    _st_logger.set_log_level = _capped
+
+
+_silence_streamlit_logs()
+
+
 import base64
 import importlib
 import logging
@@ -895,6 +932,7 @@ def run_ui():
             "run",
             app_file,
             "--browser.gatherUsageStats=false",
+            f"--logger.level={'debug' if settings.IS_DEBUG else 'error'}",
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
