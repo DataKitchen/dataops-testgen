@@ -1,3 +1,40 @@
+# Silence streamlit's "missing ScriptRunContext" / "No runtime found" /
+# "Session state does not function" warnings, which fire whenever streamlit-
+# decorated code runs outside an active script run (our CLI, scheduler, server,
+# and any import that touches @st.cache_data). Must run before the first
+# streamlit-using import, so it sits at the top of the module.
+#
+# We replace ``set_log_level`` itself, after seeding it to "error". Streamlit's
+# own ``_update_logger`` callback fires on config parse and would otherwise
+# downgrade us back to "info"; the cap floors any later call at ERROR.
+def _silence_streamlit_logs() -> None:
+    import logging as _logging
+
+    try:
+        from streamlit import logger as _st_logger
+    except ImportError:
+        return
+
+    _original = _st_logger.set_log_level
+    _original("error")
+
+    def _capped(level):
+        if isinstance(level, str):
+            try:
+                level_num = getattr(_logging, level.upper())
+            except AttributeError:
+                _original(level)
+                return
+        else:
+            level_num = level
+        _original(max(level_num, _logging.ERROR))
+
+    _st_logger.set_log_level = _capped
+
+
+_silence_streamlit_logs()
+
+
 import base64
 import importlib
 import logging
@@ -566,13 +603,20 @@ def setup_standalone(username: str, password: str):
 
     # Persist caller-supplied runtime overrides (ports, TLS) so they apply to
     # subsequent `testgen run-app` invocations.
-    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "SSL_CERT_FILE", "SSL_KEY_FILE")
+    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "TESTGEN_LOG_FILE_PATH", "SSL_CERT_FILE", "SSL_KEY_FILE")
     persisted_lines = [f"{name}={os.environ[name]}" for name in persisted_env_vars if os.environ.get(name)]
     if persisted_lines:
         config_lines.extend(["", "# Runtime overrides from installer", *persisted_lines])
 
     config_path.write_text("\n".join(config_lines) + "\n")
     click.echo(f"Config written to {config_path}")
+
+    # `getenv` resolves env vars before config.env, so a pre-existing
+    # TESTGEN_USERNAME / TESTGEN_PASSWORD in the shell would override the
+    # CLI-supplied values and get seeded into the DB. Force the CLI args
+    # to win for the rest of this process.
+    os.environ["TESTGEN_USERNAME"] = username
+    os.environ["TESTGEN_PASSWORD"] = password
 
     # Reload settings — the module was already evaluated at import time
     # before the config file existed.  Reloading re-reads the new file
@@ -895,6 +939,7 @@ def run_ui():
             "run",
             app_file,
             "--browser.gatherUsageStats=false",
+            f"--logger.level={'debug' if settings.IS_DEBUG else 'error'}",
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
