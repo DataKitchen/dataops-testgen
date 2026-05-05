@@ -95,7 +95,6 @@ def hygiene_triage(table_group_id: str | None = None) -> str:
         steps.append(
             "Call `get_data_inventory()` to see projects and table groups, with profiling status per group."
         )
-    steps.append(f"Call `list_profiling_summaries(table_group_id={tg})` to see hygiene issue counts per run.")
     steps.append(f"Call `list_hygiene_issues(table_group_id={tg}, disposition='Confirmed')` for the issues to review.")
     steps.append(
         "For each top issue (ordered by priority), call `get_hygiene_issue(issue_id='...')` for full context — "
@@ -103,8 +102,8 @@ def hygiene_triage(table_group_id: str | None = None) -> str:
     )
     steps.append("For unfamiliar issue types, read `testgen://hygiene-issue-types` once for the reference table.")
     steps.append(
-        "For each issue: explain what was found, then ask the user whether to dismiss the issue "
-        "(call `update_hygiene_issue(issue_id='...', disposition='Dismissed')`) or investigate further."
+        "For each issue: explain what was found, then help the user decide a disposition — **Confirmed**, **Dismissed**, or **Muted**. "
+        "Apply via `update_hygiene_issue(issue_id='...', disposition='...')`, or leave it open for further investigation."
     )
     steps.append("Summarize the triage results and any patterns noted across the issues.")
 

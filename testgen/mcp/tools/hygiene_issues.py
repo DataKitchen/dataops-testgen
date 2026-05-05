@@ -5,7 +5,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import func
 
 from testgen.common.models import with_database_session
-from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
+from testgen.common.models.hygiene_issue import Disposition, HygieneIssue, HygieneIssueType, IssueLikelihood, PiiRisk
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
@@ -17,6 +17,7 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     parse_disposition,
+    parse_impact_dimension,
     parse_issue_likelihood_list,
     parse_pii_risk_list,
     parse_quality_dimension,
@@ -40,8 +41,8 @@ def _redact_detail(row, view_pii_codes: set[str]) -> str:
 
 
 def _build_likelihood_clause(
-    issue_likelihood: list[str] | None,
-    pii_risk: list[str] | None,
+    issue_likelihood: list[IssueLikelihood] | None,
+    pii_risk: list[PiiRisk] | None,
 ) -> ColumnElement[bool] | None:
     """Construct the WHERE clause for the likelihood / pii_risk filter pair.
 
@@ -52,7 +53,7 @@ def _build_likelihood_clause(
     """
     likelihood_clause = HygieneIssueType.likelihood.in_(issue_likelihood) if issue_likelihood else None
     pii_clause = (
-        and_(HygieneIssueType.likelihood == "Potential PII", HygieneIssue.priority.in_(pii_risk))
+        and_(HygieneIssueType.likelihood == IssueLikelihood.POTENTIAL_PII, HygieneIssue.priority.in_(pii_risk))
         if pii_risk
         else None
     )
@@ -63,23 +64,22 @@ def _build_likelihood_clause(
     return or_(likelihood_clause, pii_clause)
 
 
-def _resolve_profile_run(
+def _resolve_profile_run_je_id(
     *,
     job_execution_id: str | None,
     table_group_id: str | None,
-) -> tuple[UUID, str]:
-    """Resolve the scope to a (profile_run_id, run_id_label) tuple.
+) -> UUID:
+    """Resolve the scope to the ``job_execution_id`` of a single profiling run.
 
-    Mutual-exclusion + at-least-one validation done by caller. Collapses missing
-    runs and inaccessible table groups into a single ``MCPResourceNotAccessible``.
+    Mutual-exclusion + at-least-one validation done by caller. Collapses missing runs
+    and inaccessible table groups into ``MCPResourceNotAccessible``.
     """
     if table_group_id:
         tg = resolve_table_group(table_group_id)
-        if tg.last_complete_profile_run_id is None:
+        je_uuid = ProfilingRun.get_latest_complete_je_id_for_table_group(tg.id)
+        if je_uuid is None:
             raise MCPUserError(f"No completed profiling runs found for table group `{table_group_id}`.")
-        run = ProfilingRun.get(tg.last_complete_profile_run_id)
-        run_id_label = str(run.job_execution_id) if run and run.job_execution_id else f"latest run for table group `{table_group_id}`"
-        return tg.last_complete_profile_run_id, run_id_label
+        return je_uuid
 
     job_uuid = parse_uuid(job_execution_id, "job_execution_id")
     run = ProfilingRun.get_by_id_or_job(job_uuid)
@@ -87,7 +87,7 @@ def _resolve_profile_run(
     tg = TableGroup.get(run.table_groups_id) if run else None
     if run is None or tg is None or not perms.has_access(tg.project_code):
         raise MCPResourceNotAccessible("Profiling run", job_execution_id)
-    return run.id, job_execution_id
+    return run.job_execution_id
 
 
 @with_database_session
@@ -98,6 +98,7 @@ def list_hygiene_issues(
     table_group_id: str | None = None,
     table_name: str | None = None,
     column_name: str | None = None,
+    impact_dimension: str | None = None,
     quality_dimension: str | None = None,
     disposition: str | None = "Confirmed",
     issue_likelihood: list[str] | None = None,
@@ -117,6 +118,8 @@ def list_hygiene_issues(
             Mutually exclusive with ``job_execution_id``.
         table_name: Filter by table name (exact match).
         column_name: Filter by column name (exact match).
+        impact_dimension: Filter by impact dimension ('Reliability', 'Conformance',
+            'Regularity', 'Usability').
         quality_dimension: Filter by data quality dimension ('Accuracy', 'Completeness',
             'Consistency', 'Recency', 'Timeliness', 'Uniqueness', 'Validity').
         disposition: Filter by disposition. Defaults to 'Confirmed'.
@@ -125,7 +128,7 @@ def list_hygiene_issues(
             Providing this filter auto-excludes PII issues; combine with ``pii_risk`` to include both.
         pii_risk: Filter by PII risk level. Values: 'High', 'Moderate'.
             Providing this filter auto-excludes regular issues.
-        issue_type: Filter by hygiene issue type (e.g. 'Personally Identifiable Information').
+        issue_type: Filter by hygiene issue type (e.g. 'Similar Values Match When Standardized').
             See ``testgen://hygiene-issue-types`` for the full list.
         limit: Maximum number of issues per page (default 50, max 200).
         page: Page number, starting from 1 (default 1).
@@ -138,7 +141,7 @@ def list_hygiene_issues(
     validate_limit(limit, 200)
 
     perms = get_project_permissions()
-    profile_run_id, run_id_label = _resolve_profile_run(
+    run_je_id = _resolve_profile_run_je_id(
         job_execution_id=job_execution_id,
         table_group_id=table_group_id,
     )
@@ -148,11 +151,13 @@ def list_hygiene_issues(
 
     clauses = [HygieneIssue.project_code.in_(perms.allowed_codes)]
     disposition_value = parse_disposition(disposition or "Confirmed")
-    clauses.append(func.coalesce(HygieneIssue.disposition, "Confirmed") == disposition_value)
+    clauses.append(func.coalesce(HygieneIssue.disposition, Disposition.CONFIRMED) == disposition_value)
     if table_name:
         clauses.append(HygieneIssue.table_name == table_name)
     if column_name:
         clauses.append(HygieneIssue.column_name == column_name)
+    if impact_dimension:
+        clauses.append(HygieneIssue.impact_dimension == parse_impact_dimension(impact_dimension))
     if quality_dimension:
         clauses.append(HygieneIssueType.dq_dimension == parse_quality_dimension(quality_dimension))
     if issue_type:
@@ -161,10 +166,10 @@ def list_hygiene_issues(
     if likelihood_clause is not None:
         clauses.append(likelihood_clause)
 
-    rows, total = HygieneIssue.list_for_run(profile_run_id, *clauses, page=page, limit=limit)
+    rows, total = HygieneIssue.list_for_run(run_je_id, *clauses, page=page, limit=limit)
 
     doc = MdDoc()
-    doc.heading(1, f"Hygiene Issues for run `{run_id_label}`")
+    doc.heading(1, f"Hygiene Issues for profiling run `{run_je_id}`")
     if not rows:
         doc.text("_No hygiene issues match the supplied filters._")
         return doc.render()
@@ -177,6 +182,8 @@ def list_hygiene_issues(
         doc.heading(2, f"[{r.priority or 'Unknown'}] {r.issue_type_name} on {location}")
         doc.field("Issue ID", r.id, code=True)
         doc.field("Issue Type", r.issue_type_name)
+        if r.impact_dimension:
+            doc.field("Impact Dimension", r.impact_dimension)
         if r.dq_dimension:
             doc.field("Quality Dimension", r.dq_dimension)
         doc.field("Disposition", format_disposition(r.disposition))
@@ -251,10 +258,10 @@ def get_hygiene_issue(*, issue_id: str) -> str:
     doc.field("Table", detail.table_name)
     if detail.column_name:
         doc.field("Column", detail.column_name)
-    if detail.dq_dimension:
-        doc.field("Quality Dimension", detail.dq_dimension)
     if detail.impact_dimension:
         doc.field("Impact Dimension", detail.impact_dimension)
+    if detail.dq_dimension:
+        doc.field("Quality Dimension", detail.dq_dimension)
     doc.field("Disposition", format_disposition(detail.disposition))
     if detail.priority:
         doc.field("Priority", detail.priority)
@@ -287,9 +294,8 @@ def get_hygiene_issue(*, issue_id: str) -> str:
             doc.field("Distinct values", detail.column_distinct_value_ct)
 
     doc.heading(2, "Profiling Run")
-    if detail.job_execution_id:
-        doc.field("Run", detail.job_execution_id, code=True)
-    doc.field("Run Date", detail.started_at)
+    doc.field("ID", detail.job_execution_id, code=True)
+    doc.field("Date", detail.started_at)
 
     return doc.render()
 
@@ -301,6 +307,7 @@ def search_hygiene_issues(
     project_code: str | None = None,
     table_group_id: str | None = None,
     issue_type: str | None = None,
+    impact_dimension: str | None = None,
     quality_dimension: str | None = None,
     disposition: str | None = "Confirmed",
     issue_likelihood: list[str] | None = None,
@@ -318,8 +325,10 @@ def search_hygiene_issues(
     Args:
         project_code: Scope to a specific project.
         table_group_id: UUID of a table group to scope to.
-        issue_type: Filter by hygiene issue type (e.g. 'Personally Identifiable Information').
+        issue_type: Filter by hygiene issue type (e.g. 'Similar Values Match When Standardized').
             See ``testgen://hygiene-issue-types`` for the full list.
+        impact_dimension: Filter by impact dimension ('Reliability', 'Conformance',
+            'Regularity', 'Usability').
         quality_dimension: Filter by data quality dimension ('Accuracy', 'Completeness',
             'Consistency', 'Recency', 'Timeliness', 'Uniqueness', 'Validity').
         disposition: Filter by disposition. Defaults to 'Confirmed'.
@@ -353,10 +362,12 @@ def search_hygiene_issues(
 
     clauses = [
         HygieneIssue.project_code.in_(project_codes),
-        func.coalesce(HygieneIssue.disposition, "Confirmed") == parse_disposition(disposition or "Confirmed"),
+        func.coalesce(HygieneIssue.disposition, Disposition.CONFIRMED) == parse_disposition(disposition or "Confirmed"),
     ]
     if table_group_uuid is not None:
         clauses.append(HygieneIssue.table_groups_id == table_group_uuid)
+    if impact_dimension:
+        clauses.append(HygieneIssue.impact_dimension == parse_impact_dimension(impact_dimension))
     if quality_dimension:
         clauses.append(HygieneIssueType.dq_dimension == parse_quality_dimension(quality_dimension))
     if type_id:
@@ -388,9 +399,10 @@ def search_hygiene_issues(
         doc.field("Issue ID", r.id, code=True)
         doc.field("Issue Type", r.issue_type_name)
         doc.field("Table Group", r.table_groups_name)
-        if r.job_execution_id:
-            doc.field("Profiling Run", r.job_execution_id, code=True)
+        doc.field("Profiling Run", r.job_execution_id, code=True)
         doc.field("Run Date", r.started_at)
+        if r.impact_dimension:
+            doc.field("Impact Dimension", r.impact_dimension)
         if r.dq_dimension:
             doc.field("Quality Dimension", r.dq_dimension)
         if r.priority:

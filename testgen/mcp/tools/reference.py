@@ -92,9 +92,9 @@ def hygiene_issue_types_resource() -> str:
     doc = MdDoc()
     doc.heading(1, "TestGen Hygiene Issue Types Reference")
     doc.table(
-        headers=["Issue Type", "Quality Dimension", "Impact Dimension", "Description", "Suggested Action"],
+        headers=["Issue Type", "Impact Dimension", "Quality Dimension", "Likelihood", "Description", "Suggested Action"],
         rows=[
-            [it.name, it.dq_dimension, it.impact_dimension, it.description, it.suggested_action]
+            [it.name, it.impact_dimension, it.dq_dimension, it.likelihood, it.description, it.suggested_action]
             for it in issue_types
         ],
     )
@@ -112,6 +112,8 @@ def glossary_resource() -> str:
 - **Project** — Top-level organizational unit.
 - **Connection** — Database connection configuration (host, credentials).
 - **Table Group** — A set of tables within a schema that are profiled and tested together.
+- **Profiling Run** — A scan of a table group that produces column-level statistics and detects hygiene issues.
+- **Hygiene Issue** — A potential data-quality concern detected by a profiling run (e.g. PII columns, non-standard blanks, mixed types).
 - **Test Suite** — A collection of test definitions scoped to a table group.
 - **Test Definition** — A configured test with parameters, thresholds, and target table/column.
 - **Test Run** — An execution of a test suite producing test results.
@@ -125,21 +127,40 @@ def glossary_resource() -> str:
 - **Error** — Test could not execute (e.g., missing table or permission issue).
 - **Log** — Informational result recorded for reference.
 
+## Hygiene Issue Likelihood
+
+How likely the issue is to indicate a real data quality problem.
+- **Definite** — Strong signal; almost always a real issue worth fixing.
+- **Likely** — Probable issue; review recommended.
+- **Possible** — Weaker signal; confirm against the data.
+
+PII issues use their own classification: hygiene issues that flag potential personally identifiable information are categorized by **PII Risk** (**High** or **Moderate**) instead of the likelihoods above.
+
 ## Disposition
 
-Disposition is a user-assigned review status for test results:
-- **Confirmed** (default) — Result is valid and counts toward scoring.
-- **Dismissed** — Result reviewed and dismissed (excluded from scoring).
-- **Muted** — Test was deactivated after this result (excluded from scoring).
+Disposition is a user-assigned review status for both test results and hygiene issues:
+- **Confirmed** (default) — Valid finding; counts toward scoring.
+- **Dismissed** — Reviewed and dismissed; excluded from scoring.
+- **Muted** — Acknowledged but suppressed; excluded from scoring. (For test results, this means the test was deactivated after the result.)
 
-## Data Quality Dimensions
+## Quality Dimensions
 
+What aspect of data quality the test or hygiene issue measures.
 - **Accuracy** — Data values are correct and reflect real-world truth.
 - **Completeness** — Required data is present (no unexpected NULLs or blanks).
 - **Consistency** — Data agrees across columns, tables, or systems.
-- **Timeliness** — Data is current and updated within expected windows.
+- **Recency** — Data values themselves reflect recent points in time (e.g. dates in the data fall within expected windows).
+- **Timeliness** — Data is updated on the expected schedule (no stale tables, expected refresh cadence).
 - **Uniqueness** — No unintended duplicates exist.
 - **Validity** — Data conforms to expected formats, ranges, or patterns.
+
+## Impact Dimensions
+
+What's at stake when the data has issues — the primary breakdown used by scorecards.
+- **Reliability** — Data is available and correct when needed.
+- **Conformance** — Data meets contracts, formats, and reference standards.
+- **Regularity** — Data arrives on schedule and stays structurally consistent.
+- **Usability** — Data is shaped so consumers can work with it efficiently.
 
 ## Test Scopes
 

@@ -2,6 +2,7 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -19,6 +20,28 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 
 PII_RISK_RE = re.compile(r"Risk: (MODERATE|HIGH),")
+
+
+class Disposition(StrEnum):
+    """Stored disposition values for ``profile_anomaly_results.disposition`` and
+    ``test_results.disposition``. The user-facing label for ``INACTIVE`` is "Muted"."""
+    CONFIRMED = "Confirmed"
+    DISMISSED = "Dismissed"
+    INACTIVE = "Inactive"
+
+
+class IssueLikelihood(StrEnum):
+    """Stored ``profile_anomaly_types.issue_likelihood`` values."""
+    DEFINITE = "Definite"
+    LIKELY = "Likely"
+    POSSIBLE = "Possible"
+    POTENTIAL_PII = "Potential PII"
+
+
+class PiiRisk(StrEnum):
+    """Risk level extracted from PII issue ``detail`` strings via ``priority`` hybrid."""
+    HIGH = "High"
+    MODERATE = "Moderate"
 
 
 @dataclass
@@ -51,6 +74,7 @@ class HygieneIssueListRow:
     schema_name: str
     table_name: str
     column_name: str
+    impact_dimension: str | None
     dq_dimension: str | None
     disposition: str
     priority: str | None
@@ -72,6 +96,7 @@ class HygieneIssueSearchRow:
     schema_name: str
     table_name: str
     column_name: str
+    impact_dimension: str | None
     dq_dimension: str | None
     disposition: str
     priority: str | None
@@ -92,7 +117,6 @@ class HygieneIssueDetail:
     schema_name: str
     table_name: str
     column_name: str
-    db_data_type: str | None
     dq_dimension: str | None
     impact_dimension: str | None
     disposition: str
@@ -150,13 +174,12 @@ class HygieneIssue(Entity):
     schema_name: str = Column(String, nullable=False)
     table_name: str = Column(String, nullable=False)
     column_name: str = Column(String, nullable=False)
-    db_data_type: str = Column(String)
 
     detail: str = Column(String, nullable=False)
     disposition: str = Column(String)
     impact_dimension: str = Column(String)
 
-    # Unmapped: column_type, dq_prevalence.
+    # Unmapped: column_type, db_data_type, dq_prevalence.
 
     @hybrid_property
     def priority(self):
@@ -237,12 +260,12 @@ class HygieneIssue(Entity):
     @classmethod
     def list_for_run(
         cls,
-        profile_run_id: UUID,
+        job_execution_id: UUID,
         *clauses,
         page: int = 1,
         limit: int = 50,
     ) -> tuple[list[HygieneIssueListRow], int]:
-        """Paginated hygiene issues for a single profiling run.
+        """Paginated hygiene issues for a single profiling run, scoped by its job_execution_id.
 
         Caller-supplied ``*clauses`` carry every WHERE filter (project scoping, disposition,
         likelihood / pii_risk, table / column / dq_dimension / issue_type filters).
@@ -255,14 +278,16 @@ class HygieneIssue(Entity):
                 cls.schema_name.label("schema_name"),
                 cls.table_name.label("table_name"),
                 cls.column_name.label("column_name"),
+                cls.impact_dimension.label("impact_dimension"),
                 HygieneIssueType.dq_dimension.label("dq_dimension"),
-                func.coalesce(cls.disposition, "Confirmed").label("disposition"),
+                func.coalesce(cls.disposition, Disposition.CONFIRMED).label("disposition"),
                 cls.priority.label("priority"),
                 cls.detail.label("detail"),
                 HygieneIssueType.detail_redactable.label("detail_redactable"),
                 ProfileResult.pii_flag.label("pii_flag"),
             )
             .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
+            .join(ProfilingRun, ProfilingRun.id == cls.profile_run_id)
             .outerjoin(
                 ProfileResult,
                 and_(
@@ -272,7 +297,7 @@ class HygieneIssue(Entity):
                     ProfileResult.column_name == cls.column_name,
                 ),
             )
-            .where(cls.profile_run_id == profile_run_id, *clauses)
+            .where(ProfilingRun.job_execution_id == job_execution_id, *clauses)
             .order_by(cls._priority_order(), cls.table_name, cls.column_name, cls.id)
         )
         return cls._paginate(query, page=page, limit=limit, data_class=HygieneIssueListRow)
@@ -301,8 +326,9 @@ class HygieneIssue(Entity):
                 cls.schema_name.label("schema_name"),
                 cls.table_name.label("table_name"),
                 cls.column_name.label("column_name"),
+                cls.impact_dimension.label("impact_dimension"),
                 HygieneIssueType.dq_dimension.label("dq_dimension"),
-                func.coalesce(cls.disposition, "Confirmed").label("disposition"),
+                func.coalesce(cls.disposition, Disposition.CONFIRMED).label("disposition"),
                 cls.priority.label("priority"),
                 cls.detail.label("detail"),
                 HygieneIssueType.detail_redactable.label("detail_redactable"),
@@ -347,10 +373,9 @@ class HygieneIssue(Entity):
                 cls.schema_name.label("schema_name"),
                 cls.table_name.label("table_name"),
                 cls.column_name.label("column_name"),
-                cls.db_data_type.label("db_data_type"),
                 HygieneIssueType.dq_dimension.label("dq_dimension"),
                 cls.impact_dimension.label("impact_dimension"),
-                func.coalesce(cls.disposition, "Confirmed").label("disposition"),
+                func.coalesce(cls.disposition, Disposition.CONFIRMED).label("disposition"),
                 cls.priority.label("priority"),
                 cls.detail.label("detail"),
                 HygieneIssueType.detail_redactable.label("detail_redactable"),
