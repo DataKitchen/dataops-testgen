@@ -603,13 +603,20 @@ def setup_standalone(username: str, password: str):
 
     # Persist caller-supplied runtime overrides (ports, TLS) so they apply to
     # subsequent `testgen run-app` invocations.
-    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "SSL_CERT_FILE", "SSL_KEY_FILE")
+    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "TESTGEN_LOG_FILE_PATH", "SSL_CERT_FILE", "SSL_KEY_FILE")
     persisted_lines = [f"{name}={os.environ[name]}" for name in persisted_env_vars if os.environ.get(name)]
     if persisted_lines:
         config_lines.extend(["", "# Runtime overrides from installer", *persisted_lines])
 
     config_path.write_text("\n".join(config_lines) + "\n")
     click.echo(f"Config written to {config_path}")
+
+    # `getenv` resolves env vars before config.env, so a pre-existing
+    # TESTGEN_USERNAME / TESTGEN_PASSWORD in the shell would override the
+    # CLI-supplied values and get seeded into the DB. Force the CLI args
+    # to win for the rest of this process.
+    os.environ["TESTGEN_USERNAME"] = username
+    os.environ["TESTGEN_PASSWORD"] = password
 
     # Reload settings — the module was already evaluated at import time
     # before the config file existed.  Reloading re-reads the new file
