@@ -10,3 +10,11 @@ VALUES  ('0ea85e17-acbe-47fe-8394-9970725ad37d', '2024-06-07 02:45:27.102847', :
         'f_ebike_sales', 'SUM(total_amount)', 0, '0', 'sale_date <= (DATE_TRUNC(''month'', CURRENT_DATE) - (interval ''3 month'' - interval ''{ITERATION_NUMBER} month'') - interval ''1 day'')',
         'product_id, sale_date_year, sale_date_month', null, 'tmp_f_ebike_sales_last_month', 'SUM(total_amount)', null, 'product_id, sale_date_year, sale_date_month',
         null, 'Y', null, 'WARN', 'N');
+
+-- Demo: mark customer_id and credit_card as CDEs so the iter3 dimension-table issues
+-- surface in the CDE-filtered breakdown. The profiling auto-flagger doesn't mark ID columns.
+UPDATE data_column_chars
+   SET critical_data_element = TRUE
+ WHERE table_groups_id = '0ea85e17-acbe-47fe-8394-9970725ad37d'
+   AND table_name = 'd_ebike_customers'
+   AND column_name IN ('customer_id', 'credit_card');

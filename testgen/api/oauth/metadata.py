@@ -1,4 +1,4 @@
-"""RFC 8414 — OAuth 2.0 Authorization Server Metadata."""
+"""RFC 8414 — OAuth 2.1 Authorization Server Metadata."""
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -10,7 +10,7 @@ router = APIRouter(tags=["OAuth"])
 
 @router.get("/.well-known/oauth-authorization-server")
 def authorization_server_metadata():
-    """Return OAuth 2.0 Authorization Server Metadata per RFC 8414.
+    """Return OAuth 2.1 Authorization Server Metadata per RFC 8414.
 
     MCP clients use this for server discovery.
     """

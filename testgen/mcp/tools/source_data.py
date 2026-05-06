@@ -9,8 +9,10 @@ from testgen.common.source_data_service import (
 )
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import parse_uuid, validate_limit
+from testgen.mcp.tools.common import DocGroup, parse_uuid, validate_limit
 from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.INVESTIGATE
 
 
 def _resolve_context(test_definition_id: str, reference_date: str | None) -> dict:

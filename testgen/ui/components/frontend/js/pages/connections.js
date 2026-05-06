@@ -46,6 +46,21 @@ const Connections = (props) => {
     const updatedConnection = van.state(connection);
     const formState = van.state({dirty: false, valid: false});
 
+    // Build the wizard once on first appearance and keep the same instance
+    // across reruns so internal state (currentStepIndex, form values) is not
+    // reset. Re-creating it would send the user back to step 0 every time
+    // Streamlit reruns (e.g. after PreviewTableGroupClicked).
+    let wizardComponent;
+    const buildWizard = () => TableGroupWizard({ emit,
+        project_code: van.derive(() => getValue(props.setup_wizard)?.project_code),
+        table_group: van.derive(() => getValue(props.setup_wizard)?.table_group),
+        table_group_preview: van.derive(() => getValue(props.setup_wizard)?.table_group_preview),
+        steps: van.derive(() => getValue(props.setup_wizard)?.steps),
+        dialog: van.derive(() => getValue(props.setup_wizard)?.dialog),
+        results: van.derive(() => getValue(props.setup_wizard)?.results),
+        standard_cron_sample: van.derive(() => getValue(props.setup_wizard)?.standard_cron_sample),
+        monitor_cron_sample: van.derive(() => getValue(props.setup_wizard)?.monitor_cron_sample),
+    });
 
     return div(
         { id: wrapperId, 'data-testid': 'connections', class: 'flex-column fx-gap-4' },
@@ -66,7 +81,7 @@ const Connections = (props) => {
                     label: 'Setup Table Groups',
                     width: 'auto',
                     disabled: !getValue(props.permissions).is_admin,
-                    tooltip: 'You do not have permissions to perform this action. Contact your administrator.',
+                    tooltip: () => !getValue(props.permissions).is_admin ? 'You do not have permissions to perform this action. Contact your administrator.' : '',
                     onclick: () => emit('SetupTableGroupClicked', {}),
                 }),
         ),
@@ -110,9 +125,14 @@ const Connections = (props) => {
             },
         ),
         () => {
-            const wizardData = getValue(props.setup_wizard);
-            if (!wizardData) return div();
-            return TableGroupWizard(wizardData, emit);
+            // Once built, always return the same instance so the wizard stays
+            // mounted (its Dialog handles its own open/close via display:none).
+            // Returning a fresh node on rerun would unmount and break VanJS
+            // bindings inside the wizard.
+            if (!getValue(props.setup_wizard) && !wizardComponent) {
+                return '';
+            }
+            return wizardComponent ??= buildWizard();
         },
     );
 }

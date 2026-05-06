@@ -104,6 +104,11 @@ const Table = (options, rows) => {
         });
     });
     van.derive(() => {
+        // Depend on `rows` so this derive re-runs whenever the rows array changes.
+        // Without this, states added to `selectedRows` beyond its original length
+        // (e.g., when a filter expansion grows the rows list) have no listener
+        // registered here, and clicks on those new rows silently drop.
+        getValue(rows);
         const selectedRows_ = [];
         for (let i = 0; i < selectedRows.length; i++) {
             if (selectedRows[i].val) {

@@ -8,6 +8,7 @@ from testgen.common.models.table_group import TableGroup, TableGroupSummary
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
+    DocGroup,
     format_page_footer,
     format_page_info,
     parse_uuid,
@@ -15,6 +16,8 @@ from testgen.mcp.tools.common import (
 )
 from testgen.mcp.tools.markdown import MdDoc
 from testgen.utils import friendly_score
+
+_DOC_GROUP = DocGroup.BROWSE_PROFILING
 
 
 @with_database_session

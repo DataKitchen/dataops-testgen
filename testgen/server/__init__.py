@@ -89,17 +89,17 @@ def create_app(version: str | None = None) -> FastAPI:
     tags_metadata = [
         {"name": "Jobs", "description": "Submit, poll, cancel, and list job executions (profiling, tests, generation)."},
         {"name": "Test Definitions", "description": "Export and import test definitions across environments."},
-        {"name": "OAuth", "description": "OAuth 2.0 authorization code flow and token management."},
+        {"name": "OAuth", "description": "OAuth 2.1 authorization code flow and token management."},
         {"name": "API", "description": "Health and version information."},
     ]
 
     app = FastAPI(
-        title=f"{version_data.edition} API" if version_data else "DataOps TestGen API",
-        summary="REST API for DataOps TestGen.",
+        title=f"{version_data.edition} API" if version_data else "TestGen API",
+        summary="REST API for DataOps Data Quality TestGen.",
         description=(
             "Automate profiling, test execution, and test generation jobs. "
             "Export and import test definitions for promotion across environments.\n\n"
-            "**Authentication**: OAuth 2.0 authorization code flow. "
+            "**Authentication**: OAuth 2.1 authorization code flow. "
             "See `GET /.well-known/oauth-authorization-server` for discovery."
         ),
         version=version or version_data.current or "dev",

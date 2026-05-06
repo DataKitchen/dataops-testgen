@@ -1,7 +1,45 @@
+# Silence streamlit's "missing ScriptRunContext" / "No runtime found" /
+# "Session state does not function" warnings, which fire whenever streamlit-
+# decorated code runs outside an active script run (our CLI, scheduler, server,
+# and any import that touches @st.cache_data). Must run before the first
+# streamlit-using import, so it sits at the top of the module.
+#
+# We replace ``set_log_level`` itself, after seeding it to "error". Streamlit's
+# own ``_update_logger`` callback fires on config parse and would otherwise
+# downgrade us back to "info"; the cap floors any later call at ERROR.
+def _silence_streamlit_logs() -> None:
+    import logging as _logging
+
+    try:
+        from streamlit import logger as _st_logger
+    except ImportError:
+        return
+
+    _original = _st_logger.set_log_level
+    _original("error")
+
+    def _capped(level):
+        if isinstance(level, str):
+            try:
+                level_num = getattr(_logging, level.upper())
+            except AttributeError:
+                _original(level)
+                return
+        else:
+            level_num = level
+        _original(max(level_num, _logging.ERROR))
+
+    _st_logger.set_log_level = _capped
+
+
+_silence_streamlit_logs()
+
+
 import base64
 import importlib
 import logging
 import os
+import pathlib
 import platform
 import secrets
 import signal
@@ -77,6 +115,16 @@ APP_MODULES = ["ui", "scheduler", "server"]
 VERSION_DATA = version_service.get_version()
 CHILDREN_POLL_INTERVAL = 10
 
+
+def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
+    # On POSIX, forward the signal verbatim. On Windows, subprocess.send_signal
+    # rejects everything except SIGTERM / CTRL_C_EVENT / CTRL_BREAK_EVENT, so
+    # fall back to terminate() — equivalent to TerminateProcess().
+    if sys.platform == "win32":
+        child.terminate()
+    else:
+        child.send_signal(signum)
+
 @dataclass
 class Configuration:
     verbose: bool = field(default=False)
@@ -94,6 +142,7 @@ class CliGroup(click.Group):
             raise
         except Exception:
             LOG.exception("There was an unexpected error")
+            sys.exit(1)
 
     def format_epilog(self, _ctx: Context, formatter: click.HelpFormatter) -> None:
         # Schema revision is a DB round-trip; defer until `--help` is actually
@@ -551,8 +600,23 @@ def setup_standalone(username: str, password: str):
         "TG_TARGET_DB_TRUST_SERVER_CERTIFICATE=yes",
         "TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL=no",
     ]
+
+    # Persist caller-supplied runtime overrides (ports, TLS) so they apply to
+    # subsequent `testgen run-app` invocations.
+    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "TESTGEN_LOG_FILE_PATH", "SSL_CERT_FILE", "SSL_KEY_FILE")
+    persisted_lines = [f"{name}={os.environ[name]}" for name in persisted_env_vars if os.environ.get(name)]
+    if persisted_lines:
+        config_lines.extend(["", "# Runtime overrides from installer", *persisted_lines])
+
     config_path.write_text("\n".join(config_lines) + "\n")
     click.echo(f"Config written to {config_path}")
+
+    # `getenv` resolves env vars before config.env, so a pre-existing
+    # TESTGEN_USERNAME / TESTGEN_PASSWORD in the shell would override the
+    # CLI-supplied values and get seeded into the DB. Force the CLI args
+    # to win for the rest of this process.
+    os.environ["TESTGEN_USERNAME"] = username
+    os.environ["TESTGEN_PASSWORD"] = password
 
     # Reload settings — the module was already evaluated at import time
     # before the config file existed.  Reloading re-reads the new file
@@ -563,6 +627,14 @@ def setup_standalone(username: str, password: str):
     click.echo("Patching Streamlit...")
     from testgen.ui.scripts.patch_streamlit import patch as patch_streamlit
     patch_streamlit(dev=True)
+
+    # Seed Streamlit's first-run credentials file so `run-app` doesn't block
+    # on the interactive email prompt. We don't care about the value — just
+    # that the file exists so Streamlit skips the prompt.
+    streamlit_creds = pathlib.Path.home() / ".streamlit" / "credentials.toml"
+    if not streamlit_creds.exists():
+        streamlit_creds.parent.mkdir(parents=True, exist_ok=True)
+        streamlit_creds.write_text('[general]\nemail = ""\n')
 
     # Start embedded PostgreSQL (standalone mode is now active via config)
     start_standalone_postgres()
@@ -860,14 +932,18 @@ def run_ui():
             child_env = {**os.environ, "TG_JOB_SOURCE": "UI", STANDALONE_URI_ENV_VAR: server_uri}
 
     process= subprocess.Popen(
-        [  # noqa: S607
+        [
+            sys.executable,
+            "-m",
             "streamlit",
             "run",
             app_file,
             "--browser.gatherUsageStats=false",
+            f"--logger.level={'debug' if settings.IS_DEBUG else 'error'}",
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
+            f"--server.port={settings.UI_PORT}",
             f"--server.sslCertFile={settings.SSL_CERT_FILE}" if use_ssl else "",
             f"--server.sslKeyFile={settings.SSL_KEY_FILE}" if use_ssl else "",
             "--",
@@ -877,7 +953,7 @@ def run_ui():
     )
     def term_ui(signum, _):
         LOG.info(f"Sending termination signal {signum} to Testgen UI")
-        process.send_signal(signum)
+        _forward_signal_to_child(process, signum)
     signal.signal(signal.SIGINT, term_ui)
     signal.signal(signal.SIGTERM, term_ui)
     status_code = process.wait()
@@ -905,13 +981,13 @@ def run_app(module):
 
         case "all":
             children = [
-                subprocess.Popen([sys.executable, sys.argv[0], "run-app", m], start_new_session=True)
+                subprocess.Popen([sys.executable, "-m", "testgen", "run-app", m], start_new_session=True)
                 for m in APP_MODULES
             ]
 
             def term_children(signum, _):
                 for child in children:
-                    child.send_signal(signum)
+                    _forward_signal_to_child(child, signum)
 
             signal.signal(signal.SIGINT, term_children)
             signal.signal(signal.SIGTERM, term_children)

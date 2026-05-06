@@ -27,7 +27,7 @@ from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.base import smtp_configured
 from testgen.common.read_file import read_template_sql_file
-from testgen.common.standalone_postgres import get_home_dir, is_standalone_mode
+from testgen.common.standalone_postgres import get_target_host_port, is_standalone_mode
 
 LOG = logging.getLogger("testgen")
 random.seed(42)
@@ -144,10 +144,13 @@ def _prepare_connection_to_target_database(params_mapping):
 
 def _get_settings_params_mapping() -> dict:
     host = settings.PROJECT_DATABASE_HOST
+    port = settings.PROJECT_DATABASE_PORT
     admin_user = settings.DATABASE_ADMIN_USER
     admin_password = settings.DATABASE_ADMIN_PASSWORD
     if is_standalone_mode():
-        host = str(get_home_dir() / "pgdata")
+        host, server_port = get_target_host_port()
+        if server_port:
+            port = server_port
         admin_user = "postgres"
         admin_password = ""
 
@@ -159,7 +162,7 @@ def _get_settings_params_mapping() -> dict:
         "PROJECT_SCHEMA": settings.PROJECT_DATABASE_SCHEMA,
         "PROJECT_KEY": settings.PROJECT_KEY,
         "PROJECT_DB_HOST": host,
-        "PROJECT_DB_PORT": settings.PROJECT_DATABASE_PORT,
+        "PROJECT_DB_PORT": port,
         "SQL_FLAVOR": settings.PROJECT_SQL_FLAVOR,
     }
 

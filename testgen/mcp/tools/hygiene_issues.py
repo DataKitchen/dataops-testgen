@@ -13,6 +13,7 @@ from testgen.common.pii_masking import PII_REDACTED
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
+    DocGroup,
     format_disposition,
     format_page_footer,
     format_page_info,
@@ -29,6 +30,8 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.BROWSE_PROFILING
 
 
 def _redact_detail(row, view_pii_codes: set[str]) -> str:

@@ -25,8 +25,6 @@ import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Alert } from '/app/static/js/components/alert.js';
-import { Code } from '/app/static/js/components/code.js';
-import { ExpanderToggle } from '/app/static/js/components/expander_toggle.js';
 import { Select } from '/app/static/js/components/select.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 
@@ -55,8 +53,6 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const generationSets = getValue(props.generation_sets) ?? [];
     const defaultSet = getValue(props.default_generation_set) ?? (generationSets[0] ?? '');
     const selectedSet = van.state(defaultSet);
-
-    const showCLI = van.state(false);
 
     const content = div(
         { class: 'flex-column fx-gap-3 generate-tests--wrapper' },
@@ -109,13 +105,6 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
             strong({}, testSuiteName),
             span('?'),
         ),
-        ExpanderToggle({
-            expandLabel: 'Show CLI command',
-            collapseLabel: 'Collapse',
-            onExpand: () => showCLI.val = true,
-            onCollapse: () => showCLI.val = false,
-        }),
-        () => Code({ class: showCLI.val ? '' : 'hidden' }, `testgen run-test-generation --test-suite-id ${testSuiteId} --generation-set '${selectedSet.val}'`),
         () => {
             const result = getValue(props.result) ?? {};
             return result.message
