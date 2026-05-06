@@ -30,6 +30,9 @@ into specific entities.
 Test types have specific, non-obvious meanings (e.g., Alpha_Trunc). Do not guess what a test checks.
 ALWAYS look them up using either the `testgen://test-types` resource or the `get_test_type()` tool.
 
+Hygiene issue types similarly have specific meanings. ALWAYS look them up using the
+`testgen://hygiene-issue-types` resource.
+
 INVESTIGATING FAILURES
 
 Use list_test_results to find failures, then get_source_data to see relevant data from the connected database.
@@ -86,6 +89,7 @@ def build_mcp_server(
     from testgen.mcp.prompts.workflows import (
         compare_runs,
         health_check,
+        hygiene_triage,
         investigate_failures,
         profiling_overview,
         table_health,
@@ -98,8 +102,19 @@ def build_mcp_server(
         run_profiling,
         run_tests,
     )
+    from testgen.mcp.tools.hygiene_issues import (
+        get_hygiene_issue,
+        list_hygiene_issues,
+        search_hygiene_issues,
+        update_hygiene_issue,
+    )
     from testgen.mcp.tools.profiling import get_table, list_column_profiles, list_profiling_summaries
-    from testgen.mcp.tools.reference import get_test_type, glossary_resource, test_types_resource
+    from testgen.mcp.tools.reference import (
+        get_test_type,
+        glossary_resource,
+        hygiene_issue_types_resource,
+        test_types_resource,
+    )
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
     from testgen.mcp.tools.test_definitions import get_test, list_test_notes, list_test_types, list_tests
     from testgen.mcp.tools.test_results import (
@@ -162,9 +177,14 @@ def build_mcp_server(
     safe_tool(cancel_test_run)
     safe_tool(cancel_profiling_run)
     safe_tool(generate_tests)
+    safe_tool(list_hygiene_issues)
+    safe_tool(get_hygiene_issue)
+    safe_tool(search_hygiene_issues)
+    safe_tool(update_hygiene_issue)
 
-    # Resources (2)
+    # Resources
     safe_resource("testgen://test-types", test_types_resource)
+    safe_resource("testgen://hygiene-issue-types", hygiene_issue_types_resource)
     safe_resource("testgen://glossary", glossary_resource)
 
     # Prompts
@@ -173,6 +193,7 @@ def build_mcp_server(
     safe_prompt(table_health)
     safe_prompt(compare_runs)
     safe_prompt(profiling_overview)
+    safe_prompt(hygiene_triage)
 
     return mcp
 
