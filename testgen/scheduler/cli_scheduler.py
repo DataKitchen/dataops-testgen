@@ -195,6 +195,10 @@ class CliScheduler(Scheduler):
 
         signal.signal(signal.SIGINT, sig_handler)
         signal.signal(signal.SIGTERM, sig_handler)
+        # Windows: parent forwards CTRL_BREAK_EVENT (delivered as SIGBREAK) when the
+        # child is spawned in its own process group, so handle it the same way.
+        if sigbreak := getattr(signal, "SIGBREAK", None):
+            signal.signal(sigbreak, sig_handler)
 
         try:
             self.start(datetime.now(UTC))
