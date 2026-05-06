@@ -77,6 +77,40 @@ Please perform a profiling exploration:
 """
 
 
+def hygiene_triage(table_group_id: str | None = None) -> str:
+    """Guided hygiene issue triage workflow — review hygiene issues and decide what to do.
+
+    Args:
+        table_group_id: Optional UUID of a table group to focus on.
+    """
+    intro = (
+        f"Focus on table group `{table_group_id}`."
+        if table_group_id
+        else "Pick a table group with confirmed hygiene issues."
+    )
+    tg = f"'{table_group_id}'" if table_group_id else "'...'"
+
+    steps: list[str] = []
+    if not table_group_id:
+        steps.append(
+            "Call `get_data_inventory()` to see projects and table groups, with profiling status per group."
+        )
+    steps.append(f"Call `list_hygiene_issues(table_group_id={tg}, disposition='Confirmed')` for the issues to review.")
+    steps.append(
+        "For each top issue (ordered by priority), call `get_hygiene_issue(issue_id='...')` for full context — "
+        "issue type description, suggested action, column profile."
+    )
+    steps.append("For unfamiliar issue types, read `testgen://hygiene-issue-types` once for the reference table.")
+    steps.append(
+        "For each issue: explain what was found, then help the user decide a disposition — **Confirmed**, **Dismissed**, or **Muted**. "
+        "Apply via `update_hygiene_issue(issue_id='...', disposition='...')`, or leave it open for further investigation."
+    )
+    steps.append("Summarize the triage results and any patterns noted across the issues.")
+
+    numbered = "\n".join(f"{i + 1}. {step}" for i, step in enumerate(steps))
+    return f"Please triage hygiene issues. {intro}\n\n{numbered}\n"
+
+
 def compare_runs(test_suite: str | None = None) -> str:
     """Compare the two most recent test runs to identify regressions and improvements.
 

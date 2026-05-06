@@ -91,7 +91,88 @@ def test_glossary_resource():
 
     assert "Entity Hierarchy" in result
     assert "Result Statuses" in result
-    assert "Data Quality Dimensions" in result
+    assert "Quality Dimensions" in result
     assert "Test Scopes" in result
     assert "Disposition" in result
     assert "Monitor Types" not in result
+
+    # Hygiene-issue additions (TG-1029):
+    assert "Profiling Run" in result
+    assert "Hygiene Issue" in result
+    assert "## Hygiene Issue Likelihood" in result
+    assert "Definite" in result
+    assert "Likely" in result
+    assert "Possible" in result
+    assert "PII Risk" in result
+    # All three disposition values defined under one section:
+    assert "Confirmed" in result
+    assert "Dismissed" in result
+    assert "Muted" in result
+    # Recency was added during the migration:
+    assert "Recency" in result
+    # Impact Dimensions section + all four values:
+    assert "## Impact Dimensions" in result
+    assert "Reliability" in result
+    assert "Conformance" in result
+    assert "Regularity" in result
+    assert "Usability" in result
+
+
+@patch("testgen.mcp.tools.reference.HygieneIssueType")
+def test_hygiene_issue_types_resource_basic(mock_type_cls, db_session_mock):
+    t1 = MagicMock()
+    t1.name = "Personally Identifiable Information"
+    t1.impact_dimension = "Conformance"
+    t1.dq_dimension = "Validity"
+    t1.likelihood = "Potential PII"
+    t1.description = "PII description."
+    t1.suggested_action = "Handle PII carefully."
+    t2 = MagicMock()
+    t2.name = "Non-Standard Blank Values"
+    t2.impact_dimension = "Usability"
+    t2.dq_dimension = "Completeness"
+    t2.likelihood = "Definite"
+    t2.description = "Blanks description."
+    t2.suggested_action = "Cleanse blanks."
+    mock_type_cls.select_where.return_value = [t1, t2]
+
+    from testgen.mcp.tools.reference import hygiene_issue_types_resource
+
+    result = hygiene_issue_types_resource()
+
+    # Header order: Issue Type | Impact Dimension | Quality Dimension | Likelihood | Description | Suggested Action
+    header_line = next(line for line in result.split("\n") if line.startswith("| Issue Type"))
+    assert header_line == "| Issue Type | Impact Dimension | Quality Dimension | Likelihood | Description | Suggested Action |"
+    # All values surface:
+    assert "Personally Identifiable Information" in result
+    assert "Non-Standard Blank Values" in result
+    assert "Potential PII" in result
+    assert "Definite" in result
+    assert "Handle PII carefully." in result
+
+
+@patch("testgen.mcp.tools.reference.HygieneIssueType")
+def test_hygiene_issue_types_resource_orders_by_name(mock_type_cls, db_session_mock):
+    from testgen.common.models.hygiene_issue import HygieneIssueType
+    from testgen.mcp.tools.reference import hygiene_issue_types_resource
+
+    mock_type_cls.select_where.return_value = []
+    mock_type_cls.name = HygieneIssueType.name
+
+    hygiene_issue_types_resource()
+
+    # ``select_where`` was called with order_by tuple containing the name column.
+    mock_type_cls.select_where.assert_called_once()
+    kwargs = mock_type_cls.select_where.call_args.kwargs
+    assert "order_by" in kwargs
+    assert kwargs["order_by"][0] is HygieneIssueType.name
+
+
+@patch("testgen.mcp.tools.reference.HygieneIssueType")
+def test_hygiene_issue_types_resource_empty(mock_type_cls, db_session_mock):
+    mock_type_cls.select_where.return_value = []
+
+    from testgen.mcp.tools.reference import hygiene_issue_types_resource
+
+    result = hygiene_issue_types_resource()
+    assert "No hygiene issue types found" in result
