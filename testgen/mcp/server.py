@@ -1,11 +1,14 @@
 import logging
+from urllib.parse import urlparse
 
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
+from testgen import settings
 from testgen.common.auth import decode_jwt_token
 from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 
@@ -75,6 +78,43 @@ def _configure_mcp_logging() -> None:
         logging.getLogger(name).parent = testgen_logger
 
 
+def _build_transport_security() -> TransportSecuritySettings:
+    """Build DNS-rebinding allowlist from BASE_URL plus operator extras and loopback.
+
+    Without an explicit transport_security, FastMCP installs a loopback-only
+    allowlist that rejects external Host headers with 421. We pass this settings
+    object so production deployments accept their own externally-reachable host.
+    """
+    parsed = urlparse(settings.BASE_URL)
+    base_host = parsed.hostname or "localhost"
+    netloc = parsed.netloc
+    scheme = parsed.scheme or "http"
+
+    allowed_hosts: set[str] = {
+        netloc,
+        f"{base_host}:*",
+        "127.0.0.1:*",
+        "localhost:*",
+        "[::1]:*",
+    }
+    allowed_origins: set[str] = {
+        f"{scheme}://{netloc}",
+        "http://127.0.0.1:*", "https://127.0.0.1:*",
+        "http://localhost:*", "https://localhost:*",
+        "http://[::1]:*", "https://[::1]:*",
+    }
+    for host in settings.MCP_EXTRA_ALLOWED_HOSTS:
+        host_pattern = host if ":" in host else f"{host}:*"
+        allowed_hosts.add(host_pattern)
+        allowed_origins.update({f"http://{host_pattern}", f"https://{host_pattern}"})
+
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=sorted(allowed_hosts),
+        allowed_origins=sorted(allowed_origins),
+    )
+
+
 def build_mcp_server(
     api_base_url: str,
     server_url: str | None = None,
@@ -138,6 +178,7 @@ def build_mcp_server(
             resource_server_url=server_url,
         ),
         token_verifier=JWTTokenVerifier(),
+        transport_security=_build_transport_security(),
     )
     _configure_mcp_logging()
 

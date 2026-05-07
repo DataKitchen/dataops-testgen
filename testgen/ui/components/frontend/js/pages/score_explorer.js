@@ -394,13 +394,11 @@ const Toolbar = (
                 div(
                     { class: 'flex-row fx-gap-4 fx-flex-wrap' },
                     Checkbox({
-                        testId: 'include-total-score',
                         label: 'Total Score',
                         checked: displayTotalScore,
                         onChange: (checked) => displayTotalScore.val = checked,
                     }),
                     Checkbox({
-                        testId: 'include-cde-score',
                         label: 'CDE Score',
                         checked: displayCDEScore,
                         onChange: (checked) => displayCDEScore.val = checked,
@@ -408,13 +406,11 @@ const Toolbar = (
                     div(
                         { class: 'flex-row fx-gap-4' },
                         Checkbox({
-                            testId: 'include-category',
                             label: 'Category:',
                             checked: displayCategory,
                             onChange: (checked) => displayCategory.val = checked,
                         }),
                         Select({
-                            testId: 'category-selector',
                             style: 'margin-left: -8px;',
                             height: 40,
                             value: selectedCategory,
@@ -427,7 +423,6 @@ const Toolbar = (
             userCanEdit ? div(
                 { class: 'flex-row fx-align-flex-end fx-gap-3' },
                 Input({
-                    testId: 'scorecard-name-input',
                     label: 'Scorecard Name',
                     height: 40,
                     value: scoreName,

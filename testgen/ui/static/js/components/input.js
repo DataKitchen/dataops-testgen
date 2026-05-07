@@ -133,10 +133,10 @@ const Input = (/** @type Properties */ props) => {
                 : undefined,
             () => input({
                 value,
-                'data-value': value,
                 name: props.name ?? '',
                 type: inputType,
                 disabled: props.disabled,
+                ...(inputType.val !== 'password' ? {'data-value': value} : {}),
                 ...(inputType.val === 'number' ? {step: getValue(props.step)} : {}),
                 ...(props.readonly ? {readonly: true} : {}),
                 ...(props.passwordSuggestions ?? true ? {} : {autocomplete: 'off', 'data-op-ignore': true}),

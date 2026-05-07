@@ -331,7 +331,6 @@ const ConnectionForm = (props, saveButton) => {
             options: props.flavors,
             disabled: props.disableFlavor,
             help: 'Type of database server to connect to. This determines the database driver and SQL dialect that will be used by TestGen.',
-            testId: 'sql_flavor',
         }),
         Input({
             name: 'connection_name',

@@ -100,7 +100,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     icon: 'search',
                     clearable: true,
                     placeholder: 'Search table group names',
-                    testId: 'table-groups-filter',
                     onChange: (value) => tableGroupsSearchTerm.val = value,
                 }),
                 Select({
@@ -108,7 +107,6 @@ const ProjectDashboard = (/** @type Properties */ props) => {
                     value: tableGroupsSortOption,
                     options: props.table_groups_sort_options?.val ?? [],
                     style: 'font-size: 14px;',
-                    testId: 'table-groups-sort',
                 }),
             )
             : '',

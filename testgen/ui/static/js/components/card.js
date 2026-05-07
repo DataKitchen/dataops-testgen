@@ -7,6 +7,7 @@
  * @property {boolean?} border
  * @property {string?} id
  * @property {string?} class
+ * @property {string?} testId
  */
 import { loadStylesheet, getValue } from '../utils.js';
 import van from '../van.min.js';

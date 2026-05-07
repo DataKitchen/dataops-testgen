@@ -199,7 +199,6 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                             checked: allSelected,
                                             indeterminate: partiallySelected,
                                             onChange: (checked) => items.forEach(item => selectedRuns[item.job_execution_id].val = checked),
-                                            testId: 'select-all-profiling-run',
                                         })
                                         : '',
                                 );
