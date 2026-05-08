@@ -6,6 +6,7 @@ from testgen.common.date_service import parse_since
 from testgen.common.enums import ImpactDimension, QualityDimension
 from testgen.common.models.hygiene_issue import Disposition, HygieneIssueType, IssueLikelihood, PiiRisk
 from testgen.common.models.job_execution import JobStatus
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestType
@@ -250,3 +251,17 @@ def resolve_test_suite(test_suite_id: str) -> TestSuite:
     if suite is None:
         raise MCPResourceNotAccessible("Test suite", test_suite_id)
     return suite
+
+
+def resolve_profiling_run(job_execution_id: str) -> ProfilingRun:
+    """Resolve a profiling run by id-or-JE-id, scoped to allowed projects.
+
+    Collapses missing-or-inaccessible into a single ``MCPResourceNotAccessible``
+    so callers don't leak existence of runs they shouldn't see.
+    """
+    run_uuid = parse_uuid(job_execution_id, "job_execution_id")
+    run = ProfilingRun.get_by_id_or_job(run_uuid)
+    perms = get_project_permissions()
+    if run is None or not perms.has_access(run.project_code):
+        raise MCPResourceNotAccessible("Profiling run", job_execution_id)
+    return run

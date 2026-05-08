@@ -1,12 +1,14 @@
+import dataclasses
 from uuid import UUID
 
 from testgen.common.models import with_database_session
-from testgen.common.models.data_column import ColumnProfileSummary, DataColumnChars
+from testgen.common.models.data_column import ColumnProfileDetail, ColumnProfileSummary, DataColumnChars
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupSummary
+from testgen.common.pii_masking import mask_profiling_pii
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -17,6 +19,7 @@ from testgen.mcp.tools.common import (
     next_scheduled_run,
     parse_run_status_filter,
     parse_uuid,
+    resolve_profiling_run,
     resolve_table_group,
     validate_limit,
     validate_page,
@@ -97,9 +100,8 @@ def list_column_profiles(
 
     profiling_run_id: UUID | None = None
     if job_execution_id:
-        run_uuid = parse_uuid(job_execution_id, "job_execution_id")
-        profiling_run = ProfilingRun.get_by_id_or_job(run_uuid)
-        if profiling_run is None or profiling_run.table_groups_id != tg.id:
+        profiling_run = resolve_profiling_run(job_execution_id)
+        if profiling_run.table_groups_id != tg.id:
             raise MCPResourceNotAccessible("Profiling run", job_execution_id)
         profiling_run_id = profiling_run.id
 
@@ -216,9 +218,9 @@ _PII_TYPE_MAP = {"ID": "ID", "NAME": "Name", "DEMO": "Demographic", "CONTACT": "
 def _format_pii(value: str | None) -> str | None:
     """Render a `pii_flag` value as a human label. Mirrors `PiiDisplay` in metadata_tags.js."""
     if not value:
-        return None
+        return "No"
     if value == "MANUAL":
-        return "PII"
+        return "Yes"
     risk, _, rest = value.partition("/")
     type_code, _, detail = rest.partition("/")
     risk_label = _PII_RISK_MAP.get(risk, "Moderate")
@@ -228,7 +230,7 @@ def _format_pii(value: str | None) -> str | None:
         caption += f" - {type_label}"
     if detail and detail != type_label:
         caption += f" / {detail}"
-    return f"PII ({caption})"
+    return f"Yes ({caption})"
 
 
 def _render_column_profile_row(c: ColumnProfileSummary) -> list:
@@ -459,3 +461,252 @@ def _render_table_group_summary(doc: MdDoc, s: TableGroupSummary) -> None:
     doc.field("Profiling Run", s.latest_profile_job_execution_id, code=True)
     if s.monitor_lookback_end:
         doc.field("Last monitored", s.monitor_lookback_end)
+
+
+# ---------------------------------------------------------------------------
+# get_column_profile_detail
+# ---------------------------------------------------------------------------
+
+# Friendly labels for `std_pattern_match` — mirrors `standardPatternLabels` in
+# `ui/components/frontend/js/data_profiling/column_distribution.js`.
+_STD_PATTERN_LABELS = {
+    "STREET_ADDR": "Street Address",
+    "STATE_USA": "State (USA)",
+    "PHONE_USA": "Phone (USA)",
+    "EMAIL": "Email",
+    "ZIP_USA": "Zip Code (USA)",
+    "FILE_NAME": "Filename",
+    "CREDIT_CARD": "Credit Card",
+    "DELIMITED_DATA": "Delimited Data",
+    "SSN": "SSN (USA)",
+}
+
+
+def _format_std_pattern(value: str | None) -> str | None:
+    if not value:
+        return None
+    return _STD_PATTERN_LABELS.get(value, value.replace("_", " ").title())
+
+
+@with_database_session
+@mcp_permission("catalog")
+def get_column_profile_detail(
+    table_group_id: str,
+    table_name: str,
+    column_name: str,
+    job_execution_id: str | None = None,
+) -> str:
+    """Get the type-specific value distribution and statistics for one column from its profiling run.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+        column_name: Column name exactly as stored in TestGen (case-sensitive).
+        job_execution_id: UUID of a profiling run, e.g. from `list_profiling_summaries`.
+            When omitted, uses the column's latest complete run.
+    """
+    tg = resolve_table_group(table_group_id)
+
+    profiling_run_id: UUID | None = None
+    if job_execution_id:
+        profiling_run = resolve_profiling_run(job_execution_id)
+        if profiling_run.table_groups_id != tg.id:
+            raise MCPResourceNotAccessible("Profiling run", job_execution_id)
+        profiling_run_id = profiling_run.id
+
+    detail = DataColumnChars.get_column_detail(
+        table_groups_id=tg.id,
+        table_name=table_name,
+        column_name=column_name,
+        profiling_run_id=profiling_run_id,
+    )
+    if detail is None:
+        raise MCPResourceNotAccessible("Column", column_name)
+
+    if detail.profile_run_id is None:
+        if job_execution_id:
+            raise MCPUserError(
+                f"Profiling run `{job_execution_id}` did not include column `{column_name}`."
+            )
+        raise MCPUserError(
+            f"Column `{column_name}` has not been profiled yet. "
+            "Run profiling for the table group first."
+        )
+
+    if detail.profile_run_status in ("Running", "Error", "Cancelled"):
+        _raise_run_not_ready(detail)
+
+    perms = get_project_permissions()
+    payload = dataclasses.asdict(detail)
+    if tg.project_code not in perms.codes_allowed_to("view_pii") and detail.pii_flag:
+        mask_profiling_pii(payload, {detail.column_name})
+
+    return _render_column_profile_detail(payload)
+
+
+def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
+    """Reject when the resolved profiling run is in `Running` or `Error` state.
+
+    Surface the run id, status, started/ended timestamps, and `log_message` (Error only)
+    in the raised error so the LLM knows what to suggest next.
+    """
+    je = detail.profile_run_je_id
+    status = detail.profile_run_status
+    started = detail.profile_run_started_at
+    ended = detail.profile_run_ended_at
+    started_label = started.strftime("%Y-%m-%d %H:%M UTC") if started else "—"
+    ended_label = ended.strftime("%Y-%m-%d %H:%M UTC") if ended else "—"
+    lines = [
+        f"Profiling run `{je}` is in `{status}` state — no profile detail available.",
+        f"Started: {started_label}. Ended: {ended_label}.",
+    ]
+    if status == "Error" and detail.profile_run_log_message:
+        lines.append(f"Error: {detail.profile_run_log_message}")
+    raise MCPUserError("\n".join(lines))
+
+
+def _render_column_profile_detail(p: dict) -> str:
+    """Render a column profile detail payload as grouped Markdown sections."""
+    doc = MdDoc()
+    fq_name = f"{p['schema_name']}.{p['table_name']}" if p["schema_name"] else p["table_name"]
+    doc.heading(1, f"Column Profile: `{p['column_name']}` in `{fq_name}`")
+
+    general_type = p.get("general_type")
+
+    # Run identity + L1 header fields
+    doc.field("Profiling Run", p["profile_run_je_id"], code=True)
+    doc.field("Profiled at", p["profile_run_started_at"])
+    doc.field("General Type", _format_general_type(general_type))
+    doc.field("Data Type", p["db_data_type"])
+    doc.field("Semantic Data Type", p["functional_data_type"])
+    if p.get("datatype_suggestion"):
+        doc.field("Suggested Data Type", p["datatype_suggestion"])
+    doc.field("PII", _format_pii(p.get("pii_flag")))
+    doc.field("Critical Data Element", p.get("critical_data_element") or False)
+    doc.field("Profiling Score", friendly_score(p.get("dq_score_profiling")))
+    doc.field("Testing Score", friendly_score(p.get("dq_score_testing")))
+
+    if not p.get("query_error"):
+        doc.field("Hygiene Issues (confirmed)", p.get("hygiene_issue_count", 0))
+
+        # Type-specific dispatch (T and unknown fall through to common-counts only)
+        if general_type == "A":
+            _render_alpha_block(doc, p)
+        elif general_type == "N":
+            _render_numeric_block(doc, p)
+        elif general_type == "D":
+            _render_date_block(doc, p)
+        elif general_type == "B":
+            _render_boolean_block(doc, p)
+        else:
+            _render_unknown_block(doc, p)
+    else:
+        doc.heading(2, "Profiling Error")
+        doc.text(p["query_error"])
+
+    return doc.render()
+
+
+_FIELD_GENERAL_TYPE_LABELS = {
+    "A": "Alpha",
+    "B": "Boolean",
+    "D": "Date",
+    "N": "Numeric",
+    "T": "Time",
+    "X": "Other",
+}
+
+
+def _format_general_type(value: str) -> str:
+    return _FIELD_GENERAL_TYPE_LABELS.get(value or "X")
+
+
+def _render_counts(doc: MdDoc, p: dict) -> None:
+    doc.heading(2, "Counts")
+    doc.field("Row Count", p.get("record_ct"))
+    doc.field("Value Count", p.get("value_ct"))
+    doc.field("Distinct Values", p.get("distinct_value_ct"))
+    doc.field("Null", p.get("null_value_ct"))
+    doc.field("Dummy Values", p.get("filled_value_ct"))
+    doc.field("Zero Values", p.get("zero_value_ct"))
+
+
+def _render_alpha_block(doc: MdDoc, p: dict) -> None:
+    _render_counts(doc, p)
+    doc.field("Zero Length", p.get("zero_length_ct"))
+
+    doc.heading(2, "Length")
+    doc.field("Minimum Length", p.get("min_length"))
+    doc.field("Maximum Length", p.get("max_length"))
+    doc.field("Average Length", p.get("avg_length"))
+
+    doc.heading(2, "Text Range")
+    doc.field("Minimum Text", p.get("min_text"))
+    doc.field("Maximum Text", p.get("max_text"))
+
+    doc.heading(2, "Patterns")
+    doc.field("Standard Pattern Match", _format_std_pattern(p.get("std_pattern_match")))
+    doc.field("Distinct Patterns", p.get("distinct_pattern_ct"))
+    doc.field("Frequent Patterns", p.get("top_patterns"))
+    doc.field("Frequent Values", p.get("top_freq_values"))
+    doc.field("Distinct Standard Values", p.get("distinct_std_value_ct"))
+
+    doc.heading(2, "Case & Composition")
+    doc.field("Upper Case", p.get("upper_case_ct"))
+    doc.field("Lower Case", p.get("lower_case_ct"))
+    doc.field("Mixed Case", p.get("mixed_case_ct"))
+    doc.field("Non-Alpha", p.get("non_alpha_ct"))
+    doc.field("Includes Digits", p.get("includes_digit_ct"))
+    doc.field("Numeric Values", p.get("numeric_ct"))
+    doc.field("Date Values", p.get("date_ct"))
+    doc.field("Quoted Values", p.get("quoted_value_ct"))
+    doc.field("Leading Spaces", p.get("lead_space_ct"))
+    doc.field("Embedded Spaces", p.get("embedded_space_ct"))
+    doc.field("Average Embedded Spaces", p.get("avg_embedded_spaces"))
+
+
+def _render_numeric_block(doc: MdDoc, p: dict) -> None:
+    _render_counts(doc, p)
+
+    doc.heading(2, "Distribution")
+    doc.field("Minimum Value", p.get("min_value"))
+    doc.field("Minimum Value > 0", p.get("min_value_over_0"))
+    doc.field("Maximum Value", p.get("max_value"))
+    doc.field("Average Value", p.get("avg_value"))
+    doc.field("Standard Deviation", p.get("stdev_value"))
+
+    doc.heading(2, "Percentiles")
+    doc.field("25th Percentile", p.get("percentile_25"))
+    doc.field("Median Value", p.get("percentile_50"))
+    doc.field("75th Percentile", p.get("percentile_75"))
+
+
+def _render_date_block(doc: MdDoc, p: dict) -> None:
+    _render_counts(doc, p)
+
+    doc.heading(2, "Date Range")
+    doc.field("Minimum Date", p.get("min_date"))
+    doc.field("Maximum Date", p.get("max_date"))
+
+    doc.heading(2, "Age Buckets")
+    doc.field("Before 1 Year", p.get("before_1yr_date_ct"))
+    doc.field("Before 5 Years", p.get("before_5yr_date_ct"))
+    doc.field("Before 20 Years", p.get("before_20yr_date_ct"))
+    doc.field("Within 1 Year", p.get("within_1yr_date_ct"))
+    doc.field("Within 1 Month", p.get("within_1mo_date_ct"))
+    doc.field("Future Dates", p.get("future_date_ct"))
+
+
+def _render_boolean_block(doc: MdDoc, p: dict) -> None:
+    _render_counts(doc, p)
+
+    doc.heading(2, "Boolean Distribution")
+    true_ct = p.get("boolean_true_ct") or 0
+    value_ct = p.get("value_ct") or 0
+    false_ct = max(value_ct - true_ct, 0)
+    doc.field("True", true_ct)
+    doc.field("False", false_ct)
+
+
+def _render_unknown_block(doc: MdDoc, p: dict) -> None:
+    _render_counts(doc, p)
