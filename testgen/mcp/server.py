@@ -148,7 +148,13 @@ def build_mcp_server(
         search_hygiene_issues,
         update_hygiene_issue,
     )
-    from testgen.mcp.tools.profiling import get_table, list_column_profiles, list_profiling_summaries
+    from testgen.mcp.tools.profiling import (
+        get_profiling_run,
+        get_table,
+        list_column_profiles,
+        list_profiling_runs,
+        list_profiling_summaries,
+    )
     from testgen.mcp.tools.reference import (
         get_test_type,
         glossary_resource,
@@ -160,12 +166,12 @@ def build_mcp_server(
     from testgen.mcp.tools.test_results import (
         get_failure_summary,
         get_failure_trend,
-        get_test_result_history,
         get_test_run_diff,
+        list_test_result_history,
         list_test_results,
         search_test_results,
     )
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import get_test_run, list_test_runs
 
     if server_url is None:
         server_url = f"{api_base_url}/mcp"
@@ -196,9 +202,10 @@ def build_mcp_server(
     safe_tool(list_projects)
     safe_tool(list_tables)
     safe_tool(list_test_suites)
-    safe_tool(get_recent_test_runs)
+    safe_tool(list_test_runs)
+    safe_tool(get_test_run)
     safe_tool(list_test_results)
-    safe_tool(get_test_result_history)
+    safe_tool(list_test_result_history)
     safe_tool(get_failure_summary)
     safe_tool(search_test_results)
     safe_tool(get_failure_trend)
@@ -213,6 +220,8 @@ def build_mcp_server(
     safe_tool(get_table)
     safe_tool(list_column_profiles)
     safe_tool(list_profiling_summaries)
+    safe_tool(list_profiling_runs)
+    safe_tool(get_profiling_run)
     safe_tool(run_tests)
     safe_tool(run_profiling)
     safe_tool(cancel_test_run)
