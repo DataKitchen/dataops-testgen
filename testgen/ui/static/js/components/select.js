@@ -21,7 +21,6 @@
  * @property {number?} width
  * @property {number?} height
  * @property {string?} style
- * @property {string?} testId
  * @property {number?} portalClass
  * @property {('top' | 'bottom')?} portalPosition
  * @property {boolean?} filterable
@@ -189,7 +188,7 @@ const Select = (/** @type {Properties} */ props) => {
             id: domId,
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            'data-testid': getValue(props.testId) ?? '',
+            'data-testid': 'select',
             onclick: (/** @type Event */ event) => {
                 event.stopPropagation();
                 event.stopImmediatePropagation();
@@ -307,7 +306,7 @@ const MultiSelect = (props) => {
             id: domId,
             class: () => `flex-column fx-gap-1 text-caption tg-select--label ${getValue(props.disabled) ? 'disabled' : ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            'data-testid': getValue(props.testId) ?? '',
+            'data-testid': 'select',
             onclick: (/** @type Event */ event) => {
                 event.stopPropagation();
                 event.stopImmediatePropagation();

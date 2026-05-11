@@ -25,7 +25,7 @@ const Slider = (/** @type Properties */ props) => {
     };
 
     return label(
-        { class: 'flex-col fx-gap-1 clickable tg-slider--label text-caption' },
+        { class: 'flex-col fx-gap-1 clickable tg-slider--label text-caption', 'data-testid': 'slider' },
         props.label,
         input({
             type: "range",

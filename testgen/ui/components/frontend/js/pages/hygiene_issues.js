@@ -458,7 +458,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
 
     // Table header bar (actions above the table)
     const tableHeader = div(
-        { class: 'flex-row fx-align-center fx-gap-2 p-2' },
+        { 'data-testid': 'table-header', class: 'flex-row fx-align-center fx-gap-2 p-2' },
         Toggle({
             label: () => {
                 return div(
@@ -481,7 +481,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
             if (!permissions.val.can_disposition) return '';
             const disabled = allSelectedArePassed.val;
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'disposition-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Confirm selected as relevant', disabled, onclick: () => onDisposition('Confirmed') }),
                 Button({ type: 'icon', icon: 'cancel', tooltip: 'Dismiss selected as not relevant', disabled, onclick: () => onDisposition('Dismissed') }),
                 Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Mute selected for future runs', disabled, onclick: () => onDisposition('Inactive') }),
@@ -563,14 +563,12 @@ const HygieneIssues = (/** @type Properties */ props) => {
             profilingColumn: van.derive(() => getValue(props.profiling_column) ?? null),
             onClose: () => emit('ProfilingClosed', {}),
             width: '50rem',
-            testId: 'profiling-dialog',
         }),
         SourceDataDialog({ emit,
             sourceData: van.derive(() => getValue(props.source_data) ?? null),
             onClose: () => emit('SourceDataClosed', {}),
             renderHeader: HygieneSourceDataHeader,
             width: '60rem',
-            testId: 'source-data-dialog',
         }),
 
         // Summary row
@@ -578,14 +576,14 @@ const HygieneIssues = (/** @type Properties */ props) => {
             { class: 'flex-row fx-gap-5 fx-align-flex-end mb-3 fx-flex-wrap' },
             () => othersSummary.val.length
                 ? div(
-                    { class: 'flex-column fx-gap-1' },
+                    { 'data-testid': 'hygiene-issues-summary', class: 'flex-column fx-gap-1' },
                     div({ class: 'text-caption' }, 'Hygiene Issues'),
                     SummaryCounts({ items: othersSummary.val }),
                 )
                 : '',
             () => piiSummary.val.length
                 ? div(
-                    { class: 'flex-column fx-gap-1' },
+                    { 'data-testid': 'hygiene-pii-summary', class: 'flex-column fx-gap-1' },
                     div({ class: 'text-caption' }, 'Potential PII (Risk)'),
                     SummaryCounts({ items: piiSummary.val }),
                 )
@@ -596,7 +594,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 div(
                     { class: 'flex-column' },
                     div({ class: 'text-caption'}, 'Score'),
-                    div({ style: 'font-size: 28px' }, score),
+                    div({ 'data-testid': 'hygiene-score', style: 'font-size: 28px' }, score),
                 ),
                 Button({
                     type: 'icon',
@@ -616,7 +614,6 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 label: 'Likelihood',
                 value: likelihoodFilter.val,
                 options: LIKELIHOOD_OPTIONS,
-                testId: 'likelihood-filter',
                 style: 'min-width: 160px',
                 onChange: onLikelihoodChange,
                 allowNull: true,
@@ -625,7 +622,6 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 label: 'Table',
                 value: tableFilter.val,
                 options: tableOptions.val,
-                testId: 'table-filter',
                 style: 'min-width: 160px',
                 filterable: true,
                 onChange: onTableChange,
@@ -635,7 +631,6 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 label: 'Column',
                 value: columnFilter.val,
                 options: columnOptions.val,
-                testId: 'column-filter',
                 style: 'min-width: 160px',
                 filterable: true,
                 acceptNewOptions: true,
@@ -646,7 +641,6 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 label: 'Issue Type',
                 value: issueTypeFilter.val,
                 options: issueTypeOptions.val,
-                testId: 'issue-type-filter',
                 style: 'min-width: 200px',
                 filterable: true,
                 onChange: onIssueTypeChange,
@@ -657,7 +651,6 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 label: 'Action',
                 value: actionFilter.val,
                 options: ACTION_OPTIONS,
-                testId: 'action-filter',
                 style: 'min-width: 160px',
                 onChange: onActionChange,
                 allowNull: true,
@@ -675,7 +668,7 @@ const HygieneIssues = (/** @type Properties */ props) => {
                 if (!sel) return '';
 
                 return div(
-                    { class: 'tg-hi--detail flex-column fx-gap-4' },
+                    { 'data-testid': 'hygiene-issue-detail', class: 'tg-hi--detail flex-column fx-gap-4' },
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
                         sel.table_name !== '(multi-table)' 

@@ -15,7 +15,6 @@
  * @property {(bool)} loading
  * @property {('normal' | 'small')?} size
  * @property {string?} style
- * @property {string?} testId
  */
 import { getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -49,7 +48,7 @@ const Button = (/** @type Properties */ props) => {
                 style: () => `width: ${isIconOnly ? '' : (width ?? '100%')}; ${getValue(props.style)}`,
                 onclick: onClickHandler,
                 disabled: isDisabled,
-                'data-testid': getValue(props.testId) ?? '',
+                'data-testid': 'button',
             },
             span({class: 'tg-button-focus-state-indicator'}, ''),
             props.icon ? i({

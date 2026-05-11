@@ -18,7 +18,6 @@
  * @property {string?} tooltipPosition
  * @property {boolean?} disabled
  * @property {((event: any) => void)?} onClick
- * @property {string?} testId
  */
 import { getValue, loadStylesheet } from '../utils.js';
 import van from '../van.min.js';
@@ -38,7 +37,7 @@ const Link = (/** @type Properties */ props) => {
 
     return a(
         {
-            'data-testid': getValue(props.testId) ?? '',
+            'data-testid': 'link',
             class: `tg-link
                 ${getValue(props.underline) ? 'tg-link--underline' : ''}
                 ${getValue(props.disabled) ? 'disabled' : ''}

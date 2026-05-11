@@ -308,7 +308,6 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     })),
                     allowNull: false,
                     style: 'font-size: 14px;',
-                    testId: 'table-group-filter',
                     onChange: (value) => emit('SetParamValues', {payload: {table_group_id: value, table_name: null}}),
                 }),
                 () => getValue(props.has_monitor_test_suite)
@@ -371,7 +370,6 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             width: 230,
                             style: 'font-size: 14px;',
                             icon: 'search',
-                            testId: 'search-tables',
                             value: tableNameFilterValue,
                             onChange: (value, state) => emit('SetParamValues', {payload: {table_name_filter: value, current_page: 0}}),
                         }),

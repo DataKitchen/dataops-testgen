@@ -13,7 +13,7 @@ const Caption = (/** @type Properties */ props) => {
     loadStylesheet('caption', stylesheet);
 
    return span(
-       { class: 'tg-caption', style: props.style },
+       { class: 'tg-caption', style: props.style, 'data-testid': 'caption' },
        props.content
    );
 }

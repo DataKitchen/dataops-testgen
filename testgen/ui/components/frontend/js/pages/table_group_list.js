@@ -208,7 +208,6 @@ const TableGroupList = (props) => {
                 ? div(
                     { class: 'flex-column fx-gap-4' },
                     ...tableGroups.map((tableGroup) => Card({
-                        testId: 'table-group-card',
                         class: '',
                         title: div(
                             { class: 'flex-column fx-gap-2 tg-tablegroup--card-title', 'data-testid': 'tablegroup-card-title' },
@@ -448,7 +447,6 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
             {class: 'flex-row fx-align-flex-end fx-gap-3'},
             () => (getValue(connections) ?? [])?.length > 1
                 ? Select({
-                    testId: 'connection-select',
                     label: 'Connection',
                     allowNull: true,
                     value: connection,
@@ -460,7 +458,6 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                 })
                 : '',
             Input({
-                testId: 'table-groups-name-filter',
                 icon: 'search',
                 label: '',
                 placeholder: 'Search table group names',

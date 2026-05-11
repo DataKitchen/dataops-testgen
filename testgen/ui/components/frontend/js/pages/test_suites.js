@@ -135,14 +135,12 @@ const TestSuites = (/** @type Properties */ props) => {
                             options: getValue(props.table_group_filter_options) ?? [],
                             allowNull: true,
                             style: 'font-size: 14px;',
-                            testId: 'table-group-filter',
                             onChange: (value) => {
                                 console.log(value)
                                 emit('FilterApplied', { payload: { table_group_id: value } })
                             },
                         }),
                         () => Input({
-                            testId: 'test-suite-name-filter',
                             icon: 'search',
                             label: '',
                             placeholder: 'Search test suite names',

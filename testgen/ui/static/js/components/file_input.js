@@ -113,7 +113,7 @@ const FileInput = (options) => {
     };
 
     return div(
-        { class: cssClass },
+        { class: cssClass, 'data-testid': 'file-input' },
         div(
             { class: 'tg-file-uploader--label text-caption flex-row fx-gap-1' },
             options.label,

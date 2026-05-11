@@ -2,7 +2,6 @@
  * @typedef Options
  * @type {object}
  * @property {string?} id
- * @property {string?} testId
  * @property {string?} class
  * @property {string?} language - Language for syntax highlighting (e.g. 'sql', 'html'). Omit for no highlighting.
  */
@@ -32,7 +31,7 @@ const Code = (options, ...children) => {
     );
 
     const el = div(
-        { id: domId, class: `tg-code ${options.class ?? ''}`, 'data-testid': options.testId ?? '' },
+        { id: domId, class: `tg-code ${options.class ?? ''}`, 'data-testid': 'code' },
         pre({}, codeEl),
         Icon(
             {

@@ -74,6 +74,7 @@ const STATUS_COLORS = {
 const ClearFlagButton = ({ disabled, onclick }) => {
     return withTooltip(btn(
         {
+            'data-testid': 'button',
             class: 'tg-button tg-icon-button tg-basic-button',
             tooltip: 'Clear flag',
             disabled,
@@ -540,7 +541,7 @@ const TestResults = (/** @type Properties */ props) => {
 
     // Table header bar
     const tableHeader = div(
-        { class: 'flex-row fx-align-center fx-gap-2 p-2' },
+        { 'data-testid': 'table-header', class: 'flex-row fx-align-center fx-gap-2 p-2' },
         Toggle({
             label: () => {
                 return div(
@@ -569,7 +570,7 @@ const TestResults = (/** @type Properties */ props) => {
                 ? !isAll && count === 0
                 : (() => { const row = selectedRow.val; return !row || row.result_status === 'Passed'; })();
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'disposition-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Confirm selected as relevant', disabled, onclick: () => onDisposition('Confirmed') }),
                 Button({ type: 'icon', icon: 'cancel', tooltip: 'Dismiss selected as not relevant', disabled, onclick: () => onDisposition('Dismissed') }),
                 Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Mute selected tests for future runs', disabled, onclick: () => onDisposition('Inactive') }),
@@ -599,7 +600,7 @@ const TestResults = (/** @type Properties */ props) => {
             };
 
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'flag-actions', class: 'flex-row fx-gap-1' },
                 span({ style: 'width: 0px; height: 24px; border-right: 1px dashed var(--border-color);'}, ''),
                 Button({
                     type: 'icon', icon: 'flag', tooltip: 'Flag selected', disabled: noSelection,
@@ -757,7 +758,7 @@ const TestResults = (/** @type Properties */ props) => {
                 div(
                     { class: 'tg-tr--score flex-column fx-align-center' },
                     small({ class: 'text-caption' }, 'Score'),
-                    span({ class: 'tg-tr--score-value' }, () => getValue(props.score) ?? '--'),
+                    span({ 'data-testid': 'test-run-score', class: 'tg-tr--score-value' }, () => getValue(props.score) ?? '--'),
                 ),
                 Button({
                     type: 'icon',
@@ -776,7 +777,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Status',
                 value: statusFilter.val,
                 options: STATUS_FILTER_OPTIONS,
-                testId: 'status-filter',
                 style: 'min-width: 160px',
                 onChange: onStatusFilterChange,
                 allowNull: true,
@@ -785,7 +785,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Table',
                 value: tableFilter.val,
                 options: tableOptions.val,
-                testId: 'table-filter',
                 style: 'min-width: 180px',
                 filterable: true,
                 onChange: onTableFilterChange,
@@ -795,7 +794,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Column',
                 value: columnFilter.val,
                 options: columnOptions.val,
-                testId: 'column-filter',
                 style: 'min-width: 180px',
                 filterable: true,
                 acceptNewOptions: true,
@@ -806,7 +804,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Test Type',
                 value: testTypeFilter.val,
                 options: testTypeOptions.val,
-                testId: 'test-type-filter',
                 style: 'min-width: 160px',
                 filterable: true,
                 onChange: onTestTypeFilterChange,
@@ -816,7 +813,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Action',
                 value: actionFilter.val,
                 options: ACTION_FILTER_OPTIONS,
-                testId: 'action-filter',
                 style: 'min-width: 140px',
                 onChange: onActionFilterChange,
                 allowNull: true,
@@ -825,7 +821,6 @@ const TestResults = (/** @type Properties */ props) => {
                 label: 'Flagged',
                 value: flaggedFilter.val,
                 options: FLAGGED_FILTER_OPTIONS,
-                testId: 'flagged-filter',
                 style: 'min-width: 140px',
                 onChange: onFlaggedFilterChange,
                 allowNull: true,
@@ -846,7 +841,7 @@ const TestResults = (/** @type Properties */ props) => {
                 const hasData = si && si.test_result_id === row.test_result_id;
 
                 return div(
-                    { class: 'tg-tr--detail flex-column fx-gap-4' },
+                    { 'data-testid': 'test-result-detail', class: 'tg-tr--detail flex-column fx-gap-4' },
 
                     // Action buttons row
                     div(
@@ -885,7 +880,7 @@ const TestResults = (/** @type Properties */ props) => {
                             { class: 'flex-column fx-flex', style: 'min-width: 0' },
                             h3({ class: 'tg-tr--detail-title' }, row.test_name_short),
                             row.test_description
-                                ? p({ class: 'tg-tr--detail-desc' }, row.test_description)
+                                ? p({ 'data-testid': 'test-result-description', class: 'tg-tr--detail-desc' }, row.test_description)
                                 : '',
                             row.measure_uom_description
                                 ? small({ class: 'text-caption' }, row.measure_uom_description)
@@ -901,7 +896,7 @@ const TestResults = (/** @type Properties */ props) => {
                             { class: 'flex-column fx-flex', style: 'min-width: 0' },
                             hasData
                                 ? Tabs(
-                                    { testId: 'test-result-detail' },
+                                    {},
                                     Tab(
                                         { label: 'History' },
                                         si.history?.length
