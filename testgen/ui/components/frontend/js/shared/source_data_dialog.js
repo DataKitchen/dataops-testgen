@@ -15,7 +15,6 @@ const { div, h4, small } = van.tags;
  * @param {function} props.onClose - called when dialog is closed
  * @param {function} [props.renderHeader] - (data) => VanJS node for page-specific metadata header
  * @param {string} [props.width='70rem']
- * @param {string} [props.testId]
  */
 const SourceDataDialog = (props) => {
     const emit = props.emit;
@@ -35,7 +34,7 @@ const SourceDataDialog = (props) => {
     };
 
     return Dialog(
-        { title: 'Source Data', open, onClose, width: props.width || '70rem', testId: props.testId },
+        { title: 'Source Data', open, onClose, width: props.width || '70rem' },
         () => {
             const d = data.val;
             if (!d) return '';

@@ -97,6 +97,7 @@ const Portal = (/** @type Options */ options, ...args) => {
         return div(
             {
                 id,
+                'data-testid': 'portal',
                 class: getValue(options.class) ?? '',
                 style: `position: ${fixed ? 'fixed' : 'absolute'}; z-index: ${zIndex}; ${coords} ${getValue(options.style) ?? ''}`,
             },

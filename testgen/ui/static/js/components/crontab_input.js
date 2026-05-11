@@ -16,7 +16,7 @@
  * @type {object}
  * @property {(string|null)} id
  * @property {(string|null)} name
- * @property {string?} testId
+
  * @property {string?} class
  * @property {CronSample?} sample
  * @property {InitialValue?} value
@@ -68,7 +68,7 @@ const CrontabInput = (/** @type Options */ props) => {
             id: domId,
             class: () => `tg-crontab-input ${getValue(props.class) ?? ''}`,
             style: 'position: relative',
-            'data-testid': getValue(props.testId) ?? null,
+            'data-testid': 'crontab-input',
         },
         div(
             {onclick: () => {

@@ -231,7 +231,6 @@ const NotificationSettings = (/** @type Properties */ props) => {
         title: () => newNotificationItemForm.isEdit.val
           ? span({ class: 'notifications--editing' }, 'Edit Notification')
           : 'Add Notification',
-        testId: 'notification-item-editor',
         expanded: panelExpanded,
       },
       div(

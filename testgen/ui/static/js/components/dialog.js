@@ -5,7 +5,6 @@
  * @property {import('../van.min.js').State<boolean>} open - Reactive open state
  * @property {Function} onClose - Called when the dialog is closed (backdrop click or X button)
  * @property {string} [width] - CSS width value, default '30rem'
- * @property {string?} testId
  */
 import van from '../van.min.js';
 import { getValue, loadStylesheet } from '../utils.js';
@@ -29,22 +28,19 @@ const { button, div, i, span } = van.tags;
  * @param {DialogProps} props
  * @param {...(Element | string)} children - Content rendered in the dialog body
  */
-const Dialog = ({ title, open, onClose, width = '30rem', testId }, ...children) => {
+const Dialog = ({ title, open, onClose, width = '30rem' }, ...children) => {
     loadStylesheet('dialog', stylesheet);
-
-    const testIdValue = getValue(testId) ?? '';
 
     const overlay = div(
         {
             class: 'tg-dialog-overlay',
-            'data-testid': testIdValue ? `${testIdValue}-backdrop` : '',
             style: () => open.val ? '' : 'display: none',
             onclick: () => onClose(),
         },
         div(
             {
                 class: 'tg-dialog',
-                'data-testid': testIdValue,
+                'data-testid': 'dialog',
                 role: 'dialog',
                 'aria-modal': 'true',
                 tabindex: '-1',
@@ -53,13 +49,13 @@ const Dialog = ({ title, open, onClose, width = '30rem', testId }, ...children) 
             },
             div(
                 { class: 'tg-dialog-header' },
-                span({ 'data-testid': testIdValue ? `${testIdValue}-title` : '', class: 'tg-dialog-title' }, title),
+                span({ 'data-testid': 'dialog-title', class: 'tg-dialog-title' }, title),
             ),
-            div({ class: 'tg-dialog-content' }, ...children),
+            div({ 'data-testid': 'dialog-content', class: 'tg-dialog-content' }, ...children),
             button(
                 {
                     class: 'tg-dialog-close',
-                    'data-testid': testIdValue ? `${testIdValue}-close` : '',
+                    'data-testid': 'dialog-close',
                     'aria-label': 'Close',
                     onclick: () => onClose(),
                 },

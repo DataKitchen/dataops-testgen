@@ -19,7 +19,7 @@ const Card = (/** @type Properties */ props) => {
     return div(
         {
             id: props.id ?? '',
-            'data-testid': props.testId ?? '',
+            'data-testid': props.testId ?? 'card',
             class: () => {
                 const classes = ['tg-card'];
                 if (getValue(props.border)) {

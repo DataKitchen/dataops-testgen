@@ -2,7 +2,6 @@
  * @typedef Options
  * @type {object}
  * @property {string} title
- * @property {string?} testId
  * @property {bool} expanded
  */
 
@@ -46,7 +45,7 @@ const ExpansionPanel = (options, ...children) => {
   });
 
   return div(
-    { class: 'tg-expansion-panel', 'data-testid': options.testId ?? '' },
+    { class: 'tg-expansion-panel', 'data-testid': 'expansion-panel' },
     titleDiv,
     contentDiv,
   );

@@ -220,7 +220,6 @@ const DataCatalog = (/** @type Properties */ props) => {
                     value: getValue(props.table_group_filter_options)?.find((op) => op.selected)?.value ?? null,
                     options: getValue(props.table_group_filter_options) ?? [],
                     style: 'font-size: 14px;',
-                    testId: 'table-group-filter',
                     onChange: (value) => emit('TableGroupSelected', {payload: value}),
                 }),
                 div(
