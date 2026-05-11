@@ -16,6 +16,7 @@ from testgen.common.pii_masking import (
     mask_profiling_pii,
     mask_source_data_pii,
 )
+from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -325,21 +326,12 @@ def get_excel_report_data(
     def _format_top_freq_values(val):
         if not val or val == PII_REDACTED:
             return val
-        lines = []
-        for part in val[2:].split("\n| "):
-            left, right = part.split(" | ")
-            lines.append(f"{right} | {left}")
-        return "\n".join(lines)
+        return "\n".join(f"{count} | {value}" for value, count in parse_top_freq_values(val))
 
     def _format_top_patterns(val):
         if not val or val == PII_REDACTED:
             return val
-        parts = val.split(" | ")
-        formatted = []
-        for index, part in enumerate(parts):
-            separator = "\n" if index % 2 else " | "
-            formatted.append(f"{part}{separator}")
-        return "".join(formatted)
+        return "\n".join(f"{count} | {pattern}" for pattern, count in parse_top_patterns(val))
 
     data["top_freq_values"] = data["top_freq_values"].apply(_format_top_freq_values)
     data["top_patterns"] = data["top_patterns"].apply(_format_top_patterns)

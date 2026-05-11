@@ -23,6 +23,7 @@ from testgen.common.pii_masking import (
     mask_profiling_pii,
     mask_source_data_pii,
 )
+from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -499,13 +500,12 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         axis=1,
     )
     data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join([f"{part.split(' | ')[1]} | {part.split(' | ')[0]}" for part in val[2:].split("\n| ")])
+        lambda val: "\n".join(f"{count} | {value}" for value, count in parse_top_freq_values(val))
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )
-    nl = "\n" # For Python 3.11 compatibility
     data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "".join([f"{part}{nl if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
+        lambda val: "\n".join(f"{count} | {pattern}" for pattern, count in parse_top_patterns(val))
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )

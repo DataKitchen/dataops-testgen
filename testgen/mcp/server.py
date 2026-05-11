@@ -152,12 +152,15 @@ def build_mcp_server(
         update_hygiene_issue,
     )
     from testgen.mcp.tools.profiling import (
+        get_column_frequent_values,
+        get_column_patterns,
         get_column_profile_detail,
         get_profiling_run,
         get_table,
         list_column_profiles,
         list_profiling_runs,
         list_profiling_summaries,
+        search_columns,
     )
     from testgen.mcp.tools.reference import (
         column_profile_fields_resource,
@@ -237,6 +240,9 @@ def build_mcp_server(
     safe_tool(list_profiling_runs)
     safe_tool(get_profiling_run)
     safe_tool(get_column_profile_detail)
+    safe_tool(get_column_frequent_values)
+    safe_tool(get_column_patterns)
+    safe_tool(search_columns)
     safe_tool(run_tests)
     safe_tool(run_profiling)
     safe_tool(cancel_test_run)

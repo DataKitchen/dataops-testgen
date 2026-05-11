@@ -7,6 +7,12 @@ from sqlalchemy import select
 from testgen.common.date_service import parse_since
 from testgen.common.enums import ImpactDimension, QualityDimension
 from testgen.common.models import get_current_session
+from testgen.common.models.data_column import (
+    GENERAL_TYPE_TO_CODE,
+    ColumnOrderBy,
+    GeneralType,
+    SuggestedDataType,
+)
 from testgen.common.models.hygiene_issue import Disposition, HygieneIssueType, IssueLikelihood, PiiRisk
 from testgen.common.models.job_execution import JobStatus
 from testgen.common.models.profiling_run import ProfilingRun
@@ -174,6 +180,83 @@ def parse_issue_likelihood_list(values: list[str]) -> list[IssueLikelihood]:
         valid = ", ".join(sorted(v.value for v in _FILTERABLE_LIKELIHOODS))
         raise MCPUserError(f"Invalid issue_likelihood values {invalid}. Valid values: {valid}")
     return parsed
+
+
+# Maps the user-facing display label to the stored ``pii_flag`` middle segment
+# (``A/<CODE>/<detail>``). Mirrors ``_PII_TYPE_MAP`` in ``profiling.py``.
+_PII_CATEGORY_TO_CODE: dict[str, str] = {
+    "ID": "ID",
+    "Name": "NAME",
+    "Demographic": "DEMO",
+    "Contact": "CONTACT",
+}
+
+
+def build_ilike_pattern(raw: str) -> str:
+    """Prepare a free-text input for an ``ILIKE`` clause.
+
+    Escapes literal underscores (which column names commonly contain) so they
+    match as themselves rather than as the SQL single-character wildcard. When
+    the input contains an explicit ``%``, honor it as the caller's wildcard;
+    otherwise wrap the input with ``%...%`` for substring match.
+
+    Pair with ``column.ilike(pattern, escape="\\\\")`` at the call site.
+    """
+    escaped = raw.replace("_", r"\_")
+    return escaped if "%" in escaped else f"%{escaped}%"
+
+
+def parse_pii_category(value: str) -> str:
+    """Validate a pii_category value and return the stored ``pii_flag`` middle segment."""
+    code = _PII_CATEGORY_TO_CODE.get(value)
+    if code is None:
+        valid = ", ".join(_PII_CATEGORY_TO_CODE)
+        raise MCPUserError(f"Invalid pii_category `{value}`. Valid values: {valid}")
+    return code
+
+
+def parse_general_type(value: str) -> str:
+    """Validate a user-facing ``general_type`` word and return the stored single-letter code.
+
+    Accepts ``Alpha`` / ``Numeric`` / ``Datetime`` / ``Boolean`` / ``Time`` / ``Other``;
+    returns ``A`` / ``N`` / ``D`` / ``B`` / ``T`` / ``X`` respectively (the values stored
+    on ``data_column_chars.general_type``).
+    """
+    try:
+        member = GeneralType(value)
+    except ValueError as err:
+        valid = ", ".join(t.value for t in GeneralType)
+        raise MCPUserError(f"Invalid general_type `{value}`. Valid values: {valid}") from err
+    return GENERAL_TYPE_TO_CODE[member]
+
+
+def parse_suggested_data_type(value: str) -> SuggestedDataType:
+    try:
+        return SuggestedDataType(value)
+    except ValueError as err:
+        valid = ", ".join(t.value for t in SuggestedDataType)
+        raise MCPUserError(f"Invalid suggested_data_type `{value}`. Valid values: {valid}") from err
+
+
+def parse_column_order_by(value: str) -> ColumnOrderBy:
+    try:
+        return ColumnOrderBy(value)
+    except ValueError as err:
+        valid = ", ".join(o.value for o in ColumnOrderBy)
+        raise MCPUserError(f"Invalid order_by `{value}`. Valid values: {valid}") from err
+
+
+# ``pii_flag`` encodes risk as a single-character prefix: ``A`` (High), ``B`` (Moderate), ``C`` (Low).
+_PII_RISK_LEVEL_TO_CODE: dict[str, str] = {"High": "A", "Moderate": "B", "Low": "C"}
+
+
+def parse_pii_risk_level(value: str) -> str:
+    """Validate a column-profile pii_risk_level filter and return the stored prefix code."""
+    code = _PII_RISK_LEVEL_TO_CODE.get(value)
+    if code is None:
+        valid = ", ".join(_PII_RISK_LEVEL_TO_CODE)
+        raise MCPUserError(f"Invalid pii_risk_level `{value}`. Valid values: {valid}")
+    return code
 
 
 def parse_pii_risk_list(values: list[str]) -> list[PiiRisk]:

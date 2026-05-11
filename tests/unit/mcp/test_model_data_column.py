@@ -238,3 +238,64 @@ def test_get_column_detail_no_pin_uses_last_complete_profile_run_id(session_mock
     query = call_args[0][0]
     sql_str = str(query.compile(compile_kwargs={"literal_binds": True}))
     assert "last_complete_profile_run_id" in sql_str
+
+
+# ----------------------------------------------------------------------
+# DataColumnChars.search_by_name
+# ----------------------------------------------------------------------
+
+
+@patch.object(DataColumnChars, "_paginate")
+def test_search_by_name_joins_table_group_and_orders_for_stable_pagination(paginate_mock):
+    paginate_mock.return_value = ([], 0)
+
+    DataColumnChars.search_by_name(pattern="%email%", page=1, limit=10)
+
+    query = paginate_mock.call_args[0][0]
+    sql_str = str(query.compile(compile_kwargs={"literal_binds": True}))
+    # Join to table_groups + ILIKE on column_name + the expected ordering for stable paging.
+    assert "table_groups" in sql_str.lower()
+    assert "ilike" in sql_str.lower() or "like" in sql_str.lower()
+    assert "ORDER BY" in sql_str
+    assert "project_code" in sql_str
+    assert "%email%" in sql_str
+
+
+@patch.object(DataColumnChars, "_paginate")
+def test_search_by_name_excludes_dropped_columns(paginate_mock):
+    paginate_mock.return_value = ([], 0)
+
+    DataColumnChars.search_by_name(pattern="%x%", page=1, limit=10)
+
+    query = paginate_mock.call_args[0][0]
+    sql_str = str(query.compile(compile_kwargs={"literal_binds": True}))
+    assert "drop_date IS NULL" in sql_str
+
+
+# ----------------------------------------------------------------------
+# DataColumnChars.summarize_matches_by_project
+# ----------------------------------------------------------------------
+
+
+@patch("testgen.common.models.data_column.get_current_session")
+def test_summarize_matches_by_project_returns_project_count_tuples(session_mock):
+    row_a = type("Row", (), {"project_code": "DEFAULT", "match_count": 6})()
+    row_b = type("Row", (), {"project_code": "DEMO_2", "match_count": 1})()
+    session_mock.return_value.execute.return_value.all.return_value = [row_a, row_b]
+
+    result = DataColumnChars.summarize_matches_by_project(pattern="%email%")
+
+    assert result == [("DEFAULT", 6), ("DEMO_2", 1)]
+
+
+@patch("testgen.common.models.data_column.get_current_session")
+def test_summarize_matches_by_project_groups_and_orders_by_project(session_mock):
+    session_mock.return_value.execute.return_value.all.return_value = []
+
+    DataColumnChars.summarize_matches_by_project(pattern="%x%")
+
+    query = session_mock.return_value.execute.call_args[0][0]
+    sql_str = str(query.compile(compile_kwargs={"literal_binds": True}))
+    assert "GROUP BY" in sql_str
+    assert "ORDER BY" in sql_str
+    assert "project_code" in sql_str.lower()
