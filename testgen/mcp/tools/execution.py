@@ -17,7 +17,7 @@ from testgen.mcp.tools.markdown import MdDoc
 @mcp_permission("edit")
 def run_tests(test_suite_id: str) -> str:
     """Submit a test run for a test suite. Returns immediately with a job_execution_id;
-    use ``get_recent_test_runs`` to track status.
+    use ``list_test_runs`` to track status.
 
     Args:
         test_suite_id: UUID of the test suite to run, e.g. from ``list_test_suites``.
@@ -29,7 +29,7 @@ def run_tests(test_suite_id: str) -> str:
         source=JobSource.mcp,
         project_code=suite.project_code,
     )
-    return _render_submission("Test run", suite.test_suite, "Test suite", job, "get_recent_test_runs")
+    return _render_submission("Test run", suite.test_suite, "Test suite", job, "list_test_runs")
 
 
 @with_database_session
@@ -86,10 +86,10 @@ def cancel_test_run(job_execution_id: str) -> str:
     """Request cancellation of a queued or running test run.
 
     Args:
-        job_execution_id: UUID of a test run, e.g. from ``get_recent_test_runs``.
+        job_execution_id: UUID of a test run, e.g. from ``list_test_runs``.
     """
     job = _resolve_job_execution(job_execution_id, JobKey.run_tests, "Test run")
-    return _render_cancel(job, "Test run", "get_recent_test_runs")
+    return _render_cancel(job, "Test run", "list_test_runs")
 
 
 @with_database_session

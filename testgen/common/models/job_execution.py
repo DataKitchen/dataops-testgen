@@ -1,7 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, Text, case, func, select, text, update
@@ -100,6 +100,39 @@ class JobExecution(Base):
         if claimed:
             LOG.info("Claimed %d pending job execution(s)", claimed)
         return rows
+
+    _ACTIVE_STATUSES: ClassVar[list[JobStatus]] = [
+        JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED,
+    ]
+
+    @classmethod
+    def select_active_by_kwargs(
+        cls,
+        project_code: str,
+        job_key: str,
+        kwargs_match: dict[str, str | list[str]],
+        statuses: list[JobStatus] | None = None,
+    ) -> list[Self]:
+        """Find JE rows whose ``kwargs`` JSONB matches the given (key, value) pairs.
+
+        Values may be a single string or a list of strings (which becomes an ``IN`` filter).
+        Defaults to active (non-terminal) statuses.
+        """
+        statuses = statuses or cls._ACTIVE_STATUSES
+        query = select(cls).where(
+            cls.project_code == project_code,
+            cls.job_key == job_key,
+            cls.status.in_(statuses),
+        )
+        for k, v in kwargs_match.items():
+            if isinstance(v, list):
+                if not v:
+                    return []
+                query = query.where(cls.kwargs[k].astext.in_([str(x) for x in v]))
+            else:
+                query = query.where(cls.kwargs[k].astext == str(v))
+        query = query.order_by(cls.created_at.desc())
+        return list(get_current_session().scalars(query).all())
 
     @classmethod
     def find_stale(cls) -> list[Self]:

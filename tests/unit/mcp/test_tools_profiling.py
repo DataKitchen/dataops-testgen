@@ -479,3 +479,198 @@ def test_list_profiling_summaries_inaccessible_tg(mock_tg_cls, db_session_mock):
     from testgen.mcp.tools.profiling import list_profiling_summaries
     with pytest.raises(MCPResourceNotAccessible, match="Table group .* not found or not accessible"):
         list_profiling_summaries(table_group_id=str(uuid4()))
+
+
+# ----------------------------------------------------------------------
+# list_profiling_runs
+# ----------------------------------------------------------------------
+
+from datetime import UTC, datetime
+
+from testgen.common.models.job_execution import JobStatus
+
+_RUN_CREATED = datetime(2026, 4, 1, 10, 0, 0, tzinfo=UTC)
+_RUN_STARTED = datetime(2026, 4, 1, 10, 0, 5, tzinfo=UTC)
+_RUN_COMPLETED = datetime(2026, 4, 1, 10, 1, 30, tzinfo=UTC)
+
+
+def _mock_profiling_run(**overrides):
+    defaults = {
+        "job_execution_id": uuid4(),
+        "profiling_run_id": uuid4(),
+        "project_code": "demo",
+        "status": JobStatus.COMPLETED,
+        "status_label": "Completed",
+        "created_at": _RUN_CREATED,
+        "started_at": _RUN_STARTED,
+        "completed_at": _RUN_COMPLETED,
+        "error_message": None,
+        "table_groups_name": "demo-tg",
+        "table_group_schema": "demo",
+        "table_ct": 5, "column_ct": 30, "record_ct": 1000,
+        "anomaly_ct": 4,
+        "anomalies_definite_ct": 1, "anomalies_likely_ct": 1,
+        "anomalies_possible_ct": 2, "anomalies_dismissed_ct": 0,
+        "dq_score_profiling": 95.5,
+    }
+    defaults.update(overrides)
+    return MagicMock(**defaults)
+
+
+@patch("testgen.mcp.tools.profiling.JobExecution")
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_default(mock_tg_cls, mock_run_cls, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    tg = _mock_table_group()
+    tg.table_groups_name = "demo-tg"
+    mock_tg_cls.get.return_value = tg
+    mock_run_cls.select_summary.return_value = ([_mock_profiling_run()], 1)
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    result = list_profiling_runs(table_group_id=str(uuid4()))
+
+    assert "Profiling runs for `demo-tg`" in result
+    assert "Completed" in result
+    call_kwargs = mock_run_cls.select_summary.call_args.kwargs
+    assert call_kwargs["statuses"] is None
+
+
+@patch("testgen.mcp.tools.profiling.JobExecution")
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_status_filter(mock_tg_cls, mock_run_cls, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_run_cls.select_summary.return_value = ([], 0)
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    list_profiling_runs(table_group_id=str(uuid4()), status="Pending")
+
+    call_kwargs = mock_run_cls.select_summary.call_args.kwargs
+    assert call_kwargs["statuses"] == [JobStatus.PENDING, JobStatus.CLAIMED]
+
+
+@patch("testgen.mcp.tools.profiling.JobExecution")
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=_RUN_STARTED)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_shows_next_scheduled(mock_tg_cls, mock_run_cls, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_run_cls.select_summary.return_value = ([], 0)
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    result = list_profiling_runs(table_group_id=str(uuid4()))
+
+    assert "Next scheduled run" in result
+
+
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_invalid_status(mock_tg_cls, mock_run_cls, mock_next, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    with pytest.raises(MCPUserError, match="Invalid status"):
+        list_profiling_runs(table_group_id=str(uuid4()), status="Bogus")
+
+
+# ----------------------------------------------------------------------
+# get_profiling_run
+# ----------------------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_returns_detail(mock_run_cls, db_session_mock):
+    summary = _mock_profiling_run()
+    mock_run_cls.select_summary.return_value = ([summary], 1)
+    mock_run = MagicMock(project_code="demo")
+    mock_run_cls.get_by_id_or_job.return_value = mock_run
+    mock_run_cls.select_table_breakdown.return_value = [
+        MagicMock(schema_name="demo", table_name="orders", record_ct=1000, column_ct=5, anomaly_ct=2),
+    ]
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="catalog", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+
+            from testgen.mcp.tools.profiling import get_profiling_run
+            result = get_profiling_run(str(summary.job_execution_id))
+
+    assert "Profiling run: demo-tg" in result
+    assert "Completed" in result
+    assert "Per-table breakdown" in result
+    assert "orders" in result
+
+
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_pending_no_breakdown(mock_run_cls, db_session_mock):
+    summary = _mock_profiling_run(
+        status=JobStatus.PENDING, status_label="Pending",
+        profiling_run_id=None, started_at=None, completed_at=None,
+        table_ct=None, column_ct=None, record_ct=None, anomaly_ct=None,
+        anomalies_definite_ct=None, anomalies_likely_ct=None,
+        anomalies_possible_ct=None, dq_score_profiling=None,
+    )
+    mock_run_cls.select_summary.return_value = ([summary], 1)
+    mock_run_cls.get_by_id_or_job.return_value = MagicMock(project_code="demo")
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="catalog", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+
+            from testgen.mcp.tools.profiling import get_profiling_run
+            result = get_profiling_run(str(summary.job_execution_id))
+
+    assert "Pending" in result
+    assert "In progress" in result
+    assert "Per-table breakdown" not in result
+
+
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_not_found(mock_run_cls, db_session_mock):
+    mock_run_cls.select_summary.return_value = ([], 0)
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="catalog", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+
+            from testgen.mcp.tools.profiling import get_profiling_run
+            with pytest.raises(MCPResourceNotAccessible):
+                get_profiling_run(str(uuid4()))
+
+
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_inaccessible_project(mock_run_cls, db_session_mock):
+    summary = _mock_profiling_run(project_code="secret")
+    mock_run_cls.select_summary.return_value = ([summary], 1)
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="catalog", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+
+            from testgen.mcp.tools.profiling import get_profiling_run
+            with pytest.raises(MCPResourceNotAccessible):
+                get_profiling_run(str(summary.job_execution_id))
+
+
+def test_get_profiling_run_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.profiling import get_profiling_run
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        get_profiling_run("not-a-uuid")

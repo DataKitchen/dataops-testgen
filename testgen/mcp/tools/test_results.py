@@ -42,7 +42,7 @@ def list_test_results(
     the latest completed run of that suite.
 
     Args:
-        job_execution_id: UUID of a test run, e.g. from ``get_recent_test_runs`` or
+        job_execution_id: UUID of a test run, e.g. from ``list_test_runs`` or
             ``list_test_suites``.
         test_suite_id: UUID of a test suite. Resolves to the latest completed test run
             for the suite. Mutually exclusive with ``job_execution_id``.
@@ -158,7 +158,7 @@ def get_failure_summary(
     Args:
         project_code: Scope to a project the caller can view. Ignored if ``job_execution_id`` is set.
         test_suite_id: UUID of a test suite to scope the aggregation to.
-        job_execution_id: UUID of a test run, e.g. from ``get_recent_test_runs``,
+        job_execution_id: UUID of a test run, e.g. from ``list_test_runs``,
             to scope the summary to a single run.
         since: Include runs since this point in time — e.g. '7 days', '2 weeks', '2026-04-01'.
         group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
@@ -263,7 +263,7 @@ def get_failure_summary(
 
 @with_database_session
 @mcp_permission("view")
-def get_test_result_history(
+def list_test_result_history(
     test_definition_id: str,
     limit: int = 20,
     page: int = 1,
@@ -330,7 +330,7 @@ def search_test_results(
     """Search test results across multiple runs with flexible filters.
 
     To drill into a single run, use ``list_test_results``. For a single test's history, use
-    ``get_test_result_history``.
+    ``list_test_result_history``.
 
     Args:
         project_code: Scope to a project the caller can view.
@@ -524,7 +524,7 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
     """Compare two test runs and report regressions, improvements, persistent failures, and added/removed tests.
 
     Args:
-        job_execution_id_a: UUID of the older (baseline) test run, e.g. from ``get_recent_test_runs``.
+        job_execution_id_a: UUID of the older (baseline) test run, e.g. from ``list_test_runs``.
         job_execution_id_b: UUID of the newer test run.
     """
     uuid_a = parse_uuid(job_execution_id_a, "job_execution_id_a")
@@ -561,7 +561,7 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
         raise MCPUserError(
             "Both runs must belong to the same test suite to be comparable. "
             f"Run A is in suite `{run_a.test_suite_id}`, run B is in suite `{run_b.test_suite_id}`. "
-            "Use `get_recent_test_runs(test_suite=...)` to pick two runs of the same suite."
+            "Use `list_test_runs(test_suite=...)` to pick two runs of the same suite."
         )
 
     diff = TestResult.diff_with_details(run_a.id, run_b.id)

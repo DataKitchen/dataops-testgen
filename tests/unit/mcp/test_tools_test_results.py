@@ -487,7 +487,7 @@ def test_get_failure_summary_passes_project_codes(
 
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_result_history_basic(mock_result, mock_tt_cls, db_session_mock):
+def test_list_test_result_history_basic(mock_result, mock_tt_cls, db_session_mock):
     def_id = str(uuid4())
     r1 = MagicMock()
     r1.test_type = "Unique_Pct"
@@ -512,9 +512,9 @@ def test_get_test_result_history_basic(mock_result, mock_tt_cls, db_session_mock
     tt.test_name_short = "Unique Percent"
     mock_tt_cls.select_where.return_value = [tt]
 
-    from testgen.mcp.tools.test_results import get_test_result_history
+    from testgen.mcp.tools.test_results import list_test_result_history
 
-    result = get_test_result_history(def_id)
+    result = list_test_result_history(def_id)
 
     assert "Unique Percent" in result
     assert "Unique_Pct" not in result
@@ -526,26 +526,26 @@ def test_get_test_result_history_basic(mock_result, mock_tt_cls, db_session_mock
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_get_test_result_history_empty(mock_result, db_session_mock):
+def test_list_test_result_history_empty(mock_result, db_session_mock):
     mock_result.select_history.return_value = []
 
-    from testgen.mcp.tools.test_results import get_test_result_history
+    from testgen.mcp.tools.test_results import list_test_result_history
 
-    result = get_test_result_history(str(uuid4()))
+    result = list_test_result_history(str(uuid4()))
 
     assert "No historical results" in result
 
 
-def test_get_test_result_history_invalid_uuid(db_session_mock):
-    from testgen.mcp.tools.test_results import get_test_result_history
+def test_list_test_result_history_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.test_results import list_test_result_history
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
-        get_test_result_history("bad-uuid")
+        list_test_result_history("bad-uuid")
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")
 @patch("testgen.mcp.permissions._compute_project_permissions")
-def test_get_test_result_history_passes_project_codes(
+def test_list_test_result_history_passes_project_codes(
     mock_compute, mock_result, db_session_mock,
 ):
     mock_compute.return_value = ProjectPermissions(
@@ -555,9 +555,9 @@ def test_get_test_result_history_passes_project_codes(
     )
     mock_result.select_history.return_value = []
 
-    from testgen.mcp.tools.test_results import get_test_result_history
+    from testgen.mcp.tools.test_results import list_test_result_history
 
-    get_test_result_history(str(uuid4()))
+    list_test_result_history(str(uuid4()))
 
     call_kwargs = mock_result.select_history.call_args.kwargs
     assert call_kwargs["project_codes"] == ["proj_a"]

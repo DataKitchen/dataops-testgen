@@ -7,7 +7,7 @@ def health_check() -> str:
 Please perform a data quality health check:
 
 1. Call `get_data_inventory()` to get a complete overview of all projects, connections, table groups, and test suites.
-2. For each project, call `get_recent_test_runs(...)` to get the latest test runs across all suites.
+2. For each project, call `list_test_runs(...)` to get the latest test runs across all suites.
 3. Summarize the overall health:
    - Which projects/suites are healthy (all tests passing)?
    - Which have failures or warnings?
@@ -29,7 +29,7 @@ def investigate_failures(test_suite: str | None = None) -> str:
 Please investigate test failures and identify root causes:{suite_filter}
 
 1. Call `get_data_inventory()` to understand the project structure.
-2. Call `get_recent_test_runs(...)` to find the latest run per suite{f" for suite `{test_suite}`" if test_suite else ""}.
+2. Call `list_test_runs(...)` to find the latest run per suite{f" for suite `{test_suite}`" if test_suite else ""}.
 3. Call `get_failure_summary(job_execution_id='...')` to see failures grouped by test type.
 4. For each failure category, call `get_test_type(test_type='...')` to understand what the test checks.
 5. Call `list_test_results(test_suite_id='...', status='Failed')` to drill into the specific failing tests in the latest run.
