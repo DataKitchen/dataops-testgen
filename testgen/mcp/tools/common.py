@@ -2,13 +2,16 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
+from sqlalchemy import select
+
 from testgen.common.date_service import parse_since
 from testgen.common.enums import ImpactDimension, QualityDimension
+from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import Disposition, HygieneIssueType, IssueLikelihood, PiiRisk
 from testgen.common.models.job_execution import JobStatus
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestType
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -250,3 +253,26 @@ def resolve_test_suite(test_suite_id: str) -> TestSuite:
     if suite is None:
         raise MCPResourceNotAccessible("Test suite", test_suite_id)
     return suite
+
+
+def resolve_test_definition(test_definition_id: str) -> TestDefinition:
+    """Resolve a test definition ID to the live ORM model, collapsing missing-or-inaccessible.
+
+    Filters monitor suites and project access. Returns the ORM ``TestDefinition``
+    (not ``TestDefinitionSummary``) so the row can be mutated and saved.
+    """
+    td_uuid = parse_uuid(test_definition_id, "test_definition_id")
+    perms = get_project_permissions()
+    query = (
+        select(TestDefinition)
+        .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
+        .where(
+            TestDefinition.id == td_uuid,
+            TestSuite.is_monitor.isnot(True),
+            TestSuite.project_code.in_(perms.allowed_codes),
+        )
+    )
+    td = get_current_session().scalars(query).first()
+    if td is None:
+        raise MCPResourceNotAccessible("Test definition", test_definition_id)
+    return td

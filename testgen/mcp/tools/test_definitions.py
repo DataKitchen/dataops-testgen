@@ -1,6 +1,20 @@
+from datetime import UTC, datetime
+from enum import StrEnum
+from typing import NoReturn
+
+from sqlalchemy import update
+
 from testgen.common.enums import ImpactDimension, QualityDimension
-from testgen.common.models import with_database_session
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestDefinitionSummary, TestType
+from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.connection import Connection
+from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_definition import (
+    InvalidTestDefinitionFields,
+    TestDefinition,
+    TestDefinitionNote,
+    TestDefinitionSummary,
+    TestType,
+)
 from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -11,15 +25,23 @@ from testgen.mcp.tools.common import (
     parse_impact_dimension,
     parse_quality_dimension,
     parse_uuid,
+    resolve_test_definition,
+    resolve_test_suite,
     resolve_test_type,
     validate_limit,
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+from testgen.ui.services.database_service import fetch_from_target_db
 
 _DOC_GROUP = DocGroup.DISCOVER
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
+
+
+class BulkAction(StrEnum):
+    ENABLE = "enable"
+    DISABLE = "disable"
 
 
 @with_database_session
@@ -118,11 +140,41 @@ def get_test(test_definition_id: str) -> str:
     if td is None:
         return f"Test definition `{test_definition_id}` not found."
 
+    doc = MdDoc()
+    _append_td_summary(doc, td)
+
+    # Last result
+    results = TestResult.select_history(
+        test_definition_id=def_uuid,
+        project_codes=perms.allowed_codes,
+        limit=1,
+    )
+    doc.heading(2, "Last Result")
+    if results:
+        r = results[0]
+        doc.field("Date", r.test_time)
+        doc.field("Status", r.status.value if r.status else None)
+        if r.message:
+            doc.field("Message", r.message)
+    else:
+        doc.text("_No results recorded for this test definition._")
+
+    # Description
+    description = td.test_description or td.default_test_description
+    if description:
+        doc.heading(2, "Description")
+        doc.text(description)
+    if td.usage_notes:
+        doc.heading(2, "Usage Notes")
+        doc.text(td.usage_notes)
+
+    return doc.render()
+
+
+def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
+    """Render the identity, configuration, parameters, custom-SQL, and reference-match sections of a test definition."""
     test_name = td.display_name
 
-    doc = MdDoc()
-
-    # Header
     if td.column_name:
         doc.heading(1, f"{test_name} on `{td.column_name}` in `{td.table_name}`")
     else:
@@ -158,7 +210,7 @@ def get_test(test_definition_id: str) -> str:
         doc.field("Export to Observability", "Yes" if td.export_to_observability else "No")
 
     # Review status
-    notes = TestDefinitionNote.get_notes(def_uuid)
+    notes = TestDefinitionNote.get_notes(td.id)
     flag_str = "Flagged" if td.flagged else "Not Flagged"
     note_str = f"{len(notes)} Notes" if notes else "No Notes"
     doc.field("Review", f"{flag_str}, {note_str}")
@@ -184,33 +236,6 @@ def get_test(test_definition_id: str) -> str:
 
     # Reference match (only fields listed in param_columns)
     _append_match_section(doc, td)
-
-    # Last result
-    results = TestResult.select_history(
-        test_definition_id=def_uuid,
-        project_codes=perms.allowed_codes,
-        limit=1,
-    )
-    doc.heading(2, "Last Result")
-    if results:
-        r = results[0]
-        doc.field("Date", r.test_time)
-        doc.field("Status", r.status.value if r.status else None)
-        if r.message:
-            doc.field("Message", r.message)
-    else:
-        doc.text("_No results recorded for this test definition._")
-
-    # Description
-    description = td.test_description or td.default_test_description
-    if description:
-        doc.heading(2, "Description")
-        doc.text(description)
-    if td.usage_notes:
-        doc.heading(2, "Usage Notes")
-        doc.text(td.usage_notes)
-
-    return doc.render()
 
 
 @with_database_session
@@ -348,4 +373,301 @@ def list_test_types(
         ],
     )
 
+    return doc.render()
+
+
+# ---------------------------------------------------------------------------
+# Write tools (create / update / validate / bulk-update)
+#
+# All gated on ``edit`` permission. Atomic semantics on ``update_test`` —
+# validation aggregates every field error before raising, so the LLM sees the
+# full set in one response and the DB is never touched on a partial-error path.
+# ---------------------------------------------------------------------------
+
+
+def _raise_validation_errors(err: InvalidTestDefinitionFields, header: str) -> NoReturn:
+    """Convert aggregated validation errors into a user-facing ``MCPUserError``."""
+    bullets = "\n".join(f"- `{field}`: {reason}" for field, reason in err.errors.items())
+    raise MCPUserError(f"{header}\n\n{bullets}") from err
+
+
+@with_database_session
+@mcp_permission("edit")
+def create_test(
+    test_suite_id: str,
+    test_type: str,
+    table_name: str,
+    column_name: str | None = None,
+    threshold_value: str | None = None,
+    baseline_value: str | None = None,
+    severity: str | None = None,
+    custom_query: str | None = None,
+    extra_params: dict | None = None,
+) -> str:
+    """Create a test in a test suite.
+
+    Args:
+        test_suite_id: UUID of the test suite.
+        test_type: Test type name, e.g. ``Alpha Truncation`` or ``Custom Test``.
+        table_name: Target table name. Case-sensitive.
+        column_name: Required for column-scoped test types.
+        threshold_value: Test threshold.
+        baseline_value: Baseline reference.
+        severity: ``Fail`` or ``Warning``. Omit to inherit the test type default.
+        custom_query: SQL for tests that accept a custom query.
+        extra_params: Additional test-type-specific parameters (e.g. ``window_days``,
+            ``match_column_names``, ``lower_tolerance``). Use ``list_test_types`` or
+            ``get_test`` on a similar test to discover supported names.
+    """
+    suite = resolve_test_suite(test_suite_id)
+    tt_code = resolve_test_type(test_type)
+    tt = TestType.get(tt_code)
+    if tt is None:  # resolve_test_type already raised if the short name is unknown
+        raise MCPUserError(f"Unknown test type: `{test_type}`.")
+
+    table_group = TableGroup.get(suite.table_groups_id)
+    if table_group is None:
+        raise MCPUserError("Test suite is not associated with a table group.")
+
+    td = TestDefinition(
+        test_suite_id=suite.id,
+        table_groups_id=table_group.id,
+        test_type=tt_code,
+        schema_name=table_group.table_group_schema,
+        table_name=table_name,
+        test_active=True,
+        lock_refresh=False,
+        last_manual_update=datetime.now(UTC),
+    )
+    explicit = {
+        "column_name": column_name,
+        "threshold_value": threshold_value,
+        "baseline_value": baseline_value,
+        "severity": severity,
+        "custom_query": custom_query,
+    }
+    for key, value in explicit.items():
+        if value is not None:
+            setattr(td, key, value)
+
+    if extra_params:
+        accepted = td.editable_fields(tt)
+        rejected = sorted(set(extra_params) - accepted)
+        if rejected:
+            raise MCPUserError(
+                f"These `extra_params` keys are not editable for test type `{tt_code}`: "
+                f"{', '.join(rejected)}."
+            )
+        conflicts = sorted(set(extra_params) & {k for k, v in explicit.items() if v is not None})
+        if conflicts:
+            raise MCPUserError(
+                f"These fields were set both as named arguments and in `extra_params`: "
+                f"{', '.join(conflicts)}. Pass each value only once."
+            )
+        for key, value in extra_params.items():
+            setattr(td, key, value)
+
+    try:
+        td.validate(tt)
+    except InvalidTestDefinitionFields as e:
+        _raise_validation_errors(e, "Test definition creation rejected. No changes saved.")
+
+    td.save()
+
+    # The joined test-type metadata (param_fields, default_severity, dq_dimension, ...)
+    # is only present on the Summary dataclass, so re-fetch for rendering.
+    perms = get_project_permissions()
+    summary = TestDefinition.get_for_project(td.id, perms.allowed_codes)
+
+    doc = MdDoc()
+    doc.text(f"**Created** in suite `{suite.test_suite}`.")
+    _append_td_summary(doc, summary)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def update_test(test_definition_id: str, fields: dict) -> str:
+    """Update fields on an existing test. Atomic — no partial save.
+
+    Args:
+        test_definition_id: UUID of the test definition.
+        fields: Mapping of field name to new value. Accepts the test type's parameter
+            columns (use ``get_test`` to see the current values and supported fields)
+            plus ``test_active``, ``severity``, ``lock_refresh``, ``flagged``.
+    """
+    td = resolve_test_definition(test_definition_id)
+    tt = TestType.get(td.test_type)
+    if tt is None:
+        raise MCPUserError(f"Test type `{td.test_type}` not found for this test definition.")
+
+    if not fields:
+        raise MCPUserError("No fields supplied to update.")
+
+    accepted = td.editable_fields(tt)
+    rejected = sorted(set(fields) - accepted)
+    if rejected:
+        bullets = "\n".join(
+            f"- `{key}`: not editable for test type `{tt.test_type}`" for key in rejected
+        )
+        raise MCPUserError(f"Update rejected. No changes saved.\n\n{bullets}")
+
+    before: dict = {key: getattr(td, key, None) for key in fields}
+    for key, value in fields.items():
+        setattr(td, key, value)
+    td.last_manual_update = datetime.now(UTC)
+
+    try:
+        td.validate(tt)
+    except InvalidTestDefinitionFields as e:
+        _raise_validation_errors(e, "Update rejected. No changes saved.")
+
+    td.save()
+
+    doc = MdDoc()
+    doc.heading(1, f"Test definition `{td.id}` updated")
+    rows = [[key, _format_diff(before[key]), _format_diff(fields[key])] for key in fields]
+    doc.table(["Field", "Before", "After"], rows, code=[0])
+    doc.text(f"{len(fields)} field(s) changed.")
+    return doc.render()
+
+
+def _format_diff(value: object) -> str | None:
+    """Render a before/after cell, normalizing empty strings to ``None`` (NullIfEmptyString)."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    return str(value)
+
+
+@with_database_session
+@mcp_permission("edit")
+def validate_custom_test(test_suite_id: str, custom_sql: str) -> str:
+    """Dry-run a custom test SQL query against the test suite's parent connection.
+
+    Args:
+        test_suite_id: UUID of the test suite whose connection the SQL runs against.
+        custom_sql: SQL query to dry-run.
+    """
+    suite = resolve_test_suite(test_suite_id)
+    connection = Connection.get_by_table_group(suite.table_groups_id)
+    if connection is None:
+        raise MCPUserError("No connection configured for this test suite's table group.")
+
+    perms = get_project_permissions()
+    can_view_pii = suite.project_code in perms.codes_allowed_to("view_pii")
+
+    doc = MdDoc()
+    doc.heading(1, "Custom test dry-run")
+
+    try:
+        rows = fetch_from_target_db(connection, custom_sql)
+    except Exception as e:  # broad catch: the DB error message IS the user-facing signal
+        doc.text(f"**SQL did not execute.** Query was not committed against `{connection.connection_name}`.")
+        message = str(e.args[0]) if e.args else str(e)
+        doc.text("**Error:**")
+        doc.code_block(message)
+        return doc.render()
+
+    row_count = len(rows)
+    flavor = connection.sql_flavor_code or connection.sql_flavor or "target database"
+    doc.text(
+        f"**SQL ran successfully** against `{connection.connection_name}` ({flavor})."
+    )
+
+    if row_count == 0:
+        doc.text("**Would pass:** ✓ — query returned 0 error rows.")
+        doc.text(
+            "_If saved as a CUSTOM test, this would currently pass: the test fails when any "
+            "error rows are returned, and there are none._"
+        )
+        return doc.render()
+
+    doc.text(f"**Would fail:** ✗ — query returned {row_count} error row(s).")
+    doc.heading(2, "Source data preview (first row)")
+    first = rows[0]
+    columns = list(first.keys())
+    if can_view_pii:
+        values = [first[c] for c in columns]
+    else:
+        values = ["[redacted]"] * len(columns)
+    doc.table(columns, [values])
+    doc.text(
+        "_If saved as a CUSTOM test, this would currently fail because the SQL returned error "
+        "rows. Refine the query if some of those rows are false positives._"
+    )
+    if not can_view_pii:
+        doc.text(
+            "_PII redacted: caller does not have `view_pii` on this project. Column names shown "
+            "so the LLM can iterate on shape; row values are masked._"
+        )
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def bulk_update_tests(
+    test_suite_id: str,
+    action: str,
+    table_name: str | None = None,
+    test_type: str | None = None,
+) -> str:
+    """Enable or disable tests in a suite in bulk.
+
+    Args:
+        test_suite_id: UUID of the test suite.
+        action: ``enable`` or ``disable``.
+        table_name: Optional table-name filter. Case-sensitive.
+        test_type: Optional test type name (e.g. ``Alpha Truncation``).
+    """
+    try:
+        bulk_action = BulkAction(action)
+    except ValueError as err:
+        valid = ", ".join(f"`{a.value}`" for a in BulkAction)
+        raise MCPUserError(f"`action` must be one of: {valid}.") from err
+    suite = resolve_test_suite(test_suite_id)
+    tt_code = resolve_test_type(test_type) if test_type else None
+
+    target = bulk_action is BulkAction.ENABLE
+    values: dict = {"test_active": target}
+    if target:
+        # Mirrors set_status_attribute: clearing the status when re-enabling so failed
+        # tests don't carry forward a stale "disabled because of X" marker.
+        values["test_definition_status"] = None
+
+    where_clauses = [TestDefinition.test_suite_id == suite.id]
+    if table_name:
+        where_clauses.append(TestDefinition.table_name == table_name)
+    if tt_code:
+        where_clauses.append(TestDefinition.test_type == tt_code)
+
+    stmt = (
+        update(TestDefinition)
+        .where(*where_clauses)
+        .values(**values)
+        .returning(TestDefinition.id)
+    )
+    session = get_current_session()
+    affected = session.execute(stmt).all()
+    count = len(affected)
+
+    verb = "Enabled" if target else "Disabled"
+    filters = []
+    if table_name:
+        filters.append(f"table_name=`{table_name}`")
+    if test_type:
+        filters.append(f"test_type=`{test_type}`")
+    filter_str = ", ".join(filters) if filters else "no filter"
+
+    doc = MdDoc()
+    if count == 0:
+        doc.heading(1, "No tests matched")
+        doc.text(
+            f"No tests in suite `{suite.test_suite}` matched the filter ({filter_str}). Nothing changed."
+        )
+        return doc.render()
+
+    doc.heading(1, f"{verb} {count} test(s) in suite `{suite.test_suite}`")
+    doc.field("Filter", filter_str)
     return doc.render()
