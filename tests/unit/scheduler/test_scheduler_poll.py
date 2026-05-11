@@ -4,8 +4,8 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.commands.job_registry import JOB_DISPATCH
-from testgen.common.enums import JobStatus
+from testgen.commands.job_registry import JOB_DISPATCH, JobConfig
+from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models.job_execution import JobExecution
 from testgen.scheduler.cli_scheduler import CliScheduler
 
@@ -36,7 +36,7 @@ def scheduler_instance():
 def job_exec():
     return JobExecution(
         id=uuid4(),
-        job_key="run-tests",
+        job_key=JobKey.run_tests,
         kwargs={"test_suite_id": "suite-123"},
         source="scheduler",
         status="claimed",
@@ -56,7 +56,7 @@ def test_dispatch_spawns_process(scheduler_instance, job_exec, mock_session):
     proc_mock = MagicMock()
 
     with (
-        patch.dict(JOB_DISPATCH, {"run-tests": Mock()}, clear=False),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}, clear=False),
         patch(f"{SCHEDULER_MODULE}.subprocess.Popen", return_value=proc_mock) as popen_mock,
         patch(f"{SCHEDULER_MODULE}.threading.Thread") as thread_mock,
     ):
@@ -218,7 +218,7 @@ def test_poll_loop_routes_cancel_requested(scheduler_instance, mock_session):
     """Cancel_requested rows are routed to _handle_cancellation, not _dispatch."""
     cancel_job = JobExecution(
         id=uuid4(),
-        job_key="run-tests",
+        job_key=JobKey.run_tests,
         kwargs={},
         source="ui",
         status=JobStatus.CANCEL_REQUESTED,
@@ -254,7 +254,7 @@ def test_start_job_submits_execution(scheduler_instance, mock_session):
         cron_expr="*/5 * * * *",
         cron_tz="UTC",
         delayed_policy=DelayedPolicy.SKIP,
-        key="run-profile",
+        key=JobKey.run_profile,
         kwargs={"table_group_id": "tg-123"},
         job_schedule_id=schedule_id,
     )
@@ -263,7 +263,7 @@ def test_start_job_submits_execution(scheduler_instance, mock_session):
 
     mock_session.add.assert_called_once()
     added = mock_session.add.call_args[0][0]
-    assert added.job_key == "run-profile"
+    assert added.job_key == JobKey.run_profile
     assert added.kwargs == {"table_group_id": "tg-123"}
     assert added.source == "scheduler"
     assert added.job_schedule_id == schedule_id

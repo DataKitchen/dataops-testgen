@@ -36,8 +36,8 @@ def exec_job(job_execution_id: UUID) -> None:
                 LOG.error("Job execution %s not found", job_execution_id)
                 sys.exit(1)
 
-            handler = JOB_DISPATCH.get(job_exec.job_key)
-            if not handler:
+            job_config = JOB_DISPATCH.get(job_exec.job_key)
+            if not job_config:
                 job_exec.mark_interrupted(f"Unknown job key: {job_exec.job_key}")
                 return
 
@@ -49,7 +49,7 @@ def exec_job(job_execution_id: UUID) -> None:
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
                 job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source))
-                handler(**job_exec.kwargs)
+                job_config.handler(**job_exec.kwargs)
 
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)

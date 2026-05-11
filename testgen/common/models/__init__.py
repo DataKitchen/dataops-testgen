@@ -4,7 +4,7 @@ import platform
 import threading
 import urllib.parse
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.orm import Session as SQLAlchemySession
 
@@ -29,6 +29,14 @@ class Base(DeclarativeBase):
     # Allow legacy Column() + type-hint patterns without Mapped[].
     # Can be removed once all models use Mapped[] annotations.
     __allow_unmapped__ = True
+
+    @classmethod
+    def delete_where(cls, *clauses) -> int:
+        """Single-statement DELETE on this model filtered by ``clauses``;
+        returns the row count. Callers may ignore the return when not needed.
+        """
+        result = get_current_session().execute(delete(cls).where(*clauses))
+        return result.rowcount or 0
 
 Session = sessionmaker(
     engine,

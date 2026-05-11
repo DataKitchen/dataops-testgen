@@ -9,7 +9,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
 from testgen.common.enums import JobStatus
-from testgen.common.models import get_current_session
+from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.job_execution import JobExecution
@@ -403,6 +403,80 @@ class TestRun(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), {"test_run_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
+
+    @classmethod
+    def find_latest_per_test_suite(cls, project_code: str) -> set[UUID]:
+        """Return the latest completed test run id per test suite for the
+        project.
+
+        Includes monitor suites (`is_monitor=True`). Used by data retention to
+        protect at least one run per scope so each suite keeps a usable
+        baseline when retention sweeps clear older history. Failed and
+        in-flight runs are skipped.
+        """
+        rows = get_current_session().scalars(
+            select(cls.id)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .where(
+                TestSuite.project_code == project_code,
+                JobExecution.status == JobStatus.COMPLETED,
+            )
+            .order_by(cls.test_suite_id, cls.test_starttime.desc())
+            .distinct(cls.test_suite_id)
+        ).all()
+        return set(rows)
+
+    @classmethod
+    def delete_older_than(
+        cls,
+        cutoff: datetime,
+        project_code: str,
+        protected_ids: set[UUID],
+        batch_size: int = 1000,
+        dry_run: bool = False,
+    ) -> int:
+        """Batched delete of test runs (with cascading children) older than
+        cutoff for the given project, excluding protected ids. Returns total
+        parent rows deleted across all batches — or, with ``dry_run=True``,
+        the number that would be deleted (for retention preview, no writes).
+
+        In-flight runs (JE in PENDING/CLAIMED/RUNNING/CANCEL_REQUESTED) are
+        never deleted — they may still be writing data.
+
+        Each batch runs in its own transaction (committed before the next batch
+        is selected), so locks on test_runs / test_results / etc. are released
+        between batches and WAL growth stays bounded for large sweeps.
+        """
+        where_clauses = [
+            TestSuite.project_code == project_code,
+            cls.test_starttime < cutoff,
+            JobExecution.status.in_([JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED]),
+        ]
+        if protected_ids:
+            where_clauses.append(cls.id.notin_(protected_ids))
+
+        base_select = (
+            select(cls.id)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+        )
+
+        if dry_run:
+            return get_current_session().scalar(
+                select(func.count()).select_from(base_select.where(*where_clauses).subquery())
+            ) or 0
+
+        total = 0
+        while True:
+            with database_session() as session:
+                ids = session.scalars(base_select.where(*where_clauses).limit(batch_size)).all()
+                if not ids:
+                    break
+                cls.cascade_delete([str(i) for i in ids])
+                total += len(ids)
+        return total
+
 
     def init_progress(self) -> None:
         self._progress = {

@@ -17,6 +17,11 @@ RUN_TESTS_JOB_KEY = "run-tests"
 RUN_MONITORS_JOB_KEY = "run-monitors"
 RUN_PROFILE_JOB_KEY = "run-profile"
 
+DEFAULT_DATA_CLEANUP_CRON = "0 1 * * *"
+# Non-UI fallback for retention schedule timezone. UI surfaces should instead
+# default to the user's browser timezone (resolved client-side).
+DEFAULT_RETENTION_CRON_TZ = "UTC"
+
 SCHEDULABLE_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.run_profile, JobKey.run_tests})
 
 
@@ -129,7 +134,51 @@ class JobSchedule(Base):
             else:
                 query = query.where(cls.kwargs[k].astext == str(v))
         return list(get_current_session().scalars(query).all())
-    
+
+    @classmethod
+    def upsert_for_retention(
+        cls,
+        project_code: str,
+        retention_days: int,
+        cron_expr: str,
+        cron_tz: str,
+    ) -> Self:
+        """Create or update the data-retention schedule for a project.
+
+        Idempotent — safe to call on project creation and on every retention
+        settings save. Uniquely keyed by (project_code, JobKey.run_data_cleanup).
+        """
+        session = get_current_session()
+        schedule = session.scalars(
+            select(cls).where(cls.project_code == project_code, cls.key == JobKey.run_data_cleanup)
+        ).first()
+        kwargs = {"project_code": project_code, "retention_days": retention_days}
+        if schedule:
+            schedule.kwargs = kwargs
+            schedule.cron_expr = cron_expr
+            schedule.cron_tz = cron_tz
+            schedule.active = True
+        else:
+            schedule = cls(
+                project_code=project_code,
+                key=JobKey.run_data_cleanup,
+                kwargs=kwargs,
+                cron_expr=cron_expr,
+                cron_tz=cron_tz,
+                active=True,
+            )
+            session.add(schedule)
+        return schedule
+
+    @classmethod
+    def delete_for_retention(cls, project_code: str) -> None:
+        """Remove the data-retention schedule for a project (when retention is
+        disabled or the project is deleted).
+        """
+        get_current_session().execute(
+            delete(cls).where(cls.project_code == project_code, cls.key == JobKey.run_data_cleanup)
+        )
+
     def get_sample_triggering_timestamps(self, n=3) -> list[datetime]:
         schedule = Cron(cron_string=self.cron_expr).schedule(timezone_str=self.cron_tz)
         return [schedule.next() for _ in range(n)]
@@ -137,7 +186,7 @@ class JobSchedule(Base):
     @property
     def cron_tz_str(self) -> str:
         return self.cron_tz.replace("_", " ")
-    
+
     def save(self) -> None:
         db_session = get_current_session()
         db_session.add(self)
