@@ -12,7 +12,10 @@ WITH filtered_defs AS (
     AND history_calculation = 'PREDICT'
 )
 SELECT r.test_definition_id,
+  r.test_run_id,
   d.test_type,
+  d.schema_name,
+  d.table_name,
   r.test_time,
   CASE
     WHEN r.result_signal ~ '^-?[0-9]*\.?[0-9]+$' THEN r.result_signal::NUMERIC
