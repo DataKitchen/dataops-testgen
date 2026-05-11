@@ -44,13 +44,17 @@ def _format_dt(value: object) -> str | None:
         return value[:16].replace("T", " ") + " UTC"
     return None
 
-
 def _format_part(value: object) -> str:
     """Format a single value for text() parts — datetime-aware, no escaping."""
     if value is None:
         return "\u2014"
     return dt_str if (dt_str := _format_dt(value)) else str(value)
 
+
+def _format_boolean(value: object) -> str | None:
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    return None
 
 # ---------------------------------------------------------------------------
 # MdDoc
@@ -204,6 +208,8 @@ class MdDoc:
             return "\u2014"
         if dt_str := _format_dt(value):
             return MdDoc.code(dt_str) if code else dt_str
+        if bool_str := _format_boolean(value):
+            return MdDoc.code(bool_str) if code else bool_str
         s = str(value)
         return MdDoc.code(s) if code else s
 

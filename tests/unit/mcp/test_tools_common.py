@@ -1,12 +1,12 @@
 from unittest.mock import MagicMock, patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
 from testgen.common.enums import ImpactDimension, QualityDimension
 from testgen.common.models.hygiene_issue import Disposition, IssueLikelihood, PiiRisk
 from testgen.common.models.test_result import TestResultStatus
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
     format_disposition,
     parse_disposition,
@@ -17,6 +17,7 @@ from testgen.mcp.tools.common import (
     parse_result_status,
     parse_uuid,
     resolve_issue_type,
+    resolve_profiling_run,
     validate_limit,
     validate_page,
 )
@@ -279,3 +280,53 @@ def test_resolve_issue_type_not_found_raises_with_resource_hint():
         with pytest.raises(MCPUserError, match="Unknown hygiene issue type") as exc_info:
             resolve_issue_type("Made-Up Type")
     assert "testgen://hygiene-issue-types" in str(exc_info.value)
+
+
+# --- resolve_profiling_run ---
+
+
+def _mock_perms(allowed_projects=("demo",)):
+    perms = MagicMock()
+    perms.has_access.side_effect = lambda code: code in allowed_projects
+    return perms
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+def test_resolve_profiling_run_happy_path(mock_pr_cls, mock_get_perms, db_session_mock):
+    run = MagicMock()
+    run.project_code = "demo"
+    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    result = resolve_profiling_run(str(uuid4()))
+
+    assert result is run
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+def test_resolve_profiling_run_unknown_run_id(mock_pr_cls, mock_get_perms, db_session_mock):
+    mock_pr_cls.get_by_id_or_job.return_value = None
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
+        resolve_profiling_run(str(uuid4()))
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+def test_resolve_profiling_run_inaccessible_project(mock_pr_cls, mock_get_perms, db_session_mock):
+    """Run exists but caller can't access its project — same unified error as unknown run."""
+    run = MagicMock()
+    run.project_code = "forbidden"
+    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
+        resolve_profiling_run(str(uuid4()))
+
+
+def test_resolve_profiling_run_invalid_uuid():
+    with pytest.raises(MCPUserError, match="Invalid job_execution_id"):
+        resolve_profiling_run("not-a-uuid")
