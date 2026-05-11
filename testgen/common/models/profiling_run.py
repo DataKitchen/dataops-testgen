@@ -15,6 +15,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
 from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
@@ -46,6 +47,7 @@ class ProfilingRunMinimal(EntityMinimal):
 class ProfilingRunSummary(EntityMinimal):
     job_execution_id: UUID
     profiling_run_id: UUID | None
+    project_code: str
     status: JobStatus
     created_at: datetime
     started_at: datetime | None
@@ -81,6 +83,15 @@ class ProfilingRunSummary(EntityMinimal):
     @property
     def status_label(self) -> str:
         return self.STATUS_LABEL.get(self.status, self.status)
+
+
+@dataclass
+class ProfilingRunTableBreakdown(EntityMinimal):
+    schema_name: str
+    table_name: str
+    record_ct: int | None
+    column_ct: int
+    anomaly_ct: int
 
 
 class LatestProfilingRun(NamedTuple):
@@ -196,14 +207,21 @@ class ProfilingRun(Entity):
     @classmethod
     def select_summary(
         cls,
-        project_code: str,
+        project_code: str | None = None,
         table_group_id: str | UUID | None = None,
+        job_execution_id: str | UUID | None = None,
+        statuses: list[JobStatus] | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[ProfilingRunSummary], int]:
-        if table_group_id and not is_uuid4(table_group_id):
+        if (
+            (table_group_id and not is_uuid4(table_group_id))
+            or (job_execution_id and not is_uuid4(job_execution_id))
+        ):
             return [], 0
 
+        # Pending JEs (no pr row) surface in project-scope queries via the LEFT JOIN, but
+        # not in table-group-scoped queries, since the WHERE filter requires tg to match.
         query = f"""
         WITH profile_anomalies AS (
             SELECT profile_anomaly_results.profile_run_id,
@@ -224,6 +242,7 @@ class ProfilingRun(Entity):
         SELECT
             je.id AS job_execution_id,
             pr.id AS profiling_run_id,
+            je.project_code,
             je.status,
             je.created_at,
             je.started_at,
@@ -250,14 +269,18 @@ class ProfilingRun(Entity):
             LEFT JOIN table_groups tg ON tg.id = pr.table_groups_id
             LEFT JOIN profile_anomalies pa ON pa.profile_run_id = pr.id
         WHERE je.job_key = 'run-profile'
-            AND je.project_code = :project_code
+            {" AND je.project_code = :project_code" if project_code else ""}
             {" AND tg.id = :table_group_id" if table_group_id else ""}
+            {" AND je.id = :job_execution_id" if job_execution_id else ""}
+            {" AND je.status IN :statuses" if statuses else ""}
         ORDER BY je.created_at DESC
         LIMIT :limit OFFSET :offset;
         """
         params = {
             "project_code": project_code,
-            "table_group_id": table_group_id,
+            "table_group_id": str(table_group_id) if table_group_id else None,
+            "job_execution_id": str(job_execution_id) if job_execution_id else None,
+            "statuses": tuple(statuses) if statuses else (),
             "limit": page_size,
             "offset": (page - 1) * page_size,
         }
@@ -266,6 +289,55 @@ class ProfilingRun(Entity):
         items = [ProfilingRunSummary(**row) for row in results]
         total = items[0].total_count if items else 0
         return items, total
+
+    @classmethod
+    def select_table_breakdown(cls, profiling_run_id: UUID) -> list[ProfilingRunTableBreakdown]:
+        """Per-table breakdown for a completed profiling run: schema, table, record/column count, anomaly count."""
+        # HygieneIssue imports ProfilingRun, so this import has to stay function-local.
+        from testgen.common.models.hygiene_issue import HygieneIssue
+
+        results_subq = (
+            select(
+                ProfileResult.schema_name.label("schema_name"),
+                ProfileResult.table_name.label("table_name"),
+                func.max(ProfileResult.record_ct).label("record_ct"),
+                func.count(func.distinct(ProfileResult.column_name)).label("column_ct"),
+            )
+            .where(ProfileResult.profile_run_id == profiling_run_id)
+            .group_by(ProfileResult.schema_name, ProfileResult.table_name)
+            .subquery()
+        )
+        anomalies_subq = (
+            select(
+                HygieneIssue.schema_name.label("schema_name"),
+                HygieneIssue.table_name.label("table_name"),
+                func.count().label("anomaly_ct"),
+            )
+            .where(
+                HygieneIssue.profile_run_id == profiling_run_id,
+                func.coalesce(HygieneIssue.disposition, "Confirmed") == "Confirmed",
+            )
+            .group_by(HygieneIssue.schema_name, HygieneIssue.table_name)
+            .subquery()
+        )
+        query = (
+            select(
+                results_subq.c.schema_name,
+                results_subq.c.table_name,
+                results_subq.c.record_ct,
+                results_subq.c.column_ct,
+                func.coalesce(anomalies_subq.c.anomaly_ct, 0).label("anomaly_ct"),
+            )
+            .select_from(results_subq)
+            .outerjoin(
+                anomalies_subq,
+                (anomalies_subq.c.schema_name == results_subq.c.schema_name)
+                & (anomalies_subq.c.table_name == results_subq.c.table_name),
+            )
+            .order_by(results_subq.c.schema_name, results_subq.c.table_name)
+        )
+        rows = get_current_session().execute(query).mappings().all()
+        return [ProfilingRunTableBreakdown(**row) for row in rows]
 
     _ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)
 

@@ -1,10 +1,12 @@
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
 from testgen.common.date_service import parse_since
 from testgen.common.enums import ImpactDimension, QualityDimension
 from testgen.common.models.hygiene_issue import Disposition, HygieneIssueType, IssueLikelihood, PiiRisk
+from testgen.common.models.job_execution import JobStatus
+from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResultStatus
@@ -83,6 +85,51 @@ def parse_quality_dimension(value: str) -> QualityDimension:
     except ValueError as err:
         valid = ", ".join(d.value for d in QualityDimension)
         raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}") from err
+
+
+# Maps user-facing run-status labels to underlying ``JobStatus`` values. Transient states
+# (Starting/Canceling) are excluded because they're sub-second and noisy as filters.
+# ``Pending`` collapses PENDING+CLAIMED; ``Canceled`` collapses CANCEL_REQUESTED+CANCELED.
+_RUN_STATUS_FILTER: dict[str, list[JobStatus]] = {
+    "Pending": [JobStatus.PENDING, JobStatus.CLAIMED],
+    "Running": [JobStatus.RUNNING],
+    "Completed": [JobStatus.COMPLETED],
+    "Canceled": [JobStatus.CANCEL_REQUESTED, JobStatus.CANCELED],
+    "Error": [JobStatus.ERROR],
+}
+
+
+def parse_run_status_filter(value: str) -> list[JobStatus]:
+    """Map a user-facing run status label (e.g. ``Pending``) to the underlying ``JobStatus`` values."""
+    statuses = _RUN_STATUS_FILTER.get(value)
+    if statuses is None:
+        valid = ", ".join(_RUN_STATUS_FILTER.keys())
+        raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}")
+    return statuses
+
+
+def format_run_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
+    """Render an elapsed duration as ``Xs`` / ``Xm Ys`` / ``Xh Ym``. Returns ``None`` if either bound is missing."""
+    if not started_at or not completed_at:
+        return None
+    seconds = int((completed_at - started_at).total_seconds())
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+
+
+def next_scheduled_run(
+    job_key: str, kwargs_filter: dict[str, str | list[str]], project_code: str,
+) -> datetime | None:
+    """Return the next firing of an active ``JobSchedule`` matching ``job_key`` and a kwargs
+    filter. When multiple schedules match, the soonest next-firing wins.
+    """
+    schedules = JobSchedule.select_active_by_kwargs(project_code, job_key, kwargs_filter)
+    if not schedules:
+        return None
+    return min(s.get_sample_triggering_timestamps(1)[0] for s in schedules)
 
 
 def parse_disposition(value: str) -> Disposition:

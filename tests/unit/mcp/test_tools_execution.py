@@ -65,7 +65,7 @@ def test_run_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mock):
     assert "Test run submitted for `Quality Suite`" in result
     assert str(submitted.id) in result
     assert "Pending" in result
-    assert "get_recent_test_runs" in result
+    assert "list_test_runs" in result
 
 
 def test_run_tests_invalid_uuid(db_session_mock):
@@ -259,7 +259,7 @@ def test_cancel_test_run_success(db_session_mock):
     assert "Test run cancellation requested" in result
     assert str(job_id) in result
     assert "cancel_requested" in result
-    assert "get_recent_test_runs" in result
+    assert "list_test_runs" in result
 
 
 def test_cancel_test_run_filters_by_job_key(db_session_mock):

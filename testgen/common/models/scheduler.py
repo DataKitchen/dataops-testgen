@@ -73,6 +73,31 @@ class JobSchedule(Base):
     @classmethod
     def count(cls):
         return get_current_session().query(cls).count()
+
+    @classmethod
+    def select_active_by_kwargs(
+        cls,
+        project_code: str,
+        key: str,
+        kwargs_match: dict[str, str | list[str]],
+    ) -> list[Self]:
+        """Find active schedules whose ``kwargs`` JSONB matches the given (key, value) pairs.
+
+        Values may be a single string or a list of strings (which becomes an ``IN`` filter).
+        """
+        query = select(cls).where(
+            cls.project_code == project_code,
+            cls.key == key,
+            cls.active.is_(True),
+        )
+        for k, v in kwargs_match.items():
+            if isinstance(v, list):
+                if not v:
+                    return []
+                query = query.where(cls.kwargs[k].astext.in_([str(x) for x in v]))
+            else:
+                query = query.where(cls.kwargs[k].astext == str(v))
+        return list(get_current_session().scalars(query).all())
     
     def get_sample_triggering_timestamps(self, n=3) -> list[datetime]:
         schedule = Cron(cron_string=self.cron_expr).schedule(timezone_str=self.cron_tz)

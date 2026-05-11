@@ -1,188 +1,305 @@
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from testgen.mcp.exceptions import MCPPermissionDenied
+from testgen.common.models.job_execution import JobStatus
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
+
+_CREATED = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
+_STARTED = datetime(2024, 1, 15, 10, 0, 0, tzinfo=UTC)
+_COMPLETED = datetime(2024, 1, 15, 10, 5, 0, tzinfo=UTC)
 
 
 def _make_run_summary(**overrides):
     defaults = {
         "test_run_id": uuid4(), "job_execution_id": uuid4(),
-        "test_suite": "Quality Suite", "project_name": "Demo",
-        "table_groups_name": "core_tables", "status": "completed",
+        "test_suite": "Quality Suite", "project_name": "Demo", "project_code": "demo",
+        "table_groups_name": "core_tables", "status": JobStatus.COMPLETED,
         "status_label": "Completed",
-        "created_at": "2024-01-15T10:00:00",
-        "started_at": "2024-01-15T10:00:00", "completed_at": "2024-01-15T10:05:00",
+        "created_at": _CREATED, "started_at": _STARTED, "completed_at": _COMPLETED,
         "test_ct": 50, "passed_ct": 45, "failed_ct": 3, "warning_ct": 2, "error_ct": 0,
         "log_ct": 0, "dismissed_ct": 0, "dq_score_testing": 92.5,
+        "error_message": None,
     }
     defaults.update(overrides)
     return MagicMock(**defaults)
 
 
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_default_limit(mock_suite, mock_run, db_session_mock):
-    """Default limit=1 returns one run per suite."""
-    runs = [_make_run_summary(test_run_id=uuid4()) for _ in range(7)]
-    mock_run.select_summary.return_value = (runs, len(runs))
-
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
-
-    result = get_recent_test_runs("demo")
-
-    # All 7 runs have test_suite="Quality Suite", so only 1 should appear
-    assert "1 run(s)" in result
-    assert "Quality Suite" in result
-    assert "92.5" in result
-    mock_run.select_summary.assert_called_once_with(project_code="demo", test_suite_id=None, page_size=1000)
-
-
-@patch("testgen.mcp.tools.test_runs.TestRun")
-@patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_custom_limit(mock_suite, mock_run, db_session_mock):
-    """Custom limit returns up to N runs per suite."""
+def test_list_test_runs_default(mock_suite, mock_run, mock_next, db_session_mock):
     runs = [_make_run_summary() for _ in range(3)]
     mock_run.select_summary.return_value = (runs, len(runs))
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    result = get_recent_test_runs("demo", limit=10)
+    result = list_test_runs(project_code="demo")
 
-    assert "3 run(s)" in result
+    mock_run.select_summary.assert_called_once_with(
+        project_code="demo",
+        table_group_id=None,
+        test_suite_id=None,
+        statuses=None,
+        page=1,
+        page_size=10,
+    )
+    assert "Test runs" in result
+    assert "demo" in result
+    assert "Quality Suite" in result
+    assert "92.5" in result
 
 
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_per_suite_grouping(mock_suite, mock_run, db_session_mock):
-    """With multiple suites, returns limit runs per suite."""
-    runs = [
-        _make_run_summary(test_suite="Suite A", test_run_id=uuid4()),
-        _make_run_summary(test_suite="Suite A", test_run_id=uuid4()),
-        _make_run_summary(test_suite="Suite B", test_run_id=uuid4()),
-        _make_run_summary(test_suite="Suite B", test_run_id=uuid4()),
-    ]
-    mock_run.select_summary.return_value = (runs, len(runs))
+def test_list_test_runs_with_status_filter(mock_suite, mock_run, mock_next, db_session_mock):
+    mock_run.select_summary.return_value = ([], 0)
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    result = get_recent_test_runs("demo")
+    list_test_runs(project_code="demo", status="Pending")
 
-    # limit=1 (default), so 1 per suite = 2 total
-    assert "2 run(s)" in result
-    assert "Suite A" in result
-    assert "Suite B" in result
+    call_kwargs = mock_run.select_summary.call_args.kwargs
+    assert call_kwargs["statuses"] == [JobStatus.PENDING, JobStatus.CLAIMED]
 
 
+@patch("testgen.mcp.tools.test_runs.JobExecution")
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_with_suite_name(mock_suite, mock_run, db_session_mock):
+def test_list_test_runs_with_suite_name(mock_suite, mock_run, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
     suite_id = uuid4()
-    suite_minimal = MagicMock()
-    suite_minimal.id = suite_id
+    suite_minimal = MagicMock(id=suite_id)
     mock_suite.select_minimal_where.return_value = [suite_minimal]
     mock_run.select_summary.return_value = ([_make_run_summary(test_suite="My Suite")], 1)
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    result = get_recent_test_runs("demo", test_suite="My Suite")
+    result = list_test_runs(project_code="demo", test_suite="My Suite")
 
-    mock_run.select_summary.assert_called_once_with(project_code="demo", test_suite_id=str(suite_id), page_size=1000)
+    call_kwargs = mock_run.select_summary.call_args.kwargs
+    assert call_kwargs["test_suite_id"] == str(suite_id)
     assert "My Suite" in result
 
 
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_suite_not_found(mock_suite, mock_run, db_session_mock):
+def test_list_test_runs_suite_not_found(mock_suite, mock_run, mock_next, db_session_mock):
     mock_suite.select_minimal_where.return_value = []
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    result = get_recent_test_runs("demo", test_suite="Nonexistent")
-
-    assert "not found" in result
+    with pytest.raises(MCPResourceNotAccessible):
+        list_test_runs(project_code="demo", test_suite="Nonexistent")
     mock_run.select_summary.assert_not_called()
 
 
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_no_runs(mock_suite, mock_run, db_session_mock):
+def test_list_test_runs_empty(mock_suite, mock_run, mock_next, db_session_mock):
     mock_run.select_summary.return_value = ([], 0)
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    result = get_recent_test_runs("demo")
+    result = list_test_runs(project_code="demo")
 
-    assert "No completed test runs" in result
+    assert "No test runs" in result
 
 
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_shows_failure_counts(mock_suite, mock_run, db_session_mock):
-    mock_run.select_summary.return_value = ([_make_run_summary(failed_ct=5, warning_ct=2)], 1)
+def test_list_test_runs_includes_pending_run(mock_suite, mock_run, mock_next, db_session_mock):
+    pending = _make_run_summary(
+        status=JobStatus.PENDING, status_label="Pending",
+        started_at=None, completed_at=None,
+        test_ct=None, passed_ct=None, failed_ct=None, warning_ct=None, error_ct=None,
+        log_ct=None, dismissed_ct=None, dq_score_testing=None,
+    )
+    mock_run.select_summary.return_value = ([pending], 1)
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    result = get_recent_test_runs("demo")
+    result = list_test_runs(project_code="demo")
 
-    assert "5 failed" in result
-    assert "2 warnings" in result
+    assert "Pending" in result
+    assert "In progress" in result
 
 
+@patch("testgen.mcp.tools.test_runs.JobExecution")
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value="2026-06-01T02:00:00")
 @patch("testgen.mcp.tools.test_runs.TestRun")
 @patch("testgen.mcp.tools.test_runs.TestSuite")
-def test_get_recent_test_runs_outputs_job_execution_id(mock_suite, mock_run, db_session_mock):
-    """Output should contain job_execution_id, not test_run_id."""
-    job_exec_id = uuid4()
-    run = _make_run_summary(job_execution_id=job_exec_id)
-    mock_run.select_summary.return_value = ([run], 1)
+def test_list_test_runs_shows_next_scheduled(mock_suite, mock_run, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    suite_id = uuid4()
+    mock_suite.select_minimal_where.return_value = [MagicMock(id=suite_id)]
+    mock_run.select_summary.return_value = ([], 0)
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    result = get_recent_test_runs("demo")
+    result = list_test_runs(project_code="demo", test_suite="Quality")
 
-    assert str(job_exec_id) in result
-    assert "job_execution_id" in result
+    assert "Next scheduled run" in result
 
 
-def test_get_recent_test_runs_empty_project_code(db_session_mock):
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+@patch("testgen.mcp.tools.test_runs.JobExecution")
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_list_test_runs_renders_pending_section(
+    mock_suite, mock_run, mock_next, mock_je, db_session_mock,
+):
+    """When scoped by suite, pending JEs are surfaced in a separate section."""
+    suite_id = uuid4()
+    mock_suite.select_minimal_where.return_value = [MagicMock(id=suite_id)]
+    mock_run.select_summary.return_value = ([], 0)
+    pending_je = MagicMock(
+        id=uuid4(), status=JobStatus.PENDING,
+        created_at=_CREATED, started_at=None, completed_at=None,
+    )
+    mock_je.select_active_by_kwargs.return_value = [pending_je]
 
-    result = get_recent_test_runs("")
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    assert "Missing required parameter" in result
-    assert "project_code" in result
+    result = list_test_runs(project_code="demo", test_suite="Quality")
+
+    assert "Pending (1)" in result
+    assert "In progress" in result
+    mock_je.select_active_by_kwargs.assert_called_once()
+
+
+def test_list_test_runs_invalid_status(db_session_mock):
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    with pytest.raises(MCPUserError, match="Invalid status"):
+        list_test_runs(project_code="demo", status="Bogus")
+
+
+def test_list_test_runs_requires_project_or_table_group(db_session_mock):
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    with pytest.raises(MCPUserError, match="Provide either"):
+        list_test_runs()
 
 
 @patch("testgen.mcp.permissions._compute_project_permissions")
-def test_get_recent_test_runs_raises_not_found_for_inaccessible_project(
-    mock_compute, db_session_mock,
-):
+def test_list_test_runs_raises_not_found_for_inaccessible_project(mock_compute, db_session_mock):
     mock_compute.return_value = ProjectPermissions(
         memberships={"other_project": "role_a"},
         permission="view",
         username="test_user",
     )
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import list_test_runs
 
-    with pytest.raises(MCPPermissionDenied, match="No completed test runs found in project `secret_project`"):
-        get_recent_test_runs("secret_project")
+    with pytest.raises(MCPPermissionDenied):
+        list_test_runs(project_code="secret_project")
 
 
-@patch("testgen.mcp.permissions._compute_project_permissions")
-def test_get_recent_test_runs_raises_denial_for_insufficient_permission(
-    mock_compute, db_session_mock,
-):
-    mock_compute.return_value = ProjectPermissions(
-        memberships={"other_project": "role_a", "secret_project": "role_c"},
-        permission="view",
-        username="test_user",
+# ----------------------------------------------------------------------
+# get_test_run
+# ----------------------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_returns_detail(mock_run, db_session_mock):
+    summary = _make_run_summary(project_code="demo")
+    mock_run.select_summary.return_value = ([summary], 1)
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"},
+            permission="view",
+            username="test_user",
+        )
+        with patch(
+            "testgen.mcp.permissions.PluginHook"
+        ) as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+            from testgen.mcp.tools.test_runs import get_test_run
+
+            result = get_test_run(str(summary.job_execution_id))
+
+    assert "Quality Suite" in result
+    assert "Completed" in result
+    assert "92.5" in result
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_pending_no_results(mock_run, db_session_mock):
+    summary = _make_run_summary(
+        project_code="demo",
+        status=JobStatus.PENDING, status_label="Pending",
+        started_at=None, completed_at=None,
+        test_ct=None, passed_ct=None, failed_ct=None, warning_ct=None, error_ct=None,
+        log_ct=None, dismissed_ct=None, dq_score_testing=None,
     )
+    mock_run.select_summary.return_value = ([summary], 1)
 
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"},
+            permission="view",
+            username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+            from testgen.mcp.tools.test_runs import get_test_run
 
-    with pytest.raises(MCPPermissionDenied, match="necessary permission"):
-        get_recent_test_runs("secret_project")
+            result = get_test_run(str(summary.job_execution_id))
+
+    assert "Pending" in result
+    assert "In progress" in result
+    assert "Results" not in result
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_not_found(mock_run, db_session_mock):
+    mock_run.select_summary.return_value = ([], 0)
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"},
+            permission="view",
+            username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+            from testgen.mcp.tools.test_runs import get_test_run
+
+            with pytest.raises(MCPResourceNotAccessible):
+                get_test_run(str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_inaccessible_project(mock_run, db_session_mock):
+    summary = _make_run_summary(project_code="secret")
+    mock_run.select_summary.return_value = ([summary], 1)
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"},
+            permission="view",
+            username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+            from testgen.mcp.tools.test_runs import get_test_run
+
+            with pytest.raises(MCPResourceNotAccessible):
+                get_test_run(str(summary.job_execution_id))
+
+
+def test_get_test_run_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.test_runs import get_test_run
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        get_test_run("not-a-uuid")
