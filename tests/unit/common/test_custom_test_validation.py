@@ -6,14 +6,14 @@ import pytest
 
 from testgen.common.custom_test_validation import (
     CustomQueryResult,
-    _row_limit_clauses,
     validate_custom_query,
 )
+from testgen.common.database.flavor.flavor_service import FlavorService
 
 
-def _flavor_service(row_limiting: str = "limit") -> MagicMock:
-    svc = MagicMock()
-    svc.row_limiting_clause = row_limiting
+def _flavor_service(row_limiting: str = "limit") -> FlavorService:
+    svc = FlavorService()
+    svc.row_limiting_clause = row_limiting  # type: ignore[assignment]
     return svc
 
 
@@ -23,27 +23,6 @@ def _connection(flavor: str = "postgresql") -> MagicMock:
     return conn
 
 
-# -- _row_limit_clauses -------------------------------------------------------
-
-
-def test_row_limit_clauses_limit_flavor():
-    prefix, suffix = _row_limit_clauses(_flavor_service("limit"), 5)
-    assert prefix == ""
-    assert suffix == "LIMIT 5"
-
-
-def test_row_limit_clauses_top_flavor():
-    prefix, suffix = _row_limit_clauses(_flavor_service("top"), 5)
-    assert prefix == "TOP 5"
-    assert suffix == ""
-
-
-def test_row_limit_clauses_fetch_flavor():
-    prefix, suffix = _row_limit_clauses(_flavor_service("fetch"), 5)
-    assert prefix == ""
-    assert suffix == "FETCH FIRST 5 ROWS ONLY"
-
-
 # -- validate_custom_query ----------------------------------------------------
 
 
@@ -51,7 +30,7 @@ def test_row_limit_clauses_fetch_flavor():
 @patch("testgen.common.custom_test_validation.get_flavor_service")
 def test_validate_custom_query_count_only(mock_get_flavor, mock_fetch):
     mock_get_flavor.return_value = _flavor_service("limit")
-    mock_fetch.return_value = [(0,)]
+    mock_fetch.return_value = [{"row_count": 0}]
 
     result = validate_custom_query(
         _connection(), "demo", "SELECT * FROM orders WHERE total < 0",
@@ -75,7 +54,7 @@ def test_validate_custom_query_with_preview(mock_get_flavor, mock_fetch):
     preview_row = MagicMock()
     preview_row.keys.return_value = ["order_id", "amount"]
     mock_fetch.side_effect = [
-        [(3,)],  # count query result
+        [{"row_count": 3}],  # count query result
         [preview_row],  # preview query result
     ]
 
@@ -96,7 +75,7 @@ def test_validate_custom_query_with_preview(mock_get_flavor, mock_fetch):
 @patch("testgen.common.custom_test_validation.get_flavor_service")
 def test_validate_custom_query_preview_skipped_when_no_rows(mock_get_flavor, mock_fetch):
     mock_get_flavor.return_value = _flavor_service("limit")
-    mock_fetch.return_value = [(0,)]
+    mock_fetch.return_value = [{"row_count": 0}]
 
     result = validate_custom_query(
         _connection(), "demo", "SELECT 1 WHERE 1=0", preview_limit=5,
@@ -112,7 +91,7 @@ def test_validate_custom_query_preview_skipped_when_no_rows(mock_get_flavor, moc
 @patch("testgen.common.custom_test_validation.get_flavor_service")
 def test_validate_custom_query_substitutes_data_schema(mock_get_flavor, mock_fetch):
     mock_get_flavor.return_value = _flavor_service("limit")
-    mock_fetch.return_value = [(0,)]
+    mock_fetch.return_value = [{"row_count": 0}]
 
     validate_custom_query(
         _connection(),
@@ -131,7 +110,7 @@ def test_validate_custom_query_substitutes_data_schema(mock_get_flavor, mock_fet
 def test_validate_custom_query_strips_trailing_semicolon(mock_get_flavor, mock_fetch):
     """Trailing semicolons break the subquery wrap — must be stripped."""
     mock_get_flavor.return_value = _flavor_service("limit")
-    mock_fetch.return_value = [(0,)]
+    mock_fetch.return_value = [{"row_count": 0}]
 
     validate_custom_query(
         _connection(), "demo", "SELECT 1;  ",
@@ -151,7 +130,7 @@ def test_validate_custom_query_uses_flavor_specific_limit(mock_get_flavor, mock_
     mock_get_flavor.return_value = _flavor_service("fetch")
     preview_row = MagicMock()
     mock_fetch.side_effect = [
-        [(5,)],
+        [{"row_count": 5}],
         [preview_row],
     ]
 
@@ -170,7 +149,7 @@ def test_validate_custom_query_top_flavor_uses_prefix(mock_get_flavor, mock_fetc
     mock_get_flavor.return_value = _flavor_service("top")
     preview_row = MagicMock()
     mock_fetch.side_effect = [
-        [(5,)],
+        [{"row_count": 5}],
         [preview_row],
     ]
 

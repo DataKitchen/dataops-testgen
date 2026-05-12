@@ -93,6 +93,14 @@ class FlavorService:
     varchar_type = "VARCHAR(1000)"
     ddf_table_ref = "table_name"
     row_limiting_clause: RowLimitingClause = "limit"
+
+    def row_limit_clauses(self, n: int) -> tuple[str, str]:
+        """Return ``(prefix, suffix)`` SQL fragments for limiting a SELECT to ``n`` rows."""
+        if self.row_limiting_clause == "top":
+            return f"TOP {n}", ""
+        if self.row_limiting_clause == "fetch":
+            return "", f"FETCH FIRST {n} ROWS ONLY"
+        return "", f"LIMIT {n}"
     default_uppercase = False
     test_query = "SELECT 1"
     url_scheme = "postgresql"
