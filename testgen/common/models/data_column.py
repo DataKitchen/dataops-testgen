@@ -17,9 +17,11 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profile_result import ProfileResult
+from testgen.common.models.profiling_run import ProfilingRun
 
 
 @dataclass
@@ -38,6 +40,88 @@ class ColumnProfileSummary(EntityMinimal):
     dq_score_profiling: float | None
     dq_score_testing: float | None
     hygiene_issue_count: int
+
+
+@dataclass
+class ColumnProfileDetail(EntityMinimal):
+    """L2 column profiling detail — header fields plus type-specific stats and run identity."""
+
+    # Identity
+    column_name: str
+    table_name: str
+    schema_name: str | None
+    # Types & metadata
+    general_type: str | None
+    column_type: str | None
+    db_data_type: str | None
+    functional_data_type: str | None
+    datatype_suggestion: str | None
+    functional_table_type: str | None
+    pii_flag: str | None
+    critical_data_element: bool | None
+    # Counts
+    record_ct: int | None
+    value_ct: int | None
+    distinct_value_ct: int | None
+    null_value_ct: int | None
+    filled_value_ct: int | None
+    zero_value_ct: int | None
+    # Alpha
+    min_length: int | None
+    max_length: int | None
+    avg_length: float | None
+    min_text: str | None
+    max_text: str | None
+    top_freq_values: str | None
+    top_patterns: str | None
+    distinct_std_value_ct: int | None
+    distinct_pattern_ct: int | None
+    std_pattern_match: str | None
+    mixed_case_ct: int | None
+    lower_case_ct: int | None
+    upper_case_ct: int | None
+    non_alpha_ct: int | None
+    includes_digit_ct: int | None
+    numeric_ct: int | None
+    date_ct: int | None
+    quoted_value_ct: int | None
+    lead_space_ct: int | None
+    embedded_space_ct: int | None
+    avg_embedded_spaces: float | None
+    zero_length_ct: int | None
+    # Numeric
+    min_value: float | None
+    min_value_over_0: float | None
+    max_value: float | None
+    avg_value: float | None
+    stdev_value: float | None
+    percentile_25: float | None
+    percentile_50: float | None
+    percentile_75: float | None
+    # Date
+    min_date: datetime | None
+    max_date: datetime | None
+    before_1yr_date_ct: int | None
+    before_5yr_date_ct: int | None
+    before_20yr_date_ct: int | None
+    within_1yr_date_ct: int | None
+    within_1mo_date_ct: int | None
+    future_date_ct: int | None
+    # Boolean
+    boolean_true_ct: int | None
+    # Per-column profiling failure
+    query_error: str | None
+    # Scores & hygiene
+    dq_score_profiling: float | None
+    dq_score_testing: float | None
+    hygiene_issue_count: int
+    # Run identity
+    profile_run_id: UUID | None
+    profile_run_je_id: UUID | None
+    profile_run_status: str | None
+    profile_run_started_at: datetime | None
+    profile_run_ended_at: datetime | None
+    profile_run_log_message: str | None
 
 
 class DataColumnChars(Entity):
@@ -166,3 +250,153 @@ class DataColumnChars(Entity):
         )
 
         return cls._paginate(query, page=page, limit=limit, data_class=ColumnProfileSummary)
+
+    @classmethod
+    def get_column_detail(
+        cls,
+        table_groups_id: UUID,
+        table_name: str,
+        column_name: str,
+        profiling_run_id: UUID | None = None,
+    ) -> ColumnProfileDetail | None:
+        """Fetch the L2 profile detail for a single column.
+
+        When ``profiling_run_id`` is None, joins on the column's
+        ``last_complete_profile_run_id`` so the caller gets the latest run.
+        Returns None when the column does not exist in the table group.
+        """
+        from testgen.common.models.data_table import DataTable
+
+        profile_run_filter = (
+            ProfileResult.profile_run_id == profiling_run_id
+            if profiling_run_id is not None
+            else ProfileResult.profile_run_id == cls.last_complete_profile_run_id
+        )
+
+        hygiene_subq = (
+            select(
+                HygieneIssue.profile_run_id.label("profile_run_id"),
+                HygieneIssue.schema_name.label("schema_name"),
+                HygieneIssue.table_name.label("table_name"),
+                HygieneIssue.column_name.label("column_name"),
+                func.count().label("hygiene_issue_count"),
+            )
+            .where(
+                HygieneIssue.table_groups_id == table_groups_id,
+                func.coalesce(HygieneIssue.disposition, "Confirmed") == "Confirmed",
+            )
+            .group_by(
+                HygieneIssue.profile_run_id,
+                HygieneIssue.schema_name,
+                HygieneIssue.table_name,
+                HygieneIssue.column_name,
+            )
+            .subquery()
+        )
+
+        cde_coalesced = case(
+            (cls.critical_data_element.is_(True), True),
+            (DataTable.critical_data_element.is_(True), True),
+            else_=False,
+        ).label("critical_data_element")
+
+        query = (
+            select(
+                cls.column_name,
+                cls.table_name,
+                cls.schema_name,
+                cls.general_type,
+                ProfileResult.column_type,
+                cls.db_data_type,
+                cls.functional_data_type,
+                ProfileResult.datatype_suggestion,
+                ProfileResult.functional_table_type,
+                cls.pii_flag,
+                cde_coalesced,
+                ProfileResult.record_ct,
+                ProfileResult.value_ct,
+                ProfileResult.distinct_value_ct,
+                ProfileResult.null_value_ct,
+                ProfileResult.filled_value_ct,
+                ProfileResult.zero_value_ct,
+                ProfileResult.min_length,
+                ProfileResult.max_length,
+                ProfileResult.avg_length,
+                ProfileResult.min_text,
+                ProfileResult.max_text,
+                ProfileResult.top_freq_values,
+                ProfileResult.top_patterns,
+                ProfileResult.distinct_std_value_ct,
+                ProfileResult.distinct_pattern_ct,
+                ProfileResult.std_pattern_match,
+                ProfileResult.mixed_case_ct,
+                ProfileResult.lower_case_ct,
+                ProfileResult.upper_case_ct,
+                ProfileResult.non_alpha_ct,
+                ProfileResult.includes_digit_ct,
+                ProfileResult.numeric_ct,
+                ProfileResult.date_ct,
+                ProfileResult.quoted_value_ct,
+                ProfileResult.lead_space_ct,
+                ProfileResult.embedded_space_ct,
+                ProfileResult.avg_embedded_spaces,
+                ProfileResult.zero_length_ct,
+                ProfileResult.min_value,
+                ProfileResult.min_value_over_0,
+                ProfileResult.max_value,
+                ProfileResult.avg_value,
+                ProfileResult.stdev_value,
+                ProfileResult.percentile_25,
+                ProfileResult.percentile_50,
+                ProfileResult.percentile_75,
+                ProfileResult.min_date,
+                ProfileResult.max_date,
+                ProfileResult.before_1yr_date_ct,
+                ProfileResult.before_5yr_date_ct,
+                ProfileResult.before_20yr_date_ct,
+                ProfileResult.within_1yr_date_ct,
+                ProfileResult.within_1mo_date_ct,
+                ProfileResult.future_date_ct,
+                ProfileResult.boolean_true_ct,
+                ProfileResult.query_error,
+                cls.dq_score_profiling,
+                cls.dq_score_testing,
+                func.coalesce(hygiene_subq.c.hygiene_issue_count, 0).label("hygiene_issue_count"),
+                ProfilingRun.id.label("profile_run_id"),
+                ProfilingRun.job_execution_id.label("profile_run_je_id"),
+                ProfilingRun.status.label("profile_run_status"),
+                ProfilingRun.profiling_starttime.label("profile_run_started_at"),
+                ProfilingRun.profiling_endtime.label("profile_run_ended_at"),
+                ProfilingRun.log_message.label("profile_run_log_message"),
+            )
+            .outerjoin(DataTable, DataTable.id == cls.table_id)
+            .outerjoin(
+                ProfileResult,
+                and_(
+                    profile_run_filter,
+                    ProfileResult.schema_name == cls.schema_name,
+                    ProfileResult.table_name == cls.table_name,
+                    ProfileResult.column_name == cls.column_name,
+                ),
+            )
+            .outerjoin(
+                hygiene_subq,
+                and_(
+                    hygiene_subq.c.profile_run_id == ProfileResult.profile_run_id,
+                    hygiene_subq.c.schema_name == cls.schema_name,
+                    hygiene_subq.c.table_name == cls.table_name,
+                    hygiene_subq.c.column_name == cls.column_name,
+                ),
+            )
+            .outerjoin(ProfilingRun, ProfilingRun.id == ProfileResult.profile_run_id)
+            .where(
+                cls.table_groups_id == table_groups_id,
+                cls.table_name == table_name,
+                cls.column_name == column_name,
+                cls.drop_date.is_(None),
+            )
+            .limit(1)
+        )
+
+        row = get_current_session().execute(query).mappings().first()
+        return ColumnProfileDetail(**row) if row else None

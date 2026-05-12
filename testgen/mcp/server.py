@@ -34,7 +34,10 @@ Test types have specific, non-obvious meanings (e.g., Alpha_Trunc). Do not guess
 ALWAYS look them up using either the `testgen://test-types` resource or the `get_test_type()` tool.
 
 Hygiene issue types similarly have specific meanings. ALWAYS look them up using the
-`testgen://hygiene-issue-types` resource.
+`testgen://hygiene-issue-types` resource.q
+
+Column profile fields are type-specific (different stats per Alpha / Numeric / Date / Boolean / Other).
+ALWAYS look them up using the `testgen://column-profile-fields` resource.
 
 INVESTIGATING FAILURES
 
@@ -149,6 +152,7 @@ def build_mcp_server(
         update_hygiene_issue,
     )
     from testgen.mcp.tools.profiling import (
+        get_column_profile_detail,
         get_profiling_run,
         get_table,
         list_column_profiles,
@@ -156,6 +160,7 @@ def build_mcp_server(
         list_profiling_summaries,
     )
     from testgen.mcp.tools.reference import (
+        column_profile_fields_resource,
         get_test_type,
         glossary_resource,
         hygiene_issue_types_resource,
@@ -231,6 +236,7 @@ def build_mcp_server(
     safe_tool(list_profiling_summaries)
     safe_tool(list_profiling_runs)
     safe_tool(get_profiling_run)
+    safe_tool(get_column_profile_detail)
     safe_tool(run_tests)
     safe_tool(run_profiling)
     safe_tool(cancel_test_run)
@@ -248,6 +254,7 @@ def build_mcp_server(
     # Resources
     safe_resource("testgen://test-types", test_types_resource)
     safe_resource("testgen://hygiene-issue-types", hygiene_issue_types_resource)
+    safe_resource("testgen://column-profile-fields", column_profile_fields_resource)
     safe_resource("testgen://glossary", glossary_resource)
 
     # Prompts

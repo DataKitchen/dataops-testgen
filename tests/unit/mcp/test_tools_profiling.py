@@ -1,9 +1,11 @@
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
-from testgen.common.models.data_column import ColumnProfileSummary
+from testgen.common.models.data_column import ColumnProfileDetail, ColumnProfileSummary
+from testgen.common.pii_masking import PII_REDACTED
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -252,7 +254,7 @@ def test_list_column_profiles_paginates(mock_tg_cls, mock_dcc_cls, db_session_mo
     assert "Use `page=2` for more" in result
 
 
-@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.DataColumnChars")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_list_column_profiles_with_valid_job_execution_id(
@@ -262,6 +264,7 @@ def test_list_column_profiles_with_valid_job_execution_id(
     pr = MagicMock()
     pr.id = uuid4()
     pr.table_groups_id = tg.id
+    pr.project_code = tg.project_code
 
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_by_id_or_job.return_value = pr
@@ -273,7 +276,7 @@ def test_list_column_profiles_with_valid_job_execution_id(
     assert mock_dcc_cls.list_for_table_group.call_args.kwargs["profiling_run_id"] == pr.id
 
 
-@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.ProfilingRun")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_list_column_profiles_rejects_je_from_different_tg(
     mock_tg_cls, mock_pr_cls, db_session_mock,
@@ -283,6 +286,7 @@ def test_list_column_profiles_rejects_je_from_different_tg(
     pr = MagicMock()
     pr.id = uuid4()
     pr.table_groups_id = uuid4()  # different TG
+    pr.project_code = tg.project_code
 
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_by_id_or_job.return_value = pr
@@ -292,7 +296,7 @@ def test_list_column_profiles_rejects_je_from_different_tg(
         list_column_profiles(str(uuid4()), job_execution_id=str(uuid4()))
 
 
-@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.ProfilingRun")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_list_column_profiles_rejects_unknown_je(mock_tg_cls, mock_pr_cls, db_session_mock):
     mock_tg_cls.get.return_value = _mock_table_group()
@@ -336,14 +340,14 @@ def test_list_column_profiles_inaccessible_tg(mock_tg_cls, db_session_mock):
 @pytest.mark.parametrize(
     "value,expected",
     [
-        (None, None),
-        ("", None),
-        ("MANUAL", "PII"),
-        ("A/ID/Passport", "PII (High Risk - ID / Passport)"),
-        ("B/NAME/Individual", "PII (Moderate Risk - Name / Individual)"),
-        ("C/CONTACT", "PII (Low Risk - Contact)"),
-        ("B/ID/ID", "PII (Moderate Risk - ID)"),  # detail collapses when equal to type label
-        ("X/UNKNOWN/Detail", "PII (Moderate Risk / Detail)"),  # unknown risk falls back; unknown type drops label
+        (None, "No"),
+        ("", "No"),
+        ("MANUAL", "Yes"),
+        ("A/ID/Passport", "Yes (High Risk - ID / Passport)"),
+        ("B/NAME/Individual", "Yes (Moderate Risk - Name / Individual)"),
+        ("C/CONTACT", "Yes (Low Risk - Contact)"),
+        ("B/ID/ID", "Yes (Moderate Risk - ID)"),  # detail collapses when equal to type label
+        ("X/UNKNOWN/Detail", "Yes (Moderate Risk / Detail)"),  # unknown risk falls back; unknown type drops label
     ],
 )
 def test_format_pii(value, expected):
@@ -359,12 +363,12 @@ def test_format_pii(value, expected):
 def test_render_row_renders_parsed_pii_label():
     from testgen.mcp.tools.profiling import _render_column_profile_row
     row = _render_column_profile_row(_column_summary(pii_flag="B/NAME/Individual"))
-    assert row[5] == "PII (Moderate Risk - Name / Individual)"
+    assert row[5] == "Yes (Moderate Risk - Name / Individual)"
 
 
-def test_render_row_falsy_pii_renders_none():
+def test_render_row_falsy_pii_renders_no():
     from testgen.mcp.tools.profiling import _render_column_profile_row
-    assert _render_column_profile_row(_column_summary(pii_flag=None))[5] is None
+    assert _render_column_profile_row(_column_summary(pii_flag=None))[5] == "No"
 
 
 def test_render_row_cde_collapsed_to_y_or_none():
@@ -485,7 +489,7 @@ def test_list_profiling_summaries_inaccessible_tg(mock_tg_cls, db_session_mock):
 # list_profiling_runs
 # ----------------------------------------------------------------------
 
-from datetime import UTC, datetime
+from datetime import UTC
 
 from testgen.common.models.job_execution import JobStatus
 
@@ -674,3 +678,636 @@ def test_get_profiling_run_invalid_uuid(db_session_mock):
     from testgen.mcp.tools.profiling import get_profiling_run
     with pytest.raises(MCPUserError, match="not a valid UUID"):
         get_profiling_run("not-a-uuid")
+
+
+# ----------------------------------------------------------------------
+# get_column_profile_detail
+# ----------------------------------------------------------------------
+
+
+def _column_detail(**overrides) -> ColumnProfileDetail:
+    """Build a ColumnProfileDetail with sensible alpha-column defaults; override per test."""
+    base: dict = {
+        # Identity
+        "column_name": "customer_name",
+        "table_name": "customers",
+        "schema_name": "demo",
+        # Types & metadata
+        "general_type": "A",
+        "column_type": "varchar(50)",
+        "db_data_type": "varchar(50)",
+        "functional_data_type": "Person Given Name",
+        "datatype_suggestion": "VARCHAR(20)",
+        "functional_table_type": None,
+        "pii_flag": None,
+        "critical_data_element": False,
+        # Counts
+        "record_ct": 500,
+        "value_ct": 500,
+        "distinct_value_ct": 260,
+        "null_value_ct": 0,
+        "filled_value_ct": 0,
+        "zero_value_ct": 0,
+        # Alpha
+        "min_length": 3,
+        "max_length": 50,
+        "avg_length": 12.4,
+        "min_text": "Aaron",
+        "max_text": "Zoey",
+        "top_freq_values": "| Mary | 12\n| John | 10",
+        "top_patterns": "10 | A(5) | 8 | A(6)",
+        "distinct_std_value_ct": 250,
+        "distinct_pattern_ct": 35,
+        "std_pattern_match": None,
+        "mixed_case_ct": 100,
+        "lower_case_ct": 350,
+        "upper_case_ct": 50,
+        "non_alpha_ct": 0,
+        "includes_digit_ct": 0,
+        "numeric_ct": 0,
+        "date_ct": 0,
+        "quoted_value_ct": 0,
+        "lead_space_ct": 0,
+        "embedded_space_ct": 0,
+        "avg_embedded_spaces": 0.0,
+        "zero_length_ct": 0,
+        # Numeric
+        "min_value": None,
+        "min_value_over_0": None,
+        "max_value": None,
+        "avg_value": None,
+        "stdev_value": None,
+        "percentile_25": None,
+        "percentile_50": None,
+        "percentile_75": None,
+        # Date
+        "min_date": None,
+        "max_date": None,
+        "before_1yr_date_ct": None,
+        "before_5yr_date_ct": None,
+        "before_20yr_date_ct": None,
+        "within_1yr_date_ct": None,
+        "within_1mo_date_ct": None,
+        "future_date_ct": None,
+        # Boolean
+        "boolean_true_ct": None,
+        # Per-column profiling failure
+        "query_error": None,
+        # Scores & hygiene
+        "dq_score_profiling": 95.2,
+        "dq_score_testing": 90.0,
+        "hygiene_issue_count": 2,
+        # Run identity
+        "profile_run_id": uuid4(),
+        "profile_run_je_id": uuid4(),
+        "profile_run_status": "Complete",
+        "profile_run_started_at": datetime(2026, 5, 1, 12, 0, 0),
+        "profile_run_ended_at": datetime(2026, 5, 1, 12, 5, 0),
+        "profile_run_log_message": None,
+    }
+    base.update(overrides)
+    return ColumnProfileDetail(**base)
+
+
+# --- happy paths per general_type ---
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_alpha_renders_alpha_sections(mock_tg_cls, mock_dcc_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(general_type="A")
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+    assert "Column Profile" in result
+    assert "customer_name" in result
+    assert "Profiling Run" in result
+    # Alpha-specific sections present
+    assert "Length" in result
+    assert "Text Range" in result
+    assert "Patterns" in result
+    assert "Aaron" in result
+    assert "Zoey" in result
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_alpha_renders_distinct_standard_values(
+    mock_tg_cls, mock_dcc_cls, db_session_mock
+):
+    """`distinct_std_value_ct` (alpha-only) renders under the Patterns section as 'Distinct Standard Values'."""
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        general_type="A",
+        distinct_std_value_ct=247,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+    assert "Distinct Standard Values" in result
+    assert "247" in result
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_numeric_renders_numeric_sections(mock_tg_cls, mock_dcc_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        column_name="amount",
+        general_type="N",
+        db_data_type="numeric",
+        functional_data_type="Currency",
+        # Numeric stats
+        min_value=0.0,
+        min_value_over_0=0.01,
+        max_value=99999.99,
+        avg_value=125.34,
+        stdev_value=42.1,
+        percentile_25=50.0,
+        percentile_50=100.0,
+        percentile_75=200.0,
+        # Alpha fields cleared (numeric column wouldn't have these populated)
+        min_text=None,
+        max_text=None,
+        top_freq_values=None,
+        top_patterns=None,
+        min_length=None,
+        max_length=None,
+        avg_length=None,
+        std_pattern_match=None,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "orders", "amount")
+
+    # Numeric-specific content present
+    assert "Median" in result or "Percentile" in result or "percentile_50" in result.lower()
+    assert "99999.99" in result or "99,999.99" in result
+    # Alpha-only sections absent
+    assert "Text Range" not in result
+    assert "Min Text" not in result
+    assert "Aaron" not in result
+    assert "Length" not in result.replace("Avg Length", "")  # rough — ensures no Length section
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_date_renders_date_sections(mock_tg_cls, mock_dcc_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        column_name="created_at",
+        general_type="D",
+        db_data_type="timestamp",
+        functional_data_type="Datetime-Created",
+        min_date=datetime(2024, 1, 1, 0, 0, 0),
+        max_date=datetime(2026, 4, 30, 23, 59, 59),
+        before_1yr_date_ct=10000,
+        before_5yr_date_ct=2000,
+        before_20yr_date_ct=0,
+        within_1yr_date_ct=40000,
+        within_1mo_date_ct=5000,
+        future_date_ct=0,
+        # Alpha fields cleared
+        min_text=None,
+        max_text=None,
+        top_freq_values=None,
+        top_patterns=None,
+        min_length=None,
+        max_length=None,
+        avg_length=None,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "orders", "created_at")
+
+    # Date-specific content
+    assert "Within 1" in result or "Before 1" in result or "Date Range" in result
+    assert "2024" in result
+    # Alpha-only sections absent
+    assert "Aaron" not in result
+    assert "Pattern" not in result
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_boolean_renders_boolean_section(mock_tg_cls, mock_dcc_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        column_name="is_active",
+        general_type="B",
+        db_data_type="boolean",
+        functional_data_type="Boolean",
+        boolean_true_ct=420,
+        value_ct=500,
+        # Alpha fields cleared
+        min_text=None,
+        max_text=None,
+        top_freq_values=None,
+        top_patterns=None,
+        min_length=None,
+        max_length=None,
+        avg_length=None,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "users", "is_active")
+
+    assert "True" in result
+    assert "420" in result
+    # Alpha-only sections absent
+    assert "Pattern" not in result
+    assert "Length" not in result.replace("Avg Length", "")
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_unknown_general_type_renders_counts_only(
+    mock_tg_cls, mock_dcc_cls, db_session_mock
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        column_name="payload",
+        general_type="X",
+        db_data_type="json",
+        functional_data_type=None,
+        # All type-specific fields cleared
+        min_text=None,
+        max_text=None,
+        top_freq_values=None,
+        top_patterns=None,
+        min_length=None,
+        max_length=None,
+        avg_length=None,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "events", "payload")
+
+    assert "payload" in result
+    assert "Counts" in result
+    assert "Pattern" not in result
+    assert "Boolean Distribution" not in result
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_general_type_t_treated_as_unknown(
+    mock_tg_cls, mock_dcc_cls, db_session_mock
+):
+    """T mirrors current UI behavior — falls through to common counts only."""
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        column_name="ts",
+        general_type="T",
+        db_data_type="time",
+        functional_data_type=None,
+        min_text=None,
+        max_text=None,
+        top_freq_values=None,
+        top_patterns=None,
+        min_length=None,
+        max_length=None,
+        avg_length=None,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "events", "ts")
+
+    assert "Counts" in result
+    assert "Date Range" not in result  # not dispatched as date
+
+
+# --- never-profiled / no-profile-for-pinned-run ---
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_never_profiled_column_rejects(
+    mock_tg_cls, mock_dcc_cls, db_session_mock
+):
+    """Column row exists in data_column_chars but has no completed profiling run yet
+    (`last_complete_profile_run_id IS NULL`). The model returns a detail with NULL run
+    fields; the tool must reject rather than render an empty profile.
+    """
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        profile_run_id=None,
+        profile_run_je_id=None,
+        profile_run_status=None,
+        profile_run_started_at=None,
+        profile_run_ended_at=None,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPUserError) as exc_info:
+        get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+    msg = str(exc_info.value)
+    assert "customer_name" in msg
+    assert "not been profiled" in msg
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_pinned_run_without_column_rejects(
+    mock_tg_cls, mock_pr_cls, mock_dcc_cls, db_session_mock,
+):
+    """User pins a valid run via job_execution_id, but that run has no profile_results
+    row for this column. Surface the pinned run id so the LLM knows what to try next.
+    """
+    tg = _mock_table_group()
+    pr = MagicMock()
+    pr.id = uuid4()
+    pr.table_groups_id = tg.id
+    pr.project_code = tg.project_code
+
+    mock_tg_cls.get.return_value = tg
+    mock_pr_cls.get_by_id_or_job.return_value = pr
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        profile_run_id=None,
+        profile_run_je_id=None,
+        profile_run_status=None,
+        profile_run_started_at=None,
+        profile_run_ended_at=None,
+    )
+
+    je_id_str = str(uuid4())
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPUserError) as exc_info:
+        get_column_profile_detail(
+            str(uuid4()), "customers", "customer_name", job_execution_id=je_id_str
+        )
+
+    msg = str(exc_info.value)
+    assert "customer_name" in msg
+    assert je_id_str in msg
+
+
+# --- error paths ---
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_column_not_found_unified_error(
+    mock_tg_cls, mock_dcc_cls, db_session_mock
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = None
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPResourceNotAccessible, match=r"Column .* not found or not accessible"):
+        get_column_profile_detail(str(uuid4()), "customers", "ghost_column")
+
+
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_inaccessible_tg(mock_tg_cls, db_session_mock):
+    mock_tg_cls.get.return_value = None
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPResourceNotAccessible, match=r"Table group .* not found or not accessible"):
+        get_column_profile_detail(str(uuid4()), "customers", "x")
+
+
+def test_get_column_profile_detail_invalid_tg_uuid(db_session_mock):
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPUserError, match="Invalid table_group_id"):
+        get_column_profile_detail("not-a-uuid", "customers", "x")
+
+
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_invalid_je_uuid(mock_tg_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPUserError, match="Invalid job_execution_id"):
+        get_column_profile_detail(
+            str(uuid4()), "customers", "x", job_execution_id="bad"
+        )
+
+
+# --- job_execution_id pinning ---
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_pinned_run_passes_id_to_model(
+    mock_tg_cls, mock_pr_cls, mock_dcc_cls, db_session_mock,
+):
+    tg = _mock_table_group()
+    pr = MagicMock()
+    pr.id = uuid4()
+    pr.table_groups_id = tg.id
+    pr.project_code = tg.project_code
+
+    mock_tg_cls.get.return_value = tg
+    mock_pr_cls.get_by_id_or_job.return_value = pr
+    mock_dcc_cls.get_column_detail.return_value = _column_detail()
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    get_column_profile_detail(str(uuid4()), "customers", "customer_name", job_execution_id=str(uuid4()))
+
+    assert mock_dcc_cls.get_column_detail.call_args.kwargs["profiling_run_id"] == pr.id
+
+
+@patch("testgen.mcp.tools.common.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_pinned_run_from_different_tg_unified_error(
+    mock_tg_cls, mock_pr_cls, db_session_mock,
+):
+    tg = _mock_table_group()
+    pr = MagicMock()
+    pr.id = uuid4()
+    pr.table_groups_id = uuid4()  # different
+    pr.project_code = tg.project_code
+
+    mock_tg_cls.get.return_value = tg
+    mock_pr_cls.get_by_id_or_job.return_value = pr
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
+        get_column_profile_detail(
+            str(uuid4()), "customers", "x", job_execution_id=str(uuid4())
+        )
+
+
+@patch("testgen.mcp.tools.common.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_pinned_run_unknown_unified_error(
+    mock_tg_cls, mock_pr_cls, db_session_mock,
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_pr_cls.get_by_id_or_job.return_value = None
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
+        get_column_profile_detail(
+            str(uuid4()), "customers", "x", job_execution_id=str(uuid4())
+        )
+
+
+# --- run-status preconditions ---
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_running_run_rejects_with_status(
+    mock_tg_cls, mock_dcc_cls, db_session_mock
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    je_id = uuid4()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        profile_run_status="Running",
+        profile_run_je_id=je_id,
+        profile_run_ended_at=None,
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPUserError) as exc_info:
+        get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+    msg = str(exc_info.value)
+    assert "Running" in msg
+    assert str(je_id) in msg
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_error_run_includes_log_message(
+    mock_tg_cls, mock_dcc_cls, db_session_mock
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    je_id = uuid4()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        profile_run_status="Error",
+        profile_run_je_id=je_id,
+        profile_run_log_message="connection timed out",
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPUserError) as exc_info:
+        get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+    msg = str(exc_info.value)
+    assert "Error" in msg
+    assert str(je_id) in msg
+    assert "connection timed out" in msg
+
+
+# --- PII redaction ---
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_pii_column_no_view_pii_redacts(
+    mock_tg_cls, mock_dcc_cls, mock_compute, db_session_mock,
+):
+    """User has 'catalog' on demo but NOT 'view_pii' → 8 raw-value fields redacted; aggregates kept."""
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        pii_flag="B/CONTACT/Email",
+        column_name="customer_email",
+        general_type="A",
+        std_pattern_match="EMAIL",
+        min_text="aaron@example.com",
+        max_text="zoey@example.com",
+        top_freq_values="| mary@x.com | 1\n| john@x.com | 1",
+    )
+    # No project includes view_pii — only catalog allowed
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"demo": "role_c"},  # role_c has 'catalog' but not 'view_pii' in test matrix
+        permission="catalog",
+        username="test_user",
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "customers", "customer_email")
+
+    # Raw-value fields redacted
+    assert PII_REDACTED in result
+    assert "aaron@example.com" not in result
+    assert "zoey@example.com" not in result
+    assert "mary@x.com" not in result
+    # Aggregates / counts / std_pattern_match still visible
+    assert "260" in result or "Distinct" in result
+    assert "EMAIL" in result or "Email" in result
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_pii_column_with_view_pii_shows_values(
+    mock_tg_cls, mock_dcc_cls, mock_compute, db_session_mock,
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        pii_flag="B/CONTACT/Email",
+        column_name="customer_email",
+        min_text="aaron@example.com",
+        max_text="zoey@example.com",
+    )
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"demo": "role_a"},  # role_a has 'view_pii' in conftest matrix? actually no — but we need a role that includes view_pii. Use role-with-view_pii via "edit" mapping.
+        permission="catalog",
+        username="test_user",
+    )
+    # Patch the rbac mapping so role_a includes view_pii for this test
+    with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+        mock_hook.instance.return_value.rbac.get_roles_with_permission.side_effect = (
+            lambda perm: ["role_a"] if perm in ("catalog", "view_pii") else []
+        )
+        from testgen.mcp.tools.profiling import get_column_profile_detail
+        result = get_column_profile_detail(str(uuid4()), "customers", "customer_email")
+
+    assert "aaron@example.com" in result
+    assert PII_REDACTED not in result
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_non_pii_column_never_redacts(
+    mock_tg_cls, mock_dcc_cls, mock_compute, db_session_mock,
+):
+    """No pii_flag → raw values shown regardless of view_pii grant."""
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        pii_flag=None,
+        min_text="Aaron",
+        max_text="Zoey",
+    )
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"demo": "role_c"},
+        permission="catalog",
+        username="test_user",
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+    assert "Aaron" in result
+    assert "Zoey" in result
+    assert PII_REDACTED not in result
+
+
+# --- query_error surfacing ---
+
+
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_query_error_section(mock_tg_cls, mock_dcc_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        query_error="ORA-01017: invalid username/password",
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    result = get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+    assert "Profiling Error" in result
+    assert "ORA-01017" in result
