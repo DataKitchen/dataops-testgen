@@ -141,6 +141,65 @@ class ScoreDefinition(Base):
         return definition
 
     @classmethod
+    def list_with_table_group_targets(
+        cls,
+        project_code: str,
+    ) -> list[tuple[UUID, str, list[str]]]:
+        """Return all scorecards in the project, each paired with the list of
+        `table_groups_name` values their criteria reference.
+
+        Walks both root filters (`criteria.filters`) and the `next_filter` chain
+        via a recursive CTE. A scorecard with zero name filters has an empty
+        list; multiple are returned in chain order.
+
+        Single query. Does NOT eagerly load the criteria/filter ORM objects —
+        the caller gets only (id, name, target names). Used by the MCP
+        inventory tool to surface scorecard IDs under each table group.
+        """
+        # Seed: root filters joined through criteria for the project's definitions.
+        seed = (
+            select(
+                ScoreDefinitionCriteria.definition_id.label("definition_id"),
+                ScoreDefinitionFilter.field.label("field"),
+                ScoreDefinitionFilter.value.label("value"),
+                ScoreDefinitionFilter.next_filter_id.label("next_filter_id"),
+            )
+            .select_from(ScoreDefinitionCriteria)
+            .join(ScoreDefinitionFilter, ScoreDefinitionFilter.criteria_id == ScoreDefinitionCriteria.id)
+            .join(ScoreDefinition, ScoreDefinition.id == ScoreDefinitionCriteria.definition_id)
+            .where(ScoreDefinition.project_code == project_code)
+            .cte("filter_walk", recursive=True)
+        )
+        # Recursive step: follow next_filter_id to walk the chain.
+        chain = aliased(ScoreDefinitionFilter)
+        filter_walk = seed.union_all(
+            select(
+                seed.c.definition_id,
+                chain.field,
+                chain.value,
+                chain.next_filter_id,
+            )
+            .select_from(seed)
+            .join(chain, chain.id == seed.c.next_filter_id)
+        )
+
+        tg_names = (
+            func.array_agg(filter_walk.c.value)
+            .filter(filter_walk.c.field == "table_groups_name")
+            .label("tg_names")
+        )
+        query = (
+            select(ScoreDefinition.id, ScoreDefinition.name, tg_names)
+            .select_from(ScoreDefinition)
+            .outerjoin(filter_walk, filter_walk.c.definition_id == ScoreDefinition.id)
+            .where(ScoreDefinition.project_code == project_code)
+            .group_by(ScoreDefinition.id, ScoreDefinition.name)
+            .order_by(ScoreDefinition.name)
+        )
+        rows = get_current_session().execute(query).all()
+        return [(row.id, row.name, list(row.tg_names) if row.tg_names else []) for row in rows]
+
+    @classmethod
     def all(
         cls,
         project_code: str | None = None,
