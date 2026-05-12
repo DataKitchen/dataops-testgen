@@ -899,15 +899,14 @@ def get_preview_data(
         return {"title": title, "status": "ERR", "message": "Connection not found."}
 
     flavor_service = get_flavor_service(connection.sql_flavor)
-    row_limiting = flavor_service.row_limiting_clause
+    prefix, suffix = flavor_service.row_limit_clauses(100)
     quote = flavor_service.quote_character
     query = f"""
     SELECT DISTINCT
-        {"TOP 100" if row_limiting == "top" else ""}
+        {prefix}
         {f"{quote}{column_name}{quote}" if column_name else "*"}
     FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}
-    {"LIMIT 100" if row_limiting == "limit" else ""}
-    {"FETCH FIRST 100 ROWS ONLY" if row_limiting == "fetch" else ""}
+    {suffix}
     """
 
     try:

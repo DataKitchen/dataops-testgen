@@ -124,12 +124,8 @@ class RefreshDataCharsSQL:
         schema = self.table_group.table_group_schema
         quote = self.flavor_service.quote_character
         table_ref = f"{quote}{schema}{quote}.{quote}{table_name}{quote}"
-        if (row_limiting := self.flavor_service.row_limiting_clause) == "top":
-            query = f"SELECT TOP 1 * FROM {table_ref}"
-        elif row_limiting == "fetch":
-            query = f"SELECT 1 FROM {table_ref} FETCH FIRST 1 ROWS ONLY"
-        else:
-            query = f"SELECT 1 FROM {table_ref} LIMIT 1"
+        prefix, suffix = self.flavor_service.row_limit_clauses(1)
+        query = f"SELECT {prefix} 1 FROM {table_ref} {suffix}".strip()
         return (query, None)
 
     def get_staging_data_chars(self, data_chars: list[ColumnChars], run_date: datetime) -> list[list[str | bool | int]]:

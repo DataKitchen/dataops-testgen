@@ -1071,7 +1071,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         { label: 'Regularity', value: 'Regularity' },
         { label: 'Usability', value: 'Usability' },
     ];
-    const showImpactDimensionOverride = testType === 'CUSTOM' || testType === 'Condition_Flag' || testScope === 'referential';
+    const showImpactDimensionOverride = ['custom', 'referential'].includes(testScope);
 
     const tableNameOptions = [
         ...new Set((tableColumns ?? []).map(c => c.table_name).filter(Boolean))

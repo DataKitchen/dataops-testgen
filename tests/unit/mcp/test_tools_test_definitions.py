@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.custom_test_validation import CustomQueryResult
 from testgen.mcp.exceptions import MCPUserError
 
 # -- list_tests ---------------------------------------------------------------
@@ -545,3 +546,584 @@ def test_list_test_types_filter_description(mock_tt, db_session_mock):
 
     assert "scope: table" in result
     assert "dimension: Completeness" in result
+
+
+# -- create_test --------------------------------------------------------------
+
+
+def _make_suite(suite_id=None, table_groups_id=None):
+    suite = MagicMock()
+    suite.id = suite_id or uuid4()
+    suite.test_suite = "demo_suite"
+    suite.project_code = "demo"
+    suite.table_groups_id = table_groups_id or uuid4()
+    return suite
+
+
+def _make_test_type(
+    code="Alpha_Trunc",
+    short_name="Alpha Truncation",
+    scope="column",
+    param_columns=None,
+    default_parm_columns="threshold_value",
+    default_parm_required=None,
+    default_severity="Fail",
+):
+    tt = MagicMock()
+    tt.test_type = code
+    tt.test_name_short = short_name
+    tt.test_scope = scope
+    tt.param_columns = param_columns if param_columns is not None else {"threshold_value"}
+    tt.default_parm_columns = default_parm_columns
+    tt.default_parm_required = default_parm_required
+    tt.default_severity = default_severity
+    return tt
+
+
+def _make_table_group(schema="public"):
+    tg = MagicMock()
+    tg.id = uuid4()
+    tg.table_group_schema = schema
+    return tg
+
+
+def _make_td_summary(table_name="orders", column_name="email", severity="Warning"):
+    """Mock TestDefinitionSummary as returned by TestDefinition.get_for_project()."""
+    summary = MagicMock()
+    summary.id = uuid4()
+    summary.display_name = "Alpha Truncation"
+    summary.test_type = "Alpha_Trunc"
+    summary.test_name_short = "Alpha Truncation"
+    summary.table_name = table_name
+    summary.column_name = column_name
+    summary.schema_name = "demo"
+    summary.test_scope = "column"
+    summary.test_suite_id = uuid4()
+    summary.impact_dimension = None
+    summary.default_impact_dimension = "Conformance"
+    summary.dq_dimension = "Validity"
+    summary.test_active = True
+    summary.severity = severity
+    summary.default_severity = "Fail"
+    summary.lock_refresh = False
+    summary.export_to_observability = True
+    summary.flagged = False
+    summary.last_auto_gen_date = None
+    summary.last_manual_update = None
+    summary.default_parm_columns = "threshold_value"
+    summary.param_columns = {"threshold_value"}
+    summary.param_fields = [("threshold_value", "Maximum String Length at Baseline", "")]
+    summary.threshold_value = "64"
+    summary.custom_query = None
+    summary.match_schema_name = None
+    summary.match_table_name = None
+    summary.match_column_names = None
+    summary.match_subset_condition = None
+    summary.match_groupby_names = None
+    summary.match_having_condition = None
+    return summary
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_happy_path(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, mock_td, mock_notes, db_session_mock,
+):
+    suite = _make_suite()
+    mock_resolve_suite.return_value = suite
+    mock_resolve_tt.return_value = "Alpha_Trunc"
+    mock_tt_model.get.return_value = _make_test_type()
+    mock_tg.get.return_value = _make_table_group()
+
+    saved = MagicMock()
+    saved.id = uuid4()
+    saved.editable_fields.return_value = {
+        "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "threshold_value", "column_name",
+    }
+    mock_td.return_value = saved
+    mock_td.get_for_project.return_value = _make_td_summary()
+    mock_notes.get_notes.return_value = []
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    result = create_test(
+        test_suite_id=str(uuid4()),
+        test_type="Alpha Truncation",
+        table_name="orders",
+        fields={"column_name": "email", "threshold_value": "64", "severity": "Warning"},
+    )
+
+    # New shared body: entity-first heading + "Created in suite" lead-in
+    assert "Created" in result
+    assert "Alpha Truncation on `email` in `orders`" in result
+    # Parameters table uses the test type's prompt, not a hardcoded label
+    assert "Maximum String Length at Baseline" in result
+    assert "64" in result
+    assert "Warning" in result
+    saved.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_column_scope_requires_column_name(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, mock_td, db_session_mock,
+):
+    """Column-scoped types: missing column_name → validate() raises before save."""
+    from testgen.common.models.test_definition import InvalidTestDefinitionFields
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_resolve_tt.return_value = "Alpha_Trunc"
+    mock_tt_model.get.return_value = _make_test_type()
+    mock_tg.get.return_value = _make_table_group()
+
+    saved = MagicMock(id=uuid4())
+    saved.editable_fields.return_value = {
+        "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "threshold_value", "column_name",
+    }
+    saved.validate.side_effect = InvalidTestDefinitionFields(
+        {"column_name": "required for test type `Alpha_Trunc`"}
+    )
+    mock_td.return_value = saved
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    with pytest.raises(MCPUserError) as exc_info:
+        create_test(
+            test_suite_id=str(uuid4()),
+            test_type="Alpha Truncation",
+            table_name="orders",
+            fields={"threshold_value": "64"},
+        )
+    assert "column_name" in str(exc_info.value)
+    assert "rejected" in str(exc_info.value).lower()
+    saved.save.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_unknown_field_rejected_by_whitelist(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, mock_td, db_session_mock,
+):
+    """Unknown field in ``fields`` (e.g. custom_query on Alpha_Trunc) is rejected by editable_fields whitelist."""
+    mock_resolve_suite.return_value = _make_suite()
+    mock_resolve_tt.return_value = "Alpha_Trunc"
+    mock_tt_model.get.return_value = _make_test_type()
+    mock_tg.get.return_value = _make_table_group()
+
+    saved = MagicMock(id=uuid4())
+    saved.editable_fields.return_value = {
+        "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "threshold_value", "column_name",
+    }
+    mock_td.return_value = saved
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    with pytest.raises(MCPUserError) as exc_info:
+        create_test(
+            test_suite_id=str(uuid4()),
+            test_type="Alpha Truncation",
+            table_name="orders",
+            fields={"column_name": "email", "threshold_value": "64", "custom_query": "SELECT 1"},
+        )
+    assert "custom_query" in str(exc_info.value)
+    assert "not editable" in str(exc_info.value)
+    saved.save.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_fields_dict_supports_test_type_params(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, mock_td, mock_notes, db_session_mock,
+):
+    """``fields`` accepts any param in editable_fields — e.g. window_days for a trend test."""
+    mock_resolve_suite.return_value = _make_suite()
+    mock_resolve_tt.return_value = "Some_Trend"
+    mock_tt_model.get.return_value = _make_test_type(
+        code="Some_Trend",
+        param_columns={"threshold_value", "window_days"},
+        default_parm_columns="threshold_value,window_days",
+    )
+    mock_tg.get.return_value = _make_table_group()
+
+    saved = MagicMock(id=uuid4())
+    saved.editable_fields.return_value = {
+        "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "threshold_value", "window_days", "column_name",
+    }
+    mock_td.return_value = saved
+    mock_td.get_for_project.return_value = _make_td_summary()
+    mock_notes.get_notes.return_value = []
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    create_test(
+        test_suite_id=str(uuid4()),
+        test_type="Some Trend",
+        table_name="orders",
+        fields={"column_name": "amount", "threshold_value": "10", "window_days": "7"},
+    )
+
+    # Both common and type-specific fields applied via setattr
+    assert saved.threshold_value == "10"
+    assert saved.window_days == "7"
+    saved.validate.assert_called_once()
+    saved.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_severity_invalid(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, mock_td, db_session_mock,
+):
+    """severity outside the StrEnum → validate() raises."""
+    from testgen.common.models.test_definition import InvalidTestDefinitionFields
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_resolve_tt.return_value = "Alpha_Trunc"
+    mock_tt_model.get.return_value = _make_test_type()
+    mock_tg.get.return_value = _make_table_group()
+
+    saved = MagicMock(id=uuid4())
+    saved.editable_fields.return_value = {
+        "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "threshold_value", "column_name",
+    }
+    saved.validate.side_effect = InvalidTestDefinitionFields(
+        {"severity": "must be `Fail` or `Warning` (got `critical`)"}
+    )
+    mock_td.return_value = saved
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    with pytest.raises(MCPUserError) as exc_info:
+        create_test(
+            test_suite_id=str(uuid4()),
+            test_type="Alpha Truncation",
+            table_name="orders",
+            fields={"column_name": "email", "threshold_value": "64", "severity": "critical"},
+        )
+    assert "severity" in str(exc_info.value)
+    saved.save.assert_not_called()
+
+
+# -- update_test --------------------------------------------------------------
+
+
+def _make_td_orm(test_type="Alpha_Trunc", threshold_value="64", severity="Warning"):
+    td = MagicMock()
+    td.id = uuid4()
+    td.test_type = test_type
+    td.threshold_value = threshold_value
+    td.severity = severity
+    td.test_active = True
+    td.lock_refresh = False
+    td.flagged = False
+    # Mirror TestDefinition.editable_fields(tt) for an Alpha_Trunc-shaped test type
+    td.editable_fields.return_value = {
+        "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "threshold_value",
+    }
+    return td
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_happy_path(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    result = update_test(str(td.id), fields={"threshold_value": "80"})
+
+    assert "updated" in result.lower()
+    assert "threshold_value" in result
+    assert "80" in result
+    assert td.threshold_value == "80"
+    td.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_empty_fields_rejected(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    with pytest.raises(MCPUserError):
+        update_test(str(td.id), fields={})
+    td.save.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_unknown_field_rejected_no_partial(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    with pytest.raises(MCPUserError) as exc_info:
+        # threshold_value is valid, table_name is not — must reject ALL
+        update_test(str(td.id), fields={"threshold_value": "80", "table_name": "new"})
+    assert "table_name" in str(exc_info.value)
+    # td.threshold_value should NOT have been mutated
+    assert td.threshold_value == "64"
+    td.save.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_multi_field(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    result = update_test(
+        str(td.id),
+        fields={"threshold_value": "80", "severity": "Fail", "test_active": False},
+    )
+    assert "3 field" in result
+    td.save.assert_called_once()
+
+
+# -- validate_custom_test -----------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_definitions.validate_custom_query")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.Connection")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_validate_custom_test_would_pass_when_no_rows(
+    mock_resolve_suite, mock_conn, mock_tg, mock_validate, db_session_mock,
+):
+
+    mock_resolve_suite.return_value = _make_suite()
+    conn = MagicMock()
+    conn.connection_name = "warehouse"
+    conn.sql_flavor_code = "snowflake"
+    conn.sql_flavor = "snowflake"
+    mock_conn.get_by_table_group.return_value = conn
+    mock_tg.get.return_value = _make_table_group()
+    mock_validate.return_value = CustomQueryResult(row_count=0, preview_rows=[])
+
+    from testgen.mcp.tools.test_definitions import validate_custom_test
+
+    result = validate_custom_test(str(uuid4()), "SELECT 1 WHERE 1=0")
+
+    assert "ran successfully" in result.lower()
+    assert "would pass" in result.lower()
+    assert "0 rows matching the failure criteria" in result
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+@patch("testgen.mcp.tools.test_definitions.validate_custom_query")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.Connection")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_validate_custom_test_would_fail_shows_preview_with_view_pii(
+    mock_resolve_suite, mock_conn, mock_tg, mock_validate, mock_compute, db_session_mock,
+):
+    from testgen.mcp.permissions import ProjectPermissions
+
+    # Grant view_pii on "demo" so values are visible in the preview.
+    perms = MagicMock(spec=ProjectPermissions)
+    perms.allowed_codes = ["demo"]
+    perms.codes_allowed_to.return_value = ["demo"]
+    perms.has_access.side_effect = lambda code: code == "demo"
+    mock_compute.return_value = perms
+
+    mock_resolve_suite.return_value = _make_suite()
+    conn = MagicMock()
+    conn.connection_name = "warehouse"
+    conn.sql_flavor_code = "snowflake"
+    conn.sql_flavor = "snowflake"
+    mock_conn.get_by_table_group.return_value = conn
+    mock_tg.get.return_value = _make_table_group()
+
+    row = MagicMock()
+    row.keys.return_value = ["order_id", "amount"]
+    row.__getitem__.side_effect = lambda k: {"order_id": "ORD-123", "amount": "-45.99"}[k]
+    mock_validate.return_value = CustomQueryResult(row_count=3, preview_rows=[row])
+
+    from testgen.mcp.tools.test_definitions import validate_custom_test
+
+    result = validate_custom_test(str(uuid4()), "SELECT * FROM orders WHERE amount < 0")
+
+    assert "would fail" in result.lower()
+    assert "3 row(s) matching the failure criteria" in result
+    assert "order_id" in result
+    assert "ORD-123" in result
+    assert "[redacted]" not in result
+
+
+@patch("testgen.mcp.tools.test_definitions.validate_custom_query")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.Connection")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_validate_custom_test_redacts_when_no_view_pii(
+    mock_resolve_suite, mock_conn, mock_tg, mock_validate, db_session_mock,
+):
+
+    # Default fixture user has role_a with edit but not view_pii.
+    mock_resolve_suite.return_value = _make_suite()
+    conn = MagicMock()
+    conn.connection_name = "warehouse"
+    conn.sql_flavor_code = "snowflake"
+    conn.sql_flavor = "snowflake"
+    mock_conn.get_by_table_group.return_value = conn
+    mock_tg.get.return_value = _make_table_group()
+
+    row = MagicMock()
+    row.keys.return_value = ["order_id", "customer_email"]
+    row.__getitem__.side_effect = lambda k: {"order_id": "ORD-123", "customer_email": "jane@example.com"}[k]
+    mock_validate.return_value = CustomQueryResult(row_count=1, preview_rows=[row])
+
+    from testgen.mcp.tools.test_definitions import validate_custom_test
+
+    result = validate_custom_test(str(uuid4()), "SELECT * FROM orders")
+
+    # Column names always visible
+    assert "order_id" in result
+    assert "customer_email" in result
+    # Values redacted; PII footer mentions permissions (no `view_pii` jargon)
+    assert "[redacted]" in result
+    assert "jane@example.com" not in result
+    assert "ORD-123" not in result
+    assert "permissions to view PII" in result
+    assert "view_pii" not in result
+
+
+@patch("testgen.mcp.tools.test_definitions.validate_custom_query")
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.Connection")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_validate_custom_test_sql_error_surfaced(
+    mock_resolve_suite, mock_conn, mock_tg, mock_validate, db_session_mock,
+):
+    mock_resolve_suite.return_value = _make_suite()
+    conn = MagicMock()
+    conn.connection_name = "warehouse"
+    conn.sql_flavor_code = "postgresql"
+    conn.sql_flavor = "postgresql"
+    mock_conn.get_by_table_group.return_value = conn
+    mock_tg.get.return_value = _make_table_group()
+    mock_validate.side_effect = Exception('syntax error at or near "FROMM"')
+
+    from testgen.mcp.tools.test_definitions import validate_custom_test
+
+    result = validate_custom_test(str(uuid4()), "SELECT * FROMM orders")
+
+    assert "did not execute" in result.lower()
+    assert "syntax error" in result
+
+
+@patch("testgen.mcp.tools.test_definitions.Connection")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_validate_custom_test_missing_connection(mock_resolve_suite, mock_conn, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_conn.get_by_table_group.return_value = None
+
+    from testgen.mcp.tools.test_definitions import validate_custom_test
+
+    with pytest.raises(MCPUserError, match="No connection"):
+        validate_custom_test(str(uuid4()), "SELECT 1")
+
+
+# -- bulk_update_tests --------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_disable_no_filter(mock_resolve_suite, mock_session, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    result_mock = MagicMock()
+    result_mock.rowcount = 3
+    mock_session.return_value.execute.return_value = result_mock
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
+
+    assert "Disabled" in result
+    assert "3 test" in result
+    assert "no filter" in result
+
+
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_enable_with_table_filter(
+    mock_resolve_suite, mock_resolve_tt, mock_session, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    result_mock = MagicMock()
+    result_mock.rowcount = 1
+    mock_session.return_value.execute.return_value = result_mock
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(
+        test_suite_id=str(uuid4()), action="enable", table_name="legacy_orders"
+    )
+
+    assert "Enabled" in result
+    assert "legacy_orders" in result
+    mock_resolve_tt.assert_not_called()  # not called when test_type filter absent
+
+
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_invalid_action(mock_resolve_suite, mock_session, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    with pytest.raises(MCPUserError, match="`action`"):
+        bulk_update_tests(test_suite_id=str(uuid4()), action="toggle")
+
+    # Suite resolution happens before action validation in current code path?
+    # Actually, action is validated first; resolve_test_suite shouldn't have been called.
+    mock_resolve_suite.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_no_match(mock_resolve_suite, mock_session, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    result_mock = MagicMock()
+    result_mock.rowcount = 0
+    mock_session.return_value.execute.return_value = result_mock
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    result = bulk_update_tests(test_suite_id=str(uuid4()), action="disable", table_name="nonexistent")
+
+    assert "No tests matched" in result
+    assert "nonexistent" in result

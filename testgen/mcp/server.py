@@ -167,7 +167,16 @@ def build_mcp_server(
         test_types_resource,
     )
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
-    from testgen.mcp.tools.test_definitions import get_test, list_test_notes, list_test_types, list_tests
+    from testgen.mcp.tools.test_definitions import (
+        bulk_update_tests,
+        create_test,
+        get_test,
+        list_test_notes,
+        list_test_types,
+        list_tests,
+        update_test,
+        validate_custom_test,
+    )
     from testgen.mcp.tools.test_results import (
         get_failure_summary,
         get_failure_trend,
@@ -233,6 +242,10 @@ def build_mcp_server(
     safe_tool(cancel_test_run)
     safe_tool(cancel_profiling_run)
     safe_tool(generate_tests)
+    safe_tool(create_test)
+    safe_tool(update_test)
+    safe_tool(validate_custom_test)
+    safe_tool(bulk_update_tests)
     safe_tool(list_hygiene_issues)
     safe_tool(get_hygiene_issue)
     safe_tool(search_hygiene_issues)

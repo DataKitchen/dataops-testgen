@@ -7,6 +7,26 @@ from testgen.common.models.table_group import TableGroup
 pytestmark = pytest.mark.unit
 
 
+@pytest.mark.parametrize(
+    "flavor,expected_sql",
+    [
+        ("postgresql", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        ("mssql", 'SELECT TOP 1 1 FROM "test_schema"."orders"'),
+        ("oracle", 'SELECT  1 FROM "test_schema"."orders" FETCH FIRST 1 ROWS ONLY'),
+    ],
+)
+def test_verify_access_uses_literal_1_projection(flavor, expected_sql):
+    """Access check uses literal ``1`` (not ``*``) — projection doesn't matter for an
+    existence/permission probe, and ``1`` avoids materialising columns on wide tables."""
+    connection = Connection(sql_flavor=flavor)
+    table_group = TableGroup(table_group_schema="test_schema")
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+
+    query, _ = sql_generator.verify_access("orders")
+
+    assert query == expected_sql
+
+
 def test_include_exclude_mask_basic():
     connection = Connection(sql_flavor="postgresql")
     table_group = TableGroup(
