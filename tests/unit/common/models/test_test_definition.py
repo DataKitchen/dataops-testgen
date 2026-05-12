@@ -96,6 +96,40 @@ def test_editable_fields_includes_param_columns():
     assert {"threshold_value", "baseline_value"} <= accepted
 
 
+def test_editable_fields_includes_impact_dimension_only_for_custom_or_referential_scope():
+    """impact_dimension is overridable only for user-defined-semantic scopes."""
+    td = make_td()
+
+    custom_tt = make_test_type(scope="custom", param_columns={"custom_query"})
+    assert "impact_dimension" in td.editable_fields(custom_tt)
+
+    referential_tt = make_test_type(scope="referential", param_columns={"match_column_names"})
+    assert "impact_dimension" in td.editable_fields(referential_tt)
+
+    column_tt = make_test_type(scope="column", param_columns={"threshold_value"})
+    assert "impact_dimension" not in td.editable_fields(column_tt)
+
+    table_tt = make_test_type(scope="table", param_columns=set())
+    assert "impact_dimension" not in td.editable_fields(table_tt)
+
+
+def test_editable_fields_includes_column_name_only_for_column_or_custom_scope():
+    """column_name is meaningful for column-scope (column under test) and custom-scope (label)."""
+    td = make_td()
+
+    column_tt = make_test_type(scope="column", param_columns={"threshold_value"})
+    assert "column_name" in td.editable_fields(column_tt)
+
+    custom_tt = make_test_type(scope="custom", param_columns={"custom_query"})
+    assert "column_name" in td.editable_fields(custom_tt)
+
+    table_tt = make_test_type(scope="table", param_columns=set())
+    assert "column_name" not in td.editable_fields(table_tt)
+
+    referential_tt = make_test_type(scope="referential", param_columns={"match_column_names"})
+    assert "column_name" not in td.editable_fields(referential_tt)
+
+
 def test_editable_fields_does_not_leak_identity_or_internal_columns():
     tt = make_test_type(param_columns={"threshold_value"})
     td = make_td()

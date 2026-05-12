@@ -4,6 +4,7 @@ from typing import NoReturn
 
 from sqlalchemy import update
 
+from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.enums import ImpactDimension, QualityDimension
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -32,7 +33,6 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
-from testgen.ui.services.database_service import fetch_from_target_db
 
 _DOC_GROUP = DocGroup.DISCOVER
 
@@ -397,12 +397,7 @@ def create_test(
     test_suite_id: str,
     test_type: str,
     table_name: str,
-    column_name: str | None = None,
-    threshold_value: str | None = None,
-    baseline_value: str | None = None,
-    severity: str | None = None,
-    custom_query: str | None = None,
-    extra_params: dict | None = None,
+    fields: dict | None = None,
 ) -> str:
     """Create a test in a test suite.
 
@@ -410,14 +405,10 @@ def create_test(
         test_suite_id: UUID of the test suite.
         test_type: Test type name, e.g. ``Alpha Truncation`` or ``Custom Test``.
         table_name: Target table name. Case-sensitive.
-        column_name: Required for column-scoped test types.
-        threshold_value: Test threshold.
-        baseline_value: Baseline reference.
-        severity: ``Fail`` or ``Warning``. Omit to inherit the test type default.
-        custom_query: SQL for tests that accept a custom query.
-        extra_params: Additional test-type-specific parameters (e.g. ``window_days``,
-            ``match_column_names``, ``lower_tolerance``). Use ``list_test_types`` or
-            ``get_test`` on a similar test to discover supported names.
+        fields: Mapping of field name to value for the test's parameters and metadata
+            (e.g. ``threshold_value``, ``custom_query``, ``severity``, ``column_name``,
+            ``test_description``). Use ``list_test_types`` or ``get_test`` on a similar
+            test to discover what's settable for the chosen test type.
     """
     suite = resolve_test_suite(test_suite_id)
     tt_code = resolve_test_type(test_type)
@@ -439,33 +430,15 @@ def create_test(
         lock_refresh=False,
         last_manual_update=datetime.now(UTC),
     )
-    explicit = {
-        "column_name": column_name,
-        "threshold_value": threshold_value,
-        "baseline_value": baseline_value,
-        "severity": severity,
-        "custom_query": custom_query,
-    }
-    for key, value in explicit.items():
-        if value is not None:
-            setattr(td, key, value)
 
-    if extra_params:
-        accepted = td.editable_fields(tt)
-        rejected = sorted(set(extra_params) - accepted)
-        if rejected:
-            raise MCPUserError(
-                f"These `extra_params` keys are not editable for test type `{tt_code}`: "
-                f"{', '.join(rejected)}."
-            )
-        conflicts = sorted(set(extra_params) & {k for k, v in explicit.items() if v is not None})
-        if conflicts:
-            raise MCPUserError(
-                f"These fields were set both as named arguments and in `extra_params`: "
-                f"{', '.join(conflicts)}. Pass each value only once."
-            )
-        for key, value in extra_params.items():
-            setattr(td, key, value)
+    fields = fields or {}
+    accepted = td.editable_fields(tt)
+    rejected = sorted(set(fields) - accepted)
+    if rejected:
+        bullets = "\n".join(f"- `{key}`: not editable for test type `{tt_code}`" for key in rejected)
+        raise MCPUserError(f"Test definition creation rejected. No changes saved.\n\n{bullets}")
+    for key, value in fields.items():
+        setattr(td, key, value)
 
     try:
         td.validate(tt)
@@ -492,9 +465,8 @@ def update_test(test_definition_id: str, fields: dict) -> str:
 
     Args:
         test_definition_id: UUID of the test definition.
-        fields: Mapping of field name to new value. Accepts the test type's parameter
-            columns (use ``get_test`` to see the current values and supported fields)
-            plus ``test_active``, ``severity``, ``lock_refresh``, ``flagged``.
+        fields: Mapping of field name to new value. Use ``get_test`` to see the current
+            values and which fields are settable for the test's type.
     """
     td = resolve_test_definition(test_definition_id)
     tt = TestType.get(td.test_type)
@@ -546,14 +518,20 @@ def _format_diff(value: object) -> str | None:
 def validate_custom_test(test_suite_id: str, custom_sql: str) -> str:
     """Dry-run a custom test SQL query against the test suite's parent connection.
 
+    The query should return rows matching the test failure criteria — returning no rows
+    means the test passes; returning any rows means it fails.
+
     Args:
         test_suite_id: UUID of the test suite whose connection the SQL runs against.
-        custom_sql: SQL query to dry-run.
+        custom_sql: SQL query returning failure-criteria rows.
     """
     suite = resolve_test_suite(test_suite_id)
     connection = Connection.get_by_table_group(suite.table_groups_id)
     if connection is None:
         raise MCPUserError("No connection configured for this test suite's table group.")
+    table_group = TableGroup.get(suite.table_groups_id)
+    if table_group is None:
+        raise MCPUserError("Test suite is not associated with a table group.")
 
     perms = get_project_permissions()
     can_view_pii = suite.project_code in perms.codes_allowed_to("view_pii")
@@ -562,7 +540,9 @@ def validate_custom_test(test_suite_id: str, custom_sql: str) -> str:
     doc.heading(1, "Custom test dry-run")
 
     try:
-        rows = fetch_from_target_db(connection, custom_sql)
+        result = validate_custom_query(
+            connection, table_group.table_group_schema, custom_sql, preview_limit=1,
+        )
     except Exception as e:  # broad catch: the DB error message IS the user-facing signal
         doc.text(f"**SQL did not execute.** Query was not committed against `{connection.connection_name}`.")
         message = str(e.args[0]) if e.args else str(e)
@@ -570,37 +550,38 @@ def validate_custom_test(test_suite_id: str, custom_sql: str) -> str:
         doc.code_block(message)
         return doc.render()
 
-    row_count = len(rows)
     flavor = connection.sql_flavor_code or connection.sql_flavor or "target database"
     doc.text(
         f"**SQL ran successfully** against `{connection.connection_name}` ({flavor})."
     )
 
-    if row_count == 0:
-        doc.text("**Would pass:** ✓ — query returned 0 error rows.")
+    if result.row_count == 0:
+        doc.text("**Would pass:** ✓ — query returned 0 rows matching the failure criteria.")
         doc.text(
             "_If saved as a CUSTOM test, this would currently pass: the test fails when any "
-            "error rows are returned, and there are none._"
+            "rows match the failure criteria, and there are none._"
         )
         return doc.render()
 
-    doc.text(f"**Would fail:** ✗ — query returned {row_count} error row(s).")
-    doc.heading(2, "Source data preview (first row)")
-    first = rows[0]
-    columns = list(first.keys())
-    if can_view_pii:
-        values = [first[c] for c in columns]
-    else:
-        values = ["[redacted]"] * len(columns)
-    doc.table(columns, [values])
     doc.text(
-        "_If saved as a CUSTOM test, this would currently fail because the SQL returned error "
-        "rows. Refine the query if some of those rows are false positives._"
+        f"**Would fail:** ✗ — query returned {result.row_count} row(s) matching the failure criteria."
+    )
+    if result.preview_rows:
+        doc.heading(2, "Source data preview (first row)")
+        first = result.preview_rows[0]
+        columns = list(first.keys())
+        if can_view_pii:
+            values = [first[c] for c in columns]
+        else:
+            values = ["[redacted]"] * len(columns)
+        doc.table(columns, [values])
+    doc.text(
+        "_If saved as a CUSTOM test, this would currently fail because the SQL returned rows "
+        "matching the test failure criteria. Refine the query if some of those rows are false positives._"
     )
     if not can_view_pii:
         doc.text(
-            "_PII redacted: caller does not have `view_pii` on this project. Column names shown "
-            "so the LLM can iterate on shape; row values are masked._"
+            "_PII redacted: caller does not have permissions to view PII on this project._"
         )
     return doc.render()
 
@@ -642,15 +623,9 @@ def bulk_update_tests(
     if tt_code:
         where_clauses.append(TestDefinition.test_type == tt_code)
 
-    stmt = (
-        update(TestDefinition)
-        .where(*where_clauses)
-        .values(**values)
-        .returning(TestDefinition.id)
-    )
+    stmt = update(TestDefinition).where(*where_clauses).values(**values)
     session = get_current_session()
-    affected = session.execute(stmt).all()
-    count = len(affected)
+    count = session.execute(stmt).rowcount
 
     verb = "Enabled" if target else "Disabled"
     filters = []

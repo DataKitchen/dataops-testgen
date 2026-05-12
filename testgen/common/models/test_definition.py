@@ -445,7 +445,17 @@ class TestDefinition(Entity):
 
     def editable_fields(self, test_type: TestType) -> set[str]:
         """Fields a caller may set or change on this test definition under the given test type."""
-        return self.EDITABLE_BASE_FIELDS | test_type.param_columns
+        fields = self.EDITABLE_BASE_FIELDS | test_type.param_columns
+        # column_name is meaningful for column-scoped tests (the column under test) and
+        # custom-scoped tests (a "Test Focus" label). Other scopes don't use it.
+        if test_type.test_scope in ("column", "custom"):
+            fields = fields | {"column_name"}
+        # impact_dimension is overridable only for user-defined-semantic scopes
+        # (custom-scope = user-authored SQL; referential-scope = comparison-based tests).
+        # Other scopes have baked-in dimensions so the override doesn't apply.
+        if test_type.test_scope in ("custom", "referential"):
+            fields = fields | {"impact_dimension"}
+        return fields
 
     def validate(self, test_type: TestType) -> None:
         """Validate the current state against the given test type.
