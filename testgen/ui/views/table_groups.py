@@ -403,7 +403,6 @@ class TableGroupsPage(Page):
                             key=RUN_TESTS_JOB_KEY,
                             cron_expr=standard_test_suite_data["schedule"],
                             cron_tz=standard_test_suite_data["timezone"],
-                            args=[],
                             kwargs={"test_suite_id": str(standard_test_suite.id)},
                         ).save()
 
@@ -435,7 +434,6 @@ class TableGroupsPage(Page):
                             key=RUN_MONITORS_JOB_KEY,
                             cron_expr=monitor_test_suite_data.get("schedule"),
                             cron_tz=monitor_test_suite_data.get("timezone"),
-                            args=[],
                             kwargs={"test_suite_id": str(monitor_test_suite.id)},
                         ).save()
 

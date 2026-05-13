@@ -235,8 +235,8 @@ class ProfilingScheduleDialog(ScheduleDialog):
             for table_group in self.table_groups
         ]
 
-    def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
-        return [], {"table_group_id": str(arg_value)}
+    def get_job_arguments(self, arg_value: str) -> dict[str, typing.Any]:
+        return {"table_group_id": str(arg_value)}
 
 
 class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):

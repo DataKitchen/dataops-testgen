@@ -281,8 +281,8 @@ class TestRunScheduleDialog(ScheduleDialog):
             for test_suite in self.test_suites
         ]
 
-    def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
-        return [], {"test_suite_id": str(arg_value)}
+    def get_job_arguments(self, arg_value: str) -> dict[str, typing.Any]:
+        return {"test_suite_id": str(arg_value)}
 
 
 @with_database_session

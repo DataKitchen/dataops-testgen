@@ -22,7 +22,6 @@ LOG = logging.getLogger("testgen")
 @dataclass
 class CliJob(Job):
     key: str
-    args: Iterable[Any]
     kwargs: dict[str, Any]
     project_code: str | None = field(default=None)
     job_schedule_id: UUID | None = field(default=None)
@@ -58,7 +57,6 @@ class CliScheduler(Scheduler):
                 cron_tz=job_model.cron_tz,
                 delayed_policy=DelayedPolicy.SKIP,
                 key=job_model.key,
-                args=job_model.args,
                 kwargs=job_model.kwargs,
                 project_code=job_model.project_code,
                 job_schedule_id=job_model.id,

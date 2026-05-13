@@ -36,7 +36,6 @@ def job_exec():
     return JobExecution(
         id=uuid4(),
         job_key="run-tests",
-        args=[],
         kwargs={"test_suite_id": "suite-123"},
         source="scheduler",
         status="claimed",
@@ -73,7 +72,6 @@ def test_dispatch_unknown_job_key(scheduler_instance, mock_session):
     job_exec = JobExecution(
         id=uuid4(),
         job_key="nonexistent",
-        args=[],
         kwargs={},
         source="ui",
         status="claimed",
@@ -220,7 +218,6 @@ def test_poll_loop_routes_cancel_requested(scheduler_instance, mock_session):
     cancel_job = JobExecution(
         id=uuid4(),
         job_key="run-tests",
-        args=[],
         kwargs={},
         source="ui",
         status=JobStatus.CANCEL_REQUESTED,
@@ -257,7 +254,6 @@ def test_start_job_submits_execution(scheduler_instance, mock_session):
         cron_tz="UTC",
         delayed_policy=DelayedPolicy.SKIP,
         key="run-profile",
-        args=[],
         kwargs={"table_group_id": "tg-123"},
         job_schedule_id=schedule_id,
     )

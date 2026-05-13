@@ -54,7 +54,6 @@ def job_data():
             "cron_expr": "*/5 9-17 * * *",
             "cron_tz":  "UTC",
             "key":  "test-job",
-            "args":  ["a"],
             "kwargs":  {"b": "c"},
         }
 
@@ -76,7 +75,7 @@ def test_get_jobs(scheduler_instance, db_jobs, job_sched):
 
     assert len(jobs) == 1
     assert isinstance(jobs[0], CliJob)
-    for attr in ("cron_expr", "cron_tz", "key", "args", "kwargs"):
+    for attr in ("cron_expr", "cron_tz", "key", "kwargs"):
         assert getattr(jobs[0], attr) == getattr(job_sched, attr), f"Attribute '{attr}' does not match"
 
 
