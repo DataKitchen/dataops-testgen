@@ -1066,12 +1066,11 @@ CREATE TABLE job_schedules (
     id UUID NOT NULL PRIMARY KEY,
     project_code VARCHAR(30) NOT NULL,
     key VARCHAR(100) NOT NULL,
-    args JSONB NOT NULL,
     kwargs JSONB NOT NULL,
     cron_expr VARCHAR(50) NOT NULL,
     cron_tz VARCHAR(30) NOT NULL,
     active BOOLEAN DEFAULT TRUE,
-    UNIQUE (project_code, key, args, kwargs, cron_expr, cron_tz)
+    UNIQUE (project_code, key, kwargs, cron_expr, cron_tz)
 );
 
 CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
@@ -1079,7 +1078,6 @@ CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
 CREATE TABLE job_executions (
     id              UUID            NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     job_key         VARCHAR(100)    NOT NULL,
-    args            JSONB           NOT NULL DEFAULT '[]'::jsonb,
     kwargs          JSONB           NOT NULL DEFAULT '{}'::jsonb,
     source          VARCHAR(20)     NOT NULL,
     status          VARCHAR(20)     NOT NULL DEFAULT 'pending',

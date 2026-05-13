@@ -638,7 +638,6 @@ def build_edit_monitor_settings_data(
             new_schedule = JobSchedule(
                 project_code=table_group.project_code,
                 key=RUN_MONITORS_JOB_KEY,
-                args=[],
                 kwargs={"test_suite_id": str(monitor_suite.id)},
                 **new_schedule_config,
             )

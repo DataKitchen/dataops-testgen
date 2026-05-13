@@ -6,8 +6,9 @@ from typing import Any
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session, with_database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
     TestRunNotificationTrigger,
@@ -108,7 +109,7 @@ class TestRunsPage(Page):
                     JobExecution.submit(
                         job_key="run-tests",
                         kwargs={"test_suite_id": str(selected_id)},
-                        source="ui",
+                        source=JobSource.ui,
                         project_code=project_code,
                     )
             except Exception as error:
@@ -281,8 +282,8 @@ class TestRunScheduleDialog(ScheduleDialog):
             for test_suite in self.test_suites
         ]
 
-    def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
-        return [], {"test_suite_id": str(arg_value)}
+    def get_job_arguments(self, arg_value: str) -> dict[str, typing.Any]:
+        return {"test_suite_id": str(arg_value)}
 
 
 @with_database_session

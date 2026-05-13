@@ -1,25 +1,24 @@
 import logging
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, Text, case, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import Base, get_current_session
 
 LOG = logging.getLogger("testgen")
 
 
-class JobStatus(StrEnum):
-    PENDING = "pending"
-    CLAIMED = "claimed"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    ERROR = "error"
-    CANCEL_REQUESTED = "cancel_requested"
-    CANCELED = "canceled"
+# Job kinds that are externally triggerable. Internal kinds (run-score-update,
+# recalculate-project-scores, ...) are absent and filtered out by construction.
+PUBLIC_JOB_KEYS: frozenset[JobKey] = frozenset({
+    JobKey.run_profile,
+    JobKey.run_tests,
+    JobKey.run_test_generation,
+})
 
 
 _VALID_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
@@ -36,9 +35,8 @@ class JobExecution(Base):
 
     id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     job_key: str = Column(String(100), nullable=False)
-    # args and kwargs are internal dispatch details passed to the job handler.
-    # Do not query or filter on them — external code should not depend on their structure.
-    args: list[Any] = Column(postgresql.JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    # kwargs is the internal dispatch payload passed to the job handler.
+    # Do not query or filter on it — external code should not depend on its structure.
     kwargs: dict[str, Any] = Column(postgresql.JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     source: str = Column(String(20), nullable=False)
     status: str = Column(String(20), nullable=False, default=JobStatus.PENDING, server_default=text("'pending'"))
@@ -55,7 +53,7 @@ class JobExecution(Base):
         cls,
         job_key: str,
         kwargs: dict[str, Any],
-        source: str,
+        source: JobSource,
         project_code: str,
         job_schedule_id: UUID | None = None,
     ) -> Self:

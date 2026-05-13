@@ -6,25 +6,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
-from testgen.common.models.job_execution import JobStatus
+from testgen.common.enums import JobKey, JobSource, JobStatus
 
 # --- Jobs ---
-
-
-class JobKey(StrEnum):
-    run_profile = "run-profile"
-    run_tests = "run-tests"
-    run_monitors = "run-monitors"
-    run_test_generation = "run-test-generation"
-
-
-class JobSource(StrEnum):
-    api = "api"
-    ui = "ui"
-    scheduler = "scheduler"
-    mcp = "mcp"
-    cli = "cli"
-    backfill = "backfill"
 
 
 class JobSubmittedResponse(BaseModel):

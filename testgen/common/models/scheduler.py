@@ -26,7 +26,6 @@ class JobSchedule(Base):
     project_code: str = Column(String)
 
     key: str = Column(String, nullable=False)
-    args: list[Any] = Column(postgresql.JSONB, nullable=False, default=[])
     kwargs: dict[str, Any] = Column(postgresql.JSONB, nullable=False, default={})
     cron_expr: str = Column(String, nullable=False)
     cron_tz: str = Column(String, nullable=False)

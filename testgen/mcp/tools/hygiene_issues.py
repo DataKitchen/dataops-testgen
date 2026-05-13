@@ -4,8 +4,9 @@ from sqlalchemy import and_, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import func
 
+from testgen.common.enums import Disposition, IssueLikelihood, PiiRisk
 from testgen.common.models import with_database_session
-from testgen.common.models.hygiene_issue import Disposition, HygieneIssue, HygieneIssueType, IssueLikelihood, PiiRisk
+from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup

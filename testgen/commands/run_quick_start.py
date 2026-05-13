@@ -19,9 +19,10 @@ from testgen.common.database.database_service import (
     set_target_db_params,
 )
 from testgen.common.database.flavor.flavor_service import ConnectionParams
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session, with_database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
@@ -51,7 +52,7 @@ def run_with_job_execution(
     effective_date = run_date or datetime.now(UTC)
     wall_start = datetime.now(UTC)
     # Match the source a real trigger would use so demo data mirrors production attribution.
-    source = "scheduler" if job_key == "run-monitors" else "ui"
+    source = JobSource.scheduler if job_key == "run-monitors" else JobSource.ui
 
     with database_session() as session:
         je = JobExecution(
