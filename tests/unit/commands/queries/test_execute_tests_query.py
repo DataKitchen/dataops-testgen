@@ -1,10 +1,12 @@
 from datetime import UTC, datetime
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
 
 from testgen.commands.queries.execute_tests_query import (
     TestExecutionDef,
+    TestExecutionSQL,
     build_cat_expressions,
     group_cat_tests,
     parse_cat_results,
@@ -359,3 +361,120 @@ def test_parse_result_code_negative_one():
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
                               datetime.now(UTC), _make_input_params_fn())
     assert rows[0][10] == "-1"
+
+
+# --- TestExecutionSQL freshness-gating helpers ---
+
+
+def _make_execution_sql() -> TestExecutionSQL:
+    """Build a minimal TestExecutionSQL instance for testing instance methods.
+
+    Bypasses __init__ (which hits the database) and sets only the attributes the
+    freshness-gating methods touch.
+    """
+    instance = TestExecutionSQL.__new__(TestExecutionSQL)
+    instance._freshness_changed_cache = {}
+    return instance
+
+
+FRESHNESS_FETCH_TARGET = "testgen.commands.queries.execute_tests_query.fetch_dict_from_db"
+
+
+@patch.object(TestExecutionSQL, "_get_query", return_value=("SELECT ...", {}))
+@patch(FRESHNESS_FETCH_TARGET)
+def test_freshness_changed_true_when_result_signal_is_zero(mock_fetch, _mock_query):
+    mock_fetch.return_value = [{"result_signal": "0"}]
+    instance = _make_execution_sql()
+    assert instance._freshness_changed_for_table(_make_td()) is True
+
+
+@patch.object(TestExecutionSQL, "_get_query", return_value=("SELECT ...", {}))
+@patch(FRESHNESS_FETCH_TARGET)
+def test_freshness_changed_false_when_result_signal_is_interval(mock_fetch, _mock_query):
+    mock_fetch.return_value = [{"result_signal": "1440"}]
+    instance = _make_execution_sql()
+    assert instance._freshness_changed_for_table(_make_td()) is False
+
+
+@patch.object(TestExecutionSQL, "_get_query", return_value=("SELECT ...", {}))
+@patch(FRESHNESS_FETCH_TARGET)
+def test_freshness_changed_none_when_no_result(mock_fetch, _mock_query):
+    mock_fetch.return_value = []
+    instance = _make_execution_sql()
+    assert instance._freshness_changed_for_table(_make_td()) is None
+
+
+@patch.object(TestExecutionSQL, "_get_query", return_value=("SELECT ...", {}))
+@patch(FRESHNESS_FETCH_TARGET)
+def test_freshness_changed_cached_per_table(mock_fetch, _mock_query):
+    """Multiple Volume/Metric defs on the same table should not re-query."""
+    mock_fetch.return_value = [{"result_signal": "0"}]
+    instance = _make_execution_sql()
+    instance._freshness_changed_for_table(_make_td(schema_name="s", table_name="t"))
+    instance._freshness_changed_for_table(_make_td(schema_name="s", table_name="t"))
+    assert mock_fetch.call_count == 1
+
+
+def test_resolve_cat_returns_definition_default_for_non_monitor_types():
+    instance = _make_execution_sql()
+    td = _make_td(test_type="Alpha_Trunc", test_operator=">=", test_condition="50")
+    operator, condition = instance._resolve_cat_operator_and_condition(td)
+    assert (operator, condition) == (">=", "50")
+
+
+def test_resolve_cat_returns_definition_default_when_no_gating():
+    """Volume_Trend / Metric_Trend with no freshness_gated flag in prediction → band check."""
+    instance = _make_execution_sql()
+    td = _make_td(
+        test_type="Volume_Trend",
+        test_operator="NOT BETWEEN",
+        test_condition="{LOWER_TOLERANCE} AND {UPPER_TOLERANCE}",
+        prediction={"mean": {"123": 220.0}},  # no freshness_gated
+    )
+    operator, condition = instance._resolve_cat_operator_and_condition(td)
+    assert operator == "NOT BETWEEN"
+    assert condition == "{LOWER_TOLERANCE} AND {UPPER_TOLERANCE}"
+
+
+@patch.object(TestExecutionSQL, "_freshness_changed_for_table", return_value=False)
+def test_resolve_cat_stale_period_overrides_to_baseline_equality(_mock_changed):
+    """When freshness-gated and Freshness signal != '0' (no change), override to <> baseline."""
+    instance = _make_execution_sql()
+    td = _make_td(
+        test_type="Volume_Trend",
+        test_operator="NOT BETWEEN",
+        test_condition="{LOWER_TOLERANCE} AND {UPPER_TOLERANCE}",
+        prediction={"freshness_gated": True, "baseline_value": 220.0},
+    )
+    assert instance._resolve_cat_operator_and_condition(td) == ("<>", "220.0")
+
+
+@patch.object(TestExecutionSQL, "_freshness_changed_for_table", return_value=True)
+def test_resolve_cat_refresh_period_uses_band_check(_mock_changed):
+    """When freshness-gated and Freshness fired this run, fall through to band check."""
+    instance = _make_execution_sql()
+    td = _make_td(
+        test_type="Volume_Trend",
+        test_operator="NOT BETWEEN",
+        test_condition="{LOWER_TOLERANCE} AND {UPPER_TOLERANCE}",
+        prediction={"freshness_gated": True, "baseline_value": 220.0},
+    )
+    operator, condition = instance._resolve_cat_operator_and_condition(td)
+    assert operator == "NOT BETWEEN"
+    assert condition == "{LOWER_TOLERANCE} AND {UPPER_TOLERANCE}"
+
+
+@patch.object(TestExecutionSQL, "_freshness_changed_for_table", return_value=None)
+def test_resolve_cat_no_freshness_result_uses_band_check(_mock_changed):
+    """When no Freshness_Trend has run for this table this run, fall back to band check."""
+    instance = _make_execution_sql()
+    td = _make_td(
+        test_type="Metric_Trend",
+        test_operator="NOT BETWEEN",
+        test_condition="{LOWER_TOLERANCE} AND {UPPER_TOLERANCE}",
+        prediction={"freshness_gated": True, "baseline_value": 5.5},
+    )
+    operator, condition = instance._resolve_cat_operator_and_condition(td)
+    assert operator == "NOT BETWEEN"
+
+

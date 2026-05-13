@@ -945,6 +945,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_m
                 "is_pending": not bool(event["result_id"]),
                 "lower_tolerance": params.get("lower_tolerance") if params.get("lower_tolerance") else None,
                 "upper_tolerance": params.get("upper_tolerance") if params.get("upper_tolerance") else None,
+                "threshold_value": params.get("threshold_value") if params.get("threshold_value") else None,
             })
 
     return {

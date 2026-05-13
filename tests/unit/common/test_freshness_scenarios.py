@@ -65,12 +65,12 @@ class Test_DailyRegular:
         return _run_scenario(rows, PredictSensitivity.medium, exclude_weekends=False, tz=None)
 
     def test_training_exits(self, results_excl: list[ScenarioPoint]) -> None:
-        """Training should end. First non-training update needs 5 gaps + min_lookback=30 rows."""
+        """Training should end once MIN_FRESHNESS_GAPS (5) completed gaps are observed."""
         updates = _updates(results_excl)
         first_non_training = next((i for i, p in enumerate(updates) if p.upper is not None), None)
         assert first_non_training is not None
-        # 5 weekday updates = 5 gaps, but min_lookback=30 means ~30 rows needed first
-        # With 12h obs interval and daily updates, training exits around update 10-14
+        # 5 weekday updates yield 5 gaps; with 12h obs interval and daily updates,
+        # training exits soon after.
         assert 6 <= first_non_training <= 16
 
     def test_zero_anomalies_excl(self, results_excl: list[ScenarioPoint]) -> None:
