@@ -259,6 +259,9 @@ class ScoreDefinition(Base):
             ).replace("{filters}", filters))
         ).mappings().first() or {}
 
+        cde_only_categories = self.cde_score and not self.total_score
+        category_filters = " AND ".join(self._get_raw_query_filters(cde_only=cde_only_categories))
+
         categories_scores = []
         if (category := self.category):
             categories_scores = [
@@ -267,7 +270,7 @@ class ScoreDefinition(Base):
                     text(read_template_sql_file(
                         categories_query_template_file,
                         sub_directory="score_cards",
-                    ).replace("{category}", category.value).replace("{filters}", filters))
+                    ).replace("{category}", category.value).replace("{filters}", category_filters))
                 ).mappings().all()
             ]
 
