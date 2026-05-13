@@ -3,8 +3,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from testgen.common.enums import ImpactDimension, QualityDimension
-from testgen.common.models.hygiene_issue import Disposition, IssueLikelihood, PiiRisk
+from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, PiiRisk, QualityDimension
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (

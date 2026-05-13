@@ -11,6 +11,7 @@ from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
@@ -144,7 +145,7 @@ class DataCatalogPage(Page):
                     JobExecution.submit(
                         job_key="run-profile",
                         kwargs={"table_group_id": str(table_group["id"])},
-                        source="ui",
+                        source=JobSource.ui,
                         project_code=project_code,
                     )
             except Exception as error:

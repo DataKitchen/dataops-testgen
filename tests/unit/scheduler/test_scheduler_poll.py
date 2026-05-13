@@ -5,7 +5,8 @@ from uuid import uuid4
 import pytest
 
 from testgen.commands.job_registry import JOB_DISPATCH
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.enums import JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.scheduler.cli_scheduler import CliScheduler
 
 pytestmark = pytest.mark.unit
@@ -36,7 +37,6 @@ def job_exec():
     return JobExecution(
         id=uuid4(),
         job_key="run-tests",
-        args=[],
         kwargs={"test_suite_id": "suite-123"},
         source="scheduler",
         status="claimed",
@@ -73,7 +73,6 @@ def test_dispatch_unknown_job_key(scheduler_instance, mock_session):
     job_exec = JobExecution(
         id=uuid4(),
         job_key="nonexistent",
-        args=[],
         kwargs={},
         source="ui",
         status="claimed",
@@ -220,7 +219,6 @@ def test_poll_loop_routes_cancel_requested(scheduler_instance, mock_session):
     cancel_job = JobExecution(
         id=uuid4(),
         job_key="run-tests",
-        args=[],
         kwargs={},
         source="ui",
         status=JobStatus.CANCEL_REQUESTED,
@@ -257,7 +255,6 @@ def test_start_job_submits_execution(scheduler_instance, mock_session):
         cron_tz="UTC",
         delayed_policy=DelayedPolicy.SKIP,
         key="run-profile",
-        args=[],
         kwargs={"table_group_id": "tg-123"},
         job_schedule_id=schedule_id,
     )

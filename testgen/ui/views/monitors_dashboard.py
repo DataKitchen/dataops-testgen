@@ -638,7 +638,6 @@ def build_edit_monitor_settings_data(
             new_schedule = JobSchedule(
                 project_code=table_group.project_code,
                 key=RUN_MONITORS_JOB_KEY,
-                args=[],
                 kwargs={"test_suite_id": str(monitor_suite.id)},
                 **new_schedule_config,
             )
@@ -946,6 +945,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_m
                 "is_pending": not bool(event["result_id"]),
                 "lower_tolerance": params.get("lower_tolerance") if params.get("lower_tolerance") else None,
                 "upper_tolerance": params.get("upper_tolerance") if params.get("upper_tolerance") else None,
+                "threshold_value": params.get("threshold_value") if params.get("threshold_value") else None,
             })
 
     return {

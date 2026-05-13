@@ -205,7 +205,7 @@ def test_list_jobs_empty_project(mock_je_cls):
 def _client_with_overrides() -> TestClient:
     """Build a TestClient that bypasses auth and db_session so query validation runs unimpeded."""
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(router, prefix="/api/v1")
     app.dependency_overrides[db_session] = lambda: iter([None])
     app.dependency_overrides[get_authorized_user] = lambda: MagicMock(id=uuid4())
     return app

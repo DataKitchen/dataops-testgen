@@ -4,6 +4,7 @@ import streamlit as st
 
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.commands.test_generation import run_test_generation
+from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import TestRunNotificationSettings
@@ -173,7 +174,7 @@ class TestSuitesPage(Page):
                     JobExecution.submit(
                         job_key="run-tests",
                         kwargs={"test_suite_id": str(selected_id)},
-                        source="ui",
+                        source=JobSource.ui,
                         project_code=project_code,
                     )
             except Exception as error:

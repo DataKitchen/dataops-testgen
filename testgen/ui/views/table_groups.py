@@ -7,6 +7,7 @@ import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
@@ -136,7 +137,7 @@ class TableGroupsPage(Page):
                 JobExecution.submit(
                     job_key="run-profile",
                     kwargs={"table_group_id": str(table_group["id"])},
-                    source="ui",
+                    source=JobSource.ui,
                     project_code=project_code,
                 )
             except Exception as error:
@@ -403,7 +404,6 @@ class TableGroupsPage(Page):
                             key=RUN_TESTS_JOB_KEY,
                             cron_expr=standard_test_suite_data["schedule"],
                             cron_tz=standard_test_suite_data["timezone"],
-                            args=[],
                             kwargs={"test_suite_id": str(standard_test_suite.id)},
                         ).save()
 
@@ -435,7 +435,6 @@ class TableGroupsPage(Page):
                             key=RUN_MONITORS_JOB_KEY,
                             cron_expr=monitor_test_suite_data.get("schedule"),
                             cron_tz=monitor_test_suite_data.get("timezone"),
-                            args=[],
                             kwargs={"test_suite_id": str(monitor_test_suite.id)},
                         ).save()
 
@@ -450,7 +449,7 @@ class TableGroupsPage(Page):
                             JobExecution.submit(
                                 job_key="run-profile",
                                 kwargs={"table_group_id": str(table_group.id)},
-                                source="ui",
+                                source=JobSource.ui,
                                 project_code=table_group.project_code,
                             )
                             message = f"Profiling run started for table group {table_group.table_groups_name}."

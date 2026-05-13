@@ -1,5 +1,6 @@
 import streamlit as st
 
+from testgen.common.enums import JobSource
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_suite import TestSuite
@@ -34,7 +35,7 @@ def run_tests_dialog_widget(
                 JobExecution.submit(
                     job_key="run-tests",
                     kwargs={"test_suite_id": str(selected_id)},
-                    source="ui",
+                    source=JobSource.ui,
                     project_code=project_code,
                 )
         except Exception as e:

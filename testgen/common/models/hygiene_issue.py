@@ -2,7 +2,6 @@ import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from enum import StrEnum
 from typing import Self
 from uuid import UUID, uuid4
 
@@ -12,6 +11,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import aliased, relationship
 from sqlalchemy.sql.functions import func
 
+from testgen.common.enums import Disposition
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.entity import Entity
 from testgen.common.models.job_execution import JobExecution
@@ -20,28 +20,6 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 
 PII_RISK_RE = re.compile(r"Risk: (MODERATE|HIGH),")
-
-
-class Disposition(StrEnum):
-    """Stored disposition values for ``profile_anomaly_results.disposition`` and
-    ``test_results.disposition``. The user-facing label for ``INACTIVE`` is "Muted"."""
-    CONFIRMED = "Confirmed"
-    DISMISSED = "Dismissed"
-    INACTIVE = "Inactive"
-
-
-class IssueLikelihood(StrEnum):
-    """Stored ``profile_anomaly_types.issue_likelihood`` values."""
-    DEFINITE = "Definite"
-    LIKELY = "Likely"
-    POSSIBLE = "Possible"
-    POTENTIAL_PII = "Potential PII"
-
-
-class PiiRisk(StrEnum):
-    """Risk level extracted from PII issue ``detail`` strings via ``priority`` hybrid."""
-    HIGH = "High"
-    MODERATE = "Moderate"
 
 
 @dataclass

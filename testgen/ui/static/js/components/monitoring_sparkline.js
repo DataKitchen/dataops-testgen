@@ -24,6 +24,7 @@
  * @property {boolean?} isPending
  * @property {number?} lowerTolerance
  * @property {number?} upperTolerance
+ * @property {number?} originalThreshold
  *
  * @typedef PredictionPoint
  * @type {Object}
@@ -253,6 +254,9 @@ const MonitoringSparklineChartTooltip = (point) => {
         {class: 'flex-column'},
         span({class: 'text-left mb-1'}, formatTimestamp(point.originalX)),
         span({class: 'text-left text-small'}, `${point.label || 'Value'}: ${formatNumber(point.originalY)}`),
+        point.originalThreshold != undefined
+            ? span({class: 'text-left text-small'}, `Baseline: ${formatNumber(point.originalThreshold)}`)
+            : '',
         point.lowerTolerance != undefined
             ? span({class: 'text-left text-small'}, `Lower bound: ${formatNumber(point.originalLowerTolerance)}`)
             : '',

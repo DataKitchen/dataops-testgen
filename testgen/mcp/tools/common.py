@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select
 
 from testgen.common.date_service import parse_since
-from testgen.common.enums import ImpactDimension, QualityDimension
+from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, JobStatus, PiiRisk, QualityDimension
 from testgen.common.models import get_current_session
 from testgen.common.models.data_column import (
     GENERAL_TYPE_TO_CODE,
@@ -13,8 +13,7 @@ from testgen.common.models.data_column import (
     GeneralType,
     SuggestedDataType,
 )
-from testgen.common.models.hygiene_issue import Disposition, HygieneIssueType, IssueLikelihood, PiiRisk
-from testgen.common.models.job_execution import JobStatus
+from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup

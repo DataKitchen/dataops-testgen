@@ -110,7 +110,12 @@ def run_test_execution(
                     "METADATA": partial(_run_tests, sql_generator, "METADATA"),
                     "CAT": partial(_run_cat_tests, sql_generator),
                 }
-                # Run metadata tests last so that results for other tests are available to them
+                # Run order: QUERY → CAT → METADATA is load-bearing for monitor suites.
+                # Freshness_Trend (QUERY) writes the table fingerprint to test_results, which
+                # Volume_Trend and Metric_Trend (both CAT) read at execution time to apply
+                # freshness-gated thresholds (see TestExecutionSQL._get_params). Metadata tests
+                # stay last so results for other tests are available to them. Do not reorder
+                # without revisiting freshness-gating in the SQL templates and exec params.
                 for run_type in ["QUERY", "CAT", "METADATA"]:
                     if (run_test_defs := [td for td in valid_test_defs if td.run_type == run_type]):
                         run_functions[run_type](run_test_defs, save_progress=not test_suite.is_monitor)

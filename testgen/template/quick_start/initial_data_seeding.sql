@@ -58,15 +58,14 @@ SELECT '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID AS id,
        30                                           AS predict_min_lookback;
 
 INSERT INTO job_schedules
-    (id, project_code, key, args, kwargs, cron_expr, cron_tz, active)
+    (id, project_code, key, kwargs, cron_expr, cron_tz, active)
 SELECT 'eac9d722-d06a-4b1f-b8c4-bb2854bd4cfd'::UUID AS id,
        '{PROJECT_CODE}'                             AS project_code,
        'run-monitors'                               AS key,
-       '[]'::JSONB                                  AS args,
        '{"test_suite_id": "823a1fef-9b6d-48d5-9d0f-2db9812cc318"}'::JSONB AS kwargs,
        '0 */12 * * *'                               AS cron_expr,
        'UTC'                                        AS cron_tz,
-       TRUE                                         AS TRUE;
+       TRUE                                         AS active;
 
 UPDATE table_groups
 SET monitor_test_suite_id = '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID

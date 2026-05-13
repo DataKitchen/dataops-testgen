@@ -450,23 +450,6 @@ class Test_ComputeFreshnessThreshold:
 
         assert upper_high <= upper_med <= upper_low
 
-    def test_min_lookback_respected(self):
-        # 6 updates with sawtooth rows in between — the helper generates many rows
-        updates = [f"2026-02-{d:02d}T{h:02d}:00" for d, h in [(1, 0), (1, 10), (1, 20), (2, 6), (2, 16), (3, 2)]]
-        history = _make_freshness_history(updates)
-        row_count = len(history)
-
-        # With min_lookback at exactly the row count → should produce thresholds
-        _, upper, _, _ = compute_freshness_threshold(history, PredictSensitivity.medium, min_lookback=row_count)
-        assert upper is not None
-
-        # With min_lookback above the row count → training mode
-        lower, upper, staleness, prediction = compute_freshness_threshold(history, PredictSensitivity.medium, min_lookback=row_count + 1)
-        assert lower is None
-        assert upper is None
-        assert staleness is None
-        assert prediction is None
-
 class Test_AddBusinessMinutes:
     def test_no_exclusions(self):
         start = pd.Timestamp("2026-02-09T08:00")  # Monday

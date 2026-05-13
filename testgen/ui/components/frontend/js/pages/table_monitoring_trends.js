@@ -455,6 +455,10 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
     originalUpperTolerance: e.upper_tolerance != undefined
       ? parseInt(e.upper_tolerance)
       : undefined,
+    // Freshness-gated baseline (only present on gated runs).
+    originalThreshold: e.threshold_value != undefined
+      ? parseFloat(e.threshold_value)
+      : undefined,
     label: 'Row count',
     isAnomaly: e.is_anomaly,
     isTraining: e.is_training,
@@ -490,6 +494,7 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
       originalY: e.value,
       originalLowerTolerance: e.lower_tolerance,
       originalUpperTolerance: e.upper_tolerance,
+      originalThreshold: e.threshold_value,
       isAnomaly: e.is_anomaly,
       isTraining: e.is_training,
       isPending: e.is_pending,

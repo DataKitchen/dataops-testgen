@@ -134,18 +134,23 @@ def _run_scenario(
     sensitivity: PredictSensitivity,
     exclude_weekends: bool = False,
     tz: str | None = None,
+    min_lookback: int = 30,
 ) -> list[ScenarioPoint]:
-    """Iterate through csv_rows calling compute_freshness_threshold at each step."""
+    """Iterate through csv_rows, mirroring the call shape of TestThresholdsPrediction.run():
+    a min_lookback guard against the raw history, then compute_freshness_threshold."""
     results: list[ScenarioPoint] = []
     freshness_last_update: pd.Timestamp | None = None
 
     for i, (timestamp, value) in enumerate(csv_rows):
         history_df = _to_history_df(csv_rows[:i])
 
-        lower, upper, staleness, prediction_json = compute_freshness_threshold(
-            history_df, sensitivity, min_lookback=30,
-            exclude_weekends=exclude_weekends, schedule_tz=tz,
-        )
+        if len(history_df) < min_lookback:
+            lower = upper = staleness = prediction_json = None
+        else:
+            lower, upper, staleness, prediction_json = compute_freshness_threshold(
+                history_df, sensitivity,
+                exclude_weekends=exclude_weekends, schedule_tz=tz,
+            )
 
         result_code, result_status = _evaluate_freshness_point(
             timestamp, value, lower, upper, staleness, prediction_json,
