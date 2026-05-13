@@ -12,8 +12,9 @@ from uuid import UUID
 
 from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, with_database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy, Job, Scheduler
 
@@ -22,7 +23,6 @@ LOG = logging.getLogger("testgen")
 @dataclass
 class CliJob(Job):
     key: str
-    args: Iterable[Any]
     kwargs: dict[str, Any]
     project_code: str | None = field(default=None)
     job_schedule_id: UUID | None = field(default=None)
@@ -58,7 +58,6 @@ class CliScheduler(Scheduler):
                 cron_tz=job_model.cron_tz,
                 delayed_policy=DelayedPolicy.SKIP,
                 key=job_model.key,
-                args=job_model.args,
                 kwargs=job_model.kwargs,
                 project_code=job_model.project_code,
                 job_schedule_id=job_model.id,
@@ -80,7 +79,7 @@ class CliScheduler(Scheduler):
         JobExecution.submit(
             job_key=job.key,
             kwargs=job.kwargs,
-            source="scheduler",
+            source=JobSource.scheduler,
             project_code=job.project_code,
             job_schedule_id=job.job_schedule_id,
         )

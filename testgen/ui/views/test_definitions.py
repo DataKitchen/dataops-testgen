@@ -10,6 +10,7 @@ from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 from testgen.common import date_service
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.enums import JobSource
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
@@ -447,7 +448,7 @@ class TestDefinitionsPage(Page):
                 JobExecution.submit(
                     job_key="run-tests",
                     kwargs={"test_suite_id": str(selected_id)},
-                    source="ui",
+                    source=JobSource.ui,
                     project_code=project_code,
                 )
             except Exception as error:

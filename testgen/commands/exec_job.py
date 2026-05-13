@@ -11,9 +11,10 @@ import sys
 from uuid import UUID
 
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
+from testgen.common.enums import JobStatus
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")

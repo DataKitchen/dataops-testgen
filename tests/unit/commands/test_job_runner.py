@@ -4,7 +4,8 @@ from uuid import uuid4
 import pytest
 
 from testgen.commands.job_runner import submit_and_wait
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.enums import JobStatus
+from testgen.common.models.job_execution import JobExecution
 
 pytestmark = pytest.mark.unit
 

@@ -1,5 +1,6 @@
 import streamlit as st
 
+from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_suite import TestSuiteMinimal
@@ -42,7 +43,7 @@ def generate_tests_dialog_widget(
                 JobExecution.submit(
                     job_key="run-test-generation",
                     kwargs={"test_suite_id": str(test_suite_id), "generation_set": selected_set},
-                    source="ui",
+                    source=JobSource.ui,
                     project_code=test_suite.project_code,
                 )
             st.session_state[RESULT_KEY] = {"success": True, "message": f"Test generation started for test suite '{test_suite_name}'."}

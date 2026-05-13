@@ -4,10 +4,14 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
 
 from testgen.common.auth import authorize_token, decode_jwt_token
 from testgen.common.models import Session, _current_session_wrapper, get_current_session
+from testgen.common.models.job_execution import PUBLIC_JOB_KEYS, JobExecution
 from testgen.common.models.project_membership import ProjectMembership
+from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_suite import TestSuite
 from testgen.common.models.user import User
 from testgen.utils.plugins import PluginHook
 
@@ -73,12 +77,23 @@ def has_project_permission(user: User, project_code: str, permission: str) -> bo
 
 # --- Resolver dependency factories ---
 # Each factory takes a permission string and returns Depends(). The entity ID
-# comes from a URL path parameter (FastAPI resolves it natively).
-# Entity not found and insufficient permission both raise the same 404
-# with a stable code/message — no variation that could leak the cause.
+# comes from a URL path parameter (FastAPI resolves it natively, including
+# UUID validation that yields a 422 for malformed inputs).
 
 _require_user = Depends(get_authorized_user)
 _not_found = api_error(404, "not_found", "Not found")
+
+
+def _check_access(entity, user: User, permission: str):
+    """Return ``entity`` if the user has ``permission`` on its project, else raise 404.
+
+    Entity-not-found and insufficient-permission both surface as the same 404
+    with a stable code/message — no variation that could leak the cause to an
+    unauthorized caller.
+    """
+    if entity and has_project_permission(user, entity.project_code, permission):
+        return entity
+    raise _not_found
 
 
 def resolve_project_code(permission: str):
@@ -92,45 +107,31 @@ def resolve_project_code(permission: str):
 
 def resolve_table_group(permission: str):
     """Resolve a TableGroup by ``table_group_id`` path param and verify project permission."""
-    from testgen.common.models.table_group import TableGroup
-
     def dependency(table_group_id: UUID, user: User = _require_user) -> TableGroup:
-        if (table_group := TableGroup.get(table_group_id)) and has_project_permission(user, table_group.project_code, permission):
-            return table_group
-        raise _not_found
+        return _check_access(TableGroup.get(table_group_id), user, permission)
     return Depends(dependency)
 
 
 def resolve_test_suite(permission: str):
     """Resolve a non-monitor TestSuite by ``test_suite_id`` path param and verify project permission."""
-    from testgen.common.models.test_suite import TestSuite
-
     def dependency(test_suite_id: UUID, user: User = _require_user) -> TestSuite:
-        if (test_suite := TestSuite.get_regular(test_suite_id)) and has_project_permission(user, test_suite.project_code, permission):
-            return test_suite
-        raise _not_found
+        return _check_access(TestSuite.get_regular(test_suite_id), user, permission)
     return Depends(dependency)
 
 
 def resolve_job(permission: str, *extra_filters):
     """Resolve a JobExecution by ``job_id`` path param and verify project permission.
 
-    Internally-submitted jobs (source='system') are never exposed via the API.
-    Extra ORM clauses are appended to the WHERE clause, e.g. to restrict by job_key.
-    Mismatches surface as the same 404 — no information leakage.
+    Only jobs whose ``job_key`` is in ``PUBLIC_JOB_KEYS`` are exposed via the API.
+    Internal kinds (score rollups, recalculations, monitor runs) are filtered out
+    by construction. Extra ORM clauses are appended to the WHERE clause to further
+    restrict by job_key when a caller wants a single kind.
     """
-    from sqlalchemy import select
-
-    from testgen.common.models.job_execution import JobExecution
-
     def dependency(job_id: UUID, user: User = _require_user) -> JobExecution:
         query = select(JobExecution).where(
             JobExecution.id == job_id,
-            JobExecution.source != "system",
+            JobExecution.job_key.in_(PUBLIC_JOB_KEYS),
             *extra_filters,
         )
-        job = get_current_session().scalars(query).first()
-        if job and has_project_permission(user, job.project_code, permission):
-            return job
-        raise _not_found
+        return _check_access(get_current_session().scalars(query).first(), user, permission)
     return Depends(dependency)

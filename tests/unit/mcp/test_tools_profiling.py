@@ -491,7 +491,7 @@ def test_list_profiling_summaries_inaccessible_tg(mock_tg_cls, db_session_mock):
 
 from datetime import UTC
 
-from testgen.common.models.job_execution import JobStatus
+from testgen.common.enums import JobStatus
 
 _RUN_CREATED = datetime(2026, 4, 1, 10, 0, 0, tzinfo=UTC)
 _RUN_STARTED = datetime(2026, 4, 1, 10, 0, 5, tzinfo=UTC)

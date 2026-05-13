@@ -11,8 +11,9 @@ import click
 from sqlalchemy import select
 
 from testgen.commands.exec_job import FINAL_STATUSES, POLL_INTERVAL
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_run import TestRun
 
@@ -34,7 +35,7 @@ def submit_and_wait(
         job_exec = JobExecution.submit(
             job_key=job_key,
             kwargs=kwargs,
-            source="cli",
+            source=JobSource.cli,
             project_code=project_code,
         )
         job_id = job_exec.id

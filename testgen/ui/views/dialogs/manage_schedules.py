@@ -33,7 +33,7 @@ class ScheduleDialog:
     def get_arg_value_options(self) -> list[dict[str, str]]:
         raise NotImplementedError
 
-    def get_job_arguments(self, arg_value: str) -> tuple[list[Any], dict[str, Any]]:
+    def get_job_arguments(self, arg_value: str) -> dict[str, Any]:
         raise NotImplementedError
 
     def build_data(self) -> dict:
@@ -98,15 +98,13 @@ class ScheduleDialog:
             is_form_valid = bool(arg_value) and bool(cron_tz) and bool(cron_expr)
             if is_form_valid:
                 cron_obj = cron_converter.Cron(cron_expr)
-                args, kwargs = self.get_job_arguments(arg_value)
                 sched_model = JobSchedule(
                     project_code=self.project_code,
                     key=self.job_key,
                     cron_expr=cron_obj.to_string(),
                     cron_tz=cron_tz,
                     active=True,
-                    args=args,
-                    kwargs=kwargs,
+                    kwargs=self.get_job_arguments(arg_value),
                 )
                 with_database_session(sched_model.save)()
                 st.session_state[RESULT_KEY] = {"success": True, "message": "Schedule added"}
