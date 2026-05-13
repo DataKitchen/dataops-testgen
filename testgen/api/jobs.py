@@ -10,8 +10,9 @@ from testgen.api.deps import (
     resolve_table_group,
     resolve_test_suite,
 )
-from testgen.api.schemas import ErrorResponse, JobKey, JobListResponse, JobResponse, JobSource, JobSubmittedResponse
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.api.schemas import ErrorResponse, JobListResponse, JobResponse, JobSubmittedResponse
+from testgen.common.enums import JobKey, JobSource, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 

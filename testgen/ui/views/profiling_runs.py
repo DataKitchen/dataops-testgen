@@ -13,8 +13,9 @@ RUN_SCHEDULES_DIALOG_OPEN_COUNT_KEY = "pr:run_schedules_dialog_open_count"
 RUN_NOTIFICATIONS_DIALOG_OPEN_COUNT_KEY = "pr:run_notifications_dialog_open_count"
 
 import testgen.ui.services.form_service as fm
+from testgen.common.enums import JobStatus
 from testgen.common.models import database_session, get_current_session, with_database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     ProfilingRunNotificationSettings,
     ProfilingRunNotificationTrigger,

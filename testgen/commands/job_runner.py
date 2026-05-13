@@ -11,8 +11,9 @@ import click
 from sqlalchemy import select
 
 from testgen.commands.exec_job import FINAL_STATUSES, POLL_INTERVAL
+from testgen.common.enums import JobStatus
 from testgen.common.models import database_session, get_current_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_run import TestRun
 

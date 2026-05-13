@@ -1,25 +1,15 @@
 import logging
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, Text, case, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.enums import JobStatus
 from testgen.common.models import Base, get_current_session
 
 LOG = logging.getLogger("testgen")
-
-
-class JobStatus(StrEnum):
-    PENDING = "pending"
-    CLAIMED = "claimed"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    ERROR = "error"
-    CANCEL_REQUESTED = "cancel_requested"
-    CANCELED = "canceled"
 
 
 _VALID_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {

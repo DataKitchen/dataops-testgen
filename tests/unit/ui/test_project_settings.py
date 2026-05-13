@@ -36,7 +36,7 @@ def test_update_project_submits_recalculate_job_when_weights_toggled_on(mock_ses
     mock_je.submit.assert_called_once_with(
         job_key="recalculate-project-scores",
         kwargs={"project_code": "proj"},
-        source="user",
+        source="ui",
         project_code="proj",
     )
 
@@ -50,7 +50,7 @@ def test_update_project_submits_recalculate_job_when_weights_toggled_off(mock_se
     mock_je.submit.assert_called_once_with(
         job_key="recalculate-project-scores",
         kwargs={"project_code": "proj"},
-        source="user",
+        source="ui",
         project_code="proj",
     )
 

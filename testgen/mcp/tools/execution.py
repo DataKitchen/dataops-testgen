@@ -2,7 +2,7 @@
 
 from sqlalchemy import select
 
-from testgen.api.schemas import JobKey, JobSource
+from testgen.common.enums import JobKey, JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError

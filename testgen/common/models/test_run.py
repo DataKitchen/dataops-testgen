@@ -9,10 +9,11 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
+from testgen.common.enums import JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus

@@ -81,7 +81,7 @@ class ProjectSettingsPage(Page):
             JobExecution.submit(
                 job_key="recalculate-project-scores",
                 kwargs={"project_code": project_code},
-                source="user",
+                source="ui",
                 project_code=project_code,
             )
             st.toast("Scores will be recalculated in the background.")
