@@ -5,6 +5,7 @@ from dataclasses import asdict, dataclass, field
 import streamlit as st
 
 from testgen.commands.run_observability_exporter import test_observability_exporter
+from testgen.common.enums import JobSource
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
@@ -81,7 +82,7 @@ class ProjectSettingsPage(Page):
             JobExecution.submit(
                 job_key="recalculate-project-scores",
                 kwargs={"project_code": project_code},
-                source="ui",
+                source=JobSource.ui,
                 project_code=project_code,
             )
             st.toast("Scores will be recalculated in the background.")

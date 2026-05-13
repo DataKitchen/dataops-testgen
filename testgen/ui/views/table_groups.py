@@ -7,6 +7,7 @@ import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
@@ -136,7 +137,7 @@ class TableGroupsPage(Page):
                 JobExecution.submit(
                     job_key="run-profile",
                     kwargs={"table_group_id": str(table_group["id"])},
-                    source="ui",
+                    source=JobSource.ui,
                     project_code=project_code,
                 )
             except Exception as error:
@@ -448,7 +449,7 @@ class TableGroupsPage(Page):
                             JobExecution.submit(
                                 job_key="run-profile",
                                 kwargs={"table_group_id": str(table_group.id)},
-                                source="ui",
+                                source=JobSource.ui,
                                 project_code=table_group.project_code,
                             )
                             message = f"Profiling run started for table group {table_group.table_groups_name}."

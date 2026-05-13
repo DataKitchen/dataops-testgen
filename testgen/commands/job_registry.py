@@ -20,7 +20,7 @@ from testgen.commands.run_recalculate_project_scores import run_recalculate_proj
 from testgen.commands.run_score_update import run_score_update
 from testgen.commands.run_test_execution import run_test_execution
 from testgen.commands.test_generation import run_test_generation
-from testgen.common.enums import JobStatus
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
@@ -97,7 +97,7 @@ def _enqueue_score_update(job_exec: JobExecution) -> None:
                 "parent_job_id": str(job_exec.id),
                 "parent_job_key": job_exec.job_key,
             },
-            source="system",
+            source=JobSource.system,
             project_code=job_exec.project_code,
         )
 

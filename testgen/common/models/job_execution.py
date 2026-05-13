@@ -6,10 +6,19 @@ from uuid import UUID, uuid4
 from sqlalchemy import Column, String, Text, case, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.enums import JobStatus
+from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import Base, get_current_session
 
 LOG = logging.getLogger("testgen")
+
+
+# Job kinds that are externally triggerable. Internal kinds (run-score-update,
+# recalculate-project-scores, ...) are absent and filtered out by construction.
+PUBLIC_JOB_KEYS: frozenset[JobKey] = frozenset({
+    JobKey.run_profile,
+    JobKey.run_tests,
+    JobKey.run_test_generation,
+})
 
 
 _VALID_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
@@ -44,7 +53,7 @@ class JobExecution(Base):
         cls,
         job_key: str,
         kwargs: dict[str, Any],
-        source: str,
+        source: JobSource,
         project_code: str,
         job_schedule_id: UUID | None = None,
     ) -> Self:

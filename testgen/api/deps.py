@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from testgen.common.auth import authorize_token, decode_jwt_token
 from testgen.common.models import Session, _current_session_wrapper, get_current_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import PUBLIC_JOB_KEYS, JobExecution
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -122,13 +122,15 @@ def resolve_test_suite(permission: str):
 def resolve_job(permission: str, *extra_filters):
     """Resolve a JobExecution by ``job_id`` path param and verify project permission.
 
-    Internally-submitted jobs (source='system') are never exposed via the API.
-    Extra ORM clauses are appended to the WHERE clause to restrict by job_key.
+    Only jobs whose ``job_key`` is in ``PUBLIC_JOB_KEYS`` are exposed via the API.
+    Internal kinds (score rollups, recalculations, monitor runs) are filtered out
+    by construction. Extra ORM clauses are appended to the WHERE clause to further
+    restrict by job_key when a caller wants a single kind.
     """
     def dependency(job_id: UUID, user: User = _require_user) -> JobExecution:
         query = select(JobExecution).where(
             JobExecution.id == job_id,
-            JobExecution.source != "system",
+            JobExecution.job_key.in_(PUBLIC_JOB_KEYS),
             *extra_filters,
         )
         return _check_access(get_current_session().scalars(query).first(), user, permission)

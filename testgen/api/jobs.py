@@ -12,7 +12,7 @@ from testgen.api.deps import (
 )
 from testgen.api.schemas import ErrorResponse, JobListResponse, JobResponse, JobSubmittedResponse
 from testgen.common.enums import JobKey, JobSource, JobStatus
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import PUBLIC_JOB_KEYS, JobExecution
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 
@@ -106,7 +106,7 @@ def list_jobs(
     """List job executions for a project, with optional filters and pagination."""
     items, total = JobExecution.list_for_project(
         project_code,
-        JobExecution.source != "system",
+        JobExecution.job_key.in_(PUBLIC_JOB_KEYS),
         job_key=job_key,
         status=status,
         page=page,

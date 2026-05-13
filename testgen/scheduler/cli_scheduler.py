@@ -12,7 +12,7 @@ from uuid import UUID
 
 from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
-from testgen.common.enums import JobStatus
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
@@ -79,7 +79,7 @@ class CliScheduler(Scheduler):
         JobExecution.submit(
             job_key=job.key,
             kwargs=job.kwargs,
-            source="scheduler",
+            source=JobSource.scheduler,
             project_code=job.project_code,
             job_schedule_id=job.job_schedule_id,
         )

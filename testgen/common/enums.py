@@ -38,14 +38,14 @@ class JobKey(StrEnum):
 
 
 class JobSource(StrEnum):
-    """``source`` column values for ``job_executions``. Identifies which surface
-    submitted the job — API client, UI, scheduler, MCP tool, CLI, or backfill."""
+    """``source`` column values for ``job_executions``."""
     api = "api"
     ui = "ui"
     scheduler = "scheduler"
     mcp = "mcp"
     cli = "cli"
     backfill = "backfill"
+    system = "system"
 
 
 class JobStatus(StrEnum):

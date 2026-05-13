@@ -6,7 +6,7 @@ from typing import Any
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
-from testgen.common.enums import JobStatus
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
@@ -109,7 +109,7 @@ class TestRunsPage(Page):
                     JobExecution.submit(
                         job_key="run-tests",
                         kwargs={"test_suite_id": str(selected_id)},
-                        source="ui",
+                        source=JobSource.ui,
                         project_code=project_code,
                     )
             except Exception as error:

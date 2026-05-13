@@ -106,7 +106,8 @@ def cancel_profiling_run(job_execution_id: str) -> str:
 
 def _resolve_job_execution(job_execution_id: str, expected_job_key: JobKey, kind: str) -> JobExecution:
     """Resolve a user-submitted job by ID + expected job_key, collapsing missing-or-inaccessible
-    into one error path. Filters out source='system' jobs (internal rollups, never user-cancelable).
+    into one error path. Each MCP tool pins ``expected_job_key`` to a public kind, so the
+    job_key match alone restricts the lookup to externally-visible jobs.
     """
     job_uuid = parse_uuid(job_execution_id, "job_execution_id")
     perms = get_project_permissions()
@@ -114,7 +115,6 @@ def _resolve_job_execution(job_execution_id: str, expected_job_key: JobKey, kind
         select(JobExecution).where(
             JobExecution.id == job_uuid,
             JobExecution.job_key == expected_job_key,
-            JobExecution.source != "system",
             JobExecution.project_code.in_(perms.allowed_codes),
         )
     ).first()
