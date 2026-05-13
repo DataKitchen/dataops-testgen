@@ -97,6 +97,119 @@ def parse_quality_dimension(value: str) -> QualityDimension:
         raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}") from err
 
 
+class ScoreGroupBy(StrEnum):
+    """User-facing values accepted for the ``group_by`` argument on quality-score rollups."""
+
+    QUALITY_DIMENSION = "Quality Dimension"
+    IMPACT_DIMENSION = "Impact Dimension"
+    SEMANTIC_DATA_TYPE = "Semantic Data Type"
+    TABLE_GROUP = "Table Group"
+    DATA_LOCATION = "Data Location"
+    DATA_SOURCE = "Data Source"
+    SOURCE_SYSTEM = "Source System"
+    SOURCE_PROCESS = "Source Process"
+    BUSINESS_DOMAIN = "Business Domain"
+    STAKEHOLDER_GROUP = "Stakeholder Group"
+    TRANSFORM_LEVEL = "Transform Level"
+    DATA_PRODUCT = "Data Product"
+
+
+# Translates the user-facing label to the internal DB column name used by
+# ``ScoreCategory`` and the criteria filter list.
+SCORE_GROUP_BY_TO_COLUMN: dict[ScoreGroupBy, str] = {
+    ScoreGroupBy.QUALITY_DIMENSION: "dq_dimension",
+    ScoreGroupBy.IMPACT_DIMENSION: "impact_dimension",
+    ScoreGroupBy.SEMANTIC_DATA_TYPE: "semantic_data_type",
+    ScoreGroupBy.TABLE_GROUP: "table_groups_name",
+    ScoreGroupBy.DATA_LOCATION: "data_location",
+    ScoreGroupBy.DATA_SOURCE: "data_source",
+    ScoreGroupBy.SOURCE_SYSTEM: "source_system",
+    ScoreGroupBy.SOURCE_PROCESS: "source_process",
+    ScoreGroupBy.BUSINESS_DOMAIN: "business_domain",
+    ScoreGroupBy.STAKEHOLDER_GROUP: "stakeholder_group",
+    ScoreGroupBy.TRANSFORM_LEVEL: "transform_level",
+    ScoreGroupBy.DATA_PRODUCT: "data_product",
+}
+
+
+class ScoreFilterField(StrEnum):
+    """User-facing values accepted for ``filters[].field`` on quality-score rollups.
+
+    Same shape as ``ScoreGroupBy`` minus the two dimension values — Quality
+    Dimension and Impact Dimension are valid as ``group_by``, not as filter
+    fields. The duplication is deliberate: each argument has its own enum so
+    the valid-value set for each is read off one StrEnum.
+    """
+
+    SEMANTIC_DATA_TYPE = "Semantic Data Type"
+    TABLE_GROUP = "Table Group"
+    DATA_LOCATION = "Data Location"
+    DATA_SOURCE = "Data Source"
+    SOURCE_SYSTEM = "Source System"
+    SOURCE_PROCESS = "Source Process"
+    BUSINESS_DOMAIN = "Business Domain"
+    STAKEHOLDER_GROUP = "Stakeholder Group"
+    TRANSFORM_LEVEL = "Transform Level"
+    DATA_PRODUCT = "Data Product"
+
+
+SCORE_FILTER_FIELD_TO_COLUMN: dict[ScoreFilterField, str] = {
+    ScoreFilterField.SEMANTIC_DATA_TYPE: "semantic_data_type",
+    ScoreFilterField.TABLE_GROUP: "table_groups_name",
+    ScoreFilterField.DATA_LOCATION: "data_location",
+    ScoreFilterField.DATA_SOURCE: "data_source",
+    ScoreFilterField.SOURCE_SYSTEM: "source_system",
+    ScoreFilterField.SOURCE_PROCESS: "source_process",
+    ScoreFilterField.BUSINESS_DOMAIN: "business_domain",
+    ScoreFilterField.STAKEHOLDER_GROUP: "stakeholder_group",
+    ScoreFilterField.TRANSFORM_LEVEL: "transform_level",
+    ScoreFilterField.DATA_PRODUCT: "data_product",
+}
+
+
+class ScoreType(StrEnum):
+    """User-facing values accepted for the ``score_type`` argument."""
+
+    COMBINED = "Combined"
+    CDE = "CDE"
+
+
+# Translates to the internal sentinel consumed by ``ScoreDefinition.total_score``
+# / ``cde_score`` flag logic.
+SCORE_TYPE_TO_INTERNAL: dict[ScoreType, str] = {
+    ScoreType.COMBINED: "total",
+    ScoreType.CDE: "cde",
+}
+
+
+def parse_score_group_by(value: str) -> ScoreGroupBy:
+    try:
+        return ScoreGroupBy(value)
+    except ValueError as err:
+        valid = ", ".join(g.value for g in ScoreGroupBy)
+        raise MCPUserError(f"Invalid group_by `{value}`. Valid values: {valid}") from err
+
+
+def parse_score_filter_field(value: str) -> ScoreFilterField:
+    try:
+        return ScoreFilterField(value)
+    except ValueError as err:
+        if value in {ScoreGroupBy.QUALITY_DIMENSION.value, ScoreGroupBy.IMPACT_DIMENSION.value}:
+            raise MCPUserError(
+                f"`{value}` is not a valid filter field — use group_by='{value}' instead"
+            ) from err
+        valid = ", ".join(f.value for f in ScoreFilterField)
+        raise MCPUserError(f"Invalid filter field `{value}`. Valid values: {valid}") from err
+
+
+def parse_score_type(value: str) -> ScoreType:
+    try:
+        return ScoreType(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in ScoreType)
+        raise MCPUserError(f"Invalid score_type `{value}`. Valid values: {valid}") from err
+
+
 # Maps user-facing run-status labels to underlying ``JobStatus`` values. Transient states
 # (Starting/Canceling) are excluded because they're sub-second and noisy as filters.
 # ``Pending`` collapses PENDING+CLAIMED; ``Canceled`` collapses CANCEL_REQUESTED+CANCELED.

@@ -7,6 +7,12 @@ from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, 
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
+    SCORE_FILTER_FIELD_TO_COLUMN,
+    SCORE_GROUP_BY_TO_COLUMN,
+    SCORE_TYPE_TO_INTERNAL,
+    ScoreFilterField,
+    ScoreGroupBy,
+    ScoreType,
     format_disposition,
     parse_disposition,
     parse_impact_dimension,
@@ -14,6 +20,9 @@ from testgen.mcp.tools.common import (
     parse_pii_risk_list,
     parse_quality_dimension,
     parse_result_status,
+    parse_score_filter_field,
+    parse_score_group_by,
+    parse_score_type,
     parse_uuid,
     resolve_issue_type,
     resolve_profiling_run,
@@ -464,3 +473,125 @@ def test_build_ilike_pattern_escapes_underscores_even_with_explicit_percent():
     from testgen.mcp.tools.common import build_ilike_pattern
     # The `_` escape is unconditional — explicit `%` doesn't suppress it.
     assert build_ilike_pattern("user_%") == r"user\_%"
+
+
+# --- parse_score_group_by ---
+
+
+@pytest.mark.parametrize("member", list(ScoreGroupBy))
+def test_parse_score_group_by_user_labels(member):
+    assert parse_score_group_by(member.value) is member
+
+
+def test_parse_score_group_by_label_maps_to_internal_column():
+    """The enum value is the user-facing label; the mapping translates to the
+    internal DB column name used downstream (``ScoreCategory``, the criteria
+    filter list)."""
+    assert SCORE_GROUP_BY_TO_COLUMN[ScoreGroupBy.QUALITY_DIMENSION] == "dq_dimension"
+    assert SCORE_GROUP_BY_TO_COLUMN[ScoreGroupBy.TABLE_GROUP] == "table_groups_name"
+    assert SCORE_GROUP_BY_TO_COLUMN[ScoreGroupBy.BUSINESS_DOMAIN] == "business_domain"
+
+
+@pytest.mark.parametrize(
+    "internal",
+    ["dq_dimension", "impact_dimension", "business_domain", "table_groups_name"],
+)
+def test_parse_score_group_by_rejects_internal_column_name(internal):
+    """Old internal vocabulary must be rejected — the tool now speaks user labels only."""
+    with pytest.raises(MCPUserError, match="Invalid group_by") as exc_info:
+        parse_score_group_by(internal)
+    msg = str(exc_info.value)
+    # Error must point users at the new user-facing vocabulary.
+    assert "Quality Dimension" in msg
+    assert "Business Domain" in msg
+
+
+def test_parse_score_group_by_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_score_group_by("Made Up")
+    msg = str(exc_info.value)
+    for member in ScoreGroupBy:
+        assert member.value in msg
+
+
+# --- parse_score_filter_field ---
+
+
+@pytest.mark.parametrize("member", list(ScoreFilterField))
+def test_parse_score_filter_field_user_labels(member):
+    assert parse_score_filter_field(member.value) is member
+
+
+def test_parse_score_filter_field_label_maps_to_internal_column():
+    assert SCORE_FILTER_FIELD_TO_COLUMN[ScoreFilterField.BUSINESS_DOMAIN] == "business_domain"
+    assert SCORE_FILTER_FIELD_TO_COLUMN[ScoreFilterField.TABLE_GROUP] == "table_groups_name"
+
+
+def test_parse_score_filter_field_does_not_include_dimensions():
+    """Quality Dimension / Impact Dimension are valid only as group_by, not as filter fields."""
+    values = {m.value for m in ScoreFilterField}
+    assert "Quality Dimension" not in values
+    assert "Impact Dimension" not in values
+
+
+@pytest.mark.parametrize("label", ["Quality Dimension", "Impact Dimension"])
+def test_parse_score_filter_field_rejects_dimension_with_hint(label):
+    """Passing a dimension as filter.field hints at group_by= usage instead."""
+    with pytest.raises(MCPUserError, match=f"`{label}`") as exc_info:
+        parse_score_filter_field(label)
+    msg = str(exc_info.value)
+    assert "group_by" in msg
+    assert label in msg
+
+
+@pytest.mark.parametrize(
+    "internal", ["business_domain", "data_source", "table_groups_name"],
+)
+def test_parse_score_filter_field_rejects_internal_column_name(internal):
+    with pytest.raises(MCPUserError, match="Invalid filter field") as exc_info:
+        parse_score_filter_field(internal)
+    msg = str(exc_info.value)
+    assert "Business Domain" in msg
+
+
+def test_parse_score_filter_field_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_score_filter_field("Made Up")
+    msg = str(exc_info.value)
+    for member in ScoreFilterField:
+        assert member.value in msg
+
+
+# --- parse_score_type ---
+
+
+@pytest.mark.parametrize(
+    "label,expected_member,expected_internal",
+    [
+        ("Combined", ScoreType.COMBINED, "total"),
+        ("CDE", ScoreType.CDE, "cde"),
+    ],
+)
+def test_parse_score_type_user_labels(label, expected_member, expected_internal):
+    member = parse_score_type(label)
+    assert member is expected_member
+    assert SCORE_TYPE_TO_INTERNAL[member] == expected_internal
+
+
+@pytest.mark.parametrize("internal", ["total", "cde", "combined"])
+def test_parse_score_type_rejects_internal_or_wrong_case(internal):
+    """The old internal vocabulary (``total``/``cde`` lowercase) must no longer
+    be accepted on input."""
+    with pytest.raises(MCPUserError, match="Invalid score_type") as exc_info:
+        parse_score_type(internal)
+    msg = str(exc_info.value)
+    assert "Combined" in msg
+    assert "CDE" in msg
+
+
+def test_parse_score_type_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_score_type("BadType")
+    msg = str(exc_info.value)
+    for member in ScoreType:
+        assert member.value in msg

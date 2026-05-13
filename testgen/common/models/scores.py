@@ -12,7 +12,22 @@ from itertools import groupby
 from typing import Literal, Self, TypedDict
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, delete, func, select, text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    column,
+    delete,
+    func,
+    select,
+    table,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased, attributes, relationship
 
@@ -534,6 +549,29 @@ class ScoreDefinition(Base):
             entry.score = renewed_history[key]
 
         self.history = list(current_history.values())
+
+    def get_overall_issue_ct(self) -> int:
+        """Sum of hygiene + test issue counts under this definition's filters.
+
+        Reuses the same filter machinery as `as_score_card` so the rolled-up
+        count matches the score that call returns.
+        """
+        if not self.criteria.has_filters():
+            return 0
+
+        where_clause = text(" AND ".join(self._get_raw_query_filters()))
+        session = get_current_session()
+
+        def _sum_issue_ct(view_name: str) -> int:
+            view = table(view_name, column("issue_ct"))
+            return int(session.execute(
+                select(func.coalesce(func.sum(view.c.issue_ct), 0)).where(where_clause)
+            ).scalar() or 0)
+
+        return (
+            _sum_issue_ct("v_dq_profile_scoring_latest_by_column")
+            + _sum_issue_ct("v_dq_test_scoring_latest_by_column")
+        )
 
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
         extra_filters = [

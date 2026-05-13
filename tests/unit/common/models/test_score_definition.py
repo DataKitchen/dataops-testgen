@@ -17,9 +17,6 @@ from testgen.common.models.scores import (
     ScoreDefinitionFilter,
 )
 
-
-from testgen.common.models.scores import ScoreDefinition
-
 pytestmark = pytest.mark.unit
 
 
@@ -208,3 +205,87 @@ def test_list_with_table_group_targets_empty_project(mock_session_fn):
     mock_session_fn.return_value.execute.return_value = mock_result
 
     assert ScoreDefinition.list_with_table_group_targets("proj") == []
+
+
+# --- get_overall_issue_ct ---
+
+
+def _definition_with_filter(project_code="demo", field="business_domain", value="Finance"):
+    """Build a transient ScoreDefinition with one filter."""
+    definition = ScoreDefinition()
+    definition.project_code = project_code
+    definition.name = "test"
+    definition.total_score = True
+    definition.cde_score = False
+    definition.criteria = ScoreDefinitionCriteria(
+        operand="AND",
+        group_by_field=True,
+        filters=[ScoreDefinitionFilter(field=field, value=value)],
+    )
+    return definition
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_get_overall_issue_ct_sums_profile_and_test(mock_session_fn):
+    """Returns the sum of profile + test issue_ct from the two scoring views."""
+    definition = _definition_with_filter()
+    # Two execute() calls; first returns profile sum, second returns test sum.
+    mock_session_fn.return_value.execute.side_effect = [
+        MagicMock(scalar=MagicMock(return_value=7)),
+        MagicMock(scalar=MagicMock(return_value=3)),
+    ]
+
+    assert definition.get_overall_issue_ct() == 10
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_get_overall_issue_ct_queries_both_views(mock_session_fn):
+    """Issues two queries — one against the profile view, one against the test view."""
+    definition = _definition_with_filter()
+    mock_session_fn.return_value.execute.side_effect = [
+        MagicMock(scalar=MagicMock(return_value=0)),
+        MagicMock(scalar=MagicMock(return_value=0)),
+    ]
+
+    definition.get_overall_issue_ct()
+
+    calls = mock_session_fn.return_value.execute.call_args_list
+    assert len(calls) == 2
+    sql_1 = str(calls[0].args[0])
+    sql_2 = str(calls[1].args[0])
+    assert "v_dq_profile_scoring_latest_by_column" in sql_1
+    assert "v_dq_test_scoring_latest_by_column" in sql_2
+    # Both queries must use the same filters as as_score_card (project_code + criteria).
+    for sql in (sql_1, sql_2):
+        assert "project_code = 'demo'" in sql
+        assert "business_domain = 'Finance'" in sql
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_get_overall_issue_ct_handles_null_scalars(mock_session_fn):
+    """A NULL sum (no matching rows) is treated as 0, not None."""
+    definition = _definition_with_filter()
+    mock_session_fn.return_value.execute.side_effect = [
+        MagicMock(scalar=MagicMock(return_value=None)),
+        MagicMock(scalar=MagicMock(return_value=None)),
+    ]
+
+    assert definition.get_overall_issue_ct() == 0
+
+
+def test_get_overall_issue_ct_no_filters_returns_zero():
+    """When the definition has no filters, return 0 without hitting the DB."""
+    definition = ScoreDefinition()
+    definition.project_code = "demo"
+    definition.name = "test"
+    definition.total_score = True
+    definition.cde_score = False
+    definition.criteria = ScoreDefinitionCriteria(
+        operand="AND",
+        group_by_field=True,
+        filters=[],
+    )
+
+    with patch("testgen.common.models.scores.get_current_session") as mock_session_fn:
+        assert definition.get_overall_issue_ct() == 0
+        mock_session_fn.return_value.execute.assert_not_called()
