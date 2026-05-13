@@ -26,7 +26,7 @@ _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
 }
 
-router = APIRouter(prefix="/api/v1", tags=["runs"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["runs"], dependencies=[Depends(db_session)], responses=_error_responses)
 
 
 @router.get(

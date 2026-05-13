@@ -17,14 +17,11 @@ _FAVICON_PATH = Path(__file__).resolve().parent.parent / "ui" / "assets" / "favi
 if settings.IS_DEBUG:
     os.environ.setdefault("AUTHLIB_INSECURE_TRANSPORT", "1")
 
-from testgen.api.app import router as api_router
-from testgen.api.jobs import router as jobs_router
+from testgen.api import router as api_v1_router
 from testgen.api.oauth.metadata import router as metadata_router
 from testgen.api.oauth.routes import init_routes
 from testgen.api.oauth.routes import router as oauth_router
 from testgen.api.oauth.server import create_authorization_server
-from testgen.api.runs import router as runs_router
-from testgen.api.test_definitions import router as test_definitions_router
 from testgen.common import version_service
 from testgen.common.models import with_database_session
 from testgen.server.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
@@ -124,10 +121,7 @@ def create_app(version: str | None = None) -> FastAPI:
 
     app.include_router(metadata_router)
     app.include_router(oauth_router)
-    app.include_router(api_router)
-    app.include_router(jobs_router)
-    app.include_router(runs_router)
-    app.include_router(test_definitions_router)
+    app.include_router(api_v1_router)
 
     if settings.MCP_ENABLED:
         app.mount("", mcp_app)
