@@ -61,13 +61,20 @@ def _decrypt_if_needed(value: Any) -> str | None:
 
 def resolve_connection_params(connection_params: ConnectionParams) -> ResolvedConnectionParams:
     sql_flavor = connection_params.get("sql_flavor") or ""
+    host = connection_params.get("project_host") or ""
+    port = connection_params.get("project_port") or ""
+    # Lazy import to keep the flavor layer free of standalone concerns at module load.
+    from testgen.common.standalone_postgres import EMBEDDED_HOST_SENTINEL, get_target_host_port, is_standalone_mode
+    if host == EMBEDDED_HOST_SENTINEL and is_standalone_mode():
+        host, live_port = get_target_host_port()
+        port = live_port or ""
     return ResolvedConnectionParams(
         url=connection_params.get("url") or "",
         connect_by_url=connection_params.get("connect_by_url", False),
         username=connection_params.get("project_user") or "",
         password=_decrypt_if_needed(connection_params.get("project_pw_encrypted")),
-        host=connection_params.get("project_host") or "",
-        port=connection_params.get("project_port") or "",
+        host=host,
+        port=port,
         dbname=connection_params.get("project_db") or "",
         dbschema=connection_params.get("table_group_schema"),
         sql_flavor=sql_flavor,
