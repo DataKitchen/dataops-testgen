@@ -9,7 +9,7 @@ from testgen.common.encrypt import EncryptText, encrypt_ui_password
 from testgen.common.models import with_database_session
 from testgen.common.read_file import get_template_files
 from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
-from testgen.common.standalone_postgres import get_target_host_port, is_standalone_mode
+from testgen.common.standalone_postgres import EMBEDDED_HOST_SENTINEL, is_standalone_mode
 
 LOG = logging.getLogger("testgen")
 
@@ -28,9 +28,10 @@ def _get_params_mapping() -> dict:
     project_user = settings.PROJECT_DATABASE_USER
     project_password = settings.PROJECT_DATABASE_PASSWORD
     if is_standalone_mode():
-        project_host, server_port = get_target_host_port()
-        if server_port:
-            project_port = server_port
+        # Live host/port are resolved at connection-build time via the sentinel
+        # so the row survives pgserver picking a fresh ephemeral port on Windows.
+        project_host = EMBEDDED_HOST_SENTINEL
+        project_port = ""
         project_user = "postgres"
         project_password = ""
 
