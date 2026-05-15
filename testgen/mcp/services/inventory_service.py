@@ -221,13 +221,13 @@ def _profiling_summary_fragment(summary: TableGroupSummary) -> str:
         + (summary.latest_hygiene_issues_likely_ct or 0)
         + (summary.latest_hygiene_issues_possible_ct or 0)
     )
-    combined = friendly_score(score(summary.dq_score_profiling, summary.dq_score_testing))
+    total = friendly_score(score(summary.dq_score_profiling, summary.dq_score_testing))
     profiled_at = (
         summary.latest_profile_start.strftime("%Y-%m-%d")
         if summary.latest_profile_start else "—"
     )
     return (
-        f"Score {combined}, hygiene issues {hygiene_issue_total}, "
+        f"Score {total}, hygiene issues {hygiene_issue_total}, "
         f"last profiled {profiled_at}, "
         f"profiling run `{summary.latest_profile_job_execution_id}`"
     )

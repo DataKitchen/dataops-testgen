@@ -17,6 +17,7 @@ from testgen.common.models.data_column import (
 from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
+from testgen.common.models.scores import ScoreCategory, ScoreDefinition
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_result import TestResultStatus
@@ -47,6 +48,7 @@ class DocGroup(StrEnum):
     INVESTIGATE = "Investigate quality issues"
     BROWSE_PROFILING = "Browse profiling results"
     TRIGGER = "Trigger profiling, tests, and test generation"
+    SCORING = "Track data quality scores"
 
 
 def parse_uuid(value: str, label: str = "ID") -> UUID:
@@ -167,19 +169,61 @@ SCORE_FILTER_FIELD_TO_COLUMN: dict[ScoreFilterField, str] = {
 }
 
 
+class ScoreCategoryArg(StrEnum):
+    """User-facing values accepted for the ``category`` argument on scorecard CRUD.
+
+    Same shape as ``ScoreGroupBy`` — every group-by value is also a valid
+    breakdown category. Kept as a separate enum (rather than reusing
+    ``ScoreGroupBy``) so each argument has its own valid-value set per the
+    per-arg enum convention.
+    """
+
+    TABLE_GROUP = "Table Group"
+    DATA_LOCATION = "Data Location"
+    DATA_SOURCE = "Data Source"
+    SOURCE_SYSTEM = "Source System"
+    SOURCE_PROCESS = "Source Process"
+    BUSINESS_DOMAIN = "Business Domain"
+    STAKEHOLDER_GROUP = "Stakeholder Group"
+    TRANSFORM_LEVEL = "Transform Level"
+    QUALITY_DIMENSION = "Quality Dimension"
+    IMPACT_DIMENSION = "Impact Dimension"
+    DATA_PRODUCT = "Data Product"
+
+
+SCORE_CATEGORY_ARG_TO_COLUMN: dict[ScoreCategoryArg, str] = {
+    ScoreCategoryArg.TABLE_GROUP: "table_groups_name",
+    ScoreCategoryArg.DATA_LOCATION: "data_location",
+    ScoreCategoryArg.DATA_SOURCE: "data_source",
+    ScoreCategoryArg.SOURCE_SYSTEM: "source_system",
+    ScoreCategoryArg.SOURCE_PROCESS: "source_process",
+    ScoreCategoryArg.BUSINESS_DOMAIN: "business_domain",
+    ScoreCategoryArg.STAKEHOLDER_GROUP: "stakeholder_group",
+    ScoreCategoryArg.TRANSFORM_LEVEL: "transform_level",
+    ScoreCategoryArg.QUALITY_DIMENSION: "dq_dimension",
+    ScoreCategoryArg.IMPACT_DIMENSION: "impact_dimension",
+    ScoreCategoryArg.DATA_PRODUCT: "data_product",
+}
+
+
+class ScoreChainLeafField(StrEnum):
+    """User-facing values accepted as the leaf ``field`` in a scorecard filter chain."""
+
+    TABLE = "Table"
+    COLUMN = "Column"
+
+
+SCORE_CHAIN_LEAF_TO_COLUMN: dict[ScoreChainLeafField, str] = {
+    ScoreChainLeafField.TABLE: "table_name",
+    ScoreChainLeafField.COLUMN: "column_name",
+}
+
+
 class ScoreType(StrEnum):
     """User-facing values accepted for the ``score_type`` argument."""
 
-    COMBINED = "Combined"
+    TOTAL = "Total"
     CDE = "CDE"
-
-
-# Translates to the internal sentinel consumed by ``ScoreDefinition.total_score``
-# / ``cde_score`` flag logic.
-SCORE_TYPE_TO_INTERNAL: dict[ScoreType, str] = {
-    ScoreType.COMBINED: "total",
-    ScoreType.CDE: "cde",
-}
 
 
 def parse_score_group_by(value: str) -> ScoreGroupBy:
@@ -208,6 +252,20 @@ def parse_score_type(value: str) -> ScoreType:
     except ValueError as err:
         valid = ", ".join(s.value for s in ScoreType)
         raise MCPUserError(f"Invalid score_type `{value}`. Valid values: {valid}") from err
+
+
+def parse_category(value: str) -> ScoreCategory:
+    """Validate a ``category`` argument and return the stored ``ScoreCategory``.
+
+    Accepts the display-form values exposed by ``get_quality_scores``'s
+    ``group_by`` argument (e.g. ``Quality Dimension``, ``Data Source``).
+    """
+    try:
+        arg = ScoreCategoryArg(value)
+    except ValueError as err:
+        valid = ", ".join(c.value for c in ScoreCategoryArg)
+        raise MCPUserError(f"Invalid category `{value}`. Valid values: {valid}") from err
+    return ScoreCategory(SCORE_CATEGORY_ARG_TO_COLUMN[arg])
 
 
 # Maps user-facing run-status labels to underlying ``JobStatus`` values. Transient states
@@ -481,6 +539,16 @@ def resolve_profiling_run(job_execution_id: str) -> ProfilingRun:
     if run is None or not perms.has_access(run.project_code):
         raise MCPResourceNotAccessible("Profiling run", job_execution_id)
     return run
+
+
+def resolve_scorecard(scorecard_id: str) -> ScoreDefinition:
+    """Resolve a scorecard ID, collapsing missing-or-inaccessible into one error path."""
+    parse_uuid(scorecard_id, "scorecard_id")
+    perms = get_project_permissions()
+    sd = ScoreDefinition.get(scorecard_id)
+    if sd is None or not perms.has_access(sd.project_code):
+        raise MCPResourceNotAccessible("Scorecard", scorecard_id)
+    return sd
 
 
 def resolve_test_definition(test_definition_id: str) -> TestDefinition:

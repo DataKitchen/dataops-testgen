@@ -29,7 +29,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import aliased, attributes, relationship
+from sqlalchemy.orm import aliased, attributes, joinedload, relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, get_current_session
@@ -212,7 +212,14 @@ class ScoreDefinition(Base):
             .order_by(ScoreDefinition.name)
         )
         rows = get_current_session().execute(query).all()
-        return [(row.id, row.name, list(row.tg_names) if row.tg_names else []) for row in rows]
+        # Dedupe tg_names: a mode-2 scorecard with N chains under the same
+        # table_groups_name would otherwise list the name N times, causing the
+        # inventory tool to render the scorecard once per chain. dict.fromkeys
+        # preserves first-seen order.
+        return [
+            (row.id, row.name, list(dict.fromkeys(row.tg_names)) if row.tg_names else [])
+            for row in rows
+        ]
 
     @classmethod
     def all(
@@ -265,6 +272,40 @@ class ScoreDefinition(Base):
                     ))
 
         return definitions
+
+    @classmethod
+    def list_for_project(
+        cls,
+        project_code: str,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[Self], int]:
+        """Paginated list of scorecards in a project.
+
+        Returns ORM objects with ``criteria`` eager-loaded so callers can walk
+        the filter chain without firing extra queries. ``results`` is already
+        ``lazy="joined"`` and rides along automatically — feeds
+        ``as_cached_score_card()``.
+        """
+        session = get_current_session()
+        base_filter = ScoreDefinition.project_code == project_code
+
+        total = session.scalar(
+            select(func.count()).select_from(
+                select(ScoreDefinition.id).where(base_filter).subquery()
+            )
+        ) or 0
+
+        query = (
+            select(ScoreDefinition)
+            .options(joinedload(ScoreDefinition.criteria))
+            .where(base_filter)
+            .order_by(ScoreDefinition.name)
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        rows = session.scalars(query).unique().all()
+        return list(rows), total
 
     def save(self) -> None:
         db_session = get_current_session()
@@ -828,7 +869,6 @@ class ScoreDefinitionResultHistoryEntry(Base):
         Query templates:
         add_latest_runs.sql
         """
-        # ruff: noqa: RUF027
         query = read_template_sql_file("add_latest_runs.sql", sub_directory="score_cards")
         params = {
             "project_code": self.definition.project_code,

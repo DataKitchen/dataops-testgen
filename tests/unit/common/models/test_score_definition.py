@@ -207,6 +207,21 @@ def test_list_with_table_group_targets_empty_project(mock_session_fn):
     assert ScoreDefinition.list_with_table_group_targets("proj") == []
 
 
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_with_table_group_targets_dedupes_repeated_names(mock_session_fn):
+    """A mode-2 scorecard with N chains all rooted at the same table_groups_name
+    must surface that name only once — otherwise the inventory tool lists the
+    scorecard once per chain under the same table group."""
+    def_id = uuid4()
+    mock_result = MagicMock()
+    mock_result.all.return_value = [_row(def_id, "redbox-tables", ["redbox"] * 4)]
+    mock_session_fn.return_value.execute.return_value = mock_result
+
+    out = ScoreDefinition.list_with_table_group_targets("proj")
+
+    assert out == [(def_id, "redbox-tables", ["redbox"])]
+
+
 # --- get_overall_issue_ct ---
 
 
@@ -289,3 +304,131 @@ def test_get_overall_issue_ct_no_filters_returns_zero():
     with patch("testgen.common.models.scores.get_current_session") as mock_session_fn:
         assert definition.get_overall_issue_ct() == 0
         mock_session_fn.return_value.execute.assert_not_called()
+
+
+# --- list_for_project ---
+
+
+def _make_scorecard_orm(name: str, project_code: str = "demo") -> ScoreDefinition:
+    sd = ScoreDefinition()
+    sd.id = uuid4()
+    sd.project_code = project_code
+    sd.name = name
+    sd.total_score = True
+    sd.cde_score = False
+    return sd
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_for_project_returns_items_and_total(mock_session_fn):
+    """Returns (rows, total) from scalars().unique() and the count scalar."""
+    sd_a = _make_scorecard_orm("Apple")
+    sd_b = _make_scorecard_orm("Mango")
+
+    session = mock_session_fn.return_value
+    session.scalar.return_value = 2
+    scalars_result = MagicMock()
+    scalars_result.unique.return_value.all.return_value = [sd_a, sd_b]
+    session.scalars.return_value = scalars_result
+
+    items, total = ScoreDefinition.list_for_project("demo", page=1, limit=20)
+
+    assert items == [sd_a, sd_b]
+    assert total == 2
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_for_project_filters_by_project_code(mock_session_fn):
+    """The page query's compiled SQL must filter by project_code."""
+    session = mock_session_fn.return_value
+    session.scalar.return_value = 0
+    scalars_result = MagicMock()
+    scalars_result.unique.return_value.all.return_value = []
+    session.scalars.return_value = scalars_result
+
+    ScoreDefinition.list_for_project("my-proj")
+
+    page_call = session.scalars.call_args
+    sql = str(page_call.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "project_code" in sql
+    assert "'my-proj'" in sql
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_for_project_orders_by_name(mock_session_fn):
+    """The page query must include ORDER BY name for stable pagination."""
+    session = mock_session_fn.return_value
+    session.scalar.return_value = 0
+    scalars_result = MagicMock()
+    scalars_result.unique.return_value.all.return_value = []
+    session.scalars.return_value = scalars_result
+
+    ScoreDefinition.list_for_project("demo")
+
+    sql = str(session.scalars.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "ORDER BY" in sql.upper()
+    assert "score_definitions.name" in sql.lower()
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_for_project_applies_offset_and_limit(mock_session_fn):
+    """page=3, limit=10 → OFFSET 20 LIMIT 10."""
+    session = mock_session_fn.return_value
+    session.scalar.return_value = 100
+    scalars_result = MagicMock()
+    scalars_result.unique.return_value.all.return_value = []
+    session.scalars.return_value = scalars_result
+
+    ScoreDefinition.list_for_project("demo", page=3, limit=10)
+
+    sql = str(session.scalars.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "LIMIT 10" in sql
+    assert "OFFSET 20" in sql
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_for_project_eager_loads_criteria(mock_session_fn):
+    """Criteria must be joinedload'd so the rendering loop doesn't fire N+1."""
+    session = mock_session_fn.return_value
+    session.scalar.return_value = 0
+    scalars_result = MagicMock()
+    scalars_result.unique.return_value.all.return_value = []
+    session.scalars.return_value = scalars_result
+
+    ScoreDefinition.list_for_project("demo")
+
+    sql = str(session.scalars.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    # joinedload emits a LEFT OUTER JOIN against the criteria table.
+    assert "score_definition_criteria" in sql.lower()
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_for_project_count_is_separate_query(mock_session_fn):
+    """A scalar count query runs alongside the paged scalars query."""
+    session = mock_session_fn.return_value
+    session.scalar.return_value = 7
+    scalars_result = MagicMock()
+    scalars_result.unique.return_value.all.return_value = []
+    session.scalars.return_value = scalars_result
+
+    _, total = ScoreDefinition.list_for_project("demo")
+
+    assert total == 7
+    assert session.scalar.call_count == 1
+    count_sql = str(session.scalar.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert "count(" in count_sql.lower()
+    assert "'demo'" in count_sql
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_list_for_project_count_null_returns_zero(mock_session_fn):
+    """When count() returns NULL on an empty table, normalize to 0."""
+    session = mock_session_fn.return_value
+    session.scalar.return_value = None
+    scalars_result = MagicMock()
+    scalars_result.unique.return_value.all.return_value = []
+    session.scalars.return_value = scalars_result
+
+    items, total = ScoreDefinition.list_for_project("demo")
+    assert items == []
+    assert total == 0

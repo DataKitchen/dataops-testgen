@@ -167,7 +167,14 @@ def build_mcp_server(
         list_profiling_summaries,
         search_columns,
     )
-    from testgen.mcp.tools.quality_scores import get_quality_scores
+    from testgen.mcp.tools.quality_scores import (
+        create_scorecard,
+        delete_scorecard,
+        get_quality_scores,
+        get_scorecard,
+        list_scorecards,
+        update_scorecard,
+    )
     from testgen.mcp.tools.reference import (
         column_profile_fields_resource,
         get_test_type,
@@ -280,6 +287,11 @@ def build_mcp_server(
     safe_tool(update_schedule)
     safe_tool(delete_schedule)
     safe_tool(get_quality_scores)
+    safe_tool(list_scorecards)
+    safe_tool(get_scorecard)
+    safe_tool(create_scorecard)
+    safe_tool(update_scorecard)
+    safe_tool(delete_scorecard)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)

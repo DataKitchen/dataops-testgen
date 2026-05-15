@@ -4,16 +4,21 @@ from uuid import UUID, uuid4
 import pytest
 
 from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, PiiRisk, QualityDimension
+from testgen.common.models.scores import ScoreCategory
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
+    SCORE_CATEGORY_ARG_TO_COLUMN,
+    SCORE_CHAIN_LEAF_TO_COLUMN,
     SCORE_FILTER_FIELD_TO_COLUMN,
     SCORE_GROUP_BY_TO_COLUMN,
-    SCORE_TYPE_TO_INTERNAL,
+    ScoreCategoryArg,
+    ScoreChainLeafField,
     ScoreFilterField,
     ScoreGroupBy,
     ScoreType,
     format_disposition,
+    parse_category,
     parse_disposition,
     parse_impact_dimension,
     parse_issue_likelihood_list,
@@ -566,26 +571,25 @@ def test_parse_score_filter_field_invalid_lists_valid_values():
 
 
 @pytest.mark.parametrize(
-    "label,expected_member,expected_internal",
+    "label,expected_member",
     [
-        ("Combined", ScoreType.COMBINED, "total"),
-        ("CDE", ScoreType.CDE, "cde"),
+        ("Total", ScoreType.TOTAL),
+        ("CDE", ScoreType.CDE),
     ],
 )
-def test_parse_score_type_user_labels(label, expected_member, expected_internal):
+def test_parse_score_type_user_labels(label, expected_member):
     member = parse_score_type(label)
     assert member is expected_member
-    assert SCORE_TYPE_TO_INTERNAL[member] == expected_internal
 
 
-@pytest.mark.parametrize("internal", ["total", "cde", "combined"])
+@pytest.mark.parametrize("internal", ["total", "cde"])
 def test_parse_score_type_rejects_internal_or_wrong_case(internal):
-    """The old internal vocabulary (``total``/``cde`` lowercase) must no longer
-    be accepted on input."""
+    """The internal vocabulary (``total``/``cde`` lowercase) must not be
+    accepted on input; only the canonical user-facing values are."""
     with pytest.raises(MCPUserError, match="Invalid score_type") as exc_info:
         parse_score_type(internal)
     msg = str(exc_info.value)
-    assert "Combined" in msg
+    assert "Total" in msg
     assert "CDE" in msg
 
 
@@ -595,3 +599,81 @@ def test_parse_score_type_invalid_lists_valid_values():
     msg = str(exc_info.value)
     for member in ScoreType:
         assert member.value in msg
+
+
+# --- parse_category ---
+
+
+@pytest.mark.parametrize(
+    "display_value,expected",
+    [
+        ("Quality Dimension", ScoreCategory.dq_dimension),
+        ("Impact Dimension", ScoreCategory.impact_dimension),
+        ("Table Group", ScoreCategory.table_groups_name),
+        ("Data Source", ScoreCategory.data_source),
+        ("Data Location", ScoreCategory.data_location),
+        ("Source System", ScoreCategory.source_system),
+        ("Source Process", ScoreCategory.source_process),
+        ("Business Domain", ScoreCategory.business_domain),
+        ("Stakeholder Group", ScoreCategory.stakeholder_group),
+        ("Transform Level", ScoreCategory.transform_level),
+        ("Data Product", ScoreCategory.data_product),
+    ],
+)
+def test_parse_category_display_form_returns_column_form_enum(display_value, expected):
+    """``parse_category`` accepts display-form labels and emits the column-form ``ScoreCategory``."""
+    assert parse_category(display_value) is expected
+
+
+def test_parse_category_translation_dict_covers_all_args():
+    """Every ``ScoreCategoryArg`` member has a translation to a valid ``ScoreCategory`` column."""
+    for arg in ScoreCategoryArg:
+        column = SCORE_CATEGORY_ARG_TO_COLUMN[arg]
+        assert ScoreCategory(column) is ScoreCategory(column)  # raises if column isn't a valid enum value
+
+
+@pytest.mark.parametrize(
+    "internal",
+    [
+        "dq_dimension",
+        "impact_dimension",
+        "table_groups_name",
+        "data_source",
+        "data_location",
+        "source_system",
+        "source_process",
+        "business_domain",
+        "stakeholder_group",
+        "transform_level",
+        "data_product",
+    ],
+)
+def test_parse_category_rejects_column_form_input(internal):
+    """The old column-form values must not be accepted on input — display-form only."""
+    with pytest.raises(MCPUserError, match="Invalid category") as exc_info:
+        parse_category(internal)
+    msg = str(exc_info.value)
+    # Error message must list at least one display-form value to guide the caller.
+    assert "Quality Dimension" in msg
+
+
+def test_parse_category_invalid_lists_display_form_values():
+    """An unrelated bad value lists every display-form value in the error message."""
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_category("Made Up")
+    msg = str(exc_info.value)
+    for member in ScoreCategoryArg:
+        assert member.value in msg
+
+
+# --- ScoreChainLeafField ---
+
+
+def test_score_chain_leaf_field_values():
+    assert ScoreChainLeafField.TABLE.value == "Table"
+    assert ScoreChainLeafField.COLUMN.value == "Column"
+
+
+def test_score_chain_leaf_to_column_mapping():
+    assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.TABLE] == "table_name"
+    assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.COLUMN] == "column_name"
