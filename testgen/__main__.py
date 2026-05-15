@@ -146,12 +146,16 @@ def _install_shutdown_handler(handler) -> None:
 
 
 def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
-    # POSIX: forward the signal verbatim. Windows: send CTRL_BREAK_EVENT so the
-    # child's atexit hooks run (it deregisters from pgserver's PID list, lets
-    # streamlit/uvicorn shut down their event loops, etc.). The child must have
-    # been spawned with CREATE_NEW_PROCESS_GROUP — see _subprocess_spawn_kwargs.
+    # POSIX: forward the signal verbatim. Windows: TerminateProcess — graceful
+    # CTRL_BREAK_EVENT delivery is unreliable here because some children
+    # (notably the scheduler thread blocked in threading.Event.wait, and
+    # Streamlit/tornado) don't wake on SIGBREAK, leaving the parent's
+    # children-watcher loop hung forever. Force-kill is safe: children no
+    # longer call pgserver.get_server(), so there's no on-disk PID registry
+    # state to clean up — only the parent owns the pgserver handle and
+    # exits via the normal atexit path.
     if sys.platform == "win32":
-        child.send_signal(signal.CTRL_BREAK_EVENT)
+        child.terminate()
     else:
         child.send_signal(signum)
 
