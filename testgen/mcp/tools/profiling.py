@@ -111,7 +111,7 @@ def list_column_profiles(
     cde: bool | None = None,
     suggested_data_type: str | None = None,
     general_type: str | None = None,
-    functional_data_type: str | None = None,
+    semantic_data_type: str | None = None,
     pii_category: str | None = None,
     pii_risk_level: str | None = None,
     order_by: str | None = None,
@@ -137,27 +137,23 @@ def list_column_profiles(
             this value.
         filled_ratio_below: Match columns whose dummy/placeholder-value fraction is below
             this value.
-        score_profiling_above: Match columns whose Profiling Score is above this value.
-        score_profiling_below: Match columns whose Profiling Score is below this value.
-        score_testing_above: Match columns whose Testing Score is above this value.
-        score_testing_below: Match columns whose Testing Score is below this value.
+        score_profiling_above: Match columns whose Profiling Score is above this value (0-100 scale).
+        score_profiling_below: Match columns whose Profiling Score is below this value (0-100 scale).
+        score_testing_above: Match columns whose Testing Score is above this value (0-100 scale).
+        score_testing_below: Match columns whose Testing Score is below this value (0-100 scale).
         pii: When `true`, match columns flagged as PII; when `false`, exclude PII columns.
         cde: When `true`, match columns flagged as a Critical Data Element (directly
             or inherited from the table); when `false`, exclude CDE columns.
         suggested_data_type: Match columns where profiling suggests a more suitable data
-            type. Pass `Any` for any mismatch, or a concrete type (`Integer`, `Numeric`,
-            `Varchar`, `Date`, `Timestamp`, `Boolean`) to filter mismatches whose
-            suggestion starts with that type. Columns where the suggestion matches the
-            column's stored type are always excluded.
+            type. Pass `Any` for any mismatch, or a concrete type (`Smallint`, `Integer`,
+            `Bigint`, `Decimal`, `Numeric`, `Varchar`, `Date`, `Timestamp`, `Boolean`) to
+            filter mismatches whose suggestion starts with that type. Columns where the
+            suggestion matches the column's stored type are always excluded.
         general_type: Broad type classification —
             `Alpha`, `Numeric`, `Datetime`, `Boolean`, `Time`, or `Other`.
-        functional_data_type: Substring match (case-insensitive) on Semantic Data Type.
-            Use a cluster prefix to catch related variants — `Period` matches
-            `Period`, `Period Month`, `Period Year`, etc.; `ID` matches `ID`, `ID-FK`,
-            `ID-Unique`, etc.; `Transactional Date` matches all of its variants. Bare
-            tokens auto-wrap with `%`; an explicit `%` in the input is honored as a
-            wildcard. The set of values is open-ended — discover available values by
-            listing columns without this filter, then narrow.
+        semantic_data_type: Substring match (case-insensitive) on Semantic Data Type.
+            Bare tokens auto-wrap with `%`; an explicit `%` is honored as a wildcard.
+            See `testgen://column-profile-fields` for the canonical value list.
         pii_category: PII category — `ID`, `Name`, `Demographic`, or `Contact`.
         pii_risk_level: PII risk level — `High`, `Moderate`, or `Low`.
         order_by: Sort key — `Null Ratio`, `Distinct Ratio`, `Filled Ratio`,
@@ -206,13 +202,13 @@ def list_column_profiles(
         )
 
     if score_profiling_above is not None:
-        clauses.append(DataColumnChars.dq_score_profiling > score_profiling_above)
+        clauses.append(DataColumnChars.dq_score_profiling > score_profiling_above / 100)
     if score_profiling_below is not None:
-        clauses.append(DataColumnChars.dq_score_profiling < score_profiling_below)
+        clauses.append(DataColumnChars.dq_score_profiling < score_profiling_below / 100)
     if score_testing_above is not None:
-        clauses.append(DataColumnChars.dq_score_testing > score_testing_above)
+        clauses.append(DataColumnChars.dq_score_testing > score_testing_above / 100)
     if score_testing_below is not None:
-        clauses.append(DataColumnChars.dq_score_testing < score_testing_below)
+        clauses.append(DataColumnChars.dq_score_testing < score_testing_below / 100)
 
     if pii is True:
         clauses.append(DataColumnChars.pii_flag.isnot(None))
@@ -244,12 +240,12 @@ def list_column_profiles(
 
     if general_type is not None:
         clauses.append(DataColumnChars.general_type == parse_general_type(general_type))
-    if functional_data_type is not None:
-        if not functional_data_type.strip():
-            raise MCPUserError("`functional_data_type` cannot be empty.")
+    if semantic_data_type is not None:
+        if not semantic_data_type.strip():
+            raise MCPUserError("`semantic_data_type` cannot be empty.")
         clauses.append(
             DataColumnChars.functional_data_type.ilike(
-                build_ilike_pattern(functional_data_type), escape="\\"
+                build_ilike_pattern(semantic_data_type), escape="\\"
             )
         )
     if pii_category is not None:
@@ -659,8 +655,12 @@ def _load_profile_for_column(
     table_name: str,
     column_name: str,
     job_execution_id: str | None,
-) -> tuple[ProfileResult, ProfilingRun]:
-    """Resolve and load the profile-results row for one column, paired with its ``ProfilingRun``."""
+) -> tuple[ProfileResult, ProfilingRun, str | None]:
+    """Resolve and load the profile-results row for one column.
+
+    Returns a triple of ``(profile, profiling_run, pii_flag)`` where ``pii_flag`` is
+    pulled from ``data_column_chars`` (the source of truth for column-level PII state).
+    """
     profiling_run: ProfilingRun | None = None
     if job_execution_id:
         profiling_run = resolve_profiling_run(job_execution_id)
@@ -678,12 +678,18 @@ def _load_profile_for_column(
         profiling_run = ProfilingRun.get(profile.profile_run_id)
         if profiling_run is None:
             raise MCPResourceNotAccessible("Profiling run", str(profile.profile_run_id))
-    return profile, profiling_run
+    column_rows = list(DataColumnChars.select_where(
+        DataColumnChars.table_groups_id == tg.id,
+        DataColumnChars.table_name == table_name,
+        DataColumnChars.column_name == column_name,
+    ))
+    pii_flag = column_rows[0].pii_flag if column_rows else None
+    return profile, profiling_run, pii_flag
 
 
-def _is_pii_redacted_for_caller(tg: TableGroup, profile: ProfileResult) -> bool:
+def _is_pii_redacted_for_caller(tg: TableGroup, pii_flag: str | None) -> bool:
     """Decide whether to redact PII values for this caller + column."""
-    if not profile.pii_flag:
+    if not pii_flag:
         return False
     return not get_project_permissions().has_permission("view_pii", tg.project_code)
 
@@ -937,16 +943,16 @@ def get_column_frequent_values(
             latest profile run.
     """
     tg = resolve_table_group(table_group_id)
-    profile, profiling_run = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
+    profile, profiling_run, pii_flag = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
 
     doc = MdDoc()
     doc.heading(1, f"Frequent values: {table_name}.{column_name}")
     doc.field("Table group", tg.id, code=True)
     doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
-    doc.field("Records", profile.record_ct)
+    doc.field("Row Count", profile.record_ct)
     doc.field("Distinct values", profile.distinct_value_ct)
-    if profile.pii_flag:
-        doc.field("PII", _format_pii(profile.pii_flag))
+    if pii_flag:
+        doc.field("PII", _format_pii(pii_flag))
 
     rows = parse_top_freq_values(profile.top_freq_values)
     if not rows:
@@ -956,7 +962,7 @@ def get_column_frequent_values(
         )
         return doc.render()
 
-    redact = _is_pii_redacted_for_caller(tg, profile)
+    redact = _is_pii_redacted_for_caller(tg, pii_flag)
     record_ct = profile.record_ct or 0
     display_rows: list[list[object]] = []
     for value, count in rows:
@@ -992,13 +998,13 @@ def get_column_patterns(
             latest profile run.
     """
     tg = resolve_table_group(table_group_id)
-    profile, profiling_run = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
+    profile, profiling_run, _ = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
 
     doc = MdDoc()
     doc.heading(1, f"Character patterns: {table_name}.{column_name}")
     doc.field("Table group", tg.id, code=True)
     doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
-    doc.field("Records", profile.record_ct)
+    doc.field("Row Count", profile.record_ct)
     doc.field("Distinct values", profile.distinct_value_ct)
 
     if profile.general_type and profile.general_type != "A":

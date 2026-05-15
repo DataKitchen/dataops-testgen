@@ -53,7 +53,10 @@ class SuggestedDataType(StrEnum):
     """Values accepted for the ``suggested_data_type`` argument."""
 
     ANY = "Any"
+    SMALLINT = "Smallint"
     INTEGER = "Integer"
+    BIGINT = "Bigint"
+    DECIMAL = "Decimal"
     NUMERIC = "Numeric"
     VARCHAR = "Varchar"
     DATE = "Date"
@@ -65,7 +68,10 @@ class SuggestedDataType(StrEnum):
 # ``datatype_suggestion`` (``Any`` is a sentinel — no prefix, just non-null check).
 SUGGESTED_DATA_TYPE_TO_PREFIX: dict[SuggestedDataType, str | None] = {
     SuggestedDataType.ANY: None,
+    SuggestedDataType.SMALLINT: "SMALLINT",
     SuggestedDataType.INTEGER: "INTEGER",
+    SuggestedDataType.BIGINT: "BIGINT",
+    SuggestedDataType.DECIMAL: "DECIMAL",
     SuggestedDataType.NUMERIC: "NUMERIC",
     SuggestedDataType.VARCHAR: "VARCHAR",
     SuggestedDataType.DATE: "DATE",
@@ -323,21 +329,24 @@ class DataColumnChars(Entity):
         null_ratio_expr = ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0)
         distinct_ratio_expr = ProfileResult.distinct_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0)
         filled_ratio_expr = ProfileResult.filled_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0)
+        # Deterministic tiebreaker so paginated callers don't see rows skip or duplicate
+        # across pages when the primary sort has ties.
+        tiebreaker = (asc(cls.table_name), asc(cls.ordinal_position), asc(cls.column_name))
         order_exprs: tuple
         if order_by is ColumnOrderBy.NULL_RATIO:
-            order_exprs = (desc(null_ratio_expr).nulls_last(),)
+            order_exprs = (desc(null_ratio_expr).nulls_last(), *tiebreaker)
         elif order_by is ColumnOrderBy.DISTINCT_RATIO:
-            order_exprs = (asc(distinct_ratio_expr).nulls_last(),)
+            order_exprs = (asc(distinct_ratio_expr).nulls_last(), *tiebreaker)
         elif order_by is ColumnOrderBy.FILLED_RATIO:
-            order_exprs = (desc(filled_ratio_expr).nulls_last(),)
+            order_exprs = (desc(filled_ratio_expr).nulls_last(), *tiebreaker)
         elif order_by is ColumnOrderBy.SCORE_PROFILING:
-            order_exprs = (asc(cls.dq_score_profiling).nulls_last(),)
+            order_exprs = (asc(cls.dq_score_profiling).nulls_last(), *tiebreaker)
         elif order_by is ColumnOrderBy.SCORE_TESTING:
-            order_exprs = (asc(cls.dq_score_testing).nulls_last(),)
+            order_exprs = (asc(cls.dq_score_testing).nulls_last(), *tiebreaker)
         elif order_by is ColumnOrderBy.HYGIENE_COUNT:
-            order_exprs = (desc(func.coalesce(hygiene_subq.c.hygiene_issue_count, 0)),)
+            order_exprs = (desc(func.coalesce(hygiene_subq.c.hygiene_issue_count, 0)), *tiebreaker)
         else:
-            order_exprs = (asc(cls.table_name), asc(cls.ordinal_position), asc(cls.column_name))
+            order_exprs = tiebreaker
 
         query = query.order_by(*order_exprs)
 

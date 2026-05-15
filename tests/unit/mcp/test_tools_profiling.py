@@ -1333,6 +1333,37 @@ def test_list_column_profiles_null_ratio_above_adds_clause(mock_tg_cls, mock_dcc
 
 @patch.object(DataColumnChars, "list_for_table_group")
 @patch("testgen.mcp.tools.common.TableGroup")
+def test_list_column_profiles_score_profiling_above_converts_to_0_to_1_scale(
+    mock_tg_cls, mock_method, db_session_mock,
+):
+    """The user-facing 0-100 score range maps to the 0-1 fraction the DB stores."""
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_method.return_value = ([], 0)
+
+    from testgen.mcp.tools.profiling import list_column_profiles
+    list_column_profiles(str(uuid4()), score_profiling_above=70)
+
+    sql = _compile_clauses(mock_method)
+    assert "dq_score_profiling > 0.7" in sql
+
+
+@patch.object(DataColumnChars, "list_for_table_group")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_column_profiles_score_testing_below_converts_to_0_to_1_scale(
+    mock_tg_cls, mock_method, db_session_mock,
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_method.return_value = ([], 0)
+
+    from testgen.mcp.tools.profiling import list_column_profiles
+    list_column_profiles(str(uuid4()), score_testing_below=50)
+
+    sql = _compile_clauses(mock_method)
+    assert "dq_score_testing < 0.5" in sql
+
+
+@patch.object(DataColumnChars, "list_for_table_group")
+@patch("testgen.mcp.tools.common.TableGroup")
 def test_list_column_profiles_pii_true_adds_is_not_null_clause(mock_tg_cls, mock_method, db_session_mock):
     mock_tg_cls.get.return_value = _mock_table_group()
     mock_method.return_value = ([], 0)
@@ -1454,14 +1485,14 @@ def test_list_column_profiles_pii_risk_level_moderate_does_not_include_manual(
 
 @patch.object(DataColumnChars, "list_for_table_group")
 @patch("testgen.mcp.tools.common.TableGroup")
-def test_list_column_profiles_functional_data_type_uses_ilike(
+def test_list_column_profiles_semantic_data_type_uses_ilike(
     mock_tg_cls, mock_method, db_session_mock,
 ):
     mock_tg_cls.get.return_value = _mock_table_group()
     mock_method.return_value = ([], 0)
 
     from testgen.mcp.tools.profiling import list_column_profiles
-    list_column_profiles(str(uuid4()), functional_data_type="Person Given")
+    list_column_profiles(str(uuid4()), semantic_data_type="Person Given")
 
     sql = _compile_clauses(mock_method)
     # Default dialect renders ILIKE as ``LOWER(col) LIKE LOWER(pat) ESCAPE`` — same semantic.
@@ -1471,7 +1502,7 @@ def test_list_column_profiles_functional_data_type_uses_ilike(
 
 @patch.object(DataColumnChars, "list_for_table_group")
 @patch("testgen.mcp.tools.common.TableGroup")
-def test_list_column_profiles_functional_data_type_underscore_escaped(
+def test_list_column_profiles_semantic_data_type_underscore_escaped(
     mock_tg_cls, mock_method, db_session_mock,
 ):
     """Underscores in the input must be escaped (column names commonly contain them)."""
@@ -1479,7 +1510,7 @@ def test_list_column_profiles_functional_data_type_underscore_escaped(
     mock_method.return_value = ([], 0)
 
     from testgen.mcp.tools.profiling import list_column_profiles
-    list_column_profiles(str(uuid4()), functional_data_type="ID_FK")
+    list_column_profiles(str(uuid4()), semantic_data_type="ID_FK")
 
     sql = _compile_clauses(mock_method)
     # The escape clause appears, and the underscore is escaped in the pattern.
@@ -1488,12 +1519,12 @@ def test_list_column_profiles_functional_data_type_underscore_escaped(
 
 @patch.object(DataColumnChars, "list_for_table_group")
 @patch("testgen.mcp.tools.common.TableGroup")
-def test_list_column_profiles_functional_data_type_empty_rejected(mock_tg_cls, mock_method, db_session_mock):
+def test_list_column_profiles_semantic_data_type_empty_rejected(mock_tg_cls, mock_method, db_session_mock):
     mock_tg_cls.get.return_value = _mock_table_group()
 
     from testgen.mcp.tools.profiling import list_column_profiles
-    with pytest.raises(MCPUserError, match="`functional_data_type` cannot be empty"):
-        list_column_profiles(str(uuid4()), functional_data_type="   ")
+    with pytest.raises(MCPUserError, match="`semantic_data_type` cannot be empty"):
+        list_column_profiles(str(uuid4()), semantic_data_type="   ")
 
 
 @patch.object(DataColumnChars, "list_for_table_group")
@@ -1543,14 +1574,25 @@ def _mock_profiling_run_for_tg(tg_id):
     return pr
 
 
+def _mock_data_column(pii_flag=None):
+    """Build a mock `DataColumnChars` row carrying just the fields the helper reads."""
+    col = MagicMock()
+    col.pii_flag = pii_flag
+    return col
+
+
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
-def test_get_column_frequent_values_happy_path(mock_tg_cls, mock_pr_cls, mock_run_cls, db_session_mock):
+def test_get_column_frequent_values_happy_path(
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
+):
     tg = _mock_table_group()
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result()
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column()]
 
     from testgen.mcp.tools.profiling import get_column_frequent_values
     result = get_column_frequent_values(str(uuid4()), "customers", "country")
@@ -1561,11 +1603,12 @@ def test_get_column_frequent_values_happy_path(mock_tg_cls, mock_pr_cls, mock_ru
     assert "Top values" in result
 
 
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_frequent_values_surfaces_job_execution_id_not_profile_run_id(
-    mock_tg_cls, mock_pr_cls, mock_run_cls, db_session_mock,
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_tg_cls.get.return_value = tg
@@ -1573,6 +1616,7 @@ def test_get_column_frequent_values_surfaces_job_execution_id_not_profile_run_id
     mock_pr_cls.get_for_column.return_value = profile
     run = _mock_profiling_run_for_tg(tg.id)
     mock_run_cls.get.return_value = run
+    mock_dcc_select.return_value = [_mock_data_column()]
 
     from testgen.mcp.tools.profiling import get_column_frequent_values
     result = get_column_frequent_values(str(uuid4()), "customers", "country")
@@ -1582,19 +1626,21 @@ def test_get_column_frequent_values_surfaces_job_execution_id_not_profile_run_id
     assert str(profile.profile_run_id) not in result
 
 
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_frequent_values_pii_value_redacted_when_caller_lacks_view_pii(
-    mock_tg_cls, mock_pr_cls, mock_run_cls, db_session_mock,
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
 ):
     tg = _mock_table_group(project_code="demo")
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
-        pii_flag="B/CONTACT/Email",
         top_freq_values="| alice@example.com | 5\n| bob@example.com | 3",
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    # The pii_flag the tool reads comes from DataColumnChars, not ProfileResult.
+    mock_dcc_select.return_value = [_mock_data_column(pii_flag="B/CONTACT/Email")]
 
     # Default test conftest grants no view_pii (TEST_PERM_MATRIX has no entry).
     from testgen.mcp.tools.profiling import get_column_frequent_values
@@ -1604,20 +1650,21 @@ def test_get_column_frequent_values_pii_value_redacted_when_caller_lacks_view_pi
     assert "alice@example.com" not in result
 
 
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.permissions._compute_project_permissions")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_frequent_values_pii_value_visible_with_view_pii_grant(
-    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_compute, db_session_mock,
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_compute, mock_dcc_select, db_session_mock,
 ):
     tg = _mock_table_group(project_code="demo")
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
-        pii_flag="B/CONTACT/Email",
         top_freq_values="| alice@example.com | 5\n| bob@example.com | 3",
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column(pii_flag="B/CONTACT/Email")]
     mock_compute.return_value = ProjectPermissions(
         memberships={"demo": "role_a"},
         permission="catalog",
@@ -1633,11 +1680,12 @@ def test_get_column_frequent_values_pii_value_visible_with_view_pii_grant(
     assert PII_REDACTED not in result
 
 
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_frequent_values_high_cardinality_fallback(
-    mock_tg_cls, mock_pr_cls, mock_run_cls, db_session_mock,
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_tg_cls.get.return_value = tg
@@ -1645,6 +1693,7 @@ def test_get_column_frequent_values_high_cardinality_fallback(
         top_freq_values=None, distinct_value_ct=10000,
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column()]
 
     from testgen.mcp.tools.profiling import get_column_frequent_values
     result = get_column_frequent_values(str(uuid4()), "customers", "customer_id")
@@ -1666,15 +1715,45 @@ def test_get_column_frequent_values_missing_profile_raises_not_accessible(
         get_column_frequent_values(str(uuid4()), "customers", "ghost")
 
 
+@patch.object(DataColumnChars, "select_where")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_frequent_values_pii_source_is_data_column_chars_not_profile_result(
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
+):
+    """``data_column_chars.pii_flag`` is the source of truth; ``profile_result.pii_flag`` is ignored."""
+    tg = _mock_table_group(project_code="demo")
+    mock_tg_cls.get.return_value = tg
+    # ProfileResult carries a stale/wrong pii_flag; DataColumnChars says None.
+    mock_pr_cls.get_for_column.return_value = _mock_profile_result(
+        pii_flag="A/CONTACT/Email",  # stale value; should NOT drive redaction
+        top_freq_values="| alice@example.com | 5",
+    )
+    mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column(pii_flag=None)]
+
+    from testgen.mcp.tools.profiling import get_column_frequent_values
+    result = get_column_frequent_values(str(uuid4()), "customers", "email")
+
+    # No redaction, no PII field — because DataColumnChars says the column is not PII.
+    assert PII_REDACTED not in result
+    assert "alice@example.com" in result
+    assert "PII" not in result.splitlines()[1:6]  # no "PII:" field in the header block
+
+
 # ----------------------------------------------------------------------
 # get_column_patterns
 # ----------------------------------------------------------------------
 
 
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
-def test_get_column_patterns_happy_path(mock_tg_cls, mock_pr_cls, mock_run_cls, db_session_mock):
+def test_get_column_patterns_happy_path(
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
+):
     tg = _mock_table_group()
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
@@ -1682,6 +1761,7 @@ def test_get_column_patterns_happy_path(mock_tg_cls, mock_pr_cls, mock_run_cls, 
         top_patterns="326 | Aaaaaa | 176 | AAA",
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column()]
 
     from testgen.mcp.tools.profiling import get_column_patterns
     result = get_column_patterns(str(uuid4()), "customers", "country")
@@ -1691,11 +1771,12 @@ def test_get_column_patterns_happy_path(mock_tg_cls, mock_pr_cls, mock_run_cls, 
     assert "Top patterns" in result
 
 
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_patterns_non_string_column_fallback(
-    mock_tg_cls, mock_pr_cls, mock_run_cls, db_session_mock,
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_tg_cls.get.return_value = tg
@@ -1704,6 +1785,7 @@ def test_get_column_patterns_non_string_column_fallback(
         top_patterns=None,
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column()]
 
     from testgen.mcp.tools.profiling import get_column_patterns
     result = get_column_patterns(str(uuid4()), "products", "price")
@@ -1711,11 +1793,12 @@ def test_get_column_patterns_non_string_column_fallback(
     assert "column is not a string type" in result
 
 
+@patch.object(DataColumnChars, "select_where")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_patterns_high_cardinality_fallback(
-    mock_tg_cls, mock_pr_cls, mock_run_cls, db_session_mock,
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_tg_cls.get.return_value = tg
@@ -1725,6 +1808,7 @@ def test_get_column_patterns_high_cardinality_fallback(
         distinct_value_ct=9999,
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column()]
 
     from testgen.mcp.tools.profiling import get_column_patterns
     result = get_column_patterns(str(uuid4()), "customers", "address")

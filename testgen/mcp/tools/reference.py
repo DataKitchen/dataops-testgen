@@ -227,6 +227,35 @@ project, the following raw-value fields render as `[PII Redacted]`:
 
 Aggregates, counts, `Frequent Patterns`, and `Standard Pattern Match` are never redacted — they're
 distribution-level signals that don't expose individual rows.
+
+## Semantic Data Type — values emitted by profiling, grouped by family.
+
+**Identifiers**: `ID`, `ID-FK`, `ID-Group`, `ID-Secondary`, `ID-SK`,
+`ID-Unique`, `ID-Unique-SK`
+
+**Dates & schedules**: `Date Stamp`, `DateTime Stamp`, `Schedule Date`,
+`Future Date`, `Historical Date`, `Transactional Date`,
+`Transactional Date (Mo)`, `Transactional Date (Qtr)`,
+`Transactional Date (Wk)`
+
+**Periods**: `Period`, `Period DOW`, `Period Mon-NN`, `Period Month`,
+`Period Quarter`, `Period Week`, `Period Year`, `Period Year-Mon`
+
+**People**: `Person Full Name`, `Person Given Name`, `Person Last Name`
+
+**Location & contact**: `Address`, `City`, `State`, `Zip`, `Email`, `Phone`
+
+**Measurements**: `Measurement`, `Measurement Discrete`, `Measurement Pct`,
+`Measurement Spike`, `Measurement Text`
+
+**Codes, flags, attributes**: `Attribute`, `Boolean`, `Code`, `Constant`,
+`Flag`, `Sequence`
+
+**Entity & system**: `Entity Name`, `Process`, `Process User`, `System User`
+
+The `semantic_data_type` filter on `list_column_profiles` matches via `ILIKE`,
+so partial inputs catch related variants (e.g. `ID` matches `ID`, `ID-FK`,
+`ID-Group`, …).
 """
 
 
