@@ -96,34 +96,6 @@ class Entity(Base):
         return get_current_session().scalars(query).all()
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
-    def _paginate(
-        cls,
-        *clauses,
-        order_by: tuple[str | InstrumentedAttribute] | None = None,
-        page_index: int = 0,
-        page_size: int = 500,
-    ) -> tuple[list[Self], int]:
-        """Fetch one page of rows plus the total matching count via a window function.
-
-        Uses ``COUNT(*) OVER()`` so only one round-trip to the database is needed.
-        Returns ``(items, total_count)``.  ``page_index`` is 0-based.
-        """
-        order_by = order_by or cls._default_order_by
-        total_col = func.count().over().label("total_count")
-        query = (
-            select(cls, total_col)
-            .where(*clauses)
-            .order_by(*order_by)
-            .offset(page_index * page_size)
-            .limit(page_size)
-        )
-        rows = get_current_session().execute(query).all()
-        items = [row[0] for row in rows]
-        total = rows[0][1] if rows else 0
-        return items, total
-
-    @classmethod
     def select_minimal_where(cls, *clauses, order_by: tuple[str | InstrumentedAttribute]) -> Iterable[Any]:
         raise NotImplementedError
 
@@ -191,12 +163,6 @@ class Entity(Base):
     @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
         raise NotImplementedError
-
-    @classmethod
-    def clear_cache(cls) -> None:
-        cls.get.clear()
-        cls.select_where.clear()
-        cls._paginate.clear()
 
     @classmethod
     def columns(cls) -> list[str]:

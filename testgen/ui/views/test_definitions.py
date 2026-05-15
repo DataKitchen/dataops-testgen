@@ -539,11 +539,22 @@ class TestDefinitionsPage(Page):
                 )
 
         def on_filter_changed(filters: dict) -> None:
+            norm = lambda v: None if v in (None, "None", "") else str(v)
+            if (
+                norm(filters.get("table_name")) == norm(table_name)
+                and norm(filters.get("column_name")) == norm(column_name)
+                and norm(filters.get("test_type")) == norm(test_type)
+                and norm(filters.get("flagged")) == norm(flagged)
+                and current_page == 0
+            ):
+                return
             Router().set_query_params({**filters, "page": "0"})
 
         def on_page_changed(payload: dict) -> None:
             new_page = payload.get("page", 0)
             new_page_size = payload.get("page_size")
+            if new_page == current_page and (new_page_size is None or int(new_page_size) == current_page_size):
+                return
             params: dict = {"page": str(new_page)}
             if new_page_size is not None:
                 params["page_size"] = str(int(new_page_size))
@@ -557,6 +568,8 @@ class TestDefinitionsPage(Page):
                 order = col.get("order", "asc")
                 sort_parts.append(f"{field}:{order}")
             sort_value = ",".join(sort_parts) if sort_parts else None
+            if sort_value == sort and current_page == 0:
+                return
             Router().set_query_params({"sort": sort_value, "page": "0"})
 
         testgen.test_definitions_widget(
@@ -813,7 +826,7 @@ def get_test_definitions(
     order_by_tuple = tuple(order_by) if order_by else None
 
     if page_index is not None:
-        test_definitions, total_count = TestDefinition._paginate(
+        test_definitions, total_count = TestDefinition.select_page(
             *clauses,
             order_by=order_by_tuple,
             page_index=page_index,

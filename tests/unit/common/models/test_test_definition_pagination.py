@@ -11,11 +11,11 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture(autouse=True)
 def clear_streamlit_cache():
-    TestDefinition._paginate.clear()
+    TestDefinition.select_page.clear()
     yield
 
 
-def _make_row(table_name: str = "my_table", total_count: int = 10) -> dict:
+def _make_row(table_name: str = "my_table") -> dict:
     """Return a minimal row dict as returned by session.execute().mappings().all()."""
     return {
         # TestDefinitionSummary fields
@@ -64,6 +64,7 @@ def _make_row(table_name: str = "my_table", total_count: int = 10) -> dict:
         "export_to_observability": False,
         "prediction": None,
         "flagged": False,
+        "impact_dimension": None,
         # TestTypeSummary fields
         "test_name_short": "Custom",
         "default_test_description": "A test",
@@ -76,18 +77,19 @@ def _make_row(table_name: str = "my_table", total_count: int = 10) -> dict:
         "default_severity": "Warning",
         "test_scope": "column",
         "dq_dimension": "",
+        "default_impact_dimension": "",
         "usage_notes": "",
-        # Window function extra column
-        "total_count": total_count,
     }
 
 
-@patch("testgen.common.models.test_definition.get_current_session")
-def test__paginate_returns_items_and_total(mock_get_session):
-    rows = [_make_row("table_a", total_count=3), _make_row("table_b", total_count=3), _make_row("table_c", total_count=3)]
-    mock_get_session.return_value.execute.return_value.mappings.return_value.all.return_value = rows
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_returns_items_and_total(mock_get_session):
+    rows = [_make_row("table_a"), _make_row("table_b"), _make_row("table_c")]
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 3
+    mock_session.execute.return_value.mappings.return_value.all.return_value = rows
 
-    items, total = TestDefinition._paginate()
+    items, total = TestDefinition.select_page()
 
     assert total == 3
     assert len(items) == 3
@@ -96,32 +98,38 @@ def test__paginate_returns_items_and_total(mock_get_session):
     assert items[2].table_name == "table_c"
 
 
-@patch("testgen.common.models.test_definition.get_current_session")
-def test__paginate_empty_result_returns_zero_total(mock_get_session):
-    mock_get_session.return_value.execute.return_value.mappings.return_value.all.return_value = []
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_empty_result_returns_zero_total(mock_get_session):
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 0
+    mock_session.execute.return_value.mappings.return_value.all.return_value = []
 
-    items, total = TestDefinition._paginate()
+    items, total = TestDefinition.select_page()
 
     assert items == []
     assert total == 0
 
 
-@patch("testgen.common.models.test_definition.get_current_session")
-def test__paginate_total_count_not_in_item_fields(mock_get_session):
-    mock_get_session.return_value.execute.return_value.mappings.return_value.all.return_value = [_make_row()]
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_item_has_no_total_count_field(mock_get_session):
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 1
+    mock_session.execute.return_value.mappings.return_value.all.return_value = [_make_row()]
 
-    items, _ = TestDefinition._paginate()
+    items, _ = TestDefinition.select_page()
 
     assert not hasattr(items[0], "total_count")
 
 
-@patch("testgen.common.models.test_definition.get_current_session")
-def test__paginate_uses_correct_offset_and_limit(mock_get_session):
-    mock_get_session.return_value.execute.return_value.mappings.return_value.all.return_value = []
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_uses_correct_offset_and_limit(mock_get_session):
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 0
+    mock_session.execute.return_value.mappings.return_value.all.return_value = []
 
-    TestDefinition._paginate(page_index=2, page_size=100)
+    TestDefinition.select_page(page_index=2, page_size=100)
 
-    call_args = mock_get_session.return_value.execute.call_args
+    call_args = mock_session.execute.call_args
     query = call_args[0][0]
     compiled = query.compile(compile_kwargs={"literal_binds": True})
     sql = str(compiled)
@@ -130,13 +138,15 @@ def test__paginate_uses_correct_offset_and_limit(mock_get_session):
     assert "OFFSET 200" in sql
 
 
-@patch("testgen.common.models.test_definition.get_current_session")
-def test__paginate_page_zero_has_no_offset(mock_get_session):
-    mock_get_session.return_value.execute.return_value.mappings.return_value.all.return_value = []
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_page_zero_has_no_offset(mock_get_session):
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 0
+    mock_session.execute.return_value.mappings.return_value.all.return_value = []
 
-    TestDefinition._paginate(page_index=0, page_size=500)
+    TestDefinition.select_page(page_index=0, page_size=500)
 
-    call_args = mock_get_session.return_value.execute.call_args
+    call_args = mock_session.execute.call_args
     query = call_args[0][0]
     compiled = query.compile(compile_kwargs={"literal_binds": True})
     sql = str(compiled)

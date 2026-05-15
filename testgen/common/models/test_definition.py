@@ -419,9 +419,8 @@ class TestDefinition(Entity):
             getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
             for col in cls._summary_columns
         ]
-        total_col = func.count().over().label("total_count")
         query = (
-            select(*select_columns, total_col)
+            select(*select_columns)
             .join(TestType, cls.test_type == TestType.test_type)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
             .where(cls.test_suite_id == test_suite_id, TestSuite.is_monitor.isnot(True))
@@ -434,15 +433,12 @@ class TestDefinition(Entity):
             query = query.where(cls.test_type == test_type)
         if test_active is not None:
             query = query.where(cls.test_active == test_active)
-        query = query.order_by(*cls._default_order_by).offset((page - 1) * limit).limit(limit)
-        rows = get_current_session().execute(query).mappings().all()
-        items = [TestDefinitionSummary(**{k: v for k, v in row.items() if k != "total_count"}) for row in rows]
-        total = rows[0]["total_count"] if rows else 0
-        return items, total
+        query = query.order_by(*cls._default_order_by)
+        return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
     @classmethod
     @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
-    def _paginate(
+    def select_page(
         cls,
         *clauses,
         order_by: tuple[str | InstrumentedAttribute] | None = None,
@@ -453,19 +449,13 @@ class TestDefinition(Entity):
             getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
             for col in cls._summary_columns
         ]
-        total_col = func.count().over().label("total_count")
         query = (
-            select(*select_columns, total_col)
+            select(*select_columns)
             .join(TestType, cls.test_type == TestType.test_type)
             .where(*clauses)
             .order_by(*(order_by or cls._default_order_by))
-            .offset(page_index * page_size)
-            .limit(page_size)
         )
-        rows = get_current_session().execute(query).mappings().all()
-        items = [TestDefinitionSummary(**{k: v for k, v in row.items() if k != "total_count"}) for row in rows]
-        total = rows[0]["total_count"] if rows else 0
-        return items, total
+        return cls._paginate(query, page=page_index + 1, limit=page_size, data_class=TestDefinitionSummary)
 
 
 
