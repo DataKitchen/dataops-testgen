@@ -1,3 +1,40 @@
+# Silence streamlit's "missing ScriptRunContext" / "No runtime found" /
+# "Session state does not function" warnings, which fire whenever streamlit-
+# decorated code runs outside an active script run (our CLI, scheduler, server,
+# and any import that touches @st.cache_data). Must run before the first
+# streamlit-using import, so it sits at the top of the module.
+#
+# We replace ``set_log_level`` itself, after seeding it to "error". Streamlit's
+# own ``_update_logger`` callback fires on config parse and would otherwise
+# downgrade us back to "info"; the cap floors any later call at ERROR.
+def _silence_streamlit_logs() -> None:
+    import logging as _logging
+
+    try:
+        from streamlit import logger as _st_logger
+    except ImportError:
+        return
+
+    _original = _st_logger.set_log_level
+    _original("error")
+
+    def _capped(level):
+        if isinstance(level, str):
+            try:
+                level_num = getattr(_logging, level.upper())
+            except AttributeError:
+                _original(level)
+                return
+        else:
+            level_num = level
+        _original(max(level_num, _logging.ERROR))
+
+    _st_logger.set_log_level = _capped
+
+
+_silence_streamlit_logs()
+
+
 import base64
 import importlib
 import logging
@@ -60,6 +97,7 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.notifications.base import smtp_configured
 from testgen.common.standalone_postgres import (
     STANDALONE_URI_ENV_VAR,
+    ensure_standalone_setup,
     get_server_uri,
     is_standalone_mode,
 )
@@ -79,12 +117,41 @@ VERSION_DATA = version_service.get_version()
 CHILDREN_POLL_INTERVAL = 10
 
 
-def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
-    # On POSIX, forward the signal verbatim. On Windows, subprocess.send_signal
-    # rejects everything except SIGTERM / CTRL_C_EVENT / CTRL_BREAK_EVENT, so
-    # fall back to terminate() — equivalent to TerminateProcess().
+def _subprocess_spawn_kwargs() -> dict:
+    """Spawn flags that let the parent send a *catchable* shutdown signal to a child.
+
+    On POSIX, ``start_new_session`` puts the child in its own session so the
+    console SIGINT only hits the parent. On Windows, ``CREATE_NEW_PROCESS_GROUP``
+    is required so the parent can deliver ``CTRL_BREAK_EVENT`` to the child —
+    without it, the only options are ``terminate()`` (uncatchable) or relying on
+    the console-wide Ctrl+C broadcast (racy).
+    """
     if sys.platform == "win32":
-        child.terminate()
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"start_new_session": True}
+
+
+def _install_shutdown_handler(handler) -> None:
+    """Register *handler* for SIGINT, SIGTERM, and (on Windows) SIGBREAK.
+
+    Windows children spawned with ``CREATE_NEW_PROCESS_GROUP`` receive
+    ``CTRL_BREAK_EVENT`` (delivered as SIGBREAK) instead of console Ctrl+C —
+    treat it the same as SIGTERM so atexit hooks run and pgserver's PID list
+    stays clean.
+    """
+    signal.signal(signal.SIGINT, handler)
+    signal.signal(signal.SIGTERM, handler)
+    if sigbreak := getattr(signal, "SIGBREAK", None):
+        signal.signal(sigbreak, handler)
+
+
+def _forward_signal_to_child(child: subprocess.Popen, signum: int) -> None:
+    # POSIX: forward the signal verbatim. Windows: send CTRL_BREAK_EVENT so the
+    # child's atexit hooks run (it deregisters from pgserver's PID list, lets
+    # streamlit/uvicorn shut down their event loops, etc.). The child must have
+    # been spawned with CREATE_NEW_PROCESS_GROUP — see _subprocess_spawn_kwargs.
+    if sys.platform == "win32":
+        child.send_signal(signal.CTRL_BREAK_EVENT)
     else:
         child.send_signal(signum)
 
@@ -132,7 +199,14 @@ class CliGroup(click.Group):
 @click.pass_context
 def cli(ctx: Context, verbose: bool):
     if is_standalone_mode():
-        start_standalone_postgres()
+        # Children spawned by `run-app all` (and the Streamlit subprocess) inherit the
+        # parent's pgserver URI. They must NOT call get_server() themselves — each call
+        # registers the calling PID in pgserver's on-disk handle list, and any PID left
+        # over after a hard kill prevents the parent from actually stopping postgres.
+        if inherited_uri := os.environ.get(STANDALONE_URI_ENV_VAR):
+            ensure_standalone_setup(inherited_uri)
+        else:
+            start_standalone_postgres()
 
     if verbose:
         configure_logging(level=logging.DEBUG)
@@ -566,13 +640,20 @@ def setup_standalone(username: str, password: str):
 
     # Persist caller-supplied runtime overrides (ports, TLS) so they apply to
     # subsequent `testgen run-app` invocations.
-    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "SSL_CERT_FILE", "SSL_KEY_FILE")
+    persisted_env_vars = ("TG_UI_PORT", "TG_API_PORT", "TESTGEN_LOG_FILE_PATH", "SSL_CERT_FILE", "SSL_KEY_FILE")
     persisted_lines = [f"{name}={os.environ[name]}" for name in persisted_env_vars if os.environ.get(name)]
     if persisted_lines:
         config_lines.extend(["", "# Runtime overrides from installer", *persisted_lines])
 
     config_path.write_text("\n".join(config_lines) + "\n")
     click.echo(f"Config written to {config_path}")
+
+    # `getenv` resolves env vars before config.env, so a pre-existing
+    # TESTGEN_USERNAME / TESTGEN_PASSWORD in the shell would override the
+    # CLI-supplied values and get seeded into the DB. Force the CLI args
+    # to win for the rest of this process.
+    os.environ["TESTGEN_USERNAME"] = username
+    os.environ["TESTGEN_PASSWORD"] = password
 
     # Reload settings — the module was already evaluated at import time
     # before the config file existed.  Reloading re-reads the new file
@@ -880,14 +961,16 @@ def run_ui():
     app_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui/app.py")
 
     # In standalone mode, pass the pgserver URI to the Streamlit subprocess
-    # so it can connect without acquiring the pgserver file lock.
+    # so it can connect without acquiring the pgserver file lock. When this
+    # process is itself a child of `run-app all`, the URI is already in the
+    # inherited environment — fall back to that so Streamlit still gets it.
     child_env = {**os.environ, "TG_JOB_SOURCE": "UI"}
     if is_standalone_mode():
-        server_uri = get_server_uri()
+        server_uri = get_server_uri() or os.environ.get(STANDALONE_URI_ENV_VAR)
         if server_uri:
-            child_env = {**os.environ, "TG_JOB_SOURCE": "UI", STANDALONE_URI_ENV_VAR: server_uri}
+            child_env[STANDALONE_URI_ENV_VAR] = server_uri
 
-    process= subprocess.Popen(
+    process = subprocess.Popen(
         [
             sys.executable,
             "-m",
@@ -895,6 +978,7 @@ def run_ui():
             "run",
             app_file,
             "--browser.gatherUsageStats=false",
+            f"--logger.level={'debug' if settings.IS_DEBUG else 'error'}",
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
@@ -905,12 +989,12 @@ def run_ui():
             f"{'--debug' if settings.IS_DEBUG else ''}",
         ],
         env=child_env,
+        **_subprocess_spawn_kwargs(),
     )
     def term_ui(signum, _):
         LOG.info(f"Sending termination signal {signum} to Testgen UI")
         _forward_signal_to_child(process, signum)
-    signal.signal(signal.SIGINT, term_ui)
-    signal.signal(signal.SIGTERM, term_ui)
+    _install_shutdown_handler(term_ui)
     status_code = process.wait()
     LOG.log(logging.ERROR if status_code != 0 else logging.INFO, f"Testgen UI exited with status code {status_code}")
 
@@ -935,8 +1019,15 @@ def run_app(module):
             run_server()
 
         case "all":
+            child_env = os.environ.copy()
+            if is_standalone_mode() and (server_uri := get_server_uri()):
+                child_env[STANDALONE_URI_ENV_VAR] = server_uri
             children = [
-                subprocess.Popen([sys.executable, "-m", "testgen", "run-app", m], start_new_session=True)
+                subprocess.Popen(
+                    [sys.executable, "-m", "testgen", "run-app", m],
+                    env=child_env,
+                    **_subprocess_spawn_kwargs(),
+                )
                 for m in APP_MODULES
             ]
 
@@ -944,8 +1035,7 @@ def run_app(module):
                 for child in children:
                     _forward_signal_to_child(child, signum)
 
-            signal.signal(signal.SIGINT, term_children)
-            signal.signal(signal.SIGTERM, term_children)
+            _install_shutdown_handler(term_children)
 
             terminating = False
             while children:
@@ -954,7 +1044,10 @@ def run_app(module):
                 except subprocess.TimeoutExpired:
                     pass
 
-                for child in children:
+                # Iterate a snapshot — `children.remove(child)` inside a live iteration
+                # would skip the next element and could leave a sibling un-reaped during
+                # the simultaneous-exit case we're explicitly hardening for here.
+                for child in list(children):
                     if child.poll() is not None:
                         children.remove(child)
                         if not terminating:

@@ -1,3 +1,4 @@
+from testgen.common.enums import ImpactDimension, QualityDimension
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestDefinitionSummary, TestType
 from testgen.common.models.test_result import TestResult
@@ -7,6 +8,8 @@ from testgen.mcp.tools.common import (
     DocGroup,
     format_page_footer,
     format_page_info,
+    parse_impact_dimension,
+    parse_quality_dimension,
     parse_uuid,
     resolve_test_type,
     validate_limit,
@@ -17,8 +20,6 @@ from testgen.mcp.tools.markdown import MdDoc
 _DOC_GROUP = DocGroup.DISCOVER
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
-_VALID_IMPACT_DIMENSIONS = {"Reliability", "Conformance", "Regularity", "Usability"}
-_VALID_DQ_DIMENSIONS = {"Accuracy", "Completeness", "Consistency", "Recency", "Timeliness", "Uniqueness", "Validity"}
 
 
 @with_database_session
@@ -303,20 +304,20 @@ def list_test_types(
     if scope and scope not in _VALID_SCOPES:
         valid = ", ".join(sorted(_VALID_SCOPES))
         raise MCPUserError(f"Invalid scope `{scope}`. Valid values: {valid}")
-    if impact_dimension and impact_dimension not in _VALID_IMPACT_DIMENSIONS:
-        valid = ", ".join(sorted(_VALID_IMPACT_DIMENSIONS))
-        raise MCPUserError(f"Invalid impact_dimension `{impact_dimension}`. Valid values: {valid}")
-    if quality_dimension and quality_dimension not in _VALID_DQ_DIMENSIONS:
-        valid = ", ".join(sorted(_VALID_DQ_DIMENSIONS))
-        raise MCPUserError(f"Invalid quality_dimension `{quality_dimension}`. Valid values: {valid}")
+    impact_dimension_enum: ImpactDimension | None = (
+        parse_impact_dimension(impact_dimension) if impact_dimension else None
+    )
+    quality_dimension_enum: QualityDimension | None = (
+        parse_quality_dimension(quality_dimension) if quality_dimension else None
+    )
 
     clauses = [TestType.active == "Y"]
     if scope:
         clauses.append(TestType.test_scope == scope)
-    if impact_dimension:
-        clauses.append(TestType.impact_dimension == impact_dimension)
-    if quality_dimension:
-        clauses.append(TestType.dq_dimension == quality_dimension)
+    if impact_dimension_enum is not None:
+        clauses.append(TestType.impact_dimension == impact_dimension_enum)
+    if quality_dimension_enum is not None:
+        clauses.append(TestType.dq_dimension == quality_dimension_enum)
 
     test_types = TestType.select_where(*clauses)
 

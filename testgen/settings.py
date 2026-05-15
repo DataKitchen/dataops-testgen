@@ -474,7 +474,7 @@ def _ssl_files_present() -> bool:
     return bool(SSL_CERT_FILE) and os.path.isfile(SSL_CERT_FILE) and bool(SSL_KEY_FILE) and os.path.isfile(SSL_KEY_FILE)
 
 
-_ui_tls_env = os.getenv("TG_UI_TLS_ENABLED", "").lower()
+_ui_tls_env = getenv("TG_UI_TLS_ENABLED", "").lower()
 UI_TLS_ENABLED: bool = _ui_tls_env in ("yes", "true") if _ui_tls_env else _ssl_files_present()
 """
 Enable TLS for the Streamlit UI server.
@@ -484,7 +484,7 @@ from env variable: `TG_UI_TLS_ENABLED`
 defaults to: auto-detect
 """
 
-_api_tls_env = os.getenv("TG_API_TLS_ENABLED", "").lower()
+_api_tls_env = getenv("TG_API_TLS_ENABLED", "").lower()
 API_TLS_ENABLED: bool = _api_tls_env in ("yes", "true") if _api_tls_env else _ssl_files_present()
 """
 Enable TLS for the API/MCP server (uvicorn).
@@ -568,7 +568,7 @@ from env variable: `TG_MCP_ENABLED`
 defaults to: `yes`
 """
 
-UI_PORT: int = int(os.getenv("TG_UI_PORT", "8501"))
+UI_PORT: int = int(getenv("TG_UI_PORT", "8501"))
 """
 Port for the UI server.
 
@@ -576,7 +576,7 @@ from env variable: `TG_UI_PORT`
 defaults to: `8501`
 """
 
-API_PORT: int = int(os.getenv("TG_API_PORT", "8530"))
+API_PORT: int = int(getenv("TG_API_PORT", "8530"))
 """
 Port for the API server.
 
@@ -584,7 +584,7 @@ from env variable: `TG_API_PORT`
 defaults to: `8530`
 """
 
-API_HOST: str = os.getenv("TG_API_HOST", "0.0.0.0")  # noqa: S104
+API_HOST: str = getenv("TG_API_HOST", "0.0.0.0")  # noqa: S104
 """
 Host for the API server.
 
@@ -597,7 +597,7 @@ def _default_base_url() -> str:
     return f"{scheme}://localhost:{API_PORT}"
 
 
-BASE_URL: str = os.getenv("TG_BASE_URL", "") or _default_base_url()
+BASE_URL: str = getenv("TG_BASE_URL", "") or _default_base_url()
 """
 Externally-reachable base URL for the API/MCP/OAuth server.
 
@@ -608,14 +608,13 @@ defaults to: computed from API_TLS_ENABLED and API_PORT
 
 def _default_ui_base_url() -> str:
     scheme = "https" if UI_TLS_ENABLED else "http"
-    port = os.getenv("STREAMLIT_SERVER_PORT", "8501")
-    return f"{scheme}://localhost:{port}"
+    return f"{scheme}://localhost:{UI_PORT}"
 
 
-UI_BASE_URL: str = os.getenv("TG_UI_BASE_URL", "") or _default_ui_base_url()
+UI_BASE_URL: str = getenv("TG_UI_BASE_URL", "") or _default_ui_base_url()
 """
 Externally-reachable base URL for the Streamlit UI (used in email links, PDFs).
 
 from env variable: `TG_UI_BASE_URL`
-defaults to: computed from UI_TLS_ENABLED and STREAMLIT_SERVER_PORT
+defaults to: computed from UI_TLS_ENABLED and UI_PORT
 """

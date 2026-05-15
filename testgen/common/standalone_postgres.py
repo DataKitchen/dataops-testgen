@@ -23,6 +23,13 @@ STANDALONE_MODE_ENV_VAR = "TG_STANDALONE_MODE"
 HOME_DIR_ENV_VAR = "TG_TESTGEN_HOME"
 STANDALONE_URI_ENV_VAR = "_TG_STANDALONE_URI"
 
+# Stored as ``project_host`` in the demo-DB connection row so that the actual
+# host/port — which can change across sessions on Windows (pgserver picks a
+# fresh ephemeral TCP port each startup) — are resolved at connection-build
+# time by ``resolve_connection_params``. Angle brackets are illegal in real
+# hostnames, so this can't collide with a user-defined connection.
+EMBEDDED_HOST_SENTINEL = "<embedded>"
+
 
 def get_home_dir() -> Path:
     env_dir = os.getenv(HOME_DIR_ENV_VAR)

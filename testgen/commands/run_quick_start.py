@@ -27,7 +27,7 @@ from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.base import smtp_configured
 from testgen.common.read_file import read_template_sql_file
-from testgen.common.standalone_postgres import get_target_host_port, is_standalone_mode
+from testgen.common.standalone_postgres import EMBEDDED_HOST_SENTINEL, is_standalone_mode
 
 LOG = logging.getLogger("testgen")
 random.seed(42)
@@ -148,9 +148,10 @@ def _get_settings_params_mapping() -> dict:
     admin_user = settings.DATABASE_ADMIN_USER
     admin_password = settings.DATABASE_ADMIN_PASSWORD
     if is_standalone_mode():
-        host, server_port = get_target_host_port()
-        if server_port:
-            port = server_port
+        # Live host/port are resolved at connection-build time via the sentinel
+        # so the row survives pgserver picking a fresh ephemeral port on Windows.
+        host = EMBEDDED_HOST_SENTINEL
+        port = ""
         admin_user = "postgres"
         admin_password = ""
 

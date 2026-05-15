@@ -163,6 +163,23 @@ class ProfilingRun(Entity):
         return None
 
     @classmethod
+    def get_latest_complete_je_id_for_table_group(cls, table_groups_id: UUID) -> UUID | None:
+        """Return the ``job_execution_id`` of the latest completed profiling run for a table group.
+
+        Computed live from ``profiling_runs`` joined to ``job_executions`` — does not read the
+        legacy ``table_groups.last_complete_profile_run_id`` cache, which points at the internal
+        run PK rather than the JE id.
+        """
+        query = (
+            select(cls.job_execution_id)
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .where(cls.table_groups_id == table_groups_id, JobExecution.status == JobStatus.COMPLETED)
+            .order_by(desc(JobExecution.started_at))
+            .limit(1)
+        )
+        return get_current_session().scalar(query)
+
+    @classmethod
     @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_minimal_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
