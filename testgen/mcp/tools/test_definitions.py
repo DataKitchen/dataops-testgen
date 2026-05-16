@@ -533,8 +533,7 @@ def validate_custom_test(test_suite_id: str, custom_sql: str) -> str:
     if table_group is None:
         raise MCPUserError("Test suite is not associated with a table group.")
 
-    perms = get_project_permissions()
-    can_view_pii = suite.project_code in perms.codes_allowed_to("view_pii")
+    can_view_pii = get_project_permissions().has_permission("view_pii", suite.project_code)
 
     doc = MdDoc()
     doc.heading(1, "Custom test dry-run")
