@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -12,6 +13,7 @@ from sqlalchemy import (
     and_,
     asc,
     case,
+    desc,
     func,
     select,
 )
@@ -22,6 +24,71 @@ from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
+
+
+class GeneralType(StrEnum):
+    """User-facing word values for the column ``general_type``."""
+
+    ALPHA = "Alpha"
+    NUMERIC = "Numeric"
+    DATETIME = "Datetime"
+    BOOLEAN = "Boolean"
+    TIME = "Time"
+    OTHER = "Other"
+
+
+# Translates the user-facing words to the single-letter codes stored on
+# ``data_column_chars.general_type`` for WHERE-clause matching.
+GENERAL_TYPE_TO_CODE: dict[GeneralType, str] = {
+    GeneralType.ALPHA: "A",
+    GeneralType.NUMERIC: "N",
+    GeneralType.DATETIME: "D",
+    GeneralType.BOOLEAN: "B",
+    GeneralType.TIME: "T",
+    GeneralType.OTHER: "X",
+}
+
+
+class SuggestedDataType(StrEnum):
+    """Values accepted for the ``suggested_data_type`` argument."""
+
+    ANY = "Any"
+    SMALLINT = "Smallint"
+    INTEGER = "Integer"
+    BIGINT = "Bigint"
+    DECIMAL = "Decimal"
+    NUMERIC = "Numeric"
+    VARCHAR = "Varchar"
+    DATE = "Date"
+    TIMESTAMP = "Timestamp"
+    BOOLEAN = "Boolean"
+
+
+# Maps the user-facing word to the SQL-type prefix matched against
+# ``datatype_suggestion`` (``Any`` is a sentinel — no prefix, just non-null check).
+SUGGESTED_DATA_TYPE_TO_PREFIX: dict[SuggestedDataType, str | None] = {
+    SuggestedDataType.ANY: None,
+    SuggestedDataType.SMALLINT: "SMALLINT",
+    SuggestedDataType.INTEGER: "INTEGER",
+    SuggestedDataType.BIGINT: "BIGINT",
+    SuggestedDataType.DECIMAL: "DECIMAL",
+    SuggestedDataType.NUMERIC: "NUMERIC",
+    SuggestedDataType.VARCHAR: "VARCHAR",
+    SuggestedDataType.DATE: "DATE",
+    SuggestedDataType.TIMESTAMP: "TIMESTAMP",
+    SuggestedDataType.BOOLEAN: "BOOLEAN",
+}
+
+
+class ColumnOrderBy(StrEnum):
+    """Values accepted for the ``order_by`` argument on column profile listings."""
+
+    NULL_RATIO = "Null Ratio"
+    DISTINCT_RATIO = "Distinct Ratio"
+    FILLED_RATIO = "Filled Ratio"
+    SCORE_PROFILING = "Profiling Score"
+    SCORE_TESTING = "Testing Score"
+    HYGIENE_COUNT = "Hygiene Count"
 
 
 @dataclass
@@ -124,6 +191,16 @@ class ColumnProfileDetail(EntityMinimal):
     profile_run_log_message: str | None
 
 
+@dataclass
+class ColumnSearchHit(EntityMinimal):
+    project_code: str
+    table_groups_id: UUID
+    table_groups_name: str
+    schema_name: str | None
+    table_name: str
+    column_name: str
+
+
 class DataColumnChars(Entity):
     __tablename__ = "data_column_chars"
 
@@ -162,6 +239,7 @@ class DataColumnChars(Entity):
         *clauses,
         table_groups_id: UUID,
         profiling_run_id: UUID | None = None,
+        order_by: ColumnOrderBy | None = None,
         page: int,
         limit: int,
     ) -> tuple[list[ColumnProfileSummary], int]:
@@ -246,8 +324,31 @@ class DataColumnChars(Entity):
                 cls.drop_date.is_(None),
                 *clauses,
             )
-            .order_by(asc(cls.table_name), asc(cls.ordinal_position), asc(cls.column_name))
         )
+
+        null_ratio_expr = ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0)
+        distinct_ratio_expr = ProfileResult.distinct_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0)
+        filled_ratio_expr = ProfileResult.filled_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0)
+        # Deterministic tiebreaker so paginated callers don't see rows skip or duplicate
+        # across pages when the primary sort has ties.
+        tiebreaker = (asc(cls.table_name), asc(cls.ordinal_position), asc(cls.column_name))
+        order_exprs: tuple
+        if order_by is ColumnOrderBy.NULL_RATIO:
+            order_exprs = (desc(null_ratio_expr).nulls_last(), *tiebreaker)
+        elif order_by is ColumnOrderBy.DISTINCT_RATIO:
+            order_exprs = (asc(distinct_ratio_expr).nulls_last(), *tiebreaker)
+        elif order_by is ColumnOrderBy.FILLED_RATIO:
+            order_exprs = (desc(filled_ratio_expr).nulls_last(), *tiebreaker)
+        elif order_by is ColumnOrderBy.SCORE_PROFILING:
+            order_exprs = (asc(cls.dq_score_profiling).nulls_last(), *tiebreaker)
+        elif order_by is ColumnOrderBy.SCORE_TESTING:
+            order_exprs = (asc(cls.dq_score_testing).nulls_last(), *tiebreaker)
+        elif order_by is ColumnOrderBy.HYGIENE_COUNT:
+            order_exprs = (desc(func.coalesce(hygiene_subq.c.hygiene_issue_count, 0)), *tiebreaker)
+        else:
+            order_exprs = tiebreaker
+
+        query = query.order_by(*order_exprs)
 
         return cls._paginate(query, page=page, limit=limit, data_class=ColumnProfileSummary)
 
@@ -400,3 +501,69 @@ class DataColumnChars(Entity):
 
         row = get_current_session().execute(query).mappings().first()
         return ColumnProfileDetail(**row) if row else None
+
+    @classmethod
+    def search_by_name(
+        cls,
+        *clauses,
+        pattern: str,
+        page: int,
+        limit: int,
+    ) -> tuple[list[ColumnSearchHit], int]:
+        """Cross-table-group column-name search. Scoping clauses are passed in by the caller.
+
+        ``pattern`` is matched with ``ILIKE``. Callers are expected to pre-wrap bare
+        tokens with ``%`` if substring search is desired; literal ``%`` / ``_`` from
+        the caller are honored as wildcards.
+        """
+        # Local import: avoid circular dependency with TableGroup.
+        from testgen.common.models.table_group import TableGroup
+
+        query = (
+            select(
+                TableGroup.project_code,
+                TableGroup.id.label("table_groups_id"),
+                TableGroup.table_groups_name,
+                cls.schema_name,
+                cls.table_name,
+                cls.column_name,
+            )
+            .join(TableGroup, TableGroup.id == cls.table_groups_id)
+            .where(
+                cls.column_name.ilike(pattern, escape="\\"),
+                cls.drop_date.is_(None),
+                *clauses,
+            )
+            .order_by(
+                asc(TableGroup.project_code),
+                asc(TableGroup.table_groups_name),
+                asc(cls.table_name),
+                asc(cls.column_name),
+            )
+        )
+
+        return cls._paginate(query, page=page, limit=limit, data_class=ColumnSearchHit)
+
+    @classmethod
+    def summarize_matches_by_project(
+        cls,
+        *clauses,
+        pattern: str,
+    ) -> list[tuple[str, int]]:
+        """Per-project match counts for a column-name search — same WHERE shape as :meth:`search_by_name`."""
+        # Local import: avoid circular dependency with TableGroup.
+        from testgen.common.models.table_group import TableGroup
+
+        query = (
+            select(TableGroup.project_code, func.count().label("match_count"))
+            .select_from(cls)
+            .join(TableGroup, TableGroup.id == cls.table_groups_id)
+            .where(
+                cls.column_name.ilike(pattern, escape="\\"),
+                cls.drop_date.is_(None),
+                *clauses,
+            )
+            .group_by(TableGroup.project_code)
+            .order_by(TableGroup.project_code)
+        )
+        return [(row.project_code, row.match_count) for row in get_current_session().execute(query).all()]

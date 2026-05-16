@@ -329,3 +329,138 @@ def test_resolve_profiling_run_inaccessible_project(mock_pr_cls, mock_get_perms,
 def test_resolve_profiling_run_invalid_uuid():
     with pytest.raises(MCPUserError, match="Invalid job_execution_id"):
         resolve_profiling_run("not-a-uuid")
+
+
+# --- parse_pii_category ---
+
+
+def test_parse_pii_category_translates_display_label_to_stored_code():
+    from testgen.mcp.tools.common import parse_pii_category
+    assert parse_pii_category("ID") == "ID"
+    assert parse_pii_category("Name") == "NAME"
+    assert parse_pii_category("Demographic") == "DEMO"
+    assert parse_pii_category("Contact") == "CONTACT"
+
+
+def test_parse_pii_category_rejects_stored_code_form():
+    from testgen.mcp.tools.common import parse_pii_category
+    with pytest.raises(MCPUserError, match="Invalid pii_category `NAME`"):
+        parse_pii_category("NAME")
+
+
+def test_parse_pii_category_lists_valid_values_in_error():
+    from testgen.mcp.tools.common import parse_pii_category
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_pii_category("Address")
+    for label in ("ID", "Name", "Demographic", "Contact"):
+        assert label in str(exc_info.value)
+
+
+# --- parse_pii_risk_level ---
+
+
+def test_parse_pii_risk_level_translates_label_to_stored_prefix():
+    from testgen.mcp.tools.common import parse_pii_risk_level
+    assert parse_pii_risk_level("High") == "A"
+    assert parse_pii_risk_level("Moderate") == "B"
+    assert parse_pii_risk_level("Low") == "C"
+
+
+def test_parse_pii_risk_level_rejects_unknown():
+    from testgen.mcp.tools.common import parse_pii_risk_level
+    with pytest.raises(MCPUserError, match="Invalid pii_risk_level `Critical`"):
+        parse_pii_risk_level("Critical")
+
+
+# --- parse_general_type ---
+
+
+def test_parse_general_type_translates_word_to_letter_code():
+    from testgen.mcp.tools.common import parse_general_type
+    assert parse_general_type("Alpha") == "A"
+    assert parse_general_type("Numeric") == "N"
+    assert parse_general_type("Datetime") == "D"
+    assert parse_general_type("Boolean") == "B"
+    assert parse_general_type("Time") == "T"
+    assert parse_general_type("Other") == "X"
+
+
+def test_parse_general_type_rejects_letter_code_input():
+    from testgen.mcp.tools.common import parse_general_type
+    with pytest.raises(MCPUserError, match="Invalid general_type `A`"):
+        parse_general_type("A")
+
+
+def test_parse_general_type_is_case_sensitive():
+    from testgen.mcp.tools.common import parse_general_type
+    with pytest.raises(MCPUserError):
+        parse_general_type("alpha")
+
+
+# --- parse_suggested_data_type ---
+
+
+def test_parse_suggested_data_type_accepts_title_case():
+    from testgen.common.models.data_column import SuggestedDataType
+    from testgen.mcp.tools.common import parse_suggested_data_type
+    assert parse_suggested_data_type("Any") is SuggestedDataType.ANY
+    assert parse_suggested_data_type("Integer") is SuggestedDataType.INTEGER
+    assert parse_suggested_data_type("Varchar") is SuggestedDataType.VARCHAR
+
+
+def test_parse_suggested_data_type_rejects_uppercase():
+    from testgen.mcp.tools.common import parse_suggested_data_type
+    with pytest.raises(MCPUserError, match="Invalid suggested_data_type `INTEGER`"):
+        parse_suggested_data_type("INTEGER")
+
+
+def test_parse_suggested_data_type_lists_valid_values_in_error():
+    from testgen.mcp.tools.common import parse_suggested_data_type
+    with pytest.raises(MCPUserError) as exc_info:
+        parse_suggested_data_type("Bogus")
+    for label in ("Any", "Integer", "Numeric", "Varchar", "Date", "Timestamp", "Boolean"):
+        assert label in str(exc_info.value)
+
+
+# --- parse_column_order_by ---
+
+
+def test_parse_column_order_by_accepts_display_form():
+    from testgen.common.models.data_column import ColumnOrderBy
+    from testgen.mcp.tools.common import parse_column_order_by
+    assert parse_column_order_by("Null Ratio") is ColumnOrderBy.NULL_RATIO
+    assert parse_column_order_by("Profiling Score") is ColumnOrderBy.SCORE_PROFILING
+    assert parse_column_order_by("Hygiene Count") is ColumnOrderBy.HYGIENE_COUNT
+
+
+def test_parse_column_order_by_rejects_snake_case():
+    from testgen.mcp.tools.common import parse_column_order_by
+    with pytest.raises(MCPUserError, match="Invalid order_by `null_ratio`"):
+        parse_column_order_by("null_ratio")
+
+
+# --- build_ilike_pattern ---
+
+
+def test_build_ilike_pattern_wraps_bare_token():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    assert build_ilike_pattern("email") == "%email%"
+
+
+def test_build_ilike_pattern_escapes_literal_underscore():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    # Column names commonly contain underscores; treat them as literal, not as SQL wildcards.
+    assert build_ilike_pattern("user_id") == r"%user\_id%"
+
+
+def test_build_ilike_pattern_honors_explicit_percent():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    # Caller-supplied % means "I'm doing my own wildcards" — don't double-wrap.
+    assert build_ilike_pattern("%email") == "%email"
+    assert build_ilike_pattern("user%") == "user%"
+
+
+def test_build_ilike_pattern_escapes_underscores_even_with_explicit_percent():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    # The `_` escape is unconditional — explicit `%` doesn't suppress it.
+    assert build_ilike_pattern("user_%") == r"user\_%"

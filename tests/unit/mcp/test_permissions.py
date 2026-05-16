@@ -206,6 +206,40 @@ def test_has_access():
     assert perms.has_access("proj_b") is False
 
 
+# --- ProjectPermissions.has_permission ---
+
+
+def test_has_permission_true_when_role_grants_it():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_c"},
+        permission="catalog",
+        username="test_user",
+    )
+    # role_a is in the "view" allowlist; role_c is not.
+    assert perms.has_permission("view", "proj_a") is True
+    assert perms.has_permission("view", "proj_b") is False
+
+
+def test_has_permission_false_when_project_not_member():
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="catalog",
+        username="test_user",
+    )
+    assert perms.has_permission("view", "proj_other") is False
+
+
+def test_has_permission_decoupled_from_decorator_permission():
+    # The decorator was "catalog", but we can query any permission.
+    perms = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="catalog",
+        username="test_user",
+    )
+    assert perms.has_permission("edit", "proj_a") is True
+    assert perms.has_permission("catalog", "proj_a") is True
+
+
 # --- get_project_permissions ---
 
 

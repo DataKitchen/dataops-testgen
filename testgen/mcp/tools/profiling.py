@@ -1,23 +1,39 @@
 import dataclasses
 from uuid import UUID
 
+from sqlalchemy import func, or_
+
 from testgen.common.models import with_database_session
-from testgen.common.models.data_column import ColumnProfileDetail, ColumnProfileSummary, DataColumnChars
+from testgen.common.models.data_column import (
+    SUGGESTED_DATA_TYPE_TO_PREFIX,
+    ColumnOrderBy,
+    ColumnProfileDetail,
+    ColumnProfileSummary,
+    DataColumnChars,
+)
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupSummary
-from testgen.common.pii_masking import mask_profiling_pii
+from testgen.common.pii_masking import PII_REDACTED, mask_profiling_pii
+from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     DocGroup,
+    build_ilike_pattern,
     format_page_footer,
     format_page_info,
     format_run_duration,
     next_scheduled_run,
+    parse_column_order_by,
+    parse_general_type,
+    parse_pii_category,
+    parse_pii_risk_level,
     parse_run_status_filter,
+    parse_suggested_data_type,
     parse_uuid,
     resolve_profiling_run,
     resolve_table_group,
@@ -81,21 +97,74 @@ def list_column_profiles(
     table_name: str | None = None,
     columns: list[str] | None = None,
     job_execution_id: str | None = None,
+    null_ratio_above: float | None = None,
+    null_ratio_below: float | None = None,
+    distinct_ratio_above: float | None = None,
+    distinct_ratio_below: float | None = None,
+    filled_ratio_above: float | None = None,
+    filled_ratio_below: float | None = None,
+    score_profiling_above: float | None = None,
+    score_profiling_below: float | None = None,
+    score_testing_above: float | None = None,
+    score_testing_below: float | None = None,
+    pii: bool | None = None,
+    cde: bool | None = None,
+    suggested_data_type: str | None = None,
+    general_type: str | None = None,
+    semantic_data_type: str | None = None,
+    pii_category: str | None = None,
+    pii_risk_level: str | None = None,
+    order_by: str | None = None,
     limit: int = 100,
     page: int = 1,
 ) -> str:
-    """List per-column profile headers (~14 fields each) — the Layer 1 scan of profiling results across columns in a table group.
+    """List per-column profile headers across a table group, with optional profile-predicate filters.
 
     Args:
         table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
         table_name: Optional — scope to one table (case-sensitive).
         columns: Optional — specific column names to include (case-sensitive).
         job_execution_id: UUID of a profiling run, e.g. from `get_table` or
-            `list_profiling_summaries`. When omitted, each column uses its own
-            latest run.
-        limit: Page size (default 100).
+            `list_profiling_summaries`. When omitted, each column uses its own latest run.
+        null_ratio_above: Match columns whose null fraction exceeds this value
+            (e.g. `0.2` for above 20% null).
+        null_ratio_below: Match columns whose null fraction is below this value.
+        distinct_ratio_above: Match columns whose distinct-value fraction exceeds this
+            value (e.g. `0.95` for near-unique columns).
+        distinct_ratio_below: Match columns whose distinct-value fraction is below this
+            value (e.g. `0.001` for low cardinality).
+        filled_ratio_above: Match columns whose dummy/placeholder-value fraction exceeds
+            this value.
+        filled_ratio_below: Match columns whose dummy/placeholder-value fraction is below
+            this value.
+        score_profiling_above: Match columns whose Profiling Score is above this value (0-100 scale).
+        score_profiling_below: Match columns whose Profiling Score is below this value (0-100 scale).
+        score_testing_above: Match columns whose Testing Score is above this value (0-100 scale).
+        score_testing_below: Match columns whose Testing Score is below this value (0-100 scale).
+        pii: When `true`, match columns flagged as PII; when `false`, exclude PII columns.
+        cde: When `true`, match columns flagged as a Critical Data Element (directly
+            or inherited from the table); when `false`, exclude CDE columns.
+        suggested_data_type: Match columns where profiling suggests a more suitable data
+            type. Pass `Any` for any mismatch, or a concrete type (`Smallint`, `Integer`,
+            `Bigint`, `Decimal`, `Numeric`, `Varchar`, `Date`, `Timestamp`, `Boolean`) to
+            filter mismatches whose suggestion starts with that type. Columns where the
+            suggestion matches the column's stored type are always excluded.
+        general_type: Broad type classification —
+            `Alpha`, `Numeric`, `Datetime`, `Boolean`, `Time`, or `Other`.
+        semantic_data_type: Substring match (case-insensitive) on Semantic Data Type.
+            Bare tokens auto-wrap with `%`; an explicit `%` is honored as a wildcard.
+            See `testgen://column-profile-fields` for the canonical value list.
+        pii_category: PII category — `ID`, `Name`, `Demographic`, or `Contact`.
+        pii_risk_level: PII risk level — `High`, `Moderate`, or `Low`.
+        order_by: Sort key — `Null Ratio`, `Distinct Ratio`, `Filled Ratio`,
+            `Profiling Score`, `Testing Score`, or `Hygiene Count`. Defaults to
+            table/column position.
+        limit: Page size (default 100, max 500).
         page: Page number starting at 1 (default 1).
     """
+    validate_page(page)
+    validate_limit(limit, 500)
+
     tg = resolve_table_group(table_group_id)
 
     profiling_run_id: UUID | None = None
@@ -111,10 +180,98 @@ def list_column_profiles(
     if columns:
         clauses.append(DataColumnChars.column_name.in_(columns))
 
+    if null_ratio_above is not None:
+        clauses.append(ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) > null_ratio_above)
+    if null_ratio_below is not None:
+        clauses.append(ProfileResult.null_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) < null_ratio_below)
+    if distinct_ratio_above is not None:
+        clauses.append(
+            ProfileResult.distinct_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) > distinct_ratio_above
+        )
+    if distinct_ratio_below is not None:
+        clauses.append(
+            ProfileResult.distinct_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) < distinct_ratio_below
+        )
+    if filled_ratio_above is not None:
+        clauses.append(
+            ProfileResult.filled_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) > filled_ratio_above
+        )
+    if filled_ratio_below is not None:
+        clauses.append(
+            ProfileResult.filled_value_ct * 1.0 / func.nullif(ProfileResult.record_ct, 0) < filled_ratio_below
+        )
+
+    if score_profiling_above is not None:
+        clauses.append(DataColumnChars.dq_score_profiling > score_profiling_above / 100)
+    if score_profiling_below is not None:
+        clauses.append(DataColumnChars.dq_score_profiling < score_profiling_below / 100)
+    if score_testing_above is not None:
+        clauses.append(DataColumnChars.dq_score_testing > score_testing_above / 100)
+    if score_testing_below is not None:
+        clauses.append(DataColumnChars.dq_score_testing < score_testing_below / 100)
+
+    if pii is True:
+        clauses.append(DataColumnChars.pii_flag.isnot(None))
+    elif pii is False:
+        clauses.append(DataColumnChars.pii_flag.is_(None))
+
+    if cde is True:
+        # A column is a CDE when either it or its parent table is flagged.
+        clauses.append(
+            or_(
+                DataColumnChars.critical_data_element.is_(True),
+                DataTable.critical_data_element.is_(True),
+            )
+        )
+    elif cde is False:
+        clauses.append(
+            DataColumnChars.critical_data_element.isnot(True),
+        )
+        clauses.append(
+            DataTable.critical_data_element.isnot(True),
+        )
+
+    if suggested_data_type is not None:
+        prefix = SUGGESTED_DATA_TYPE_TO_PREFIX[parse_suggested_data_type(suggested_data_type)]
+        if prefix is None:
+            clauses.append(ProfileResult.datatype_suggestion.isnot(None))
+        else:
+            clauses.append(ProfileResult.datatype_suggestion.ilike(f"{prefix}%"))
+
+    if general_type is not None:
+        clauses.append(DataColumnChars.general_type == parse_general_type(general_type))
+    if semantic_data_type is not None:
+        if not semantic_data_type.strip():
+            raise MCPUserError("`semantic_data_type` cannot be empty.")
+        clauses.append(
+            DataColumnChars.functional_data_type.ilike(
+                build_ilike_pattern(semantic_data_type), escape="\\"
+            )
+        )
+    if pii_category is not None:
+        category = parse_pii_category(pii_category)
+        # ``pii_flag`` stores ``<risk>/<category>/<detail>``; match on the middle segment.
+        clauses.append(DataColumnChars.pii_flag.like(f"%/{category}/%"))
+    if pii_risk_level is not None:
+        risk_code = parse_pii_risk_level(pii_risk_level)
+        # ``MANUAL`` is user-set PII, weighted equivalent to ``A`` (High) by ``dq_score_weight_defaults``.
+        if risk_code == "A":
+            clauses.append(
+                or_(
+                    DataColumnChars.pii_flag.like("A/%"),
+                    DataColumnChars.pii_flag == "MANUAL",
+                )
+            )
+        else:
+            clauses.append(DataColumnChars.pii_flag.like(f"{risk_code}/%"))
+
+    order_value: ColumnOrderBy | None = parse_column_order_by(order_by) if order_by else None
+
     data, total = DataColumnChars.list_for_table_group(
         *clauses,
         table_groups_id=tg.id,
         profiling_run_id=profiling_run_id,
+        order_by=order_value,
         page=page,
         limit=limit,
     )
@@ -488,6 +645,55 @@ def _format_std_pattern(value: str | None) -> str | None:
     return _STD_PATTERN_LABELS.get(value, value.replace("_", " ").title())
 
 
+# ---------------------------------------------------------------------------
+# Shared helpers for single-column tools (frequent values, patterns)
+# ---------------------------------------------------------------------------
+
+
+def _load_profile_for_column(
+    tg: TableGroup,
+    table_name: str,
+    column_name: str,
+    job_execution_id: str | None,
+) -> tuple[ProfileResult, ProfilingRun, str | None]:
+    """Resolve and load the profile-results row for one column.
+
+    Returns a triple of ``(profile, profiling_run, pii_flag)`` where ``pii_flag`` is
+    pulled from ``data_column_chars`` (the source of truth for column-level PII state).
+    """
+    profiling_run: ProfilingRun | None = None
+    if job_execution_id:
+        profiling_run = resolve_profiling_run(job_execution_id)
+        if profiling_run.table_groups_id != tg.id:
+            raise MCPResourceNotAccessible("Profiling run", job_execution_id)
+    profile = ProfileResult.get_for_column(
+        table_groups_id=tg.id,
+        table_name=table_name,
+        column_name=column_name,
+        profiling_run_id=profiling_run.id if profiling_run else None,
+    )
+    if profile is None:
+        raise MCPResourceNotAccessible("Column profile", f"{table_name}.{column_name}")
+    if profiling_run is None:
+        profiling_run = ProfilingRun.get(profile.profile_run_id)
+        if profiling_run is None:
+            raise MCPResourceNotAccessible("Profiling run", str(profile.profile_run_id))
+    column_rows = list(DataColumnChars.select_where(
+        DataColumnChars.table_groups_id == tg.id,
+        DataColumnChars.table_name == table_name,
+        DataColumnChars.column_name == column_name,
+    ))
+    pii_flag = column_rows[0].pii_flag if column_rows else None
+    return profile, profiling_run, pii_flag
+
+
+def _is_pii_redacted_for_caller(tg: TableGroup, pii_flag: str | None) -> bool:
+    """Decide whether to redact PII values for this caller + column."""
+    if not pii_flag:
+        return False
+    return not get_project_permissions().has_permission("view_pii", tg.project_code)
+
+
 @with_database_session
 @mcp_permission("catalog")
 def get_column_profile_detail(
@@ -536,9 +742,8 @@ def get_column_profile_detail(
     if detail.profile_run_status in ("Running", "Error", "Cancelled"):
         _raise_run_not_ready(detail)
 
-    perms = get_project_permissions()
     payload = dataclasses.asdict(detail)
-    if tg.project_code not in perms.codes_allowed_to("view_pii") and detail.pii_flag:
+    if detail.pii_flag and not get_project_permissions().has_permission("view_pii", tg.project_code):
         mask_profiling_pii(payload, {detail.column_name})
 
     return _render_column_profile_detail(payload)
@@ -710,3 +915,220 @@ def _render_boolean_block(doc: MdDoc, p: dict) -> None:
 
 def _render_unknown_block(doc: MdDoc, p: dict) -> None:
     _render_counts(doc, p)
+
+
+# ---------------------------------------------------------------------------
+# Single-column tools — frequent values and patterns
+# ---------------------------------------------------------------------------
+
+
+@with_database_session
+@mcp_permission("catalog")
+def get_column_frequent_values(
+    table_group_id: str,
+    table_name: str,
+    column_name: str,
+    job_execution_id: str | None = None,
+) -> str:
+    """Get the top frequent values for one column from its profile run, with row counts and percentages.
+
+    Profiling captures the top 10 values; when the column has more distinct values, a
+    trailing `Other Values (N)` row aggregates the remainder.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+        column_name: Column name exactly as stored in TestGen (case-sensitive).
+        job_execution_id: UUID of a profiling run. When omitted, uses the column's
+            latest profile run.
+    """
+    tg = resolve_table_group(table_group_id)
+    profile, profiling_run, pii_flag = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
+
+    doc = MdDoc()
+    doc.heading(1, f"Frequent values: {table_name}.{column_name}")
+    doc.field("Table group", tg.id, code=True)
+    doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
+    doc.field("Row Count", profile.record_ct)
+    doc.field("Distinct values", profile.distinct_value_ct)
+    if pii_flag:
+        doc.field("PII", _format_pii(pii_flag))
+
+    rows = parse_top_freq_values(profile.top_freq_values)
+    if not rows:
+        doc.text(
+            f"_Frequency data not available — high cardinality "
+            f"(distinct count: {profile.distinct_value_ct})._"
+        )
+        return doc.render()
+
+    redact = _is_pii_redacted_for_caller(tg, pii_flag)
+    record_ct = profile.record_ct or 0
+    display_rows: list[list[object]] = []
+    for value, count in rows:
+        pct = (count / record_ct * 100) if record_ct else None
+        display_value = PII_REDACTED if redact else value
+        display_rows.append([display_value, count, f"{pct:.2f}%" if pct is not None else None])
+
+    doc.heading(2, "Top values")
+    doc.table(["Value", "Count", "% of records"], display_rows)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("catalog")
+def get_column_patterns(
+    table_group_id: str,
+    table_name: str,
+    column_name: str,
+    job_execution_id: str | None = None,
+) -> str:
+    """Get the top character patterns for one string column from its profile run.
+
+    Patterns use shorthand: `A` = uppercase letter, `a` = lowercase letter, `N` = digit;
+    every other character (whitespace, punctuation, symbols) appears literally. Examples:
+    `Aaaaaaaa` (capitalized word), `NNNN-NN-NN` (ISO-like date), `aaa@aaa.aaa` (email-shaped).
+    Profiling captures the top 5 patterns.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+        column_name: Column name exactly as stored in TestGen (case-sensitive).
+        job_execution_id: UUID of a profiling run. When omitted, uses the column's
+            latest profile run.
+    """
+    tg = resolve_table_group(table_group_id)
+    profile, profiling_run, _ = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
+
+    doc = MdDoc()
+    doc.heading(1, f"Character patterns: {table_name}.{column_name}")
+    doc.field("Table group", tg.id, code=True)
+    doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
+    doc.field("Row Count", profile.record_ct)
+    doc.field("Distinct values", profile.distinct_value_ct)
+
+    if profile.general_type and profile.general_type != "A":
+        doc.text("_Pattern data not available — column is not a string type._")
+        return doc.render()
+
+    rows = parse_top_patterns(profile.top_patterns)
+    if not rows:
+        doc.text(
+            f"_Pattern data not available — high cardinality "
+            f"(distinct count: {profile.distinct_value_ct})._"
+        )
+        return doc.render()
+
+    record_ct = profile.record_ct or 0
+    display_rows: list[list[object]] = []
+    for pattern, count in rows:
+        pct = (count / record_ct * 100) if record_ct else None
+        display_rows.append([pattern, count, f"{pct:.2f}%" if pct is not None else None])
+
+    doc.heading(2, "Top patterns")
+    doc.table(["Pattern", "Count", "% of records"], display_rows, code=[0])
+    return doc.render()
+
+
+# ---------------------------------------------------------------------------
+# Cross-scope column-name search
+# ---------------------------------------------------------------------------
+
+
+@with_database_session
+@mcp_permission("catalog")
+def search_columns(
+    pattern: str,
+    project_code: str | None = None,
+    table_group_id: str | None = None,
+    limit: int = 100,
+    page: int = 1,
+) -> str:
+    """Search columns by name across one or many projects (bare tokens auto-wrap as `%token%`; explicit `%` honored as a wildcard).
+
+    Args:
+        pattern: Column-name search pattern. Case-insensitive.
+        project_code: Optional — scope to one project. Mutually exclusive with
+            `table_group_id`.
+        table_group_id: Optional — scope to one table group. Mutually exclusive
+            with `project_code`.
+        limit: Page size (default 100, max 500).
+        page: Page number starting at 1 (default 1).
+    """
+    validate_page(page)
+    validate_limit(limit, 500)
+
+    if not pattern or not pattern.strip():
+        raise MCPUserError("`pattern` is required and cannot be empty.")
+    effective_pattern = build_ilike_pattern(pattern)
+
+    if project_code is not None and table_group_id is not None:
+        raise MCPUserError("Pass either `project_code` or `table_group_id`, not both.")
+
+    perms = get_project_permissions()
+    clauses: list = []
+
+    if table_group_id is not None:
+        tg = resolve_table_group(table_group_id)
+        clauses.append(DataColumnChars.table_groups_id == tg.id)
+        scope_label = f"table group `{table_group_id}`"
+    elif project_code is not None:
+        perms.verify_access(
+            project_code,
+            not_found=MCPResourceNotAccessible("Project", project_code),
+        )
+        clauses.append(TableGroup.project_code == project_code)
+        scope_label = f"project `{project_code}`"
+    else:
+        # The @mcp_permission decorator guarantees ``allowed_codes`` is non-empty by
+        # the time the body runs (it raises MCPPermissionDenied otherwise).
+        clauses.append(TableGroup.project_code.in_(list(perms.allowed_codes)))
+        scope_label = "all accessible projects"
+
+    data, total = DataColumnChars.search_by_name(
+        *clauses,
+        pattern=effective_pattern,
+        page=page,
+        limit=limit,
+    )
+
+    if not data:
+        if page > 1:
+            return f"No columns matching `{pattern}` on page {page} (total: {total})."
+        return f"No columns matching `{pattern}` in {scope_label}."
+
+    doc = MdDoc()
+    doc.heading(1, f"Columns matching `{pattern}` in {scope_label}")
+
+    page_info = format_page_info(total, page, limit)
+    if page_info:
+        doc.text(page_info)
+
+    # Per-project match summary when no scope was provided.
+    if project_code is None and table_group_id is None:
+        summary_rows = DataColumnChars.summarize_matches_by_project(
+            *clauses,
+            pattern=effective_pattern,
+        )
+        if summary_rows:
+            doc.heading(2, "Matches by project")
+            doc.table(
+                ["Project", "Matches"],
+                [[code_, count] for code_, count in summary_rows],
+                code=[0],
+            )
+
+    doc.heading(2, "Columns")
+    doc.table(
+        ["Project", "Table group", "Schema", "Table", "Column"],
+        [
+            [hit.project_code, hit.table_groups_name, hit.schema_name, hit.table_name, hit.column_name]
+            for hit in data
+        ],
+        code=[0, 1],
+    )
+
+    footer = format_page_footer(total, page, limit)
+    if footer:
+        doc.text(footer)
+    return doc.render()
