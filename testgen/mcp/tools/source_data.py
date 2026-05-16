@@ -101,8 +101,7 @@ def get_source_data(
     validate_limit(limit, 500)
     context = _resolve_context(test_definition_id, reference_date)
 
-    perms = get_project_permissions()
-    mask_pii = context.get("project_code") not in perms.codes_allowed_to("view_pii")
+    mask_pii = not get_project_permissions().has_permission("view_pii", context.get("project_code"))
 
     result: SourceDataResult = fetch_test_result_source_data(context, limit, mask_pii)
 

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, Numeric, String, asc
+from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, Numeric, String, asc, desc
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.entity import Entity
@@ -85,3 +85,42 @@ class ProfileResult(Entity):
     query_error: str | None = Column(String)
 
     _default_order_by = (asc(position), asc(column_name))
+
+    @classmethod
+    def get_for_column(
+        cls,
+        table_groups_id: UUID,
+        table_name: str,
+        column_name: str,
+        profiling_run_id: UUID | None = None,
+    ) -> "ProfileResult | None":
+        """Fetch the profile-results row for one column.
+
+        Resolves to the explicit ``profiling_run_id`` when given, otherwise to the
+        column's latest profile run (via ``data_column_chars.last_complete_profile_run_id``).
+        Returns ``None`` when no row exists.
+        """
+        # Local import: data_column imports ProfileResult at module top.
+        from testgen.common.models.data_column import DataColumnChars
+
+        clauses = [
+            cls.table_groups_id == table_groups_id,
+            cls.table_name == table_name,
+            cls.column_name == column_name,
+        ]
+        if profiling_run_id is not None:
+            clauses.append(cls.profile_run_id == profiling_run_id)
+        else:
+            latest = list(
+                DataColumnChars.select_where(
+                    DataColumnChars.table_groups_id == table_groups_id,
+                    DataColumnChars.table_name == table_name,
+                    DataColumnChars.column_name == column_name,
+                )
+            )
+            if not latest or latest[0].last_complete_profile_run_id is None:
+                return None
+            clauses.append(cls.profile_run_id == latest[0].last_complete_profile_run_id)
+
+        rows = list(cls.select_where(*clauses, order_by=(desc(cls.profile_run_id),)))
+        return rows[0] if rows else None

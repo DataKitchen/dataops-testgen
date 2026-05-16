@@ -39,6 +39,14 @@ class ProjectPermissions:
         """For filtering lists — no exception, just a bool."""
         return project_code in self.allowed_codes
 
+    def has_permission(self, permission: str, project_code: str) -> bool:
+        """Whether the user has ``permission`` on ``project_code`` (single-check predicate).
+
+        For per-row checks in tight loops, prefer caching the result of
+        :meth:`codes_allowed_to` once and using a set lookup.
+        """
+        return project_code in self.codes_allowed_to(permission)
+
     def verify_access(self, project_code: str, not_found: "str | MCPPermissionDenied") -> None:
         """Raise MCPPermissionDenied if user can't access this project.
 
