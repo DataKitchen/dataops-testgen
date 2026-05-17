@@ -11,7 +11,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
-from testgen.common.enums import JobStatus
+from testgen.common.enums import Disposition, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
@@ -450,7 +450,7 @@ class ProfilingRun(Entity):
             select(HygieneIssue.profile_run_id, func.count())
             .where(
                 HygieneIssue.profile_run_id.in_(run_ids),
-                func.coalesce(HygieneIssue.disposition, "Confirmed") == "Confirmed",
+                func.coalesce(HygieneIssue.disposition, Disposition.CONFIRMED) == Disposition.CONFIRMED,
             )
             .group_by(HygieneIssue.profile_run_id)
         )

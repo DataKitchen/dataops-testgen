@@ -96,7 +96,9 @@ class ProfileMetric(StrEnum):
 
     Covers general column ratios (null / distinct / filled), type-specific
     statistics (length, numeric range, date range, true count), table-level
-    record count, and table-group rollups (profiling score, hygiene count).
+    row count, and table-group rollups (profiling score, hygiene issues).
+
+    Labels align with the field names in ``column_profile_fields_resource``.
     """
 
     # Apply to any column
@@ -104,22 +106,22 @@ class ProfileMetric(StrEnum):
     DISTINCT_RATIO = "Distinct Ratio"
     FILLED_RATIO = "Filled Ratio"
     # Apply to the parent table
-    RECORD_COUNT = "Record Count"
+    RECORD_COUNT = "Row Count"
     # Apply to the whole table group
     PROFILING_SCORE = "Profiling Score"
-    HYGIENE_COUNT = "Hygiene Count"
+    HYGIENE_COUNT = "Hygiene Issues"
     # Alpha-only
-    MIN_LENGTH = "Min Length"
-    MAX_LENGTH = "Max Length"
-    AVG_LENGTH = "Avg Length"
+    MIN_LENGTH = "Minimum Length"
+    MAX_LENGTH = "Maximum Length"
+    AVG_LENGTH = "Average Length"
     # Numeric-only
-    MIN = "Min"
-    MAX = "Max"
-    AVG = "Avg"
-    STDEV = "Stdev"
+    MIN = "Minimum Value"
+    MAX = "Maximum Value"
+    AVG = "Average Value"
+    STDEV = "Standard Deviation"
     # Date-only
-    MIN_DATE = "Min Date"
-    MAX_DATE = "Max Date"
+    MIN_DATE = "Minimum Date"
+    MAX_DATE = "Maximum Date"
     # Boolean-only
     TRUE_COUNT = "True Count"
 

@@ -16,11 +16,13 @@ from uuid import UUID
 
 from sqlalchemy import func
 
-from testgen.common.models import with_database_session
+from testgen.common.enums import Disposition, JobStatus
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.data_column import ProfileMetric
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
-from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
 from testgen.mcp.tools.common import (
@@ -123,7 +125,7 @@ def _column_metric_value(metric: ProfileMetric, pr: ProfileResult | None) -> obj
     """Extract a column-scope metric value from a ProfileResult row.
 
     Returns ``None`` if the row is missing or the metric doesn't apply to the
-    column's ``general_type`` (e.g. ``Avg Length`` on a numeric column).
+    column's ``general_type`` (e.g. ``Average Length`` on a numeric column).
     """
     if pr is None:
         return None
@@ -198,13 +200,14 @@ def _delta_cell(metric: ProfileMetric, baseline: object | None, target: object |
 # Run-state guard
 # ---------------------------------------------------------------------------
 
-_REQUIRED_RUN_STATUS = "Complete"
-
 
 def _require_completed(run: ProfilingRun, label: str) -> None:
-    if run.status != _REQUIRED_RUN_STATUS:
+    """Raise if the run's job execution isn't completed."""
+    je = get_current_session().get(JobExecution, run.job_execution_id)
+    if je.status != JobStatus.COMPLETED:
+        status_label = ProfilingRunSummary.STATUS_LABEL.get(je.status, je.status)
         raise MCPUserError(
-            f"{label} run is in `{run.status}` state — comparison requires a completed run."
+            f"{label} run is in `{status_label}` state — comparison requires a completed run."
         )
 
 
@@ -294,9 +297,12 @@ def compare_profiling_runs(
             snapshot). When omitted, defaults to the previous completed run on the same
             table group.
         table_name: Optional — restrict the comparison to one table (case-sensitive).
-        column_name: Optional — restrict the comparison to one column (requires
-            `table_name` when used in the diff render but accepted independently).
+        column_name: Optional — restrict the comparison to one column (case-sensitive); requires
+            `table_name`.
     """
+    if column_name is not None and table_name is None:
+        raise MCPUserError("`column_name` requires `table_name`.")
+
     target_run = resolve_profiling_run(target_job_execution_id)
     _require_completed(target_run, "Target")
 
@@ -309,13 +315,13 @@ def compare_profiling_runs(
             )
     else:
         baseline_run = resolve_profiling_run(baseline_job_execution_id)
-        _require_completed(baseline_run, "Baseline")
         if baseline_run.table_groups_id != target_run.table_groups_id:
             raise MCPUserError(
                 "Both runs must belong to the same table group to be comparable. "
                 f"Target is in table group `{target_run.table_groups_id}`, "
                 f"baseline is in table group `{baseline_run.table_groups_id}`."
             )
+    _require_completed(baseline_run, "Baseline")
 
     rows = ProfileResult.select_for_runs(
         run_ids=[target_run.id, baseline_run.id],
@@ -361,7 +367,7 @@ def _diff_hygiene_issues(
     """
     clauses = [
         HygieneIssue.profile_run_id.in_([target_run_id, baseline_run_id]),
-        func.coalesce(HygieneIssue.disposition, "Confirmed") == "Confirmed",
+        func.coalesce(HygieneIssue.disposition, Disposition.CONFIRMED) == Disposition.CONFIRMED,
     ]
     if table_name is not None:
         clauses.append(HygieneIssue.table_name == table_name)
@@ -537,19 +543,20 @@ def get_profiling_trends(
     """Show a time series of caller-named profiling metrics across recent completed runs of a table group.
 
     Metric scope rules:
-    - Column-level metrics (e.g. `Null Ratio`, `Avg Length`, `Min`) require both
+    - Column-level metrics (e.g. `Null Ratio`, `Average Length`, `Minimum Value`) require both
       `table_name` and `column_name`.
-    - `Record Count` is table-level and requires `table_name`.
-    - `Profiling Score` and `Hygiene Count` are table-group-level and accept any scope.
+    - `Row Count` is table-level and requires `table_name`.
+    - `Profiling Score` and `Hygiene Issues` are table-group-level and accept any scope.
     - Type-specific metrics return `—` for runs where the column's general type
-      didn't match (e.g. `Min` on a column that was Alpha in an earlier run).
+      didn't match (e.g. `Minimum Value` on a column that was Alpha in an earlier run).
 
     Args:
         table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
         metrics: One or more metric names. Accepted values: `Null Ratio`, `Distinct Ratio`,
-            `Filled Ratio`, `Record Count`, `Profiling Score`, `Hygiene Count`,
-            `Min Length`, `Max Length`, `Avg Length`, `Min`, `Max`, `Avg`, `Stdev`,
-            `Min Date`, `Max Date`, `True Count`.
+            `Filled Ratio`, `Row Count`, `Profiling Score`, `Hygiene Issues`,
+            `Minimum Length`, `Maximum Length`, `Average Length`, `Minimum Value`,
+            `Maximum Value`, `Average Value`, `Standard Deviation`, `Minimum Date`,
+            `Maximum Date`, `True Count`.
         table_name: Optional — restrict to one table (case-sensitive).
         column_name: Optional — restrict to one column (case-sensitive); requires
             `table_name`.
@@ -844,10 +851,12 @@ def _format_column_delta(
     baseline_names = set(baseline_cols)
     for name in sorted(target_names - baseline_names):
         snap = target_cols[name]
-        out.append(f"column `{name}` added ({snap.column_type or snap.db_data_type or '—'})")
+        type_label = snap.column_type or snap.db_data_type
+        out.append(f"column `{name}` added ({type_label})" if type_label else f"column `{name}` added")
     for name in sorted(baseline_names - target_names):
         snap = baseline_cols[name]
-        out.append(f"column `{name}` dropped (was {snap.column_type or snap.db_data_type or '—'})")
+        type_label = snap.column_type or snap.db_data_type
+        out.append(f"column `{name}` dropped (was {type_label})" if type_label else f"column `{name}` dropped")
     for name in sorted(target_names & baseline_names):
         target_col = target_cols[name]
         baseline_col = baseline_cols[name]
