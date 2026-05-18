@@ -91,6 +91,41 @@ class ColumnOrderBy(StrEnum):
     HYGIENE_COUNT = "Hygiene Count"
 
 
+class ProfileMetric(StrEnum):
+    """Profile-metric vocabulary: linear/arithmetic stats from a profiling run.
+
+    Covers general column ratios (null / distinct / filled), type-specific
+    statistics (length, numeric range, date range, true count), table-level
+    row count, and table-group rollups (profiling score, hygiene issues).
+
+    Labels align with the field names in ``column_profile_fields_resource``.
+    """
+
+    # Apply to any column
+    NULL_RATIO = "Null Ratio"
+    DISTINCT_RATIO = "Distinct Ratio"
+    FILLED_RATIO = "Filled Ratio"
+    # Apply to the parent table
+    RECORD_COUNT = "Row Count"
+    # Apply to the whole table group
+    PROFILING_SCORE = "Profiling Score"
+    HYGIENE_COUNT = "Hygiene Issues"
+    # Alpha-only
+    MIN_LENGTH = "Minimum Length"
+    MAX_LENGTH = "Maximum Length"
+    AVG_LENGTH = "Average Length"
+    # Numeric-only
+    MIN = "Minimum Value"
+    MAX = "Maximum Value"
+    AVG = "Average Value"
+    STDEV = "Standard Deviation"
+    # Date-only
+    MIN_DATE = "Minimum Date"
+    MAX_DATE = "Maximum Date"
+    # Boolean-only
+    TRUE_COUNT = "True Count"
+
+
 @dataclass
 class ColumnProfileSummary(EntityMinimal):
     column_name: str

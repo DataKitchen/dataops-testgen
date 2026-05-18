@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -124,3 +125,25 @@ class ProfileResult(Entity):
 
         rows = list(cls.select_where(*clauses, order_by=(desc(cls.profile_run_id),)))
         return rows[0] if rows else None
+
+    @classmethod
+    def select_for_runs(
+        cls,
+        run_ids: Iterable[UUID],
+        table_name: str | None = None,
+        column_name: str | None = None,
+    ) -> list["ProfileResult"]:
+        """Fetch profile-results rows for a set of profiling runs in one query.
+
+        Optional ``table_name`` and ``column_name`` filters narrow the result to one
+        entity (case-sensitive exact match).
+        """
+        run_ids = list(run_ids)
+        if not run_ids:
+            return []
+        clauses = [cls.profile_run_id.in_(run_ids)]
+        if table_name is not None:
+            clauses.append(cls.table_name == table_name)
+        if column_name is not None:
+            clauses.append(cls.column_name == column_name)
+        return list(cls.select_where(*clauses))

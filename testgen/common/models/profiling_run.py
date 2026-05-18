@@ -11,7 +11,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
-from testgen.common.enums import JobStatus
+from testgen.common.enums import Disposition, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
@@ -423,3 +423,35 @@ class ProfilingRun(Entity):
             .limit(1)
         )
         return get_current_session().scalar(query)
+
+    @classmethod
+    def list_recent_complete(cls, table_groups_id: UUID, limit: int) -> list[Self]:
+        """Return the most recent completed profiling runs for a table group, newest first."""
+        query = (
+            select(cls)
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .where(
+                cls.table_groups_id == table_groups_id,
+                JobExecution.status == JobStatus.COMPLETED,
+            )
+            .order_by(desc(JobExecution.started_at))
+            .limit(limit)
+        )
+        return list(get_current_session().scalars(query))
+
+    @classmethod
+    def count_confirmed_hygiene_issues(cls, run_ids: list[UUID]) -> dict[UUID, int]:
+        """Count confirmed hygiene issues per profiling run. Missing runs default to zero."""
+        if not run_ids:
+            return {}
+        from testgen.common.models.hygiene_issue import HygieneIssue
+
+        query = (
+            select(HygieneIssue.profile_run_id, func.count())
+            .where(
+                HygieneIssue.profile_run_id.in_(run_ids),
+                func.coalesce(HygieneIssue.disposition, Disposition.CONFIRMED) == Disposition.CONFIRMED,
+            )
+            .group_by(HygieneIssue.profile_run_id)
+        )
+        return {row[0]: row[1] for row in get_current_session().execute(query)}

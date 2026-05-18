@@ -151,6 +151,11 @@ def build_mcp_server(
         search_hygiene_issues,
         update_hygiene_issue,
     )
+    from testgen.mcp.tools.profile_history import (
+        compare_profiling_runs,
+        get_profiling_trends,
+        get_schema_history,
+    )
     from testgen.mcp.tools.profiling import (
         get_column_frequent_values,
         get_column_patterns,
@@ -243,6 +248,9 @@ def build_mcp_server(
     safe_tool(get_column_frequent_values)
     safe_tool(get_column_patterns)
     safe_tool(search_columns)
+    safe_tool(compare_profiling_runs)
+    safe_tool(get_profiling_trends)
+    safe_tool(get_schema_history)
     safe_tool(run_tests)
     safe_tool(run_profiling)
     safe_tool(cancel_test_run)
