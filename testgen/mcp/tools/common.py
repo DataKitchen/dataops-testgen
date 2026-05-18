@@ -11,6 +11,7 @@ from testgen.common.models.data_column import (
     GENERAL_TYPE_TO_CODE,
     ColumnOrderBy,
     GeneralType,
+    ProfileMetric,
     SuggestedDataType,
 )
 from testgen.common.models.hygiene_issue import HygieneIssueType
@@ -243,6 +244,23 @@ def parse_column_order_by(value: str) -> ColumnOrderBy:
     except ValueError as err:
         valid = ", ".join(o.value for o in ColumnOrderBy)
         raise MCPUserError(f"Invalid order_by `{value}`. Valid values: {valid}") from err
+
+
+def parse_profile_metrics(values: list[str]) -> list[ProfileMetric]:
+    """Validate a list of profile metric names. Empties out with one error listing all invalids."""
+    if not values:
+        raise MCPUserError("`metrics` cannot be empty — name at least one metric to trend.")
+    parsed: list[ProfileMetric] = []
+    invalid: list[str] = []
+    for value in values:
+        try:
+            parsed.append(ProfileMetric(value))
+        except ValueError:
+            invalid.append(value)
+    if invalid:
+        valid = ", ".join(m.value for m in ProfileMetric)
+        raise MCPUserError(f"Invalid metrics {invalid}. Valid values: {valid}")
+    return parsed
 
 
 # ``pii_flag`` encodes risk as a single-character prefix: ``A`` (High), ``B`` (Moderate), ``C`` (Low).

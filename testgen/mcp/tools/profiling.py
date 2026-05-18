@@ -909,8 +909,8 @@ def _render_boolean_block(doc: MdDoc, p: dict) -> None:
     true_ct = p.get("boolean_true_ct") or 0
     value_ct = p.get("value_ct") or 0
     false_ct = max(value_ct - true_ct, 0)
-    doc.field("True", true_ct)
-    doc.field("False", false_ct)
+    doc.field("True Count", true_ct)
+    doc.field("False Count", false_ct)
 
 
 def _render_unknown_block(doc: MdDoc, p: dict) -> None:

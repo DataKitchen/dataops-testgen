@@ -208,8 +208,8 @@ Populated when `General Type == "Date"`.
 
 Populated when `General Type == "Boolean"`.
 
-- **True** — Rows where the value is true (count).
-- **False** — Rows where the value is false (count, derived as `Value Count - True`).
+- **True Count** — Rows where the value is true (count).
+- **False Count** — Rows where the value is false (count, derived as `Value Count - True Count`).
 
 ## PII Redaction
 
