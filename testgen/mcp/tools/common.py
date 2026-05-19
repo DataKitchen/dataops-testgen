@@ -16,7 +16,7 @@ from testgen.common.models.data_column import (
 )
 from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.models.scheduler import JobSchedule
+from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_result import TestResultStatus
@@ -391,3 +391,17 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
     if td is None:
         raise MCPResourceNotAccessible("Test definition", test_definition_id)
     return td
+
+
+def resolve_schedule(schedule_id: str) -> JobSchedule:
+    """Resolve a user-managed schedule ID, collapsing missing-or-inaccessible into one error path."""
+    sched_uuid = parse_uuid(schedule_id, "schedule_id")
+    perms = get_project_permissions()
+    sched = JobSchedule.get(
+        JobSchedule.id == sched_uuid,
+        JobSchedule.key.in_(SCHEDULABLE_JOB_KEYS),
+        JobSchedule.project_code.in_(perms.allowed_codes),
+    )
+    if sched is None:
+        raise MCPResourceNotAccessible("Schedule", schedule_id)
+    return sched

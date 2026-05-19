@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.cron_service import get_cron_sample
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
@@ -27,7 +28,7 @@ from testgen.ui.services.database_service import execute_db_query, fetch_all_fro
 from testgen.ui.services.query_cache import get_project_summary, get_test_type_summaries
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
-from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
+from testgen.ui.utils import dict_from_kv, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
 

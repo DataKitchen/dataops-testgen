@@ -3,20 +3,21 @@ from datetime import datetime
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-import streamlit as st
 from cron_converter import Cron
 from sqlalchemy import Boolean, Column, String, cast, delete, func, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.enums import JobKey
 from testgen.common.models import Base, get_current_session
-from testgen.common.models.entity import ENTITY_HASH_FUNCS
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 
 RUN_TESTS_JOB_KEY = "run-tests"
 RUN_MONITORS_JOB_KEY = "run-monitors"
 RUN_PROFILE_JOB_KEY = "run-profile"
+
+SCHEDULABLE_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.run_profile, JobKey.run_tests})
 
 
 class JobSchedule(Base):
@@ -32,13 +33,22 @@ class JobSchedule(Base):
     active: bool = Column(Boolean, default=True)
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def get(cls, *clauses) -> Self | None:
         query = select(cls).where(*clauses)
         return get_current_session().scalars(query).first()
 
     @classmethod
     def select_where(cls, *clauses, order_by: str | InstrumentedAttribute | None = None) -> Iterable[Self]:
+        query = select(cls).where(*clauses)
+        if order_by is not None:
+            query = query.order_by(order_by)
+        return get_current_session().scalars(query).all()
+
+    @classmethod
+    def select_runnable(cls, *clauses, order_by: str | InstrumentedAttribute | None = None) -> Iterable[Self]:
+        """Schedules the scheduler should dispatch: active rows, and (for test/monitor runs)
+        only when the linked test suite has at least one test definition.
+        """
         test_job_keys = [RUN_TESTS_JOB_KEY, RUN_MONITORS_JOB_KEY]
         test_definitions_count = (
             select(cls.id)
@@ -72,6 +82,28 @@ class JobSchedule(Base):
     @classmethod
     def count(cls):
         return get_current_session().query(cls).count()
+
+    @classmethod
+    def list_for_project(
+        cls,
+        project_code: str,
+        *extra_filters,
+        key_filter: Iterable[JobKey] | None = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[Self], int]:
+        """List schedules for a project with optional key filter and pagination.
+
+        Returns both active and paused rows. Defaults ``key_filter`` to
+        ``SCHEDULABLE_JOB_KEYS`` (``run_profile``, ``run_tests``); pass an explicit
+        ``key_filter`` to include other kinds.
+        """
+        session = get_current_session()
+        keys = list(key_filter) if key_filter is not None else list(SCHEDULABLE_JOB_KEYS)
+        query = select(cls).where(cls.project_code == project_code, cls.key.in_(keys), *extra_filters)
+        total = session.scalar(select(func.count()).select_from(query.subquery()))
+        items = session.scalars(query.order_by(cls.key, cls.id).offset((page - 1) * limit).limit(limit)).all()
+        return list(items), total or 0
 
     @classmethod
     def select_active_by_kwargs(
