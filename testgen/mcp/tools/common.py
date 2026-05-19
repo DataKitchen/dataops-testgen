@@ -15,6 +15,13 @@ from testgen.common.models.data_column import (
     SuggestedDataType,
 )
 from testgen.common.models.hygiene_issue import HygieneIssueType
+from testgen.common.models.notification_settings import (
+    MonitorNotificationTrigger,
+    NotificationEvent,
+    NotificationSettings,
+    ProfilingRunNotificationTrigger,
+    TestRunNotificationTrigger,
+)
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
@@ -49,6 +56,7 @@ class DocGroup(StrEnum):
     BROWSE_PROFILING = "Browse profiling results"
     TRIGGER = "Trigger profiling, tests, and test generation"
     SCORING = "Track data quality scores"
+    MANAGE = "Manage TestGen configuration"
 
 
 def parse_uuid(value: str, label: str = "ID") -> UUID:
@@ -609,3 +617,110 @@ def resolve_schedule(schedule_id: str) -> JobSchedule:
     if sched is None:
         raise MCPResourceNotAccessible("Schedule", schedule_id)
     return sched
+
+
+def resolve_notification(notification_id: str) -> NotificationSettings:
+    """Resolve a notification ID, collapsing missing-or-inaccessible into one error path.
+
+    Returns the polymorphic ``NotificationSettings`` subclass (TestRun / ProfilingRun /
+    ScoreDrop / Monitor) so callers can read event-specific typed properties.
+    """
+    notif_uuid = parse_uuid(notification_id, "notification_id")
+    perms = get_project_permissions()
+    notif = NotificationSettings.get(
+        notif_uuid,
+        NotificationSettings.project_code.in_(perms.allowed_codes),
+    )
+    if notif is None:
+        raise MCPResourceNotAccessible("Notification", notification_id)
+    return notif
+
+
+# Notification event-type labels.
+
+class NotificationEventLabel(StrEnum):
+    """User-facing values for notification event types."""
+
+    TEST_RUN = "Test Run"
+    PROFILING_RUN = "Profiling Run"
+    SCORE_DROP = "Score Drop"
+    MONITOR_RUN = "Monitor Alert"
+
+
+NOTIFICATION_EVENT_LABEL_TO_INTERNAL: dict[NotificationEventLabel, NotificationEvent] = {
+    NotificationEventLabel.TEST_RUN: NotificationEvent.test_run,
+    NotificationEventLabel.PROFILING_RUN: NotificationEvent.profiling_run,
+    NotificationEventLabel.SCORE_DROP: NotificationEvent.score_drop,
+    NotificationEventLabel.MONITOR_RUN: NotificationEvent.monitor_run,
+}
+
+_NOTIFICATION_EVENT_INTERNAL_TO_LABEL: dict[NotificationEvent, NotificationEventLabel] = {
+    v: k for k, v in NOTIFICATION_EVENT_LABEL_TO_INTERNAL.items()
+}
+
+
+def format_notification_event(event: NotificationEvent | str) -> str:
+    """Map a stored notification event to its user-facing label."""
+    return _NOTIFICATION_EVENT_INTERNAL_TO_LABEL[NotificationEvent(event)].value
+
+
+# Notification trigger labels — one StrEnum per event type. Same wording the end user sees in the UI:
+# ``ui/views/test_runs.py:249-254``, ``ui/views/profiling_runs.py:265-268``,
+# ``ui/views/monitors_dashboard.py:323-326``.
+
+class TestRunTriggerLabel(StrEnum):
+    ALWAYS = "Always"
+    ON_FAILURES = "On test failures"
+    ON_WARNINGS = "On test failures and warnings"
+    ON_CHANGES = "On new test failures and warnings"
+
+
+TEST_RUN_TRIGGER_LABEL_TO_INTERNAL: dict[TestRunTriggerLabel, TestRunNotificationTrigger] = {
+    TestRunTriggerLabel.ALWAYS: TestRunNotificationTrigger.always,
+    TestRunTriggerLabel.ON_FAILURES: TestRunNotificationTrigger.on_failures,
+    TestRunTriggerLabel.ON_WARNINGS: TestRunNotificationTrigger.on_warnings,
+    TestRunTriggerLabel.ON_CHANGES: TestRunNotificationTrigger.on_changes,
+}
+
+
+class ProfilingRunTriggerLabel(StrEnum):
+    ALWAYS = "Always"
+    ON_CHANGES = "On new hygiene issues"
+
+
+PROFILING_RUN_TRIGGER_LABEL_TO_INTERNAL: dict[ProfilingRunTriggerLabel, ProfilingRunNotificationTrigger] = {
+    ProfilingRunTriggerLabel.ALWAYS: ProfilingRunNotificationTrigger.always,
+    ProfilingRunTriggerLabel.ON_CHANGES: ProfilingRunNotificationTrigger.on_changes,
+}
+
+
+class MonitorTriggerLabel(StrEnum):
+    ON_ANOMALIES = "On anomalies"
+
+
+MONITOR_TRIGGER_LABEL_TO_INTERNAL: dict[MonitorTriggerLabel, MonitorNotificationTrigger] = {
+    MonitorTriggerLabel.ON_ANOMALIES: MonitorNotificationTrigger.on_anomalies,
+}
+
+_TEST_RUN_TRIGGER_INTERNAL_TO_LABEL = {v: k for k, v in TEST_RUN_TRIGGER_LABEL_TO_INTERNAL.items()}
+_PROFILING_RUN_TRIGGER_INTERNAL_TO_LABEL = {v: k for k, v in PROFILING_RUN_TRIGGER_LABEL_TO_INTERNAL.items()}
+_MONITOR_TRIGGER_INTERNAL_TO_LABEL = {v: k for k, v in MONITOR_TRIGGER_LABEL_TO_INTERNAL.items()}
+
+
+def format_notification_trigger(event: NotificationEvent | str, settings: dict | None) -> str | None:
+    """Map a notification's stored trigger value to its user-facing label.
+
+    Returns ``None`` for ``score_drop`` (no trigger — thresholds drive it) or when
+    ``settings`` carries no ``trigger`` key.
+    """
+    raw = settings.get("trigger") if settings else None
+    if raw is None:
+        return None
+    event_enum = NotificationEvent(event)
+    if event_enum is NotificationEvent.test_run:
+        return _TEST_RUN_TRIGGER_INTERNAL_TO_LABEL[TestRunNotificationTrigger(raw)].value
+    if event_enum is NotificationEvent.profiling_run:
+        return _PROFILING_RUN_TRIGGER_INTERNAL_TO_LABEL[ProfilingRunNotificationTrigger(raw)].value
+    if event_enum is NotificationEvent.monitor_run:
+        return _MONITOR_TRIGGER_INTERNAL_TO_LABEL[MonitorNotificationTrigger(raw)].value
+    return None

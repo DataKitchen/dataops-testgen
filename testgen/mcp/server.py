@@ -151,6 +151,13 @@ def build_mcp_server(
         search_hygiene_issues,
         update_hygiene_issue,
     )
+    from testgen.mcp.tools.notifications import (
+        create_notification,
+        delete_notification,
+        get_notification,
+        list_notifications,
+        update_notification,
+    )
     from testgen.mcp.tools.profile_history import (
         compare_profiling_runs,
         get_profiling_trends,
@@ -298,6 +305,11 @@ def build_mcp_server(
     safe_tool(create_scorecard)
     safe_tool(update_scorecard)
     safe_tool(delete_scorecard)
+    safe_tool(list_notifications)
+    safe_tool(get_notification)
+    safe_tool(create_notification)
+    safe_tool(update_notification)
+    safe_tool(delete_notification)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)

@@ -432,3 +432,42 @@ def test_list_for_project_count_null_returns_zero(mock_session_fn):
     items, total = ScoreDefinition.list_for_project("demo")
     assert items == []
     assert total == 0
+
+
+# ─── names_by_id — single batched lookup, no N+1 ──────────────────────
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_names_by_id_returns_id_to_name_mapping(mock_session_fn):
+    id_a, id_b = uuid4(), uuid4()
+    mock_result = MagicMock()
+    mock_result.all.return_value = [_row(id_a, "Card A", None), _row(id_b, "Card B", None)]
+    mock_session_fn.return_value.execute.return_value = mock_result
+
+    out = ScoreDefinition.names_by_id([id_a, id_b])
+
+    assert out == {id_a: "Card A", id_b: "Card B"}
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_names_by_id_empty_input_skips_query(mock_session_fn):
+    out = ScoreDefinition.names_by_id([])
+
+    assert out == {}
+    mock_session_fn.return_value.execute.assert_not_called()
+
+
+@patch("testgen.common.models.scores.get_current_session")
+def test_names_by_id_uses_single_in_query(mock_session_fn):
+    """One IN query for all IDs — not a per-ID lookup (N+1)."""
+    ids = [uuid4(), uuid4(), uuid4()]
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+    mock_session_fn.return_value.execute.return_value = mock_result
+
+    ScoreDefinition.names_by_id(ids)
+
+    assert mock_session_fn.return_value.execute.call_count == 1
+    args, _ = mock_session_fn.return_value.execute.call_args
+    sql = str(args[0].compile(compile_kwargs={"literal_binds": True}))
+    assert " IN (" in sql.upper()
