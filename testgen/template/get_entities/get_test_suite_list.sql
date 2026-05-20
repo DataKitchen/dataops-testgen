@@ -8,4 +8,6 @@
  LEFT JOIN test_runs tr
         ON tr.test_suite_id = ts.id
      WHERE ts.project_code = :PROJECT_CODE
+       AND ts.is_monitor IS NOT TRUE
+  GROUP BY ts.id, ts.project_code, ts.test_suite, ts.connection_id, ts.test_suite_description
   ORDER BY ts.test_suite;
