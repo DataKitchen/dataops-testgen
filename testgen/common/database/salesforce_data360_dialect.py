@@ -25,7 +25,6 @@ from salesforcecdpconnector.constants import (
 )
 from salesforcecdpconnector.exceptions import Error as _CdpError
 from sqlalchemy.engine.default import DefaultDialect
-from sqlalchemy.pool import StaticPool
 
 
 def _format_oauth_failure(grant_label: str, response) -> str:
@@ -164,6 +163,3 @@ class SalesforceData360Dialect(DefaultDialect):
         # Skip server-version detection and other introspection that
         # DefaultDialect.initialize() performs.
         pass
-
-    def get_pool_class(self, _url):
-        return StaticPool

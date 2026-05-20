@@ -121,7 +121,7 @@ test_types:
     test_type: Min_Date
     sql_flavor: salesforce_data360
     measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) < CAST('{BASELINE_VALUE}' AS DATE) THEN 1 ELSE 0 END)
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}

@@ -1398,7 +1398,16 @@ const SalesforceData360Form = (
                     { label: 'Client Credentials Flow', value: 'client_credentials' },
                 ],
                 value: authMethod,
-                onChange: (value) => authMethod.val = value,
+                onChange: (value) => {
+                    authMethod.val = value;
+                    if (value === 'jwt') {
+                        delete validityPerField['consumer_secret'];
+                    } else {
+                        delete validityPerField['permitted_user'];
+                        delete validityPerField['private_key'];
+                    }
+                    isValid.val = Object.values(validityPerField).every(v => v);
+                },
                 layout: 'inline',
             }),
             Input({
@@ -1427,10 +1436,7 @@ const SalesforceData360Form = (
                                 validityPerField['permitted_user'] = state.valid;
                                 isValid.val = Object.values(validityPerField).every(v => v);
                             },
-                            validators: [
-                                requiredIf(() => authMethod.val === 'jwt'),
-                                maxLength(250),
-                            ],
+                            validators: [required, maxLength(250)],
                         }),
                         FileInput({
                             name: 'private_key',
@@ -1456,7 +1462,7 @@ const SalesforceData360Form = (
                                 isValid.val = Object.values(validityPerField).every(v => v);
                             },
                             validators: [
-                                requiredIf(() => authMethod.val === 'client_credentials' && !originalConnection?.connection_id || !originalConnection?.private_key),
+                                requiredIf(() => !originalConnection?.connection_id || !originalConnection?.private_key),
                                 sizeLimit(200 * 1024 * 1024),
                             ],
                         }),
@@ -1476,7 +1482,7 @@ const SalesforceData360Form = (
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
                     validators: [
-                        requiredIf(() => authMethod.val === 'jwt' && !originalConnection?.connection_id || !originalConnection?.project_pw_encrypted),
+                        requiredIf(() => !originalConnection?.connection_id || !originalConnection?.project_pw_encrypted),
                     ],
                 });
             },
