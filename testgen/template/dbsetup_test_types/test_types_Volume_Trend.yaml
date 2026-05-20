@@ -107,6 +107,14 @@ test_types:
     test_operator: NOT BETWEEN
     test_condition: |-
       {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
+  - id: '10037'
+    test_type: Volume_Trend
+    sql_flavor: salesforce_data360
+    measure: |-
+      {CUSTOM_QUERY}
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      {LOWER_TOLERANCE} AND {UPPER_TOLERANCE}
   target_data_lookups:
   - id: '1477'
     test_id: '1513'
@@ -206,5 +214,16 @@ test_types:
         {LOWER_TOLERANCE} AS lower_bound,
         {UPPER_TOLERANCE} AS upper_bound
       FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10045'
+    test_id: 1513
+    test_type: Volume_Trend
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT {CUSTOM_QUERY} AS current_count,
+        {LOWER_TOLERANCE} AS lower_bound,
+        {UPPER_TOLERANCE} AS upper_bound
+      FROM "{TABLE_NAME}";
     error_type: Test Results
   test_templates: []

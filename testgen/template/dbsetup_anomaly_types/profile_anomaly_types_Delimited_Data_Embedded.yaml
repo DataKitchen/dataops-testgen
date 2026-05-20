@@ -96,3 +96,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" LIKE_REGEXPR '^([^,|' || NCHAR(9) || ']{1,20}[,|' || NCHAR(9) || ']){2,}[^,|' || NCHAR(9) || ']{0,20}([,|' || NCHAR(9) || ']{0,1}[^,|' || NCHAR(9) || ']{0,20})*$' AND NOT "{COLUMN_NAME}" LIKE_REGEXPR '[[:space:]](and|but|or|yet)[[:space:]]' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '10051'
+    test_id: 1025
+    test_type: Delimited_Data_Embedded
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE REGEXP_LIKE(CAST("{COLUMN_NAME}" AS VARCHAR), '^([^,|\t]{1,20}[,|\t]){2,}[^,|\t]{0,20}([,|\t]{0,1}[^,|\t]{0,20})*$') AND NOT REGEXP_LIKE(CAST("{COLUMN_NAME}" AS VARCHAR), '\s(and|but|or|yet)\s') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+    error_type: Profile Anomaly

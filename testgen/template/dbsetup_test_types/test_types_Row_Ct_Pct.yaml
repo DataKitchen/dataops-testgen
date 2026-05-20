@@ -116,6 +116,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10026'
+    test_type: Row_Ct_Pct
+    sql_flavor: salesforce_data360
+    measure: |-
+      ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT}) AS DECIMAL(18,4)) / CAST({BASELINE_CT} AS DECIMAL(18,4)), 2))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1388'
     test_id: '1032'
@@ -194,5 +202,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       WITH CTE AS (SELECT COUNT(*) AS current_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") SELECT current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * (current_count - {BASELINE_CT}) / {BASELINE_CT}, 2)) AS row_count_pct_difference FROM cte
+    error_type: Test Results
+  - id: '10033'
+    test_id: 1032
+    test_type: Row_Ct_Pct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_count, {BASELINE_CT} AS baseline_count, ABS(ROUND(100 * CAST((COUNT(*) - {BASELINE_CT}) AS NUMERIC) / CAST({BASELINE_CT} AS NUMERIC), 2)) AS row_count_pct_difference FROM "{TABLE_NAME}";
     error_type: Test Results
   test_templates: []

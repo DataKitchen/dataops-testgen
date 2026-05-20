@@ -118,6 +118,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10030'
+    test_type: Unique_Pct
+    sql_flavor: salesforce_data360
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT(CAST({BASELINE_UNIQUE_CT} AS FLOAT) / CAST({BASELINE_VALUE_CT} AS FLOAT) ) ) - 2 * ASIN( SQRT( CAST(COUNT( DISTINCT {COLUMN_NAME} ) AS FLOAT) / CAST(NULLIF(COUNT( {COLUMN_NAME} ), 0) AS FLOAT) )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1392'
     test_id: '1035'
@@ -194,5 +202,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10039'
+    test_id: 1035
+    test_type: Unique_Pct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

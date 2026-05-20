@@ -118,6 +118,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10031'
+    test_type: Valid_Characters
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({COLUMN_NAME}, CHR(160), ''), CHR(8203), ''), CHR(65279), ''), CHR(8239), ''), CHR(8201), ''), CHR(12288), ''), CHR(8204), '') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1397'
     test_id: '1043'
@@ -198,5 +206,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", NCHAR(160), ''), NCHAR(8203), ''), NCHAR(65279), ''), NCHAR(8239), ''), NCHAR(8201), ''), NCHAR(12288), ''), NCHAR(8204), '') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10040'
+    test_id: 1043
+    test_type: Valid_Characters
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TABLE_NAME}" WHERE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", CHR(160), ''), CHR(8203), ''), CHR(65279), ''), CHR(8239), ''), CHR(8201), ''), CHR(12288), ''), CHR(8204), '') <> "{COLUMN_NAME}" OR "{COLUMN_NAME}" LIKE ' %' OR "{COLUMN_NAME}" LIKE '''%''' OR "{COLUMN_NAME}" LIKE '"%"' GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

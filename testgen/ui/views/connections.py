@@ -639,6 +639,12 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url("flavors/sap_hana.svg"),
     ),
     ConnectionFlavor(
+        label="Salesforce Data 360",
+        value="salesforce_data360",
+        flavor="salesforce_data360",
+        icon=get_asset_data_url("flavors/salesforce_data360.svg"),
+    ),
+    ConnectionFlavor(
         label="Snowflake",
         value="snowflake",
         flavor="snowflake",

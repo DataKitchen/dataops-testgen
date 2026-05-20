@@ -854,6 +854,7 @@ const AddDialogComponent = ({ open, info, validateResult: validateResultProp, on
     const tableGroupsId = van.derive(() => getValue(info)?.table_groups_id ?? '');
     const testSuite = van.derive(() => getValue(info)?.test_suite ?? {});
     const tableColumns = van.derive(() => getValue(info)?.table_columns ?? []);
+    const qualifiesTableRefsWithSchema = van.derive(() => getValue(info)?.qualifies_table_refs_with_schema ?? true);
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const scopeFilter = {
@@ -960,6 +961,7 @@ const AddDialogComponent = ({ open, info, validateResult: validateResultProp, on
                     formValues: fv,
                     tableColumns: tableColumns.rawVal,
                     testSuite: testSuite.rawVal,
+                    qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     validateResult: vr,
                     mode: 'add',
                     onFormChange: (changes) => {
@@ -979,6 +981,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
     const dialogInfo = van.derive(() => getValue(info) ?? null);
     const tableColumns = van.derive(() => dialogInfo.val?.table_columns ?? []);
     const testSuite = van.derive(() => dialogInfo.val?.test_suite ?? {});
+    const qualifiesTableRefsWithSchema = van.derive(() => dialogInfo.val?.qualifies_table_refs_with_schema ?? true);
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const formValues = van.state(null);
@@ -1022,6 +1025,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
                     formValues: fv,
                     tableColumns: tableColumns.rawVal,
                     testSuite: testSuite.rawVal,
+                    qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     validateResult: vr,
                     mode: 'edit',
                     onFormChange: (changes) => {
@@ -1037,7 +1041,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
 };
 
 // Shared form content for add/edit dialogs
-const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, onFormChange, onValidate, onSave, onCancel }) => {
+const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, onFormChange, onValidate, onSave, onCancel }) => {
     const testScope = formValues.test_scope ?? 'column';
     const runType = formValues.run_type ?? 'CAT';
     const testType = formValues.test_type ?? '';
@@ -1177,12 +1181,14 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         ),
 
         // Schema (read-only)
-        Input({
-            name: 'schema_name',
-            label: 'Schema',
-            value: formValues.schema_name ?? '',
-            disabled: true,
-        }),
+        qualifiesTableRefsWithSchema
+            ? Input({
+                name: 'schema_name',
+                label: 'Schema',
+                value: formValues.schema_name ?? '',
+                disabled: true,
+            })
+            : null,
 
         // Table name
         testScope !== 'tablegroup'
@@ -1242,6 +1248,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             { class: 'td-form-params-section' },
             TestDefinitionForm({
                 definition: formValues,
+                qualifiesTableRefsWithSchema,
                 onChange: (changes) => {
                     if (Object.keys(changes).length === 0) return;
                     const updated = { ...fv.rawVal, ...changes };

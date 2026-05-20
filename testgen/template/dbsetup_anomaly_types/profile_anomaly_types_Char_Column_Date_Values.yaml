@@ -112,3 +112,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT A.* FROM (SELECT DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) A UNION ALL SELECT B.* FROM (SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) B ORDER BY data_type, count DESC
     error_type: Profile Anomaly
+  - id: '10048'
+    test_id: 1012
+    test_type: Char_Column_Date_Values
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT A.* FROM (  SELECT  DISTINCT 'Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> = 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2}) AS A UNION ALL SELECT B.* FROM  ( SELECT DISTINCT 'Non-Date' as data_type, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE <%IS_DATE;"{COLUMN_NAME}"%> != 1 GROUP BY "{COLUMN_NAME}" ORDER BY count DESC LIMIT {LIMIT_2})  AS B ORDER BY data_type, count DESC;
+    error_type: Profile Anomaly

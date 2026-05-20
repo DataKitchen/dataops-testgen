@@ -90,3 +90,10 @@ profile_anomaly_types:
     lookup_query: |-
       created_in_ui
     error_type: Profile Anomaly
+  - id: '10067'
+    test_id: 1020
+    test_type: Recency_Six_Months
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: created_in_ui
+    error_type: Profile Anomaly

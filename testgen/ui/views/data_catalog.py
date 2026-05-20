@@ -117,7 +117,7 @@ class DataCatalogPage(Page):
             selected_item["connection_id"] = str(selected_table_group.connection_id)
         else:
             on_item_selected(None)
-        
+
         def on_run_profiling_clicked(_) -> None:
             if selected_table_group:
                 st.session_state[DC_RUN_PROFILING_DIALOG_KEY] = str(selected_table_group.id)
@@ -466,7 +466,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
             include_tags=True,
             include_active_tests=True,
         )
-        
+
 
     data = pd.DataFrame(table_data + column_data)
 
@@ -684,7 +684,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
 def get_table_group_columns(table_group_id: str) -> list[dict]:
     if not is_uuid4(table_group_id):
         return []
-    
+
     query = f"""
     SELECT CONCAT('column_', column_chars.column_id) AS column_id,
         CONCAT('table_', table_chars.table_id) AS table_id,
@@ -902,11 +902,12 @@ def get_preview_data(
     flavor_service = get_flavor_service(connection.sql_flavor)
     prefix, suffix = flavor_service.row_limit_clauses(100)
     quote = flavor_service.quote_character
+    table_ref = flavor_service.get_table_ref(schema_name, table_name)
     query = f"""
     SELECT DISTINCT
         {prefix}
         {f"{quote}{column_name}{quote}" if column_name else "*"}
-    FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}
+    FROM {table_ref}
     {suffix}
     """
 

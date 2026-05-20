@@ -1,8 +1,8 @@
 import dataclasses
 from uuid import UUID
 
-from testgen.commands.queries.refresh_data_chars_query import ColumnChars
 from testgen.common import read_template_sql_file
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import process_conditionals, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun

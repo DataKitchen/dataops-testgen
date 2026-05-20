@@ -98,3 +98,11 @@ profile_anomaly_types:
     lookup_query: |-
       WITH val_list(token, remaining) AS ( SELECT CASE WHEN LOCATE(SUBSTR('{DETAIL_EXPRESSION}', LOCATE('{DETAIL_EXPRESSION}', ':') + 2), '|') > 0 THEN TRIM(SUBSTR(SUBSTR('{DETAIL_EXPRESSION}', LOCATE('{DETAIL_EXPRESSION}', ':') + 2), 1, LOCATE(SUBSTR('{DETAIL_EXPRESSION}', LOCATE('{DETAIL_EXPRESSION}', ':') + 2), '|') - 1)) ELSE TRIM(SUBSTR('{DETAIL_EXPRESSION}', LOCATE('{DETAIL_EXPRESSION}', ':') + 2)) END AS token, CASE WHEN LOCATE(SUBSTR('{DETAIL_EXPRESSION}', LOCATE('{DETAIL_EXPRESSION}', ':') + 2), '|') > 0 THEN SUBSTR(SUBSTR('{DETAIL_EXPRESSION}', LOCATE('{DETAIL_EXPRESSION}', ':') + 2), LOCATE(SUBSTR('{DETAIL_EXPRESSION}', LOCATE('{DETAIL_EXPRESSION}', ':') + 2), '|') + 1) ELSE '' END AS remaining FROM DUMMY UNION ALL SELECT CASE WHEN LOCATE(remaining, '|') > 0 THEN TRIM(SUBSTR(remaining, 1, LOCATE(remaining, '|') - 1)) ELSE TRIM(remaining) END AS token, CASE WHEN LOCATE(remaining, '|') > 0 THEN SUBSTR(remaining, LOCATE(remaining, '|') + 1) ELSE '' END AS remaining FROM val_list WHERE LENGTH(remaining) > 0 ) SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LOWER("{COLUMN_NAME}") IN (SELECT token FROM val_list) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '10077'
+    test_id: 1027
+    test_type: Variant_Coded_Values
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE LOWER("{COLUMN_NAME}") IN (SELECT TRIM(val) FROM UNNEST(STRING_TO_ARRAY(SUBSTRING('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|')) AS t(val)) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Profile Anomaly
