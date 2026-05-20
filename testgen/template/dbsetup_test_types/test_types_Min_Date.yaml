@@ -117,6 +117,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10016'
+    test_type: Min_Date
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DATE) < CAST('{BASELINE_VALUE}' AS DATE) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1378'
     test_id: '1020'
@@ -193,5 +201,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10023'
+    test_id: 1020
+    test_type: Min_Date
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}",  COUNT(*) AS count FROM "{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DATE) < CAST('{BASELINE_VALUE}' AS DATE) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

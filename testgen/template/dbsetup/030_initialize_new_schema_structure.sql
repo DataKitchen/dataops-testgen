@@ -72,7 +72,7 @@ CREATE TABLE connections (
    sql_flavor_code        VARCHAR(30),
    project_host           VARCHAR(250),
    project_port           VARCHAR(5),
-   project_user           VARCHAR(50),
+   project_user           VARCHAR(256),
    project_db             VARCHAR(100),
    connection_name        VARCHAR(40),
    project_pw_encrypted   BYTEA,

@@ -95,3 +95,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '10072'
+    test_id: 1001
+    test_type: Suggested_Type
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS record_ct FROM "{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY record_ct DESC LIMIT {LIMIT};
+    error_type: Profile Anomaly

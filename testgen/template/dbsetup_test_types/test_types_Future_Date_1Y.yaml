@@ -117,6 +117,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10011'
+    test_type: Future_Date_1Y
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(GREATEST(0, SIGN(CAST({COLUMN_NAME} AS DATE) - (CAST('{RUN_DATE}' AS DATE)+365))))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1374'
     test_id: '1016'
@@ -193,5 +201,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS DATE) > ADD_DAYS(TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS'), 365) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10018'
+    test_id: 1016
+    test_type: Future_Date_1Y
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE GREATEST(0, SIGN(CAST("{COLUMN_NAME}" AS DATE) - (CAST('{TEST_DATE}' AS DATE) + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

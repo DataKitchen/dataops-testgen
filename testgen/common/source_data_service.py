@@ -265,13 +265,15 @@ def _generate_recency_lookup_query(
         column_names_str = detail_exp[start_index:]
         columns = [col.strip() for col in column_names_str.split(",")]
 
-    quote = get_flavor_service(sql_flavor).quote_character
+    flavor_service = get_flavor_service(sql_flavor)
+    quote = flavor_service.quote_character
+    table_ref = flavor_service.get_table_ref("{TARGET_SCHEMA}", "{TABLE_NAME}")
     queries = [
         f"""
         SELECT
             '{column}' AS column_name,
             MAX({quote}{column}{quote}) AS max_date_available
-        FROM {quote}{{TARGET_SCHEMA}}{quote}.{quote}{{TABLE_NAME}}{quote}
+        FROM {table_ref}
         """
         for column in columns
     ]

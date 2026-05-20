@@ -1,6 +1,6 @@
 /**
  * @import { Connection } from './connection_form.js';
- * 
+ *
  * @typedef TableGroup
  * @type {object}
  * @property {string?} id
@@ -29,12 +29,12 @@
  * @property {string?} stakeholder_group
  * @property {string?} transform_level
  * @property {string?} data_product
- * 
+ *
  * @typedef FormState
  * @type {object}
  * @property {boolean} dirty
  * @property {boolean} valid
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {TableGroup} tableGroup
@@ -42,6 +42,7 @@
  * @property {boolean?} showConnectionSelector
  * @property {boolean?} disableConnectionSelector
  * @property {boolean?} disableSchemaField
+ * @property {string?} sqlFlavor
  * @property {boolean?} disablePiiFlag
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
@@ -65,9 +66,9 @@ const normalizeTableSet = (value) => {
 }
 
 /**
- * 
- * @param {Properties} props 
- * @returns 
+ *
+ * @param {Properties} props
+ * @returns
  */
 const TableGroupForm = (props) => {
     loadStylesheet('table-group-form', stylesheet);
@@ -110,6 +111,13 @@ const TableGroupForm = (props) => {
     });
     const showConnectionSelector = getValue(props.showConnectionSelector) ?? false;
     const disableSchemaField = van.derive(() => getValue(props.disableSchemaField) ?? false)
+
+    const isSalesforce = van.derive(() => {
+        const connections = getValue(props.connections) ?? [];
+        const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
+        const flavor = selected?.sql_flavor ?? getValue(props.sqlFlavor);
+        return flavor === 'salesforce_data360';
+    });
 
     const updatedTableGroup = van.derive(() => {
         return {
@@ -176,7 +184,7 @@ const TableGroupForm = (props) => {
             })
             : undefined,
         MainForm(
-            { disableSchemaField, setValidity: setFieldValidity },
+            { disableSchemaField, isSalesforce, setValidity: setFieldValidity },
             tableGroupsName,
             tableGroupSchema,
         ),
@@ -238,12 +246,14 @@ const MainForm = (
             },
             validators: [ required ],
         }),
-        Input({
+        () => Input({
             name: 'table_group_schema',
-            label: 'Schema',
+            label: getValue(options.isSalesforce) ? 'Data Space' : 'Schema',
             value: tableGroupSchema,
             class: 'tg-column-flex',
-            help: 'Database schema containing the tables for the Table Group',
+            help: getValue(options.isSalesforce)
+                ? 'Salesforce data space containing the tables for the Table Group'
+                : 'Database schema containing the tables for the Table Group',
             helpPlacement: 'bottom-left',
             disabled: options.disableSchemaField,
             onChange: (value, state) => {
@@ -340,7 +350,7 @@ const SettingsForm = (
 ) => {
     return div(
         { class: 'flex-row fx-gap-3 fx-flex-wrap fx-align-flex-start border border-radius-1 p-3 mt-1', style: 'position: relative;' },
-        Caption({content: 'Settings', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),        
+        Caption({content: 'Settings', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
         div(
             { class: 'tg-column-flex flex-column fx-gap-3' },
             Checkbox({

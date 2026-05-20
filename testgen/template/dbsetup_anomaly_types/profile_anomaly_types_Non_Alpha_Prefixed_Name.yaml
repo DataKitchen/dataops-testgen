@@ -110,3 +110,13 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" < 'A' AND SUBSTR("{COLUMN_NAME}", 1, 1) NOT IN ('"', ' ') AND SUBSTR("{COLUMN_NAME}", -1, 1) <> '''' GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '10060'
+    test_id: 1030
+    test_type: Non_Alpha_Prefixed_Name
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TABLE_NAME}"
+       WHERE "{COLUMN_NAME}" < 'A' AND SUBSTR("{COLUMN_NAME}", 1, 1) NOT IN ('"', ' ') AND SUBSTRING("{COLUMN_NAME}", LENGTH("{COLUMN_NAME}")) <> ''''
+      GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
+    error_type: Profile Anomaly

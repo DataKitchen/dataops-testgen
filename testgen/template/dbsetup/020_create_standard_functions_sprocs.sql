@@ -226,10 +226,12 @@ BEGIN
       RAISE EXCEPTION 'Invalid expression: dangerous statement detected';
    END IF;
 
-   -- Remove all allowed tokens from the validation expression, treating 'FLOAT' as a keyword
+   -- Remove all allowed tokens from the validation expression, treating 'FLOAT' as a keyword.
+   -- Numeric pattern accepts leading-dot decimals (e.g. ".733") that Oracle emits
+   -- when converting NUMBER values with |x| < 1 to VARCHAR2.
    invalid_parts := regexp_replace(
       expression,
-      E'(\\mGREATEST|LEAST|ABS|FN_NORMAL_CDF|DATEDIFF|DAY|FLOAT|NULLIF)\\M|[0-9]+(\\.[0-9]+)?([eE][+-]?[0-9]+)?|[+\\-*/(),\\\'":]+|\\s+',
+      E'(\\mGREATEST|LEAST|ABS|FN_NORMAL_CDF|DATEDIFF|DAY|FLOAT|NULLIF)\\M|([0-9]+\\.?[0-9]*|\\.[0-9]+)([eE][+-]?[0-9]+)?|[+\\-*/(),\\\'":]+|\\s+',
       '',
       'gi'
    );

@@ -182,6 +182,12 @@ class TestDefinitionsPage(Page):
         # Build dialog states
         validate_result = st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
+        qualifies_table_refs_with_schema = True
+        if st.session_state.get(TD_ADD_DIALOG_KEY) or st.session_state.get(TD_EDIT_DIALOG_KEY):
+            connection = Connection.get(table_group.connection_id)
+            if connection:
+                qualifies_table_refs_with_schema = get_flavor_service(connection.sql_flavor).qualifies_table_refs_with_schema
+
         add_dialog = None
         if st.session_state.get(TD_ADD_DIALOG_KEY):
             add_dialog = {
@@ -191,6 +197,7 @@ class TestDefinitionsPage(Page):
                 "table_groups_id": str(table_group.id),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
+                "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
             }
 
         edit_dialog = None
@@ -202,6 +209,7 @@ class TestDefinitionsPage(Page):
                 "table_columns": table_columns,
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
+                "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
             }
 
         delete_dialog = None
@@ -318,9 +326,27 @@ class TestDefinitionsPage(Page):
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
+        match_schema_test_types = {
+            tt["test_type"]
+            for tt in test_types
+            if "match_schema_name" in (tt.get("default_parm_columns") or "").split(",")
+        }
+
+        def _default_match_schema(test_def: dict) -> None:
+            # The Match Schema field is hidden in the UI for flavors whose SQL doesn't
+            # qualify table refs with a schema, but downstream SQL/Python still expects
+            # match_schema_name populated for tests that support it. Default to the
+            # test's schema (or table-group schema) when the test type accepts
+            # match_schema_name and match_table_name is set.
+            if test_def.get("test_type") not in match_schema_test_types:
+                return
+            if test_def.get("match_table_name") and not test_def.get("match_schema_name"):
+                test_def["match_schema_name"] = test_def.get("schema_name") or table_group.table_group_schema
+
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
+            _default_match_schema(test_def)
             td_columns = set(TestDefinition.__table__.columns.keys())
             TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
             st.cache_data.clear()
@@ -330,6 +356,7 @@ class TestDefinitionsPage(Page):
         @with_database_session
         def on_edit_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
+            _default_match_schema(test_def)
             td_columns = set(TestDefinition.__table__.columns.keys())
             TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
             st.cache_data.clear()
@@ -975,7 +1002,7 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
         condition = test_definition["custom_query"]
         flavor_service = get_flavor_service(connection.sql_flavor)
         concat_operator = flavor_service.concat_operator
-        quote = flavor_service.quote_character
+        table_ref = flavor_service.get_table_ref(schema, table_name)
         query = f"""
         SELECT
             COALESCE(
@@ -987,7 +1014,7 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
                 {concat_operator} '|',
                 '<NULL>|'
             )
-        FROM {quote}{schema}{quote}.{quote}{table_name}{quote};
+        FROM {table_ref};
         """
         fetch_from_target_db(connection, query)
     else:

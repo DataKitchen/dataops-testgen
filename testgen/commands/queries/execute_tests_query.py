@@ -510,7 +510,6 @@ class TestExecutionSQL:
     ) -> tuple[list[tuple[str, None]], list[list[TestExecutionDef]]]:
         varchar_type = self.flavor_service.varchar_type
         concat_operator = self.flavor_service.concat_operator
-        quote = self.flavor_service.quote_character
 
         for td in test_defs:
             # Don't recalculate expressions if it was already done before
@@ -545,7 +544,7 @@ class TestExecutionSQL:
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
                 f"{concat_operator.join([td.condition_expression for td in group])} AS result_codes "
-                f"FROM {quote}{group[0].schema_name}{quote}.{quote}{group[0].table_name}{quote}"
+                f"FROM {self.flavor_service.get_table_ref(group[0].schema_name, group[0].table_name)}"
             )
             query = query.replace(":", "\\:")
 
