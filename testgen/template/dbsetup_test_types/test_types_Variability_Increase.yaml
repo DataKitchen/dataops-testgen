@@ -126,6 +126,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10036'
+    test_type: Variability_Increase
+    sql_flavor: salesforce_data360
+    measure: |-
+      100.0*STDDEV(CAST({COLUMN_NAME} AS FLOAT))/CAST({BASELINE_SD} AS FLOAT)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1394'
     test_id: '1040'
@@ -199,5 +207,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT STDDEV(CAST("{COLUMN_NAME}" AS DECIMAL)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10044'
+    test_id: 1040
+    test_type: Variability_Increase
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TABLE_NAME}";
     error_type: Test Results
   test_templates: []

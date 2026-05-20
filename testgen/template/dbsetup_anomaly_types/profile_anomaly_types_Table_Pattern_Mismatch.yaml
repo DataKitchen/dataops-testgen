@@ -105,3 +105,10 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT COLUMN_NAME, TABLE_NAME FROM SYS.TABLE_COLUMNS WHERE SCHEMA_NAME = '{TARGET_SCHEMA}' AND COLUMN_NAME = '{COLUMN_NAME}' ORDER BY TABLE_NAME LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '10073'
+    test_id: 1008
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: null
+    error_type: Profile Anomaly

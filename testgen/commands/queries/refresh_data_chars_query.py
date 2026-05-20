@@ -1,28 +1,20 @@
-import dataclasses
+import re
 from collections.abc import Iterable
 from datetime import datetime
 
 from testgen.common import read_template_sql_file
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import chunk_queries, to_sql_timestamp
 
 
-@dataclasses.dataclass
-class ColumnChars:
-    schema_name: str
-    table_name: str
-    column_name: str
-    ordinal_position: int = None
-    general_type: str = None
-    column_type: str = None
-    db_data_type: str = None
-    is_decimal: bool = False
-    approx_record_ct: int = None
-    # This should not default to 0 since we don't always retrieve actual row counts
-    # UI relies on the null value to know that the approx_record_ct should be displayed instead
-    record_ct: int = None
+def _like_to_regex(pattern: str) -> re.Pattern[str]:
+    # Mirrors SQL LIKE semantics used in _get_table_criteria: `%` is the only
+    # wildcard; `_` is treated as a literal character (escaped to `\_` in the
+    # SQL path). Anything else is literal.
+    return re.compile("^" + re.escape(pattern.strip()).replace("%", ".*") + "$")
 
 
 class RefreshDataCharsSQL:
@@ -100,6 +92,32 @@ class RefreshDataCharsSQL:
 
         return table_criteria
 
+    def filter_schema_columns(self, columns: list[ColumnChars]) -> list[ColumnChars]:
+        """Apply the table group's filters (table set, include/exclude masks) to a column list.
+
+        Mirrors `_get_table_criteria` for flavors that bypass the SQL template path
+        (e.g., Salesforce Data 360, where columns come from the metadata API).
+        """
+        result = columns
+
+        if self.table_group.profiling_table_set:
+            allowed = {item.strip() for item in self.table_group.profiling_table_set.split(",")}
+            result = [c for c in result if c.table_name in allowed]
+
+        if self.table_group.profiling_include_mask:
+            include_patterns = [
+                _like_to_regex(item) for item in self.table_group.profiling_include_mask.split(",")
+            ]
+            result = [c for c in result if any(p.match(c.table_name) for p in include_patterns)]
+
+        if self.table_group.profiling_exclude_mask:
+            exclude_patterns = [
+                _like_to_regex(item) for item in self.table_group.profiling_exclude_mask.split(",")
+            ]
+            result = [c for c in result if not any(p.match(c.table_name) for p in exclude_patterns)]
+
+        return result
+
     def get_schema_ddf(self) -> tuple[str, dict]:
         # Runs on Target database
         return self._get_query(
@@ -111,9 +129,8 @@ class RefreshDataCharsSQL:
     def get_row_counts(self, table_names: Iterable[str]) -> list[tuple[str, None]]:
         # Runs on Target database
         schema = self.table_group.table_group_schema
-        quote = self.flavor_service.quote_character
         count_queries = [
-            f"SELECT '{table}' AS table_name, COUNT(*) AS row_count FROM {quote}{schema}{quote}.{quote}{table}{quote}"
+            f"SELECT '{table}' AS table_name, COUNT(*) AS row_count FROM {self.flavor_service.get_table_ref(schema, table)}"
             for table in table_names
         ]
         chunked_queries = chunk_queries(count_queries, " UNION ALL ", self.connection.max_query_chars)
@@ -122,8 +139,7 @@ class RefreshDataCharsSQL:
     def verify_access(self, table_name: str) -> tuple[str, None]:
         # Runs on Target database
         schema = self.table_group.table_group_schema
-        quote = self.flavor_service.quote_character
-        table_ref = f"{quote}{schema}{quote}.{quote}{table_name}{quote}"
+        table_ref = self.flavor_service.get_table_ref(schema, table_name)
         prefix, suffix = self.flavor_service.row_limit_clauses(1)
         query = f"SELECT {prefix} 1 FROM {table_ref} {suffix}".strip()
         return (query, None)

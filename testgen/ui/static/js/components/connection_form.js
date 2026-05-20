@@ -87,6 +87,9 @@ const defaultPorts = {
     sap_hana: '39015',
 };
 
+// Salesforce Data 360's Hyper engine has a lower expression-depth limit than other databases
+const defaultMaxQueryChars = (flavorCode) => flavorCode === 'salesforce_data360' ? 15000 : 20000;
+
 /**
  *
  * @param {Properties} props
@@ -114,7 +117,7 @@ const ConnectionForm = (props, saveButton) => {
     const connectionFlavor = van.state(connection?.sql_flavor_code);
     const connectionName = van.state(connection?.connection_name ?? '');
     const connectionMaxThreads = van.state(connection?.max_threads ?? 4);
-    const connectionQueryChars = van.state(connection?.max_query_chars ?? 20000);
+    const connectionQueryChars = van.state(connection?.max_query_chars ?? defaultMaxQueryChars(connection?.sql_flavor_code));
     const privateKeyFile = van.state(getValue(props.cachedPrivateKeyFile) ?? null);
     const serviceAccountKeyFile = van.state(getValue(props.cachedServiceAccountKeyFile) ?? null);
 
@@ -139,7 +142,7 @@ const ConnectionForm = (props, saveButton) => {
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
-        max_query_chars: connectionQueryChars.rawVal ?? 20000,
+        max_query_chars: connectionQueryChars.rawVal ?? defaultMaxQueryChars(connectionFlavor.rawVal),
     });
     const dynamicConnectionUrl = van.state(props.dynamicConnectionUrl?.rawVal ?? '');
 
@@ -179,6 +182,7 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('redshift_spectrum_form', isValid);
             },
             connection,
+            dynamicConnectionUrl,
         ),
         azure_mssql: () => AzureMSSQLForm(
             updatedConnection,
@@ -274,6 +278,17 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             getValue(props.cachedServiceAccountKeyFile) ?? null
         ),
+        salesforce_data360: () => SalesforceData360Form(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, fileValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                privateKeyFile.val = fileValue;
+                setFieldValidity('salesforce_data360_form', isValid);
+            },
+            connection,
+            getValue(props.cachedPrivateKeyFile) ?? null,
+        ),
     };
 
     const setFieldValidity = (field, validity) => {
@@ -285,17 +300,6 @@ const ConnectionForm = (props, saveButton) => {
         validityPerField.val = {connection_name: validityPerField.val.connection_name};
         const flavor = getValue(props.flavors).find(f => f.value === selectedFlavorCode);
         return authenticationForms[flavor.value]();
-    });
-
-    van.derive(() => {
-        const selectedFlavorCode = connectionFlavor.val;
-        const previousFlavorCode = connectionFlavor.oldVal;
-        const updatedConnection_ = updatedConnection.rawVal;
-
-        const isCustomPort = updatedConnection_?.project_port !== defaultPorts[previousFlavorCode];
-        if (selectedFlavorCode !== previousFlavorCode && (!isCustomPort || !updatedConnection_?.project_port)) {
-            updatedConnection.val = {...updatedConnection_, project_port: defaultPorts[selectedFlavorCode]};
-        }
     });
 
     van.derive(() => {
@@ -409,7 +413,6 @@ const ConnectionForm = (props, saveButton) => {
 /**
  * @param {VanState<Connection>} connection
  * @param {Flavor} flavor
- * @param {boolean} maskPassword
  * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
  * @param {VanState<string?>} dynamicConnectionUrl
@@ -788,7 +791,6 @@ const MSSQLForm = RedshiftForm;
 /**
  * @param {VanState<Connection>} connection
  * @param {Flavor} flavor
- * @param {boolean} maskPassword
  * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
  * @param {VanState<string?>} dynamicConnectionUrl
@@ -1030,7 +1032,6 @@ const DatabricksForm = (
 /**
  * @param {VanState<Connection>} connection
  * @param {Flavor} flavor
- * @param {boolean} maskPassword
  * @param {(params: Partial<Connection>, fileValue: FileValue, isValid: boolean) => void} onChange
  * @param {Connection?} originalConnection
  * @param {string?} cachedFile
@@ -1321,6 +1322,168 @@ const SnowflakeForm = (
                         validityPerField['password'] = state.valid;
                         isValid.val = Object.values(validityPerField).every(v => v);
                     },
+                });
+            },
+        ),
+    );
+};
+
+/**
+ * @param {VanState<Connection>} connection
+ * @param {Flavor} flavor
+ * @param {(params: Partial<Connection>, fileValue: FileValue, isValid: boolean) => void} onChange
+ * @param {Connection?} originalConnection
+ * @param {string?} cachedFile
+ * @returns {HTMLElement}
+ */
+const SalesforceData360Form = (
+    connection,
+    flavor,
+    onChange,
+    originalConnection,
+    cachedFile,
+) => {
+    const isValid = van.state(false);
+    const authMethod = van.state(
+        originalConnection?.connection_id
+            ? (connection.rawVal.connect_by_key ? 'jwt' : 'client_credentials')
+            : 'jwt'
+    );
+    const loginUrl = van.state(connection.rawVal.project_host ?? '');
+    const consumerKey = van.state(connection.rawVal.project_user ?? '');
+    const consumerSecret = van.state(connection.rawVal?.project_pw_encrypted ?? '');
+    const permittedUser = van.state(connection.rawVal.project_db ?? '');
+    const connectionPrivateKey = van.state(connection.rawVal?.private_key ?? '');
+
+    const validityPerField = {};
+
+    const privateKeyFileRaw = van.state(cachedFile);
+
+    van.derive(() => {
+        onChange({
+            project_host: loginUrl.val,
+            project_user: consumerKey.val,
+            project_pw_encrypted: consumerSecret.val,
+            project_db: permittedUser.val,
+            connect_by_key: authMethod.val === 'jwt',
+            private_key: connectionPrivateKey.val,
+        }, privateKeyFileRaw.val, isValid.val);
+    });
+
+    return div(
+        { class: 'flex-column fx-gap-3 fx-flex' },
+        div(
+            { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
+            Caption({ content: 'Org', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+            Input({
+                name: 'login_url',
+                label: 'Login URL',
+                help: 'My Domain URL of the Salesforce org',
+                value: loginUrl,
+                onChange: (value, state) => {
+                    loginUrl.val = value;
+                    validityPerField['login_url'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
+                },
+                validators: [required, maxLength(250)],
+            }),
+        ),
+        div(
+            { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
+            Caption({ content: 'Authentication', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+            RadioGroup({
+                label: 'Connection Strategy',
+                options: [
+                    { label: 'JWT Bearer Flow', value: 'jwt' },
+                    { label: 'Client Credentials Flow', value: 'client_credentials' },
+                ],
+                value: authMethod,
+                onChange: (value) => {
+                    authMethod.val = value;
+                    if (value === 'jwt') {
+                        delete validityPerField['consumer_secret'];
+                    } else {
+                        delete validityPerField['permitted_user'];
+                        delete validityPerField['private_key'];
+                    }
+                    isValid.val = Object.values(validityPerField).every(v => v);
+                },
+                layout: 'inline',
+            }),
+            Input({
+                name: 'consumer_key',
+                label: 'Consumer Key',
+                help: 'Consumer key from the Salesforce external client app',
+                value: consumerKey,
+                onChange: (value, state) => {
+                    consumerKey.val = value;
+                    validityPerField['consumer_key'] = state.valid;
+                    isValid.val = Object.values(validityPerField).every(v => v);
+                },
+                validators: [required, maxLength(250)],
+            }),
+            () => {
+                if (authMethod.val === 'jwt') {
+                    return div(
+                        { class: 'flex-column fx-gap-3' },
+                        Input({
+                            name: 'permitted_user',
+                            label: 'Username',
+                            help: 'Salesforce user the JWT token will impersonate. Must be pre-authorized on the external client app.',
+                            value: permittedUser,
+                            onChange: (value, state) => {
+                                permittedUser.val = value;
+                                validityPerField['permitted_user'] = state.valid;
+                                isValid.val = Object.values(validityPerField).every(v => v);
+                            },
+                            validators: [required, maxLength(250)],
+                        }),
+                        FileInput({
+                            name: 'private_key',
+                            label: 'Upload private key (.pem, .key)',
+                            placeholder: (originalConnection?.connection_id && originalConnection?.private_key)
+                                ? 'Drop file here or browse files to replace existing key'
+                                : undefined,
+                            value: privateKeyFileRaw,
+                            onChange: (value, state) => {
+                                let isFieldValid = state.valid;
+
+                                privateKeyFileRaw.val = value;
+                                try {
+                                    if (value?.content) {
+                                        connectionPrivateKey.val = value.content.split(',')?.[1] ?? '';
+                                    }
+                                } catch (err) {
+                                    console.error(err);
+                                    isFieldValid = false;
+                                }
+
+                                validityPerField['private_key'] = isFieldValid;
+                                isValid.val = Object.values(validityPerField).every(v => v);
+                            },
+                            validators: [
+                                requiredIf(() => !originalConnection?.connection_id || !originalConnection?.private_key),
+                                sizeLimit(200 * 1024 * 1024),
+                            ],
+                        }),
+                    );
+                };
+                return Input({
+                    name: 'consumer_secret',
+                    label: 'Consumer Secret',
+                    help: 'Consumer secret from the Salesforce external client app',
+                    type: 'password',
+                    passwordSuggestions: false,
+                    value: consumerSecret,
+                    placeholder: (originalConnection?.connection_id && originalConnection?.project_pw_encrypted) ? secretsPlaceholder : '',
+                    onChange: (value, state) => {
+                        consumerSecret.val = value;
+                        validityPerField['consumer_secret'] = state.valid;
+                        isValid.val = Object.values(validityPerField).every(v => v);
+                    },
+                    validators: [
+                        requiredIf(() => !originalConnection?.connection_id || !originalConnection?.project_pw_encrypted),
+                    ],
                 });
             },
         ),
