@@ -143,7 +143,7 @@ def test_create_test_run_schedule_happy_path(mock_resolve_suite, mock_sched_cls,
         cron_tz="UTC",
     )
 
-    assert "Test-run schedule created" in result
+    assert "Test run schedule created" in result
     assert "suite_a" in result
     saved.save.assert_called_once()
 
@@ -207,7 +207,7 @@ def test_list_schedules_type_filter_maps_to_job_key(mock_sched_cls, mock_linked,
 
     from testgen.mcp.tools.schedules import list_schedules
 
-    list_schedules(project_code="demo", schedule_type="profiling")
+    list_schedules(project_code="demo", schedule_type="profiling_run")
 
     call_kwargs = mock_sched_cls.list_for_project.call_args
     assert call_kwargs.kwargs["key_filter"] == [JobKey.run_profile.value]
@@ -248,7 +248,7 @@ def test_get_schedule_no_executions(mock_resolve, mock_linked, mock_session, db_
 
     result = get_schedule(schedule_id=str(sched.id))
     assert "orders_tg" in result
-    assert "No executions yet" in result
+    assert "No runs yet" in result
 
 
 @patch("testgen.mcp.tools.schedules.get_current_session")
@@ -272,7 +272,7 @@ def test_get_schedule_with_executions(mock_resolve, mock_linked, mock_session, d
     from testgen.mcp.tools.schedules import get_schedule
 
     result = get_schedule(schedule_id=str(sched.id))
-    assert "Recent executions" in result
+    assert "Recent runs" in result
     assert str(je.id) in result
 
 

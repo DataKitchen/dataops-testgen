@@ -32,13 +32,13 @@ _DOC_GROUP = DocGroup.TRIGGER
 
 
 class ScheduleType(StrEnum):
-    profiling = "profiling"
-    test_execution = "test_execution"
+    profiling_run = "profiling_run"
+    test_run = "test_run"
 
 
 _SCHEDULE_TYPE_TO_JOB_KEY: dict[ScheduleType, JobKey] = {
-    ScheduleType.profiling: JobKey.run_profile,
-    ScheduleType.test_execution: JobKey.run_tests,
+    ScheduleType.profiling_run: JobKey.run_profile,
+    ScheduleType.test_run: JobKey.run_tests,
 }
 
 
@@ -244,7 +244,7 @@ def create_test_run_schedule(
     get_current_session().flush()
 
     doc = MdDoc()
-    doc.heading(1, f"Test-run schedule created for `{suite.test_suite}`")
+    doc.heading(1, f"Test run schedule created for `{suite.test_suite}`")
     _render_schedule(doc, sched, linked_name=suite.test_suite)
     return doc.render()
 
@@ -333,11 +333,11 @@ def list_schedules(
     limit: int = 20,
     page: int = 1,
 ) -> str:
-    """List schedules for a project — profiling and test-run schedules.
+    """List schedules for a project — profiling and test run schedules.
 
     Args:
         project_code: Project to scope to, e.g. from ``list_projects``.
-        schedule_type: Optional filter — ``profiling`` or ``test_execution``.
+        schedule_type: Optional filter — ``profiling_run`` or ``test_run``.
         limit: Max rows per page. Defaults to 20.
         page: 1-indexed page number. Defaults to 1.
     """
@@ -415,9 +415,9 @@ def get_schedule(schedule_id: str) -> str:
         .limit(5)
     ).all()
 
-    doc.heading(2, "Recent executions")
+    doc.heading(2, "Recent runs")
     if not history:
-        doc.text("_No executions yet._")
+        doc.text("_No runs yet._")
         return doc.render()
 
     rows: list[list[object]] = []
@@ -430,12 +430,12 @@ def get_schedule(schedule_id: str) -> str:
             format_run_duration(je.started_at, je.completed_at),
         ])
     doc.table(
-        ["Job execution ID", "Status", "Started", "Completed", "Duration"],
+        ["Job ID", "Status", "Started", "Completed", "Duration"],
         rows,
         code=[0],
     )
     doc.text(
-        "_Showing the 5 most recent executions._ "
+        "_Showing the 5 most recent runs._ "
         "Use `list_test_runs` or `list_profiling_runs` for full history."
     )
     return doc.render()
