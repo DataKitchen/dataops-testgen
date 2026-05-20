@@ -17,6 +17,7 @@ INNER JOIN test_results r ON tr.id = r.test_run_id
 INNER JOIN test_suites ts ON tr.test_suite_id = ts.id
      WHERE ts.project_code = :PROJECT_CODE
        AND ts.test_suite = :TEST_SUITE
+       AND ts.is_monitor IS NOT TRUE
   GROUP BY tr.id,
            ts.project_code,
            ts.test_suite,
