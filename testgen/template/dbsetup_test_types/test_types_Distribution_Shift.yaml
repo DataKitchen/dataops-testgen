@@ -49,13 +49,25 @@ test_types:
     lookup_query: |-
       WITH latest_ver AS (
         SELECT {CONCAT_COLUMNS} AS category,
-               CAST(COUNT(*) AS FLOAT64) / SUM(COUNT(*)) OVER() AS pct_of_total
-        FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` v1
+               CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
+        FROM `{TARGET_SCHEMA}.{TABLE_NAME}` v1
         WHERE {SUBSET_CONDITION}
-        GROUP BY {CONCAT_COLUMNS}
+        GROUP BY {COLUMN_NAME_NO_QUOTES}
+      ),
+      older_ver AS (
+        SELECT {CONCAT_MATCH_GROUPBY} AS category,
+               CAST(COUNT(*) AS FLOAT64) / CAST(SUM(COUNT(*)) OVER () AS FLOAT64) AS pct_of_total
+        FROM `{MATCH_SCHEMA_NAME}.{TABLE_NAME}` v2
+        WHERE {MATCH_SUBSET_CONDITION}
+        GROUP BY {MATCH_GROUPBY_NAMES}
       )
-      SELECT *
-      FROM latest_ver
+      SELECT COALESCE(l.category, o.category) AS category,
+             o.pct_of_total AS old_pct,
+             l.pct_of_total AS new_pct
+      FROM latest_ver l
+      FULL JOIN older_ver o
+        ON l.category = o.category
+      ORDER BY COALESCE(l.category, o.category)
       LIMIT {LIMIT};
     error_type: Test Results
   - id: '1336'
