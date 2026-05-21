@@ -16,6 +16,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
 from testgen.common.models.project import Project, ProjectSummary
 from testgen.common.models.project_membership import ProjectMembership
+from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupStats, TableGroupSummary
 from testgen.common.models.test_definition import TestType, TestTypeSummary
 from testgen.common.models.test_run import TestRun, TestRunSummary
@@ -126,3 +127,13 @@ def get_profiling_run_summaries(
     page_size: int = 20,
 ) -> tuple[list[ProfilingRunSummary], int]:
     return ProfilingRun.select_summary(project_code, table_group_id, page=page, page_size=page_size)
+
+
+# -- JobSchedule --------------------------------------------------------------
+
+@st.cache_data(show_spinner=False)
+def get_monitor_schedule(monitor_suite_id: str | UUID) -> JobSchedule | None:
+    return JobSchedule.get(
+        JobSchedule.key == RUN_MONITORS_JOB_KEY,
+        JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
+    )

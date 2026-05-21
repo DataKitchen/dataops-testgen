@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.cron_service import get_cron_sample
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
@@ -24,10 +25,10 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
-from testgen.ui.services.query_cache import get_project_summary, get_test_type_summaries
+from testgen.ui.services.query_cache import get_monitor_schedule, get_project_summary, get_test_type_summaries
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
-from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
+from testgen.ui.utils import dict_from_kv, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
 
@@ -107,10 +108,7 @@ class MonitorsDashboardPage(Page):
 
             if monitor_suite_id:
                 with st.spinner(text="Loading data ..."):
-                    monitor_schedule = JobSchedule.get(
-                        JobSchedule.key == RUN_MONITORS_JOB_KEY,
-                        JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
-                    )
+                    monitor_schedule = get_monitor_schedule(monitor_suite_id)
 
                     anomaly_type_filter = [t for t in anomaly_type_filter.split(",") if t in ANOMALY_TYPE_FILTERS] if anomaly_type_filter else None
                     if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
@@ -757,10 +755,7 @@ def build_table_trends_data(
     predictions = {}
     if len(definitions) > 0:
         test_suite = TestSuite.get(table_group.monitor_test_suite_id)
-        monitor_schedule = JobSchedule.get(
-            JobSchedule.key == RUN_MONITORS_JOB_KEY,
-            JobSchedule.kwargs["test_suite_id"].astext == str(table_group.monitor_test_suite_id),
-        )
+        monitor_schedule = get_monitor_schedule(table_group.monitor_test_suite_id)
         monitor_lookback = test_suite.monitor_lookback
         predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
 

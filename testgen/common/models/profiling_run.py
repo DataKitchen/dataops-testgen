@@ -48,6 +48,7 @@ class ProfilingRunMinimal(EntityMinimal):
 class ProfilingRunSummary(EntityMinimal):
     job_execution_id: UUID
     profiling_run_id: UUID | None
+    job_schedule_id: UUID | None
     project_code: str
     status: JobStatus
     created_at: datetime
@@ -243,6 +244,7 @@ class ProfilingRun(Entity):
         SELECT
             je.id AS job_execution_id,
             pr.id AS profiling_run_id,
+            je.job_schedule_id,
             je.project_code,
             je.status,
             je.created_at,

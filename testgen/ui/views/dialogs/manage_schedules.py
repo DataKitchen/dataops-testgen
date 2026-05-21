@@ -86,7 +86,7 @@ class ScheduleDialog:
         st.session_state.pop(RESULT_KEY, None)
 
     def on_cron_sample(self, payload: dict) -> None:
-        from testgen.ui.utils import get_cron_sample
+        from testgen.common.cron_service import get_cron_sample
         sample = get_cron_sample(payload["cron_expr"], payload["tz"], CRON_SAMPLE_COUNT, formatted=True)
         st.session_state[CRON_SAMPLE_KEY] = sample
 
