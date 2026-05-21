@@ -279,6 +279,8 @@ def _render_pending_je(doc: MdDoc, je: JobExecution, label: str) -> None:
     status_label = TestRunSummary.STATUS_LABEL.get(je.status, je.status)
     doc.heading(3, f"{label} — {status_label}")
     doc.field("Job ID", je.id, code=True)
+    if je.job_schedule_id is not None:
+        doc.field("Schedule", je.job_schedule_id, code=True)
     doc.field("Submitted", je.created_at)
     doc.field("Started", je.started_at or "—")
     doc.field("Ended", je.completed_at or "In progress")
@@ -288,6 +290,8 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     title = run.test_suite or run.project_code
     doc.heading(2, f"{title} — {run.status_label}")
     doc.field("Job ID", run.job_execution_id, code=True)
+    if run.job_schedule_id is not None:
+        doc.field("Schedule", run.job_schedule_id, code=True)
     if run.test_suite:
         doc.field("Test suite", run.test_suite)
     if run.table_groups_name:

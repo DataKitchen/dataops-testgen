@@ -42,7 +42,7 @@ def popen_mock(popen_proc_mock):
 @pytest.fixture
 def db_jobs(scheduler_instance):
     with (
-        patch("testgen.scheduler.cli_scheduler.JobSchedule.select_where") as mock,
+        patch("testgen.scheduler.cli_scheduler.JobSchedule.select_runnable") as mock,
     ):
         yield mock
 
