@@ -54,7 +54,7 @@ test_types:
         {HAVING_CONDITION}
         EXCEPT DISTINCT
         SELECT {MATCH_GROUPBY_NAMES}
-        FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+        FROM `{MATCH_SCHEMA_NAME}`.`{MATCH_TABLE_NAME}`
         WHERE {MATCH_SUBSET_CONDITION}
         GROUP BY {MATCH_GROUPBY_NAMES}
         {MATCH_HAVING_CONDITION}
@@ -76,7 +76,7 @@ test_types:
                {HAVING_CONDITION}
                 EXCEPT
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM `{MATCH_SCHEMA_NAME}`.`{MATCH_TABLE_NAME}`
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
@@ -98,7 +98,7 @@ test_types:
                {HAVING_CONDITION}
                 EXCEPT
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
@@ -119,7 +119,7 @@ test_types:
                {HAVING_CONDITION}
                 EXCEPT
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
@@ -141,7 +141,7 @@ test_types:
                {HAVING_CONDITION}
                 EXCEPT
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
@@ -163,7 +163,7 @@ test_types:
                {HAVING_CONDITION}
                 EXCEPT
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
@@ -185,7 +185,7 @@ test_types:
                {HAVING_CONDITION}
                 EXCEPT
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
@@ -207,7 +207,7 @@ test_types:
                {HAVING_CONDITION}
                 MINUS
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
@@ -229,7 +229,7 @@ test_types:
                {HAVING_CONDITION}
                 EXCEPT
                SELECT {MATCH_GROUPBY_NAMES}
-                 FROM {MATCH_SCHEMA_NAME}.{MATCH_TABLE_NAME}
+                 FROM "{MATCH_SCHEMA_NAME}"."{MATCH_TABLE_NAME}"
                 WHERE {MATCH_SUBSET_CONDITION}
                GROUP BY {MATCH_GROUPBY_NAMES}
                {MATCH_HAVING_CONDITION}
