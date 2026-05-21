@@ -48,6 +48,7 @@ class TestRunMinimal(EntityMinimal):
 class TestRunSummary(EntityMinimal):
     job_execution_id: UUID
     test_run_id: UUID | None
+    job_schedule_id: UUID | None
     status: JobStatus
     created_at: datetime
     started_at: datetime | None
@@ -256,6 +257,7 @@ class TestRun(Entity):
         SELECT
             je.id AS job_execution_id,
             tr.id AS test_run_id,
+            je.job_schedule_id,
             je.status,
             je.created_at,
             je.started_at,

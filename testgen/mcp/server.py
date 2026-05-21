@@ -174,6 +174,14 @@ def build_mcp_server(
         hygiene_issue_types_resource,
         test_types_resource,
     )
+    from testgen.mcp.tools.schedules import (
+        create_profiling_schedule,
+        create_test_run_schedule,
+        delete_schedule,
+        get_schedule,
+        list_schedules,
+        update_schedule,
+    )
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
     from testgen.mcp.tools.test_definitions import (
         bulk_update_tests,
@@ -264,6 +272,12 @@ def build_mcp_server(
     safe_tool(get_hygiene_issue)
     safe_tool(search_hygiene_issues)
     safe_tool(update_hygiene_issue)
+    safe_tool(create_profiling_schedule)
+    safe_tool(create_test_run_schedule)
+    safe_tool(list_schedules)
+    safe_tool(get_schedule)
+    safe_tool(update_schedule)
+    safe_tool(delete_schedule)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)
