@@ -3,6 +3,7 @@ import logging
 import time
 
 from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scores import (
     SCORE_CATEGORIES,
     ScoreCard,
@@ -11,6 +12,7 @@ from testgen.common.models.scores import (
     ScoreDefinitionResult,
     ScoreDefinitionResultHistoryEntry,
 )
+from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.score_drop import collect_score_notification_data, send_score_drop_notifications
 
 LOG = logging.getLogger("testgen")
@@ -169,3 +171,48 @@ def run_recalculate_score_card(*, project_code: str, definition_id: str):
         project_code,
         round(end_time - start_time, 2),
     )
+
+
+@with_database_session
+def save_and_refresh_score_definition(
+    score_definition: ScoreDefinition,
+    *,
+    is_new: bool,
+) -> ScoreDefinition:
+    """Save a scorecard and refresh / recalculate its cached scores.
+
+    Owns the persist-then-refresh orchestration shared by the Score Explorer UI
+    and the ``update_scorecard`` MCP tool. UI-only concerns (Streamlit cache
+    clear, navigation, toasts) stay in the view layer.
+
+    For new scorecards (``is_new=True``), seeds the first refresh with a
+    history entry timestamped at the latest profiling or test run for the
+    project, so the trend chart has an anchor point. For existing scorecards,
+    also runs ``run_recalculate_score_card`` to update history entries whose
+    scores might have shifted under the new filters.
+    """
+    refresh_kwargs: dict = {}
+    if is_new:
+        # tz-aware sentinel: run_time is stored as TIMESTAMP(timezone=True), so a naive
+        # min would raise on comparison when only one of the two runs exists.
+        epoch = datetime.datetime.min.replace(tzinfo=datetime.UTC)
+        latest_run = max(
+            (
+                ProfilingRun.get_latest_run(score_definition.project_code),
+                TestRun.get_latest_run(score_definition.project_code),
+            ),
+            key=lambda run: getattr(run, "run_time", epoch),
+        )
+        refresh_kwargs = {
+            "add_history_entry": True,
+            "refresh_date": latest_run.run_time if latest_run else None,
+        }
+
+    score_definition.save()
+    run_refresh_score_cards_results(definition_id=score_definition.id, **refresh_kwargs)
+    if not is_new:
+        run_recalculate_score_card(
+            project_code=score_definition.project_code,
+            definition_id=score_definition.id,
+        )
+    return score_definition

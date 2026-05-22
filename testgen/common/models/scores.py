@@ -12,9 +12,24 @@ from itertools import groupby
 from typing import Literal, Self, TypedDict
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, Enum, Float, ForeignKey, Integer, String, delete, func, select, text
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    column,
+    delete,
+    func,
+    select,
+    table,
+    text,
+)
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import aliased, attributes, relationship
+from sqlalchemy.orm import aliased, attributes, joinedload, relationship
 
 from testgen.common import read_template_sql_file
 from testgen.common.models import Base, get_current_session
@@ -141,6 +156,72 @@ class ScoreDefinition(Base):
         return definition
 
     @classmethod
+    def list_with_table_group_targets(
+        cls,
+        project_code: str,
+    ) -> list[tuple[UUID, str, list[str]]]:
+        """Return all scorecards in the project, each paired with the list of
+        `table_groups_name` values their criteria reference.
+
+        Walks both root filters (`criteria.filters`) and the `next_filter` chain
+        via a recursive CTE. A scorecard with zero name filters has an empty
+        list; multiple are returned in chain order.
+
+        Single query. Does NOT eagerly load the criteria/filter ORM objects —
+        the caller gets only (id, name, target names). Used by the MCP
+        inventory tool to surface scorecard IDs under each table group.
+        """
+        # Seed: root filters joined through criteria for the project's definitions.
+        seed = (
+            select(
+                ScoreDefinitionCriteria.definition_id.label("definition_id"),
+                ScoreDefinitionFilter.field.label("field"),
+                ScoreDefinitionFilter.value.label("value"),
+                ScoreDefinitionFilter.next_filter_id.label("next_filter_id"),
+            )
+            .select_from(ScoreDefinitionCriteria)
+            .join(ScoreDefinitionFilter, ScoreDefinitionFilter.criteria_id == ScoreDefinitionCriteria.id)
+            .join(ScoreDefinition, ScoreDefinition.id == ScoreDefinitionCriteria.definition_id)
+            .where(ScoreDefinition.project_code == project_code)
+            .cte("filter_walk", recursive=True)
+        )
+        # Recursive step: follow next_filter_id to walk the chain.
+        chain = aliased(ScoreDefinitionFilter)
+        filter_walk = seed.union_all(
+            select(
+                seed.c.definition_id,
+                chain.field,
+                chain.value,
+                chain.next_filter_id,
+            )
+            .select_from(seed)
+            .join(chain, chain.id == seed.c.next_filter_id)
+        )
+
+        tg_names = (
+            func.array_agg(filter_walk.c.value)
+            .filter(filter_walk.c.field == "table_groups_name")
+            .label("tg_names")
+        )
+        query = (
+            select(ScoreDefinition.id, ScoreDefinition.name, tg_names)
+            .select_from(ScoreDefinition)
+            .outerjoin(filter_walk, filter_walk.c.definition_id == ScoreDefinition.id)
+            .where(ScoreDefinition.project_code == project_code)
+            .group_by(ScoreDefinition.id, ScoreDefinition.name)
+            .order_by(ScoreDefinition.name)
+        )
+        rows = get_current_session().execute(query).all()
+        # Dedupe tg_names: a mode-2 scorecard with N chains under the same
+        # table_groups_name would otherwise list the name N times, causing the
+        # inventory tool to render the scorecard once per chain. dict.fromkeys
+        # preserves first-seen order.
+        return [
+            (row.id, row.name, list(dict.fromkeys(row.tg_names)) if row.tg_names else [])
+            for row in rows
+        ]
+
+    @classmethod
     def all(
         cls,
         project_code: str | None = None,
@@ -191,6 +272,40 @@ class ScoreDefinition(Base):
                     ))
 
         return definitions
+
+    @classmethod
+    def list_for_project(
+        cls,
+        project_code: str,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[Self], int]:
+        """Paginated list of scorecards in a project.
+
+        Returns ORM objects with ``criteria`` eager-loaded so callers can walk
+        the filter chain without firing extra queries. ``results`` is already
+        ``lazy="joined"`` and rides along automatically — feeds
+        ``as_cached_score_card()``.
+        """
+        session = get_current_session()
+        base_filter = ScoreDefinition.project_code == project_code
+
+        total = session.scalar(
+            select(func.count()).select_from(
+                select(ScoreDefinition.id).where(base_filter).subquery()
+            )
+        ) or 0
+
+        query = (
+            select(ScoreDefinition)
+            .options(joinedload(ScoreDefinition.criteria))
+            .where(base_filter)
+            .order_by(ScoreDefinition.name)
+            .offset((page - 1) * limit)
+            .limit(limit)
+        )
+        rows = session.scalars(query).unique().all()
+        return list(rows), total
 
     def save(self) -> None:
         db_session = get_current_session()
@@ -476,6 +591,29 @@ class ScoreDefinition(Base):
 
         self.history = list(current_history.values())
 
+    def get_overall_issue_ct(self) -> int:
+        """Sum of hygiene + test issue counts under this definition's filters.
+
+        Reuses the same filter machinery as `as_score_card` so the rolled-up
+        count matches the score that call returns.
+        """
+        if not self.criteria.has_filters():
+            return 0
+
+        where_clause = text(" AND ".join(self._get_raw_query_filters()))
+        session = get_current_session()
+
+        def _sum_issue_ct(view_name: str) -> int:
+            view = table(view_name, column("issue_ct"))
+            return int(session.execute(
+                select(func.coalesce(func.sum(view.c.issue_ct), 0)).where(where_clause)
+            ).scalar() or 0)
+
+        return (
+            _sum_issue_ct("v_dq_profile_scoring_latest_by_column")
+            + _sum_issue_ct("v_dq_test_scoring_latest_by_column")
+        )
+
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
         extra_filters = [
             f"{prefix or ''}project_code = '{self.project_code}'"
@@ -731,7 +869,6 @@ class ScoreDefinitionResultHistoryEntry(Base):
         Query templates:
         add_latest_runs.sql
         """
-        # ruff: noqa: RUF027
         query = read_template_sql_file("add_latest_runs.sql", sub_directory="score_cards")
         params = {
             "project_code": self.definition.project_code,
