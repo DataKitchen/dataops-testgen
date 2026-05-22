@@ -1,4 +1,3 @@
-# ruff: noqa: TRY002
 
 import pathlib
 import re
