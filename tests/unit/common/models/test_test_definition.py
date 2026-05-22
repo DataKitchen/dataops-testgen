@@ -1,6 +1,8 @@
-"""Tests for TestDefinition.validate() and TestDefinition.editable_fields()."""
+"""Tests for TestDefinition model methods."""
 
-from unittest.mock import MagicMock
+from datetime import datetime
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -8,6 +10,7 @@ from testgen.common.models.test_definition import (
     InvalidTestDefinitionFields,
     Severity,
     TestDefinition,
+    TestDefinitionSummary,
     _required_fields_for,
 )
 
@@ -239,3 +242,137 @@ def test_severity_enum_value_accepted():
     tt = make_test_type()
     td = make_td(column_name="email", threshold_value="10", severity=Severity.FAIL)
     td.validate(tt)
+
+
+# --- select_page ---
+
+@pytest.fixture(autouse=True)
+def clear_select_page_cache():
+    TestDefinition.select_page.clear()
+    yield
+
+
+def _make_summary_row(table_name: str = "my_table") -> dict:
+    return {
+        "id": uuid4(),
+        "table_groups_id": uuid4(),
+        "profile_run_id": uuid4(),
+        "test_type": "CUSTOM",
+        "test_suite_id": uuid4(),
+        "test_description": None,
+        "schema_name": "public",
+        "table_name": table_name,
+        "column_name": "col1",
+        "skip_errors": 0,
+        "baseline_ct": None,
+        "baseline_unique_ct": None,
+        "baseline_value": None,
+        "baseline_value_ct": None,
+        "threshold_value": None,
+        "baseline_sum": None,
+        "baseline_avg": None,
+        "baseline_sd": None,
+        "lower_tolerance": None,
+        "upper_tolerance": None,
+        "subset_condition": None,
+        "groupby_names": None,
+        "having_condition": None,
+        "window_date_column": None,
+        "window_days": None,
+        "match_schema_name": None,
+        "match_table_name": None,
+        "match_column_names": None,
+        "match_subset_condition": None,
+        "match_groupby_names": None,
+        "match_having_condition": None,
+        "custom_query": None,
+        "history_calculation": None,
+        "history_calculation_upper": None,
+        "history_lookback": None,
+        "test_active": True,
+        "test_definition_status": None,
+        "severity": None,
+        "lock_refresh": False,
+        "last_auto_gen_date": None,
+        "profiling_as_of_date": None,
+        "last_manual_update": datetime.now(),
+        "export_to_observability": False,
+        "prediction": None,
+        "flagged": False,
+        "impact_dimension": None,
+        "test_name_short": "Custom",
+        "default_test_description": "A test",
+        "measure_uom": "",
+        "measure_uom_description": "",
+        "default_parm_columns": "",
+        "default_parm_prompts": "",
+        "default_parm_help": "",
+        "default_parm_required": "",
+        "default_severity": "Warning",
+        "test_scope": "column",
+        "dq_dimension": "",
+        "default_impact_dimension": "",
+        "usage_notes": "",
+    }
+
+
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_returns_items_and_total(mock_get_session):
+    rows = [_make_summary_row("table_a"), _make_summary_row("table_b"), _make_summary_row("table_c")]
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 3
+    mock_session.execute.return_value.mappings.return_value.all.return_value = rows
+
+    items, total = TestDefinition.select_page()
+
+    assert total == 3
+    assert len(items) == 3
+    assert all(isinstance(item, TestDefinitionSummary) for item in items)
+    assert items[0].table_name == "table_a"
+    assert items[2].table_name == "table_c"
+
+
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_empty_result_returns_zero_total(mock_get_session):
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 0
+    mock_session.execute.return_value.mappings.return_value.all.return_value = []
+
+    items, total = TestDefinition.select_page()
+
+    assert items == []
+    assert total == 0
+
+
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_uses_correct_offset_and_limit(mock_get_session):
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 0
+    mock_session.execute.return_value.mappings.return_value.all.return_value = []
+
+    TestDefinition.select_page(page=3, limit=100)
+
+    call_args = mock_session.execute.call_args
+    query = call_args[0][0]
+    compiled = query.compile(compile_kwargs={"literal_binds": True})
+    sql = str(compiled)
+
+    assert "LIMIT 100" in sql
+    assert "OFFSET 200" in sql
+
+
+@patch("testgen.common.models.entity.get_current_session")
+def test_select_page_first_page_has_no_offset(mock_get_session):
+    mock_session = mock_get_session.return_value
+    mock_session.scalar.return_value = 0
+    mock_session.execute.return_value.mappings.return_value.all.return_value = []
+
+    TestDefinition.select_page(page=1, limit=500)
+
+    call_args = mock_session.execute.call_args
+    query = call_args[0][0]
+    compiled = query.compile(compile_kwargs={"literal_binds": True})
+    sql = str(compiled)
+
+    assert "LIMIT 500" in sql
+    assert "OFFSET 0" in sql

@@ -442,8 +442,8 @@ class TestDefinition(Entity):
         cls,
         *clauses,
         order_by: tuple[str | InstrumentedAttribute] | None = None,
-        page_index: int = 0,
-        page_size: int = 500,
+        page: int = 1,
+        limit: int = 500,
     ) -> tuple[list["TestDefinitionSummary"], int]:
         select_columns = [
             getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
@@ -455,9 +455,7 @@ class TestDefinition(Entity):
             .where(*clauses)
             .order_by(*(order_by or cls._default_order_by))
         )
-        return cls._paginate(query, page=page_index + 1, limit=page_size, data_class=TestDefinitionSummary)
-
-
+        return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
     _yn_columns: ClassVar = {"test_active", "lock_refresh"}
 

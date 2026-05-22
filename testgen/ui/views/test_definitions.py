@@ -816,12 +816,11 @@ def get_test_definitions(
     page_size: int = 500,
     flagged_filter: str | None = None,
 ) -> tuple[pd.DataFrame, int]:
-    """Return ``(df, total_count)`` for one page of test definitions.
+    """Return ``(df, total_count)`` for test definitions matching the given filters.
 
     When ``page_index`` is provided (0-based), fetches only that page from
-    the DB using ``TestDefinition._paginate()``; otherwise fetches all rows
-    via ``select_where()``.  ``total_count`` is the full count of matching
-    rows regardless of which page is requested.
+    the DB using ``TestDefinition.select_page()``; otherwise fetches all rows
+    via ``select_where()``.  ``total_count`` is always the full matching count.
     """
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
@@ -856,8 +855,8 @@ def get_test_definitions(
         test_definitions, total_count = TestDefinition.select_page(
             *clauses,
             order_by=order_by_tuple,
-            page_index=page_index,
-            page_size=page_size,
+            page=page_index + 1,
+            limit=page_size,
         )
     else:
         test_definitions = TestDefinition.select_where(*clauses, order_by=order_by_tuple)
@@ -894,36 +893,6 @@ def get_test_definitions(
         df[col] = df[col].astype(str).replace("NaT", "")
 
     return df, total_count
-
-
-def get_test_definitions_count(
-    test_suite: TestSuite,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    test_type: str | None = None,
-    flagged_filter: str | None = None,
-) -> int:
-    from testgen.ui.services.database_service import fetch_one_from_db
-
-    where_parts = ["test_suite_id = :test_suite_id"]
-    params: dict = {"test_suite_id": str(test_suite.id)}
-    if table_name:
-        where_parts.append("table_name = :table_name")
-        params["table_name"] = table_name
-    if column_name:
-        where_parts.append("column_name ILIKE :column_name")
-        params["column_name"] = column_name
-    if test_type:
-        where_parts.append("test_type = :test_type")
-        params["test_type"] = test_type
-    if flagged_filter == "Flagged":
-        where_parts.append("flagged = true")
-    elif flagged_filter == "Not Flagged":
-        where_parts.append("flagged = false")
-
-    query = f"SELECT COUNT(*) as cnt FROM test_definitions WHERE {' AND '.join(where_parts)};"
-    result = fetch_one_from_db(query, params)
-    return int(result["cnt"]) if result else 0
 
 
 def get_test_definition_ids(
