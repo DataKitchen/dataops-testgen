@@ -436,6 +436,27 @@ class TestDefinition(Entity):
         query = query.order_by(*cls._default_order_by)
         return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
+    @classmethod
+    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
+    def select_page(
+        cls,
+        *clauses,
+        order_by: tuple[str | InstrumentedAttribute] | None = None,
+        page: int = 1,
+        limit: int = 500,
+    ) -> tuple[list["TestDefinitionSummary"], int]:
+        select_columns = [
+            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
+            for col in cls._summary_columns
+        ]
+        query = (
+            select(*select_columns)
+            .join(TestType, cls.test_type == TestType.test_type)
+            .where(*clauses)
+            .order_by(*(order_by or cls._default_order_by))
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
+
     _yn_columns: ClassVar = {"test_active", "lock_refresh"}
 
     # Fields editable on every test type regardless of param_columns.

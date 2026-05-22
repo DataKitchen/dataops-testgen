@@ -143,11 +143,9 @@ class TestDefinitionsPage(Page):
         with st.spinner("Loading data ..."):
             user_can_edit = session.auth.user_has_permission("edit")
             user_can_disposition = session.auth.user_has_permission("disposition")
-            df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
-                                       page=current_page, page_size=current_page_size,
-                                       flagged_filter=flagged)
-            total_count = get_test_definitions_count(test_suite, table_name, column_name, test_type,
-                                                      flagged_filter=flagged)
+            df, total_count = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
+                                                    page_index=current_page, page_size=current_page_size,
+                                                    flagged_filter=flagged)
             test_types = run_test_type_lookup_query().to_dict("records")
             table_columns = get_columns(str(table_group.id))
             filter_columns_df = get_test_suite_columns(test_suite_id)
@@ -559,7 +557,7 @@ class TestDefinitionsPage(Page):
         def on_export_selected(payload: dict) -> None:
             ids = payload.get("ids", [])
             if ids:
-                data = get_test_definitions(test_suite)
+                data, _ = get_test_definitions(test_suite)
                 data = data[data["id"].isin(ids)]
                 download_dialog(
                     dialog_title="Download Excel Report",
@@ -568,11 +566,22 @@ class TestDefinitionsPage(Page):
                 )
 
         def on_filter_changed(filters: dict) -> None:
+            norm = lambda v: None if v in (None, "None", "") else str(v)
+            if (
+                norm(filters.get("table_name")) == norm(table_name)
+                and norm(filters.get("column_name")) == norm(column_name)
+                and norm(filters.get("test_type")) == norm(test_type)
+                and norm(filters.get("flagged")) == norm(flagged)
+                and current_page == 0
+            ):
+                return
             Router().set_query_params({**filters, "page": "0"})
 
         def on_page_changed(payload: dict) -> None:
             new_page = payload.get("page", 0)
             new_page_size = payload.get("page_size")
+            if new_page == current_page and (new_page_size is None or int(new_page_size) == current_page_size):
+                return
             params: dict = {"page": str(new_page)}
             if new_page_size is not None:
                 params["page_size"] = str(int(new_page_size))
@@ -586,6 +595,8 @@ class TestDefinitionsPage(Page):
                 order = col.get("order", "asc")
                 sort_parts.append(f"{field}:{order}")
             sort_value = ",".join(sort_parts) if sort_parts else None
+            if sort_value == sort and current_page == 0:
+                return
             Router().set_query_params({"sort": sort_value, "page": "0"})
 
         testgen.test_definitions_widget(
@@ -708,7 +719,7 @@ def get_excel_report_data(
     if data is not None:
         data = data.copy()
     else:
-        data = get_test_definitions(test_suite)
+        data, _ = get_test_definitions(test_suite)
 
     for key in ["test_active_display", "lock_refresh_display", "flagged_display"]:
         data[key] = data[key].apply(lambda val: val if val == "Yes" else None)
@@ -801,10 +812,16 @@ def get_test_definitions(
     column_name: str | None = None,
     test_type: str | None = None,
     sorting_columns: list[tuple] | None = None,
-    page: int = 0,
-    page_size: int = 0,
+    page_index: int | None = None,
+    page_size: int = 500,
     flagged_filter: str | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, int]:
+    """Return ``(df, total_count)`` for test definitions matching the given filters.
+
+    When ``page_index`` is provided (0-based), fetches only that page from
+    the DB using ``TestDefinition.select_page()``; otherwise fetches all rows
+    via ``select_where()``.  ``total_count`` is always the full matching count.
+    """
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
         clauses.append(TestDefinition.table_name == table_name)
@@ -832,16 +849,18 @@ def get_test_definitions(
             else:
                 order_by.append(sort_funcs[direction](func.lower(getattr(TestDefinition, attribute))))
 
-    # For pagination, we need to bypass the base select_where which doesn't support offset/limit.
-    # We'll fetch all matching results and slice in Python.
-    test_definitions = TestDefinition.select_where(
-        *clauses,
-        order_by=tuple(order_by) if order_by else None,
-    )
+    order_by_tuple = tuple(order_by) if order_by else None
 
-    if page_size > 0:
-        offset = page * page_size
-        test_definitions = list(test_definitions)[offset:offset + page_size]
+    if page_index is not None:
+        test_definitions, total_count = TestDefinition.select_page(
+            *clauses,
+            order_by=order_by_tuple,
+            page=page_index + 1,
+            limit=page_size,
+        )
+    else:
+        test_definitions = TestDefinition.select_where(*clauses, order_by=order_by_tuple)
+        total_count = len(test_definitions)
 
     df = to_dataframe(test_definitions, TestDefinitionSummary.columns())
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
@@ -873,37 +892,7 @@ def get_test_definitions(
     for col in df.select_dtypes(include=["datetime"]).columns:
         df[col] = df[col].astype(str).replace("NaT", "")
 
-    return df
-
-
-def get_test_definitions_count(
-    test_suite: TestSuite,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    test_type: str | None = None,
-    flagged_filter: str | None = None,
-) -> int:
-    from testgen.ui.services.database_service import fetch_one_from_db
-
-    where_parts = ["test_suite_id = :test_suite_id"]
-    params: dict = {"test_suite_id": str(test_suite.id)}
-    if table_name:
-        where_parts.append("table_name = :table_name")
-        params["table_name"] = table_name
-    if column_name:
-        where_parts.append("column_name ILIKE :column_name")
-        params["column_name"] = column_name
-    if test_type:
-        where_parts.append("test_type = :test_type")
-        params["test_type"] = test_type
-    if flagged_filter == "Flagged":
-        where_parts.append("flagged = true")
-    elif flagged_filter == "Not Flagged":
-        where_parts.append("flagged = false")
-
-    query = f"SELECT COUNT(*) as cnt FROM test_definitions WHERE {' AND '.join(where_parts)};"
-    result = fetch_one_from_db(query, params)
-    return int(result["cnt"]) if result else 0
+    return df, total_count
 
 
 def get_test_definition_ids(
