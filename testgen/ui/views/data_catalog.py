@@ -47,7 +47,14 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_table_group,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_from_target_db
-from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
+from testgen.ui.services.query_cache import (
+    get_profiling_run_summaries,
+    get_project_summary,
+    get_table_group,
+    get_table_group_stats,
+    select_profiling_runs_minimal_where,
+    select_table_groups_minimal_where,
+)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.import_metadata_dialog import (
     apply_metadata_import,
@@ -100,7 +107,7 @@ class DataCatalogPage(Page):
 
                 project_summary = get_project_summary(project_code)
                 user_can_navigate = session.auth.user_has_permission("view")
-                table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+                table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
 
                 if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
                     table_group_id = str(table_groups[0].id) if table_groups else None
@@ -203,7 +210,7 @@ class DataCatalogPage(Page):
             try:
                 apply_metadata_import(preview, tg_id)
                 from testgen.ui.queries.profiling_queries import get_column_by_id, get_table_by_id
-                for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, TableGroup.select_minimal_where]:
+                for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where]:
                     func.clear()
                 st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
                 parts = []
@@ -664,7 +671,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
             if disable_flags:
                 table_group_id = st.query_params.get("table_group_id")
                 if table_group_id:
-                    table_group = TableGroup.get(table_group_id)
+                    table_group = get_table_group(table_group_id)
                     changed = False
                     if "profile_flag_cdes" in disable_flags and table_group.profile_flag_cdes:
                         table_group.profile_flag_cdes = False
@@ -675,7 +682,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                     if changed:
                         table_group.save()
 
-    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, TableGroup.select_minimal_where ]:
+    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
 
@@ -832,7 +839,7 @@ def _build_history_dialog_data(
     column_name: str,
     add_date: int,
 ) -> dict | None:
-    profiling_runs = ProfilingRun.select_minimal_where(
+    profiling_runs = select_profiling_runs_minimal_where(
         ProfilingRun.table_groups_id == table_group_id,
         ProfilingRun.profiling_starttime >= sa_func.to_timestamp(add_date),
     )

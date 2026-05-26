@@ -6,7 +6,6 @@ from itertools import zip_longest
 from typing import ClassVar, Literal
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import (
     Boolean,
     Column,
@@ -28,7 +27,7 @@ from sqlalchemy.sql.expression import case, literal
 
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
-from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
 TestRunType = Literal["QUERY", "CAT", "METADATA"]
@@ -331,7 +330,6 @@ class TestDefinition(Entity):
     )
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get(cls, identifier: str | UUID) -> TestDefinitionSummary | None:
         if not is_uuid4(identifier):
             return None
@@ -370,7 +368,6 @@ class TestDefinition(Entity):
         return TestDefinitionSummary(**result) if result else None
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[TestDefinitionSummary]:
@@ -384,7 +381,6 @@ class TestDefinition(Entity):
         return [TestDefinitionSummary(**row) for row in results]
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_minimal_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[TestDefinitionMinimal]:
@@ -437,7 +433,6 @@ class TestDefinition(Entity):
         return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_page(
         cls,
         *clauses,

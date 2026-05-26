@@ -2,7 +2,6 @@ from datetime import UTC, datetime
 from typing import Self
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import Boolean, Column, String, asc, func, select, update
 from sqlalchemy.dialects import postgresql
 
@@ -42,7 +41,6 @@ class User(Entity):
             super().save()
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get(cls, identifier: str) -> Self | None:
         query = select(cls).where(func.lower(User.username) == func.lower(identifier))
         return get_current_session().scalars(query).first()

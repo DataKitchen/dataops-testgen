@@ -30,6 +30,11 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.query_cache import (
+    get_connection,
+    select_connections_where,
+    select_table_groups_minimal_where,
+)
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -71,14 +76,14 @@ class ConnectionsPage(Page):
             "connect-your-database/manage-connections/",
         )
 
-        connections = Connection.select_where(Connection.project_code == project_code)
+        connections = select_connections_where(Connection.project_code == project_code)
         connection: Connection = connections[0] if len(connections) > 0 else Connection(
             sql_flavor="postgresql",
             sql_flavor_code="postgresql",
             project_code=project_code,
         )
         has_table_groups = (
-            connection.id and len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
+            connection.id and len(select_table_groups_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
         )
 
         user_is_admin = session.auth.user_has_permission("administer")
@@ -186,8 +191,8 @@ class ConnectionsPage(Page):
             success = True
             try:
                 connection.save()
-                Connection.select_where.clear()
-                Connection.get.clear()
+                select_connections_where.clear()
+                get_connection.clear()
                 message = "Changes have been saved successfully."
             except Exception as error:
                 message = "Something went wrong while creating the connection."

@@ -12,6 +12,7 @@ from testgen.common.models.project import Project
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.query_cache import get_project, select_projects_where
 from testgen.ui.session import session, temp_value
 
 PAGE_TITLE = "Project Settings"
@@ -35,7 +36,7 @@ class ProjectSettingsPage(Page):
     existing_names: list[str] | None = None
 
     def render(self, project_code: str | None = None, **_kwargs) -> None:
-        self.project = Project.get(project_code)
+        self.project = get_project(project_code)
 
         testgen.page_header(
             PAGE_TITLE,
@@ -64,7 +65,7 @@ class ProjectSettingsPage(Page):
     @with_database_session
     def update_project(self, project_code: str, edited_project: dict) -> None:
         existing_names = [
-            p.project_name.lower() for p in Project.select_where(Project.project_code != project_code)
+            p.project_name.lower() for p in select_projects_where(Project.project_code != project_code)
         ]
         new_project_name = edited_project["name"]
         if new_project_name.lower() in existing_names:

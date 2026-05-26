@@ -4,9 +4,9 @@ import logging
 
 import pandas as pd
 
-from testgen.common.models.table_group import TableGroup
 from testgen.ui.queries.profiling_queries import TAG_FIELDS
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
+from testgen.ui.services.query_cache import get_table_group
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
@@ -192,7 +192,7 @@ def _match_and_validate(
     matched_columns = sum(1 for r in preview_rows if r.get("column_name") and r.get("_status") in _importable)
     skipped = sum(1 for r in preview_rows if r.get("_status") not in _importable)
 
-    table_group = TableGroup.get(table_group_id)
+    table_group = get_table_group(table_group_id)
 
     return {
         "table_rows": table_rows,
@@ -328,7 +328,7 @@ def apply_metadata_import(preview: dict, table_group_id: str | None = None) -> d
 
 
 def _disable_autoflags(table_group_id: str, metadata_columns: list[str]) -> None:
-    table_group = TableGroup.get(table_group_id)
+    table_group = get_table_group(table_group_id)
     changed = False
     if "critical_data_element" in metadata_columns and table_group.profile_flag_cdes:
         table_group.profile_flag_cdes = False
