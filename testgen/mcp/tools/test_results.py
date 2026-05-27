@@ -1,9 +1,12 @@
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
-from testgen.common.models import with_database_session
+from testgen.common.enums import JobStatus
+from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import BucketInterval, TestResult, TestResultStatus
-from testgen.common.models.test_run import TestRun
+from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -520,66 +523,85 @@ def get_failure_trend(
 
 @with_database_session
 @mcp_permission("view")
-def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
+def compare_test_runs(
+    target_job_execution_id: str,
+    baseline_job_execution_id: str | None = None,
+) -> str:
     """Compare two test runs and report regressions, improvements, persistent failures, and added/removed tests.
 
+    When ``baseline_job_execution_id`` is omitted, the baseline defaults to the immediately
+    previous completed test run on the same test suite as the target run.
+
     Args:
-        job_execution_id_a: UUID of the older (baseline) test run, e.g. from ``list_test_runs``.
-        job_execution_id_b: UUID of the newer test run.
+        target_job_execution_id: UUID of the newer test run, e.g. from ``list_test_runs``.
+        baseline_job_execution_id: Optional UUID of the older test run.
+            When omitted, defaults to the previous completed run on the same test suite.
     """
-    uuid_a = parse_uuid(job_execution_id_a, "job_execution_id_a")
-    uuid_b = parse_uuid(job_execution_id_b, "job_execution_id_b")
-
-    run_a = TestRun.get_by_id_or_job(uuid_a)
-    run_b = TestRun.get_by_id_or_job(uuid_b)
-
-    # Permission check first — unify "not found" and "inaccessible" (also covers monitor suites,
-    # which are hidden from this tool the same way they're hidden from the inventory tools).
     perms = get_project_permissions()
-    suite_ids = [r.test_suite_id for r in (run_a, run_b) if r is not None]
-    suites_by_id: dict = {}
-    if suite_ids:
-        suites_by_id = {
-            s.id: s for s in TestSuite.select_where(TestSuite.id.in_(suite_ids))
-        }
 
-    def _accessible(run) -> bool:
+    def _resolve_accessible(je_id_str: str, je_uuid: UUID) -> TestRun:
+        run = TestRun.get_by_id_or_job(je_uuid)
         if run is None:
-            return False
-        suite = suites_by_id.get(run.test_suite_id)
-        if suite is None or suite.is_monitor:
-            return False
-        return perms.has_access(suite.project_code)
+            raise MCPResourceNotAccessible("Test run", je_id_str)
+        suite = TestSuite.get_regular(run.test_suite_id)
+        if suite is None or not perms.has_access(suite.project_code):
+            raise MCPResourceNotAccessible("Test run", je_id_str)
+        return run
 
-    if not _accessible(run_a):
-        raise MCPResourceNotAccessible("Test run", job_execution_id_a)
-    if not _accessible(run_b):
-        raise MCPResourceNotAccessible("Test run", job_execution_id_b)
+    def _require_completed(run: TestRun, label: str) -> None:
+        je = get_current_session().get(JobExecution, run.job_execution_id)
+        if je.status != JobStatus.COMPLETED:
+            status_label = TestRunSummary.STATUS_LABEL.get(je.status, je.status)
+            raise MCPUserError(
+                f"{label} run is in `{status_label}` state — comparison requires a completed run."
+            )
 
-    # Both runs confirmed accessible — safe to reveal suite IDs in the compatibility message.
-    if run_a.test_suite_id != run_b.test_suite_id:
-        raise MCPUserError(
-            "Both runs must belong to the same test suite to be comparable. "
-            f"Run A is in suite `{run_a.test_suite_id}`, run B is in suite `{run_b.test_suite_id}`. "
-            "Use `list_test_runs(test_suite=...)` to pick two runs of the same suite."
-        )
+    target_uuid = parse_uuid(target_job_execution_id, "target_job_execution_id")
+    target_run = _resolve_accessible(target_job_execution_id, target_uuid)
+    _require_completed(target_run, "Target")
 
-    diff = TestResult.diff_with_details(run_a.id, run_b.id)
+    if baseline_job_execution_id is None:
+        baseline_run = target_run.get_previous()
+        if baseline_run is None:
+            raise MCPUserError(
+                f"Target run `{target_job_execution_id}` has no earlier completed "
+                "test run on its test suite to compare against."
+            )
+    else:
+        baseline_uuid = parse_uuid(baseline_job_execution_id, "baseline_job_execution_id")
+        baseline_run = _resolve_accessible(baseline_job_execution_id, baseline_uuid)
+        if baseline_run.test_suite_id != target_run.test_suite_id:
+            raise MCPUserError(
+                "Both runs must belong to the same test suite to be comparable. "
+                f"Target is in suite `{target_run.test_suite_id}`, "
+                f"baseline is in suite `{baseline_run.test_suite_id}`. "
+                "Use `list_test_runs(test_suite=...)` to pick two runs of the same suite."
+            )
+        _require_completed(baseline_run, "Baseline")
+
+    diff = TestResult.diff_with_details(baseline_run.id, target_run.id)
 
     doc = MdDoc()
-    doc.heading(1, "Test Run Diff")
-    doc.field("Test Run A", job_execution_id_a, code=True)
-    doc.field("Test Run B", job_execution_id_b, code=True)
+    doc.heading(1, "Test Run Comparison")
+    doc.table(
+        ["", "Target", "Baseline"],
+        [
+            ["Test Run",
+             MdDoc.code(str(target_run.job_execution_id)),
+             MdDoc.code(str(baseline_run.job_execution_id))],
+            ["Started", target_run.test_starttime, baseline_run.test_starttime],
+        ],
+    )
     doc.table(
         headers=["Category", "Count"],
         rows=[
-            ["Regressions (A passed → B failed/warning)", len(diff.regressions)],
-            ["Improvements (A failed/warning → B passed)", len(diff.improvements)],
+            ["Regressions (Baseline passed → Target failed/warning)", len(diff.regressions)],
+            ["Improvements (Baseline failed/warning → Target passed)", len(diff.improvements)],
             ["Persistent failures", len(diff.persistent_failures)],
-            ["New tests (only in B)", len(diff.new_tests)],
-            ["Removed tests (only in A)", len(diff.removed_tests)],
-            ["Total in A", diff.total_a],
-            ["Total in B", diff.total_b],
+            ["New tests (only in Target)", len(diff.new_tests)],
+            ["Removed tests (only in Baseline)", len(diff.removed_tests)],
+            ["Total in Target", diff.total_target],
+            ["Total in Baseline", diff.total_baseline],
         ],
     )
 
@@ -588,17 +610,21 @@ def get_test_run_diff(job_execution_id_a: str, job_execution_id_b: str) -> str:
             return
         doc.heading(2, title)
         doc.table(
-            headers=["Test Type", "Table", "Column", "A → B", "Measure A", "Measure B", "Threshold A", "Threshold B"],
+            headers=[
+                "Test Type", "Table", "Column", "Baseline → Target",
+                "Measure Baseline", "Measure Target", "Threshold Baseline", "Threshold Target",
+            ],
             rows=[
                 [
                     row.test_name_short or row.test_type,
                     row.table_name,
                     row.column_names,
-                    f"{row.status_a.value if row.status_a else '—'} → {row.status_b.value if row.status_b else '—'}",
-                    row.measure_a,
-                    row.measure_b,
-                    row.threshold_a,
-                    row.threshold_b,
+                    f"{row.status_baseline.value if row.status_baseline else '—'} → "
+                    f"{row.status_target.value if row.status_target else '—'}",
+                    row.measure_baseline,
+                    row.measure_target,
+                    row.threshold_baseline,
+                    row.threshold_target,
                 ]
                 for row in rows
             ],

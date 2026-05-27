@@ -80,27 +80,27 @@ class TrendBucket:
 
 @dataclass
 class DiffRow:
-    """One test definition's status across two runs for ``get_test_run_diff``."""
+    """One test definition's status across two runs for ``compare_test_runs``."""
 
     test_definition_id: UUID
     test_type: str
     test_name_short: str | None
     table_name: str | None
     column_names: str | None
-    status_a: TestResultStatus | None
-    status_b: TestResultStatus | None
-    measure_a: str | None
-    measure_b: str | None
-    threshold_a: str | None
-    threshold_b: str | None
+    status_baseline: TestResultStatus | None
+    status_target: TestResultStatus | None
+    measure_baseline: str | None
+    measure_target: str | None
+    threshold_baseline: str | None
+    threshold_target: str | None
 
 
 @dataclass
 class RunDiff:
     """Categorized diff between two test runs."""
 
-    total_a: int
-    total_b: int
+    total_baseline: int
+    total_target: int
     regressions: list[DiffRow] = field(default_factory=list)
     improvements: list[DiffRow] = field(default_factory=list)
     persistent_failures: list[DiffRow] = field(default_factory=list)
@@ -414,7 +414,7 @@ class TestResult(Entity):
         ]
 
     @classmethod
-    def diff_with_details(cls, test_run_id_a: UUID, test_run_id_b: UUID) -> RunDiff:
+    def diff_with_details(cls, baseline_run_id: UUID, target_run_id: UUID) -> RunDiff:
         """Compare two runs by ``test_definition_id`` and return categorized diff rows."""
 
         def _fetch(run_id: UUID) -> dict[UUID, dict]:
@@ -448,41 +448,41 @@ class TestResult(Entity):
                 for row in get_current_session().execute(query)
             }
 
-        def _row(tid: UUID, info_a: dict | None, info_b: dict | None) -> DiffRow:
-            base = info_b or info_a  # prefer B for display fields (test_type, table, column names)
+        def _row(tid: UUID, baseline_info: dict | None, target_info: dict | None) -> DiffRow:
+            base = target_info or baseline_info  # prefer target for display fields (test_type, table, column names)
             return DiffRow(
                 test_definition_id=tid,
                 test_type=base["test_type"],
                 test_name_short=base["test_name_short"],
                 table_name=base["table_name"],
                 column_names=base["column_names"],
-                status_a=info_a["status"] if info_a else None,
-                status_b=info_b["status"] if info_b else None,
-                measure_a=info_a["measure"] if info_a else None,
-                measure_b=info_b["measure"] if info_b else None,
-                threshold_a=info_a["threshold"] if info_a else None,
-                threshold_b=info_b["threshold"] if info_b else None,
+                status_baseline=baseline_info["status"] if baseline_info else None,
+                status_target=target_info["status"] if target_info else None,
+                measure_baseline=baseline_info["measure"] if baseline_info else None,
+                measure_target=target_info["measure"] if target_info else None,
+                threshold_baseline=baseline_info["threshold"] if baseline_info else None,
+                threshold_target=target_info["threshold"] if target_info else None,
             )
 
-        results_a = _fetch(test_run_id_a)
-        results_b = _fetch(test_run_id_b)
+        baseline_results = _fetch(baseline_run_id)
+        target_results = _fetch(target_run_id)
         failing = {TestResultStatus.Failed, TestResultStatus.Warning}
-        diff = RunDiff(total_a=len(results_a), total_b=len(results_b))
+        diff = RunDiff(total_baseline=len(baseline_results), total_target=len(target_results))
 
-        for tid in results_a.keys() & results_b.keys():
-            info_a, info_b = results_a[tid], results_b[tid]
-            row = _row(tid, info_a, info_b)
-            if info_a["status"] == TestResultStatus.Passed and info_b["status"] in failing:
+        for tid in baseline_results.keys() & target_results.keys():
+            baseline_info, target_info = baseline_results[tid], target_results[tid]
+            row = _row(tid, baseline_info, target_info)
+            if baseline_info["status"] == TestResultStatus.Passed and target_info["status"] in failing:
                 diff.regressions.append(row)
-            elif info_a["status"] in failing and info_b["status"] == TestResultStatus.Passed:
+            elif baseline_info["status"] in failing and target_info["status"] == TestResultStatus.Passed:
                 diff.improvements.append(row)
-            elif info_a["status"] in failing and info_b["status"] in failing:
+            elif baseline_info["status"] in failing and target_info["status"] in failing:
                 diff.persistent_failures.append(row)
 
-        for tid in results_b.keys() - results_a.keys():
-            diff.new_tests.append(_row(tid, None, results_b[tid]))
+        for tid in target_results.keys() - baseline_results.keys():
+            diff.new_tests.append(_row(tid, None, target_results[tid]))
 
-        for tid in results_a.keys() - results_b.keys():
-            diff.removed_tests.append(_row(tid, results_a[tid], None))
+        for tid in baseline_results.keys() - target_results.keys():
+            diff.removed_tests.append(_row(tid, baseline_results[tid], None))
 
         return diff

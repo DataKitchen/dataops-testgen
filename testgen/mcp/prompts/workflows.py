@@ -112,7 +112,7 @@ def hygiene_triage(table_group_id: str | None = None) -> str:
 
 
 def compare_runs(test_suite: str | None = None) -> str:
-    """Compare the two most recent test runs to identify regressions and improvements.
+    """Compare the most recent test run against the previous run to identify regressions and improvements.
 
     Args:
         test_suite: Optional test suite name to focus the comparison on.
@@ -120,16 +120,10 @@ def compare_runs(test_suite: str | None = None) -> str:
     suite_filter = f" for suite `{test_suite}`" if test_suite else ""
 
     return f"""\
-Please compare the two most recent test runs{suite_filter} to identify regressions and improvements:
+Please compare the most recent test run{suite_filter} against the previous run to identify regressions and improvements:
 
 1. Call `get_data_inventory()` to understand the project structure.
-2. Call `list_test_suites(project_code='...')` to find suites{suite_filter} and their latest runs.
-3. For the most recent completed run, call `list_test_results(test_suite_id='...')` to get all results.
-4. For the previous run, call `list_test_results(job_execution_id='...')` to get all results.
-5. Compare the two runs:
-   - **Regressions:** Tests that passed before but now fail.
-   - **Improvements:** Tests that failed before but now pass.
-   - **Persistent failures:** Tests that failed in both runs.
-   - **Stable passes:** Tests that passed in both runs.
-6. Summarize the trend and highlight any concerning regressions.
+2. Call `list_test_suites(project_code='...')` to find suites{suite_filter} and their latest run IDs.
+3. Call `compare_test_runs(target_job_execution_id='<latest run id>')` — with only the target supplied, the tool automatically diffs against the previous completed run of the same suite.
+4. Summarize the trend and highlight any concerning regressions, improvements, persistent failures, or newly added/removed tests.
 """

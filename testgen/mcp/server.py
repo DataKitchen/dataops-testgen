@@ -202,9 +202,9 @@ def build_mcp_server(
         validate_custom_test,
     )
     from testgen.mcp.tools.test_results import (
+        compare_test_runs,
         get_failure_summary,
         get_failure_trend,
-        get_test_run_diff,
         list_test_result_history,
         list_test_results,
         search_test_results,
@@ -247,7 +247,7 @@ def build_mcp_server(
     safe_tool(get_failure_summary)
     safe_tool(search_test_results)
     safe_tool(get_failure_trend)
-    safe_tool(get_test_run_diff)
+    safe_tool(compare_test_runs)
     safe_tool(get_test_type)
     safe_tool(get_source_data)
     safe_tool(get_source_data_query)
