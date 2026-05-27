@@ -11,10 +11,8 @@ from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
-from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestDefinitionSummary
-from testgen.common.models.test_run import TestRun
-from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
+from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -35,6 +33,14 @@ from testgen.ui.queries.source_data_queries import (
     get_test_issue_source_query_custom,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
+from testgen.ui.services.query_cache import (
+    get_table_group_minimal,
+    get_test_definition,
+    get_test_run_minimal,
+    get_test_suite,
+    get_test_suite_minimal,
+    select_test_definitions_where,
+)
 from testgen.ui.services.string_service import snake_case_to_title_case
 from testgen.ui.session import session
 from testgen.utils import friendly_score, make_json_safe
@@ -134,7 +140,7 @@ class TestResultsPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        run = TestRun.get_minimal(run_id)
+        run = get_test_run_minimal(run_id)
         if not run:
             self.router.navigate_with_warning(
                 f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
@@ -166,7 +172,7 @@ class TestResultsPage(Page):
         # Handle deferred export/issue report (still use st.dialog for file downloads)
         export_filters = st.session_state.pop(EXPORT_FILTERS_KEY, None)
         if export_filters is not None:
-            test_suite = TestSuite.get_minimal(run.test_suite_id)
+            test_suite = get_test_suite_minimal(run.test_suite_id)
             _handle_export(export_filters, run_id, run_date, test_suite)
 
         issue_report_data = st.session_state.pop(ISSUE_REPORT_KEY, None)
@@ -216,7 +222,7 @@ class TestResultsPage(Page):
 
             filter_options = test_result_queries.get_filter_options(run_id)
 
-            test_suite = TestSuite.get_minimal(run.test_suite_id)
+            test_suite = get_test_suite_minimal(run.test_suite_id)
 
         items = json.loads(df.to_json(orient="records", date_unit="s"))
         summary = get_test_result_summary(run_id)
@@ -412,7 +418,7 @@ class TestResultsPage(Page):
         def on_validate_test(test_def: dict) -> None:
             from testgen.ui.views.test_definitions import validate_test
 
-            table_group = TableGroup.get_minimal(test_suite.table_groups_id)
+            table_group = get_table_group_minimal(test_suite.table_groups_id)
             try:
                 validate_test(test_def, table_group)
                 st.session_state[VALIDATE_RESULT_KEY] = {"success": True, "message": "Validation is successful."}
@@ -550,12 +556,12 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
 
     from testgen.ui.views.test_definitions import get_columns, run_test_type_lookup_query
 
-    test_def = TestDefinition.select_where(TestDefinition.id == test_definition_id)
+    test_def = select_test_definitions_where(TestDefinition.id == test_definition_id)
     if not test_def:
         return None
 
-    full_test_suite = TestSuite.get(test_suite_minimal.id)
-    table_group = TableGroup.get_minimal(test_suite_minimal.table_groups_id)
+    full_test_suite = get_test_suite(test_suite_minimal.id)
+    table_group = get_table_group_minimal(test_suite_minimal.table_groups_id)
     test_def_row = test_def[0]
     test_def_dict = {col: getattr(test_def_row, col) for col in TestDefinitionSummary.columns()}
     for key in ["id", "table_groups_id", "profile_run_id", "test_suite_id"]:
@@ -672,7 +678,7 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
     if not test_definition_id:
         return None
 
-    test_definition = TestDefinition.get(test_definition_id)
+    test_definition = get_test_definition(test_definition_id)
     if not test_definition:
         return None
 
@@ -730,8 +736,7 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
 
 
 def _handle_export(export_filters: dict, run_id: str, run_date: str, test_suite: TestSuiteMinimal) -> None:
-    from testgen.common.models.table_group import TableGroup
-    table_group = TableGroup.get_minimal(test_suite.table_groups_id)
+    table_group = get_table_group_minimal(test_suite.table_groups_id)
 
     export_type = export_filters.get("type", "all")
     with st.spinner("Loading data ..."):

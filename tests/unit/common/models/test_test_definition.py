@@ -246,12 +246,6 @@ def test_severity_enum_value_accepted():
 
 # --- select_page ---
 
-@pytest.fixture(autouse=True)
-def clear_select_page_cache():
-    TestDefinition.select_page.clear()
-    yield
-
-
 def _make_summary_row(table_name: str = "my_table") -> dict:
     return {
         "id": uuid4(),

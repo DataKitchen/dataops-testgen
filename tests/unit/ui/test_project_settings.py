@@ -81,8 +81,8 @@ def test_update_project_raises_on_duplicate_name(mock_session):
     ]
 
     with (
-        patch(f"{MODULE}.Project") as mock_project_cls,
+        patch(f"{MODULE}.select_projects_where") as mock_select,
         pytest.raises(ValueError, match="Other Project"),
     ):
-        mock_project_cls.select_where.return_value = [MagicMock(project_name="Other Project")]
+        mock_select.return_value = [MagicMock(project_name="Other Project")]
         page.update_project("proj", {"name": "Other Project", "use_dq_score_weights": True})

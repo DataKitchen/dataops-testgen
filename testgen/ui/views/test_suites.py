@@ -15,7 +15,14 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.query_cache import get_project_summary, get_test_suite_summaries
+from testgen.ui.services.query_cache import (
+    get_project_summary,
+    get_table_group,
+    get_test_suite,
+    get_test_suite_minimal,
+    get_test_suite_summaries,
+    select_table_groups_minimal_where,
+)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.generate_tests_dialog import (
     get_generation_set_choices,
@@ -57,7 +64,7 @@ class TestSuitesPage(Page):
             "manage-test-suites",
         )
 
-        table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+        table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
         user_can_edit = session.auth.user_has_permission("edit")
         test_suites = get_test_suite_summaries(project_code, table_group_id, test_suite_name)
         project_summary = get_project_summary(project_code)
@@ -77,7 +84,7 @@ class TestSuitesPage(Page):
                 "result": st.session_state.get("ts_form_dialog:result"),
             }
         elif edit_ts_id := st.session_state.get(EDIT_DIALOG_KEY):
-            selected = TestSuite.get(edit_ts_id)
+            selected = get_test_suite(edit_ts_id)
             form_dialog = {
                 "open": True,
                 "mode": "edit",
@@ -133,7 +140,7 @@ class TestSuitesPage(Page):
 
         generate_tests_data = None
         if generate_tests_ts_id := st.session_state.get(GENERATE_TESTS_DIALOG_KEY):
-            generate_ts = TestSuite.get_minimal(generate_tests_ts_id)
+            generate_ts = get_test_suite_minimal(generate_tests_ts_id)
             generation_sets = get_generation_set_choices()
             default_set = "Standard" if "Standard" in generation_sets else (generation_sets[0] if generation_sets else "")
             test_ct, unlocked_test_ct, unlocked_edits_ct = get_test_suite_refresh_warning(str(generate_ts.id))
@@ -315,7 +322,7 @@ def save_test_suite_form(data: dict) -> None:
 
     if mode == "edit":
         test_suite_id = data.get("test_suite_id")
-        test_suite = TestSuite.get(test_suite_id)
+        test_suite = get_test_suite(test_suite_id)
         test_suite.test_suite_description = data.get("test_suite_description", "")
         test_suite.severity = data.get("severity")
         test_suite.export_to_observability = data.get("export_to_observability", False)
@@ -329,7 +336,7 @@ def save_test_suite_form(data: dict) -> None:
         get_test_suite_summaries.clear()
         st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "Changes have been saved successfully."}
     else:
-        table_group = TableGroup.get(data.get("table_groups_id"))
+        table_group = get_table_group(data.get("table_groups_id"))
         test_suite = TestSuite()
         test_suite.project_code = table_group.project_code
         test_suite.test_suite = data.get("test_suite")
@@ -351,7 +358,7 @@ def save_test_suite_form(data: dict) -> None:
 
 @with_database_session
 def prepare_ts_delete_dialog(test_suite_id: str) -> None:
-    selected = TestSuite.get_minimal(test_suite_id)
+    selected = get_test_suite_minimal(test_suite_id)
     is_in_use = TestSuite.is_in_use([selected.id])
     st.session_state["ts_delete_dialog"] = {
         "open": True,
@@ -375,7 +382,7 @@ def execute_ts_delete(test_suite_id: str) -> None:
 
 @with_database_session
 def observability_export_action(test_suite_id: str) -> None:
-    selected_test_suite = TestSuite.get_minimal(test_suite_id)
+    selected_test_suite = get_test_suite_minimal(test_suite_id)
     try:
         qty_of_exported_events = export_test_results(selected_test_suite.id)
         st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": f"Export finished: {qty_of_exported_events} events exported."}

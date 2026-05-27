@@ -4,7 +4,6 @@ from typing import Literal, Self
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -23,7 +22,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson
-from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
@@ -70,7 +69,6 @@ class Connection(Entity):
     _minimal_columns = ConnectionMinimal.__annotations__.keys()
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_minimal(cls, identifier: int) -> ConnectionMinimal | None:
         result = cls._get_columns(identifier, cls._minimal_columns)
         return ConnectionMinimal(**result) if result else None
@@ -84,7 +82,6 @@ class Connection(Entity):
         return get_current_session().scalars(query).first()
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_minimal_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[ConnectionMinimal]:

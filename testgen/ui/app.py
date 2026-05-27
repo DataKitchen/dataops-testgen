@@ -8,12 +8,12 @@ from testgen import settings
 from testgen.common import version_service
 from testgen.common.docker_service import check_basic_configuration
 from testgen.common.models import get_current_session, with_database_session
-from testgen.common.models.project import Project
 from testgen.common.standalone_postgres import STANDALONE_URI_ENV_VAR, ensure_standalone_setup, is_standalone_mode
 from testgen.ui import bootstrap
 from testgen.ui.assets import get_asset_path
 from testgen.ui.components import widgets as testgen
 from testgen.ui.services import javascript_service
+from testgen.ui.services.query_cache import select_projects_where
 from testgen.ui.session import session
 
 if is_standalone_mode() and (standalone_uri := os.environ.get(STANDALONE_URI_ENV_VAR)):
@@ -72,7 +72,7 @@ def render(log_level: int = logging.INFO):
                 with st.sidebar:
                     testgen.sidebar(
                         projects=[] if is_global_context else [
-                            p for p in Project.select_where() if session.auth.user_has_project_access(p.project_code)
+                            p for p in select_projects_where() if session.auth.user_has_project_access(p.project_code)
                         ],
                         current_project=None if is_global_context else session.sidebar_project,
                         menu=application.menu,
