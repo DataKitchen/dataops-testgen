@@ -196,9 +196,9 @@ class TestRun(Entity):
             .where(
                 TestRun.test_suite_id == self.test_suite_id,
                 JobExecution.status == JobStatus.COMPLETED,
-                JobExecution.started_at < self.test_starttime,
+                TestRun.test_starttime < self.test_starttime,
             )
-            .order_by(desc(JobExecution.started_at))
+            .order_by(desc(TestRun.test_starttime))
             .limit(1)
         )
         return get_current_session().scalar(query)
