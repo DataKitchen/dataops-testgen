@@ -8,7 +8,6 @@ import testgen.ui.queries.profiling_queries as profiling_queries
 from testgen.common import date_service
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import with_database_session
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.pii_masking import (
     PII_REDACTED,
     get_pii_columns,
@@ -26,6 +25,7 @@ from testgen.ui.components.widgets.download_dialog import (
 )
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.query_cache import get_profiling_run_minimal
 from testgen.ui.session import session
 from testgen.ui.views.data_catalog import get_preview_data
 from testgen.utils import make_json_safe
@@ -87,7 +87,7 @@ class ProfilingResultsPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        run = ProfilingRun.get_minimal(run_id)
+        run = get_profiling_run_minimal(run_id)
         if not run:
             self.router.navigate_with_warning(
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",

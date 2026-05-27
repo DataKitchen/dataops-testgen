@@ -6,7 +6,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.test_suite import TestSuite
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.query_cache import get_test_run_summaries
+from testgen.ui.services.query_cache import get_test_run_summaries, select_test_suites_minimal_where
 from testgen.ui.session import session
 
 LINK_HREF = "test-runs"
@@ -19,7 +19,7 @@ def run_tests_dialog_widget(
     on_close: callable,
     test_suite_id: str | None = None,
 ) -> None:
-    test_suites = TestSuite.select_minimal_where(
+    test_suites = select_test_suites_minimal_where(
         TestSuite.project_code == project_code,
         TestSuite.is_monitor.isnot(True),
     )

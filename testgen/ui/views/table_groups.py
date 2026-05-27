@@ -22,7 +22,16 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import table_group_queries
-from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
+from testgen.ui.services.query_cache import (
+    get_connection_minimal,
+    get_profiling_run_summaries,
+    get_project_summary,
+    get_table_group,
+    get_table_group_minimal,
+    get_table_group_stats,
+    select_connections_minimal_where,
+    select_table_groups_minimal_where,
+)
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
@@ -74,7 +83,7 @@ class TableGroupsPage(Page):
         if table_group_name:
             table_group_filters.append(TableGroup.table_groups_name.ilike(f"%{table_group_name}%"))
 
-        table_groups = TableGroup.select_minimal_where(*table_group_filters)
+        table_groups = select_table_groups_minimal_where(*table_group_filters)
         connections = self._get_connections(project_code)
 
         wizard_mode = st.session_state.get("tg_wizard_mode")
@@ -282,7 +291,7 @@ class TableGroupsPage(Page):
             set_run_profiling(run_profiling)
 
         def on_close_clicked(_params: dict) -> None:
-            TableGroup.select_minimal_where.clear()
+            select_table_groups_minimal_where.clear()
             for key in ["tg_wizard_mode", "tg_wizard_connection_id", "tg_wizard_table_group_id"]:
                 st.session_state.pop(key, None)
 
@@ -328,7 +337,7 @@ class TableGroupsPage(Page):
         table_group = TableGroup(project_code=project_code)
         original_table_group_schema = None
         if table_group_id:
-            table_group = TableGroup.get(table_group_id)
+            table_group = get_table_group(table_group_id)
             original_table_group_schema = table_group.table_group_schema
             is_table_group_used = TableGroup.is_in_use([table_group_id])
 
@@ -525,7 +534,7 @@ class TableGroupsPage(Page):
             for key in ["tg_wizard_mode", "tg_wizard_table_group_id"]:
                 st.session_state.pop(key, None)
 
-        table_group = TableGroup.get(table_group_id)
+        table_group = get_table_group(table_group_id)
         original_schema = table_group.table_group_schema
         is_in_use = TableGroup.is_in_use([table_group_id])
 
@@ -592,9 +601,9 @@ class TableGroupsPage(Page):
 
     def _get_connections(self, project_code: str, connection_id: str | None = None) -> list[dict]:
         if connection_id:
-            connections = [Connection.get_minimal(connection_id)]
+            connections = [get_connection_minimal(connection_id)]
         else:
-            connections = Connection.select_minimal_where(Connection.project_code == project_code)
+            connections = select_connections_minimal_where(Connection.project_code == project_code)
         return [ format_connection(connection) for connection in connections ]
 
     def _format_table_group_list(
@@ -622,7 +631,7 @@ class TableGroupsPage(Page):
 
     @with_database_session
     def _prepare_delete_dialog(self, table_group_id: str) -> None:
-        table_group = TableGroup.get_minimal(table_group_id)
+        table_group = get_table_group_minimal(table_group_id)
         can_be_deleted = not TableGroup.is_in_use([table_group_id])
         st.session_state["tg_delete_dialog"] = {
             "open": True,
@@ -635,7 +644,7 @@ class TableGroupsPage(Page):
         table_group_name = st.session_state.get("tg_delete_dialog", {}).get("table_group", {}).get("table_groups_name", "")
         if not (ProfilingRun.has_active_job_for(TableGroup, table_group_id) or TestRun.has_active_job_for(TableGroup, table_group_id)):
             TableGroup.cascade_delete([table_group_id])
-            TableGroup.select_minimal_where.clear()
+            select_table_groups_minimal_where.clear()
             st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
         else:
             st.toast("This Table Group is in use by a running process and cannot be deleted.", icon=":material/error:")

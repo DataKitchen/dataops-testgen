@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import BigInteger, Column, Float, Integer, String, desc, func, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
@@ -14,7 +13,7 @@ from sqlalchemy.sql.expression import case
 from testgen.common.enums import Disposition, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.project import Project
@@ -148,7 +147,6 @@ class ProfilingRun(Entity):
         return get_current_session().scalars(query).first()
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_minimal(cls, run_id: str | UUID) -> ProfilingRunMinimal | None:
         if not is_uuid4(run_id):
             return None
@@ -193,7 +191,6 @@ class ProfilingRun(Entity):
         return get_current_session().scalar(query)
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_minimal_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[ProfilingRunMinimal]:

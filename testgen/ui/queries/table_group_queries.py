@@ -12,6 +12,7 @@ from testgen.common.database.flavor.flavor_service import resolve_connection_par
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.ui.services.query_cache import get_connection
 
 
 class StatsPreview(TypedDict):
@@ -56,7 +57,7 @@ def get_table_group_preview(
 
     if connection or table_group.connection_id:
         try:
-            connection = connection or Connection.get(table_group.connection_id)
+            connection = connection or get_connection(table_group.connection_id)
             table_group_preview, data_chars, sql_generator = _get_preview(table_group, connection)
 
             def save_data_chars(table_group_id: UUID) -> None:

@@ -3,7 +3,6 @@ from datetime import UTC, datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, String, Text, desc, func, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm.attributes import flag_modified
@@ -161,7 +160,6 @@ class TestRun(Entity):
         return {row.id: row.job_execution_id for row in rows}
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_minimal(cls, run_id: str | UUID) -> TestRunMinimal | None:
         if not is_uuid4(run_id):
             return None
