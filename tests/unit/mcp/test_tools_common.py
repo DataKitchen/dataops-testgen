@@ -31,6 +31,7 @@ from testgen.mcp.tools.common import (
     parse_uuid,
     resolve_issue_type,
     resolve_profiling_run,
+    resolve_test_note,
     validate_limit,
     validate_page,
 )
@@ -343,6 +344,39 @@ def test_resolve_profiling_run_inaccessible_project(mock_pr_cls, mock_get_perms,
 def test_resolve_profiling_run_invalid_uuid():
     with pytest.raises(MCPUserError, match="Invalid job_execution_id"):
         resolve_profiling_run("not-a-uuid")
+
+
+# --- resolve_test_note ---
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_note_happy_path(mock_get_session, mock_get_perms):
+    note = MagicMock()
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = note
+    mock_get_session.return_value = session
+    mock_get_perms.return_value = _mock_perms()
+
+    assert resolve_test_note(str(uuid4())) is note
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_note_missing_or_inaccessible(mock_get_session, mock_get_perms):
+    """Missing note, monitor-suite parent, and forbidden project all collapse to one error."""
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = None
+    mock_get_session.return_value = session
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Test note .* not found or not accessible"):
+        resolve_test_note(str(uuid4()))
+
+
+def test_resolve_test_note_invalid_uuid():
+    with pytest.raises(MCPUserError, match="Invalid test_note_id"):
+        resolve_test_note("not-a-uuid")
 
 
 # --- parse_pii_category ---
