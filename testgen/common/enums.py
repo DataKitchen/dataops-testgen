@@ -35,6 +35,9 @@ class JobKey(StrEnum):
     run_tests = "run-tests"
     run_monitors = "run-monitors"
     run_test_generation = "run-test-generation"
+    run_score_update = "run-score-update"
+    recalculate_project_scores = "recalculate-project-scores"
+    run_data_cleanup = "run-data-cleanup"
 
 
 class JobSource(StrEnum):

@@ -3,11 +3,11 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, Text, case, func, select, text, update
+from sqlalchemy import Column, String, Text, case, delete, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.enums import JobKey, JobSource, JobStatus
-from testgen.common.models import Base, get_current_session
+from testgen.common.models import Base, database_session, get_current_session
 
 LOG = logging.getLogger("testgen")
 
@@ -147,6 +147,42 @@ class JobExecution(Base):
         """Fetch a job execution by primary key."""
         session = get_current_session()
         return session.get(cls, execution_id)
+
+    @classmethod
+    def delete_older_than(
+        cls,
+        cutoff: datetime,
+        project_code: str,
+        protected_ids: set[UUID],
+        batch_size: int = 1000,
+    ) -> int:
+        """Batched delete of terminal-state job executions older than cutoff for
+        the given project, excluding protected ids. Returns total rows deleted.
+
+        Skips rows in non-terminal states (pending/claimed/running/cancel_requested) —
+        those represent live work and must not be removed regardless of age.
+
+        Each batch runs in its own transaction (committed before the next batch
+        is selected), so locks on job_executions are released between batches
+        and WAL growth stays bounded for large sweeps.
+        """
+        where_clauses = [
+            cls.project_code == project_code,
+            cls.completed_at < cutoff,
+            cls.status.in_([JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED]),
+        ]
+        if protected_ids:
+            where_clauses.append(cls.id.notin_(protected_ids))
+
+        total = 0
+        while True:
+            with database_session() as session:
+                ids = session.scalars(select(cls.id).where(*where_clauses).limit(batch_size)).all()
+                if not ids:
+                    break
+                session.execute(delete(cls).where(cls.id.in_(ids)))
+                total += len(ids)
+        return total
 
     @classmethod
     def list_for_project(

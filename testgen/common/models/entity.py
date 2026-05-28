@@ -3,7 +3,7 @@ from dataclasses import asdict, dataclass, fields
 from typing import Any, Self
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
@@ -146,12 +146,6 @@ class Entity(Base):
     @classmethod
     def has_running_process(cls, ids: list[str]) -> bool:
         raise NotImplementedError
-
-    @classmethod
-    def delete_where(cls, *clauses) -> None:
-        query = delete(cls).where(*clauses)
-        db_session = get_current_session()
-        db_session.execute(query)
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
