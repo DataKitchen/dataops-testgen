@@ -7,6 +7,8 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.commands.job_registry import JobConfig
+from testgen.common.enums import JobKey, JobSource
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy
@@ -49,7 +51,7 @@ def db_jobs(scheduler_instance):
 
 @pytest.fixture
 def job_data():
-    with patch.dict("testgen.commands.job_registry.JOB_DISPATCH", {"test-job": Mock()}):
+    with patch.dict("testgen.commands.job_registry.JOB_DISPATCH", {"test-job": JobConfig(handler=Mock())}):
         yield {
             "cron_expr": "*/5 9-17 * * *",
             "cron_tz":  "UTC",
@@ -93,6 +95,32 @@ def test_job_start(scheduler_instance, cli_job):
     assert added.source == "scheduler"
     assert added.job_schedule_id == cli_job.job_schedule_id
     mock_session.commit.assert_called_once()
+
+
+def test_job_start_tags_source_from_job_config(scheduler_instance, job_data):
+    """Scheduled executions inherit `JobConfig.scheduler_source` as their
+    `JobExecution.source`. Retention cleanup (registered with
+    `scheduler_source="system"`) gets `source="system"` so MCP / REST /
+    api/deps filters auto-hide it from user-facing surfaces."""
+    from testgen.scheduler.cli_scheduler import CliJob
+
+    system_job_data = {**job_data, "key": JobKey.run_data_cleanup}
+    system_cli_job = CliJob(**system_job_data, delayed_policy=DelayedPolicy.SKIP)
+
+    mock_session = MagicMock()
+    mock_session.__enter__ = Mock(return_value=mock_session)
+    mock_session.__exit__ = Mock(return_value=False)
+    with (
+        patch.dict(
+            "testgen.commands.job_registry.JOB_DISPATCH",
+            {JobKey.run_data_cleanup: JobConfig(handler=Mock(), scheduler_source=JobSource.system)},
+        ),
+        patch("testgen.common.models.Session", return_value=mock_session),
+    ):
+        scheduler_instance.start_job(system_cli_job, datetime.now(UTC))
+
+    added = mock_session.add.call_args[0][0]
+    assert added.source == "system"
 
 
 @pytest.mark.parametrize("proc_exit_code", [0, 1])

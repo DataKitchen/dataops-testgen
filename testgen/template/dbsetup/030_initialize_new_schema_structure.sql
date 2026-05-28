@@ -50,14 +50,16 @@ CREATE TABLE stg_test_definition_updates (
 );
 
 CREATE TABLE projects (
-   id                    UUID DEFAULT gen_random_uuid(),
-   project_code          VARCHAR(30) NOT NULL
+   id                       UUID DEFAULT gen_random_uuid(),
+   project_code             VARCHAR(30) NOT NULL
       CONSTRAINT projects_project_code_pk
          PRIMARY KEY,
-   project_name          VARCHAR(50),
+   project_name             VARCHAR(50),
    observability_api_key    TEXT,
    observability_api_url    TEXT DEFAULT '',
-   use_dq_score_weights     BOOLEAN DEFAULT TRUE
+   use_dq_score_weights     BOOLEAN DEFAULT TRUE,
+   data_retention_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+   data_retention_days      INTEGER DEFAULT 180
 );
 
 CREATE TABLE connections (
@@ -966,6 +968,9 @@ CREATE INDEX ix_dsl_tg_tcd
 CREATE INDEX ix_prun_pc_con
    ON profiling_runs(project_code, connection_id);
 
+CREATE INDEX ix_prun_pc_starttime
+   ON profiling_runs(project_code, profiling_starttime);
+
 CREATE INDEX ix_prun_tg
    ON profiling_runs(table_groups_id);
 
@@ -1093,6 +1098,8 @@ CREATE TABLE job_executions (
 CREATE INDEX idx_job_executions_poll ON job_executions (status, created_at) WHERE status = 'pending';
 CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
 CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
+CREATE INDEX idx_job_executions_project_completed
+    ON job_executions (project_code, completed_at);
 
 CREATE TABLE settings (
     key VARCHAR(50) NOT NULL PRIMARY KEY,

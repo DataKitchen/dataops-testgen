@@ -7,6 +7,18 @@ SELECT '{PROJECT_CODE}' as project_code,
        '{OBSERVABILITY_API_KEY}' as observability_api_key,
        '{OBSERVABILITY_API_URL}' as observability_api_url;
 
+-- Seed the data retention schedule so the default project's cleanup job
+-- runs out of the box (matches the column defaults: enabled, 180 days).
+INSERT INTO job_schedules
+    (id, project_code, key, kwargs, cron_expr, cron_tz, active)
+SELECT gen_random_uuid(),
+       '{PROJECT_CODE}',
+       'run-data-cleanup',
+       jsonb_build_object('project_code', '{PROJECT_CODE}', 'retention_days', 180),
+       '0 1 * * *',
+       'UTC',
+       TRUE;
+
 
 WITH inserted_user AS (
     INSERT INTO auth_users

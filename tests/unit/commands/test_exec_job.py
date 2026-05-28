@@ -4,7 +4,8 @@ from uuid import uuid4
 import pytest
 
 from testgen.commands.exec_job import exec_job
-from testgen.commands.job_registry import JOB_DISPATCH, JOB_FINAL_CALLBACKS, run_final_callbacks
+from testgen.commands.job_registry import JOB_DISPATCH, JOB_FINAL_CALLBACKS, JobConfig, run_final_callbacks
+from testgen.common.enums import JobKey
 from testgen.common.models.job_execution import JobExecution
 
 pytestmark = pytest.mark.unit
@@ -19,7 +20,7 @@ def mock_session():
         yield session
 
 
-def _make_job_exec(job_key="run-tests", status="claimed", **kwargs):
+def _make_job_exec(job_key=JobKey.run_tests, status="claimed", **kwargs):
     job = MagicMock(spec=JobExecution)
     job.id = uuid4()
     job.job_key = job_key
@@ -31,13 +32,13 @@ def _make_job_exec(job_key="run-tests", status="claimed", **kwargs):
 
 
 def test_exec_job_dispatches_run_tests(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
     dispatch_mock = Mock(return_value="ok")
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-tests": dispatch_mock}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=dispatch_mock)}),
     ):
         exec_job(job.id)
 
@@ -47,14 +48,14 @@ def test_exec_job_dispatches_run_tests(mock_session):
 
 
 def test_exec_job_dispatches_run_profile(mock_session):
-    job = _make_job_exec(job_key="run-profile")
+    job = _make_job_exec(job_key=JobKey.run_profile)
     job.kwargs = {"table_group_id": "tg-123"}
     job.mark_running.return_value = True
     dispatch_mock = Mock(return_value="ok")
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-profile": dispatch_mock}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_profile: JobConfig(handler=dispatch_mock)}),
     ):
         exec_job(job.id)
 
@@ -63,13 +64,13 @@ def test_exec_job_dispatches_run_profile(mock_session):
 
 
 def test_exec_job_dispatches_run_monitors(mock_session):
-    job = _make_job_exec(job_key="run-monitors")
+    job = _make_job_exec(job_key=JobKey.run_monitors)
     job.mark_running.return_value = True
     dispatch_mock = Mock(return_value="ok")
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-monitors": dispatch_mock}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_monitors: JobConfig(handler=dispatch_mock)}),
     ):
         exec_job(job.id)
 
@@ -77,14 +78,14 @@ def test_exec_job_dispatches_run_monitors(mock_session):
 
 
 def test_exec_job_dispatches_run_test_generation(mock_session):
-    job = _make_job_exec(job_key="run-test-generation")
+    job = _make_job_exec(job_key=JobKey.run_test_generation)
     job.kwargs = {"test_suite_id": "suite-123", "generation_set": "Standard"}
     job.mark_running.return_value = True
     dispatch_mock = Mock(return_value="ok")
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-test-generation": dispatch_mock}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_test_generation: JobConfig(handler=dispatch_mock)}),
     ):
         exec_job(job.id)
 
@@ -103,7 +104,7 @@ def test_exec_job_marks_interrupted_on_unknown_key(mock_session):
 
 
 def test_exec_job_skips_when_mark_running_fails(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = False
 
     with patch.object(JobExecution, "get", return_value=job):
@@ -113,12 +114,12 @@ def test_exec_job_skips_when_mark_running_fails(mock_session):
 
 
 def test_exec_job_marks_interrupted_on_dispatch_error(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-tests": Mock(side_effect=RuntimeError("boom"))}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock(side_effect=RuntimeError("boom")))}),
     ):
         exec_job(job.id)
 
@@ -136,24 +137,24 @@ def test_exec_job_exits_on_missing_record(mock_session):
 
 
 def test_job_dispatch_has_all_job_keys():
-    assert "run-profile" in JOB_DISPATCH
-    assert "run-tests" in JOB_DISPATCH
-    assert "run-monitors" in JOB_DISPATCH
-    assert "run-test-generation" in JOB_DISPATCH
-    assert "run-score-update" in JOB_DISPATCH
-    assert "recalculate-project-scores" in JOB_DISPATCH
+    assert JobKey.run_profile in JOB_DISPATCH
+    assert JobKey.run_tests in JOB_DISPATCH
+    assert JobKey.run_monitors in JOB_DISPATCH
+    assert JobKey.run_test_generation in JOB_DISPATCH
+    assert JobKey.run_score_update in JOB_DISPATCH
+    assert JobKey.recalculate_project_scores in JOB_DISPATCH
 
 
 def test_exec_job_fires_final_callbacks_on_success(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
     job.mark_completed.return_value = True
     cb1, cb2 = Mock(), Mock()
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-tests": Mock(return_value="ok")}),
-        patch.dict(JOB_FINAL_CALLBACKS, {"run-tests": [cb1, cb2]}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock(return_value="ok"))}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [cb1, cb2]}),
     ):
         exec_job(job.id)
 
@@ -162,7 +163,7 @@ def test_exec_job_fires_final_callbacks_on_success(mock_session):
 
 
 def test_exec_job_runs_callbacks_in_registered_order(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
     job.mark_completed.return_value = True
     order = []
@@ -171,8 +172,8 @@ def test_exec_job_runs_callbacks_in_registered_order(mock_session):
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-tests": Mock(return_value="ok")}),
-        patch.dict(JOB_FINAL_CALLBACKS, {"run-tests": [cb1, cb2]}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock(return_value="ok"))}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [cb1, cb2]}),
     ):
         exec_job(job.id)
 
@@ -180,15 +181,15 @@ def test_exec_job_runs_callbacks_in_registered_order(mock_session):
 
 
 def test_exec_job_skips_callbacks_when_mark_completed_fails(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
     job.mark_completed.return_value = False
     cb = Mock()
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-tests": Mock(return_value="ok")}),
-        patch.dict(JOB_FINAL_CALLBACKS, {"run-tests": [cb]}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock(return_value="ok"))}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [cb]}),
     ):
         exec_job(job.id)
 
@@ -196,15 +197,15 @@ def test_exec_job_skips_callbacks_when_mark_completed_fails(mock_session):
 
 
 def test_exec_job_fires_callbacks_on_interrupted(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
     job.mark_interrupted.return_value = True
     cb = Mock()
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-tests": Mock(side_effect=RuntimeError("boom"))}),
-        patch.dict(JOB_FINAL_CALLBACKS, {"run-tests": [cb]}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock(side_effect=RuntimeError("boom")))}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [cb]}),
     ):
         exec_job(job.id)
 
@@ -212,15 +213,15 @@ def test_exec_job_fires_callbacks_on_interrupted(mock_session):
 
 
 def test_exec_job_skips_callbacks_when_mark_interrupted_fails(mock_session):
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
     job.mark_interrupted.return_value = False
     cb = Mock()
 
     with (
         patch.object(JobExecution, "get", return_value=job),
-        patch.dict(JOB_DISPATCH, {"run-tests": Mock(side_effect=RuntimeError("boom"))}),
-        patch.dict(JOB_FINAL_CALLBACKS, {"run-tests": [cb]}),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock(side_effect=RuntimeError("boom")))}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [cb]}),
     ):
         exec_job(job.id)
 
@@ -228,11 +229,11 @@ def test_exec_job_skips_callbacks_when_mark_interrupted_fails(mock_session):
 
 
 def test_run_final_callbacks_isolates_failures():
-    job = _make_job_exec(job_key="run-tests")
+    job = _make_job_exec(job_key=JobKey.run_tests)
     failing = Mock(side_effect=RuntimeError("boom"), __name__="failing_cb")
     succeeding = Mock(__name__="succeeding_cb")
 
-    with patch.dict(JOB_FINAL_CALLBACKS, {"run-tests": [failing, succeeding]}):
+    with patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_tests: [failing, succeeding]}):
         run_final_callbacks(job)
 
     failing.assert_called_once_with(job)
@@ -247,6 +248,6 @@ def test_run_final_callbacks_noop_for_unknown_job_key():
 
 
 def test_registered_callbacks_cover_notification_job_keys():
-    assert "run-profile" in JOB_FINAL_CALLBACKS
-    assert "run-tests" in JOB_FINAL_CALLBACKS
-    assert "run-monitors" in JOB_FINAL_CALLBACKS
+    assert JobKey.run_profile in JOB_FINAL_CALLBACKS
+    assert JobKey.run_tests in JOB_FINAL_CALLBACKS
+    assert JobKey.run_monitors in JOB_FINAL_CALLBACKS

@@ -68,7 +68,7 @@ def run_with_job_execution(
         je_id = je.id
 
     job_context.set(JobContext(job_id=je_id, source=source))
-    JOB_DISPATCH[job_key](**handler_kwargs, run_date=run_date)
+    JOB_DISPATCH[job_key].handler(**handler_kwargs, run_date=run_date)
 
     with database_session():
         je = JobExecution.get(je_id)

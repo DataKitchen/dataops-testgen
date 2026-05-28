@@ -24,15 +24,17 @@ from sqlalchemy import (
     column,
     delete,
     func,
+    or_,
     select,
     table,
     text,
+    tuple_,
 )
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased, attributes, joinedload, relationship
 
 from testgen.common import read_template_sql_file
-from testgen.common.models import Base, get_current_session
+from testgen.common.models import Base, database_session, get_current_session
 from testgen.utils import is_uuid4
 
 SCORE_CATEGORIES = [
@@ -877,6 +879,142 @@ class ScoreDefinitionResultHistoryEntry(Base):
         }
         session = get_current_session()
         session.execute(text(query), params)
+
+    @classmethod
+    def delete_older_than(
+        cls,
+        cutoff: datetime,
+        project_code: str,
+        protected_keys: set[tuple[UUID, datetime]],
+        batch_size: int = 1000,
+    ) -> int:
+        """Batched delete of score-history entries older than cutoff for the
+        given project, excluding entries whose (definition_id, last_run_time)
+        is in protected_keys. Preserves snapshots tied to protected latest
+        runs so the score-trend chart stays consistent with the run.
+
+        Each batch runs in its own transaction (committed before the next batch
+        is selected) so locks and WAL growth stay bounded for large sweeps.
+        """
+        project_def_ids = select(ScoreDefinition.id).where(
+            ScoreDefinition.project_code == project_code
+        ).scalar_subquery()
+
+        where_clauses = [
+            cls.last_run_time < cutoff,
+            cls.definition_id.in_(project_def_ids),
+        ]
+        if protected_keys:
+            where_clauses.append(
+                tuple_(cls.definition_id, cls.last_run_time).notin_(list(protected_keys))
+            )
+
+        total = 0
+        while True:
+            with database_session() as session:
+                keys = session.execute(
+                    select(cls.definition_id, cls.last_run_time)
+                    .where(*where_clauses)
+                    .distinct()
+                    .limit(batch_size)
+                ).all()
+                if not keys:
+                    break
+                result = session.execute(
+                    delete(cls).where(
+                        tuple_(cls.definition_id, cls.last_run_time).in_(list(keys))
+                    )
+                )
+                total += result.rowcount or 0
+        return total
+
+
+class ScoreHistoryLatestRun(Base):
+    """Snapshot mapping rows: for a score definition + cutoff time, holds the
+    latest profiling/test run ids active at that point. Score-trend snapshots
+    in score_definition_results_history correlate to runs through this table.
+
+    The underlying table has no real primary key — the composite declared here
+    captures the semantic uniqueness (one row per definition x cutoff x scope).
+    """
+
+    __tablename__ = "score_history_latest_runs"
+
+    definition_id: UUID = Column(postgresql.UUID(as_uuid=True), nullable=False, primary_key=True)
+    score_history_cutoff_time: datetime = Column(DateTime(timezone=False), nullable=False, primary_key=True)
+    table_groups_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True, primary_key=True)
+    last_profiling_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
+    test_suite_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True, primary_key=True)
+    last_test_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
+
+    @classmethod
+    def find_protected_keys(
+        cls,
+        protected_profiling_ids: set[UUID],
+        protected_test_run_ids: set[UUID],
+    ) -> set[tuple[UUID, datetime]]:
+        """Return (definition_id, score_history_cutoff_time) pairs that map to
+        any protected profiling or test run. Used to preserve score-trend
+        snapshots tied to runs that retention is keeping alive.
+        """
+        if not protected_profiling_ids and not protected_test_run_ids:
+            return set()
+        clauses = []
+        if protected_profiling_ids:
+            clauses.append(cls.last_profiling_run_id.in_(protected_profiling_ids))
+        if protected_test_run_ids:
+            clauses.append(cls.last_test_run_id.in_(protected_test_run_ids))
+        rows = get_current_session().execute(
+            select(cls.definition_id, cls.score_history_cutoff_time).where(or_(*clauses)).distinct()
+        ).all()
+        return {tuple(row) for row in rows}
+
+    @classmethod
+    def delete_older_than(
+        cls,
+        cutoff: datetime,
+        project_code: str,
+        protected_keys: set[tuple[UUID, datetime]],
+        batch_size: int = 1000,
+    ) -> int:
+        """Batched delete of mapping rows older than cutoff for the given
+        project, excluding rows whose (definition_id, cutoff_time) is in
+        protected_keys.
+
+        Each batch runs in its own transaction (committed before the next batch
+        is selected) so locks and WAL growth stay bounded for large sweeps.
+        """
+        project_def_ids = select(ScoreDefinition.id).where(
+            ScoreDefinition.project_code == project_code
+        ).scalar_subquery()
+
+        where_clauses = [
+            cls.score_history_cutoff_time < cutoff,
+            cls.definition_id.in_(project_def_ids),
+        ]
+        if protected_keys:
+            where_clauses.append(
+                tuple_(cls.definition_id, cls.score_history_cutoff_time).notin_(list(protected_keys))
+            )
+
+        total = 0
+        while True:
+            with database_session() as session:
+                keys = session.execute(
+                    select(cls.definition_id, cls.score_history_cutoff_time)
+                    .where(*where_clauses)
+                    .distinct()
+                    .limit(batch_size)
+                ).all()
+                if not keys:
+                    break
+                result = session.execute(
+                    delete(cls).where(
+                        tuple_(cls.definition_id, cls.score_history_cutoff_time).in_(list(keys))
+                    )
+                )
+                total += result.rowcount or 0
+        return total
 
 
 class ScoreCard(TypedDict):

@@ -11,7 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
 from testgen.common.enums import Disposition, JobStatus
-from testgen.common.models import get_current_session
+from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.job_execution import JobExecution
@@ -388,6 +388,89 @@ class ProfilingRun(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), {"profiling_run_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
+
+    @classmethod
+    def find_latest_per_table_group(cls, project_code: str) -> set[UUID]:
+        """Return the latest completed profiling run id per table group for the
+        project.
+
+        Used by data retention to protect at least one run per scope. Profiling
+        is expensive and runs infrequently; downstream features (test
+        generation, freshness monitor generation, data catalog, MCP analysis
+        tools) read the most recent profiling result for a table group, so the
+        latest usable snapshot must survive even when its run_date is past the
+        retention cutoff. Failed and in-flight runs are skipped because they
+        don't expose result data for downstream consumers to read.
+        """
+        rows = get_current_session().scalars(
+            select(cls.id)
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .where(
+                cls.project_code == project_code,
+                JobExecution.status == JobStatus.COMPLETED,
+            )
+            .order_by(cls.table_groups_id, cls.profiling_starttime.desc())
+            .distinct(cls.table_groups_id)
+        ).all()
+        return set(rows)
+
+    @classmethod
+    def delete_older_than(
+        cls,
+        cutoff: datetime,
+        project_code: str,
+        protected_ids: set[UUID],
+        batch_size: int = 1000,
+        dry_run: bool = False,
+    ) -> int:
+        """Batched delete of profiling runs (with cascading children) older than
+        cutoff for the given project, excluding protected ids. Returns total
+        parent rows deleted across all batches — or, with ``dry_run=True``,
+        the number that would be deleted (for retention preview, no writes).
+
+        In-flight runs (JE in PENDING/CLAIMED/RUNNING/CANCEL_REQUESTED) are
+        never deleted — they may still be writing data.
+
+        Each batch runs in its own transaction (committed before the next batch
+        is selected), so locks on profiling_runs / profile_results / etc. are
+        released between batches and WAL growth stays bounded for large sweeps.
+        """
+        where_clauses = [
+            cls.project_code == project_code,
+            cls.profiling_starttime < cutoff,
+            JobExecution.status.in_([JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED]),
+        ]
+        if protected_ids:
+            where_clauses.append(cls.id.notin_(protected_ids))
+
+        base_select = select(cls.id).join(JobExecution, cls.job_execution_id == JobExecution.id)
+
+        if dry_run:
+            return get_current_session().scalar(
+                select(func.count()).select_from(base_select.where(*where_clauses).subquery())
+            ) or 0
+
+        total = 0
+        while True:
+            with database_session() as session:
+                ids = session.scalars(base_select.where(*where_clauses).limit(batch_size)).all()
+                if not ids:
+                    break
+                cls.cascade_delete([str(i) for i in ids])
+                total += len(ids)
+        return total
+
+    @classmethod
+    def get_job_execution_ids(cls, profiling_run_ids: list[UUID]) -> dict[UUID, UUID | None]:
+        """Map profiling_run PKs to their job_execution_ids (batch lookup).
+
+        Mirrors TestRun.get_job_execution_ids.
+        """
+        if not profiling_run_ids:
+            return {}
+        query = select(cls.id, cls.job_execution_id).where(cls.id.in_(profiling_run_ids))
+        rows = get_current_session().execute(query).all()
+        return {row.id: row.job_execution_id for row in rows}
 
     def init_progress(self) -> None:
         self._progress = {
