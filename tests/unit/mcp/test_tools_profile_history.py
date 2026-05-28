@@ -337,7 +337,7 @@ def test_compare_profiling_runs_auto_baseline_first_run(mock_resolve, db_session
     mock_resolve.return_value = target_run
 
     with _patch_session([_je()]):
-        with pytest.raises(MCPUserError, match="first completed profiling run"):
+        with pytest.raises(MCPUserError, match="no earlier completed profiling run"):
             compare_profiling_runs(str(target_run.job_execution_id))
 
 

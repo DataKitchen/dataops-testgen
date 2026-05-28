@@ -416,9 +416,9 @@ class ProfilingRun(Entity):
             .where(
                 ProfilingRun.table_groups_id == self.table_groups_id,
                 JobExecution.status == JobStatus.COMPLETED,
-                JobExecution.started_at < self.profiling_starttime,
+                ProfilingRun.profiling_starttime < self.profiling_starttime,
             )
-            .order_by(desc(JobExecution.started_at))
+            .order_by(desc(ProfilingRun.profiling_starttime))
             .limit(1)
         )
         return get_current_session().scalar(query)

@@ -310,8 +310,8 @@ def compare_profiling_runs(
         baseline_run = target_run.get_previous()
         if baseline_run is None:
             raise MCPUserError(
-                f"Target run `{target_job_execution_id}` is the first completed profiling run "
-                "on its table group — pass `baseline_job_execution_id` to compare against."
+                f"Target run `{target_job_execution_id}` has no earlier completed "
+                "profiling run on its table group to compare against."
             )
     else:
         baseline_run = resolve_profiling_run(baseline_job_execution_id)
