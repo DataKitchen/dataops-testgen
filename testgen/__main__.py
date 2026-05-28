@@ -982,7 +982,7 @@ def run_ui():
             "run",
             app_file,
             "--browser.gatherUsageStats=false",
-            f"--logger.level={'debug' if settings.IS_DEBUG else 'error'}",
+            "--logger.level=error",
             "--client.showErrorDetails=none",
             "--client.toolbarMode=minimal",
             "--server.enableStaticServing=true",
