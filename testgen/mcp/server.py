@@ -201,6 +201,11 @@ def build_mcp_server(
         update_schedule,
     )
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
+    from testgen.mcp.tools.table_groups import (
+        create_table_group,
+        preview_table_group,
+        update_table_group,
+    )
     from testgen.mcp.tools.test_definitions import (
         bulk_update_tests,
         create_test,
@@ -314,6 +319,9 @@ def build_mcp_server(
     safe_tool(update_notification)
     safe_tool(delete_notification)
     safe_tool(test_connection)
+    safe_tool(create_table_group)
+    safe_tool(update_table_group)
+    safe_tool(preview_table_group)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)

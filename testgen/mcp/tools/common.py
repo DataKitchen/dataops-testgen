@@ -514,6 +514,18 @@ def format_page_footer(total: int, page: int, limit: int) -> str:
 # Extract a new resolve_<entity> here when a second caller needs the same parse-uuid +
 # perm-scoped lookup + collapsed-error pattern.
 
+def resolve_connection(connection_id: int) -> Connection:
+    """Resolve a connection ID, collapsing missing-or-inaccessible into one error path."""
+    perms = get_project_permissions()
+    conn = Connection.get(
+        connection_id,
+        Connection.project_code.in_(perms.allowed_codes),
+    )
+    if conn is None:
+        raise MCPResourceNotAccessible("Connection", str(connection_id))
+    return conn
+
+
 def resolve_table_group(table_group_id: str) -> TableGroup:
     """Resolve a TG ID, collapsing missing-or-inaccessible into one error path."""
     tg_uuid = parse_uuid(table_group_id, "table_group_id")
@@ -737,18 +749,6 @@ def format_notification_trigger(event: NotificationEvent | str, settings: dict |
     if event_enum is NotificationEvent.monitor_run:
         return _MONITOR_TRIGGER_INTERNAL_TO_LABEL[MonitorNotificationTrigger(raw)].value
     return None
-
-
-def resolve_connection(connection_id: int) -> Connection:
-    """Resolve a connection ID, collapsing missing-or-inaccessible into one error path."""
-    perms = get_project_permissions()
-    conn = Connection.get(
-        connection_id,
-        Connection.project_code.in_(perms.allowed_codes),
-    )
-    if conn is None:
-        raise MCPResourceNotAccessible("Connection", str(connection_id))
-    return conn
 
 
 # Flavor display labels are the single source of truth in ``common/flavors.py``

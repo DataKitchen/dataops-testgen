@@ -1,98 +1,60 @@
+"""UI cache adapter around the table-group preview service.
+
+The implementation lives in ``testgen.common.database.table_group_service`` so
+MCP tools and the CLI can reuse identical logic without a Streamlit runtime.
+This module wraps the service in ``@st.cache_data`` for the Streamlit pages.
+"""
+
 from collections.abc import Callable
-from datetime import UTC, datetime
-from typing import TypedDict
 from uuid import UUID
 
 import streamlit as st
 
-from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
-from testgen.commands.run_refresh_data_chars import write_data_chars
-from testgen.common.database.column_chars import ColumnChars
-from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.database.table_group_service import (
+    TableGroupPreview,
+    make_save_data_chars,
+    preview_table_group,
+)
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
-from testgen.ui.services.database_service import fetch_from_target_db
 from testgen.ui.services.query_cache import get_connection
-
-
-class StatsPreview(TypedDict):
-    id: UUID
-    table_groups_name: str
-    table_group_schema: str
-    table_ct: int | None
-    column_ct: int | None
-    approx_record_ct: int | None
-    approx_data_point_ct: int | None
-
-class TablePreview(TypedDict):
-    column_ct: int
-    approx_record_ct: int | None
-    approx_data_point_ct: int | None
-    can_access: bool | None
-
-
-class TableGroupPreview(TypedDict):
-    stats: StatsPreview
-    tables: dict[str, TablePreview]
-    success: bool
-    message: str | None
 
 
 def get_table_group_preview(
     table_group: TableGroup,
     connection: Connection | None = None,
     verify_table_access: bool = False,
-) -> tuple[TableGroupPreview, Callable[[UUID], None]]:
-    table_group_preview: TableGroupPreview = {
-        "stats": {
-            "id": table_group.id,
-            "table_groups_name": table_group.table_groups_name,
-            "table_group_schema": table_group.table_group_schema,
-        },
-        "tables": {},
-        "success": True,
-        "message": None,
-    }
-    save_data_chars = None
+) -> tuple[TableGroupPreview, Callable[[UUID], None] | None]:
+    """Streamlit-cached wrapper around ``preview_table_group``.
 
-    if connection or table_group.connection_id:
-        try:
-            connection = connection or get_connection(table_group.connection_id)
-            table_group_preview, data_chars, sql_generator = _get_preview(table_group, connection)
+    The service returns ``(preview, data_chars, sql_generator)`` — all picklable —
+    so the cache can store the result. The ``save_data_chars`` closure is built
+    here, outside the cached function, because local closures can't be pickled.
 
-            def save_data_chars(table_group_id: UUID) -> None:
-                # Unsaved table groups will not have an ID, so we have to update it after saving
-                sql_generator.table_group.id = table_group_id
-                write_data_chars(data_chars, sql_generator, datetime.now(UTC))
+    When the caller does not supply a ``Connection`` and the table group has a
+    ``connection_id``, the connection is resolved via the Streamlit cache so
+    repeated previews on the same page don't re-fetch it.
+    """
+    if connection is None and table_group.connection_id:
+        connection = get_connection(table_group.connection_id)
 
-            if verify_table_access:
-                tables_preview = table_group_preview["tables"]
-                for table_name in tables_preview.keys():
-                    try:
-                        results = fetch_from_target_db(connection, *sql_generator.verify_access(table_name))
-                    except Exception as error:
-                        tables_preview[table_name]["can_access"] = False
-                    else:
-                        tables_preview[table_name]["can_access"] = results is not None and len(results) > 0
-
-                    if not all(table["can_access"] for table in tables_preview.values()):
-                        table_group_preview["message"] = (
-                            "Some tables were not accessible. Please the check the database permissions."
-                        )
-        except Exception as error:
-            table_group_preview["success"] = False
-            table_group_preview["message"] = error.args[0]
-    else:
-        table_group_preview["success"] = False
-        table_group_preview["message"] = (
-            "No connection selected. Please select a connection to preview the Table Group."
+    if verify_table_access:
+        preview, data_chars, sql_generator = preview_table_group(
+            table_group, connection=connection, verify_access=True,
         )
+    else:
+        preview, data_chars, sql_generator = _cached_preview(table_group, connection)
 
-    return table_group_preview, save_data_chars
+    save = (
+        make_save_data_chars(data_chars, sql_generator)
+        if data_chars is not None and sql_generator is not None
+        else None
+    )
+    return preview, save
 
 
 def reset_table_group_preview() -> None:
-    _get_preview.clear()
+    _cached_preview.clear()
 
 
 @st.cache_data(
@@ -107,61 +69,5 @@ def reset_table_group_preview() -> None:
         Connection: lambda x: x.to_dict(),
     },
 )
-def _get_preview(
-    table_group: TableGroup,
-    connection: Connection,
-) -> tuple[TableGroupPreview, list[ColumnChars], RefreshDataCharsSQL]:
-    sql_generator = RefreshDataCharsSQL(connection, table_group)
-    if sql_generator.flavor_service.metadata_via_api:
-        params = resolve_connection_params(connection.__dict__)
-        api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
-        data_chars = sql_generator.filter_schema_columns(api_columns)
-    else:
-        rows = fetch_from_target_db(connection, *sql_generator.get_schema_ddf())
-        data_chars = [ColumnChars(**column) for column in rows]
-
-    preview: TableGroupPreview = {
-        "stats": {
-            "id": table_group.id,
-            "table_groups_name": table_group.table_groups_name,
-            "table_group_schema": table_group.table_group_schema,
-            "table_ct": 0,
-            "column_ct": 0,
-            "approx_record_ct": None,
-            "approx_data_point_ct": None,
-        },
-        "tables": {},
-        "success": True,
-        "message": None,
-    }
-    stats = preview["stats"]
-    tables = preview["tables"]
-
-    for column in data_chars:
-        if not tables.get(column.table_name):
-            tables[column.table_name] = {
-                "column_ct": 0,
-                "approx_record_ct": column.approx_record_ct,
-                "approx_data_point_ct": None,
-                "can_access": None,
-            }
-            stats["table_ct"] += 1
-            if column.approx_record_ct is not None:
-                stats["approx_record_ct"] = (stats["approx_record_ct"] or 0) + column.approx_record_ct
-
-        stats["column_ct"] += 1
-        tables[column.table_name]["column_ct"] += 1
-        if column.approx_record_ct is not None:
-            stats["approx_data_point_ct"] = (stats["approx_data_point_ct"] or 0) + column.approx_record_ct
-            tables[column.table_name]["approx_data_point_ct"] = (
-                tables[column.table_name]["approx_data_point_ct"] or 0
-            ) + column.approx_record_ct
-
-    if len(data_chars) <= 0:
-        preview["success"] = False
-        preview["message"] = (
-            "No tables found matching the criteria. Please check the Table Group configuration"
-            " or the database permissions."
-        )
-
-    return preview, data_chars, sql_generator
+def _cached_preview(table_group, connection):
+    return preview_table_group(table_group, connection=connection, verify_access=False)
