@@ -711,3 +711,34 @@ def test_score_chain_leaf_field_values():
 def test_score_chain_leaf_to_column_mapping():
     assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.TABLE] == "table_name"
     assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.COLUMN] == "column_name"
+
+
+# --- SqlFlavorLabel ---
+
+
+def test_sql_flavor_label_set_matches_common_layer():
+    """Codes covered by the MCP enum and the common-layer maps must stay in sync."""
+    from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL
+    from testgen.mcp.tools.common import SQL_FLAVOR_CODE_TO_LABEL, SQL_FLAVOR_LABEL_TO_CODE
+
+    assert set(SQL_FLAVOR_CODE_TO_LABEL) == set(FLAVOR_CODE_TO_LABEL)
+    assert set(SQL_FLAVOR_LABEL_TO_CODE.values()) == set(FLAVOR_CODE_TO_FAMILY.keys())
+
+
+def test_parse_sql_flavor_returns_label_code_family():
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+
+    label, code, family = parse_sql_flavor("Azure SQL Database")
+    assert label == SqlFlavorLabel.AZURE_MSSQL
+    assert code == "azure_mssql"
+    assert family == "mssql"
+
+
+def test_parse_sql_flavor_invalid_lists_display_values():
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+
+    with pytest.raises(MCPUserError, match="Invalid sql_flavor `bogus`") as exc:
+        parse_sql_flavor("bogus")
+    msg = str(exc.value)
+    for member in SqlFlavorLabel:
+        assert member.value in msg

@@ -117,9 +117,9 @@ def get_inventory(
                 lines.append("_No table groups._\n")
             continue
 
-        for _conn_id, conn in proj["connections"].items():
+        for conn_id, conn in proj["connections"].items():
             if can_view:
-                lines.append(f"### Connection: {conn['name']}\n")
+                lines.append(f"### Connection: {conn['name']} (id: `{conn_id}`)\n")
 
             if not conn["groups"]:
                 if can_view:

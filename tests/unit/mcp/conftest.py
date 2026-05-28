@@ -10,6 +10,7 @@ TEST_PERM_MATRIX = {
     "view": ["role_a", "role_b"],
     "catalog": ["role_a", "role_b", "role_c"],
     "edit": ["role_a"],
+    "administer": ["role_a"],
 }
 
 

@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
@@ -6,7 +7,9 @@ from sqlalchemy import select
 
 from testgen.common.date_service import parse_since
 from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, JobStatus, PiiRisk, QualityDimension
+from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorLabel
 from testgen.common.models import get_current_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import (
     GENERAL_TYPE_TO_CODE,
     ColumnOrderBy,
@@ -724,3 +727,447 @@ def format_notification_trigger(event: NotificationEvent | str, settings: dict |
     if event_enum is NotificationEvent.monitor_run:
         return _MONITOR_TRIGGER_INTERNAL_TO_LABEL[MonitorNotificationTrigger(raw)].value
     return None
+
+
+def resolve_connection(connection_id: int) -> Connection:
+    """Resolve a connection ID, collapsing missing-or-inaccessible into one error path."""
+    perms = get_project_permissions()
+    conn = Connection.get(
+        connection_id,
+        Connection.project_code.in_(perms.allowed_codes),
+    )
+    if conn is None:
+        raise MCPResourceNotAccessible("Connection", str(connection_id))
+    return conn
+
+
+# Flavor display labels are the single source of truth in ``common/flavors.py``
+# (shared with the UI page). These maps just re-shape them for the MCP layer.
+SQL_FLAVOR_CODE_TO_LABEL: dict[str, SqlFlavorLabel] = dict(FLAVOR_CODE_TO_LABEL)
+SQL_FLAVOR_LABEL_TO_CODE: dict[SqlFlavorLabel, str] = {
+    label: code for code, label in FLAVOR_CODE_TO_LABEL.items()
+}
+SQL_FLAVOR_CODE_TO_FAMILY: dict[str, str] = dict(FLAVOR_CODE_TO_FAMILY)
+
+
+def parse_sql_flavor(value: str) -> tuple[SqlFlavorLabel, str, str]:
+    """Validate a user-facing ``sql_flavor`` value and return ``(label, code, family)``."""
+    try:
+        label = SqlFlavorLabel(value)
+    except ValueError as err:
+        valid = ", ".join(f.value for f in SqlFlavorLabel)
+        raise MCPUserError(f"Invalid sql_flavor `{value}`. Valid values: {valid}") from err
+    code = SQL_FLAVOR_LABEL_TO_CODE[label]
+    return label, code, SQL_FLAVOR_CODE_TO_FAMILY[code]
+
+
+# ===========================================================================
+# Connection-parameter contract (MCP input vocabulary)
+#
+# The per-flavor connection shape: which auth modes exist and which fields each
+# needs, keyed by their UI labels (which double as ``connection_params`` keys).
+# This is MCP-only input vocabulary + parsing — it mirrors the per-flavor JS
+# forms in ``ui/static/js/components/connection_form.js`` (NOT sourced from
+# Python), and drives both the connection tools and the
+# ``testgen://connection-parameters/{flavor}`` resource. Field labels map to the
+# (often leaky) ``Connection`` columns here so the tool's arg surface speaks the
+# target-DB vocabulary.
+# ===========================================================================
+
+
+class ConnectionMode(StrEnum):
+    PASSWORD = "Password"  # noqa: S105 — auth-mode label, not a credential
+    KEY_PAIR = "Key-Pair"
+    MANAGED_IDENTITY = "Managed Identity"
+    ACCESS_TOKEN = "Access Token"  # noqa: S105 — auth-mode label, not a credential
+    SERVICE_PRINCIPAL = "Service Principal (OAuth)"
+    JWT_BEARER = "JWT Bearer Flow"
+    CLIENT_CREDENTIALS = "Client Credentials Flow"
+    SERVICE_ACCOUNT = "Service Account Key"
+
+
+class Req(StrEnum):
+    REQUIRED = "required"  # always required in this mode
+    REQUIRED_UNLESS_URL = "required_unless_url"  # required only in host mode
+    OPTIONAL = "optional"
+
+
+@dataclass(frozen=True)
+class ConnField:
+    label: str  # exact UI label == connection_params key
+    column: str  # Connection ORM attribute it maps to
+    requirement: Req
+    secret: bool = False
+
+
+@dataclass(frozen=True)
+class FlavorMode:
+    mode: ConnectionMode | None  # None for single-auth flavors
+    fields: tuple[ConnField, ...]  # excludes the URL field
+    supports_url: bool  # whether the URL alternative is offered
+    # Columns forced regardless of supplied params (auth flags, Databricks PAT user).
+    sets: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class FlavorSchema:
+    code: str
+    label: str
+    modes: tuple[FlavorMode, ...]
+    url_field: ConnField | None  # the shared URL field when any mode supports_url
+
+
+# -- reusable field definitions ---------------------------------------------
+
+_HOST = ConnField("Host", "project_host", Req.REQUIRED_UNLESS_URL)
+_PORT = ConnField("Port", "project_port", Req.REQUIRED_UNLESS_URL)
+_DATABASE = ConnField("Database", "project_db", Req.REQUIRED_UNLESS_URL)
+_SERVICE_NAME = ConnField("Service Name", "project_db", Req.REQUIRED_UNLESS_URL)
+_USERNAME = ConnField("Username", "project_user", Req.REQUIRED)
+_PASSWORD_OPT = ConnField("Password", "project_pw_encrypted", Req.OPTIONAL, secret=True)
+_PASSWORD_REQ = ConnField("Password", "project_pw_encrypted", Req.REQUIRED, secret=True)
+_WAREHOUSE = ConnField("Warehouse", "warehouse", Req.OPTIONAL)
+_PRIVATE_KEY = ConnField("Private Key", "private_key", Req.REQUIRED, secret=True)
+_PRIVATE_KEY_PASSPHRASE = ConnField("Private Key Passphrase", "private_key_passphrase", Req.OPTIONAL, secret=True)
+_URL = ConnField("URL", "url", Req.REQUIRED)
+
+# Databricks
+_HTTP_PATH_RU = ConnField("HTTP Path", "http_path", Req.REQUIRED_UNLESS_URL)
+_HTTP_PATH_REQ = ConnField("HTTP Path", "http_path", Req.REQUIRED)
+_HOST_REQ = ConnField("Host", "project_host", Req.REQUIRED)
+_PORT_REQ = ConnField("Port", "project_port", Req.REQUIRED)
+_CATALOG = ConnField("Catalog", "project_db", Req.REQUIRED_UNLESS_URL)
+_CATALOG_REQ = ConnField("Catalog", "project_db", Req.REQUIRED)
+_ACCESS_TOKEN = ConnField("Access Token", "project_pw_encrypted", Req.REQUIRED, secret=True)
+_CLIENT_ID = ConnField("Client ID", "project_user", Req.REQUIRED)
+_CLIENT_SECRET = ConnField("Client Secret", "project_pw_encrypted", Req.REQUIRED, secret=True)
+
+# BigQuery / Salesforce
+_SERVICE_ACCOUNT_KEY = ConnField("Service Account Key", "service_account_key", Req.REQUIRED, secret=True)
+_LOGIN_URL = ConnField("Login URL", "project_host", Req.REQUIRED)
+_CONSUMER_KEY = ConnField("Consumer Key", "project_user", Req.REQUIRED)
+_SF_USERNAME = ConnField("Username", "project_db", Req.REQUIRED)
+_CONSUMER_SECRET = ConnField("Consumer Secret", "project_pw_encrypted", Req.REQUIRED, secret=True)
+
+
+def _host_auth_schema(code: str, *, db_field: ConnField = _DATABASE) -> FlavorSchema:
+    """Single-mode host/URL flavors (PostgreSQL, Redshift, MSSQL, Oracle, SAP HANA)."""
+    return FlavorSchema(
+        code=code,
+        label=FLAVOR_CODE_TO_LABEL[code],
+        modes=(
+            FlavorMode(mode=None, fields=(_HOST, _PORT, db_field, _USERNAME, _PASSWORD_OPT), supports_url=True),
+        ),
+        url_field=_URL,
+    )
+
+
+def _azure_schema(code: str) -> FlavorSchema:
+    return FlavorSchema(
+        code=code,
+        label=FLAVOR_CODE_TO_LABEL[code],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.PASSWORD,
+                fields=(_HOST, _PORT, _DATABASE, _USERNAME, _PASSWORD_OPT),
+                supports_url=True,
+                sets={"connect_with_identity": False},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.MANAGED_IDENTITY,
+                fields=(_HOST, _PORT, _DATABASE),
+                supports_url=True,
+                sets={"connect_with_identity": True},
+            ),
+        ),
+        url_field=_URL,
+    )
+
+
+FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
+    "postgresql": _host_auth_schema("postgresql"),
+    "redshift": _host_auth_schema("redshift"),
+    "redshift_spectrum": _host_auth_schema("redshift_spectrum"),
+    "mssql": _host_auth_schema("mssql"),
+    "oracle": _host_auth_schema("oracle", db_field=_SERVICE_NAME),
+    "sap_hana": _host_auth_schema("sap_hana"),
+    "azure_mssql": _azure_schema("azure_mssql"),
+    "synapse_mssql": _azure_schema("synapse_mssql"),
+    "snowflake": FlavorSchema(
+        code="snowflake",
+        label=FLAVOR_CODE_TO_LABEL["snowflake"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.KEY_PAIR,
+                fields=(_HOST, _PORT, _DATABASE, _USERNAME, _WAREHOUSE, _PRIVATE_KEY, _PRIVATE_KEY_PASSPHRASE),
+                supports_url=True,
+                sets={"connect_by_key": True},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.PASSWORD,
+                fields=(_HOST, _PORT, _DATABASE, _USERNAME, _WAREHOUSE, _PASSWORD_REQ),
+                supports_url=True,
+                sets={"connect_by_key": False},
+            ),
+        ),
+        url_field=_URL,
+    ),
+    "databricks": FlavorSchema(
+        code="databricks",
+        label=FLAVOR_CODE_TO_LABEL["databricks"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.ACCESS_TOKEN,
+                fields=(_HOST, _PORT, _HTTP_PATH_RU, _CATALOG, _ACCESS_TOKEN),
+                supports_url=True,
+                # PAT auth: the username is always the literal 'token'.
+                sets={"connect_by_key": False, "project_user": "token"},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.SERVICE_PRINCIPAL,
+                fields=(_HOST_REQ, _PORT_REQ, _HTTP_PATH_REQ, _CATALOG_REQ, _CLIENT_ID, _CLIENT_SECRET),
+                supports_url=False,
+                sets={"connect_by_key": True},
+            ),
+        ),
+        url_field=_URL,
+    ),
+    "bigquery": FlavorSchema(
+        code="bigquery",
+        label=FLAVOR_CODE_TO_LABEL["bigquery"],
+        modes=(FlavorMode(mode=None, fields=(_SERVICE_ACCOUNT_KEY,), supports_url=False),),
+        url_field=None,
+    ),
+    "salesforce_data360": FlavorSchema(
+        code="salesforce_data360",
+        label=FLAVOR_CODE_TO_LABEL["salesforce_data360"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.JWT_BEARER,
+                fields=(_LOGIN_URL, _CONSUMER_KEY, _SF_USERNAME, _PRIVATE_KEY),
+                supports_url=False,
+                sets={"connect_by_key": True},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.CLIENT_CREDENTIALS,
+                fields=(_LOGIN_URL, _CONSUMER_KEY, _CONSUMER_SECRET),
+                supports_url=False,
+                sets={"connect_by_key": False},
+            ),
+        ),
+        url_field=None,
+    ),
+}
+
+
+def schema_for(code: str) -> FlavorSchema:
+    """Return the connection schema for a flavor code. Raises ``KeyError`` if unknown."""
+    return FLAVOR_CONNECTION_SCHEMA[code]
+
+
+def resolve_mode(code: str, mode_label: str | None) -> FlavorMode:
+    """Resolve the ``FlavorMode`` for a flavor + supplied ``connection_mode`` label.
+
+    Single-mode flavors take no ``connection_mode`` (passing one is an error).
+    Multi-mode flavors require a valid one.
+    """
+    schema = schema_for(code)
+    if len(schema.modes) == 1 and schema.modes[0].mode is None:
+        if mode_label is not None:
+            raise MCPUserError(f"{schema.label} does not take a connection_mode.")
+        return schema.modes[0]
+
+    valid = [str(m.mode) for m in schema.modes if m.mode is not None]
+    if mode_label is None:
+        raise MCPUserError(f"{schema.label} requires a connection_mode. Valid values: {', '.join(valid)}.")
+    for fmode in schema.modes:
+        if fmode.mode is not None and str(fmode.mode) == mode_label:
+            return fmode
+    raise MCPUserError(
+        f"Invalid connection_mode `{mode_label}` for {schema.label}. Valid values: {', '.join(valid)}."
+    )
+
+
+def infer_mode(connection: Connection) -> ConnectionMode | None:
+    """Reverse of a mode's ``sets`` flags — derive the active mode from a stored
+    connection so update/validation can pick the right field set without the
+    caller re-supplying ``connection_mode``.
+    """
+    code = connection.sql_flavor_code
+    schema = FLAVOR_CONNECTION_SCHEMA.get(code)
+    if schema is None or (len(schema.modes) == 1 and schema.modes[0].mode is None):
+        return None
+
+    if code in {"azure_mssql", "synapse_mssql"}:
+        return ConnectionMode.MANAGED_IDENTITY if connection.connect_with_identity else ConnectionMode.PASSWORD
+    if code == "snowflake":
+        return ConnectionMode.KEY_PAIR if connection.connect_by_key else ConnectionMode.PASSWORD
+    if code == "databricks":
+        return ConnectionMode.SERVICE_PRINCIPAL if connection.connect_by_key else ConnectionMode.ACCESS_TOKEN
+    if code == "salesforce_data360":
+        return ConnectionMode.JWT_BEARER if connection.connect_by_key else ConnectionMode.CLIENT_CREDENTIALS
+    return None
+
+
+def _mode_for_connection(connection: Connection) -> FlavorMode:
+    """Pick the FlavorMode matching a connection's current flags (for validation)."""
+    schema = schema_for(connection.sql_flavor_code)
+    if len(schema.modes) == 1:
+        return schema.modes[0]
+    active = infer_mode(connection)
+    for fmode in schema.modes:
+        if fmode.mode == active:
+            return fmode
+    return schema.modes[0]
+
+
+def connection_display_fields(connection: Connection) -> list[ConnField]:
+    """Active-mode fields (plus the URL field when in URL mode), in schema order.
+
+    For rendering a connection back to the user with the flavor-specific UI label
+    for each populated column (e.g. ``Catalog`` for Databricks, ``Login URL`` for
+    Salesforce). Callers skip secrets and empty values.
+    """
+    schema = schema_for(connection.sql_flavor_code)
+    fields = list(_mode_for_connection(connection).fields)
+    if schema.url_field is not None and getattr(connection, "connect_by_url", False):
+        fields.append(schema.url_field)
+    return fields
+
+
+def connection_field_labels(connection: Connection) -> dict[str, str]:
+    """Map each ``Connection`` column to its flavor/mode-specific UI label.
+
+    Used to label diff output. Columns outside the active mode fall back to the
+    caller's generic labels.
+    """
+    schema = schema_for(connection.sql_flavor_code)
+    labels = {fld.column: fld.label for fld in _mode_for_connection(connection).fields}
+    if schema.url_field is not None:
+        labels[schema.url_field.column] = schema.url_field.label
+    return labels
+
+
+def apply_connection_params(
+    connection: Connection,
+    code: str,
+    mode_label: str | None,
+    params: dict[str, object],
+) -> None:
+    """Map a label-keyed ``connection_params`` dict onto a ``Connection``.
+
+    * Resolves the mode and applies its forced ``sets`` columns (auth flags,
+      Databricks PAT ``project_user='token'``).
+    * Maps each supplied label to its ``Connection`` column (casting ``Port``).
+    * Toggles ``connect_by_url`` from the presence of ``URL`` vs the host-group
+      fields, rejecting an ambiguous mix.
+
+    Raises ``MCPUserError`` on unknown keys, an unsupported / conflicting ``URL``,
+    or an invalid / missing mode.
+    """
+    fmode = resolve_mode(code, mode_label)
+    fields_by_label = {f.label: f for f in fmode.fields}
+    url_fields = {f.label for f in fmode.fields if f.requirement is Req.REQUIRED_UNLESS_URL}
+
+    valid_keys = set(fields_by_label)
+    if fmode.supports_url:
+        valid_keys.add(_URL.label)
+    unknown = [key for key in params if key not in valid_keys]
+    if unknown:
+        raise MCPUserError(
+            f"Unknown connection_params for {schema_for(code).label}: {', '.join(sorted(unknown))}. "
+            f"Allowed: {', '.join(sorted(valid_keys))}."
+        )
+
+    has_url = _URL.label in params
+    provided_url_fields = [key for key in params if key in url_fields]
+    if has_url and not fmode.supports_url:
+        raise MCPUserError(f"{schema_for(code).label} does not support URL connections in this mode.")
+    if has_url and provided_url_fields:
+        raise MCPUserError(
+            f"Provide either a `URL` or host fields ({', '.join(sorted(url_fields))}), not both."
+        )
+
+    # Forced columns first so explicit params can't be clobbered by sets.
+    for attr, value in fmode.sets.items():
+        setattr(connection, attr, value)
+
+    for label, value in params.items():
+        if label == _URL.label:
+            continue
+        column = fields_by_label[label].column
+        setattr(connection, column, str(value) if column == "project_port" and value is not None else value)
+
+    if has_url:
+        connection.connect_by_url = True
+        connection.url = str(params[_URL.label])
+    elif provided_url_fields:
+        connection.connect_by_url = False
+
+
+# -- field-requirement validation -------------------------------------------
+
+_CONNECTION_NAME_MIN = 3
+_CONNECTION_NAME_MAX = 40
+_MAX_THREADS_MIN = 1
+_MAX_THREADS_MAX = 8
+_MAX_QUERY_CHARS_MIN = 500
+_MAX_QUERY_CHARS_MAX = 50000
+
+
+def _missing(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _required_fields_for(connection: Connection) -> list[ConnField]:
+    """Schema fields that must be non-empty for this connection's flavor + active
+    mode, accounting for the URL alternative.
+    """
+    fmode = _mode_for_connection(connection)
+    using_url = fmode.supports_url and bool(connection.connect_by_url)
+
+    required: list[ConnField] = []
+    for fld in fmode.fields:
+        if fld.requirement is Req.REQUIRED:
+            required.append(fld)
+        elif fld.requirement is Req.REQUIRED_UNLESS_URL and not using_url:
+            required.append(fld)
+
+    schema = schema_for(connection.sql_flavor_code)
+    if using_url and schema.url_field is not None:
+        required.append(schema.url_field)
+    return required
+
+
+def validate_connection_fields(connection: Connection) -> list[str]:
+    """Return every validation error (empty list = valid).
+
+    Mirrors the per-flavor JS form validators in
+    ``ui/static/js/components/connection_form.js``. The connection tools call this
+    and raise their user-facing error containing the bullets. Field errors use the
+    UI label (e.g. ``Host``) so the LLM sees the same wording as a UI user.
+    """
+    errors: list[str] = []
+    flavor_label = FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code, connection.sql_flavor_code)
+
+    name = connection.connection_name
+    if _missing(name):
+        errors.append("`connection_name` is required.")
+    elif not (_CONNECTION_NAME_MIN <= len(name.strip()) <= _CONNECTION_NAME_MAX):
+        errors.append(
+            f"`connection_name` must be between {_CONNECTION_NAME_MIN} and {_CONNECTION_NAME_MAX} characters."
+        )
+
+    for fld in _required_fields_for(connection):
+        if _missing(getattr(connection, fld.column, None)):
+            errors.append(f"`{fld.label}` is required for {flavor_label}.")
+
+    threads = connection.max_threads
+    if threads is not None and not (_MAX_THREADS_MIN <= threads <= _MAX_THREADS_MAX):
+        errors.append(f"`max_threads` must be between {_MAX_THREADS_MIN} and {_MAX_THREADS_MAX}.")
+
+    query_chars = connection.max_query_chars
+    if query_chars is not None and not (_MAX_QUERY_CHARS_MIN <= query_chars <= _MAX_QUERY_CHARS_MAX):
+        errors.append(f"`max_query_chars` must be between {_MAX_QUERY_CHARS_MIN} and {_MAX_QUERY_CHARS_MAX}.")
+
+    return errors
