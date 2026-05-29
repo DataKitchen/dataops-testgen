@@ -7,6 +7,7 @@ from testgen.common.credentials import get_tg_db, get_tg_schema
 from testgen.common.database.database_service import get_queries_for_command
 from testgen.common.encrypt import EncryptText, encrypt_ui_password
 from testgen.common.models import with_database_session
+from testgen.common.models.user import initial_feedback_popup_seed
 from testgen.common.read_file import get_template_files
 from testgen.common.read_yaml_metadata_records import import_metadata_records_from_yaml
 from testgen.common.standalone_postgres import EMBEDDED_HOST_SENTINEL, is_standalone_mode
@@ -40,6 +41,7 @@ def _get_params_mapping() -> dict:
         "UI_USER_USERNAME": settings.USERNAME,
         "UI_USER_EMAIL": "",
         "UI_USER_ENCRYPTED_PASSWORD": ui_user_encrypted_password,
+        "LAST_FEEDBACK_POPUP_SEED": initial_feedback_popup_seed(),
         "SCHEMA_NAME": get_tg_schema(),
         "PROJECT_CODE": settings.PROJECT_KEY,
         "CONNECTION_ID": 1,

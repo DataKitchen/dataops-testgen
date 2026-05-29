@@ -22,13 +22,14 @@ SELECT gen_random_uuid(),
 
 WITH inserted_user AS (
     INSERT INTO auth_users
-        (username, email, name, password, is_global_admin)
+        (username, email, name, password, is_global_admin, preferences)
     SELECT
         '{UI_USER_USERNAME}' as username,
         '{UI_USER_EMAIL}' as email,
         '{UI_USER_NAME}' as name,
         '{UI_USER_ENCRYPTED_PASSWORD}' as password,
-        true as is_global_admin
+        true as is_global_admin,
+        jsonb_build_object('last_feedback_popup', '{LAST_FEEDBACK_POPUP_SEED}') as preferences
     RETURNING id
 )
 INSERT INTO project_memberships
