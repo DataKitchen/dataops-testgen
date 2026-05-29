@@ -415,9 +415,11 @@ def test_list_test_notes_basic(mock_td, mock_notes, db_session_mock):
     td.column_name = "name"
     mock_td.get_for_project.return_value = td
 
+    note_id_1 = str(uuid4())
+    note_id_2 = str(uuid4())
     mock_notes.get_notes.return_value = [
-        {"detail": "Threshold looks wrong", "created_by": "alice", "created_at": "2026-04-01T10:00:00", "updated_at": None},
-        {"detail": "Confirmed with team", "created_by": "bob", "created_at": "2026-04-02T14:30:00", "updated_at": "2026-04-03T09:00:00"},
+        {"id": note_id_1, "detail": "Threshold looks wrong", "created_by": "alice", "created_at": "2026-04-01T10:00:00", "updated_at": None},
+        {"id": note_id_2, "detail": "Confirmed with team", "created_by": "bob", "created_at": "2026-04-02T14:30:00", "updated_at": "2026-04-03T09:00:00"},
     ]
 
     from testgen.mcp.tools.test_definitions import list_test_notes
@@ -432,6 +434,9 @@ def test_list_test_notes_basic(mock_td, mock_notes, db_session_mock):
     assert "alice" in result
     assert "2026-04-01 10:00" in result
     assert "2026-04-03 09:00" in result
+    assert "Test note ID" in result
+    assert note_id_1 in result
+    assert note_id_2 in result
 
 
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
@@ -466,6 +471,187 @@ def test_list_test_notes_invalid_uuid(db_session_mock):
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
         list_test_notes("garbage")
+
+
+# -- create_test_note ---------------------------------------------------------
+
+
+def _make_note_summary():
+    """Minimal TestDefinitionSummary mock for note-tool rendering."""
+    summary = MagicMock()
+    summary.display_name = "Alpha Truncation"
+    summary.table_name = "orders"
+    summary.column_name = "email"
+    return summary
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_create_test_note_happy_path(
+    mock_resolve_td, mock_td, mock_note_model, mcp_user, db_session_mock,
+):
+    mcp_user.username = "test_user"
+    td = MagicMock(id=uuid4())
+    mock_resolve_td.return_value = td
+
+    note_instance = MagicMock(
+        id=uuid4(),
+        detail="Threshold widened — confirmed with team",
+        created_at="2026-05-27T10:00:00",
+    )
+    mock_note_model.add_note.return_value = note_instance
+    mock_td.get_for_project.return_value = _make_note_summary()
+
+    from testgen.mcp.tools.test_definitions import create_test_note
+
+    result = create_test_note(str(td.id), "Threshold widened — confirmed with team")
+
+    assert "Note added" in result
+    assert "Alpha Truncation" in result
+    assert "`email`" in result
+    assert "`orders`" in result
+    assert "test_user" in result
+    assert str(note_instance.id) in result
+    mock_note_model.add_note.assert_called_once_with(td.id, "Threshold widened — confirmed with team", "test_user")
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_create_test_note_rejects_empty_body(mock_resolve_td, db_session_mock):
+    from testgen.mcp.tools.test_definitions import create_test_note
+
+    with pytest.raises(MCPUserError, match="cannot be empty"):
+        create_test_note(str(uuid4()), "")
+    with pytest.raises(MCPUserError, match="cannot be empty"):
+        create_test_note(str(uuid4()), "   \n\t  ")
+
+    mock_resolve_td.assert_not_called()
+
+
+def test_create_test_note_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.test_definitions import create_test_note
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        create_test_note("garbage", "valid detail")
+
+
+# -- update_test_note ---------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_note")
+def test_update_test_note_happy_path(
+    mock_resolve_note, mock_td, mock_note_model, mcp_user, db_session_mock,
+):
+    mcp_user.username = "test_user"
+    note = MagicMock(
+        id=uuid4(),
+        test_definition_id=uuid4(),
+        created_by="test_user",
+        detail="original body",
+    )
+    mock_resolve_note.return_value = note
+    mock_td.get_for_project.return_value = _make_note_summary()
+
+    from testgen.mcp.tools.test_definitions import update_test_note
+
+    result = update_test_note(str(note.id), "rewritten body")
+
+    assert "Note updated" in result
+    assert "Alpha Truncation" in result
+    assert "original body" in result
+    assert "rewritten body" in result
+    mock_note_model.update_note.assert_called_once_with(note.id, "rewritten body")
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_note")
+def test_update_test_note_non_author_rejected(
+    mock_resolve_note, mock_note_model, mcp_user, db_session_mock,
+):
+    mcp_user.username = "test_user"
+    note = MagicMock(created_by="someone_else")
+    mock_resolve_note.return_value = note
+
+    from testgen.mcp.tools.test_definitions import update_test_note
+
+    with pytest.raises(MCPUserError, match="You can only edit notes you authored"):
+        update_test_note(str(uuid4()), "new body")
+
+    mock_note_model.update_note.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_note")
+def test_update_test_note_rejects_empty_body(mock_resolve_note, db_session_mock):
+    from testgen.mcp.tools.test_definitions import update_test_note
+
+    with pytest.raises(MCPUserError, match="cannot be empty"):
+        update_test_note(str(uuid4()), "")
+    with pytest.raises(MCPUserError, match="cannot be empty"):
+        update_test_note(str(uuid4()), "   ")
+
+    mock_resolve_note.assert_not_called()
+
+
+def test_update_test_note_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.test_definitions import update_test_note
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        update_test_note("garbage", "valid detail")
+
+
+# -- delete_test_note ---------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_note")
+def test_delete_test_note_happy_path(
+    mock_resolve_note, mock_td, mock_note_model, mcp_user, db_session_mock,
+):
+    mcp_user.username = "test_user"
+    note = MagicMock(
+        id=uuid4(),
+        test_definition_id=uuid4(),
+        created_by="test_user",
+        created_at="2026-05-27T10:00:00",
+    )
+    mock_resolve_note.return_value = note
+    mock_td.get_for_project.return_value = _make_note_summary()
+
+    from testgen.mcp.tools.test_definitions import delete_test_note
+
+    result = delete_test_note(str(note.id))
+
+    assert "Note deleted" in result
+    assert "Alpha Truncation" in result
+    assert "test_user" in result
+    mock_note_model.delete_note.assert_called_once_with(note.id)
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_note")
+def test_delete_test_note_non_author_rejected(
+    mock_resolve_note, mock_note_model, mcp_user, db_session_mock,
+):
+    mcp_user.username = "test_user"
+    note = MagicMock(created_by="someone_else")
+    mock_resolve_note.return_value = note
+
+    from testgen.mcp.tools.test_definitions import delete_test_note
+
+    with pytest.raises(MCPUserError, match="You can only delete notes you authored"):
+        delete_test_note(str(uuid4()))
+
+    mock_note_model.delete_note.assert_not_called()
+
+
+def test_delete_test_note_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.test_definitions import delete_test_note
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        delete_test_note("garbage")
 
 
 # -- list_test_types ----------------------------------------------------------

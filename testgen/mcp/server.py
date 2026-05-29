@@ -194,11 +194,14 @@ def build_mcp_server(
     from testgen.mcp.tools.test_definitions import (
         bulk_update_tests,
         create_test,
+        create_test_note,
+        delete_test_note,
         get_test,
         list_test_notes,
         list_test_types,
         list_tests,
         update_test,
+        update_test_note,
         validate_custom_test,
     )
     from testgen.mcp.tools.test_results import (
@@ -276,6 +279,9 @@ def build_mcp_server(
     safe_tool(update_test)
     safe_tool(validate_custom_test)
     safe_tool(bulk_update_tests)
+    safe_tool(create_test_note)
+    safe_tool(update_test_note)
+    safe_tool(delete_test_note)
     safe_tool(list_hygiene_issues)
     safe_tool(get_hygiene_issue)
     safe_tool(search_hygiene_issues)

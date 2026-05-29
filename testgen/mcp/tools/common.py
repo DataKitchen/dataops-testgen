@@ -19,7 +19,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestType
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestType
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -572,6 +572,29 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
     if td is None:
         raise MCPResourceNotAccessible("Test definition", test_definition_id)
     return td
+
+
+def resolve_test_note(test_note_id: str) -> TestDefinitionNote:
+    """Resolve a test note ID to the live ORM model, collapsing missing-or-inaccessible.
+
+    Filters monitor suites and project access via the note's parent test definition.
+    """
+    note_uuid = parse_uuid(test_note_id, "test_note_id")
+    perms = get_project_permissions()
+    query = (
+        select(TestDefinitionNote)
+        .join(TestDefinition, TestDefinitionNote.test_definition_id == TestDefinition.id)
+        .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
+        .where(
+            TestDefinitionNote.id == note_uuid,
+            TestSuite.is_monitor.isnot(True),
+            TestSuite.project_code.in_(perms.allowed_codes),
+        )
+    )
+    note = get_current_session().scalars(query).first()
+    if note is None:
+        raise MCPResourceNotAccessible("Test note", test_note_id)
+    return note
 
 
 def resolve_schedule(schedule_id: str) -> JobSchedule:

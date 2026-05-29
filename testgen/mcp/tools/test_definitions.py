@@ -18,7 +18,7 @@ from testgen.common.models.test_definition import (
 )
 from testgen.common.models.test_result import TestResult
 from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     DocGroup,
     format_page_footer,
@@ -27,6 +27,7 @@ from testgen.mcp.tools.common import (
     parse_quality_dimension,
     parse_uuid,
     resolve_test_definition,
+    resolve_test_note,
     resolve_test_suite,
     resolve_test_type,
     validate_limit,
@@ -267,12 +268,108 @@ def list_test_notes(test_definition_id: str) -> str:
 
     doc.text(f"{len(notes)} note(s).")
     doc.table(
-        headers=["Date", "Author", "Note", "Updated"],
+        headers=["Test note ID", "Date", "Author", "Note", "Updated"],
         rows=[
-            [n["created_at"], n["created_by"], n["detail"], n["updated_at"]]
+            [n["id"], n["created_at"], n["created_by"], n["detail"], n["updated_at"]]
             for n in notes
         ],
+        code=[0],
     )
+    return doc.render()
+
+
+def _validate_note_body(body: str) -> None:
+    if not isinstance(body, str) or not body.strip():
+        raise MCPUserError("`body` cannot be empty or whitespace-only.")
+
+
+def _note_parent_label(summary: TestDefinitionSummary) -> str:
+    where = f"`{summary.column_name}` in `{summary.table_name}`" if summary.column_name else f"`{summary.table_name}`"
+    return f"{summary.display_name} on {where}"
+
+
+@with_database_session
+@mcp_permission("edit")
+def create_test_note(test_definition_id: str, body: str) -> str:
+    """Attach a note to a test definition.
+
+    Args:
+        test_definition_id: UUID of the test definition, e.g. from ``list_tests``.
+        body: Note body (free-text). Empty or whitespace-only is rejected.
+    """
+    _validate_note_body(body)
+    td = resolve_test_definition(test_definition_id)
+    username = get_authorized_mcp_user().username
+
+    note = TestDefinitionNote.add_note(td.id, body, username)
+
+    perms = get_project_permissions()
+    summary = TestDefinition.get_for_project(td.id, perms.allowed_codes)
+
+    doc = MdDoc()
+    doc.text(f"**Note added** to {_note_parent_label(summary)}.")
+    doc.field("Test note ID", note.id, code=True)
+    doc.field("Author", username)
+    doc.field("Date", note.created_at)
+    doc.field("Note", MdDoc.escape(note.detail))
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def update_test_note(test_note_id: str, body: str) -> str:
+    """Replace the body of a test note. Only the note's author can update it.
+
+    Args:
+        test_note_id: UUID of the test note, e.g. from ``list_test_notes`` or ``create_test_note``.
+        body: New note body (free-text). Empty or whitespace-only is rejected.
+    """
+    _validate_note_body(body)
+    note = resolve_test_note(test_note_id)
+    username = get_authorized_mcp_user().username
+    if note.created_by != username:
+        raise MCPUserError("You can only edit notes you authored.")
+
+    before_body = note.detail
+    TestDefinitionNote.update_note(note.id, body)
+
+    perms = get_project_permissions()
+    summary = TestDefinition.get_for_project(note.test_definition_id, perms.allowed_codes)
+
+    doc = MdDoc()
+    doc.text(f"**Note updated** on {_note_parent_label(summary)}.")
+    doc.table(
+        headers=["Field", "Before", "After"],
+        rows=[["Note", before_body, body]],
+    )
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def delete_test_note(test_note_id: str) -> str:
+    """Delete a test note. Only the note's author can delete it.
+
+    Args:
+        test_note_id: UUID of the test note, e.g. from ``list_test_notes``.
+    """
+    note = resolve_test_note(test_note_id)
+    username = get_authorized_mcp_user().username
+    if note.created_by != username:
+        raise MCPUserError("You can only delete notes you authored.")
+
+    author = note.created_by
+    created_at = note.created_at
+    td_id = note.test_definition_id
+    TestDefinitionNote.delete_note(note.id)
+
+    perms = get_project_permissions()
+    summary = TestDefinition.get_for_project(td_id, perms.allowed_codes)
+
+    doc = MdDoc()
+    doc.text(f"**Note deleted** from {_note_parent_label(summary)}.")
+    doc.field("Author", author)
+    doc.field("Date", created_at)
     return doc.render()
 
 

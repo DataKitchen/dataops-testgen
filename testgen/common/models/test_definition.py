@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from itertools import zip_longest
 from typing import ClassVar, Literal
@@ -673,16 +673,25 @@ class TestDefinitionNote(Base):
     updated_at: datetime = Column(postgresql.TIMESTAMP)
 
     @classmethod
-    def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> None:
+    def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> "TestDefinitionNote":
+        """Insert a note and return the persisted instance with ``id`` and ``created_at`` populated."""
         db_session = get_current_session()
-        db_session.execute(
-            insert(cls).values(test_definition_id=test_definition_id, detail=detail, created_by=username)
+        note = cls(
+            test_definition_id=test_definition_id,
+            detail=detail,
+            created_by=username,
+            created_at=datetime.now(UTC).replace(tzinfo=None),
         )
+        db_session.add(note)
+        db_session.flush()
+        return note
 
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:
         db_session = get_current_session()
-        db_session.execute(update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now()))
+        db_session.execute(
+            update(cls).where(cls.id == note_id).values(detail=detail, updated_at=datetime.now(UTC).replace(tzinfo=None))
+        )
 
     @classmethod
     def delete_note(cls, note_id: str | UUID) -> None:
