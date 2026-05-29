@@ -311,7 +311,7 @@ def create_test_note(test_definition_id: str, body: str) -> str:
     doc.field("Test note ID", note.id, code=True)
     doc.field("Author", username)
     doc.field("Date", note.created_at)
-    doc.field("Note", note.detail)
+    doc.field("Note", MdDoc.escape(note.detail))
     return doc.render()
 
 

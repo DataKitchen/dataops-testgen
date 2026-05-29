@@ -689,7 +689,9 @@ class TestDefinitionNote(Base):
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:
         db_session = get_current_session()
-        db_session.execute(update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now()))
+        db_session.execute(
+            update(cls).where(cls.id == note_id).values(detail=detail, updated_at=datetime.now(UTC).replace(tzinfo=None))
+        )
 
     @classmethod
     def delete_note(cls, note_id: str | UUID) -> None:
