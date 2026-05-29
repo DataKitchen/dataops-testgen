@@ -8,6 +8,7 @@
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
+ * @property {boolean} is_logged_in
  *
  * @typedef Properties
  * @type {object}
@@ -71,6 +72,13 @@ const HelpMenu = (/** @type Properties */ props) => {
                 )
                 : null,
             span({ class: 'help-divider' }),
+            getValue(props.permissions)?.is_logged_in
+                ? div(
+                    { class: 'help-item', onclick: () => emit('FeedbackClicked') },
+                    Icon({ classes: 'help-item-icon' }, 'rate_review'),
+                    'Give Feedback',
+                )
+                : null,
             HelpLink(slackUrl, 'Slack Community', 'group'),
             getValue(props.support_email)
                 ? HelpLink(

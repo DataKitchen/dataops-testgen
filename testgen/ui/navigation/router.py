@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import UTC, datetime
 
 import streamlit as st
 
 import testgen.ui.navigation.page
+from testgen import settings
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models.user import FEEDBACK_POPUP_INTERVAL, PreferenceKey
 from testgen.ui.session import session
 from testgen.utils.singleton import Singleton
 
@@ -30,6 +33,25 @@ class Router(Singleton):
 
         source = st.query_params.pop("source", None)
         MixpanelService().send_event(f"nav-{url}", page_load=True, source=source)
+
+    def _evaluate_feedback_popup(self) -> None:
+        session.show_feedback_popup = False
+        try:
+            if settings.DISABLE_FEEDBACK_POPUP or not (user := session.auth.user):
+                return
+
+            if (last_popup_str := user.get_preference(PreferenceKey.LAST_FEEDBACK_POPUP)):
+                try:
+                    last_popup_dt = datetime.fromisoformat(last_popup_str)
+                    if datetime.now(UTC) - last_popup_dt < FEEDBACK_POPUP_INTERVAL:
+                        return
+                except (ValueError, TypeError):
+                    pass  # Corrupted value — treat as no prior popup
+
+            user.set_preference(PreferenceKey.LAST_FEEDBACK_POPUP, datetime.now(UTC).isoformat())
+            session.show_feedback_popup = True
+        except Exception:
+            LOG.exception("Error evaluating feedback popup eligibility")
 
     def run(self) -> None:
         streamlit_pages = [route.streamlit_page for route in self._routes.values()]
@@ -62,6 +84,9 @@ class Router(Singleton):
             if session.page_args_pending_router is not None:
                 st.query_params.from_dict(session.page_args_pending_router)
                 session.page_args_pending_router = None
+
+            if session.show_feedback_popup is None and session.auth.is_logged_in:
+                self._evaluate_feedback_popup()
 
             session.current_page = current_page.url_path
             current_page.run()

@@ -146,3 +146,10 @@ sidebar_widget = component_v2_wrapped(components_v2.component(
     js="pages/sidebar.js",
     isolate_styles=False,
 ))
+
+feedback_widget = component_v2_wrapped(components_v2.component(
+    name="dataops-testgen.feedback_widget",
+    js="pages/feedback_widget.js",
+    isolate_styles=False,
+))
+

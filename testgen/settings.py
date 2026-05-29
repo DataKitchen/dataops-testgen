@@ -512,6 +512,14 @@ ANALYTICS_ENABLED: bool = getenv("TG_ANALYTICS", "yes").lower() in ("yes", "true
 Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
 """
 
+DISABLE_FEEDBACK_POPUP: bool = getenv("TG_DISABLE_FEEDBACK_POPUP", "no").lower() in ("yes", "true")
+"""
+When set to "yes" or "true", suppresses the periodic feedback popup entirely.
+
+from env variable: `TG_DISABLE_FEEDBACK_POPUP`
+defaults to: `no`
+"""
+
 JOB_POLL_INTERVAL: int = int(getenv("TG_JOB_POLL_INTERVAL", "5"))
 """
 Seconds between polls for pending job executions.
