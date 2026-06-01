@@ -90,7 +90,7 @@ const ScoreCard = (score, actions, options) => {
                     : '',
                 (score_.cde_score && categories.length > 0) ? i({ class: 'mr-4 ml-4' }) : '',
                 categories.length > 0 ? div(
-                    { class: 'flex-column' },
+                    { class: 'flex-column tg-score-card--breakdown' },
                     span({ class: 'mb-2 text-caption' }, categoriesLabel),
                     div(
                         { class: 'tg-score-card--categories' },
@@ -164,13 +164,17 @@ stylesheet.replace(`
     margin-bottom: unset !important;
 }
 
+.tg-score-card--breakdown {
+    margin-top: -12px;
+}
+
 .tg-score-card--categories {
     display: flex;
     flex-direction: column;
     flex-wrap: wrap;
-    row-gap: 8px;
+    row-gap: 4px;
     column-gap: 16px;
-    max-height: 100px;
+    max-height: 140px;
     overflow-y: auto;
 }
 .tg-score-card--categories > div {
