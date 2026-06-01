@@ -9,14 +9,14 @@ profile_anomaly_types:
     p.distinct_pattern_ct > 1
        AND (p.column_name ilike '%zip%' OR p.column_name ILIKE '%postal%')
        AND SPLIT_PART(p.top_patterns, ' | ', 2) = 'NNN'
-       AND SPLIT_PART(p.top_patterns, ' | ', 1)::FLOAT/NULLIF(value_ct, 0)::FLOAT > 0.50
+       AND NULLIF(SPLIT_PART(p.top_patterns, ' | ', 1), '')::FLOAT/NULLIF(value_ct, 0)::FLOAT > 0.50
   detail_expression: |-
     'Pattern: ' || p.top_patterns
   issue_likelihood: Definite
   suggested_action: |-
     Review your source data, ingestion process, and any processing steps that update this column.
   dq_score_prevalence_formula: |-
-    (NULLIF(p.record_ct, 0)::INT - SPLIT_PART(p.top_patterns, ' | ', 1)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+    (NULLIF(p.record_ct, 0)::INT - NULLIF(SPLIT_PART(p.top_patterns, ' | ', 1), '')::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '1'
   dq_dimension: Validity
   impact_dimension: Conformance

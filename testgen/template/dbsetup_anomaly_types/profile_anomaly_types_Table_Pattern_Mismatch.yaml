@@ -13,7 +13,7 @@ profile_anomaly_types:
                    AND m.max_pattern_ct = 1
                    AND m.column_ct > 1
                    AND SPLIT_PART(p.top_patterns, '|', 2) <> SPLIT_PART(m.very_top_pattern, '|', 2)
-                   AND SPLIT_PART(p.top_patterns, '|', 1)::NUMERIC / SPLIT_PART(m.very_top_pattern, '|', 1)::NUMERIC < 0.1
+                   AND NULLIF(SPLIT_PART(p.top_patterns, '|', 1), '')::NUMERIC / NULLIF(SPLIT_PART(m.very_top_pattern, '|', 1), '')::NUMERIC < 0.1
   detail_expression: |-
     'Patterns: ' || SPLIT_PART(p.top_patterns, '|', 2) || ', ' || SPLIT_PART(ltrim(m.very_top_pattern, '0'), '|', 2)
   issue_likelihood: Likely
