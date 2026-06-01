@@ -1,6 +1,7 @@
 import logging
 import os
 from urllib.parse import urlparse
+from uuid import uuid4
 
 import streamlit as st
 
@@ -15,6 +16,8 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.services import javascript_service
 from testgen.ui.services.query_cache import select_projects_where
 from testgen.ui.session import session
+
+LOG = logging.getLogger("testgen")
 
 if is_standalone_mode() and (standalone_uri := os.environ.get(STANDALONE_URI_ENV_VAR)):
     ensure_standalone_setup(standalone_uri)
@@ -84,6 +87,20 @@ def render(log_level: int = logging.INFO):
                     )
 
         application.router.run()
+    except Exception:
+        # Log the full traceback (tagged with a reference the user can quote) so it lands in app.log,
+        # which the in-app Application Logs dialog reads -- letting users download and share UI errors
+        # instead of needing container logs. Streamlit's rerun/stop signals are BaseException
+        # subclasses, so they pass through uncaught.
+        error_reference = uuid4().hex[:8].upper()
+        LOG.exception(
+            "Unhandled error rendering page '%s' [ref=%s]", session.current_page or "unknown", error_reference
+        )
+        try:
+            _render_error_message(error_reference)
+        except Exception:
+            # Never let the error message itself break the run -- fall back to a bare message.
+            st.error("Something went wrong. Use the menu on the left to navigate to another page.")
     finally:
         # Safety net: commit any flushed-but-uncommitted work (e.g., PersistedSetting writes)
         # before RerunException propagates and bypasses database_session()'s normal commit.
@@ -95,6 +112,18 @@ def render(log_level: int = logging.INFO):
                 # Session may be in a bad state (e.g., broken connection from pool).
                 # Roll back so the connection is returned clean and the next rerun works.
                 db_session.rollback()
+
+
+def _render_error_message(reference: str) -> None:
+    support_email = settings.SUPPORT_EMAIL
+    st.error(
+        "**Something went wrong.**\n\n"
+        "An unexpected error occurred while loading this page. Use the menu on the left to navigate to "
+        "another page.\n\n"
+        "If this keeps happening, download the logs from **Help → Application Logs** and send them to "
+        f"[{support_email}](mailto:{support_email}) with this reference: **{reference}**.",
+        icon=":material/error:",
+    )
 
 
 @st.cache_resource(validate=lambda _: not settings.IS_DEBUG, show_spinner=False)
