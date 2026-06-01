@@ -31,6 +31,8 @@ _GROUP_ORDER: list[DocGroup] = [
     DocGroup.INVESTIGATE,
     DocGroup.BROWSE_PROFILING,
     DocGroup.TRIGGER,
+    DocGroup.SCORING,
+    DocGroup.MANAGE,
 ]
 _FALLBACK_GROUP = "Other tools"
 

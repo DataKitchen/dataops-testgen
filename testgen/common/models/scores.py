@@ -158,6 +158,19 @@ class ScoreDefinition(Base):
         return definition
 
     @classmethod
+    def names_by_id(cls, ids: Iterable[UUID]) -> dict[UUID, str]:
+        """Return ``{id: name}`` for the given scorecard IDs in a single query.
+
+        IDs with no matching scorecard are omitted. Empty input yields ``{}``
+        without touching the database.
+        """
+        ids = list(ids)
+        if not ids:
+            return {}
+        query = select(cls.id, cls.name).where(cls.id.in_(ids))
+        return {row.id: row.name for row in get_current_session().execute(query).all()}
+
+    @classmethod
     def list_with_table_group_targets(
         cls,
         project_code: str,
