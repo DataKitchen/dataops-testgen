@@ -30,7 +30,7 @@ from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestType
-from testgen.common.models.test_result import TestResultStatus
+from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
@@ -353,6 +353,25 @@ def parse_disposition(value: str) -> Disposition:
     return db_value
 
 
+_NO_DECISION = "No Decision"
+
+
+def parse_test_result_disposition(value: str) -> Disposition | None:
+    """Validate a user-facing test-result disposition and return the stored value.
+
+    Accepts ``Confirmed``, ``Dismissed``, ``Muted``, and ``No Decision``. ``Muted``
+    maps to ``Disposition.INACTIVE``; ``No Decision`` clears the disposition (returns
+    ``None`` → NULL).
+    """
+    if value == _NO_DECISION:
+        return None
+    db_value = _DISPOSITION_USER_TO_DB.get(value)
+    if db_value is None:
+        valid = ", ".join([*_DISPOSITION_USER_TO_DB, _NO_DECISION])
+        raise MCPUserError(f"Invalid disposition `{value}`. Valid values: {valid}")
+    return db_value
+
+
 def format_disposition(value: Disposition | str) -> str:
     """Map a stored disposition to its user-facing label (``INACTIVE`` → "Muted")."""
     try:
@@ -621,6 +640,28 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
     if td is None:
         raise MCPResourceNotAccessible("Test definition", test_definition_id)
     return td
+
+
+def resolve_test_result(test_result_id: str) -> TestResult:
+    """Resolve a test result ID to the live ORM model, collapsing missing-or-inaccessible.
+
+    Filters monitor suites and project access via the result's parent test suite.
+    """
+    result_uuid = parse_uuid(test_result_id, "test_result_id")
+    perms = get_project_permissions()
+    query = (
+        select(TestResult)
+        .join(TestSuite, TestResult.test_suite_id == TestSuite.id)
+        .where(
+            TestResult.id == result_uuid,
+            TestSuite.is_monitor.isnot(True),
+            TestSuite.project_code.in_(perms.allowed_codes),
+        )
+    )
+    result = get_current_session().scalars(query).first()
+    if result is None:
+        raise MCPResourceNotAccessible("Test result", test_result_id)
+    return result
 
 
 def resolve_test_note(test_note_id: str) -> TestDefinitionNote:

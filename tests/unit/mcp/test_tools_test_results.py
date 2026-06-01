@@ -4,8 +4,9 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.common.enums import JobStatus
+from testgen.common.enums import Disposition, JobStatus
 from testgen.common.models.test_result import TestResultStatus
+from testgen.common.test_result_disposition_service import DispositionUpdate
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -51,6 +52,40 @@ def test_list_test_results_basic(mock_result, mock_tt_cls, mock_test_run_cls, mo
     assert "on `customer_name` in `orders`" in result
     assert "15.3" in result
     assert "Truncation detected" in result
+
+
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+@patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestResult")
+def test_list_test_results_emits_test_result_id(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
+    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_suite_cls.get_regular.return_value = _mock_test_suite()
+
+    result_id = uuid4()
+    r1 = MagicMock()
+    r1.id = result_id
+    r1.status = TestResultStatus.Failed
+    r1.test_type = "Alpha_Trunc"
+    r1.test_definition_id = uuid4()
+    r1.table_name = "orders"
+    r1.column_names = "customer_name"
+    r1.result_measure = "15.3"
+    r1.threshold_value = "10.0"
+    r1.message = "Truncation detected"
+    mock_result.select_results.return_value = [r1]
+
+    tt = MagicMock()
+    tt.test_type = "Alpha_Trunc"
+    tt.test_name_short = "Alpha Truncation"
+    mock_tt_cls.select_where.return_value = [tt]
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    result = list_test_results(str(uuid4()))
+
+    assert "Test result" in result
+    assert str(result_id) in result
 
 
 @patch("testgen.mcp.tools.test_results.TestSuite")
@@ -1317,3 +1352,217 @@ def test_compare_test_runs_rejects_baseline_not_completed(
     with _patch_test_results_session([_je(), _je(status=JobStatus.ERROR)]), \
             pytest.raises(MCPUserError, match=r"Baseline run is in `Error` state"):
         compare_test_runs(str(uuid4()), str(uuid4()))
+
+
+# ---------------------------------------------------------------------------
+# update_test_result
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def disposition_perms():
+    """Grant 'disposition' permission on demo (the conftest matrix omits it)."""
+    perms = MagicMock(spec=ProjectPermissions)
+    perms.memberships = {"demo": "role_a"}
+    perms.permission = "disposition"
+    perms.username = "test_user"
+    perms.allowed_codes = ["demo"]
+    perms.codes_allowed_to.return_value = ["demo"]
+    perms.has_access.side_effect = lambda code: code in ["demo"]
+    with patch("testgen.mcp.permissions._compute_project_permissions", return_value=perms):
+        yield perms
+
+
+def test_update_test_result_invalid_uuid(db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        update_test_result(test_result_id="bogus", disposition="Confirmed")
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.resolve_test_result")
+def test_update_test_result_muted_maps_to_inactive(mock_resolve, mock_set, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    mock_resolve.return_value = MagicMock(id=uuid4())
+    mock_set.return_value = DispositionUpdate(matched=1, passed_skipped=0)
+    update_test_result(test_result_id=str(uuid4()), disposition="Muted")
+
+    assert mock_set.call_args.args[1] == Disposition.INACTIVE
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.resolve_test_result")
+def test_update_test_result_no_decision_clears(mock_resolve, mock_set, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    mock_resolve.return_value = MagicMock(id=uuid4())
+    mock_set.return_value = DispositionUpdate(matched=1, passed_skipped=0)
+    update_test_result(test_result_id=str(uuid4()), disposition="No Decision")
+
+    assert mock_set.call_args.args[1] is None
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.resolve_test_result")
+def test_update_test_result_success_message(mock_resolve, mock_set, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    rid = str(uuid4())
+    mock_resolve.return_value = MagicMock(id=uuid4())
+    mock_set.return_value = DispositionUpdate(matched=1, passed_skipped=0)
+    out = update_test_result(test_result_id=rid, disposition="Dismissed")
+
+    assert rid in out and "Dismissed" in out
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.resolve_test_result")
+def test_update_test_result_passed_row_is_noop(mock_resolve, mock_set, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import update_test_result
+
+    mock_resolve.return_value = MagicMock(id=uuid4())
+    mock_set.return_value = DispositionUpdate(matched=0, passed_skipped=1)
+    out = update_test_result(test_result_id=str(uuid4()), disposition="Confirmed")
+
+    assert "passed" in out and "No change" in out
+
+
+def test_update_test_result_uses_disposition_permission():
+    import testgen.mcp.tools.test_results as mod
+
+    closure = {c.cell_contents for c in mod.update_test_result.__wrapped__.__closure__}
+    assert "disposition" in closure
+
+
+# ---------------------------------------------------------------------------
+# bulk_update_test_results
+# ---------------------------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.get_current_session")
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_uses_latest_run_when_run_omitted(
+    mock_resolve_suite, mock_session, mock_set, db_session_mock, disposition_perms
+):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    run_id = uuid4()
+    suite = MagicMock(id=uuid4(), test_suite="suite_a", last_complete_test_run_id=run_id)
+    mock_resolve_suite.return_value = suite
+    matched_ids = [uuid4(), uuid4()]
+    mock_session.return_value.scalars.return_value.all.return_value = matched_ids
+    mock_set.return_value = DispositionUpdate(matched=2, passed_skipped=0)
+
+    with patch("testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+               return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
+        out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Dismissed")
+
+    assert mock_set.call_args.args[0] == matched_ids
+    assert mock_set.call_args.args[1] == Disposition.DISMISSED
+    assert "2" in out
+
+
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_no_completed_run_errors(mock_resolve_suite, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    mock_resolve_suite.return_value = MagicMock(last_complete_test_run_id=None, test_suite="suite_a")
+    with pytest.raises(MCPUserError, match="No completed test runs"):
+        bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Confirmed")
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.get_current_session")
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_reports_passed_exclusions(
+    mock_resolve_suite, mock_session, mock_set, db_session_mock, disposition_perms
+):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    run_id = uuid4()
+    suite = MagicMock(id=uuid4(), test_suite="suite_a", last_complete_test_run_id=run_id)
+    mock_resolve_suite.return_value = suite
+    mock_session.return_value.scalars.return_value.all.return_value = [uuid4(), uuid4(), uuid4()]
+    mock_set.return_value = DispositionUpdate(matched=2, passed_skipped=1)
+
+    with patch("testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+               return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
+        out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Muted")
+
+    assert "2" in out  # matched
+    assert "1" in out and "passed" in out  # exclusions surfaced
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.get_current_session")
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_no_matches(mock_resolve_suite, mock_session, mock_set, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    run_id = uuid4()
+    suite = MagicMock(id=uuid4(), test_suite="suite_a", last_complete_test_run_id=run_id)
+    mock_resolve_suite.return_value = suite
+    mock_session.return_value.scalars.return_value.all.return_value = []
+    mock_set.return_value = DispositionUpdate(matched=0, passed_skipped=0)
+
+    with patch("testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+               return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
+        out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Confirmed")
+
+    assert "No test results matched" in out
+
+
+def test_bulk_update_uses_disposition_permission():
+    import testgen.mcp.tools.test_results as mod
+
+    closure = {c.cell_contents for c in mod.bulk_update_test_results.__wrapped__.__closure__}
+    assert "disposition" in closure
+
+
+@patch("testgen.mcp.tools.test_results.set_test_results_disposition")
+@patch("testgen.mcp.tools.test_results.get_current_session")
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_explicit_run_in_suite(
+    mock_resolve_suite, mock_session, mock_set, db_session_mock, disposition_perms
+):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    suite = MagicMock(id=uuid4(), test_suite="suite_a")
+    mock_resolve_suite.return_value = suite
+    run_id = uuid4()
+    matched_ids = [uuid4()]
+    mock_session.return_value.scalars.return_value.all.return_value = matched_ids
+    mock_set.return_value = DispositionUpdate(matched=1, passed_skipped=0)
+
+    with patch(
+        "testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+        return_value=MagicMock(id=uuid4(), job_execution_id=run_id, test_suite_id=suite.id),
+    ):
+        out = bulk_update_test_results(
+            test_suite_id=str(uuid4()), disposition="Confirmed", job_execution_id=str(run_id)
+        )
+
+    assert mock_set.call_args.args[0] == matched_ids
+    assert "1" in out
+
+
+@patch("testgen.mcp.tools.test_results.resolve_test_suite")
+def test_bulk_update_explicit_run_from_other_suite_rejected(
+    mock_resolve_suite, db_session_mock, disposition_perms
+):
+    from testgen.mcp.tools.test_results import bulk_update_test_results
+
+    suite = MagicMock(id=uuid4(), test_suite="suite_a")
+    mock_resolve_suite.return_value = suite
+
+    with patch(
+        "testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+        return_value=MagicMock(test_suite_id=uuid4()),  # different suite
+    ):
+        with pytest.raises(MCPResourceNotAccessible, match=r"Test run .* not found or not accessible"):
+            bulk_update_test_results(
+                test_suite_id=str(uuid4()), disposition="Confirmed", job_execution_id=str(uuid4())
+            )

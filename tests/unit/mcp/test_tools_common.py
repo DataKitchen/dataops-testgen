@@ -772,3 +772,65 @@ def test_parse_sql_flavor_invalid_lists_display_values():
     msg = str(exc.value)
     for member in SqlFlavorLabel:
         assert member.value in msg
+
+
+# --- parse_test_result_disposition ---
+
+
+@pytest.mark.parametrize(
+    "user_label,expected",
+    [
+        ("Confirmed", Disposition.CONFIRMED),
+        ("Dismissed", Disposition.DISMISSED),
+        ("Muted", Disposition.INACTIVE),
+        ("No Decision", None),
+    ],
+)
+def test_parse_test_result_disposition_user_labels(user_label, expected):
+    from testgen.mcp.tools.common import parse_test_result_disposition
+
+    assert parse_test_result_disposition(user_label) is expected
+
+
+def test_parse_test_result_disposition_rejects_unknown_and_lists_accepted():
+    from testgen.mcp.tools.common import parse_test_result_disposition
+
+    with pytest.raises(MCPUserError) as exc:
+        parse_test_result_disposition("Inactive")  # DB value, not user-facing
+    msg = str(exc.value)
+    for label in ("Confirmed", "Dismissed", "Muted", "No Decision"):
+        assert label in msg
+
+
+# --- resolve_test_result ---
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_result_happy_path(mock_session, mock_perms, db_session_mock):
+    from testgen.mcp.tools.common import resolve_test_result
+
+    result = MagicMock()
+    mock_session.return_value.scalars.return_value.first.return_value = result
+    mock_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    assert resolve_test_result(str(uuid4())) is result
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_result_missing_or_inaccessible(mock_session, mock_perms, db_session_mock):
+    from testgen.mcp.tools.common import resolve_test_result
+
+    mock_session.return_value.scalars.return_value.first.return_value = None
+    mock_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Test result .* not found or not accessible"):
+        resolve_test_result(str(uuid4()))
+
+
+def test_resolve_test_result_invalid_uuid():
+    from testgen.mcp.tools.common import resolve_test_result
+
+    with pytest.raises(MCPUserError, match="Invalid test_result_id"):
+        resolve_test_result("not-a-uuid")

@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import select
+
 from testgen.common.enums import JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -8,6 +10,10 @@ from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import BucketInterval, TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.test_result_disposition_service import (
+    DispositionUpdate,
+    set_test_results_disposition,
+)
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -18,8 +24,11 @@ from testgen.mcp.tools.common import (
     parse_failure_group_by,
     parse_result_status,
     parse_since_arg,
+    parse_test_result_disposition,
     parse_uuid,
     resolve_aggregate_scope,
+    resolve_test_result,
+    resolve_test_suite,
     resolve_test_type,
     validate_limit,
     validate_page,
@@ -134,6 +143,7 @@ def list_test_results(
             doc.heading(2, f"[{status_str}] {test_name} on `{r.column_names}` in `{r.table_name}`")
         else:
             doc.heading(2, f"[{status_str}] {test_name} on `{r.table_name}`")
+        doc.field("Test result", r.id, code=True)
         doc.field("Test definition", r.test_definition_id, code=True)
         if r.column_names:
             doc.field("Column", r.column_names, code=True)
@@ -635,4 +645,117 @@ def compare_test_runs(
     _section("New Tests", diff.new_tests)
     _section("Removed Tests", diff.removed_tests)
 
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("disposition")
+def update_test_result(test_result_id: str, disposition: str) -> str:
+    """Set the disposition on a single test result (confirm, dismiss, mute, or clear).
+
+    Args:
+        test_result_id: UUID of the test result, e.g. from ``list_test_results``.
+        disposition: New disposition. One of 'Confirmed', 'Dismissed', 'Muted',
+            'No Decision' (clears it). 'Muted' deactivates the parent test and locks
+            it against auto-regeneration; any other value reactivates and unlocks it.
+    """
+    result = resolve_test_result(test_result_id)
+    db_disposition = parse_test_result_disposition(disposition)
+
+    update: DispositionUpdate = set_test_results_disposition([result.id], db_disposition)
+
+    doc = MdDoc()
+    if update.matched == 0:
+        doc.text(
+            f"Test result {MdDoc.code(test_result_id)} was not dispositioned — disposition does "
+            f"not apply to passed results. No change made."
+        )
+        return doc.render()
+
+    doc.text(f"Updated test result {MdDoc.code(test_result_id)} disposition to **{disposition}**.")
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("disposition")
+def bulk_update_test_results(
+    test_suite_id: str,
+    disposition: str,
+    job_execution_id: str | None = None,
+    table_name: str | None = None,
+    test_type: str | None = None,
+    status: str | None = None,
+    test_definition_id: str | None = None,
+) -> str:
+    """Set the disposition on every matching test result in a suite (confirm, dismiss, mute, clear).
+
+    Args:
+        test_suite_id: UUID of the test suite, e.g. from ``list_test_suites``.
+        disposition: New disposition. One of 'Confirmed', 'Dismissed', 'Muted',
+            'No Decision' (clears it). 'Muted' deactivates the parent tests and locks
+            them against auto-regeneration; any other value reactivates and unlocks.
+        job_execution_id: UUID of a test run within the suite. Defaults to the suite's
+            latest completed run when omitted.
+        table_name: Optional table-name filter. Case-sensitive.
+        test_type: Optional test type name (e.g. 'Alpha Truncation').
+        status: Optional result-status filter (Passed, Failed, Warning, Error, Log).
+        test_definition_id: Optional single test-definition filter.
+    """
+    suite = resolve_test_suite(test_suite_id)
+    db_disposition = parse_test_result_disposition(disposition)
+
+    if job_execution_id:
+        run = TestRun.get_by_id_or_job(parse_uuid(job_execution_id, "job_execution_id"))
+        if run is None or run.test_suite_id != suite.id:
+            raise MCPResourceNotAccessible("Test run", job_execution_id)
+    else:
+        run = (
+            TestRun.get_by_id_or_job(suite.last_complete_test_run_id)
+            if suite.last_complete_test_run_id
+            else None
+        )
+        if run is None:
+            raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
+
+    clauses = [TestResult.test_suite_id == suite.id, TestResult.test_run_id == run.id]
+    if status:
+        clauses.append(TestResult.status == parse_result_status(status))
+    if table_name:
+        clauses.append(TestResult.table_name == table_name)
+    if test_type:
+        clauses.append(TestResult.test_type == resolve_test_type(test_type))
+    if test_definition_id:
+        clauses.append(TestResult.test_definition_id == parse_uuid(test_definition_id, "test_definition_id"))
+
+    result_ids = list(get_current_session().scalars(select(TestResult.id).where(*clauses)).all())
+    update = set_test_results_disposition(result_ids, db_disposition)
+
+    filters = []
+    if table_name:
+        filters.append(f"table_name=`{table_name}`")
+    if test_type:
+        filters.append(f"test_type=`{test_type}`")
+    if status:
+        filters.append(f"status=`{status}`")
+    if test_definition_id:
+        filters.append(f"test_definition_id=`{test_definition_id}`")
+    filter_str = ", ".join(filters) if filters else "no filter"
+
+    doc = MdDoc()
+    if update.matched == 0 and update.passed_skipped == 0:
+        doc.heading(1, "No test results matched")
+        doc.text(
+            f"No test results in suite `{suite.test_suite}` matched the filter ({filter_str}). Nothing changed."
+        )
+        return doc.render()
+
+    doc.heading(1, f"Updated {update.matched} test results in suite `{suite.test_suite}`")
+    doc.field("Disposition", disposition)
+    doc.field("Run", run.job_execution_id, code=True)
+    doc.field("Filter", filter_str)
+    if update.passed_skipped:
+        doc.text(
+            f"Left {update.passed_skipped} passed results unchanged — disposition is not "
+            f"applied to passed results."
+        )
     return doc.render()
