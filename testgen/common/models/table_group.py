@@ -48,6 +48,19 @@ class TableGroupStats(EntityMinimal):
 
 
 @dataclass
+class TableGroupListItem(EntityMinimal):
+    id: UUID
+    table_groups_name: str
+    table_group_schema: str
+    project_code: str
+    connection_name: str | None
+    table_count: int
+    last_profiled_date: datetime | None
+    last_tested_date: datetime | None
+    testing_score: float | None
+
+
+@dataclass
 class TableGroupSummary(EntityMinimal):
     id: UUID
     table_groups_name: str
@@ -383,6 +396,89 @@ class TableGroup(Entity):
         results = get_current_session().execute(text(query), params).mappings().all()
         items = [TableGroupSummary(**row) for row in results]
         total = items[0].total_count if items else 0
+        return items, total
+
+    @classmethod
+    def list_for_project(
+        cls, project_code: str, *, page: int = 1, limit: int = 20
+    ) -> tuple[list[TableGroupListItem], int]:
+        """Config-focused paginated listing for a project, with table count and activity timestamps."""
+        return cls._list_with_activity(
+            scope_sql="groups.project_code = :project_code",
+            scope_params={"project_code": project_code},
+            page=page,
+            limit=limit,
+        )
+
+    @classmethod
+    def list_for_connection(
+        cls, connection_id: int, *, page: int = 1, limit: int = 20
+    ) -> tuple[list[TableGroupListItem], int]:
+        """Config-focused paginated listing for a connection, with table count and activity timestamps."""
+        return cls._list_with_activity(
+            scope_sql="groups.connection_id = :connection_id",
+            scope_params={"connection_id": connection_id},
+            page=page,
+            limit=limit,
+        )
+
+    @classmethod
+    def _list_with_activity(
+        cls,
+        *,
+        scope_sql: str,
+        scope_params: dict,
+        page: int,
+        limit: int,
+    ) -> tuple[list[TableGroupListItem], int]:
+        params: dict = {**scope_params, "limit": limit, "offset": (page - 1) * limit}
+        query = f"""
+        WITH stats AS (
+            SELECT table_groups_id, COUNT(*) AS table_count
+            FROM data_table_chars
+            GROUP BY table_groups_id
+        ),
+        latest_profile AS (
+            SELECT pr.table_groups_id, MAX(je.started_at) AS started_at
+            FROM profiling_runs pr
+                LEFT JOIN job_executions je ON je.id = pr.job_execution_id
+            GROUP BY pr.table_groups_id
+        ),
+        latest_test AS (
+            SELECT ts.table_groups_id, MAX(tr.test_starttime) AS test_starttime
+            FROM test_runs tr
+                JOIN test_suites ts ON ts.id = tr.test_suite_id
+            WHERE ts.is_monitor IS NOT TRUE
+            GROUP BY ts.table_groups_id
+        )
+        SELECT
+            groups.id,
+            groups.table_groups_name,
+            groups.table_group_schema,
+            groups.project_code,
+            connections.connection_name,
+            COALESCE(stats.table_count, 0) AS table_count,
+            latest_profile.started_at AS last_profiled_date,
+            latest_test.test_starttime AS last_tested_date,
+            groups.dq_score_testing AS testing_score,
+            COUNT(*) OVER() AS total_count
+        FROM table_groups AS groups
+            LEFT JOIN connections ON connections.connection_id = groups.connection_id
+            LEFT JOIN stats ON stats.table_groups_id = groups.id
+            LEFT JOIN latest_profile ON latest_profile.table_groups_id = groups.id
+            LEFT JOIN latest_test ON latest_test.table_groups_id = groups.id
+        WHERE {scope_sql}
+        ORDER BY LOWER(groups.table_groups_name)
+        LIMIT :limit OFFSET :offset;
+        """
+        rows = get_current_session().execute(text(query), params).mappings().all()
+        if not rows:
+            return [], 0
+        total = int(rows[0]["total_count"])
+        items = [
+            TableGroupListItem(**{k: v for k, v in row.items() if k != "total_count"})
+            for row in rows
+        ]
         return items, total
 
     @classmethod

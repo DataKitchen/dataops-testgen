@@ -26,12 +26,113 @@ from testgen.mcp.tools.common import (
     apply_connection_params,
     connection_display_fields,
     connection_field_labels,
+    format_page_footer,
+    format_page_info,
     infer_mode,
     parse_sql_flavor,
     resolve_connection,
     validate_connection_fields,
+    validate_limit,
+    validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+
+
+@with_database_session
+@mcp_permission("view")
+def list_connections(project_code: str, page: int = 1, limit: int = 20) -> str:
+    """List database connections in a project with their database type and table-group counts.
+
+    Use this before changing or referencing a connection to confirm its ID, name, and host.
+    Credentials are never returned.
+
+    Args:
+        project_code: The project code to list connections for.
+        page: Page number starting at 1 (default 1).
+        limit: Page size (default 20, max 100).
+    """
+    validate_page(page)
+    validate_limit(limit, 100)
+
+    perms = get_project_permissions()
+    perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
+
+    rows, total = Connection.list_for_project(project_code, page=page, limit=limit)
+
+    if not rows:
+        if page > 1:
+            return f"No connections on page {page} (total: {total})."
+        return f"No connections found for project `{project_code}`."
+
+    doc = MdDoc()
+    doc.heading(1, f"Connections for `{project_code}`")
+    doc.text(format_page_info(total, page, limit))
+    table_rows: list[list[object]] = []
+    for row in rows:
+        label = SQL_FLAVOR_CODE_TO_LABEL.get(row.sql_flavor_code)
+        database_type = label.value if label else row.sql_flavor_code
+        table_rows.append(
+            [
+                row.connection_id,
+                row.connection_name,
+                database_type,
+                row.project_host,
+                row.project_db,
+                row.table_group_count,
+            ]
+        )
+    doc.table(
+        ["ID", "Name", "Type", "Host", "Database", "Table groups"],
+        table_rows,
+        code=[0, 3, 4],
+    )
+    if footer := format_page_footer(total, page, limit):
+        doc.text(footer)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def get_connection(connection_id: int) -> str:
+    """Get a connection's configuration, including database type, host, and authentication mode.
+
+    Credentials (password, private key, service-account key) are never returned.
+    Use this before editing a connection or creating a table group on it.
+
+    Args:
+        connection_id: Bigint connection ID returned by `list_connections` or shown on the connections page.
+    """
+    connection = resolve_connection(connection_id)
+
+    doc = MdDoc()
+    doc.heading(1, f"Connection `{connection.connection_name}`")
+    doc.field("ID", connection.connection_id, code=True)
+    doc.field("Project", connection.project_code, code=True)
+    label = SQL_FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code)
+    doc.field("Type", label.value if label else connection.sql_flavor_code)
+
+    if connection.project_host:
+        doc.field("Host", connection.project_host, code=True)
+    if connection.project_port:
+        doc.field("Port", connection.project_port)
+    if connection.project_db:
+        doc.field("Database", connection.project_db, code=True)
+    if connection.project_user:
+        doc.field("User", connection.project_user, code=True)
+    if connection.connect_by_url and connection.url:
+        doc.field("URL", connection.url, code=True)
+    if connection.warehouse:
+        doc.field("Warehouse", connection.warehouse, code=True)
+    if connection.http_path:
+        doc.field("HTTP Path", connection.http_path, code=True)
+    doc.field("Authentication", _authentication_label(connection))
+
+    if connection.max_threads is not None:
+        doc.field("Max Threads", connection.max_threads)
+    if connection.max_query_chars is not None:
+        doc.field("Max Expression Length", connection.max_query_chars)
+
+    return doc.render()
 
 
 @with_database_session

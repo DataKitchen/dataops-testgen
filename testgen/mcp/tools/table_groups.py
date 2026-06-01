@@ -18,9 +18,17 @@ from testgen.common.database.table_group_service import validate_table_group_fie
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
-from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.permissions import mcp_permission
-from testgen.mcp.tools.common import resolve_connection, resolve_table_group
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.tools.common import (
+    SQL_FLAVOR_CODE_TO_LABEL,
+    format_page_footer,
+    format_page_info,
+    resolve_connection,
+    resolve_table_group,
+    validate_limit,
+    validate_page,
+)
 from testgen.mcp.tools.markdown import MdDoc
 
 _DUPLICATE_NAME_MESSAGE = "A Table Group with the same name already exists."
@@ -28,6 +36,151 @@ _SCHEMA_LOCKED_MESSAGE = (
     "Schema cannot be changed once the table group has been used. "
     "Delete and recreate the table group to use a different schema."
 )
+
+
+@with_database_session
+@mcp_permission("view")
+def list_table_groups(
+    project_code: str | None = None,
+    connection_id: int | None = None,
+    page: int = 1,
+    limit: int = 20,
+) -> str:
+    """List table groups in a project or on a specific connection.
+
+    Pass exactly one of `project_code` or `connection_id`. Returns each group's
+    table count, last profile / test timestamps, and current Testing Score.
+
+    Args:
+        project_code: List groups in a project.
+        connection_id: List groups on a specific connection.
+        page: Page number starting at 1 (default 1).
+        limit: Page size (default 20, max 100).
+    """
+    if (project_code is None) == (connection_id is None):
+        raise MCPUserError("Pass either `project_code` or `connection_id`, not both.")
+    validate_page(page)
+    validate_limit(limit, 100)
+
+    perms = get_project_permissions()
+    if project_code is not None:
+        perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
+        rows, total = TableGroup.list_for_project(project_code, page=page, limit=limit)
+        heading = f"Table groups for project `{project_code}`"
+    else:
+        connection = resolve_connection(connection_id)
+        rows, total = TableGroup.list_for_connection(connection.connection_id, page=page, limit=limit)
+        heading = f"Table groups on connection `{connection.connection_name}` (`{connection.connection_id}`)"
+
+    if not rows:
+        if page > 1:
+            return f"No table groups on page {page} (total: {total})."
+        return f"{heading} — none found."
+
+    doc = MdDoc()
+    doc.heading(1, heading)
+    doc.text(format_page_info(total, page, limit))
+    table_rows: list[list[object]] = []
+    for row in rows:
+        score = f"{row.testing_score:.2f}" if row.testing_score is not None else None
+        table_rows.append(
+            [
+                str(row.id),
+                row.table_groups_name,
+                row.connection_name,
+                row.table_group_schema,
+                row.table_count,
+                row.last_profiled_date,
+                row.last_tested_date,
+                score,
+            ]
+        )
+    doc.table(
+        ["ID", "Name", "Connection", "Schema", "Tables", "Last profiled", "Last tested", "Testing Score"],
+        table_rows,
+        code=[0, 3],
+    )
+    if footer := format_page_footer(total, page, limit):
+        doc.text(footer)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def get_table_group(table_group_id: str) -> str:
+    """Get a table group's full configuration: filters, sampling, profiling flags, catalog tags, and recent activity.
+
+    Mirrors the field set of the table-group edit dialog so an LLM can introspect or modify
+    every setting available in the UI. Use this before editing a table group or generating tests.
+
+    Args:
+        table_group_id: The table group UUID, e.g. from `list_table_groups` or `get_data_inventory`.
+    """
+    table_group = resolve_table_group(table_group_id)
+    connection = Connection.get(table_group.connection_id) if table_group.connection_id else None
+
+    doc = MdDoc()
+    doc.heading(1, f"Table group `{table_group.table_groups_name}`")
+    doc.field("ID", str(table_group.id), code=True)
+    doc.field("Project", table_group.project_code, code=True)
+    if connection is not None:
+        label = SQL_FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code)
+        flavor_label = label.value if label else connection.sql_flavor_code
+        doc.field(
+            "Connection",
+            f"{connection.connection_name} (`{connection.connection_id}`, {flavor_label})",
+        )
+    doc.field("Schema", table_group.table_group_schema, code=True)
+    if table_group.description:
+        doc.field("Description", table_group.description)
+
+    doc.heading(2, "Criteria")
+    if table_group.profiling_table_set:
+        doc.field("Explicit table list", table_group.profiling_table_set, code=True)
+    if table_group.profiling_include_mask:
+        doc.field("Tables to include mask", table_group.profiling_include_mask, code=True)
+    if table_group.profiling_exclude_mask:
+        doc.field("Tables to exclude mask", table_group.profiling_exclude_mask, code=True)
+    doc.field("Profiling ID column mask", table_group.profile_id_column_mask, code=True)
+    doc.field("Profiling surrogate-key column mask", table_group.profile_sk_column_mask, code=True)
+
+    doc.heading(2, "Settings")
+    doc.field("Detect CDE during profiling", table_group.profile_flag_cdes)
+    doc.field("Detect PII during profiling", table_group.profile_flag_pii)
+    doc.field("Exclude XDE columns from profiling", table_group.profile_exclude_xde)
+    doc.field("Include in project dashboard", table_group.include_in_dashboard)
+    doc.field("Min profiling age (days)", table_group.profiling_delay_days)
+
+    doc.heading(2, "Sampling parameters")
+    doc.field("Use profile sampling", table_group.profile_use_sampling)
+    if table_group.profile_use_sampling:
+        doc.field("Sample percent", table_group.profile_sample_percent)
+        doc.field("Min sample record count", table_group.profile_sample_min_count)
+
+    catalog_fields: list[tuple[str, str | None]] = [
+        ("Data source", table_group.data_source),
+        ("Source system", table_group.source_system),
+        ("Source process", table_group.source_process),
+        ("Business domain", table_group.business_domain),
+        ("Transform level", table_group.transform_level),
+        ("Data location", table_group.data_location),
+        ("Stakeholder group", table_group.stakeholder_group),
+        ("Data product", table_group.data_product),
+    ]
+    if any(value for _, value in catalog_fields):
+        doc.heading(2, "Catalog tags")
+        for label, value in catalog_fields:
+            if value:
+                doc.field(label, value)
+
+    if table_group.dq_score_testing is not None or table_group.dq_score_profiling is not None:
+        doc.heading(2, "Latest activity")
+        if table_group.dq_score_testing is not None:
+            doc.field("Testing Score", f"{table_group.dq_score_testing:.2f}")
+        if table_group.dq_score_profiling is not None:
+            doc.field("Profiling Score", f"{table_group.dq_score_profiling:.2f}")
+
+    return doc.render()
 
 
 @with_database_session
