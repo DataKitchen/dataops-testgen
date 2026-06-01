@@ -727,22 +727,35 @@ def test_update_hygiene_issue_invalid_disposition(db_session_mock, disposition_p
         update_hygiene_issue(issue_id=str(uuid4()), disposition="Bogus")
 
 
-@patch.object(HygieneIssue, "update_disposition")
-def test_update_hygiene_issue_muted_maps_to_inactive(mock_update, db_session_mock, disposition_perms):
+@patch("testgen.mcp.tools.hygiene_issues.resolve_hygiene_issue")
+def test_update_hygiene_issue_muted_maps_to_inactive(mock_resolve, db_session_mock, disposition_perms):
     from testgen.mcp.tools.hygiene_issues import update_hygiene_issue
 
-    mock_update.return_value = True
+    issue = MagicMock()
+    mock_resolve.return_value = issue
     update_hygiene_issue(issue_id=str(uuid4()), disposition="Muted")
 
-    args = mock_update.call_args.args
-    assert args[1] == Disposition.INACTIVE
+    assert issue.disposition == Disposition.INACTIVE
 
 
-@patch.object(HygieneIssue, "update_disposition")
-def test_update_hygiene_issue_returns_success_markdown(mock_update, db_session_mock, disposition_perms):
+@patch("testgen.mcp.tools.hygiene_issues.resolve_hygiene_issue")
+def test_update_hygiene_issue_sets_disposition_on_resolved_issue(
+    mock_resolve, db_session_mock, disposition_perms,
+):
     from testgen.mcp.tools.hygiene_issues import update_hygiene_issue
 
-    mock_update.return_value = True
+    issue = MagicMock()
+    mock_resolve.return_value = issue
+    update_hygiene_issue(issue_id=str(uuid4()), disposition="Dismissed")
+
+    assert issue.disposition == Disposition.DISMISSED
+
+
+@patch("testgen.mcp.tools.hygiene_issues.resolve_hygiene_issue")
+def test_update_hygiene_issue_returns_success_markdown(mock_resolve, db_session_mock, disposition_perms):
+    from testgen.mcp.tools.hygiene_issues import update_hygiene_issue
+
+    mock_resolve.return_value = MagicMock()
     issue_id = str(uuid4())
     result = update_hygiene_issue(issue_id=issue_id, disposition="Dismissed")
 
@@ -751,30 +764,30 @@ def test_update_hygiene_issue_returns_success_markdown(mock_update, db_session_m
     assert "Dismissed" in result
 
 
-@patch.object(HygieneIssue, "update_disposition")
-def test_update_hygiene_issue_not_updated_collapses_to_not_accessible(
-    mock_update, db_session_mock, disposition_perms,
+@patch("testgen.mcp.tools.hygiene_issues.resolve_hygiene_issue")
+def test_update_hygiene_issue_not_accessible_propagates(
+    mock_resolve, db_session_mock, disposition_perms,
 ):
     from testgen.mcp.tools.hygiene_issues import update_hygiene_issue
 
-    mock_update.return_value = False
+    mock_resolve.side_effect = MCPResourceNotAccessible("Hygiene issue", "x")
     with pytest.raises(MCPResourceNotAccessible):
         update_hygiene_issue(issue_id=str(uuid4()), disposition="Confirmed")
 
 
-@patch.object(HygieneIssue, "update_disposition")
-def test_update_hygiene_issue_passes_project_scope_clause(
-    mock_update, db_session_mock, disposition_perms,
+@patch("testgen.mcp.tools.hygiene_issues.resolve_hygiene_issue")
+def test_update_hygiene_issue_delegates_scope_to_resolver(
+    mock_resolve, db_session_mock, disposition_perms,
 ):
+    """Project scoping lives in resolve_hygiene_issue (covered in test_tools_common);
+    the tool must route the issue id through it."""
     from testgen.mcp.tools.hygiene_issues import update_hygiene_issue
 
-    mock_update.return_value = True
-    update_hygiene_issue(issue_id=str(uuid4()), disposition="Confirmed")
+    mock_resolve.return_value = MagicMock()
+    issue_id = str(uuid4())
+    update_hygiene_issue(issue_id=issue_id, disposition="Confirmed")
 
-    # Trailing args after (issue_uuid, db_disposition) are the *clauses
-    clauses = mock_update.call_args.args[2:]
-    sql = "\n".join(str(c.compile(dialect=postgresql.dialect())) for c in clauses)
-    assert "profile_anomaly_results.project_code IN" in sql
+    mock_resolve.assert_called_once_with(issue_id)
 
 
 def test_update_hygiene_issue_uses_disposition_permission():
