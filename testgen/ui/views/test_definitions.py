@@ -1,4 +1,3 @@
-import json
 import logging
 import typing
 from datetime import UTC, datetime
@@ -45,7 +44,7 @@ from testgen.ui.services.query_cache import (
     select_test_suites_minimal_where,
 )
 from testgen.ui.session import session
-from testgen.utils import make_json_safe, to_dataframe
+from testgen.utils import dataframe_to_json_records, make_json_safe, to_dataframe
 
 LOG = logging.getLogger("testgen")
 
@@ -275,7 +274,7 @@ class TestDefinitionsPage(Page):
             # Fetch fresh row from the current data
             row_df = df[df["id"] == test_def_id]
             if not row_df.empty:
-                test_def = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+                test_def = dataframe_to_json_records(row_df)[0]
                 st.session_state[TD_EDIT_DIALOG_KEY] = test_def
 
         def on_delete_dialog_opened(selected: list) -> None:
@@ -616,7 +615,7 @@ class TestDefinitionsPage(Page):
                     "test_suite": test_suite.test_suite,
                     "project_code": project_code,
                 },
-                "test_definitions": json.loads(df.to_json(orient="records", date_unit="s")),
+                "test_definitions": dataframe_to_json_records(df),
                 "filter_options": {
                     "tables": table_options,
                     "columns": columns_raw,
