@@ -62,7 +62,7 @@ def parse_since(since: str, *, today: date | None = None) -> date:
 
 def parse_fuzzy_date(value: str | int) -> datetime | None:
     if type(value) == str:
-        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+        return datetime.fromisoformat(value)
     elif type(value) == int or type(value) == float:
         ts = int(value)
         if ts >= 1e11:

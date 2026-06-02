@@ -4,10 +4,12 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID
 
+import pandas as pd
 import pytest
 
 from testgen.utils import (
     chunk_queries,
+    dataframe_to_json_records,
     friendly_score,
     friendly_score_impact,
     get_exception_message,
@@ -124,6 +126,16 @@ def test_make_json_safe_datetime():
     assert make_json_safe(dt) == int(dt.timestamp())
 
 
+def test_make_json_safe_nat():
+    assert make_json_safe(pd.NaT) is None
+
+
+@pytest.mark.parametrize("dt", [datetime(1, 1, 1), datetime(9999, 12, 31)])
+def test_make_json_safe_out_of_nanosecond_range_datetime(dt):
+    # Datetimes outside pandas' nanosecond Timestamp range (1677..2262) must still serialize.
+    assert make_json_safe(dt) == int(dt.replace(tzinfo=UTC).timestamp())
+
+
 def test_make_json_safe_decimal():
     assert make_json_safe(Decimal("3.14")) == 3.14
 
@@ -150,6 +162,26 @@ def test_make_json_safe_passthrough():
     assert make_json_safe("hello") == "hello"
     assert make_json_safe(42) == 42
     assert make_json_safe(None) is None
+
+
+# --- dataframe_to_json_records ---
+
+def test_dataframe_to_json_records_empty():
+    assert dataframe_to_json_records(pd.DataFrame()) == []
+
+
+def test_dataframe_to_json_records_handles_out_of_range_dates_and_nulls():
+    # Rows mixing out-of-nanosecond-range datetimes with NaT/NaN must serialize without overflow.
+    df = pd.DataFrame([
+        {"id": "1", "min_date": datetime(1, 1, 1), "max_date": datetime(9999, 12, 31), "frac": 1.5},
+        {"id": "2", "min_date": datetime(2020, 6, 1), "max_date": pd.NaT, "frac": None},
+    ])
+    records = dataframe_to_json_records(df)
+
+    assert records[0]["min_date"] == int(datetime(1, 1, 1, tzinfo=UTC).timestamp())
+    assert records[0]["max_date"] == int(datetime(9999, 12, 31, tzinfo=UTC).timestamp())
+    assert records[1]["max_date"] is None
+    assert records[1]["frac"] is None
 
 
 # --- chunk_queries ---

@@ -260,7 +260,7 @@ class HygieneIssuesPage(Page):
             anomaly_df = profiling_queries.get_profiling_anomalies_by_ids([row_id])
             if anomaly_df.empty:
                 return
-            row = make_json_safe(anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")[0])
+            row = anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")[0]
 
             MixpanelService().send_event(
                 "view-source-data",
@@ -335,10 +335,7 @@ class HygieneIssuesPage(Page):
             anomaly_df = profiling_queries.get_profiling_anomalies_by_ids(ids)
             if anomaly_df.empty:
                 return
-            selected_items = [
-                make_json_safe(record)
-                for record in anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")
-            ]
+            selected_items = anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")
 
             MixpanelService().send_event(
                 "download-issue-report",

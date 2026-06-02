@@ -28,7 +28,7 @@ from testgen.ui.navigation.router import Router
 from testgen.ui.services.query_cache import get_profiling_run_minimal
 from testgen.ui.session import session
 from testgen.ui.views.data_catalog import get_preview_data
-from testgen.utils import make_json_safe
+from testgen.utils import dataframe_to_json_records, make_json_safe
 
 PAGE_SIZE = 500
 
@@ -163,15 +163,14 @@ class ProfilingResultsPage(Page):
             pii_columns = get_pii_columns(str(run.table_groups_id))
             mask_profiling_pii(df, pii_columns)
 
-        # Use pandas JSON serialization to safely handle NaN/NaT -> null, timestamps -> epoch seconds
-        items = json.loads(df.to_json(orient="records", date_unit="s"))
+        items = dataframe_to_json_records(df)
 
         selected_item = st.session_state.get(SELECTED_ITEM_KEY)
         # Load selected item if URL has a selection but session cache is missing or stale
         if selected and (selected_item is None or selected_item.get("id") != selected):
             row_df = df[df["id"] == selected]
             if not row_df.empty:
-                row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+                row = dataframe_to_json_records(row_df)[0]
                 row["hygiene_issues"] = profiling_queries.get_hygiene_issues(
                     run_id, row["table_name"], row.get("column_name")
                 )
@@ -189,7 +188,7 @@ class ProfilingResultsPage(Page):
             row_df = df[df["id"] == item_id]
             if row_df.empty:
                 return
-            row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+            row = dataframe_to_json_records(row_df)[0]
             row["hygiene_issues"] = profiling_queries.get_hygiene_issues(
                 run_id, row["table_name"], row.get("column_name")
             )

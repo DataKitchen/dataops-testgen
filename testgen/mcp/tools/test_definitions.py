@@ -35,7 +35,7 @@ from testgen.mcp.tools.common import (
 )
 from testgen.mcp.tools.markdown import MdDoc
 
-_DOC_GROUP = DocGroup.DISCOVER
+_DOC_GROUP = DocGroup.INVESTIGATE
 
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
 

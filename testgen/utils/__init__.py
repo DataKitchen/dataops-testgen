@@ -101,6 +101,8 @@ def make_json_safe(value: Any) -> str | bool | int | float | None:
     elif isinstance(value, UUID):
         return str(value)
     elif isinstance(value, datetime):
+        if value != value:  # NaT (and other nan-like datetimes) are never equal to themselves
+            return None
         return int(value.replace(tzinfo=UTC).timestamp())
     elif isinstance(value, date):
         return value.isoformat()
@@ -113,6 +115,17 @@ def make_json_safe(value: Any) -> str | bool | int | float | None:
     elif isinstance(value, dict):
         return { key: make_json_safe(value) for key, value in value.items() }
     return value
+
+
+def dataframe_to_json_records(df: pd.DataFrame) -> list[dict]:
+    """Convert a DataFrame to JSON-safe records, one dict per row.
+
+    Routes every cell through make_json_safe rather than DataFrame.to_json. to_json forces datetime values
+    through pandas' nanosecond Timestamp, which raises OverflowError on dates outside 1677-09-21..2262-04-11
+    (e.g. the year-9999 / year-1 sentinel dates that SQL Server date/datetime2 columns commonly carry).
+    make_json_safe handles native datetimes via timedelta arithmetic, so any in-range datetime is unaffected.
+    """
+    return [{key: make_json_safe(value) for key, value in record.items()} for record in df.to_dict(orient="records")]
 
 
 def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -> list[str]:

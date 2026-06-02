@@ -201,16 +201,16 @@ const ProjectSettings = (props) => {
                 content: div(
                     { class: 'flex-column fx-gap-3' },
                     Checkbox({
-                        label: 'Enable data retention',
+                        label: 'Automatically delete old profiling and test history',
                         checked: form.data_retention_enabled,
-                        help: 'Automatically delete old profiling and test run data to keep your database lean. The most recent run in each suite or table group is always preserved.',
+                        help: 'Old profiling and test runs are permanently deleted to keep the database from growing without bound. The most recent run in each test suite and table group is always kept.',
                         onChange: (checked) => { form.data_retention_enabled.val = checked; },
                     }),
                     () => form.data_retention_enabled.val
                         ? div(
                             { class: 'flex-column fx-gap-3' },
                             Input({
-                                label: 'Retention period (days)',
+                                label: 'Delete history older than (days)',
                                 value: form.data_retention_days,
                                 type: 'number',
                                 step: 1,

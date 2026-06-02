@@ -1,4 +1,3 @@
-import json
 import typing
 from io import BytesIO
 from itertools import zip_longest
@@ -43,7 +42,7 @@ from testgen.ui.services.query_cache import (
 )
 from testgen.ui.services.string_service import snake_case_to_title_case
 from testgen.ui.session import session
-from testgen.utils import friendly_score, make_json_safe
+from testgen.utils import dataframe_to_json_records, friendly_score, make_json_safe
 
 PAGE_PATH = "test-runs:results"
 PAGE_SIZE = 500
@@ -224,7 +223,7 @@ class TestResultsPage(Page):
 
             test_suite = get_test_suite_minimal(run.test_suite_id)
 
-        items = json.loads(df.to_json(orient="records", date_unit="s"))
+        items = dataframe_to_json_records(df)
         summary = get_test_result_summary(run_id)
         score = friendly_score(run.dq_score_test_run) or "--"
 
@@ -233,7 +232,7 @@ class TestResultsPage(Page):
         if selected and (selected_item is None or selected_item.get("test_result_id") != selected):
             row_df = df[df["test_result_id"] == selected]
             if not row_df.empty:
-                row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+                row = dataframe_to_json_records(row_df)[0]
                 selected_item = build_selected_item_data(row, test_suite)
                 st.session_state[SELECTED_ITEM_KEY] = selected_item
         elif not selected:
@@ -255,7 +254,7 @@ class TestResultsPage(Page):
             row_df = df[df["test_result_id"] == item_id]
             if row_df.empty:
                 return
-            row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+            row = dataframe_to_json_records(row_df)[0]
             item_data = build_selected_item_data(row, test_suite)
             st.session_state[SELECTED_ITEM_KEY] = item_data
             Router().set_query_params({"selected": item_id})
@@ -370,7 +369,7 @@ class TestResultsPage(Page):
         def on_source_data_clicked(item_id: str) -> None:
             result_df = test_result_queries.get_test_results_by_ids([item_id])
             if not result_df.empty:
-                row = json.loads(result_df.to_json(orient="records", date_unit="s"))[0]
+                row = result_df.where(result_df.notna(), None).to_dict(orient="records")[0]
                 MixpanelService().send_event("view-source-data", page=PAGE_PATH, test_type=row.get("test_name_short"))
                 mask_pii = not session.auth.user_has_permission("view_pii")
                 st.session_state[SOURCE_DATA_KEY] = _build_source_data(row, mask_pii=mask_pii)
@@ -440,7 +439,7 @@ class TestResultsPage(Page):
             result_df = test_result_queries.get_test_results_by_ids(ids)
             if result_df.empty:
                 return
-            rows = json.loads(result_df.to_json(orient="records", date_unit="s"))
+            rows = result_df.where(result_df.notna(), None).to_dict(orient="records")
             MixpanelService().send_event("download-issue-report", page=PAGE_PATH, issue_count=len(rows))
             st.session_state[ISSUE_REPORT_KEY] = rows
 
@@ -660,7 +659,7 @@ def build_selected_item_data(row: dict, test_suite: TestSuiteMinimal) -> dict:
     dfh = test_result_queries.get_test_result_history(row)
     time_columns = ["test_date"]
     date_service.accommodate_dataframe_to_timezone(dfh, st.session_state, time_columns)
-    history = json.loads(dfh.to_json(orient="records", date_unit="s"))
+    history = dataframe_to_json_records(dfh)
 
     test_definition = _build_test_definition_data(row.get("test_definition_id"), test_suite)
 

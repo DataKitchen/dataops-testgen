@@ -39,6 +39,16 @@ class Test_parse_fuzzy_date:
         result = parse_fuzzy_date("2024-03-15 10:30:45")
         assert result == datetime(2024, 3, 15, 10, 30, 45)
 
+    def test_parses_string_date_with_microseconds(self):
+        # DB timestamp strings carry fractional seconds; the source-data lookups
+        # (PROFILE_RUN_DATE / TEST_DATE) feed these through parse_fuzzy_date.
+        result = parse_fuzzy_date("2026-06-02 06:54:30.105548")
+        assert result == datetime(2026, 6, 2, 6, 54, 30, 105548)
+
+    def test_parses_iso_t_separator(self):
+        result = parse_fuzzy_date("2026-06-02T06:54:30")
+        assert result == datetime(2026, 6, 2, 6, 54, 30)
+
     def test_parses_unix_timestamp_seconds(self):
         result = parse_fuzzy_date(1710500000)
         assert isinstance(result, datetime)

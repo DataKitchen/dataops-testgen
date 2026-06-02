@@ -127,7 +127,11 @@ def build_hygiene_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str | N
         "TABLE_NAME": issue_data["table_name"],
         "COLUMN_NAME": issue_data["column_name"],
         "DETAIL_EXPRESSION": issue_data["detail"],
-        "PROFILE_RUN_DATE": issue_data["profiling_starttime"],
+        # Date-only string: Oracle/HANA templates use TO_DATE(..., 'YYYY-MM-DD'), which rejects a time
+        # component, and the anomaly criteria boundary is date-based (CURRENT_DATE + INTERVAL '30 year').
+        "PROFILE_RUN_DATE": parsed_run_date.strftime("%Y-%m-%d")
+        if (parsed_run_date := parse_fuzzy_date(issue_data["profiling_starttime"]))
+        else None,
         "LIMIT": limit,
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
