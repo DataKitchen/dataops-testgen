@@ -59,7 +59,7 @@ def build_summary_table(document, tr_data):
             *[
                 (cmd[0], *coords, *cmd[1:])
                 for coords in (
-                    ((3, 3), (3, -3)),
+                    ((3, 3), (3, -4)),
                     ((0, 0), (0, -2))
                 )
                 for cmd in (
