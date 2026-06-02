@@ -83,10 +83,11 @@ def build_summary_table(document, tr_data):
             ("SPAN", (1, 6), (2, 6)),
             ("SPAN", (4, 6), (5, 6)),
             ("SPAN", (1, 7), (5, 7)),
-            ("SPAN", (0, 8), (5, 8)),
+            ("SPAN", (1, 8), (5, 8)),
+            ("SPAN", (0, 9), (5, 9)),
 
             # Link cell
-            ("BACKGROUND", (0, 8), (5, 8), colors.white),
+            ("BACKGROUND", (0, 9), (5, 9), colors.white),
 
             # Measure cell
             ("FONT", (1, 1), (1, 1), "Helvetica-Bold"),
