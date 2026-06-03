@@ -29,6 +29,7 @@ from testgen.mcp.tools.common import (
     parse_score_group_by,
     parse_score_type,
     parse_uuid,
+    resolve_hygiene_issue,
     resolve_issue_type,
     resolve_profiling_run,
     resolve_test_note,
@@ -377,6 +378,35 @@ def test_resolve_test_note_missing_or_inaccessible(mock_get_session, mock_get_pe
 def test_resolve_test_note_invalid_uuid():
     with pytest.raises(MCPUserError, match="Invalid test_note_id"):
         resolve_test_note("not-a-uuid")
+
+
+# --- resolve_hygiene_issue ---
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.HygieneIssue")
+def test_resolve_hygiene_issue_happy_path(mock_hi_cls, mock_get_perms, db_session_mock):
+    issue = MagicMock()
+    mock_hi_cls.get.return_value = issue
+    mock_get_perms.return_value = _mock_perms()
+
+    assert resolve_hygiene_issue(str(uuid4())) is issue
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.HygieneIssue")
+def test_resolve_hygiene_issue_missing_or_inaccessible(mock_hi_cls, mock_get_perms, db_session_mock):
+    """Missing issue and forbidden-project issue both collapse to one error (project scoped in the query)."""
+    mock_hi_cls.get.return_value = None
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Hygiene issue .* not found or not accessible"):
+        resolve_hygiene_issue(str(uuid4()))
+
+
+def test_resolve_hygiene_issue_invalid_uuid():
+    with pytest.raises(MCPUserError, match="Invalid issue_id"):
+        resolve_hygiene_issue("not-a-uuid")
 
 
 # --- parse_pii_category ---

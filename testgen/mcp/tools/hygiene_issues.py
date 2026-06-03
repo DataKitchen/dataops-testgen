@@ -25,6 +25,7 @@ from testgen.mcp.tools.common import (
     parse_quality_dimension,
     parse_since_arg,
     parse_uuid,
+    resolve_hygiene_issue,
     resolve_issue_type,
     resolve_table_group,
     validate_limit,
@@ -211,17 +212,9 @@ def update_hygiene_issue(*, issue_id: str, disposition: str) -> str:
         issue_id: UUID of the hygiene issue.
         disposition: New disposition. Valid values: 'Confirmed', 'Dismissed', 'Muted'.
     """
-    issue_uuid = parse_uuid(issue_id, "issue_id")
     db_disposition = parse_disposition(disposition)
-    perms = get_project_permissions()
-
-    updated = HygieneIssue.update_disposition(
-        issue_uuid,
-        db_disposition,
-        HygieneIssue.project_code.in_(perms.allowed_codes),
-    )
-    if not updated:
-        raise MCPResourceNotAccessible("Hygiene issue", issue_id)
+    issue = resolve_hygiene_issue(issue_id)
+    issue.disposition = db_disposition
 
     doc = MdDoc()
     doc.text(f"Updated hygiene issue {MdDoc.code(issue_id)} disposition to **{disposition}**.")

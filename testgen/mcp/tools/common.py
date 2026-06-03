@@ -17,7 +17,7 @@ from testgen.common.models.data_column import (
     ProfileMetric,
     SuggestedDataType,
 )
-from testgen.common.models.hygiene_issue import HygieneIssueType
+from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
 from testgen.common.models.notification_settings import (
     MonitorNotificationTrigger,
     NotificationEvent,
@@ -522,6 +522,16 @@ def resolve_table_group(table_group_id: str) -> TableGroup:
     if tg is None:
         raise MCPResourceNotAccessible("Table group", table_group_id)
     return tg
+
+
+def resolve_hygiene_issue(issue_id: str) -> HygieneIssue:
+    """Resolve a hygiene issue ID, collapsing missing-or-inaccessible into one error path."""
+    issue_uuid = parse_uuid(issue_id, "issue_id")
+    perms = get_project_permissions()
+    issue = HygieneIssue.get(issue_uuid, HygieneIssue.project_code.in_(perms.allowed_codes))
+    if issue is None:
+        raise MCPResourceNotAccessible("Hygiene issue", issue_id)
+    return issue
 
 
 def resolve_test_suite(test_suite_id: str) -> TestSuite:
