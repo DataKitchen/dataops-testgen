@@ -46,6 +46,10 @@ const ProjectSettings = (props) => {
     // newly-stored values and these derives recompute, letting
     // `showRetentionConfirmation` settle back to a clean state.
     const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const persistedName = van.derive(() => props.name.val ?? '');
+    const persistedUseWeights = van.derive(() => props.use_dq_score_weights.val ?? true);
+    const persistedObsUrl = van.derive(() => props.observability_api_url.val ?? '');
+    const persistedObsKey = van.derive(() => props.observability_api_key.val ?? '');
     const persistedRetentionEnabled = van.derive(() => props.data_retention_enabled.val ?? false);
     const persistedRetentionDays = van.derive(() => props.data_retention_days.val ?? 180);
     const persistedRetentionCron = van.derive(() => props.retention_cron_expr.val ?? '0 1 * * *');
@@ -66,10 +70,30 @@ const ProjectSettings = (props) => {
         observability_api_url: van.state(true),
         data_retention_days: van.state(Number.isFinite(form.data_retention_days.rawVal)),
     };
+    // Retention is unchanged when the enabled flag matches the persisted value and,
+    // while enabled, the days/cron/tz also match. When retention is off, days/cron/tz
+    // are hidden and the backend clears them, so they don't count as unsaved changes —
+    // only the enabled flag matters.
+    const retentionUnchanged = van.derive(() => {
+        if (form.data_retention_enabled.val !== persistedRetentionEnabled.val) return false;
+        if (!form.data_retention_enabled.val) return true;
+        return form.data_retention_days.val === persistedRetentionDays.val
+            && form.retention_cron_expr.val === persistedRetentionCron.val
+            && form.retention_cron_tz.val === persistedRetentionTz.val;
+    });
+    // No unsaved changes when every field matches its persisted value. Because the
+    // persisted derives are reactive, this settles back to `true` after a Save once
+    // the props update with the stored values, disabling the button again.
+    const noChanges = van.derive(() => form.name.val === persistedName.val
+        && form.use_dq_score_weights.val === persistedUseWeights.val
+        && form.observability_api_url.val === persistedObsUrl.val
+        && form.observability_api_key.val === persistedObsKey.val
+        && retentionUnchanged.val);
     const saveDisabled = van.derive(() => !formValidity.name.val
         || !formValidity.observability_api_url.val
         || !formValidity.observability_api_key.val
-        || (form.data_retention_enabled.val && !formValidity.data_retention_days.val));
+        || (form.data_retention_enabled.val && !formValidity.data_retention_days.val)
+        || noChanges.val);
     const testObservabilityDisabled = van.derive(() => form.observability_api_url.val.length <= 0 || form.observability_api_key.val.length <= 0);
     const retentionCronEditorValue = van.derive(() => {
         if (form.retention_cron_expr.val && form.retention_cron_tz.val && form.data_retention_enabled.val) {
@@ -284,7 +308,7 @@ const ProjectSettings = (props) => {
             }),
         ),
         div(
-            { class: 'flex-row fx-justify-content-flex-end' },
+            { class: 'flex-row fx-justify-content-flex-end', style: 'max-width: 700px;' },
             Button({
                 type: 'stroked',
                 color: 'primary',
