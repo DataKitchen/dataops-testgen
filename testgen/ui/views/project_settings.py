@@ -153,6 +153,8 @@ class ProjectSettingsPage(Page):
         self.project.data_retention_enabled = retention_enabled
         self.project.data_retention_days = retention_days if retention_enabled else None
         self.project.save()
+        get_project.clear()
+        select_projects_where.clear()
 
         if retention_enabled:
             JobSchedule.upsert_for_retention(
@@ -172,6 +174,8 @@ class ProjectSettingsPage(Page):
                 project_code=project_code,
             )
             st.toast("Scores will be recalculated in the background.")
+
+        st.toast("Project settings saved", icon=":material/task_alt:")
 
     def test_observability_connection(self, project_code: str, edited_project: dict) -> "ObservabilityConnectionStatus":
         try:
