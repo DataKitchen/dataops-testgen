@@ -13,8 +13,9 @@ RUN_SCHEDULES_DIALOG_OPEN_COUNT_KEY = "pr:run_schedules_dialog_open_count"
 RUN_NOTIFICATIONS_DIALOG_OPEN_COUNT_KEY = "pr:run_notifications_dialog_open_count"
 
 import testgen.ui.services.form_service as fm
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session, with_database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     ProfilingRunNotificationSettings,
     ProfilingRunNotificationTrigger,
@@ -26,7 +27,13 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
+from testgen.ui.services.query_cache import (
+    get_profiling_run_summaries,
+    get_project_summary,
+    get_table_group_stats,
+    select_profiling_runs_where,
+    select_table_groups_minimal_where,
+)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
@@ -61,7 +68,7 @@ class DataProfilingPage(Page):
         with st.spinner("Loading data ..."):
             project_summary = get_project_summary(project_code)
             profiling_runs, total_count = get_profiling_run_summaries(project_code, table_group_id, page=page)
-            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+            table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
 
         schedule_obj = ProfilingScheduleDialog(project_code)
         ns_obj = ProfilingRunNotificationSettingsDialog(
@@ -114,7 +121,7 @@ class DataProfilingPage(Page):
                     JobExecution.submit(
                         job_key="run-profile",
                         kwargs={"table_group_id": str(table_group["id"])},
-                        source="ui",
+                        source=JobSource.ui,
                         project_code=project_code,
                     )
             except Exception as error:
@@ -224,7 +231,7 @@ class ProfilingScheduleDialog(ScheduleDialog):
     table_groups: Iterable[TableGroupMinimal] | None = None
 
     def init(self) -> None:
-        self.table_groups = TableGroup.select_minimal_where(TableGroup.project_code == self.project_code)
+        self.table_groups = select_table_groups_minimal_where(TableGroup.project_code == self.project_code)
 
     def get_arg_value(self, job):
         return next(item.table_groups_name for item in self.table_groups if str(item.id) == job.kwargs["table_group_id"])
@@ -235,8 +242,8 @@ class ProfilingScheduleDialog(ScheduleDialog):
             for table_group in self.table_groups
         ]
 
-    def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
-        return [], {"table_group_id": str(arg_value)}
+    def get_job_arguments(self, arg_value: str) -> dict[str, typing.Any]:
+        return {"table_group_id": str(arg_value)}
 
 
 class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
@@ -258,7 +265,7 @@ class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
     def _get_component_props(self) -> dict[str, typing.Any]:
         table_group_options = [
             (str(tg.id), tg.table_groups_name)
-            for tg in TableGroup.select_minimal_where(TableGroup.project_code == self.ns_attrs["project_code"])
+            for tg in select_table_groups_minimal_where(TableGroup.project_code == self.ns_attrs["project_code"])
         ]
         table_group_options.insert(0, (None, "All Table Groups"))
         trigger_labels = {
@@ -300,7 +307,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
                 continue
             if job_exec.status in (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
                 job_exec.request_cancel()
-            profiling_run = next(iter(ProfilingRun.select_where(ProfilingRun.job_execution_id == je_id)), None)
+            profiling_run = next(iter(select_profiling_runs_where(ProfilingRun.job_execution_id == je_id)), None)
             if profiling_run:
                 ProfilingRun.cascade_delete([str(profiling_run.id)])
             get_current_session().delete(job_exec)

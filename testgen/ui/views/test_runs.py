@@ -6,8 +6,9 @@ from typing import Any
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
+from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session, with_database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
     TestRunNotificationTrigger,
@@ -20,7 +21,13 @@ from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
-from testgen.ui.services.query_cache import get_project_summary, get_test_run_summaries
+from testgen.ui.services.query_cache import (
+    get_project_summary,
+    get_test_run_summaries,
+    select_table_groups_minimal_where,
+    select_test_runs_where,
+    select_test_suites_minimal_where,
+)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.ui.views.dialogs.manage_schedules import ScheduleDialog
@@ -60,8 +67,8 @@ class TestRunsPage(Page):
         with st.spinner("Loading data ..."):
             project_summary = get_project_summary(project_code)
             test_runs, total_count = get_test_run_summaries(project_code, table_group_id, test_suite_id, page=page)
-            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-            test_suites = TestSuite.select_minimal_where(TestSuite.project_code == project_code, TestSuite.is_monitor.isnot(True))
+            table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
+            test_suites = select_test_suites_minimal_where(TestSuite.project_code == project_code, TestSuite.is_monitor.isnot(True))
 
         def on_run_tests_clicked(*_) -> None:
             st.session_state[TR_RUN_TESTS_DIALOG_KEY] = True
@@ -108,7 +115,7 @@ class TestRunsPage(Page):
                     JobExecution.submit(
                         job_key="run-tests",
                         kwargs={"test_suite_id": str(selected_id)},
-                        source="ui",
+                        source=JobSource.ui,
                         project_code=project_code,
                     )
             except Exception as error:
@@ -239,7 +246,7 @@ class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
     def _get_component_props(self) -> dict[str, Any]:
         test_suite_options = [
             (str(ts.id), ts.test_suite)
-            for ts in TestSuite.select_minimal_where(
+            for ts in select_test_suites_minimal_where(
                 TestSuite.project_code == self.ns_attrs["project_code"],
                 TestSuite.is_monitor.isnot(True),
             )
@@ -267,7 +274,7 @@ class TestRunScheduleDialog(ScheduleDialog):
     test_suites: Iterable[TestSuiteMinimal] | None = None
 
     def init(self) -> None:
-        self.test_suites = TestSuite.select_minimal_where(
+        self.test_suites = select_test_suites_minimal_where(
             TestSuite.project_code == self.project_code,
             TestSuite.is_monitor.isnot(True),
         )
@@ -281,8 +288,8 @@ class TestRunScheduleDialog(ScheduleDialog):
             for test_suite in self.test_suites
         ]
 
-    def get_job_arguments(self, arg_value: str) -> tuple[list[typing.Any], dict[str, typing.Any]]:
-        return [], {"test_suite_id": str(arg_value)}
+    def get_job_arguments(self, arg_value: str) -> dict[str, typing.Any]:
+        return {"test_suite_id": str(arg_value)}
 
 
 @with_database_session
@@ -312,7 +319,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
                 continue
             if job_exec.status in (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
                 job_exec.request_cancel()
-            test_run = next(iter(TestRun.select_where(TestRun.job_execution_id == je_id)), None)
+            test_run = next(iter(select_test_runs_where(TestRun.job_execution_id == je_id)), None)
             if test_run:
                 TestRun.cascade_delete([str(test_run.id)])
             get_current_session().delete(job_exec)

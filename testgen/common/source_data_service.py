@@ -127,7 +127,11 @@ def build_hygiene_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str | N
         "TABLE_NAME": issue_data["table_name"],
         "COLUMN_NAME": issue_data["column_name"],
         "DETAIL_EXPRESSION": issue_data["detail"],
-        "PROFILE_RUN_DATE": issue_data["profiling_starttime"],
+        # Date-only string: Oracle/HANA templates use TO_DATE(..., 'YYYY-MM-DD'), which rejects a time
+        # component, and the anomaly criteria boundary is date-based (CURRENT_DATE + INTERVAL '30 year').
+        "PROFILE_RUN_DATE": parsed_run_date.strftime("%Y-%m-%d")
+        if (parsed_run_date := parse_fuzzy_date(issue_data["profiling_starttime"]))
+        else None,
         "LIMIT": limit,
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
@@ -265,13 +269,15 @@ def _generate_recency_lookup_query(
         column_names_str = detail_exp[start_index:]
         columns = [col.strip() for col in column_names_str.split(",")]
 
-    quote = get_flavor_service(sql_flavor).quote_character
+    flavor_service = get_flavor_service(sql_flavor)
+    quote = flavor_service.quote_character
+    table_ref = flavor_service.get_table_ref("{TARGET_SCHEMA}", "{TABLE_NAME}")
     queries = [
         f"""
         SELECT
             '{column}' AS column_name,
             MAX({quote}{column}{quote}) AS max_date_available
-        FROM {quote}{{TARGET_SCHEMA}}{quote}.{quote}{{TABLE_NAME}}{quote}
+        FROM {table_ref}
         """
         for column in columns
     ]

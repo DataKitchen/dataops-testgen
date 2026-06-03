@@ -8,9 +8,15 @@ import pandas as pd
 
 from testgen.common import read_template_sql_file
 from testgen.common.clean_sql import concat_columns
-from testgen.common.database.database_service import get_flavor_service, get_tg_schema, replace_params
+from testgen.common.database.database_service import (
+    fetch_dict_from_db,
+    get_flavor_service,
+    get_tg_schema,
+    replace_params,
+)
 from testgen.common.freshness_service import (
     count_excluded_minutes,
+    get_freshness_gated_baseline,
     get_schedule_params,
     is_excluded_day,
     resolve_holiday_dates,
@@ -264,6 +270,52 @@ class TestExecutionSQL:
                     test_suite.holiday_codes_list,
                     pd.DatetimeIndex([datetime(self.run_date.year - 1, 1, 1), datetime(self.run_date.year + 1, 12, 31)]),
                 )
+        # Cache of (schema, table) -> "did Freshness_Trend detect a fingerprint change in
+        # this run?". True / False / None (no Freshness_Trend result). Populated lazily
+        # per table; reused across all Volume/Metric defs for the same table.
+        self._freshness_changed_cache: dict[tuple[str, str], bool | None] = {}
+
+    def _freshness_changed_for_table(self, test_def: TestExecutionDef) -> bool | None:
+        """Did Freshness_Trend detect a fingerprint change for the test's table in this run?
+
+        Reads the latest Freshness_Trend result_signal written during the current run.
+        Freshness_Trend emits `result_signal = '0'` when the table fingerprint differs
+        from the previous run's baseline (i.e., an update was detected). Any other value
+        (the interval since last update) means no change.
+
+        Returns True / False per the signal, or None if no Freshness_Trend result exists
+        for this table in this run.
+        """
+        cache_key = (test_def.schema_name, test_def.table_name)
+        if cache_key in self._freshness_changed_cache:
+            return self._freshness_changed_cache[cache_key]
+
+        rows = fetch_dict_from_db(*self._get_query("get_current_freshness_signal.sql", test_def=test_def))
+        changed: bool | None = None
+        if rows and rows[0].get("result_signal") is not None:
+            changed = str(rows[0]["result_signal"]) == "0"
+        self._freshness_changed_cache[cache_key] = changed
+        return changed
+
+    def _resolve_cat_operator_and_condition(self, test_def: TestExecutionDef) -> tuple[str, str]:
+        """Pick the operator / condition pair to feed into build_cat_expressions.
+
+        For Volume_Trend / Metric_Trend with freshness-gating enabled, when Freshness_Trend
+        detected no change in this run the table is in a "stale period" — the measure must
+        equal baseline_value, and any deviation is a silent-write anomaly. In that case,
+        override the test definition's `NOT BETWEEN` band check with a strict equality
+        check against baseline_value. All other cases (band check, refresh detected,
+        non-monitor test types, or no Freshness_Trend result) keep the test definition's
+        own operator and condition.
+        """
+        if (
+            test_def.test_type in ("Volume_Trend", "Metric_Trend")
+            and (baseline := get_freshness_gated_baseline(test_def.prediction)) is not None
+            and self._freshness_changed_for_table(test_def) is False
+        ):
+            return "<>", str(baseline)
+
+        return test_def.test_operator, test_def.test_condition
 
     def _get_input_parameters(self, test_def: TestExecutionDef) -> str:
         return "; ".join(
@@ -458,21 +510,21 @@ class TestExecutionSQL:
     ) -> tuple[list[tuple[str, None]], list[list[TestExecutionDef]]]:
         varchar_type = self.flavor_service.varchar_type
         concat_operator = self.flavor_service.concat_operator
-        quote = self.flavor_service.quote_character
 
         for td in test_defs:
             # Don't recalculate expressions if it was already done before
             if not td.measure_expression or not td.condition_expression:
                 params = self._get_params(td)
+                operator, condition_template = self._resolve_cat_operator_and_condition(td)
 
                 measure = replace_params(td.measure, params)
                 measure = replace_templated_functions(measure, self.flavor)
-                condition = replace_params(td.test_condition, params)
+                condition = replace_params(condition_template, params)
                 condition = replace_templated_functions(condition, self.flavor)
 
                 td.measure_expression, td.condition_expression = build_cat_expressions(
                     measure=measure,
-                    test_operator=td.test_operator,
+                    test_operator=operator,
                     test_condition=condition,
                     history_calculation=td.history_calculation,
                     lower_tolerance=td.lower_tolerance,
@@ -492,7 +544,7 @@ class TestExecutionSQL:
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
                 f"{concat_operator.join([td.condition_expression for td in group])} AS result_codes "
-                f"FROM {quote}{group[0].schema_name}{quote}.{quote}{group[0].table_name}{quote}"
+                f"FROM {self.flavor_service.get_table_ref(group[0].schema_name, group[0].table_name)}"
             )
             query = query.replace(":", "\\:")
 

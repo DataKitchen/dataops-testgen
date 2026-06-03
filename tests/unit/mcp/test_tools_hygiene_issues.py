@@ -5,7 +5,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.models.hygiene_issue import Disposition, HygieneIssue, IssueLikelihood
+from testgen.common.enums import Disposition, IssueLikelihood
+from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError

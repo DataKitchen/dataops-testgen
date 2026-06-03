@@ -19,7 +19,7 @@ const Toggle = (/** @type Properties */ props) => {
     const disabled = props.disabled?.val ?? props.disabled ?? false;
 
     return label(
-        { class: `flex-row fx-gap-2 ${disabled ? '' : 'clickable'}`, style: props.style ?? '', 'data-testid': props.name ?? '' },
+        { class: `flex-row fx-gap-2 ${disabled ? '' : 'clickable'}`, style: props.style ?? '', 'data-testid': 'toggle' },
         input({
             type: 'checkbox',
             role: 'switch',

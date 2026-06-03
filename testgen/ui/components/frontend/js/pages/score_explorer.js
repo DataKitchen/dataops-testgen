@@ -396,13 +396,11 @@ const Toolbar = (
                     Checkbox({
                         label: 'Total Score',
                         checked: displayTotalScore,
-                        testId: 'include-total-score',
                         onChange: (checked) => displayTotalScore.val = checked,
                     }),
                     Checkbox({
                         label: 'CDE Score',
                         checked: displayCDEScore,
-                        testId: 'include-cde-score',
                         onChange: (checked) => displayCDEScore.val = checked,
                     }),
                     div(
@@ -410,7 +408,6 @@ const Toolbar = (
                         Checkbox({
                             label: 'Category:',
                             checked: displayCategory,
-                            testId: 'include-category',
                             onChange: (checked) => displayCategory.val = checked,
                         }),
                         Select({
@@ -419,7 +416,6 @@ const Toolbar = (
                             value: selectedCategory,
                             options: categories.map((c) => ({ value: c, label: TRANSLATIONS[c] })),
                             disabled: van.derive(() => !getValue(displayCategory)),
-                            testId: 'category-selector',
                         }),
                     ),
                 ),
@@ -430,7 +426,6 @@ const Toolbar = (
                     label: 'Scorecard Name',
                     height: 40,
                     value: scoreName,
-                    testId: 'scorecard-name-input',
                     onChange: debounce((name) => scoreName.val = name, 300),
                 }),
                 () => {

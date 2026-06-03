@@ -118,6 +118,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10018'
+    test_type: Missing_Pct
+    sql_flavor: salesforce_data360
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT( CAST({BASELINE_VALUE_CT} AS FLOAT) / CAST({BASELINE_CT} AS FLOAT) ) ) - 2 * ASIN( SQRT( CAST(COUNT( {COLUMN_NAME} ) AS FLOAT) / CAST(NULLIF(COUNT(*), 0) AS FLOAT) )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1380'
     test_id: '1022'
@@ -193,5 +201,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10025'
+    test_id: 1022
+    test_type: Missing_Pct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR CAST("{COLUMN_NAME}" AS VARCHAR(255)) = '' LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

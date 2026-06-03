@@ -3,14 +3,13 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
-from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import is_uuid4
@@ -151,13 +150,11 @@ class TableGroup(Entity):
     )
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_minimal(cls, id_: str | UUID) -> TableGroupMinimal | None:
         result = cls._get_columns(id_, cls._minimal_columns)
         return TableGroupMinimal(**result) if result else None
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_minimal_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[TableGroupMinimal]:

@@ -1,12 +1,32 @@
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
+from sqlalchemy import select
+
 from testgen.common.date_service import parse_since
-from testgen.common.enums import ImpactDimension, QualityDimension
-from testgen.common.models.hygiene_issue import Disposition, HygieneIssueType, IssueLikelihood, PiiRisk
+from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, JobStatus, PiiRisk, QualityDimension
+from testgen.common.models import get_current_session
+from testgen.common.models.data_column import (
+    GENERAL_TYPE_TO_CODE,
+    ColumnOrderBy,
+    GeneralType,
+    ProfileMetric,
+    SuggestedDataType,
+)
+from testgen.common.models.hygiene_issue import HygieneIssueType
+from testgen.common.models.notification_settings import (
+    MonitorNotificationTrigger,
+    NotificationEvent,
+    NotificationSettings,
+    ProfilingRunNotificationTrigger,
+    TestRunNotificationTrigger,
+)
+from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
+from testgen.common.models.scores import ScoreCategory, ScoreDefinition
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestType
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestType
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -35,6 +55,8 @@ class DocGroup(StrEnum):
     INVESTIGATE = "Investigate quality issues"
     BROWSE_PROFILING = "Browse profiling results"
     TRIGGER = "Trigger profiling, tests, and test generation"
+    SCORING = "Track data quality scores"
+    MANAGE = "Manage TestGen configuration"
 
 
 def parse_uuid(value: str, label: str = "ID") -> UUID:
@@ -85,6 +107,220 @@ def parse_quality_dimension(value: str) -> QualityDimension:
         raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}") from err
 
 
+class ScoreGroupBy(StrEnum):
+    """User-facing values accepted for the ``group_by`` argument on quality-score rollups."""
+
+    QUALITY_DIMENSION = "Quality Dimension"
+    IMPACT_DIMENSION = "Impact Dimension"
+    SEMANTIC_DATA_TYPE = "Semantic Data Type"
+    TABLE_GROUP = "Table Group"
+    DATA_LOCATION = "Data Location"
+    DATA_SOURCE = "Data Source"
+    SOURCE_SYSTEM = "Source System"
+    SOURCE_PROCESS = "Source Process"
+    BUSINESS_DOMAIN = "Business Domain"
+    STAKEHOLDER_GROUP = "Stakeholder Group"
+    TRANSFORM_LEVEL = "Transform Level"
+    DATA_PRODUCT = "Data Product"
+
+
+# Translates the user-facing label to the internal DB column name used by
+# ``ScoreCategory`` and the criteria filter list.
+SCORE_GROUP_BY_TO_COLUMN: dict[ScoreGroupBy, str] = {
+    ScoreGroupBy.QUALITY_DIMENSION: "dq_dimension",
+    ScoreGroupBy.IMPACT_DIMENSION: "impact_dimension",
+    ScoreGroupBy.SEMANTIC_DATA_TYPE: "semantic_data_type",
+    ScoreGroupBy.TABLE_GROUP: "table_groups_name",
+    ScoreGroupBy.DATA_LOCATION: "data_location",
+    ScoreGroupBy.DATA_SOURCE: "data_source",
+    ScoreGroupBy.SOURCE_SYSTEM: "source_system",
+    ScoreGroupBy.SOURCE_PROCESS: "source_process",
+    ScoreGroupBy.BUSINESS_DOMAIN: "business_domain",
+    ScoreGroupBy.STAKEHOLDER_GROUP: "stakeholder_group",
+    ScoreGroupBy.TRANSFORM_LEVEL: "transform_level",
+    ScoreGroupBy.DATA_PRODUCT: "data_product",
+}
+
+
+class ScoreFilterField(StrEnum):
+    """User-facing values accepted for ``filters[].field`` on quality-score rollups.
+
+    Same shape as ``ScoreGroupBy`` minus the two dimension values — Quality
+    Dimension and Impact Dimension are valid as ``group_by``, not as filter
+    fields. The duplication is deliberate: each argument has its own enum so
+    the valid-value set for each is read off one StrEnum.
+    """
+
+    SEMANTIC_DATA_TYPE = "Semantic Data Type"
+    TABLE_GROUP = "Table Group"
+    DATA_LOCATION = "Data Location"
+    DATA_SOURCE = "Data Source"
+    SOURCE_SYSTEM = "Source System"
+    SOURCE_PROCESS = "Source Process"
+    BUSINESS_DOMAIN = "Business Domain"
+    STAKEHOLDER_GROUP = "Stakeholder Group"
+    TRANSFORM_LEVEL = "Transform Level"
+    DATA_PRODUCT = "Data Product"
+
+
+SCORE_FILTER_FIELD_TO_COLUMN: dict[ScoreFilterField, str] = {
+    ScoreFilterField.SEMANTIC_DATA_TYPE: "semantic_data_type",
+    ScoreFilterField.TABLE_GROUP: "table_groups_name",
+    ScoreFilterField.DATA_LOCATION: "data_location",
+    ScoreFilterField.DATA_SOURCE: "data_source",
+    ScoreFilterField.SOURCE_SYSTEM: "source_system",
+    ScoreFilterField.SOURCE_PROCESS: "source_process",
+    ScoreFilterField.BUSINESS_DOMAIN: "business_domain",
+    ScoreFilterField.STAKEHOLDER_GROUP: "stakeholder_group",
+    ScoreFilterField.TRANSFORM_LEVEL: "transform_level",
+    ScoreFilterField.DATA_PRODUCT: "data_product",
+}
+
+
+class ScoreCategoryArg(StrEnum):
+    """User-facing values accepted for the ``category`` argument on scorecard CRUD.
+
+    Same shape as ``ScoreGroupBy`` — every group-by value is also a valid
+    breakdown category. Kept as a separate enum (rather than reusing
+    ``ScoreGroupBy``) so each argument has its own valid-value set per the
+    per-arg enum convention.
+    """
+
+    TABLE_GROUP = "Table Group"
+    DATA_LOCATION = "Data Location"
+    DATA_SOURCE = "Data Source"
+    SOURCE_SYSTEM = "Source System"
+    SOURCE_PROCESS = "Source Process"
+    BUSINESS_DOMAIN = "Business Domain"
+    STAKEHOLDER_GROUP = "Stakeholder Group"
+    TRANSFORM_LEVEL = "Transform Level"
+    QUALITY_DIMENSION = "Quality Dimension"
+    IMPACT_DIMENSION = "Impact Dimension"
+    DATA_PRODUCT = "Data Product"
+
+
+SCORE_CATEGORY_ARG_TO_COLUMN: dict[ScoreCategoryArg, str] = {
+    ScoreCategoryArg.TABLE_GROUP: "table_groups_name",
+    ScoreCategoryArg.DATA_LOCATION: "data_location",
+    ScoreCategoryArg.DATA_SOURCE: "data_source",
+    ScoreCategoryArg.SOURCE_SYSTEM: "source_system",
+    ScoreCategoryArg.SOURCE_PROCESS: "source_process",
+    ScoreCategoryArg.BUSINESS_DOMAIN: "business_domain",
+    ScoreCategoryArg.STAKEHOLDER_GROUP: "stakeholder_group",
+    ScoreCategoryArg.TRANSFORM_LEVEL: "transform_level",
+    ScoreCategoryArg.QUALITY_DIMENSION: "dq_dimension",
+    ScoreCategoryArg.IMPACT_DIMENSION: "impact_dimension",
+    ScoreCategoryArg.DATA_PRODUCT: "data_product",
+}
+
+
+class ScoreChainLeafField(StrEnum):
+    """User-facing values accepted as the leaf ``field`` in a scorecard filter chain."""
+
+    TABLE = "Table"
+    COLUMN = "Column"
+
+
+SCORE_CHAIN_LEAF_TO_COLUMN: dict[ScoreChainLeafField, str] = {
+    ScoreChainLeafField.TABLE: "table_name",
+    ScoreChainLeafField.COLUMN: "column_name",
+}
+
+
+class ScoreType(StrEnum):
+    """User-facing values accepted for the ``score_type`` argument."""
+
+    TOTAL = "Total"
+    CDE = "CDE"
+
+
+def parse_score_group_by(value: str) -> ScoreGroupBy:
+    try:
+        return ScoreGroupBy(value)
+    except ValueError as err:
+        valid = ", ".join(g.value for g in ScoreGroupBy)
+        raise MCPUserError(f"Invalid group_by `{value}`. Valid values: {valid}") from err
+
+
+def parse_score_filter_field(value: str) -> ScoreFilterField:
+    try:
+        return ScoreFilterField(value)
+    except ValueError as err:
+        if value in {ScoreGroupBy.QUALITY_DIMENSION.value, ScoreGroupBy.IMPACT_DIMENSION.value}:
+            raise MCPUserError(
+                f"`{value}` is not a valid filter field — use group_by='{value}' instead"
+            ) from err
+        valid = ", ".join(f.value for f in ScoreFilterField)
+        raise MCPUserError(f"Invalid filter field `{value}`. Valid values: {valid}") from err
+
+
+def parse_score_type(value: str) -> ScoreType:
+    try:
+        return ScoreType(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in ScoreType)
+        raise MCPUserError(f"Invalid score_type `{value}`. Valid values: {valid}") from err
+
+
+def parse_category(value: str) -> ScoreCategory:
+    """Validate a ``category`` argument and return the stored ``ScoreCategory``.
+
+    Accepts the display-form values exposed by ``get_quality_scores``'s
+    ``group_by`` argument (e.g. ``Quality Dimension``, ``Data Source``).
+    """
+    try:
+        arg = ScoreCategoryArg(value)
+    except ValueError as err:
+        valid = ", ".join(c.value for c in ScoreCategoryArg)
+        raise MCPUserError(f"Invalid category `{value}`. Valid values: {valid}") from err
+    return ScoreCategory(SCORE_CATEGORY_ARG_TO_COLUMN[arg])
+
+
+# Maps user-facing run-status labels to underlying ``JobStatus`` values. Transient states
+# (Starting/Canceling) are excluded because they're sub-second and noisy as filters.
+# ``Pending`` collapses PENDING+CLAIMED; ``Canceled`` collapses CANCEL_REQUESTED+CANCELED.
+_RUN_STATUS_FILTER: dict[str, list[JobStatus]] = {
+    "Pending": [JobStatus.PENDING, JobStatus.CLAIMED],
+    "Running": [JobStatus.RUNNING],
+    "Completed": [JobStatus.COMPLETED],
+    "Canceled": [JobStatus.CANCEL_REQUESTED, JobStatus.CANCELED],
+    "Error": [JobStatus.ERROR],
+}
+
+
+def parse_run_status_filter(value: str) -> list[JobStatus]:
+    """Map a user-facing run status label (e.g. ``Pending``) to the underlying ``JobStatus`` values."""
+    statuses = _RUN_STATUS_FILTER.get(value)
+    if statuses is None:
+        valid = ", ".join(_RUN_STATUS_FILTER.keys())
+        raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}")
+    return statuses
+
+
+def format_run_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
+    """Render an elapsed duration as ``Xs`` / ``Xm Ys`` / ``Xh Ym``. Returns ``None`` if either bound is missing."""
+    if not started_at or not completed_at:
+        return None
+    seconds = int((completed_at - started_at).total_seconds())
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m {seconds % 60}s"
+    return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+
+
+def next_scheduled_run(
+    job_key: str, kwargs_filter: dict[str, str | list[str]], project_code: str,
+) -> datetime | None:
+    """Return the next firing of an active ``JobSchedule`` matching ``job_key`` and a kwargs
+    filter. When multiple schedules match, the soonest next-firing wins.
+    """
+    schedules = JobSchedule.select_active_by_kwargs(project_code, job_key, kwargs_filter)
+    if not schedules:
+        return None
+    return min(s.get_sample_triggering_timestamps(1)[0] for s in schedules)
+
+
 def parse_disposition(value: str) -> Disposition:
     """Validate a user-facing disposition label and return the stored ``Disposition``.
 
@@ -123,6 +359,100 @@ def parse_issue_likelihood_list(values: list[str]) -> list[IssueLikelihood]:
         valid = ", ".join(sorted(v.value for v in _FILTERABLE_LIKELIHOODS))
         raise MCPUserError(f"Invalid issue_likelihood values {invalid}. Valid values: {valid}")
     return parsed
+
+
+# Maps the user-facing display label to the stored ``pii_flag`` middle segment
+# (``A/<CODE>/<detail>``). Mirrors ``_PII_TYPE_MAP`` in ``profiling.py``.
+_PII_CATEGORY_TO_CODE: dict[str, str] = {
+    "ID": "ID",
+    "Name": "NAME",
+    "Demographic": "DEMO",
+    "Contact": "CONTACT",
+}
+
+
+def build_ilike_pattern(raw: str) -> str:
+    """Prepare a free-text input for an ``ILIKE`` clause.
+
+    Escapes literal underscores (which column names commonly contain) so they
+    match as themselves rather than as the SQL single-character wildcard. When
+    the input contains an explicit ``%``, honor it as the caller's wildcard;
+    otherwise wrap the input with ``%...%`` for substring match.
+
+    Pair with ``column.ilike(pattern, escape="\\\\")`` at the call site.
+    """
+    escaped = raw.replace("_", r"\_")
+    return escaped if "%" in escaped else f"%{escaped}%"
+
+
+def parse_pii_category(value: str) -> str:
+    """Validate a pii_category value and return the stored ``pii_flag`` middle segment."""
+    code = _PII_CATEGORY_TO_CODE.get(value)
+    if code is None:
+        valid = ", ".join(_PII_CATEGORY_TO_CODE)
+        raise MCPUserError(f"Invalid pii_category `{value}`. Valid values: {valid}")
+    return code
+
+
+def parse_general_type(value: str) -> str:
+    """Validate a user-facing ``general_type`` word and return the stored single-letter code.
+
+    Accepts ``Alpha`` / ``Numeric`` / ``Datetime`` / ``Boolean`` / ``Time`` / ``Other``;
+    returns ``A`` / ``N`` / ``D`` / ``B`` / ``T`` / ``X`` respectively (the values stored
+    on ``data_column_chars.general_type``).
+    """
+    try:
+        member = GeneralType(value)
+    except ValueError as err:
+        valid = ", ".join(t.value for t in GeneralType)
+        raise MCPUserError(f"Invalid general_type `{value}`. Valid values: {valid}") from err
+    return GENERAL_TYPE_TO_CODE[member]
+
+
+def parse_suggested_data_type(value: str) -> SuggestedDataType:
+    try:
+        return SuggestedDataType(value)
+    except ValueError as err:
+        valid = ", ".join(t.value for t in SuggestedDataType)
+        raise MCPUserError(f"Invalid suggested_data_type `{value}`. Valid values: {valid}") from err
+
+
+def parse_column_order_by(value: str) -> ColumnOrderBy:
+    try:
+        return ColumnOrderBy(value)
+    except ValueError as err:
+        valid = ", ".join(o.value for o in ColumnOrderBy)
+        raise MCPUserError(f"Invalid order_by `{value}`. Valid values: {valid}") from err
+
+
+def parse_profile_metrics(values: list[str]) -> list[ProfileMetric]:
+    """Validate a list of profile metric names. Empties out with one error listing all invalids."""
+    if not values:
+        raise MCPUserError("`metrics` cannot be empty — name at least one metric to trend.")
+    parsed: list[ProfileMetric] = []
+    invalid: list[str] = []
+    for value in values:
+        try:
+            parsed.append(ProfileMetric(value))
+        except ValueError:
+            invalid.append(value)
+    if invalid:
+        valid = ", ".join(m.value for m in ProfileMetric)
+        raise MCPUserError(f"Invalid metrics {invalid}. Valid values: {valid}")
+    return parsed
+
+
+# ``pii_flag`` encodes risk as a single-character prefix: ``A`` (High), ``B`` (Moderate), ``C`` (Low).
+_PII_RISK_LEVEL_TO_CODE: dict[str, str] = {"High": "A", "Moderate": "B", "Low": "C"}
+
+
+def parse_pii_risk_level(value: str) -> str:
+    """Validate a column-profile pii_risk_level filter and return the stored prefix code."""
+    code = _PII_RISK_LEVEL_TO_CODE.get(value)
+    if code is None:
+        valid = ", ".join(_PII_RISK_LEVEL_TO_CODE)
+        raise MCPUserError(f"Invalid pii_risk_level `{value}`. Valid values: {valid}")
+    return code
 
 
 def parse_pii_risk_list(values: list[str]) -> list[PiiRisk]:
@@ -203,3 +533,194 @@ def resolve_test_suite(test_suite_id: str) -> TestSuite:
     if suite is None:
         raise MCPResourceNotAccessible("Test suite", test_suite_id)
     return suite
+
+
+def resolve_profiling_run(job_execution_id: str) -> ProfilingRun:
+    """Resolve a profiling run by id-or-JE-id, scoped to allowed projects.
+
+    Collapses missing-or-inaccessible into a single ``MCPResourceNotAccessible``
+    so callers don't leak existence of runs they shouldn't see.
+    """
+    run_uuid = parse_uuid(job_execution_id, "job_execution_id")
+    run = ProfilingRun.get_by_id_or_job(run_uuid)
+    perms = get_project_permissions()
+    if run is None or not perms.has_access(run.project_code):
+        raise MCPResourceNotAccessible("Profiling run", job_execution_id)
+    return run
+
+
+def resolve_scorecard(scorecard_id: str) -> ScoreDefinition:
+    """Resolve a scorecard ID, collapsing missing-or-inaccessible into one error path."""
+    parse_uuid(scorecard_id, "scorecard_id")
+    perms = get_project_permissions()
+    sd = ScoreDefinition.get(scorecard_id)
+    if sd is None or not perms.has_access(sd.project_code):
+        raise MCPResourceNotAccessible("Scorecard", scorecard_id)
+    return sd
+
+
+def resolve_test_definition(test_definition_id: str) -> TestDefinition:
+    """Resolve a test definition ID to the live ORM model, collapsing missing-or-inaccessible.
+
+    Filters monitor suites and project access. Returns the ORM ``TestDefinition``
+    (not ``TestDefinitionSummary``) so the row can be mutated and saved.
+    """
+    td_uuid = parse_uuid(test_definition_id, "test_definition_id")
+    perms = get_project_permissions()
+    query = (
+        select(TestDefinition)
+        .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
+        .where(
+            TestDefinition.id == td_uuid,
+            TestSuite.is_monitor.isnot(True),
+            TestSuite.project_code.in_(perms.allowed_codes),
+        )
+    )
+    td = get_current_session().scalars(query).first()
+    if td is None:
+        raise MCPResourceNotAccessible("Test definition", test_definition_id)
+    return td
+
+
+def resolve_test_note(test_note_id: str) -> TestDefinitionNote:
+    """Resolve a test note ID to the live ORM model, collapsing missing-or-inaccessible.
+
+    Filters monitor suites and project access via the note's parent test definition.
+    """
+    note_uuid = parse_uuid(test_note_id, "test_note_id")
+    perms = get_project_permissions()
+    query = (
+        select(TestDefinitionNote)
+        .join(TestDefinition, TestDefinitionNote.test_definition_id == TestDefinition.id)
+        .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
+        .where(
+            TestDefinitionNote.id == note_uuid,
+            TestSuite.is_monitor.isnot(True),
+            TestSuite.project_code.in_(perms.allowed_codes),
+        )
+    )
+    note = get_current_session().scalars(query).first()
+    if note is None:
+        raise MCPResourceNotAccessible("Test note", test_note_id)
+    return note
+
+
+def resolve_schedule(schedule_id: str) -> JobSchedule:
+    """Resolve a user-managed schedule ID, collapsing missing-or-inaccessible into one error path."""
+    sched_uuid = parse_uuid(schedule_id, "schedule_id")
+    perms = get_project_permissions()
+    sched = JobSchedule.get(
+        JobSchedule.id == sched_uuid,
+        JobSchedule.key.in_(SCHEDULABLE_JOB_KEYS),
+        JobSchedule.project_code.in_(perms.allowed_codes),
+    )
+    if sched is None:
+        raise MCPResourceNotAccessible("Schedule", schedule_id)
+    return sched
+
+
+def resolve_notification(notification_id: str) -> NotificationSettings:
+    """Resolve a notification ID, collapsing missing-or-inaccessible into one error path.
+
+    Returns the polymorphic ``NotificationSettings`` subclass (TestRun / ProfilingRun /
+    ScoreDrop / Monitor) so callers can read event-specific typed properties.
+    """
+    notif_uuid = parse_uuid(notification_id, "notification_id")
+    perms = get_project_permissions()
+    notif = NotificationSettings.get(
+        notif_uuid,
+        NotificationSettings.project_code.in_(perms.allowed_codes),
+    )
+    if notif is None:
+        raise MCPResourceNotAccessible("Notification", notification_id)
+    return notif
+
+
+# Notification event-type labels.
+
+class NotificationEventLabel(StrEnum):
+    """User-facing values for notification event types."""
+
+    TEST_RUN = "Test Run"
+    PROFILING_RUN = "Profiling Run"
+    SCORE_DROP = "Score Drop"
+    MONITOR_RUN = "Monitor Alert"
+
+
+NOTIFICATION_EVENT_LABEL_TO_INTERNAL: dict[NotificationEventLabel, NotificationEvent] = {
+    NotificationEventLabel.TEST_RUN: NotificationEvent.test_run,
+    NotificationEventLabel.PROFILING_RUN: NotificationEvent.profiling_run,
+    NotificationEventLabel.SCORE_DROP: NotificationEvent.score_drop,
+    NotificationEventLabel.MONITOR_RUN: NotificationEvent.monitor_run,
+}
+
+_NOTIFICATION_EVENT_INTERNAL_TO_LABEL: dict[NotificationEvent, NotificationEventLabel] = {
+    v: k for k, v in NOTIFICATION_EVENT_LABEL_TO_INTERNAL.items()
+}
+
+
+def format_notification_event(event: NotificationEvent | str) -> str:
+    """Map a stored notification event to its user-facing label."""
+    return _NOTIFICATION_EVENT_INTERNAL_TO_LABEL[NotificationEvent(event)].value
+
+
+# Notification trigger labels — one StrEnum per event type. Same wording the end user sees in the UI:
+# ``ui/views/test_runs.py:249-254``, ``ui/views/profiling_runs.py:265-268``,
+# ``ui/views/monitors_dashboard.py:323-326``.
+
+class TestRunTriggerLabel(StrEnum):
+    ALWAYS = "Always"
+    ON_FAILURES = "On test failures"
+    ON_WARNINGS = "On test failures and warnings"
+    ON_CHANGES = "On new test failures and warnings"
+
+
+TEST_RUN_TRIGGER_LABEL_TO_INTERNAL: dict[TestRunTriggerLabel, TestRunNotificationTrigger] = {
+    TestRunTriggerLabel.ALWAYS: TestRunNotificationTrigger.always,
+    TestRunTriggerLabel.ON_FAILURES: TestRunNotificationTrigger.on_failures,
+    TestRunTriggerLabel.ON_WARNINGS: TestRunNotificationTrigger.on_warnings,
+    TestRunTriggerLabel.ON_CHANGES: TestRunNotificationTrigger.on_changes,
+}
+
+
+class ProfilingRunTriggerLabel(StrEnum):
+    ALWAYS = "Always"
+    ON_CHANGES = "On new hygiene issues"
+
+
+PROFILING_RUN_TRIGGER_LABEL_TO_INTERNAL: dict[ProfilingRunTriggerLabel, ProfilingRunNotificationTrigger] = {
+    ProfilingRunTriggerLabel.ALWAYS: ProfilingRunNotificationTrigger.always,
+    ProfilingRunTriggerLabel.ON_CHANGES: ProfilingRunNotificationTrigger.on_changes,
+}
+
+
+class MonitorTriggerLabel(StrEnum):
+    ON_ANOMALIES = "On anomalies"
+
+
+MONITOR_TRIGGER_LABEL_TO_INTERNAL: dict[MonitorTriggerLabel, MonitorNotificationTrigger] = {
+    MonitorTriggerLabel.ON_ANOMALIES: MonitorNotificationTrigger.on_anomalies,
+}
+
+_TEST_RUN_TRIGGER_INTERNAL_TO_LABEL = {v: k for k, v in TEST_RUN_TRIGGER_LABEL_TO_INTERNAL.items()}
+_PROFILING_RUN_TRIGGER_INTERNAL_TO_LABEL = {v: k for k, v in PROFILING_RUN_TRIGGER_LABEL_TO_INTERNAL.items()}
+_MONITOR_TRIGGER_INTERNAL_TO_LABEL = {v: k for k, v in MONITOR_TRIGGER_LABEL_TO_INTERNAL.items()}
+
+
+def format_notification_trigger(event: NotificationEvent | str, settings: dict | None) -> str | None:
+    """Map a notification's stored trigger value to its user-facing label.
+
+    Returns ``None`` for ``score_drop`` (no trigger — thresholds drive it) or when
+    ``settings`` carries no ``trigger`` key.
+    """
+    raw = settings.get("trigger") if settings else None
+    if raw is None:
+        return None
+    event_enum = NotificationEvent(event)
+    if event_enum is NotificationEvent.test_run:
+        return _TEST_RUN_TRIGGER_INTERNAL_TO_LABEL[TestRunNotificationTrigger(raw)].value
+    if event_enum is NotificationEvent.profiling_run:
+        return _PROFILING_RUN_TRIGGER_INTERNAL_TO_LABEL[ProfilingRunNotificationTrigger(raw)].value
+    if event_enum is NotificationEvent.monitor_run:
+        return _MONITOR_TRIGGER_INTERNAL_TO_LABEL[MonitorNotificationTrigger(raw)].value
+    return None

@@ -104,3 +104,11 @@ profile_anomaly_types:
     lookup_query: |-
       WITH CTE AS ( SELECT DISTINCT UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', '')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") AS cnt FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', '')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT a."{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" a, cte b WHERE UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(a."{COLUMN_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', '')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}" ORDER BY UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(a."{COLUMN_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', '')) ASC, count DESC LIMIT {LIMIT}
     error_type: Profile Anomaly
+  - id: '10071'
+    test_id: 1017
+    test_type: Standardized_Value_Matches
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      WITH CTE AS ( SELECT DISTINCT UPPER(REGEXP_REPLACE("{COLUMN_NAME}", '[ '',.\-]', '', 'g')) as possible_standard_value, COUNT(DISTINCT "{COLUMN_NAME}") FROM "{TABLE_NAME}" GROUP BY UPPER(REGEXP_REPLACE("{COLUMN_NAME}", '[ '',.\-]', '', 'g')) HAVING COUNT(DISTINCT "{COLUMN_NAME}") > 1 ) SELECT a."{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" a, cte b WHERE UPPER(REGEXP_REPLACE(a."{COLUMN_NAME}", '[ '',.\-]', '', 'g')) = b.possible_standard_value GROUP BY a."{COLUMN_NAME}" ORDER BY UPPER(REGEXP_REPLACE(a."{COLUMN_NAME}", '[ '',.\-]', '', 'g')) ASC, count DESC LIMIT {LIMIT};
+    error_type: Profile Anomaly

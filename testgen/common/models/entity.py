@@ -3,8 +3,7 @@ from dataclasses import asdict, dataclass, fields
 from typing import Any, Self
 from uuid import UUID
 
-import streamlit as st
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
@@ -46,7 +45,6 @@ class Entity(Base):
     _default_order_by: tuple[str | InstrumentedAttribute] = ("id",)
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def get(cls, identifier: str | int | UUID, *clauses) -> Self | None:
         """Fetch by primary key, optionally narrowed by extra WHERE clauses.
 
@@ -89,7 +87,6 @@ class Entity(Base):
         return get_current_session().execute(query).mappings().first()
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_where(cls, *clauses, order_by: tuple[str | InstrumentedAttribute] | None = None) -> Iterable[Self]:
         order_by = order_by or cls._default_order_by
         query = select(cls).where(*clauses).order_by(*order_by)
@@ -149,12 +146,6 @@ class Entity(Base):
     @classmethod
     def has_running_process(cls, ids: list[str]) -> bool:
         raise NotImplementedError
-
-    @classmethod
-    def delete_where(cls, *clauses) -> None:
-        query = delete(cls).where(*clauses)
-        db_session = get_current_session()
-        db_session.execute(query)
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:

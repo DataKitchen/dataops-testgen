@@ -1,22 +1,37 @@
 from unittest.mock import MagicMock, patch
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 
-from testgen.common.enums import ImpactDimension, QualityDimension
-from testgen.common.models.hygiene_issue import Disposition, IssueLikelihood, PiiRisk
+from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, PiiRisk, QualityDimension
+from testgen.common.models.scores import ScoreCategory
 from testgen.common.models.test_result import TestResultStatus
-from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
+    SCORE_CATEGORY_ARG_TO_COLUMN,
+    SCORE_CHAIN_LEAF_TO_COLUMN,
+    SCORE_FILTER_FIELD_TO_COLUMN,
+    SCORE_GROUP_BY_TO_COLUMN,
+    ScoreCategoryArg,
+    ScoreChainLeafField,
+    ScoreFilterField,
+    ScoreGroupBy,
+    ScoreType,
     format_disposition,
+    parse_category,
     parse_disposition,
     parse_impact_dimension,
     parse_issue_likelihood_list,
     parse_pii_risk_list,
     parse_quality_dimension,
     parse_result_status,
+    parse_score_filter_field,
+    parse_score_group_by,
+    parse_score_type,
     parse_uuid,
     resolve_issue_type,
+    resolve_profiling_run,
+    resolve_test_note,
     validate_limit,
     validate_page,
 )
@@ -279,3 +294,420 @@ def test_resolve_issue_type_not_found_raises_with_resource_hint():
         with pytest.raises(MCPUserError, match="Unknown hygiene issue type") as exc_info:
             resolve_issue_type("Made-Up Type")
     assert "testgen://hygiene-issue-types" in str(exc_info.value)
+
+
+# --- resolve_profiling_run ---
+
+
+def _mock_perms(allowed_projects=("demo",)):
+    perms = MagicMock()
+    perms.has_access.side_effect = lambda code: code in allowed_projects
+    return perms
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+def test_resolve_profiling_run_happy_path(mock_pr_cls, mock_get_perms, db_session_mock):
+    run = MagicMock()
+    run.project_code = "demo"
+    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    result = resolve_profiling_run(str(uuid4()))
+
+    assert result is run
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+def test_resolve_profiling_run_unknown_run_id(mock_pr_cls, mock_get_perms, db_session_mock):
+    mock_pr_cls.get_by_id_or_job.return_value = None
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
+        resolve_profiling_run(str(uuid4()))
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.ProfilingRun")
+def test_resolve_profiling_run_inaccessible_project(mock_pr_cls, mock_get_perms, db_session_mock):
+    """Run exists but caller can't access its project — same unified error as unknown run."""
+    run = MagicMock()
+    run.project_code = "forbidden"
+    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
+        resolve_profiling_run(str(uuid4()))
+
+
+def test_resolve_profiling_run_invalid_uuid():
+    with pytest.raises(MCPUserError, match="Invalid job_execution_id"):
+        resolve_profiling_run("not-a-uuid")
+
+
+# --- resolve_test_note ---
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_note_happy_path(mock_get_session, mock_get_perms):
+    note = MagicMock()
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = note
+    mock_get_session.return_value = session
+    mock_get_perms.return_value = _mock_perms()
+
+    assert resolve_test_note(str(uuid4())) is note
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_note_missing_or_inaccessible(mock_get_session, mock_get_perms):
+    """Missing note, monitor-suite parent, and forbidden project all collapse to one error."""
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = None
+    mock_get_session.return_value = session
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Test note .* not found or not accessible"):
+        resolve_test_note(str(uuid4()))
+
+
+def test_resolve_test_note_invalid_uuid():
+    with pytest.raises(MCPUserError, match="Invalid test_note_id"):
+        resolve_test_note("not-a-uuid")
+
+
+# --- parse_pii_category ---
+
+
+def test_parse_pii_category_translates_display_label_to_stored_code():
+    from testgen.mcp.tools.common import parse_pii_category
+    assert parse_pii_category("ID") == "ID"
+    assert parse_pii_category("Name") == "NAME"
+    assert parse_pii_category("Demographic") == "DEMO"
+    assert parse_pii_category("Contact") == "CONTACT"
+
+
+def test_parse_pii_category_rejects_stored_code_form():
+    from testgen.mcp.tools.common import parse_pii_category
+    with pytest.raises(MCPUserError, match="Invalid pii_category `NAME`"):
+        parse_pii_category("NAME")
+
+
+def test_parse_pii_category_lists_valid_values_in_error():
+    from testgen.mcp.tools.common import parse_pii_category
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_pii_category("Address")
+    for label in ("ID", "Name", "Demographic", "Contact"):
+        assert label in str(exc_info.value)
+
+
+# --- parse_pii_risk_level ---
+
+
+def test_parse_pii_risk_level_translates_label_to_stored_prefix():
+    from testgen.mcp.tools.common import parse_pii_risk_level
+    assert parse_pii_risk_level("High") == "A"
+    assert parse_pii_risk_level("Moderate") == "B"
+    assert parse_pii_risk_level("Low") == "C"
+
+
+def test_parse_pii_risk_level_rejects_unknown():
+    from testgen.mcp.tools.common import parse_pii_risk_level
+    with pytest.raises(MCPUserError, match="Invalid pii_risk_level `Critical`"):
+        parse_pii_risk_level("Critical")
+
+
+# --- parse_general_type ---
+
+
+def test_parse_general_type_translates_word_to_letter_code():
+    from testgen.mcp.tools.common import parse_general_type
+    assert parse_general_type("Alpha") == "A"
+    assert parse_general_type("Numeric") == "N"
+    assert parse_general_type("Datetime") == "D"
+    assert parse_general_type("Boolean") == "B"
+    assert parse_general_type("Time") == "T"
+    assert parse_general_type("Other") == "X"
+
+
+def test_parse_general_type_rejects_letter_code_input():
+    from testgen.mcp.tools.common import parse_general_type
+    with pytest.raises(MCPUserError, match="Invalid general_type `A`"):
+        parse_general_type("A")
+
+
+def test_parse_general_type_is_case_sensitive():
+    from testgen.mcp.tools.common import parse_general_type
+    with pytest.raises(MCPUserError):
+        parse_general_type("alpha")
+
+
+# --- parse_suggested_data_type ---
+
+
+def test_parse_suggested_data_type_accepts_title_case():
+    from testgen.common.models.data_column import SuggestedDataType
+    from testgen.mcp.tools.common import parse_suggested_data_type
+    assert parse_suggested_data_type("Any") is SuggestedDataType.ANY
+    assert parse_suggested_data_type("Integer") is SuggestedDataType.INTEGER
+    assert parse_suggested_data_type("Varchar") is SuggestedDataType.VARCHAR
+
+
+def test_parse_suggested_data_type_rejects_uppercase():
+    from testgen.mcp.tools.common import parse_suggested_data_type
+    with pytest.raises(MCPUserError, match="Invalid suggested_data_type `INTEGER`"):
+        parse_suggested_data_type("INTEGER")
+
+
+def test_parse_suggested_data_type_lists_valid_values_in_error():
+    from testgen.mcp.tools.common import parse_suggested_data_type
+    with pytest.raises(MCPUserError) as exc_info:
+        parse_suggested_data_type("Bogus")
+    for label in ("Any", "Integer", "Numeric", "Varchar", "Date", "Timestamp", "Boolean"):
+        assert label in str(exc_info.value)
+
+
+# --- parse_column_order_by ---
+
+
+def test_parse_column_order_by_accepts_display_form():
+    from testgen.common.models.data_column import ColumnOrderBy
+    from testgen.mcp.tools.common import parse_column_order_by
+    assert parse_column_order_by("Null Ratio") is ColumnOrderBy.NULL_RATIO
+    assert parse_column_order_by("Profiling Score") is ColumnOrderBy.SCORE_PROFILING
+    assert parse_column_order_by("Hygiene Count") is ColumnOrderBy.HYGIENE_COUNT
+
+
+def test_parse_column_order_by_rejects_snake_case():
+    from testgen.mcp.tools.common import parse_column_order_by
+    with pytest.raises(MCPUserError, match="Invalid order_by `null_ratio`"):
+        parse_column_order_by("null_ratio")
+
+
+# --- build_ilike_pattern ---
+
+
+def test_build_ilike_pattern_wraps_bare_token():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    assert build_ilike_pattern("email") == "%email%"
+
+
+def test_build_ilike_pattern_escapes_literal_underscore():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    # Column names commonly contain underscores; treat them as literal, not as SQL wildcards.
+    assert build_ilike_pattern("user_id") == r"%user\_id%"
+
+
+def test_build_ilike_pattern_honors_explicit_percent():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    # Caller-supplied % means "I'm doing my own wildcards" — don't double-wrap.
+    assert build_ilike_pattern("%email") == "%email"
+    assert build_ilike_pattern("user%") == "user%"
+
+
+def test_build_ilike_pattern_escapes_underscores_even_with_explicit_percent():
+    from testgen.mcp.tools.common import build_ilike_pattern
+    # The `_` escape is unconditional — explicit `%` doesn't suppress it.
+    assert build_ilike_pattern("user_%") == r"user\_%"
+
+
+# --- parse_score_group_by ---
+
+
+@pytest.mark.parametrize("member", list(ScoreGroupBy))
+def test_parse_score_group_by_user_labels(member):
+    assert parse_score_group_by(member.value) is member
+
+
+def test_parse_score_group_by_label_maps_to_internal_column():
+    """The enum value is the user-facing label; the mapping translates to the
+    internal DB column name used downstream (``ScoreCategory``, the criteria
+    filter list)."""
+    assert SCORE_GROUP_BY_TO_COLUMN[ScoreGroupBy.QUALITY_DIMENSION] == "dq_dimension"
+    assert SCORE_GROUP_BY_TO_COLUMN[ScoreGroupBy.TABLE_GROUP] == "table_groups_name"
+    assert SCORE_GROUP_BY_TO_COLUMN[ScoreGroupBy.BUSINESS_DOMAIN] == "business_domain"
+
+
+@pytest.mark.parametrize(
+    "internal",
+    ["dq_dimension", "impact_dimension", "business_domain", "table_groups_name"],
+)
+def test_parse_score_group_by_rejects_internal_column_name(internal):
+    """Old internal vocabulary must be rejected — the tool now speaks user labels only."""
+    with pytest.raises(MCPUserError, match="Invalid group_by") as exc_info:
+        parse_score_group_by(internal)
+    msg = str(exc_info.value)
+    # Error must point users at the new user-facing vocabulary.
+    assert "Quality Dimension" in msg
+    assert "Business Domain" in msg
+
+
+def test_parse_score_group_by_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_score_group_by("Made Up")
+    msg = str(exc_info.value)
+    for member in ScoreGroupBy:
+        assert member.value in msg
+
+
+# --- parse_score_filter_field ---
+
+
+@pytest.mark.parametrize("member", list(ScoreFilterField))
+def test_parse_score_filter_field_user_labels(member):
+    assert parse_score_filter_field(member.value) is member
+
+
+def test_parse_score_filter_field_label_maps_to_internal_column():
+    assert SCORE_FILTER_FIELD_TO_COLUMN[ScoreFilterField.BUSINESS_DOMAIN] == "business_domain"
+    assert SCORE_FILTER_FIELD_TO_COLUMN[ScoreFilterField.TABLE_GROUP] == "table_groups_name"
+
+
+def test_parse_score_filter_field_does_not_include_dimensions():
+    """Quality Dimension / Impact Dimension are valid only as group_by, not as filter fields."""
+    values = {m.value for m in ScoreFilterField}
+    assert "Quality Dimension" not in values
+    assert "Impact Dimension" not in values
+
+
+@pytest.mark.parametrize("label", ["Quality Dimension", "Impact Dimension"])
+def test_parse_score_filter_field_rejects_dimension_with_hint(label):
+    """Passing a dimension as filter.field hints at group_by= usage instead."""
+    with pytest.raises(MCPUserError, match=f"`{label}`") as exc_info:
+        parse_score_filter_field(label)
+    msg = str(exc_info.value)
+    assert "group_by" in msg
+    assert label in msg
+
+
+@pytest.mark.parametrize(
+    "internal", ["business_domain", "data_source", "table_groups_name"],
+)
+def test_parse_score_filter_field_rejects_internal_column_name(internal):
+    with pytest.raises(MCPUserError, match="Invalid filter field") as exc_info:
+        parse_score_filter_field(internal)
+    msg = str(exc_info.value)
+    assert "Business Domain" in msg
+
+
+def test_parse_score_filter_field_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_score_filter_field("Made Up")
+    msg = str(exc_info.value)
+    for member in ScoreFilterField:
+        assert member.value in msg
+
+
+# --- parse_score_type ---
+
+
+@pytest.mark.parametrize(
+    "label,expected_member",
+    [
+        ("Total", ScoreType.TOTAL),
+        ("CDE", ScoreType.CDE),
+    ],
+)
+def test_parse_score_type_user_labels(label, expected_member):
+    member = parse_score_type(label)
+    assert member is expected_member
+
+
+@pytest.mark.parametrize("internal", ["total", "cde"])
+def test_parse_score_type_rejects_internal_or_wrong_case(internal):
+    """The internal vocabulary (``total``/``cde`` lowercase) must not be
+    accepted on input; only the canonical user-facing values are."""
+    with pytest.raises(MCPUserError, match="Invalid score_type") as exc_info:
+        parse_score_type(internal)
+    msg = str(exc_info.value)
+    assert "Total" in msg
+    assert "CDE" in msg
+
+
+def test_parse_score_type_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_score_type("BadType")
+    msg = str(exc_info.value)
+    for member in ScoreType:
+        assert member.value in msg
+
+
+# --- parse_category ---
+
+
+@pytest.mark.parametrize(
+    "display_value,expected",
+    [
+        ("Quality Dimension", ScoreCategory.dq_dimension),
+        ("Impact Dimension", ScoreCategory.impact_dimension),
+        ("Table Group", ScoreCategory.table_groups_name),
+        ("Data Source", ScoreCategory.data_source),
+        ("Data Location", ScoreCategory.data_location),
+        ("Source System", ScoreCategory.source_system),
+        ("Source Process", ScoreCategory.source_process),
+        ("Business Domain", ScoreCategory.business_domain),
+        ("Stakeholder Group", ScoreCategory.stakeholder_group),
+        ("Transform Level", ScoreCategory.transform_level),
+        ("Data Product", ScoreCategory.data_product),
+    ],
+)
+def test_parse_category_display_form_returns_column_form_enum(display_value, expected):
+    """``parse_category`` accepts display-form labels and emits the column-form ``ScoreCategory``."""
+    assert parse_category(display_value) is expected
+
+
+def test_parse_category_translation_dict_covers_all_args():
+    """Every ``ScoreCategoryArg`` member has a translation to a valid ``ScoreCategory`` column."""
+    for arg in ScoreCategoryArg:
+        column = SCORE_CATEGORY_ARG_TO_COLUMN[arg]
+        assert ScoreCategory(column) is ScoreCategory(column)  # raises if column isn't a valid enum value
+
+
+@pytest.mark.parametrize(
+    "internal",
+    [
+        "dq_dimension",
+        "impact_dimension",
+        "table_groups_name",
+        "data_source",
+        "data_location",
+        "source_system",
+        "source_process",
+        "business_domain",
+        "stakeholder_group",
+        "transform_level",
+        "data_product",
+    ],
+)
+def test_parse_category_rejects_column_form_input(internal):
+    """The old column-form values must not be accepted on input — display-form only."""
+    with pytest.raises(MCPUserError, match="Invalid category") as exc_info:
+        parse_category(internal)
+    msg = str(exc_info.value)
+    # Error message must list at least one display-form value to guide the caller.
+    assert "Quality Dimension" in msg
+
+
+def test_parse_category_invalid_lists_display_form_values():
+    """An unrelated bad value lists every display-form value in the error message."""
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_category("Made Up")
+    msg = str(exc_info.value)
+    for member in ScoreCategoryArg:
+        assert member.value in msg
+
+
+# --- ScoreChainLeafField ---
+
+
+def test_score_chain_leaf_field_values():
+    assert ScoreChainLeafField.TABLE.value == "Table"
+    assert ScoreChainLeafField.COLUMN.value == "Column"
+
+
+def test_score_chain_leaf_to_column_mapping():
+    assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.TABLE] == "table_name"
+    assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.COLUMN] == "column_name"

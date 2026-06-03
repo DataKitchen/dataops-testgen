@@ -1,19 +1,14 @@
 import json
 import typing
-from datetime import datetime
 from io import BytesIO
 from typing import ClassVar
 
 import pandas as pd
 import streamlit as st
 
-from testgen.commands.run_refresh_score_cards_results import (
-    run_recalculate_score_card,
-    run_refresh_score_cards_results,
-)
+from testgen.commands.run_refresh_score_cards_results import save_and_refresh_score_definition
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scores import (
     Categories,
     ScoreCategory,
@@ -22,7 +17,6 @@ from testgen.common.models.scores import (
     ScoreTypes,
     SelectedIssue,
 )
-from testgen.common.models.test_run import TestRun
 from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import FILE_DATA_TYPE, download_dialog, zip_multi_file_data
@@ -373,23 +367,10 @@ def save_score_definition(_) -> None:
 
     is_new = True
     score_definition = ScoreDefinition()
-    refresh_kwargs = {}
     if definition_id:
         is_new = False
         score_definition = ScoreDefinition.get(definition_id)
         project_code = score_definition.project_code
-
-    if is_new:
-        latest_run = max(
-            ProfilingRun.get_latest_run(project_code),
-            TestRun.get_latest_run(project_code),
-            key=lambda run: getattr(run, "run_time", datetime.min),
-        )
-
-        refresh_kwargs = {
-            "add_history_entry": True,
-            "refresh_date": latest_run.run_time if latest_run else None,
-        }
 
     score_definition.project_code = project_code
     score_definition.name = name
@@ -403,12 +384,8 @@ def save_score_definition(_) -> None:
         ],
         group_by_field=not filter_by_columns,
     )
-    score_definition.save()
-    run_refresh_score_cards_results(definition_id=score_definition.id, **refresh_kwargs)
+    save_and_refresh_score_definition(score_definition, is_new=is_new)
     get_all_score_cards.clear()
-
-    if not is_new:
-        run_recalculate_score_card(project_code=project_code, definition_id=score_definition.id)
 
     Router().set_query_params({
         "name": None,

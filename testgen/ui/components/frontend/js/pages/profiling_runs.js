@@ -199,7 +199,6 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                             checked: allSelected,
                                             indeterminate: partiallySelected,
                                             onChange: (checked) => items.forEach(item => selectedRuns[item.job_execution_id].val = checked),
-                                            testId: 'select-all-profiling-run',
                                         })
                                         : '',
                                 );
@@ -359,7 +358,6 @@ const Toolbar = (
             options: getValue(props.table_group_options) ?? [],
             allowNull: true,
             style: 'font-size: 14px;',
-            testId: 'table-group-filter',
             onChange: (value) => emit('FilterApplied', { payload: { table_group_id: value } }),
         }),
         div(
@@ -401,7 +399,6 @@ const Toolbar = (
                 tooltipPosition: 'left',
                 style: 'background: var(--button-generic-background-color);',
                 onclick: () => emit('RefreshData', {}),
-                testId: 'profiling-runs-refresh',
             }),
         ),
     );
@@ -426,7 +423,6 @@ const ProfilingRunItem = (
                 Checkbox({
                     checked: selected,
                     onChange: (checked) => selected.val = checked,
-                    testId: 'select-profiling-run',
                 }),
             )
             : '',

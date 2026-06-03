@@ -15,6 +15,7 @@ from testgen.common.freshness_service import (
     detect_active_days,
     detect_update_window,
     get_freshness_gap_threshold,
+    get_freshness_gated_baseline,
     get_schedule_params,
     infer_schedule,
     is_excluded_day,
@@ -756,6 +757,40 @@ class Test_GetScheduleParams:
         assert result.excluded_days is None
         assert result.window_start is None
         assert result.window_end is None
+
+
+# ---------------------------------------------------------------------------
+# get_freshness_gated_baseline Tests
+# ---------------------------------------------------------------------------
+
+class Test_GetFreshnessGatedBaseline:
+    def test_returns_none_for_none(self):
+        assert get_freshness_gated_baseline(None) is None
+
+    def test_returns_none_for_empty_string(self):
+        assert get_freshness_gated_baseline("") is None
+
+    def test_returns_none_when_freshness_gated_absent(self):
+        assert get_freshness_gated_baseline({"mean": {"123": 100.0}}) is None
+
+    def test_returns_none_when_freshness_gated_false(self):
+        assert get_freshness_gated_baseline({"freshness_gated": False, "baseline_value": 100.0}) is None
+
+    def test_returns_baseline_when_freshness_gated_true(self):
+        assert get_freshness_gated_baseline({"freshness_gated": True, "baseline_value": 220.0}) == 220.0
+
+    def test_parses_from_json_string(self):
+        pred = json.dumps({"freshness_gated": True, "baseline_value": 5.5})
+        assert get_freshness_gated_baseline(pred) == 5.5
+
+    def test_returns_none_when_baseline_value_missing(self):
+        assert get_freshness_gated_baseline({"freshness_gated": True}) is None
+
+    def test_baseline_value_coerced_to_float(self):
+        """JSON may serialize int — must be cast to float for downstream SQL."""
+        result = get_freshness_gated_baseline({"freshness_gated": True, "baseline_value": 220})
+        assert isinstance(result, float)
+        assert result == 220.0
 
     def test_no_window_when_missing(self):
         pred = {"frequency": "sub_daily", "schedule_stage": "active"}

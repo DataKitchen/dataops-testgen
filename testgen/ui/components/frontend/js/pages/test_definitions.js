@@ -75,6 +75,7 @@ const BLANK_PARAM_FIELDS = {
 const ClearFlagButton = ({ disabled, onclick }) => {
     return withTooltip(btn(
         {
+            'data-testid': 'button',
             class: 'tg-button tg-icon-button tg-basic-button',
             disabled,
             onclick,
@@ -394,7 +395,7 @@ const TestDefinitions = (/** @type object */ props) => {
 
     // Table header bar: multi-select toggle + edit buttons | dashed separator | disposition buttons + export
     const tableHeader = div(
-        { class: 'flex-row fx-align-center fx-gap-2 p-2 fx-flex-wrap' },
+        { 'data-testid': 'table-header', class: 'flex-row fx-align-center fx-gap-2 p-2 fx-flex-wrap' },
         () => canDisposition.val
             ? Toggle({
                 label: () => {
@@ -429,7 +430,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 test_type: r.test_type, lock_refresh: r.lock_refresh,
             }));
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'edit-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'file_copy', tooltip: 'Copy/Move', disabled: !hasSelection, onclick: () => emit('CopyMoveDialogOpened', { payload: isAll ? 'all' : minimalSelected() }) }),
                 Button({
                     type: 'icon', icon: 'delete', tooltip: 'Delete', disabled: !hasSelection,
@@ -462,7 +463,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 }
             };
             return div(
-                { class: 'flex-row fx-gap-1' },
+                { 'data-testid': 'disposition-actions', class: 'flex-row fx-gap-1' },
                 Button({ type: 'icon', icon: 'check_circle', tooltip: 'Activate selected', disabled: noSelection || allActive, onclick: () => emitAttribute('test_active', true) }),
                 Button({ type: 'icon', icon: 'notifications_off', tooltip: 'Deactivate selected', disabled: noSelection || allInactive, onclick: () => emitAttribute('test_active', false) }),
                 div({ class: 'td-header-separator' }),
@@ -758,7 +759,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 const row = singleSelected.val;
                 if (!row) return '';
                 return div(
-                    { class: 'tg-td--detail flex-column fx-gap-4' },
+                    { 'data-testid': 'test-definition-detail', class: 'tg-td--detail flex-column fx-gap-4' },
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
                         canEdit.val ? Button({
@@ -853,6 +854,7 @@ const AddDialogComponent = ({ open, info, validateResult: validateResultProp, on
     const tableGroupsId = van.derive(() => getValue(info)?.table_groups_id ?? '');
     const testSuite = van.derive(() => getValue(info)?.test_suite ?? {});
     const tableColumns = van.derive(() => getValue(info)?.table_columns ?? []);
+    const qualifiesTableRefsWithSchema = van.derive(() => getValue(info)?.qualifies_table_refs_with_schema ?? true);
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const scopeFilter = {
@@ -959,6 +961,7 @@ const AddDialogComponent = ({ open, info, validateResult: validateResultProp, on
                     formValues: fv,
                     tableColumns: tableColumns.rawVal,
                     testSuite: testSuite.rawVal,
+                    qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     validateResult: vr,
                     mode: 'add',
                     onFormChange: (changes) => {
@@ -978,6 +981,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
     const dialogInfo = van.derive(() => getValue(info) ?? null);
     const tableColumns = van.derive(() => dialogInfo.val?.table_columns ?? []);
     const testSuite = van.derive(() => dialogInfo.val?.test_suite ?? {});
+    const qualifiesTableRefsWithSchema = van.derive(() => dialogInfo.val?.qualifies_table_refs_with_schema ?? true);
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const formValues = van.state(null);
@@ -1021,6 +1025,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
                     formValues: fv,
                     tableColumns: tableColumns.rawVal,
                     testSuite: testSuite.rawVal,
+                    qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     validateResult: vr,
                     mode: 'edit',
                     onFormChange: (changes) => {
@@ -1036,7 +1041,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
 };
 
 // Shared form content for add/edit dialogs
-const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, onFormChange, onValidate, onSave, onCancel }) => {
+const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, onFormChange, onValidate, onSave, onCancel }) => {
     const testScope = formValues.test_scope ?? 'column';
     const runType = formValues.run_type ?? 'CAT';
     const testType = formValues.test_type ?? '';
@@ -1070,7 +1075,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         { label: 'Regularity', value: 'Regularity' },
         { label: 'Usability', value: 'Usability' },
     ];
-    const showImpactDimensionOverride = testType === 'CUSTOM' || testType === 'Condition_Flag' || testScope === 'referential';
+    const showImpactDimensionOverride = ['custom', 'referential'].includes(testScope);
 
     const tableNameOptions = [
         ...new Set((tableColumns ?? []).map(c => c.table_name).filter(Boolean))
@@ -1176,12 +1181,14 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         ),
 
         // Schema (read-only)
-        Input({
-            name: 'schema_name',
-            label: 'Schema',
-            value: formValues.schema_name ?? '',
-            disabled: true,
-        }),
+        qualifiesTableRefsWithSchema
+            ? Input({
+                name: 'schema_name',
+                label: 'Schema',
+                value: formValues.schema_name ?? '',
+                disabled: true,
+            })
+            : null,
 
         // Table name
         testScope !== 'tablegroup'
@@ -1241,6 +1248,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             { class: 'td-form-params-section' },
             TestDefinitionForm({
                 definition: formValues,
+                qualifiesTableRefsWithSchema,
                 onChange: (changes) => {
                     if (Object.keys(changes).length === 0) return;
                     const updated = { ...fv.rawVal, ...changes };

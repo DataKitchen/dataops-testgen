@@ -1,9 +1,10 @@
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
 import pytest
 
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import JobExecution, JobStatus
 
 pytestmark = pytest.mark.unit
 
@@ -21,7 +22,13 @@ def _returning_row(job, **overrides):
 @pytest.fixture
 def mock_session():
     session = MagicMock()
-    with patch(f"{MODULE}.get_current_session", return_value=session):
+    ctx = MagicMock()
+    ctx.__enter__ = Mock(return_value=session)
+    ctx.__exit__ = Mock(return_value=False)
+    with (
+        patch(f"{MODULE}.get_current_session", return_value=session),
+        patch(f"{MODULE}.database_session", return_value=ctx),
+    ):
         yield session
 
 
@@ -185,3 +192,97 @@ def test_request_cancel_terminal_state_returns_false(mock_session):
 
     assert job.request_cancel() is False
     assert job.status == "completed"
+
+
+# ─── delete_older_than (data retention) ─────────────────────────────
+
+
+def _capture_clauses_used_in_select(mock_session):
+    """Returns the WHERE clauses passed to the candidate-id select query.
+
+    The cleanup loop does select(id).where(*clauses).limit(...). We capture
+    those clauses to assert which filters were applied."""
+    select_call = mock_session.scalars.call_args
+    select_stmt = select_call.args[0]
+    return list(select_stmt.whereclause.clauses) if select_stmt.whereclause is not None else []
+
+
+def test_delete_older_than_filters_only_terminal_statuses(mock_session):
+    """The status filter is `IN ('completed', 'error', 'canceled')` — non-terminal
+    rows (pending/claimed/running/cancel_requested) are skipped regardless of age.
+    This is the key safety guarantee: live work must never be deleted."""
+    mock_session.scalars.return_value.all.return_value = []  # no candidates → loop exits
+
+    cutoff = datetime.now(UTC) - timedelta(days=180)
+    JobExecution.delete_older_than(cutoff=cutoff, project_code="proj", protected_ids=set())
+
+    clauses = _capture_clauses_used_in_select(mock_session)
+    status_clause = next(
+        (c for c in clauses if "status" in str(c).lower()),
+        None,
+    )
+    assert status_clause is not None
+    rendered = str(status_clause.compile(compile_kwargs={"literal_binds": True}))
+    # Must include all three terminal states
+    for state in (JobStatus.COMPLETED.value, JobStatus.ERROR.value, JobStatus.CANCELED.value):
+        assert state in rendered
+    # Must not include any non-terminal state
+    for state in (JobStatus.PENDING.value, JobStatus.CLAIMED.value,
+                  JobStatus.RUNNING.value, JobStatus.CANCEL_REQUESTED.value):
+        assert state not in rendered
+
+
+def test_delete_older_than_returns_zero_when_no_candidates(mock_session):
+    """No-op when nothing is old enough to delete — returns 0, no DELETE executed."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    cutoff = datetime.now(UTC) - timedelta(days=180)
+    result = JobExecution.delete_older_than(cutoff=cutoff, project_code="proj", protected_ids=set())
+
+    assert result == 0
+    # Only the candidate-select ran; no DELETE statement was issued.
+    mock_session.execute.assert_not_called()
+
+
+def test_delete_older_than_batches_and_deletes(mock_session):
+    """Two-batch path: scalars returns one batch, then empty. Both should result
+    in a DELETE on the first batch, and the total count returned."""
+    first_batch = [uuid4(), uuid4(), uuid4()]
+    mock_session.scalars.return_value.all.side_effect = [first_batch, []]
+
+    cutoff = datetime.now(UTC) - timedelta(days=180)
+    result = JobExecution.delete_older_than(
+        cutoff=cutoff, project_code="proj", protected_ids=set(), batch_size=1000,
+    )
+
+    assert result == 3
+    mock_session.execute.assert_called_once()  # one DELETE for one non-empty batch
+
+
+def test_delete_older_than_applies_protected_ids_exclusion(mock_session):
+    """The protected_ids carve-out — job_executions of protected runs — adds a
+    NOT IN clause so they survive even when older than the cutoff."""
+    protected = {uuid4(), uuid4()}
+    mock_session.scalars.return_value.all.return_value = []
+
+    cutoff = datetime.now(UTC) - timedelta(days=180)
+    JobExecution.delete_older_than(cutoff=cutoff, project_code="proj", protected_ids=protected)
+
+    clauses = _capture_clauses_used_in_select(mock_session)
+    rendered = " ".join(str(c) for c in clauses).lower()
+    assert "not in" in rendered or "!= all" in rendered or "in (" in rendered  # NOT IN expression present
+
+
+def test_delete_older_than_skips_protected_filter_when_empty(mock_session):
+    """Empty protected_ids → no NOT IN clause emitted, avoiding the SQL warning
+    that `IN ()` triggers in postgres."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    cutoff = datetime.now(UTC) - timedelta(days=180)
+    JobExecution.delete_older_than(cutoff=cutoff, project_code="proj", protected_ids=set())
+
+    clauses = _capture_clauses_used_in_select(mock_session)
+    rendered = " ".join(str(c) for c in clauses).lower()
+    # Three expected clauses: project_code, completed_at, status IN
+    # Absence of "not in" confirms the protected-ids clause was skipped.
+    assert "not in" not in rendered

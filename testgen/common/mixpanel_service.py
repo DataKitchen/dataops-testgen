@@ -54,6 +54,17 @@ class MixpanelService(Singleton):
 
     @safe_method
     def send_event(self, event_name, include_usage=False, **properties):
+        self._track(event_name, include_usage=include_usage, **properties)
+
+    def send_feedback(self, **properties):
+        # User-submitted feedback is content the user explicitly chose to share
+        # so it is not gated by the TG_ANALYTICS opt-out.
+        try:
+            self._track("feedback", **properties)
+        except Exception:
+            LOG.exception("Error sending feedback")
+
+    def _track(self, event_name, include_usage=False, **properties):
         properties.setdefault("instance_id", self.instance_id)
         properties.setdefault("edition", settings.DOCKER_HUB_REPOSITORY)
         properties.setdefault("version", settings.VERSION)

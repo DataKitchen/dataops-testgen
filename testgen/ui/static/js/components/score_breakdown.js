@@ -33,7 +33,6 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, em
                             .map(([value, label]) => ({ value, label })),
                         height: 32,
                         onChange: (value) => emit('CategoryChanged', { payload: value }),
-                        testId: 'groupby-selector',
                     });
                 },
                 span('for'),
@@ -50,7 +49,6 @@ const ScoreBreakdown = (score, breakdown, category, scoreType, onViewDetails, em
                         options: scoreTypeOptions.map((s) => ({ label: SCORE_TYPE_LABEL[s], value: s })),
                         height: 32,
                         onChange: (value) => emit('ScoreTypeChanged', { payload: value }),
-                        testId: 'score-type-selector',
                     });
                 },
             ),

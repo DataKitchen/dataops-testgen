@@ -1,25 +1,24 @@
 import logging
 from datetime import UTC, datetime
-from enum import StrEnum
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, Text, case, func, select, text, update
+from sqlalchemy import Column, String, Text, case, delete, func, select, text, update
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.models import Base, get_current_session
+from testgen.common.enums import JobKey, JobSource, JobStatus
+from testgen.common.models import Base, database_session, get_current_session
 
 LOG = logging.getLogger("testgen")
 
 
-class JobStatus(StrEnum):
-    PENDING = "pending"
-    CLAIMED = "claimed"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    ERROR = "error"
-    CANCEL_REQUESTED = "cancel_requested"
-    CANCELED = "canceled"
+# Job kinds that are externally triggerable. Internal kinds (run-score-update,
+# recalculate-project-scores, ...) are absent and filtered out by construction.
+PUBLIC_JOB_KEYS: frozenset[JobKey] = frozenset({
+    JobKey.run_profile,
+    JobKey.run_tests,
+    JobKey.run_test_generation,
+})
 
 
 _VALID_TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
@@ -36,9 +35,8 @@ class JobExecution(Base):
 
     id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
     job_key: str = Column(String(100), nullable=False)
-    # args and kwargs are internal dispatch details passed to the job handler.
-    # Do not query or filter on them — external code should not depend on their structure.
-    args: list[Any] = Column(postgresql.JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
+    # kwargs is the internal dispatch payload passed to the job handler.
+    # Do not query or filter on it — external code should not depend on its structure.
     kwargs: dict[str, Any] = Column(postgresql.JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
     source: str = Column(String(20), nullable=False)
     status: str = Column(String(20), nullable=False, default=JobStatus.PENDING, server_default=text("'pending'"))
@@ -55,7 +53,7 @@ class JobExecution(Base):
         cls,
         job_key: str,
         kwargs: dict[str, Any],
-        source: str,
+        source: JobSource,
         project_code: str,
         job_schedule_id: UUID | None = None,
     ) -> Self:
@@ -101,6 +99,39 @@ class JobExecution(Base):
             LOG.info("Claimed %d pending job execution(s)", claimed)
         return rows
 
+    _ACTIVE_STATUSES: ClassVar[list[JobStatus]] = [
+        JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED,
+    ]
+
+    @classmethod
+    def select_active_by_kwargs(
+        cls,
+        project_code: str,
+        job_key: str,
+        kwargs_match: dict[str, str | list[str]],
+        statuses: list[JobStatus] | None = None,
+    ) -> list[Self]:
+        """Find JE rows whose ``kwargs`` JSONB matches the given (key, value) pairs.
+
+        Values may be a single string or a list of strings (which becomes an ``IN`` filter).
+        Defaults to active (non-terminal) statuses.
+        """
+        statuses = statuses or cls._ACTIVE_STATUSES
+        query = select(cls).where(
+            cls.project_code == project_code,
+            cls.job_key == job_key,
+            cls.status.in_(statuses),
+        )
+        for k, v in kwargs_match.items():
+            if isinstance(v, list):
+                if not v:
+                    return []
+                query = query.where(cls.kwargs[k].astext.in_([str(x) for x in v]))
+            else:
+                query = query.where(cls.kwargs[k].astext == str(v))
+        query = query.order_by(cls.created_at.desc())
+        return list(get_current_session().scalars(query).all())
+
     @classmethod
     def find_stale(cls) -> list[Self]:
         """Return job executions left in non-terminal states from a previous process."""
@@ -116,6 +147,42 @@ class JobExecution(Base):
         """Fetch a job execution by primary key."""
         session = get_current_session()
         return session.get(cls, execution_id)
+
+    @classmethod
+    def delete_older_than(
+        cls,
+        cutoff: datetime,
+        project_code: str,
+        protected_ids: set[UUID],
+        batch_size: int = 1000,
+    ) -> int:
+        """Batched delete of terminal-state job executions older than cutoff for
+        the given project, excluding protected ids. Returns total rows deleted.
+
+        Skips rows in non-terminal states (pending/claimed/running/cancel_requested) —
+        those represent live work and must not be removed regardless of age.
+
+        Each batch runs in its own transaction (committed before the next batch
+        is selected), so locks on job_executions are released between batches
+        and WAL growth stays bounded for large sweeps.
+        """
+        where_clauses = [
+            cls.project_code == project_code,
+            cls.completed_at < cutoff,
+            cls.status.in_([JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED]),
+        ]
+        if protected_ids:
+            where_clauses.append(cls.id.notin_(protected_ids))
+
+        total = 0
+        while True:
+            with database_session() as session:
+                ids = session.scalars(select(cls.id).where(*where_clauses).limit(batch_size)).all()
+                if not ids:
+                    break
+                session.execute(delete(cls).where(cls.id.in_(ids)))
+                total += len(ids)
+        return total
 
     @classmethod
     def list_for_project(

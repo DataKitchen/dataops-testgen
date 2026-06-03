@@ -90,6 +90,7 @@ const Tree = (/** @type Properties */ props, /** @type any? */ searchOptionsCont
         {
             id: props.id,
             class: () => `flex-column ${getValue(props.classes)}`,
+            'data-testid': 'tree',
         },
         Toolbar(treeNodes, multiSelect, props, searchOptionsContent, filtersContent, emit),
         div(

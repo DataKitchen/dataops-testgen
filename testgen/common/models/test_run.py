@@ -3,16 +3,16 @@ from datetime import UTC, datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, String, Text, desc, func, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
-from testgen.common.models import get_current_session
+from testgen.common.enums import JobStatus
+from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestResultStatus
@@ -47,6 +47,7 @@ class TestRunMinimal(EntityMinimal):
 class TestRunSummary(EntityMinimal):
     job_execution_id: UUID
     test_run_id: UUID | None
+    job_schedule_id: UUID | None
     status: JobStatus
     created_at: datetime
     started_at: datetime | None
@@ -159,7 +160,6 @@ class TestRun(Entity):
         return {row.id: row.job_execution_id for row in rows}
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get_minimal(cls, run_id: str | UUID) -> TestRunMinimal | None:
         if not is_uuid4(run_id):
             return None
@@ -194,9 +194,9 @@ class TestRun(Entity):
             .where(
                 TestRun.test_suite_id == self.test_suite_id,
                 JobExecution.status == JobStatus.COMPLETED,
-                JobExecution.started_at < self.test_starttime,
+                TestRun.test_starttime < self.test_starttime,
             )
-            .order_by(desc(JobExecution.started_at))
+            .order_by(desc(TestRun.test_starttime))
             .limit(1)
         )
         return get_current_session().scalar(query)
@@ -218,6 +218,8 @@ class TestRun(Entity):
         table_group_id: str | None = None,
         test_suite_id: str | None = None,
         test_run_ids: list[str | UUID] | None = None,
+        job_execution_id: str | UUID | None = None,
+        statuses: list[JobStatus] | None = None,
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[list[TestRunSummary], int]:
@@ -225,9 +227,13 @@ class TestRun(Entity):
             (table_group_id and not is_uuid4(table_group_id))
             or (test_suite_id and not is_uuid4(test_suite_id))
             or (test_run_ids and not all(is_uuid4(run_id) for run_id in test_run_ids))
+            or (job_execution_id and not is_uuid4(job_execution_id))
         ):
             return [], 0
 
+        # Pending JEs (no tr row) surface in project-scope queries — the LEFT JOIN to
+        # test_suites yields a NULL ts row that the ``ts.id IS NULL`` clause lets through —
+        # but not in suite/TG-scoped queries, since the WHERE filter requires ts to match.
         query = f"""
         WITH run_results AS (
             SELECT test_run_id,
@@ -249,6 +255,7 @@ class TestRun(Entity):
         SELECT
             je.id AS job_execution_id,
             tr.id AS test_run_id,
+            je.job_schedule_id,
             je.status,
             je.created_at,
             je.started_at,
@@ -282,6 +289,8 @@ class TestRun(Entity):
             {" AND ts.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND ts.id = :test_suite_id" if test_suite_id else ""}
             {" AND tr.id IN :test_run_ids" if test_run_ids else ""}
+            {" AND je.id = :job_execution_id" if job_execution_id else ""}
+            {" AND je.status IN :statuses" if statuses else ""}
         ORDER BY je.created_at DESC
         LIMIT :limit OFFSET :offset;
         """
@@ -290,6 +299,8 @@ class TestRun(Entity):
             "table_group_id": table_group_id,
             "test_suite_id": test_suite_id,
             "test_run_ids": tuple(test_run_ids or []),
+            "job_execution_id": str(job_execution_id) if job_execution_id else None,
+            "statuses": tuple(statuses) if statuses else (),
             "limit": page_size,
             "offset": (page - 1) * page_size,
         }
@@ -392,6 +403,80 @@ class TestRun(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), {"test_run_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
+
+    @classmethod
+    def find_latest_per_test_suite(cls, project_code: str) -> set[UUID]:
+        """Return the latest completed test run id per test suite for the
+        project.
+
+        Includes monitor suites (`is_monitor=True`). Used by data retention to
+        protect at least one run per scope so each suite keeps a usable
+        baseline when retention sweeps clear older history. Failed and
+        in-flight runs are skipped.
+        """
+        rows = get_current_session().scalars(
+            select(cls.id)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .where(
+                TestSuite.project_code == project_code,
+                JobExecution.status == JobStatus.COMPLETED,
+            )
+            .order_by(cls.test_suite_id, cls.test_starttime.desc())
+            .distinct(cls.test_suite_id)
+        ).all()
+        return set(rows)
+
+    @classmethod
+    def delete_older_than(
+        cls,
+        cutoff: datetime,
+        project_code: str,
+        protected_ids: set[UUID],
+        batch_size: int = 1000,
+        dry_run: bool = False,
+    ) -> int:
+        """Batched delete of test runs (with cascading children) older than
+        cutoff for the given project, excluding protected ids. Returns total
+        parent rows deleted across all batches — or, with ``dry_run=True``,
+        the number that would be deleted (for retention preview, no writes).
+
+        In-flight runs (JE in PENDING/CLAIMED/RUNNING/CANCEL_REQUESTED) are
+        never deleted — they may still be writing data.
+
+        Each batch runs in its own transaction (committed before the next batch
+        is selected), so locks on test_runs / test_results / etc. are released
+        between batches and WAL growth stays bounded for large sweeps.
+        """
+        where_clauses = [
+            TestSuite.project_code == project_code,
+            cls.test_starttime < cutoff,
+            JobExecution.status.in_([JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED]),
+        ]
+        if protected_ids:
+            where_clauses.append(cls.id.notin_(protected_ids))
+
+        base_select = (
+            select(cls.id)
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+        )
+
+        if dry_run:
+            return get_current_session().scalar(
+                select(func.count()).select_from(base_select.where(*where_clauses).subquery())
+            ) or 0
+
+        total = 0
+        while True:
+            with database_session() as session:
+                ids = session.scalars(base_select.where(*where_clauses).limit(batch_size)).all()
+                if not ids:
+                    break
+                cls.cascade_delete([str(i) for i in ids])
+                total += len(ids)
+        return total
+
 
     def init_progress(self) -> None:
         self._progress = {

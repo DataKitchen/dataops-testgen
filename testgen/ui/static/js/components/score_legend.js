@@ -6,7 +6,7 @@ const { div, span } = van.tags;
 
 const ScoreLegend = (/** @type string */ style) => {
     return div(
-        { class: 'flex-row fx-gap-3 text-secondary', style },
+        { 'data-testid': 'score-legend', class: 'flex-row fx-gap-3 text-secondary', style },
         span({ class: 'fx-flex' }),
         LegendItem('N/A', NaN),
         LegendItem('0-85', 0),

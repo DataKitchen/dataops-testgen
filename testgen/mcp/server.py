@@ -1,11 +1,14 @@
 import logging
+from urllib.parse import urlparse
 
 from mcp.server.auth.provider import AccessToken
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
+from testgen import settings
 from testgen.common.auth import decode_jwt_token
 from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 
@@ -31,7 +34,10 @@ Test types have specific, non-obvious meanings (e.g., Alpha_Trunc). Do not guess
 ALWAYS look them up using either the `testgen://test-types` resource or the `get_test_type()` tool.
 
 Hygiene issue types similarly have specific meanings. ALWAYS look them up using the
-`testgen://hygiene-issue-types` resource.
+`testgen://hygiene-issue-types` resource.q
+
+Column profile fields are type-specific (different stats per Alpha / Numeric / Date / Boolean / Other).
+ALWAYS look them up using the `testgen://column-profile-fields` resource.
 
 INVESTIGATING FAILURES
 
@@ -75,6 +81,43 @@ def _configure_mcp_logging() -> None:
         logging.getLogger(name).parent = testgen_logger
 
 
+def _build_transport_security() -> TransportSecuritySettings:
+    """Build DNS-rebinding allowlist from BASE_URL plus operator extras and loopback.
+
+    Without an explicit transport_security, FastMCP installs a loopback-only
+    allowlist that rejects external Host headers with 421. We pass this settings
+    object so production deployments accept their own externally-reachable host.
+    """
+    parsed = urlparse(settings.BASE_URL)
+    base_host = parsed.hostname or "localhost"
+    netloc = parsed.netloc
+    scheme = parsed.scheme or "http"
+
+    allowed_hosts: set[str] = {
+        netloc,
+        f"{base_host}:*",
+        "127.0.0.1:*",
+        "localhost:*",
+        "[::1]:*",
+    }
+    allowed_origins: set[str] = {
+        f"{scheme}://{netloc}",
+        "http://127.0.0.1:*", "https://127.0.0.1:*",
+        "http://localhost:*", "https://localhost:*",
+        "http://[::1]:*", "https://[::1]:*",
+    }
+    for host in settings.MCP_EXTRA_ALLOWED_HOSTS:
+        host_pattern = host if ":" in host else f"{host}:*"
+        allowed_hosts.add(host_pattern)
+        allowed_origins.update({f"http://{host_pattern}", f"https://{host_pattern}"})
+
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        allowed_hosts=sorted(allowed_hosts),
+        allowed_origins=sorted(allowed_origins),
+    )
+
+
 def build_mcp_server(
     api_base_url: str,
     server_url: str | None = None,
@@ -108,24 +151,75 @@ def build_mcp_server(
         search_hygiene_issues,
         update_hygiene_issue,
     )
-    from testgen.mcp.tools.profiling import get_table, list_column_profiles, list_profiling_summaries
+    from testgen.mcp.tools.notifications import (
+        create_notification,
+        delete_notification,
+        get_notification,
+        list_notifications,
+        update_notification,
+    )
+    from testgen.mcp.tools.profile_history import (
+        compare_profiling_runs,
+        get_profiling_trends,
+        get_schema_history,
+    )
+    from testgen.mcp.tools.profiling import (
+        get_column_frequent_values,
+        get_column_patterns,
+        get_column_profile_detail,
+        get_profiling_run,
+        get_table,
+        list_column_profiles,
+        list_profiling_runs,
+        list_profiling_summaries,
+        search_columns,
+    )
+    from testgen.mcp.tools.quality_scores import (
+        create_scorecard,
+        delete_scorecard,
+        get_quality_scores,
+        get_scorecard,
+        list_scorecards,
+        update_scorecard,
+    )
     from testgen.mcp.tools.reference import (
+        column_profile_fields_resource,
         get_test_type,
         glossary_resource,
         hygiene_issue_types_resource,
         test_types_resource,
     )
+    from testgen.mcp.tools.schedules import (
+        create_profiling_schedule,
+        create_test_run_schedule,
+        delete_schedule,
+        get_schedule,
+        list_schedules,
+        update_schedule,
+    )
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
-    from testgen.mcp.tools.test_definitions import get_test, list_test_notes, list_test_types, list_tests
+    from testgen.mcp.tools.test_definitions import (
+        bulk_update_tests,
+        create_test,
+        create_test_note,
+        delete_test_note,
+        get_test,
+        list_test_notes,
+        list_test_types,
+        list_tests,
+        update_test,
+        update_test_note,
+        validate_custom_test,
+    )
     from testgen.mcp.tools.test_results import (
+        compare_test_runs,
         get_failure_summary,
         get_failure_trend,
-        get_test_result_history,
-        get_test_run_diff,
+        list_test_result_history,
         list_test_results,
         search_test_results,
     )
-    from testgen.mcp.tools.test_runs import get_recent_test_runs
+    from testgen.mcp.tools.test_runs import get_test_run, list_test_runs
 
     if server_url is None:
         server_url = f"{api_base_url}/mcp"
@@ -138,6 +232,7 @@ def build_mcp_server(
             resource_server_url=server_url,
         ),
         token_verifier=JWTTokenVerifier(),
+        transport_security=_build_transport_security(),
     )
     _configure_mcp_logging()
 
@@ -155,13 +250,14 @@ def build_mcp_server(
     safe_tool(list_projects)
     safe_tool(list_tables)
     safe_tool(list_test_suites)
-    safe_tool(get_recent_test_runs)
+    safe_tool(list_test_runs)
+    safe_tool(get_test_run)
     safe_tool(list_test_results)
-    safe_tool(get_test_result_history)
+    safe_tool(list_test_result_history)
     safe_tool(get_failure_summary)
     safe_tool(search_test_results)
     safe_tool(get_failure_trend)
-    safe_tool(get_test_run_diff)
+    safe_tool(compare_test_runs)
     safe_tool(get_test_type)
     safe_tool(get_source_data)
     safe_tool(get_source_data_query)
@@ -172,19 +268,53 @@ def build_mcp_server(
     safe_tool(get_table)
     safe_tool(list_column_profiles)
     safe_tool(list_profiling_summaries)
+    safe_tool(list_profiling_runs)
+    safe_tool(get_profiling_run)
+    safe_tool(get_column_profile_detail)
+    safe_tool(get_column_frequent_values)
+    safe_tool(get_column_patterns)
+    safe_tool(search_columns)
+    safe_tool(compare_profiling_runs)
+    safe_tool(get_profiling_trends)
+    safe_tool(get_schema_history)
     safe_tool(run_tests)
     safe_tool(run_profiling)
     safe_tool(cancel_test_run)
     safe_tool(cancel_profiling_run)
     safe_tool(generate_tests)
+    safe_tool(create_test)
+    safe_tool(update_test)
+    safe_tool(validate_custom_test)
+    safe_tool(bulk_update_tests)
+    safe_tool(create_test_note)
+    safe_tool(update_test_note)
+    safe_tool(delete_test_note)
     safe_tool(list_hygiene_issues)
     safe_tool(get_hygiene_issue)
     safe_tool(search_hygiene_issues)
     safe_tool(update_hygiene_issue)
+    safe_tool(create_profiling_schedule)
+    safe_tool(create_test_run_schedule)
+    safe_tool(list_schedules)
+    safe_tool(get_schedule)
+    safe_tool(update_schedule)
+    safe_tool(delete_schedule)
+    safe_tool(get_quality_scores)
+    safe_tool(list_scorecards)
+    safe_tool(get_scorecard)
+    safe_tool(create_scorecard)
+    safe_tool(update_scorecard)
+    safe_tool(delete_scorecard)
+    safe_tool(list_notifications)
+    safe_tool(get_notification)
+    safe_tool(create_notification)
+    safe_tool(update_notification)
+    safe_tool(delete_notification)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)
     safe_resource("testgen://hygiene-issue-types", hygiene_issue_types_resource)
+    safe_resource("testgen://column-profile-fields", column_profile_fields_resource)
     safe_resource("testgen://glossary", glossary_resource)
 
     # Prompts

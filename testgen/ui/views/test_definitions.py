@@ -1,4 +1,3 @@
-import json
 import logging
 import typing
 from datetime import UTC, datetime
@@ -8,9 +7,10 @@ import streamlit as st
 from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 
 from testgen.common import date_service
-from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.custom_test_validation import validate_custom_query
+from testgen.common.database.database_service import get_flavor_service
+from testgen.common.enums import JobSource
 from testgen.common.models import with_database_session
-from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
@@ -33,8 +33,18 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries import profiling_queries
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_from_target_db
+from testgen.ui.services.query_cache import (
+    get_connection,
+    get_table_group_minimal,
+    get_test_suite,
+    select_table_groups_minimal_where,
+    select_test_definitions_minimal_where,
+    select_test_definitions_page,
+    select_test_definitions_where,
+    select_test_suites_minimal_where,
+)
 from testgen.ui.session import session
-from testgen.utils import make_json_safe, to_dataframe
+from testgen.utils import dataframe_to_json_records, make_json_safe, to_dataframe
 
 LOG = logging.getLogger("testgen")
 
@@ -105,7 +115,7 @@ class TestDefinitionsPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        test_suite = TestSuite.get(test_suite_id)
+        test_suite = get_test_suite(test_suite_id)
         if not test_suite:
             self.router.navigate_with_warning(
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
@@ -113,7 +123,7 @@ class TestDefinitionsPage(Page):
             )
             return
 
-        table_group = TableGroup.get_minimal(test_suite.table_groups_id)
+        table_group = get_table_group_minimal(test_suite.table_groups_id)
         project_code = table_group.project_code
 
         if not session.auth.user_has_project_access(project_code):
@@ -141,16 +151,14 @@ class TestDefinitionsPage(Page):
         with st.spinner("Loading data ..."):
             user_can_edit = session.auth.user_has_permission("edit")
             user_can_disposition = session.auth.user_has_permission("disposition")
-            df = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
-                                       page=current_page, page_size=current_page_size,
-                                       flagged_filter=flagged)
-            total_count = get_test_definitions_count(test_suite, table_name, column_name, test_type,
-                                                      flagged_filter=flagged)
+            df, total_count = get_test_definitions(test_suite, table_name, column_name, test_type, sorting_columns,
+                                                    page_index=current_page, page_size=current_page_size,
+                                                    flagged_filter=flagged)
             test_types = run_test_type_lookup_query().to_dict("records")
             table_columns = get_columns(str(table_group.id))
             filter_columns_df = get_test_suite_columns(test_suite_id)
-            table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
-            all_test_suites = TestSuite.select_minimal_where(
+            table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
+            all_test_suites = select_test_suites_minimal_where(
                 TestSuite.table_groups_id.in_([str(tg.id) for tg in table_groups]),
                 TestSuite.is_monitor.isnot(True),
             )
@@ -182,6 +190,12 @@ class TestDefinitionsPage(Page):
         # Build dialog states
         validate_result = st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
+        qualifies_table_refs_with_schema = True
+        if st.session_state.get(TD_ADD_DIALOG_KEY) or st.session_state.get(TD_EDIT_DIALOG_KEY):
+            connection = get_connection(table_group.connection_id)
+            if connection:
+                qualifies_table_refs_with_schema = get_flavor_service(connection.sql_flavor).qualifies_table_refs_with_schema
+
         add_dialog = None
         if st.session_state.get(TD_ADD_DIALOG_KEY):
             add_dialog = {
@@ -191,6 +205,7 @@ class TestDefinitionsPage(Page):
                 "table_groups_id": str(table_group.id),
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
+                "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
             }
 
         edit_dialog = None
@@ -202,6 +217,7 @@ class TestDefinitionsPage(Page):
                 "table_columns": table_columns,
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
+                "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
             }
 
         delete_dialog = None
@@ -258,7 +274,7 @@ class TestDefinitionsPage(Page):
             # Fetch fresh row from the current data
             row_df = df[df["id"] == test_def_id]
             if not row_df.empty:
-                test_def = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+                test_def = dataframe_to_json_records(row_df)[0]
                 st.session_state[TD_EDIT_DIALOG_KEY] = test_def
 
         def on_delete_dialog_opened(selected: list) -> None:
@@ -288,7 +304,7 @@ class TestDefinitionsPage(Page):
         def on_copy_move_dialog_opened(selected) -> None:
             if selected == "all":
                 all_ids = get_test_definition_ids(test_suite, table_name, column_name, test_type, flagged_filter=flagged)
-                results = TestDefinition.select_where(TestDefinition.id.in_(all_ids))
+                results = select_test_definitions_where(TestDefinition.id.in_(all_ids))
                 selected = [
                     {"id": str(r.id), "table_name": r.table_name, "column_name": r.column_name,
                      "test_type": r.test_type, "lock_refresh": r.lock_refresh}
@@ -318,9 +334,27 @@ class TestDefinitionsPage(Page):
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
+        match_schema_test_types = {
+            tt["test_type"]
+            for tt in test_types
+            if "match_schema_name" in (tt.get("default_parm_columns") or "").split(",")
+        }
+
+        def _default_match_schema(test_def: dict) -> None:
+            # The Match Schema field is hidden in the UI for flavors whose SQL doesn't
+            # qualify table refs with a schema, but downstream SQL/Python still expects
+            # match_schema_name populated for tests that support it. Default to the
+            # test's schema (or table-group schema) when the test type accepts
+            # match_schema_name and match_table_name is set.
+            if test_def.get("test_type") not in match_schema_test_types:
+                return
+            if test_def.get("match_table_name") and not test_def.get("match_schema_name"):
+                test_def["match_schema_name"] = test_def.get("schema_name") or table_group.table_group_schema
+
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
+            _default_match_schema(test_def)
             td_columns = set(TestDefinition.__table__.columns.keys())
             TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
             st.cache_data.clear()
@@ -330,6 +364,7 @@ class TestDefinitionsPage(Page):
         @with_database_session
         def on_edit_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
+            _default_match_schema(test_def)
             td_columns = set(TestDefinition.__table__.columns.keys())
             TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
             st.cache_data.clear()
@@ -446,7 +481,7 @@ class TestDefinitionsPage(Page):
                 JobExecution.submit(
                     job_key="run-tests",
                     kwargs={"test_suite_id": str(selected_id)},
-                    source="ui",
+                    source=JobSource.ui,
                     project_code=project_code,
                 )
             except Exception as error:
@@ -530,7 +565,7 @@ class TestDefinitionsPage(Page):
         def on_export_selected(payload: dict) -> None:
             ids = payload.get("ids", [])
             if ids:
-                data = get_test_definitions(test_suite)
+                data, _ = get_test_definitions(test_suite)
                 data = data[data["id"].isin(ids)]
                 download_dialog(
                     dialog_title="Download Excel Report",
@@ -539,11 +574,22 @@ class TestDefinitionsPage(Page):
                 )
 
         def on_filter_changed(filters: dict) -> None:
+            norm = lambda v: None if v in (None, "None", "") else str(v)
+            if (
+                norm(filters.get("table_name")) == norm(table_name)
+                and norm(filters.get("column_name")) == norm(column_name)
+                and norm(filters.get("test_type")) == norm(test_type)
+                and norm(filters.get("flagged")) == norm(flagged)
+                and current_page == 0
+            ):
+                return
             Router().set_query_params({**filters, "page": "0"})
 
         def on_page_changed(payload: dict) -> None:
             new_page = payload.get("page", 0)
             new_page_size = payload.get("page_size")
+            if new_page == current_page and (new_page_size is None or int(new_page_size) == current_page_size):
+                return
             params: dict = {"page": str(new_page)}
             if new_page_size is not None:
                 params["page_size"] = str(int(new_page_size))
@@ -557,6 +603,8 @@ class TestDefinitionsPage(Page):
                 order = col.get("order", "asc")
                 sort_parts.append(f"{field}:{order}")
             sort_value = ",".join(sort_parts) if sort_parts else None
+            if sort_value == sort and current_page == 0:
+                return
             Router().set_query_params({"sort": sort_value, "page": "0"})
 
         testgen.test_definitions_widget(
@@ -567,7 +615,7 @@ class TestDefinitionsPage(Page):
                     "test_suite": test_suite.test_suite,
                     "project_code": project_code,
                 },
-                "test_definitions": json.loads(df.to_json(orient="records", date_unit="s")),
+                "test_definitions": dataframe_to_json_records(df),
                 "filter_options": {
                     "tables": table_options,
                     "columns": columns_raw,
@@ -679,7 +727,7 @@ def get_excel_report_data(
     if data is not None:
         data = data.copy()
     else:
-        data = get_test_definitions(test_suite)
+        data, _ = get_test_definitions(test_suite)
 
     for key in ["test_active_display", "lock_refresh_display", "flagged_display"]:
         data[key] = data[key].apply(lambda val: val if val == "Yes" else None)
@@ -759,7 +807,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def get_test_suite_columns(test_suite_id: str) -> pd.DataFrame:
-    results = TestDefinition.select_minimal_where(
+    results = select_test_definitions_minimal_where(
         TestDefinition.test_suite_id == test_suite_id,
         order_by=(asc(func.lower(TestDefinition.table_name)), asc(func.lower(TestDefinition.column_name))),
     )
@@ -772,10 +820,16 @@ def get_test_definitions(
     column_name: str | None = None,
     test_type: str | None = None,
     sorting_columns: list[tuple] | None = None,
-    page: int = 0,
-    page_size: int = 0,
+    page_index: int | None = None,
+    page_size: int = 500,
     flagged_filter: str | None = None,
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, int]:
+    """Return ``(df, total_count)`` for test definitions matching the given filters.
+
+    When ``page_index`` is provided (0-based), fetches only that page from
+    the DB using ``select_test_definitions_page()``; otherwise fetches all rows
+    via ``select_test_definitions_where()``.  ``total_count`` is always the full matching count.
+    """
     clauses = [TestDefinition.test_suite_id == test_suite.id]
     if table_name:
         clauses.append(TestDefinition.table_name == table_name)
@@ -803,16 +857,18 @@ def get_test_definitions(
             else:
                 order_by.append(sort_funcs[direction](func.lower(getattr(TestDefinition, attribute))))
 
-    # For pagination, we need to bypass the base select_where which doesn't support offset/limit.
-    # We'll fetch all matching results and slice in Python.
-    test_definitions = TestDefinition.select_where(
-        *clauses,
-        order_by=tuple(order_by) if order_by else None,
-    )
+    order_by_tuple = tuple(order_by) if order_by else None
 
-    if page_size > 0:
-        offset = page * page_size
-        test_definitions = list(test_definitions)[offset:offset + page_size]
+    if page_index is not None:
+        test_definitions, total_count = select_test_definitions_page(
+            *clauses,
+            order_by=order_by_tuple,
+            page=page_index + 1,
+            limit=page_size,
+        )
+    else:
+        test_definitions = select_test_definitions_where(*clauses, order_by=order_by_tuple)
+        total_count = len(test_definitions)
 
     df = to_dataframe(test_definitions, TestDefinitionSummary.columns())
     date_service.accommodate_dataframe_to_timezone(df, st.session_state)
@@ -844,37 +900,7 @@ def get_test_definitions(
     for col in df.select_dtypes(include=["datetime"]).columns:
         df[col] = df[col].astype(str).replace("NaT", "")
 
-    return df
-
-
-def get_test_definitions_count(
-    test_suite: TestSuite,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    test_type: str | None = None,
-    flagged_filter: str | None = None,
-) -> int:
-    from testgen.ui.services.database_service import fetch_one_from_db
-
-    where_parts = ["test_suite_id = :test_suite_id"]
-    params: dict = {"test_suite_id": str(test_suite.id)}
-    if table_name:
-        where_parts.append("table_name = :table_name")
-        params["table_name"] = table_name
-    if column_name:
-        where_parts.append("column_name ILIKE :column_name")
-        params["column_name"] = column_name
-    if test_type:
-        where_parts.append("test_type = :test_type")
-        params["test_type"] = test_type
-    if flagged_filter == "Flagged":
-        where_parts.append("flagged = true")
-    elif flagged_filter == "Not Flagged":
-        where_parts.append("flagged = false")
-
-    query = f"SELECT COUNT(*) as cnt FROM test_definitions WHERE {' AND '.join(where_parts)};"
-    result = fetch_one_from_db(query, params)
-    return int(result["cnt"]) if result else 0
+    return df, total_count
 
 
 def get_test_definition_ids(
@@ -895,7 +921,7 @@ def get_test_definition_ids(
         clauses.append(TestDefinition.flagged == True)
     elif flagged_filter == "Not Flagged":
         clauses.append(TestDefinition.flagged == False)
-    results = TestDefinition.select_where(*clauses)
+    results = select_test_definitions_where(*clauses)
     return [str(r.id) for r in results]
 
 
@@ -916,7 +942,7 @@ def get_test_definitions_collision(
         for item in test_definitions
         if item["column_name"] is not None
     ]
-    results = TestDefinition.select_minimal_where(
+    results = select_test_definitions_minimal_where(
         TestDefinition.table_groups_id == target_table_group_id,
         TestDefinition.test_suite_id == target_test_suite_id,
         TestDefinition.last_auto_gen_date.isnot(None),
@@ -947,13 +973,13 @@ def get_columns(table_groups_id: str) -> list[dict]:
 def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None:
     schema = test_definition["schema_name"]
     table_name = test_definition["table_name"]
-    connection = Connection.get(table_group.connection_id)
+    connection = get_connection(table_group.connection_id)
 
     if test_definition["test_type"] == "Condition_Flag":
         condition = test_definition["custom_query"]
         flavor_service = get_flavor_service(connection.sql_flavor)
         concat_operator = flavor_service.concat_operator
-        quote = flavor_service.quote_character
+        table_ref = flavor_service.get_table_ref(schema, table_name)
         query = f"""
         SELECT
             COALESCE(
@@ -965,17 +991,8 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
                 {concat_operator} '|',
                 '<NULL>|'
             )
-        FROM {quote}{schema}{quote}.{quote}{table_name}{quote};
+        FROM {table_ref};
         """
+        fetch_from_target_db(connection, query)
     else:
-        query = replace_params(
-            f"""
-            SELECT COUNT(*)
-            FROM (
-                {test_definition["custom_query"]}
-            ) TEST
-            """,
-            {"DATA_SCHEMA": schema},
-        )
-
-    fetch_from_target_db(connection, query)
+        validate_custom_query(connection, schema, test_definition["custom_query"])

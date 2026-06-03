@@ -143,6 +143,25 @@ def get_schedule_params(prediction: dict | str | None) -> ScheduleParams:
     return ScheduleParams(excluded_days=excluded_days, window_start=window_start, window_end=window_end)
 
 
+def get_freshness_gated_baseline(prediction: dict | str | None) -> float | None:
+    """Extract the freshness-gated baseline value from a Volume_Trend / Metric_Trend
+    prediction JSON.
+
+    The baseline is the test value at the most recent detected freshness update. Returns
+    None when the prediction is missing, empty, does not have freshness-gating enabled,
+    or has no baseline value recorded.
+    """
+    if not prediction:
+        return None
+    parsed = prediction if isinstance(prediction, dict) else json.loads(prediction)
+    if not parsed.get("freshness_gated"):
+        return None
+    baseline_value = parsed.get("baseline_value")
+    if baseline_value is None:
+        return None
+    return float(baseline_value)
+
+
 def is_excluded_day(
     dt: pd.Timestamp,
     exclude_weekends: bool,

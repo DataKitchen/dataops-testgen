@@ -117,6 +117,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10022'
+    test_type: Pattern_Match
+    sql_flavor: salesforce_data360
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CASE WHEN REGEXP_LIKE(CAST(NULLIF({COLUMN_NAME}, '') AS VARCHAR), '{BASELINE_VALUE}') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1384'
     test_id: '1026'
@@ -193,5 +201,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NOT NULLIF(TO_VARCHAR("{COLUMN_NAME}"), '') LIKE_REGEXPR '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10029'
+    test_id: 1026
+    test_type: Pattern_Match
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NOT REGEXP_LIKE(CAST(NULLIF("{COLUMN_NAME}", '') AS VARCHAR), '{BASELINE_VALUE}') GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

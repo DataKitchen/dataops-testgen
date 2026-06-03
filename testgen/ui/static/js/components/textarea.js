@@ -22,7 +22,6 @@
  * @property {string?} class
  * @property {number?} width
  * @property {number?} height
- * @property {string?} testId
  * @property {Array<Validator>?} validators
  */
 import van from '../van.min.js';
@@ -68,7 +67,7 @@ const Textarea = (/** @type Properties */ props) => {
             id: domId,
             class: () => `flex-column fx-gap-1 ${getValue(props.class) ?? ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            'data-testid': props.testId ?? props.name ?? '',
+            'data-testid': 'textarea',
         },
         div(
             { class: 'flex-row fx-gap-1 text-caption' },
@@ -87,6 +86,7 @@ const Textarea = (/** @type Properties */ props) => {
             class: () => `tg-textarea--field ${getValue(props.disabled) ? 'tg-textarea--disabled' : ''}`,
             style: () => `min-height: ${getValue(props.height) || defaultHeight}px;`,
             value,
+            'data-value': value,
             name: props.name ?? '',
             disabled: props.disabled,
             placeholder: () => getValue(props.placeholder) ?? '',

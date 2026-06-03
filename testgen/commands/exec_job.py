@@ -11,9 +11,10 @@ import sys
 from uuid import UUID
 
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
+from testgen.common.enums import JobStatus
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
@@ -35,8 +36,8 @@ def exec_job(job_execution_id: UUID) -> None:
                 LOG.error("Job execution %s not found", job_execution_id)
                 sys.exit(1)
 
-            handler = JOB_DISPATCH.get(job_exec.job_key)
-            if not handler:
+            job_config = JOB_DISPATCH.get(job_exec.job_key)
+            if not job_config:
                 job_exec.mark_interrupted(f"Unknown job key: {job_exec.job_key}")
                 return
 
@@ -48,7 +49,7 @@ def exec_job(job_execution_id: UUID) -> None:
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
                 job_context.set(JobContext(job_id=job_execution_id, source=job_exec.source))
-                handler(**job_exec.kwargs)
+                job_config.handler(**job_exec.kwargs)
 
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)

@@ -9,7 +9,11 @@ from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.project_membership import RoleType
 from testgen.common.models.user import User
 from testgen.ui.services.javascript_service import execute_javascript
-from testgen.ui.services.query_cache import get_membership_by_user_and_project
+from testgen.ui.services.query_cache import (
+    get_membership_by_user_and_project,
+    get_user,
+    select_users_where,
+)
 from testgen.ui.session import session
 
 LOG = logging.getLogger("testgen")
@@ -62,7 +66,7 @@ class Authentication:
             st.stop()
 
     def get_credentials(self):
-        users = User.select_where()
+        users = select_users_where()
         usernames = {}
         for item in users:
             usernames[item.username.lower()] = {
@@ -72,7 +76,7 @@ class Authentication:
         return {"usernames": usernames}
 
     def login_user(self, username: str) -> None:
-        self.user = User.get(username)
+        self.user = get_user(username)
         self.user.save(update_latest_login=True)
         self.load_user_role()
         MixpanelService().send_event("login", include_usage=True, role=self.role)
@@ -83,7 +87,7 @@ class Authentication:
         if token is not None:
             try:
                 payload = decode_jwt_token(token)
-                self.user = User.get(payload["username"])
+                self.user = get_user(payload["username"])
                 self.load_user_role()
             except Exception:
                 LOG.debug("Invalid auth token found on cookies", exc_info=True, stack_info=True)

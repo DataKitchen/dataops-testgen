@@ -115,6 +115,14 @@ test_types:
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '10013'
+    test_type: LOV_All
+    sql_flavor: salesforce_data360
+    measure: |-
+      (SELECT ARRAY_JOIN(ARRAY_AGG(sub_val), '|') FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{TABLE_NAME}" WHERE {SUBSET_CONDITION} ORDER BY 1 LIMIT 1000) sub_lov)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1376'
     test_id: '1018'
@@ -202,5 +210,13 @@ test_types:
     lookup_redactable_columns: lov
     lookup_query: |-
       SELECT STRING_AGG("{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}") AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") HAVING STRING_AGG("{COLUMN_NAME}", '|' ORDER BY "{COLUMN_NAME}") <> {THRESHOLD_VALUE} LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10020'
+    test_id: 1018
+    test_type: LOV_All
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT ARRAY_JOIN(ARRAY_AGG(sub_val), '|') AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" AS sub_val FROM "{TABLE_NAME}" ORDER BY 1 LIMIT 1000) sub_lov HAVING ARRAY_JOIN(ARRAY_AGG(sub_val), '|') <> {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

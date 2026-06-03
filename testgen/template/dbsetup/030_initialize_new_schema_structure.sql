@@ -50,14 +50,16 @@ CREATE TABLE stg_test_definition_updates (
 );
 
 CREATE TABLE projects (
-   id                    UUID DEFAULT gen_random_uuid(),
-   project_code          VARCHAR(30) NOT NULL
+   id                       UUID DEFAULT gen_random_uuid(),
+   project_code             VARCHAR(30) NOT NULL
       CONSTRAINT projects_project_code_pk
          PRIMARY KEY,
-   project_name          VARCHAR(50),
+   project_name             VARCHAR(50),
    observability_api_key    TEXT,
    observability_api_url    TEXT DEFAULT '',
-   use_dq_score_weights     BOOLEAN DEFAULT TRUE
+   use_dq_score_weights     BOOLEAN DEFAULT TRUE,
+   data_retention_enabled   BOOLEAN NOT NULL DEFAULT TRUE,
+   data_retention_days      INTEGER DEFAULT 180
 );
 
 CREATE TABLE connections (
@@ -72,7 +74,7 @@ CREATE TABLE connections (
    sql_flavor_code        VARCHAR(30),
    project_host           VARCHAR(250),
    project_port           VARCHAR(5),
-   project_user           VARCHAR(50),
+   project_user           VARCHAR(256),
    project_db             VARCHAR(100),
    connection_name        VARCHAR(40),
    project_pw_encrypted   BYTEA,
@@ -711,7 +713,8 @@ CREATE TABLE auth_users (
 	name 			 VARCHAR(256),
 	password 	 VARCHAR(120),
 	is_global_admin BOOLEAN NOT NULL DEFAULT FALSE,
-   latest_login TIMESTAMP
+   latest_login TIMESTAMP,
+   preferences JSONB NOT NULL DEFAULT '{}'
 );
 
 ALTER TABLE auth_users
@@ -966,6 +969,9 @@ CREATE INDEX ix_dsl_tg_tcd
 CREATE INDEX ix_prun_pc_con
    ON profiling_runs(project_code, connection_id);
 
+CREATE INDEX ix_prun_pc_starttime
+   ON profiling_runs(project_code, profiling_starttime);
+
 CREATE INDEX ix_prun_tg
    ON profiling_runs(table_groups_id);
 
@@ -1066,12 +1072,11 @@ CREATE TABLE job_schedules (
     id UUID NOT NULL PRIMARY KEY,
     project_code VARCHAR(30) NOT NULL,
     key VARCHAR(100) NOT NULL,
-    args JSONB NOT NULL,
     kwargs JSONB NOT NULL,
     cron_expr VARCHAR(50) NOT NULL,
     cron_tz VARCHAR(30) NOT NULL,
     active BOOLEAN DEFAULT TRUE,
-    UNIQUE (project_code, key, args, kwargs, cron_expr, cron_tz)
+    UNIQUE (project_code, key, kwargs, cron_expr, cron_tz)
 );
 
 CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
@@ -1079,7 +1084,6 @@ CREATE INDEX job_schedules_idx ON job_schedules (project_code, key);
 CREATE TABLE job_executions (
     id              UUID            NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     job_key         VARCHAR(100)    NOT NULL,
-    args            JSONB           NOT NULL DEFAULT '[]'::jsonb,
     kwargs          JSONB           NOT NULL DEFAULT '{}'::jsonb,
     source          VARCHAR(20)     NOT NULL,
     status          VARCHAR(20)     NOT NULL DEFAULT 'pending',
@@ -1095,6 +1099,8 @@ CREATE TABLE job_executions (
 CREATE INDEX idx_job_executions_poll ON job_executions (status, created_at) WHERE status = 'pending';
 CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
 CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
+CREATE INDEX idx_job_executions_project_completed
+    ON job_executions (project_code, completed_at);
 
 CREATE TABLE settings (
     key VARCHAR(50) NOT NULL PRIMARY KEY,

@@ -422,6 +422,10 @@ Use as testgen.text("text", "extra_styles") */
 div[data-testid="stPopoverBody"]:has(i.tg-header--help-wrapper) {
     padding: 0;
 }
+
+.st-key-feedback_widget {
+    z-index: 9999;
+}
 /*  */
 
 /* Summary bar component */

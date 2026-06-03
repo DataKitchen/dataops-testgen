@@ -1,13 +1,15 @@
 import logging
 from datetime import datetime
 
-from testgen.commands.queries.refresh_data_chars_query import ColumnChars, RefreshDataCharsSQL
+from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
     fetch_from_db_threaded,
     write_to_app_db,
 )
+from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import get_exception_message
@@ -20,16 +22,25 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
 
     LOG.info("Getting DDF for table group")
     try:
-        data_chars = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
+        if sql_generator.flavor_service.metadata_via_api:
+            # Flavor returns column metadata directly (e.g., Salesforce Data 360
+            # via the connector's metadata API). These flavors have no information_schema.
+            # Apply the table-group filters in Python
+            # since we bypass the SQL {TABLE_CRITERIA} clause.
+            params = resolve_connection_params(connection.__dict__)
+            api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
+            data_chars = sql_generator.filter_schema_columns(api_columns)
+        else:
+            rows = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
+            data_chars = [ColumnChars(**row) for row in rows]
     except Exception as e:
         raise RuntimeError(f"Error refreshing columns for data catalog. {get_exception_message(e)}") from e
-    
-    data_chars = [ColumnChars(**column) for column in data_chars]
+
     if data_chars:
         distinct_tables = {column.table_name for column in data_chars}
         LOG.info(f"Tables: {len(distinct_tables)}, Columns: {len(data_chars)}")
         count_queries = sql_generator.get_row_counts(distinct_tables)
-        
+
         LOG.info("Getting row counts for table group")
         count_results, _, error_data = fetch_from_db_threaded(
             count_queries, use_target_db=True, max_threads=connection.max_threads,

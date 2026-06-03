@@ -30,7 +30,6 @@
  * @property {string?} style
  * @property {string?} type
  * @property {string?} class
- * @property {string?} testId
  * @property {any?} prefix
  * @property {number} step
  * @property {Array<Validator>?} validators
@@ -103,7 +102,7 @@ const Input = (/** @type Properties */ props) => {
             id: domId,
             class: () => `flex-column fx-gap-1 tg-input--label ${getValue(props.class) ?? ''}`,
             style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}; ${getValue(props.style)}`,
-            'data-testid': props.testId ?? props.name ?? '',
+            'data-testid': 'input',
         },
         div(
             { class: 'flex-row fx-gap-1 text-caption' },
@@ -137,6 +136,7 @@ const Input = (/** @type Properties */ props) => {
                 name: props.name ?? '',
                 type: inputType,
                 disabled: props.disabled,
+                ...(inputType.val !== 'password' ? {'data-value': value} : {}),
                 ...(inputType.val === 'number' ? {step: getValue(props.step)} : {}),
                 ...(props.readonly ? {readonly: true} : {}),
                 ...(props.passwordSuggestions ?? true ? {} : {autocomplete: 'off', 'data-op-ignore': true}),

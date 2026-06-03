@@ -318,6 +318,7 @@ def run_observability_exporter(project_code, test_suite):
     test_suites = TestSuite.select_minimal_where(
         TestSuite.project_code == project_code,
         TestSuite.test_suite == test_suite,
+        TestSuite.is_monitor.isnot(True),
     )
     qty_of_exported_events = export_test_results(test_suites[0].id)
     click.echo(f"{qty_of_exported_events} events have been exported.")

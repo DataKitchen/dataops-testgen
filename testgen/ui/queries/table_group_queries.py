@@ -5,11 +5,14 @@ from uuid import UUID
 
 import streamlit as st
 
-from testgen.commands.queries.refresh_data_chars_query import ColumnChars, RefreshDataCharsSQL
+from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
 from testgen.commands.run_refresh_data_chars import write_data_chars
+from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.ui.services.query_cache import get_connection
 
 
 class StatsPreview(TypedDict):
@@ -54,7 +57,7 @@ def get_table_group_preview(
 
     if connection or table_group.connection_id:
         try:
-            connection = connection or Connection.get(table_group.connection_id)
+            connection = connection or get_connection(table_group.connection_id)
             table_group_preview, data_chars, sql_generator = _get_preview(table_group, connection)
 
             def save_data_chars(table_group_id: UUID) -> None:
@@ -109,8 +112,13 @@ def _get_preview(
     connection: Connection,
 ) -> tuple[TableGroupPreview, list[ColumnChars], RefreshDataCharsSQL]:
     sql_generator = RefreshDataCharsSQL(connection, table_group)
-    data_chars = fetch_from_target_db(connection, *sql_generator.get_schema_ddf())
-    data_chars = [ColumnChars(**column) for column in data_chars]
+    if sql_generator.flavor_service.metadata_via_api:
+        params = resolve_connection_params(connection.__dict__)
+        api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
+        data_chars = sql_generator.filter_schema_columns(api_columns)
+    else:
+        rows = fetch_from_target_db(connection, *sql_generator.get_schema_ddf())
+        data_chars = [ColumnChars(**column) for column in rows]
 
     preview: TableGroupPreview = {
         "stats": {

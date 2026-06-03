@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.cron_service import get_cron_sample
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
@@ -24,10 +25,19 @@ from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
-from testgen.ui.services.query_cache import get_project_summary, get_test_type_summaries
+from testgen.ui.services.query_cache import (
+    get_monitor_schedule,
+    get_project_summary,
+    get_table_group,
+    get_test_definition,
+    get_test_suite,
+    get_test_type_summaries,
+    select_table_groups_minimal_where,
+    select_test_definitions_where,
+)
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
-from testgen.ui.utils import dict_from_kv, get_cron_sample, get_cron_sample_handler
+from testgen.ui.utils import dict_from_kv, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
 
@@ -85,7 +95,7 @@ class MonitorsDashboardPage(Page):
         )
 
         project_summary = get_project_summary(project_code)
-        table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+        table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
 
         if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
             table_group_id = str(table_groups[0].id) if table_groups else None
@@ -107,10 +117,7 @@ class MonitorsDashboardPage(Page):
 
             if monitor_suite_id:
                 with st.spinner(text="Loading data ..."):
-                    monitor_schedule = JobSchedule.get(
-                        JobSchedule.key == RUN_MONITORS_JOB_KEY,
-                        JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
-                    )
+                    monitor_schedule = get_monitor_schedule(monitor_suite_id)
 
                     anomaly_type_filter = [t for t in anomaly_type_filter.split(",") if t in ANOMALY_TYPE_FILTERS] if anomaly_type_filter else None
                     if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
@@ -597,7 +604,7 @@ def build_edit_monitor_settings_data(
     monitor_suite_id = table_group.monitor_test_suite_id
 
     if monitor_suite_id:
-        monitor_suite = TestSuite.get(monitor_suite_id)
+        monitor_suite = get_test_suite(monitor_suite_id)
     else:
         monitor_suite = TestSuite(
             project_code=table_group.project_code,
@@ -638,7 +645,6 @@ def build_edit_monitor_settings_data(
             new_schedule = JobSchedule(
                 project_code=table_group.project_code,
                 key=RUN_MONITORS_JOB_KEY,
-                args=[],
                 kwargs={"test_suite_id": str(monitor_suite.id)},
                 **new_schedule_config,
             )
@@ -648,7 +654,7 @@ def build_edit_monitor_settings_data(
             JobSchedule.update_active(schedule.id, new_schedule_config["active"])
 
         if is_new:
-            updated_table_group = TableGroup.get(table_group.id)
+            updated_table_group = get_table_group(table_group.id)
             updated_table_group.monitor_test_suite_id = monitor_suite.id
             updated_table_group.save()
             # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
@@ -680,7 +686,7 @@ def build_edit_monitor_settings_data(
 @with_database_session
 def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
     try:
-        monitor_suite = TestSuite.get(table_group.monitor_test_suite_id)
+        monitor_suite = get_test_suite(table_group.monitor_test_suite_id)
         TestSuite.cascade_delete([monitor_suite.id])
         st.cache_data.clear()
     except Exception:
@@ -749,7 +755,7 @@ def build_table_trends_data(
 
     lookback_multiplier = 3 if extended_history else 1
     events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name, lookback_multiplier)
-    definitions = TestDefinition.select_where(
+    definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
         TestDefinition.table_name == table_name,
         TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
@@ -757,11 +763,8 @@ def build_table_trends_data(
 
     predictions = {}
     if len(definitions) > 0:
-        test_suite = TestSuite.get(table_group.monitor_test_suite_id)
-        monitor_schedule = JobSchedule.get(
-            JobSchedule.key == RUN_MONITORS_JOB_KEY,
-            JobSchedule.kwargs["test_suite_id"].astext == str(table_group.monitor_test_suite_id),
-        )
+        test_suite = get_test_suite(table_group.monitor_test_suite_id)
+        monitor_schedule = get_monitor_schedule(table_group.monitor_test_suite_id)
         monitor_lookback = test_suite.monitor_lookback
         predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
 
@@ -946,6 +949,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_m
                 "is_pending": not bool(event["result_id"]),
                 "lower_tolerance": params.get("lower_tolerance") if params.get("lower_tolerance") else None,
                 "upper_tolerance": params.get("upper_tolerance") if params.get("upper_tolerance") else None,
+                "threshold_value": params.get("threshold_value") if params.get("threshold_value") else None,
             })
 
     return {
@@ -1021,7 +1025,7 @@ def build_edit_table_monitors_data(
     table_group: TableGroupMinimal, payload: dict, dialog: dict | None = None,
 ) -> tuple[dict, dict]:
     table_name = payload.get("table_name")
-    definitions = TestDefinition.select_where(
+    definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
         TestDefinition.table_name == table_name,
         TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
@@ -1045,7 +1049,7 @@ def build_edit_table_monitors_data(
         valid_columns = {col.name for col in TestDefinition.__table__.columns}
 
         for updated_def in get_updated_definitions():
-            current_def: TestDefinitionSummary = TestDefinition.get(updated_def.get("id"))
+            current_def: TestDefinitionSummary = get_test_definition(updated_def.get("id"))
             if current_def:
                 merged = {key: getattr(current_def, key, None) for key in valid_columns}
                 merged.update({key: value for key, value in updated_def.items() if key in valid_columns})

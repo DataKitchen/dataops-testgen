@@ -75,9 +75,11 @@ tran_date_cols AS (
     ) AS rank
   FROM latest_results
   WHERE general_type IN ('A', 'D', 'N')
-    AND functional_data_type ILIKE 'transactional date%'
-    OR functional_data_type ILIKE 'period%'
-    OR functional_data_type = 'timestamp'
+    AND (
+      functional_data_type ILIKE 'transactional date%'
+      OR functional_data_type ILIKE 'period%'
+      OR functional_data_type = 'timestamp'
+    )
 ),
 -- Numeric Measures
 numeric_cols AS (

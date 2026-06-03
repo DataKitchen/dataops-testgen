@@ -31,7 +31,7 @@ const RadioGroup = (/** @type Properties */ props) => {
     const disabled = getValue(props.disabled) ?? false;
 
     return div(
-        { class: () => `tg-radio-group--wrapper ${layout}${disabled ? ' disabled' : ''}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}` },
+        { class: () => `tg-radio-group--wrapper ${layout}${disabled ? ' disabled' : ''}`, style: () => `width: ${props.width ? getValue(props.width) + 'px' : 'auto'}`, 'data-testid': 'radio-group' },
         div(
             { class: 'text-caption tg-radio-group--label flex-row fx-gap-1' },
             props.label,

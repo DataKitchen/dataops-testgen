@@ -176,3 +176,90 @@ def test_hygiene_issue_types_resource_empty(mock_type_cls, db_session_mock):
 
     result = hygiene_issue_types_resource()
     assert "No hygiene issue types found" in result
+
+
+# --- column_profile_fields_resource ---
+
+
+def test_column_profile_fields_resource_has_five_sections():
+    from testgen.mcp.tools.reference import column_profile_fields_resource
+
+    result = column_profile_fields_resource()
+
+    assert "TestGen Column Profile Fields Reference" in result
+    assert "## All Column Types" in result
+    assert "## Alpha" in result
+    assert "## Numeric" in result
+    assert "## Date" in result
+    assert "## Boolean" in result
+
+
+def test_column_profile_fields_resource_lists_all_pii_redacted_fields():
+    """The footer must name every redactable field so the LLM can interpret `[PII Redacted]` markers."""
+    from testgen.mcp.tools.reference import column_profile_fields_resource
+
+    result = column_profile_fields_resource()
+
+    # Friendly labels mirroring PROFILING_PII_FIELDS from testgen.common.pii_masking.
+    expected_labels = (
+        "Frequent Values",
+        "Minimum Text",
+        "Maximum Text",
+        "Minimum Value",
+        "Minimum Value > 0",
+        "Maximum Value",
+        "Minimum Date",
+        "Maximum Date",
+    )
+    for label in expected_labels:
+        assert label in result, f"Expected `{label}` to be named in the redaction note"
+
+
+def test_column_profile_fields_resource_describes_redaction_trigger():
+    from testgen.mcp.tools.reference import column_profile_fields_resource
+
+    result = column_profile_fields_resource()
+
+    # The redaction trigger: column is PII-flagged AND caller lacks permission to view PII.
+    assert "PII" in result
+    assert "permission to view PII" in result
+
+
+def test_column_profile_fields_resource_describes_per_type_fields():
+    """Each section should at least mention the most distinctive field for that type."""
+    from testgen.mcp.tools.reference import column_profile_fields_resource
+
+    result = column_profile_fields_resource()
+
+    # All-types section
+    assert "Row Count" in result
+    assert "Hygiene Issues" in result
+    # Alpha
+    assert "Minimum Length" in result
+    assert "Frequent Values" in result
+    assert "Standard Pattern Match" in result
+    # Numeric
+    assert "Minimum Value" in result
+    assert "Median Value" in result
+    # Datetime
+    assert "Minimum Date" in result
+    assert "Before 1 Year" in result
+    # Boolean
+    assert "## Boolean Columns" in result
+
+
+# --- server instructions reference the new resource ---
+
+
+def test_server_instructions_reference_column_profile_fields_resource():
+    """The LLM relies on SERVER_INSTRUCTIONS to learn which resources to consult.
+
+    The new resource must be named alongside test-types and hygiene-issue-types so
+    the LLM knows when to look up column-profile field semantics.
+    """
+    from testgen.mcp.server import SERVER_INSTRUCTIONS
+
+    assert "testgen://column-profile-fields" in SERVER_INSTRUCTIONS
+    # Sanity check the existing references are still present.
+    assert "testgen://test-types" in SERVER_INSTRUCTIONS
+    assert "testgen://hygiene-issue-types" in SERVER_INSTRUCTIONS

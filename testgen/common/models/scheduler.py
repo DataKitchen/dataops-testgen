@@ -3,20 +3,26 @@ from datetime import datetime
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-import streamlit as st
 from cron_converter import Cron
 from sqlalchemy import Boolean, Column, String, cast, delete, func, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.enums import JobKey
 from testgen.common.models import Base, get_current_session
-from testgen.common.models.entity import ENTITY_HASH_FUNCS
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 
 RUN_TESTS_JOB_KEY = "run-tests"
 RUN_MONITORS_JOB_KEY = "run-monitors"
 RUN_PROFILE_JOB_KEY = "run-profile"
+
+DEFAULT_DATA_CLEANUP_CRON = "0 1 * * *"
+# Non-UI fallback for retention schedule timezone. UI surfaces should instead
+# default to the user's browser timezone (resolved client-side).
+DEFAULT_RETENTION_CRON_TZ = "UTC"
+
+SCHEDULABLE_JOB_KEYS: frozenset[JobKey] = frozenset({JobKey.run_profile, JobKey.run_tests})
 
 
 class JobSchedule(Base):
@@ -26,20 +32,28 @@ class JobSchedule(Base):
     project_code: str = Column(String)
 
     key: str = Column(String, nullable=False)
-    args: list[Any] = Column(postgresql.JSONB, nullable=False, default=[])
     kwargs: dict[str, Any] = Column(postgresql.JSONB, nullable=False, default={})
     cron_expr: str = Column(String, nullable=False)
     cron_tz: str = Column(String, nullable=False)
     active: bool = Column(Boolean, default=True)
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def get(cls, *clauses) -> Self | None:
         query = select(cls).where(*clauses)
         return get_current_session().scalars(query).first()
 
     @classmethod
     def select_where(cls, *clauses, order_by: str | InstrumentedAttribute | None = None) -> Iterable[Self]:
+        query = select(cls).where(*clauses)
+        if order_by is not None:
+            query = query.order_by(order_by)
+        return get_current_session().scalars(query).all()
+
+    @classmethod
+    def select_runnable(cls, *clauses, order_by: str | InstrumentedAttribute | None = None) -> Iterable[Self]:
+        """Schedules the scheduler should dispatch: active rows, and (for test/monitor runs)
+        only when the linked test suite has at least one test definition.
+        """
         test_job_keys = [RUN_TESTS_JOB_KEY, RUN_MONITORS_JOB_KEY]
         test_definitions_count = (
             select(cls.id)
@@ -73,7 +87,98 @@ class JobSchedule(Base):
     @classmethod
     def count(cls):
         return get_current_session().query(cls).count()
-    
+
+    @classmethod
+    def list_for_project(
+        cls,
+        project_code: str,
+        *extra_filters,
+        key_filter: Iterable[JobKey] | None = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[Self], int]:
+        """List schedules for a project with optional key filter and pagination.
+
+        Returns both active and paused rows. Defaults ``key_filter`` to
+        ``SCHEDULABLE_JOB_KEYS`` (``run_profile``, ``run_tests``); pass an explicit
+        ``key_filter`` to include other kinds.
+        """
+        session = get_current_session()
+        keys = list(key_filter) if key_filter is not None else list(SCHEDULABLE_JOB_KEYS)
+        query = select(cls).where(cls.project_code == project_code, cls.key.in_(keys), *extra_filters)
+        total = session.scalar(select(func.count()).select_from(query.subquery()))
+        items = session.scalars(query.order_by(cls.key, cls.id).offset((page - 1) * limit).limit(limit)).all()
+        return list(items), total or 0
+
+    @classmethod
+    def select_active_by_kwargs(
+        cls,
+        project_code: str,
+        key: str,
+        kwargs_match: dict[str, str | list[str]],
+    ) -> list[Self]:
+        """Find active schedules whose ``kwargs`` JSONB matches the given (key, value) pairs.
+
+        Values may be a single string or a list of strings (which becomes an ``IN`` filter).
+        """
+        query = select(cls).where(
+            cls.project_code == project_code,
+            cls.key == key,
+            cls.active.is_(True),
+        )
+        for k, v in kwargs_match.items():
+            if isinstance(v, list):
+                if not v:
+                    return []
+                query = query.where(cls.kwargs[k].astext.in_([str(x) for x in v]))
+            else:
+                query = query.where(cls.kwargs[k].astext == str(v))
+        return list(get_current_session().scalars(query).all())
+
+    @classmethod
+    def upsert_for_retention(
+        cls,
+        project_code: str,
+        retention_days: int,
+        cron_expr: str,
+        cron_tz: str,
+    ) -> Self:
+        """Create or update the data-retention schedule for a project.
+
+        Idempotent — safe to call on project creation and on every retention
+        settings save. Uniquely keyed by (project_code, JobKey.run_data_cleanup).
+        """
+        session = get_current_session()
+        schedule = session.scalars(
+            select(cls).where(cls.project_code == project_code, cls.key == JobKey.run_data_cleanup)
+        ).first()
+        kwargs = {"project_code": project_code, "retention_days": retention_days}
+        if schedule:
+            schedule.kwargs = kwargs
+            schedule.cron_expr = cron_expr
+            schedule.cron_tz = cron_tz
+            schedule.active = True
+        else:
+            schedule = cls(
+                project_code=project_code,
+                key=JobKey.run_data_cleanup,
+                kwargs=kwargs,
+                cron_expr=cron_expr,
+                cron_tz=cron_tz,
+                active=True,
+            )
+            session.add(schedule)
+        return schedule
+
+    @classmethod
+    def delete_for_retention(cls, project_code: str) -> None:
+        """Remove the data-retention schedule for a project (when retention is
+        disabled or the project is deleted).
+        """
+        get_current_session().execute(
+            delete(cls).where(cls.project_code == project_code, cls.key == JobKey.run_data_cleanup)
+        )
+
     def get_sample_triggering_timestamps(self, n=3) -> list[datetime]:
         schedule = Cron(cron_string=self.cron_expr).schedule(timezone_str=self.cron_tz)
         return [schedule.next() for _ in range(n)]
@@ -81,7 +186,7 @@ class JobSchedule(Base):
     @property
     def cron_tz_str(self) -> str:
         return self.cron_tz.replace("_", " ")
-    
+
     def save(self) -> None:
         db_session = get_current_session()
         db_session.add(self)

@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dataops-testgen"
-version = "5.33.3"
+version = "5.48.0"
 description = "DataKitchen's Data Quality DataOps TestGen"
 authors = [
     { "name" = "DataKitchen, Inc.", "email" = "info@datakitchen.io" },
@@ -41,6 +41,7 @@ dependencies = [
     "oracledb==3.4.0",
     "hdbcli==2.25.31",
     "sqlalchemy-hana==4.4.0",
+    "salesforce-cdp-connector>=1.0.19",
     "pyodbc==5.2.0",
     "psycopg2-binary==2.9.11",
     "pycryptodome==3.21",
@@ -116,6 +117,9 @@ release = [
 [project.entry-points.console_scripts]
 testgen = "testgen.__main__:cli"
 tg-patch-streamlit = "testgen.ui.scripts.patch_streamlit:patch"
+
+[project.entry-points."sqlalchemy.dialects"]
+salesforce_data360 = "testgen.common.database.salesforce_data360_dialect:SalesforceData360Dialect"
 
 [project.urls]
 "Source Code" = "https://github.com/DataKitchen/dataops-testgen"
@@ -396,4 +400,8 @@ asset_dir = "ui/components/frontend/js"
 
 [[tool.streamlit.component.components]]
 name = "sidebar"
+asset_dir = "ui/components/frontend/js"
+
+[[tool.streamlit.component.components]]
+name = "feedback_widget"
 asset_dir = "ui/components/frontend/js"

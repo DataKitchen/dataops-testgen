@@ -512,6 +512,14 @@ ANALYTICS_ENABLED: bool = getenv("TG_ANALYTICS", "yes").lower() in ("yes", "true
 Disables sending usage data when set to any value except "true" and "yes". Defaults to "yes"
 """
 
+DISABLE_FEEDBACK_POPUP: bool = getenv("TG_DISABLE_FEEDBACK_POPUP", "no").lower() in ("yes", "true")
+"""
+When set to "yes" or "true", suppresses the periodic feedback popup entirely.
+
+from env variable: `TG_DISABLE_FEEDBACK_POPUP`
+defaults to: `no`
+"""
+
 JOB_POLL_INTERVAL: int = int(getenv("TG_JOB_POLL_INTERVAL", "5"))
 """
 Seconds between polls for pending job executions.
@@ -617,4 +625,66 @@ Externally-reachable base URL for the Streamlit UI (used in email links, PDFs).
 
 from env variable: `TG_UI_BASE_URL`
 defaults to: computed from UI_TLS_ENABLED and UI_PORT
+"""
+
+MCP_EXTRA_ALLOWED_HOSTS: list[str] = [
+    h.strip() for h in (getenv("TG_MCP_EXTRA_ALLOWED_HOSTS", "") or "").split(",") if h.strip()
+]
+"""
+Extra Host header values accepted by MCP DNS rebinding protection (comma-separated).
+BASE_URL's hostname and loopback are always allowed; this adds more for multi-domain
+deployments or reverse proxies that rewrite Host. Entries without a port (`tg.example.com`)
+get an automatic `:*` wildcard; entries with a port are matched literally
+(`tg.example.com:8080`) or with explicit wildcard (`tg.example.com:*`).
+Only affects MCP routes — the parent FastAPI app does not validate Host headers.
+
+from env variable: `TG_MCP_EXTRA_ALLOWED_HOSTS`
+defaults to: empty (BASE_URL hostname + loopback only)
+"""
+
+API_MAX_REQUEST_BODY_BYTES: int = int(
+    getenv("TG_API_MAX_REQUEST_BODY_BYTES", str(10 * 1024 * 1024))
+)
+"""
+Reject HTTP requests larger than this with 413 Payload Too Large.
+
+from env variable: `TG_API_MAX_REQUEST_BODY_BYTES`
+defaults to: 10485760 (10 MiB)
+"""
+
+API_GRACEFUL_SHUTDOWN_TIMEOUT: int = int(getenv("TG_API_GRACEFUL_SHUTDOWN_TIMEOUT", "30"))
+"""
+Seconds uvicorn waits for in-flight requests on SIGTERM before force-closing.
+Long blocking SQL queries that don't honor asyncio cancellation may be cut mid-flight;
+align with the target DB's statement_timeout.
+
+from env variable: `TG_API_GRACEFUL_SHUTDOWN_TIMEOUT`
+defaults to: 30
+"""
+
+API_HSTS_HEADER: str = getenv("TG_API_HSTS_HEADER", "")
+"""
+Override HSTS (Strict-Transport-Security) header value. When empty, HSTS is emitted
+only when API_TLS_ENABLED with value 'max-age=63072000; includeSubDomains'. Setting
+this forces emission regardless of TLS (useful when TLS terminates at a reverse proxy).
+
+from env variable: `TG_API_HSTS_HEADER`
+defaults to: empty (auto from API_TLS_ENABLED)
+"""
+
+API_CSP_HEADER: str = getenv("TG_API_CSP_HEADER", "frame-ancestors 'none'")
+"""
+Content-Security-Policy header value. Default restricts framing only; broader policies
+risk breaking Redoc at /api/docs which loads CDN assets.
+
+from env variable: `TG_API_CSP_HEADER`
+defaults to: `frame-ancestors 'none'`
+"""
+
+API_REFERRER_POLICY: str = getenv("TG_API_REFERRER_POLICY", "no-referrer")
+"""
+Referrer-Policy header value.
+
+from env variable: `TG_API_REFERRER_POLICY`
+defaults to: `no-referrer`
 """

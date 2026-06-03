@@ -1,11 +1,11 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
+from enum import StrEnum
 from itertools import zip_longest
 from typing import ClassVar, Literal
 from uuid import UUID, uuid4
 
-import streamlit as st
 from sqlalchemy import (
     Boolean,
     Column,
@@ -27,12 +27,30 @@ from sqlalchemy.sql.expression import case, literal
 
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
-from testgen.common.models.entity import ENTITY_HASH_FUNCS, Entity, EntityMinimal
+from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
 TestRunType = Literal["QUERY", "CAT", "METADATA"]
 TestScope = Literal["column", "referential", "table", "tablegroup", "custom"]
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
+
+
+class Severity(StrEnum):
+    FAIL = "Fail"
+    WARNING = "Warning"
+
+
+class InvalidTestDefinitionFields(ValueError):
+    """Aggregated field-level validation errors. ``errors``: ``dict[field_name, reason]``."""
+
+    def __init__(self, errors: dict[str, str]) -> None:
+        self.errors = errors
+        super().__init__("; ".join(f"{k}: {v}" for k, v in errors.items()))
+
+
+def _is_blank(value: object) -> bool:
+    # NullIfEmptyString columns turn ``""`` into NULL on write — treat both as cleared.
+    return value is None or value == ""
 
 
 class ParamFieldsMixin:
@@ -204,6 +222,28 @@ class TestType(ParamFieldsMixin, Entity):
         return [TestTypeSummary(**row) for row in results]
 
 
+def _required_fields_for(test_type: TestType) -> set[str]:
+    """Fields that must be present and non-empty for the given test type.
+
+    - Column-scoped tests implicitly require ``column_name``.
+    - Test types with ``custom_query`` in ``param_columns`` require ``custom_query``.
+    - ``default_parm_required`` is a CSV of ``Y``/``N`` aligned with ``default_parm_columns``;
+      positions marked ``Y`` are required.
+    """
+    required: set[str] = set()
+    if test_type.test_scope == "column":
+        required.add("column_name")
+    if "custom_query" in test_type.param_columns:
+        required.add("custom_query")
+    if test_type.default_parm_required and test_type.default_parm_columns:
+        flags = [v.strip().upper() for v in test_type.default_parm_required.split(",")]
+        columns = [c.strip() for c in test_type.default_parm_columns.split(",")]
+        for col, flag in zip(columns, flags, strict=False):
+            if flag == "Y":
+                required.add(col)
+    return required
+
+
 class TestDefinition(Entity):
     __tablename__ = "test_definitions"
 
@@ -290,7 +330,6 @@ class TestDefinition(Entity):
     )
 
     @classmethod
-    @st.cache_data(show_spinner=False)
     def get(cls, identifier: str | UUID) -> TestDefinitionSummary | None:
         if not is_uuid4(identifier):
             return None
@@ -329,7 +368,6 @@ class TestDefinition(Entity):
         return TestDefinitionSummary(**result) if result else None
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[TestDefinitionSummary]:
@@ -343,7 +381,6 @@ class TestDefinition(Entity):
         return [TestDefinitionSummary(**row) for row in results]
 
     @classmethod
-    @st.cache_data(show_spinner=False, hash_funcs=ENTITY_HASH_FUNCS)
     def select_minimal_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[TestDefinitionMinimal]:
@@ -395,7 +432,83 @@ class TestDefinition(Entity):
         query = query.order_by(*cls._default_order_by)
         return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
+    @classmethod
+    def select_page(
+        cls,
+        *clauses,
+        order_by: tuple[str | InstrumentedAttribute] | None = None,
+        page: int = 1,
+        limit: int = 500,
+    ) -> tuple[list["TestDefinitionSummary"], int]:
+        select_columns = [
+            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
+            for col in cls._summary_columns
+        ]
+        query = (
+            select(*select_columns)
+            .join(TestType, cls.test_type == TestType.test_type)
+            .where(*clauses)
+            .order_by(*(order_by or cls._default_order_by))
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
+
     _yn_columns: ClassVar = {"test_active", "lock_refresh"}
+
+    # Fields editable on every test type regardless of param_columns.
+    EDITABLE_BASE_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "test_active", "severity", "lock_refresh", "flagged", "test_description",
+    })
+
+    def editable_fields(self, test_type: TestType) -> set[str]:
+        """Fields a caller may set or change on this test definition under the given test type."""
+        fields = self.EDITABLE_BASE_FIELDS | test_type.param_columns
+        # column_name is meaningful for column-scoped tests (the column under test) and
+        # custom-scoped tests (a "Test Focus" label). Other scopes don't use it.
+        if test_type.test_scope in ("column", "custom"):
+            fields = fields | {"column_name"}
+        # impact_dimension is overridable only for user-defined-semantic scopes
+        # (custom-scope = user-authored SQL; referential-scope = comparison-based tests).
+        # Other scopes have baked-in dimensions so the override doesn't apply.
+        if test_type.test_scope in ("custom", "referential"):
+            fields = fields | {"impact_dimension"}
+        return fields
+
+    def validate(self, test_type: TestType) -> None:
+        """Validate the current state against the given test type.
+
+        Raises :class:`InvalidTestDefinitionFields` with every offending field
+        and reason — callers see all problems at once.
+        """
+        errors: dict[str, str] = {}
+
+        if self.severity:
+            try:
+                Severity(self.severity)
+            except ValueError:
+                errors["severity"] = (
+                    f"must be `{Severity.FAIL.value}` or `{Severity.WARNING.value}` "
+                    f"(got `{self.severity}`)"
+                )
+
+        # column_name applies to column-scoped tests (the column under test) and
+        # custom-scoped tests (a "Test Focus" label). Other scopes don't use it.
+        if test_type.test_scope not in ("column", "custom") and not _is_blank(self.column_name):
+            errors["column_name"] = (
+                f"test type `{test_type.test_type}` has scope `{test_type.test_scope}`; "
+                f"column_name does not apply to this scope"
+            )
+
+        if not _is_blank(self.custom_query) and "custom_query" not in test_type.param_columns:
+            errors["custom_query"] = (
+                f"test type `{test_type.test_type}` does not accept a custom query"
+            )
+
+        for required in _required_fields_for(test_type):
+            if _is_blank(getattr(self, required, None)):
+                errors[required] = f"required for test type `{test_type.test_type}`"
+
+        if errors:
+            raise InvalidTestDefinitionFields(errors)
 
     @classmethod
     def set_status_attribute(
@@ -560,16 +673,25 @@ class TestDefinitionNote(Base):
     updated_at: datetime = Column(postgresql.TIMESTAMP)
 
     @classmethod
-    def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> None:
+    def add_note(cls, test_definition_id: str | UUID, detail: str, username: str) -> "TestDefinitionNote":
+        """Insert a note and return the persisted instance with ``id`` and ``created_at`` populated."""
         db_session = get_current_session()
-        db_session.execute(
-            insert(cls).values(test_definition_id=test_definition_id, detail=detail, created_by=username)
+        note = cls(
+            test_definition_id=test_definition_id,
+            detail=detail,
+            created_by=username,
+            created_at=datetime.now(UTC).replace(tzinfo=None),
         )
+        db_session.add(note)
+        db_session.flush()
+        return note
 
     @classmethod
     def update_note(cls, note_id: str | UUID, detail: str) -> None:
         db_session = get_current_session()
-        db_session.execute(update(cls).where(cls.id == note_id).values(detail=detail, updated_at=func.now()))
+        db_session.execute(
+            update(cls).where(cls.id == note_id).values(detail=detail, updated_at=datetime.now(UTC).replace(tzinfo=None))
+        )
 
     @classmethod
     def delete_note(cls, note_id: str | UUID) -> None:

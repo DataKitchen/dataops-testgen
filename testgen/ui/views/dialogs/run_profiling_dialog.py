@@ -2,6 +2,7 @@ from uuid import UUID
 
 import streamlit as st
 
+from testgen.common.enums import JobSource
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.ui.components import widgets as testgen
@@ -32,7 +33,7 @@ def run_profiling_dialog_widget(
                 JobExecution.submit(
                     job_key="run-profile",
                     kwargs={"table_group_id": str(table_group["id"])},
-                    source="ui",
+                    source=JobSource.ui,
                     project_code=project_code,
                 )
         except Exception as error:

@@ -10,7 +10,6 @@ from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.pii_masking import get_pii_columns, mask_hygiene_detail, mask_profiling_pii
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
@@ -26,6 +25,7 @@ from testgen.ui.pdf.hygiene_issue_report import create_report
 from testgen.ui.queries.profiling_queries import get_profiling_anomalies
 from testgen.ui.queries.source_data_queries import get_hygiene_issue_source_data, get_hygiene_issue_source_query
 from testgen.ui.services.database_service import execute_db_query
+from testgen.ui.services.query_cache import get_profiling_run_minimal
 from testgen.ui.session import session
 from testgen.utils import friendly_score, make_json_safe
 
@@ -92,7 +92,7 @@ class HygieneIssuesPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        run = ProfilingRun.get_minimal(run_id)
+        run = get_profiling_run_minimal(run_id)
         if not run:
             self.router.navigate_with_warning(
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
@@ -260,7 +260,7 @@ class HygieneIssuesPage(Page):
             anomaly_df = profiling_queries.get_profiling_anomalies_by_ids([row_id])
             if anomaly_df.empty:
                 return
-            row = make_json_safe(anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")[0])
+            row = anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")[0]
 
             MixpanelService().send_event(
                 "view-source-data",
@@ -335,10 +335,7 @@ class HygieneIssuesPage(Page):
             anomaly_df = profiling_queries.get_profiling_anomalies_by_ids(ids)
             if anomaly_df.empty:
                 return
-            selected_items = [
-                make_json_safe(record)
-                for record in anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")
-            ]
+            selected_items = anomaly_df.where(anomaly_df.notna(), None).to_dict(orient="records")
 
             MixpanelService().send_event(
                 "download-issue-report",

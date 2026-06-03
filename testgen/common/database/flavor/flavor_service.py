@@ -6,9 +6,10 @@ from urllib.parse import quote_plus
 from sqlalchemy import create_engine as sqlalchemy_create_engine
 from sqlalchemy.engine.base import Engine
 
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.encrypt import DecryptText
 
-SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana"]
+SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 RowLimitingClause = Literal["limit", "top", "fetch"]
 
 
@@ -100,9 +101,36 @@ class FlavorService:
     varchar_type = "VARCHAR(1000)"
     ddf_table_ref = "table_name"
     row_limiting_clause: RowLimitingClause = "limit"
+
+    def row_limit_clauses(self, n: int) -> tuple[str, str]:
+        """Return ``(prefix, suffix)`` SQL fragments for limiting a SELECT to ``n`` rows."""
+        if self.row_limiting_clause == "top":
+            return f"TOP {n}", ""
+        if self.row_limiting_clause == "fetch":
+            return "", f"FETCH FIRST {n} ROWS ONLY"
+        return "", f"LIMIT {n}"
+
     default_uppercase = False
     test_query = "SELECT 1"
     url_scheme = "postgresql"
+
+    qualifies_table_refs_with_schema = True
+    metadata_via_api = False
+
+    def get_schema_columns(self, _params: ResolvedConnectionParams, _schema: str) -> list[ColumnChars] | None:
+        """Return column metadata without querying information_schema.
+
+        Override this for flavors that lack information_schema and set ``metadata_via_api = True``.
+        Return None to use the standard SQL template path.
+        """
+        return None
+
+    def get_table_ref(self, schema: str, table: str) -> str:
+        """Return a fully-qualified table reference for SQL queries."""
+        q = self.quote_character
+        if not self.qualifies_table_refs_with_schema:
+            return f"{q}{table}{q}"
+        return f"{q}{schema}{q}.{q}{table}{q}"
 
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
         return []
@@ -134,4 +162,3 @@ class FlavorService:
 
     def get_connection_string_head(self, params: ResolvedConnectionParams) -> str:
         return f"{self.url_scheme}://{params.username}:{quote_plus(params.password)}@"
-

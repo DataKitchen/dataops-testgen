@@ -9,6 +9,7 @@ from streamlit.delta_generator import DeltaGenerator
 import testgen.common.logs as logs
 from testgen import settings
 from testgen.common import version_service
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session
 
@@ -43,6 +44,9 @@ def page_header(
             help_menu(help_topic)
 
         st.html('<hr size="3" class="tg-header--line">')
+
+        # Feedback widget (bottom-right)
+        render_feedback_widget()
 
     # Render app logs dialog widget (outside the header container)
     logs_data = st.session_state.get(APP_LOGS_DIALOG_KEY)
@@ -114,6 +118,10 @@ def help_menu(help_topic: str | None = None) -> None:
             close_help()
             st.session_state[APP_LOGS_DIALOG_KEY] = _read_log_data()
 
+        def open_feedback():
+            close_help()
+            session.show_feedback_popup = True
+
         with help_container.container():
             flex_row_end()
             with st.popover("Help"):
@@ -127,9 +135,11 @@ def help_menu(help_topic: str | None = None) -> None:
                         "version": version.__dict__,
                         "permissions": {
                             "can_edit": session.auth.user_has_permission("edit"),
+                            "is_logged_in": session.auth.is_logged_in,
                         },
                     },
                     on_AppLogsClicked_change=lambda _: open_app_logs(),
+                    on_FeedbackClicked_change=lambda _: open_feedback(),
                     on_ExternalLinkClicked_change=lambda _: close_help(rerun=True),
                 )
 
@@ -175,3 +185,36 @@ def _apply_html(html: str, container: DeltaGenerator | None = None):
         container.html(html)
     else:
         st.html(html)
+
+
+def render_feedback_widget():
+    """Render the feedback popup widget in the bottom-right corner.
+
+    Visibility is driven by session.show_feedback_popup:
+    - set by router on session start (30-day eligibility gate)
+    - set when the user manually clicks "Give Feedback"
+
+    Feedback submissions are sent to MixPanel.
+    """
+    if not bool(session.show_feedback_popup):
+        return
+
+    def on_dismissed(_):
+        session.show_feedback_popup = False
+
+    def on_submitted(payload):
+        if payload:
+            MixpanelService().send_feedback(
+                rating=int(payload.get("rating", 0)),
+                comment=payload.get("comment") or None,
+                email=payload.get("email") or None,
+            )
+
+    from testgen.ui.components.widgets import feedback_widget
+    feedback_widget(
+        key="feedback_widget",
+        data={},
+        on_FeedbackDismissed_change=on_dismissed,
+        on_FeedbackSubmitted_change=on_submitted,
+    )
+

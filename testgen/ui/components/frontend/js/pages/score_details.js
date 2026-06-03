@@ -70,7 +70,7 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 () => {
                     const score = getValue(props.score);
                     return getValue(props.permissions)?.can_edit ?? false ? div(
-                        { class: 'flex-row tg-test-suites--card-actions' },
+                        { class: 'flex-row tg-score-details--card-actions' },
                         Button({ type: 'icon', icon: 'notifications', tooltip: 'Configure Notifications', onclick: () => emit('EditNotifications', {}) }),
                         Button({ type: 'icon', icon: 'edit', tooltip: 'Edit Scorecard', onclick: () => emit('LinkClicked', { href: 'quality-dashboard:explorer', params: { definition_id: score.id, project_code: score.project_code } }) }),
                         Button({ type: 'icon', icon: 'delete', tooltip: 'Delete Scorecard', onclick: () => { deleteDialogOpen.val = true; } }),
@@ -170,6 +170,10 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-score-details {
     min-height: 900px;
+}
+ 
+.tg-score-details--card-actions {
+    margin-top: -10px;
 }
 `);
 

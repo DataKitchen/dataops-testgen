@@ -8,7 +8,6 @@ import testgen.ui.queries.profiling_queries as profiling_queries
 from testgen.common import date_service
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import with_database_session
-from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.pii_masking import (
     PII_REDACTED,
     get_pii_columns,
@@ -16,6 +15,7 @@ from testgen.common.pii_masking import (
     mask_profiling_pii,
     mask_source_data_pii,
 )
+from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -25,9 +25,10 @@ from testgen.ui.components.widgets.download_dialog import (
 )
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
+from testgen.ui.services.query_cache import get_profiling_run_minimal
 from testgen.ui.session import session
 from testgen.ui.views.data_catalog import get_preview_data
-from testgen.utils import make_json_safe
+from testgen.utils import dataframe_to_json_records, make_json_safe
 
 PAGE_SIZE = 500
 
@@ -86,7 +87,7 @@ class ProfilingResultsPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        run = ProfilingRun.get_minimal(run_id)
+        run = get_profiling_run_minimal(run_id)
         if not run:
             self.router.navigate_with_warning(
                 f"Profiling run with ID '{run_id}' does not exist. Redirecting to list of Profiling Runs ...",
@@ -162,15 +163,14 @@ class ProfilingResultsPage(Page):
             pii_columns = get_pii_columns(str(run.table_groups_id))
             mask_profiling_pii(df, pii_columns)
 
-        # Use pandas JSON serialization to safely handle NaN/NaT -> null, timestamps -> epoch seconds
-        items = json.loads(df.to_json(orient="records", date_unit="s"))
+        items = dataframe_to_json_records(df)
 
         selected_item = st.session_state.get(SELECTED_ITEM_KEY)
         # Load selected item if URL has a selection but session cache is missing or stale
         if selected and (selected_item is None or selected_item.get("id") != selected):
             row_df = df[df["id"] == selected]
             if not row_df.empty:
-                row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+                row = dataframe_to_json_records(row_df)[0]
                 row["hygiene_issues"] = profiling_queries.get_hygiene_issues(
                     run_id, row["table_name"], row.get("column_name")
                 )
@@ -188,7 +188,7 @@ class ProfilingResultsPage(Page):
             row_df = df[df["id"] == item_id]
             if row_df.empty:
                 return
-            row = json.loads(row_df.to_json(orient="records", date_unit="s"))[0]
+            row = dataframe_to_json_records(row_df)[0]
             row["hygiene_issues"] = profiling_queries.get_hygiene_issues(
                 run_id, row["table_name"], row.get("column_name")
             )
@@ -325,21 +325,12 @@ def get_excel_report_data(
     def _format_top_freq_values(val):
         if not val or val == PII_REDACTED:
             return val
-        lines = []
-        for part in val[2:].split("\n| "):
-            left, right = part.split(" | ")
-            lines.append(f"{right} | {left}")
-        return "\n".join(lines)
+        return "\n".join(f"{count} | {value}" for value, count in parse_top_freq_values(val))
 
     def _format_top_patterns(val):
         if not val or val == PII_REDACTED:
             return val
-        parts = val.split(" | ")
-        formatted = []
-        for index, part in enumerate(parts):
-            separator = "\n" if index % 2 else " | "
-            formatted.append(f"{part}{separator}")
-        return "".join(formatted)
+        return "\n".join(f"{count} | {pattern}" for pattern, count in parse_top_patterns(val))
 
     data["top_freq_values"] = data["top_freq_values"].apply(_format_top_freq_values)
     data["top_patterns"] = data["top_patterns"].apply(_format_top_patterns)

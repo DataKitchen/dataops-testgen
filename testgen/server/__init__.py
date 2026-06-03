@@ -17,16 +17,14 @@ _FAVICON_PATH = Path(__file__).resolve().parent.parent / "ui" / "assets" / "favi
 if settings.IS_DEBUG:
     os.environ.setdefault("AUTHLIB_INSECURE_TRANSPORT", "1")
 
-from testgen.api.app import router as api_router
-from testgen.api.jobs import router as jobs_router
+from testgen.api import router as api_v1_router
 from testgen.api.oauth.metadata import router as metadata_router
 from testgen.api.oauth.routes import init_routes
 from testgen.api.oauth.routes import router as oauth_router
 from testgen.api.oauth.server import create_authorization_server
-from testgen.api.runs import router as runs_router
-from testgen.api.test_definitions import router as test_definitions_router
 from testgen.common import version_service
 from testgen.common.models import with_database_session
+from testgen.server.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
 LOG = logging.getLogger("testgen")
 
@@ -123,13 +121,25 @@ def create_app(version: str | None = None) -> FastAPI:
 
     app.include_router(metadata_router)
     app.include_router(oauth_router)
-    app.include_router(api_router)
-    app.include_router(jobs_router)
-    app.include_router(runs_router)
-    app.include_router(test_definitions_router)
+    app.include_router(api_v1_router)
 
     if settings.MCP_ENABLED:
         app.mount("", mcp_app)
+
+    # add_middleware is LIFO — body cap is added first so it runs innermost,
+    # rejecting oversized requests before security headers wrap the 413 response
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.API_MAX_REQUEST_BODY_BYTES)
+
+    hsts = settings.API_HSTS_HEADER or (
+        "max-age=63072000; includeSubDomains" if settings.API_TLS_ENABLED else None
+    )
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        hsts=hsts,
+        csp=settings.API_CSP_HEADER,
+        referrer=settings.API_REFERRER_POLICY,
+        nosniff=True,
+    )
 
     if settings.IS_DEBUG:
         from starlette.middleware.cors import CORSMiddleware
@@ -171,4 +181,11 @@ def run_server() -> None:
         "enabled" if settings.API_TLS_ENABLED else "disabled",
         "enabled" if settings.MCP_ENABLED else "disabled",
     )
-    uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT, log_level="info", **ssl_kwargs)
+    uvicorn.run(
+        app,
+        host=settings.API_HOST,
+        port=settings.API_PORT,
+        log_level="info",
+        timeout_graceful_shutdown=settings.API_GRACEFUL_SHUTDOWN_TIMEOUT,
+        **ssl_kwargs,
+    )

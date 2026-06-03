@@ -1,10 +1,38 @@
 import pytest
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
+from testgen.common.database.column_chars import ColumnChars
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 
 pytestmark = pytest.mark.unit
+
+
+def _make_columns(*table_names: str) -> list[ColumnChars]:
+    return [
+        ColumnChars(schema_name="default", table_name=name, column_name="id")
+        for name in table_names
+    ]
+
+
+@pytest.mark.parametrize(
+    "flavor,expected_sql",
+    [
+        ("postgresql", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        ("mssql", 'SELECT TOP 1 1 FROM "test_schema"."orders"'),
+        ("oracle", 'SELECT  1 FROM "test_schema"."orders" FETCH FIRST 1 ROWS ONLY'),
+    ],
+)
+def test_verify_access_uses_literal_1_projection(flavor, expected_sql):
+    """Access check uses literal ``1`` (not ``*``) — projection doesn't matter for an
+    existence/permission probe, and ``1`` avoids materialising columns on wide tables."""
+    connection = Connection(sql_flavor=flavor)
+    table_group = TableGroup(table_group_schema="test_schema")
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+
+    query, _ = sql_generator.verify_access("orders")
+
+    assert query == expected_sql
 
 
 def test_include_exclude_mask_basic():
@@ -107,3 +135,85 @@ def test_table_set_with_include_exclude():
     assert "LIKE 'important%'" in criteria
     assert "AND NOT" in criteria
     assert "LIKE 'temp%'" in criteria
+
+
+def test_filter_schema_columns_table_set():
+    connection = Connection(sql_flavor="salesforce_data360")
+    table_group = TableGroup(
+        table_group_schema="default",
+        profiling_table_set="users, orders",
+        profiling_include_mask="",
+        profiling_exclude_mask="",
+    )
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+    columns = _make_columns("users", "orders", "products", "logs")
+
+    filtered = sql_generator.filter_schema_columns(columns)
+
+    assert {c.table_name for c in filtered} == {"users", "orders"}
+
+
+def test_filter_schema_columns_include_mask():
+    connection = Connection(sql_flavor="salesforce_data360")
+    table_group = TableGroup(
+        table_group_schema="default",
+        profiling_table_set="",
+        profiling_include_mask="party_%, summary",
+        profiling_exclude_mask="",
+    )
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+    columns = _make_columns("party_planners", "party_transactions", "summary", "audit_log")
+
+    filtered = sql_generator.filter_schema_columns(columns)
+
+    assert {c.table_name for c in filtered} == {"party_planners", "party_transactions", "summary"}
+
+
+def test_filter_schema_columns_exclude_mask():
+    connection = Connection(sql_flavor="salesforce_data360")
+    table_group = TableGroup(
+        table_group_schema="default",
+        profiling_table_set="",
+        profiling_include_mask="",
+        profiling_exclude_mask="tmp_%, raw_log",
+    )
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+    columns = _make_columns("users", "tmp_x", "tmp_y", "raw_log", "orders")
+
+    filtered = sql_generator.filter_schema_columns(columns)
+
+    assert {c.table_name for c in filtered} == {"users", "orders"}
+
+
+def test_filter_schema_columns_underscore_is_literal():
+    # SQL LIKE _ wildcard semantics: the existing SQL path escapes user `_` to `\_`,
+    # treating `_` as a literal. The Python filter must match that behavior.
+    connection = Connection(sql_flavor="salesforce_data360")
+    table_group = TableGroup(
+        table_group_schema="default",
+        profiling_table_set="",
+        profiling_include_mask="a_b",
+        profiling_exclude_mask="",
+    )
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+    columns = _make_columns("a_b", "axb", "axxb")
+
+    filtered = sql_generator.filter_schema_columns(columns)
+
+    assert {c.table_name for c in filtered} == {"a_b"}
+
+
+def test_filter_schema_columns_no_filters_returns_all():
+    connection = Connection(sql_flavor="salesforce_data360")
+    table_group = TableGroup(
+        table_group_schema="default",
+        profiling_table_set="",
+        profiling_include_mask="",
+        profiling_exclude_mask="",
+    )
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+    columns = _make_columns("users", "orders")
+
+    filtered = sql_generator.filter_schema_columns(columns)
+
+    assert {c.table_name for c in filtered} == {"users", "orders"}

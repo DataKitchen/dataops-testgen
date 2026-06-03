@@ -84,7 +84,7 @@ const TableGroupList = (props) => {
         if (key !== wizardKey) {
             wizardContainer.innerHTML = '';
             wizardKey = key;
-            van.add(wizardContainer, TableGroupWizard({ emit, 
+            van.add(wizardContainer, TableGroupWizard({ emit,
                 project_code: van.derive(() => getValue(props.wizard)?.project_code),
                 connections: van.derive(() => getValue(props.wizard)?.connections),
                 table_group: van.derive(() => getValue(props.wizard)?.table_group),
@@ -115,7 +115,7 @@ const TableGroupList = (props) => {
         if (key !== editDialogKey) {
             editDialogContainer.innerHTML = '';
             editDialogKey = key;
-            van.add(editDialogContainer, TableGroupEditDialog({ emit, 
+            van.add(editDialogContainer, TableGroupEditDialog({ emit,
                 dialog: van.derive(() => getValue(props.edit_dialog)?.dialog),
                 connections: van.derive(() => getValue(props.edit_dialog)?.connections),
                 table_group: van.derive(() => getValue(props.edit_dialog)?.table_group),
@@ -208,7 +208,6 @@ const TableGroupList = (props) => {
                 ? div(
                     { class: 'flex-column fx-gap-4' },
                     ...tableGroups.map((tableGroup) => Card({
-                        testId: 'table-group-card',
                         class: '',
                         title: div(
                             { class: 'flex-column fx-gap-2 tg-tablegroup--card-title', 'data-testid': 'tablegroup-card-title' },
@@ -226,7 +225,7 @@ const TableGroupList = (props) => {
                                 { class: 'flex-row fx-gap-3' },
                                 div(
                                     { class: 'flex-column fx-flex fx-gap-3' },
-                                    Link({ emit, 
+                                    Link({ emit,
                                         label: 'View test suites',
                                         href: 'test-suites',
                                         params: { 'project_code': projectSummary.project_code, 'table_group_id': tableGroup.id },
@@ -239,7 +238,7 @@ const TableGroupList = (props) => {
                                             { class: 'flex-column fx-flex fx-gap-4' },
                                             div(
                                                 { class: 'flex-column fx-flex' },
-                                                Caption({content: 'DB Schema', style: 'margin-bottom: 4px;'}),
+                                                Caption({content: tableGroup.connection.flavor.flavor === 'salesforce_data360' ? 'Data Space' : 'Schema', style: 'margin-bottom: 4px;'}),
                                                 span(tableGroup.table_group_schema || '--'),
                                             ),
                                             div(
@@ -448,7 +447,6 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
             {class: 'flex-row fx-align-flex-end fx-gap-3'},
             () => (getValue(connections) ?? [])?.length > 1
                 ? Select({
-                    testId: 'connection-select',
                     label: 'Connection',
                     allowNull: true,
                     value: connection,
@@ -460,7 +458,6 @@ const Toolbar = (permissions, connections, selectedConnection, tableGroupNameFil
                 })
                 : '',
             Input({
-                testId: 'table-groups-name-filter',
                 icon: 'search',
                 label: '',
                 placeholder: 'Search table group names',

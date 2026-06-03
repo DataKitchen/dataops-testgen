@@ -11,6 +11,7 @@ from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
@@ -23,6 +24,7 @@ from testgen.common.pii_masking import (
     mask_profiling_pii,
     mask_source_data_pii,
 )
+from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -45,7 +47,14 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_table_group,
 )
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_from_target_db
-from testgen.ui.services.query_cache import get_profiling_run_summaries, get_project_summary, get_table_group_stats
+from testgen.ui.services.query_cache import (
+    get_profiling_run_summaries,
+    get_project_summary,
+    get_table_group,
+    get_table_group_stats,
+    select_profiling_runs_minimal_where,
+    select_table_groups_minimal_where,
+)
 from testgen.ui.session import session
 from testgen.ui.views.dialogs.import_metadata_dialog import (
     apply_metadata_import,
@@ -98,7 +107,7 @@ class DataCatalogPage(Page):
 
                 project_summary = get_project_summary(project_code)
                 user_can_navigate = session.auth.user_has_permission("view")
-                table_groups = TableGroup.select_minimal_where(TableGroup.project_code == project_code)
+                table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
 
                 if not table_group_id or table_group_id not in [ str(item.id) for item in table_groups ]:
                     table_group_id = str(table_groups[0].id) if table_groups else None
@@ -115,7 +124,7 @@ class DataCatalogPage(Page):
             selected_item["connection_id"] = str(selected_table_group.connection_id)
         else:
             on_item_selected(None)
-        
+
         def on_run_profiling_clicked(_) -> None:
             if selected_table_group:
                 st.session_state[DC_RUN_PROFILING_DIALOG_KEY] = str(selected_table_group.id)
@@ -143,7 +152,7 @@ class DataCatalogPage(Page):
                     JobExecution.submit(
                         job_key="run-profile",
                         kwargs={"table_group_id": str(table_group["id"])},
-                        source="ui",
+                        source=JobSource.ui,
                         project_code=project_code,
                     )
             except Exception as error:
@@ -201,7 +210,7 @@ class DataCatalogPage(Page):
             try:
                 apply_metadata_import(preview, tg_id)
                 from testgen.ui.queries.profiling_queries import get_column_by_id, get_table_by_id
-                for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, TableGroup.select_minimal_where]:
+                for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where]:
                     func.clear()
                 st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
                 parts = []
@@ -464,7 +473,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
             include_tags=True,
             include_active_tests=True,
         )
-        
+
 
     data = pd.DataFrame(table_data + column_data)
 
@@ -499,13 +508,12 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         axis=1,
     )
     data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join([f"{part.split(' | ')[1]} | {part.split(' | ')[0]}" for part in val[2:].split("\n| ")])
+        lambda val: "\n".join(f"{count} | {value}" for value, count in parse_top_freq_values(val))
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )
-    nl = "\n" # For Python 3.11 compatibility
     data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "".join([f"{part}{nl if index % 2 else ' | '}" for index, part in enumerate(val.split(" | "))])
+        lambda val: "\n".join(f"{count} | {pattern}" for pattern, count in parse_top_patterns(val))
         if not pd.isna(val) and val != PII_REDACTED
         else val
     )
@@ -663,7 +671,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
             if disable_flags:
                 table_group_id = st.query_params.get("table_group_id")
                 if table_group_id:
-                    table_group = TableGroup.get(table_group_id)
+                    table_group = get_table_group(table_group_id)
                     changed = False
                     if "profile_flag_cdes" in disable_flags and table_group.profile_flag_cdes:
                         table_group.profile_flag_cdes = False
@@ -674,7 +682,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                     if changed:
                         table_group.save()
 
-    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, TableGroup.select_minimal_where ]:
+    for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
 
@@ -683,7 +691,7 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
 def get_table_group_columns(table_group_id: str) -> list[dict]:
     if not is_uuid4(table_group_id):
         return []
-    
+
     query = f"""
     SELECT CONCAT('column_', column_chars.column_id) AS column_id,
         CONCAT('table_', table_chars.table_id) AS table_id,
@@ -773,7 +781,7 @@ def get_latest_test_issues(table_group_id: str, table_name: str, column_name: st
             test_results.test_type = test_types.test_type
         )
     WHERE test_suites.table_groups_id = :table_group_id
-        AND test_suites.is_monitor = false
+        AND test_suites.is_monitor IS NOT TRUE
         AND table_name = :table_name
         {"AND column_names = :column_name" if column_name else ""}
         AND result_status NOT IN ('Passed', 'Log')
@@ -808,7 +816,7 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
             test_definitions.test_suite_id = test_suites.id
         )
     WHERE test_suites.table_groups_id = :table_group_id
-        AND test_suites.is_monitor = false
+        AND test_suites.is_monitor IS NOT TRUE
         AND table_name = :table_name
         {"AND column_name = :column_name" if column_name else ""}
     GROUP BY test_suites.id
@@ -831,7 +839,7 @@ def _build_history_dialog_data(
     column_name: str,
     add_date: int,
 ) -> dict | None:
-    profiling_runs = ProfilingRun.select_minimal_where(
+    profiling_runs = select_profiling_runs_minimal_where(
         ProfilingRun.table_groups_id == table_group_id,
         ProfilingRun.profiling_starttime >= sa_func.to_timestamp(add_date),
     )
@@ -899,15 +907,15 @@ def get_preview_data(
         return {"title": title, "status": "ERR", "message": "Connection not found."}
 
     flavor_service = get_flavor_service(connection.sql_flavor)
-    row_limiting = flavor_service.row_limiting_clause
+    prefix, suffix = flavor_service.row_limit_clauses(100)
     quote = flavor_service.quote_character
+    table_ref = flavor_service.get_table_ref(schema_name, table_name)
     query = f"""
     SELECT DISTINCT
-        {"TOP 100" if row_limiting == "top" else ""}
+        {prefix}
         {f"{quote}{column_name}{quote}" if column_name else "*"}
-    FROM {quote}{schema_name}{quote}.{quote}{table_name}{quote}
-    {"LIMIT 100" if row_limiting == "limit" else ""}
-    {"FETCH FIRST 100 ROWS ONLY" if row_limiting == "fetch" else ""}
+    FROM {table_ref}
+    {suffix}
     """
 
     try:

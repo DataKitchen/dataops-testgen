@@ -87,11 +87,18 @@ class TestThresholdsPrediction:
             df = to_dataframe(test_results, coerce_float=True)
             grouped_dfs = df.groupby("test_definition_id", group_keys=False)
 
+            # Freshness update events are fetched as secondary data only when the suite
+            # is a monitor — Volume_Trend / Metric_Trend in monitor suites couple to the
+            # Freshness_Trend signal to avoid stairstep false positives. 
+            freshness_updates_by_table: dict[tuple[str, str], list[str]] = (
+                self._fetch_freshness_updates_by_table() if self.test_suite.is_monitor else {}
+            )
+
             LOG.info(f"Training prediction models for tests: {len(grouped_dfs)}")
             prediction_results = []
             for test_def_id, group in grouped_dfs:
                 test_type = group["test_type"].iloc[0]
-                history = group[["test_time", "result_signal"]]
+                history = group[["test_time", "result_signal", "test_run_id"]]
                 history = history.set_index("test_time")
 
                 test_prediction = [
@@ -99,30 +106,42 @@ class TestThresholdsPrediction:
                     test_def_id,
                     to_sql_timestamp(self.run_date),
                 ]
-                if test_type == "Freshness_Trend":
+                # Skip prediction if history is smaller than configured lookback
+                if len(history) < (self.test_suite.predict_min_lookback or 1):
+                    test_prediction.extend([None, None, None, None])
+                elif test_type == "Freshness_Trend":
                     lower, upper, staleness, prediction = compute_freshness_threshold(
                         history,
                         sensitivity=self.test_suite.predict_sensitivity or PredictSensitivity.medium,
-                        min_lookback=self.test_suite.predict_min_lookback or 1,
                         exclude_weekends=self.test_suite.predict_exclude_weekends,
                         holiday_codes=self.test_suite.holiday_codes_list,
                         schedule_tz=self.tz,
                     )
                     test_prediction.extend([lower, upper, staleness, prediction])
-                else:
-                    lower, upper, prediction = compute_sarimax_threshold(
+                elif test_type in ("Volume_Trend", "Metric_Trend"):
+                    table_key = (group["schema_name"].iloc[0], group["table_name"].iloc[0])
+                    lower, upper, baseline, prediction = compute_volume_or_metric_threshold(
                         history,
+                        freshness_updates=freshness_updates_by_table.get(table_key, []),
                         sensitivity=self.test_suite.predict_sensitivity or PredictSensitivity.medium,
-                        min_lookback=self.test_suite.predict_min_lookback or 1,
                         exclude_weekends=self.test_suite.predict_exclude_weekends,
                         holiday_codes=self.test_suite.holiday_codes_list,
                         schedule_tz=self.tz,
                     )
                     if test_type == "Volume_Trend":
-                        if lower is not None: 
+                        if lower is not None:
                             lower = max(lower, 0.0)
                         if upper is not None:
                             upper = max(upper, 0.0)
+                    test_prediction.extend([lower, upper, baseline, prediction])
+                else:
+                    lower, upper, prediction = compute_sarimax_threshold(
+                        history,
+                        sensitivity=self.test_suite.predict_sensitivity or PredictSensitivity.medium,
+                        exclude_weekends=self.test_suite.predict_exclude_weekends,
+                        holiday_codes=self.test_suite.holiday_codes_list,
+                        schedule_tz=self.tz,
+                    )
                     test_prediction.extend([lower, upper, None, prediction])
 
                 prediction_results.append(test_prediction)
@@ -149,11 +168,21 @@ class TestThresholdsPrediction:
         query = replace_params(query, params)
         return query, params
 
+    def _fetch_freshness_updates_by_table(
+        self,
+    ) -> dict[tuple[str, str], list[str]]:
+        """Fetch test_run_ids of Freshness_Trend fingerprint changes, indexed by table."""
+        rows = fetch_dict_from_db(*self._get_query("get_freshness_fingerprint_events.sql"))
+        events_by_table: dict[tuple[str, str], list[str]] = {}
+        for row in rows:
+            key = (row["schema_name"], row["table_name"])
+            events_by_table.setdefault(key, []).append(str(row["test_run_id"]))
+        return events_by_table
+
 
 def compute_freshness_threshold(
     history: pd.DataFrame,
     sensitivity: PredictSensitivity,
-    min_lookback: int = 1,
     exclude_weekends: bool = False,
     holiday_codes: list[str] | None = None,
     schedule_tz: str | None = None,
@@ -163,9 +192,6 @@ def compute_freshness_threshold(
     Returns (lower, upper, staleness_threshold, prediction_json) in business minutes,
     or (None, None, None, None) if not enough data.
     """
-    if len(history) < min_lookback:
-        return None, None, None, None
-
     upper_percentile, floor_multiplier, lower_percentile = FRESHNESS_THRESHOLD_MAP[sensitivity]
     staleness_factor = STALENESS_FACTOR_MAP[sensitivity]
 
@@ -264,7 +290,6 @@ def compute_sarimax_threshold(
     history: pd.DataFrame,
     sensitivity: PredictSensitivity,
     num_forecast: int = NUM_FORECAST,
-    min_lookback: int = 1,
     exclude_weekends: bool = False,
     holiday_codes: list[str] | None = None,
     schedule_tz: str | None = None,
@@ -273,12 +298,9 @@ def compute_sarimax_threshold(
 
     Returns (lower, upper, forecast_json) or (None, None, None) if insufficient data.
     """
-    if len(history) < min_lookback:
-        return None, None, None
-
     try:
         forecast = get_sarimax_forecast(
-            history,
+            history[["result_signal"]], # SARIMAX only consumes result_signal - drop other columns
             num_forecast=num_forecast,
             exclude_weekends=exclude_weekends,
             holiday_codes=holiday_codes,
@@ -305,3 +327,59 @@ def compute_sarimax_threshold(
             return float(lower_tolerance), float(upper_tolerance), forecast.to_json()
     except NotEnoughData:
         return None, None, None
+
+
+def compute_volume_or_metric_threshold(
+    history: pd.DataFrame,
+    freshness_updates: list[str],
+    sensitivity: PredictSensitivity,
+    num_forecast: int = NUM_FORECAST,
+    exclude_weekends: bool = False,
+    holiday_codes: list[str] | None = None,
+    schedule_tz: str | None = None,
+) -> tuple[float | None, float | None, float | None, str | None]:
+    """SARIMAX threshold for Volume_Trend / Metric_Trend with freshness-gating.
+
+    First, attempts a SARIMAX fit on the value series filtered only to points with freshness updates.
+    This avoids the "stairstep" false-positive shape where inter-change plateaus collapse the SE estimate.
+    The returned prediction JSON is augmented with `freshness_gated` and `baseline_value` so
+    that test execution can apply dual-branch evaluation.
+    
+    If the filtered fit fails for any reason, falls back to fit SARIMAX on
+    the raw value series and emits a prediction JSON without the freshness-gating markers.
+
+    `history` is expected to have a `test_run_id` column alongside `result_signal`, and to be
+    indexed by `test_time`. `freshness_updates` is the list of run identifiers where
+    Freshness_Trend detected a fingerprint change.
+    """
+    filtered_history = history.loc[history["test_run_id"].astype(str).isin(freshness_updates)]
+    lower, upper, prediction = compute_sarimax_threshold(
+        filtered_history,
+        sensitivity=sensitivity,
+        num_forecast=num_forecast,
+        exclude_weekends=exclude_weekends,
+        holiday_codes=holiday_codes,
+        schedule_tz=schedule_tz,
+    )
+    if prediction is not None:
+        # Pull the baseline value from the most-recent filtered row.
+        last_update_ts = filtered_history.index.max()
+        baseline_value = filtered_history.loc[last_update_ts, "result_signal"]
+        baseline_value = float(baseline_value) if not pd.isna(baseline_value) else None
+        prediction_dict = json.loads(prediction)
+        prediction_dict.update({
+            "freshness_gated": True,
+            "baseline_value": baseline_value,
+        })
+        prediction = json.dumps(prediction_dict)
+        return lower, upper, baseline_value, prediction
+
+    lower, upper, prediction = compute_sarimax_threshold(
+        history,
+        sensitivity=sensitivity,
+        num_forecast=num_forecast,
+        exclude_weekends=exclude_weekends,
+        holiday_codes=holiday_codes,
+        schedule_tz=schedule_tz,
+    )        
+    return lower, upper, None, prediction

@@ -19,6 +19,7 @@ import testgen.ui.services.database_service as db
 from testgen import settings
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.job_execution import JobExecution
@@ -29,6 +30,11 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.query_cache import (
+    get_connection,
+    select_connections_where,
+    select_table_groups_minimal_where,
+)
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
 
@@ -70,14 +76,14 @@ class ConnectionsPage(Page):
             "connect-your-database/manage-connections/",
         )
 
-        connections = Connection.select_where(Connection.project_code == project_code)
+        connections = select_connections_where(Connection.project_code == project_code)
         connection: Connection = connections[0] if len(connections) > 0 else Connection(
             sql_flavor="postgresql",
             sql_flavor_code="postgresql",
             project_code=project_code,
         )
         has_table_groups = (
-            connection.id and len(TableGroup.select_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
+            connection.id and len(select_table_groups_minimal_where(TableGroup.connection_id == connection.connection_id) or []) > 0
         )
 
         user_is_admin = session.auth.user_has_permission("administer")
@@ -185,8 +191,8 @@ class ConnectionsPage(Page):
             success = True
             try:
                 connection.save()
-                Connection.select_where.clear()
-                Connection.get.clear()
+                select_connections_where.clear()
+                get_connection.clear()
                 message = "Changes have been saved successfully."
             except Exception as error:
                 message = "Something went wrong while creating the connection."
@@ -426,7 +432,6 @@ class ConnectionsPage(Page):
                             key=RUN_TESTS_JOB_KEY,
                             cron_expr=standard_test_suite_data["schedule"],
                             cron_tz=standard_test_suite_data["timezone"],
-                            args=[],
                             kwargs={"test_suite_id": str(standard_test_suite.id)},
                         ).save()
 
@@ -458,7 +463,6 @@ class ConnectionsPage(Page):
                             key=RUN_MONITORS_JOB_KEY,
                             cron_expr=monitor_test_suite_data.get("schedule"),
                             cron_tz=monitor_test_suite_data.get("timezone"),
-                            args=[],
                             kwargs={"test_suite_id": str(monitor_test_suite.id)},
                         ).save()
 
@@ -473,7 +477,7 @@ class ConnectionsPage(Page):
                             JobExecution.submit(
                                 job_key="run-profile",
                                 kwargs={"table_group_id": str(table_group.id)},
-                                source="ui",
+                                source=JobSource.ui,
                                 project_code=table_group.project_code,
                             )
                             message = f"Profiling run started for table group {table_group.table_groups_name}."
@@ -638,6 +642,12 @@ FLAVOR_OPTIONS = [
         value="sap_hana",
         flavor="sap_hana",
         icon=get_asset_data_url("flavors/sap_hana.svg"),
+    ),
+    ConnectionFlavor(
+        label="Salesforce Data 360",
+        value="salesforce_data360",
+        flavor="salesforce_data360",
+        icon=get_asset_data_url("flavors/salesforce_data360.svg"),
     ),
     ConnectionFlavor(
         label="Snowflake",
