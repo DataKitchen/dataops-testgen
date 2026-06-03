@@ -137,6 +137,7 @@ def build_mcp_server(
         profiling_overview,
         table_health,
     )
+    from testgen.mcp.tools.connections import test_connection
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
     from testgen.mcp.tools.execution import (
         cancel_profiling_run,
@@ -184,6 +185,8 @@ def build_mcp_server(
     )
     from testgen.mcp.tools.reference import (
         column_profile_fields_resource,
+        connection_parameters_index_resource,
+        connection_parameters_resource,
         get_test_type,
         glossary_resource,
         hygiene_issue_types_resource,
@@ -310,12 +313,15 @@ def build_mcp_server(
     safe_tool(create_notification)
     safe_tool(update_notification)
     safe_tool(delete_notification)
+    safe_tool(test_connection)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)
     safe_resource("testgen://hygiene-issue-types", hygiene_issue_types_resource)
     safe_resource("testgen://column-profile-fields", column_profile_fields_resource)
     safe_resource("testgen://glossary", glossary_resource)
+    safe_resource("testgen://connection-parameters", connection_parameters_index_resource)
+    safe_resource("testgen://connection-parameters/{flavor}", connection_parameters_resource)
 
     # Prompts
     safe_prompt(health_check)

@@ -1,7 +1,16 @@
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.test_definition import TestType
-from testgen.mcp.tools.common import DocGroup
+from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.tools.common import (
+    FLAVOR_CONNECTION_SCHEMA,
+    ConnField,
+    DocGroup,
+    FlavorMode,
+    FlavorSchema,
+    Req,
+    schema_for,
+)
 from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.DISCOVER
@@ -326,3 +335,127 @@ What's at stake when the data has issues — the primary breakdown used by score
 - **referential** — Tests relationships between tables (e.g., foreign key match).
 - **custom** — User-defined SQL tests.
 """
+
+
+# Doc-only hints for the connection-parameters resource: value type / format
+# guidance that helps the model but isn't part of the validation/mapping schema.
+_FIELD_NOTES: dict[str, str] = {
+    "Port": "Integer.",
+    "Service Account Key": "Service-account key JSON, passed as a parsed object.",
+    "Private Key": "Private key as PEM text.",
+    "Private Key Passphrase": "Passphrase for the encrypted private key. Omit if the key is unencrypted.",
+    "Login URL": "My Domain URL of the Salesforce org.",
+    "Consumer Key": "Consumer key from the Salesforce external client app.",
+    "Consumer Secret": "Consumer secret from the Salesforce external client app.",
+    "Access Token": "Databricks personal access token.",
+    "Client ID": "Service-principal client ID.",
+    "Client Secret": "Service-principal OAuth secret.",
+    "HTTP Path": "Databricks SQL warehouse HTTP path.",
+    "Catalog": "Databricks catalog (the database/namespace).",
+    "Service Name": "Oracle service name.",
+    "Warehouse": "Snowflake warehouse name.",
+    "URL": "Full connection URL. Provide instead of the host fields.",
+}
+
+# Doc-only: the conventional default port per flavor, so the model can fill the
+# Port when the user doesn't specify one.
+_DEFAULT_PORTS: dict[str, str] = {
+    "redshift": "5439",
+    "redshift_spectrum": "5439",
+    "azure_mssql": "1433",
+    "synapse_mssql": "1433",
+    "mssql": "1433",
+    "postgresql": "5432",
+    "snowflake": "443",
+    "databricks": "443",
+    "oracle": "1521",
+    "sap_hana": "39015",
+}
+
+
+def _requirement_label(field: ConnField) -> str:
+    if field.requirement is Req.REQUIRED:
+        return "Required"
+    if field.requirement is Req.REQUIRED_UNLESS_URL:
+        return "Required (host mode)"
+    return "Optional"
+
+
+def _field_note(field: ConnField, schema: FlavorSchema) -> str | None:
+    parts = []
+    if field.secret:
+        parts.append("Secret — encrypted at rest, never echoed back.")
+    if note := _FIELD_NOTES.get(field.label):
+        parts.append(note)
+    if field.column == "project_port" and (port := _DEFAULT_PORTS.get(schema.code)):
+        parts.append(f"Default for {schema.label} is {port} — use it unless the user specifies otherwise.")
+    return " ".join(parts) or None
+
+
+def _append_mode(doc: MdDoc, mode: FlavorMode, schema: FlavorSchema, *, url_offered: bool) -> None:
+    if mode.mode is not None:
+        doc.heading(2, f"Mode: {mode.mode}")
+        doc.text(f'Pass `connection_mode="{mode.mode}"`.')
+    doc.table(
+        headers=["Field", "Required", "Notes"],
+        rows=[[field.label, _requirement_label(field), _field_note(field, schema)] for field in mode.fields],
+        code=[0],
+    )
+    if mode.supports_url and url_offered:
+        doc.text(
+            "Alternatively, provide `URL` instead of the host fields "
+            "(the fields marked _Required (host mode)_) to connect by URL."
+        )
+
+
+def connection_parameters_resource(flavor: str) -> str:
+    """Per-flavor connection parameter shapes: the auth modes and the exact
+    ``connection_params`` keys (with required/optional + secret notes) used by
+    ``create_connection`` / ``update_connection`` / ``test_connection``.
+
+    Args:
+        flavor: Flavor code, e.g. ``snowflake``, ``azure_mssql``, ``salesforce_data360``.
+    """
+    if flavor not in FLAVOR_CONNECTION_SCHEMA:
+        valid = ", ".join(sorted(FLAVOR_CONNECTION_SCHEMA))
+        raise MCPUserError(f"Unknown flavor `{flavor}`. Valid flavor codes: {valid}.")
+
+    schema = schema_for(flavor)
+    doc = MdDoc()
+    doc.heading(1, f"{schema.label} Connection Parameters")
+    doc.text(
+        f'Create with `sql_flavor="{schema.label}"` and a `connection_params` dict keyed by the '
+        "field labels below. Secrets are encrypted at rest and never returned."
+    )
+
+    multi_mode = len([m for m in schema.modes if m.mode is not None]) > 1
+    if multi_mode:
+        modes = ", ".join(f"`{m.mode}`" for m in schema.modes if m.mode is not None)
+        doc.text(f"Set `connection_mode` to one of: {modes}.")
+
+    for mode in schema.modes:
+        _append_mode(doc, mode, schema, url_offered=schema.url_field is not None)
+
+    return doc.render()
+
+
+def connection_parameters_index_resource() -> str:
+    """Supported database flavors for the connection tools: the accepted
+    ``sql_flavor`` values and, for each, the resource that documents its
+    connection modes and fields.
+    """
+    doc = MdDoc()
+    doc.heading(1, "Connection Flavors")
+    doc.text(
+        "Accepted `sql_flavor` values. Read the per-flavor resource for a flavor's "
+        "connection modes and the fields each needs."
+    )
+    doc.table(
+        headers=["sql_flavor", "Parameters resource"],
+        rows=[
+            [schema.label, f"testgen://connection-parameters/{code}"]
+            for code, schema in FLAVOR_CONNECTION_SCHEMA.items()
+        ],
+        code=[1],
+    )
+    return doc.render()
