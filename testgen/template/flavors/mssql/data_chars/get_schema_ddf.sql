@@ -49,8 +49,10 @@ SELECT
                'X'
        END AS general_type,
        CASE WHEN c.numeric_scale > 0 THEN 1 ELSE 0 END AS is_decimal,
+       CASE it.table_type WHEN 'BASE TABLE' THEN 'TABLE' WHEN 'VIEW' THEN 'VIEW' ELSE 'OTHER' END AS object_type,
        a.approx_record_ct AS approx_record_ct
 FROM information_schema.columns c
     LEFT JOIN approx_cts a ON c.table_schema = a.schema_name AND c.table_name = a.table_name
+    LEFT JOIN information_schema.tables it ON c.table_schema = it.table_schema AND c.table_name = it.table_name
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

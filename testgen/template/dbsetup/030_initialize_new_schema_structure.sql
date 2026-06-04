@@ -35,6 +35,7 @@ CREATE TABLE stg_data_chars_updates (
    general_type          VARCHAR(1),
    column_type           VARCHAR(50),
    db_data_type          VARCHAR(50),
+   object_type           VARCHAR(20),
    approx_record_ct      BIGINT,
    record_ct             BIGINT
 );
@@ -419,6 +420,7 @@ CREATE TABLE data_table_chars (
    table_groups_id       UUID,
    schema_name           VARCHAR(50),
    table_name            VARCHAR(120),
+   object_type           VARCHAR(20),
    functional_table_type VARCHAR(50),
    description           VARCHAR(1000),
    critical_data_element BOOLEAN,

@@ -6,7 +6,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import create_engine as sqlalchemy_create_engine
 from sqlalchemy.engine.base import Engine
 
-from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.encrypt import DecryptText
 
 SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
@@ -116,6 +116,7 @@ class FlavorService:
 
     qualifies_table_refs_with_schema = True
     metadata_via_api = False
+    sampleable_object_types: frozenset[ObjectType] | None = None
 
     def get_schema_columns(self, _params: ResolvedConnectionParams, _schema: str) -> list[ColumnChars] | None:
         """Return column metadata without querying information_schema.

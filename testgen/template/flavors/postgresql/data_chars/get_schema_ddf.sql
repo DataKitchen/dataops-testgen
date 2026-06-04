@@ -44,6 +44,10 @@ SELECT
          WHEN c.data_type = 'numeric' THEN COALESCE(numeric_scale, 1) > 0
          ELSE numeric_scale > 0
        END as is_decimal,
+       CASE p.relkind
+            WHEN 'r' THEN 'TABLE' WHEN 'p' THEN 'TABLE'
+            WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED_VIEW' WHEN 'f' THEN 'EXTERNAL'
+            ELSE 'OTHER' END AS object_type,
        NULLIF(p.reltuples::BIGINT, -1) AS approx_record_ct
 FROM information_schema.columns c
     LEFT JOIN pg_namespace n ON c.table_schema = n.nspname
