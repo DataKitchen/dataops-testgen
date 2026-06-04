@@ -44,6 +44,11 @@ def _patch_openapi_schema(app: FastAPI) -> None:
     - Top-level component schema titles (shown in Redoc sidebar)
     - Path/query parameter schemas
 
+    It also strips ``description`` from enum component schemas. A ``StrEnum`` used
+    as a field type surfaces its class docstring as the schema description; enums
+    are internal primitives free to carry technical docstrings, so the public
+    schema must not echo them. Per-field API text comes from ``Field(description=...)``.
+
     FastAPI caches the schema after the first call, so the patching runs once.
     """
     _original = app.openapi
@@ -56,6 +61,8 @@ def _patch_openapi_schema(app: FastAPI) -> None:
                 for branch in prop.get("anyOf", []):
                     branch.pop("title", None)
             model_schema.pop("title", None)
+            if "enum" in model_schema:
+                model_schema.pop("description", None)
         for methods in schema.get("paths", {}).values():
             for details in methods.values():
                 if isinstance(details, dict):

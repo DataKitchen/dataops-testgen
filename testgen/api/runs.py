@@ -7,13 +7,13 @@ from testgen.api.deps import db_session, resolve_job
 from testgen.api.schemas import (
     ErrorResponse,
     IssueBreakdown,
-    JobKey,
     ProfilingRunResponse,
     ProfilingRunResult,
     TestBreakdown,
     TestRunResponse,
     TestRunResult,
 )
+from testgen.common.enums import JobKey
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.job_execution import JobExecution
