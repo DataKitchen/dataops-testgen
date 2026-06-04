@@ -4,6 +4,7 @@ from urllib.parse import quote
 
 import pytest
 
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
 from testgen.common.models.hygiene_issue import IssueCount
 from testgen.common.models.notification_settings import (
     ProfilingRunNotificationSettings,
@@ -13,6 +14,10 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
 
 pytestmark = pytest.mark.unit
+
+
+def make_job_execution(status, started_at=None, completed_at=None, error_message=None):
+    return Mock(status=status, started_at=started_at, completed_at=completed_at, error_message=error_message)
 
 
 def create_ns(**kwargs):
@@ -79,12 +84,12 @@ def get_prev_mock():
 @pytest.mark.parametrize(
     ("profiling_run_status", "has_prev_run", "issue_count", "new_issue_count", "expected_triggers"),
     (
-        ("Error", True, 25, 0, ("always", "on_changes")),
-        ("Error", True, 0, 0, ("always", "on_changes")),
-        ("Cancelled", True, 50, 10, ("always", "on_changes")),
-        ("Complete", True, 50, 10, ("always", "on_changes")),
-        ("Complete", True, 15, 0, ("always",)),
-        ("Complete", False, 15, 15, ("always", "on_changes")),
+        (JobStatus.ERROR, True, 25, 0, ("always", "on_changes")),
+        (JobStatus.ERROR, True, 0, 0, ("always", "on_changes")),
+        (JobStatus.CANCELED, True, 50, 10, ("always", "on_changes")),
+        (JobStatus.COMPLETED, True, 50, 10, ("always", "on_changes")),
+        (JobStatus.COMPLETED, True, 15, 0, ("always",)),
+        (JobStatus.COMPLETED, False, 15, 15, ("always", "on_changes")),
     ),
 )
 def test_send_profiling_run_notification(
@@ -104,9 +109,9 @@ def test_send_profiling_run_notification(
         id="pr-id",
         job_execution_id="pr-id",
         table_groups_id="tg-id",
-        status=profiling_run_status,
         project_code="proj",
     )
+    profiling_run.job_execution = make_job_execution(profiling_run_status)
     get_prev_mock.return_value = ProfilingRun(id="pr-prev-id") if has_prev_run else None
     new_count = iter(count())
     priorities = ("Definite", "Likely", "Possible", "High", "Moderate")
@@ -144,6 +149,7 @@ def test_send_profiling_run_notification(
                         "start_time": None,
                         "end_time": None,
                         "status": profiling_run_status,
+                        "status_label": JOB_STATUS_LABEL[profiling_run_status],
                         "log_message": None,
                         "table_ct": None,
                         "column_ct": None,

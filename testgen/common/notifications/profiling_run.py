@@ -4,6 +4,7 @@ from urllib.parse import quote
 from sqlalchemy import select
 
 from testgen import settings
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.notification_settings import (
@@ -23,7 +24,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
 
     def get_subject_template(self) -> str:
         return (
-            "[TestGen] Profiling Run {{format_status profiling_run.status}}: {{table_groups_name}}"
+            "[TestGen] Profiling Run {{profiling_run.status_label}}: {{table_groups_name}}"
             "{{#if issue_count}}"
             ' | {{format_number issue_count}} hygiene {{pluralize issue_count "issue" "issues"}}'
             "{{/if}}"
@@ -32,9 +33,9 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
     def get_title_template(self):
         return """
           TestGen Profiling Run - <span class="
-          {{#if (eq profiling_run.status 'Error')}} text-red {{/if}}
-          {{#if (eq profiling_run.status 'Cancelled')}} text-purple {{/if}}
-          ">{{format_status profiling_run.status}}</span>
+          {{#if (eq profiling_run.status 'error')}} text-red {{/if}}
+          {{#if (eq profiling_run.status 'canceled')}} text-purple {{/if}}
+          ">{{profiling_run.status_label}}</span>
         """
 
     def get_main_content_template(self):
@@ -85,7 +86,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
                 <tr>
                   <td class="summary__subtitle">
-                    {{#if (eq profiling_run.status 'Complete')}}
+                    {{#if (eq profiling_run.status 'completed')}}
                         {{#if (eq notification_trigger 'on_changes')}}
                             Profiling run detected new hygiene issues.
                         {{/if}}
@@ -95,15 +96,15 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                             {{/if}}
                         {{/if}}
                     {{/if}}
-                    {{#if (eq profiling_run.status 'Error')}}
+                    {{#if (eq profiling_run.status 'error')}}
                         Profiling encountered an error.
                     {{/if}}
-                    {{#if (eq profiling_run.status 'Cancelled')}}
+                    {{#if (eq profiling_run.status 'canceled')}}
                         Profiling run was canceled.
                     {{/if}}
                   </td>
                 </tr>
-                {{#if (eq profiling_run.status 'Complete')}}
+                {{#if (eq profiling_run.status 'completed')}}
                 <tr>
                   <td colspan="2" style="padding-top: 12px; padding-bottom: 12px;">
                     <table cellspacing="0" cellpadding="0">
@@ -131,12 +132,12 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                   </td>
                 </tr>
                 {{/if}}
-                {{#if (eq profiling_run.status 'Error')}}
+                {{#if (eq profiling_run.status 'error')}}
                 <tr>
                   <td><div class="code">{{profiling_run.log_message}}</div></td>
                 </tr>
                 {{/if}}
-                {{#if (eq profiling_run.status 'Complete')}}
+                {{#if (eq profiling_run.status 'completed')}}
                 <tr>
                   <td>
                     <a class="link" href="{{profiling_run.issues_url}}" target="_blank">View {{format_number issue_count}} issues &gt;</a>
@@ -241,6 +242,8 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
     if not notifications:
         return
 
+    job_execution = profiling_run.job_execution
+
     previous_run = profiling_run.get_previous()
     issues = list(
         HygieneIssue.select_with_diff(
@@ -251,7 +254,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
     )
 
     triggers = {ProfilingRunNotificationTrigger.always}
-    if profiling_run.status in ("Error", "Cancelled") or {None, True} & {is_new for _, is_new in issues}:
+    if job_execution.status in (JobStatus.ERROR, JobStatus.CANCELED) or {None, True} & {is_new for _, is_new in issues}:
         triggers.add(ProfilingRunNotificationTrigger.on_changes)
 
     notifications = [ns for ns in notifications if ns.trigger in triggers]
@@ -320,10 +323,11 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
                     "&source=email"
                 )
             ),
-            "start_time": profiling_run.profiling_starttime,
-            "end_time": profiling_run.profiling_endtime,
-            "status": profiling_run.status,
-            "log_message": profiling_run.log_message,
+            "start_time": job_execution.started_at,
+            "end_time": job_execution.completed_at,
+            "status": job_execution.status,
+            "status_label": JOB_STATUS_LABEL.get(job_execution.status, job_execution.status),
+            "log_message": job_execution.error_message,
             "table_ct": profiling_run.table_ct,
             "column_ct": profiling_run.column_ct,
         },

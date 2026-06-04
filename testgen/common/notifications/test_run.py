@@ -3,6 +3,7 @@ import logging
 from sqlalchemy import case, literal, select
 
 from testgen import settings
+from testgen.common.enums import JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
@@ -261,7 +262,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
                 changed_td_id_list.extend(td_id_list)
 
     triggers = {TestRunNotificationTrigger.always}
-    if test_run.status in ("Error", "Cancelled"):
+    if test_run.job_execution.status in (JobStatus.ERROR, JobStatus.CANCELED):
         triggers.update(TestRunNotificationTrigger)
     else:
         if test_run.error_ct + test_run.failed_ct:
