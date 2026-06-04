@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
-from testgen.common.enums import JobKey, JobSource, JobStatus
+from testgen.common.enums import JobSource, JobStatus, PublicJobKey
 
 # --- Jobs ---
 
@@ -24,7 +24,7 @@ class JobResponse(BaseModel):
     """Full job execution record returned by status and cancel endpoints."""
 
     id: UUID
-    job_key: JobKey
+    job_key: PublicJobKey
     status: JobStatus
     source: JobSource
     created_at: datetime

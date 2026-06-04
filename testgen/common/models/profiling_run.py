@@ -10,7 +10,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
-from testgen.common.enums import Disposition, JobStatus
+from testgen.common.enums import JOB_STATUS_LABEL, Disposition, JobStatus
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -71,15 +71,7 @@ class ProfilingRunSummary(EntityMinimal):
     dq_score_profiling: float | None
     total_count: int
 
-    STATUS_LABEL: ClassVar[dict[str, str]] = {
-        JobStatus.COMPLETED: "Completed",
-        JobStatus.CANCELED: "Canceled",
-        JobStatus.CANCEL_REQUESTED: "Canceling",
-        JobStatus.PENDING: "Pending",
-        JobStatus.CLAIMED: "Starting",
-        JobStatus.RUNNING: "Running",
-        JobStatus.ERROR: "Error",
-    }
+    STATUS_LABEL: ClassVar[dict[str, str]] = JOB_STATUS_LABEL
 
     @property
     def status_label(self) -> str:

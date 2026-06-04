@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.jobs import (
@@ -18,6 +19,8 @@ from testgen.api.jobs import (
     submit_test_generation,
     submit_test_run,
 )
+from testgen.common.enums import JobKey, PublicJobKey
+from testgen.common.models.job_execution import JobExecution
 
 pytestmark = pytest.mark.unit
 
@@ -236,3 +239,44 @@ def test_list_jobs_accepts_valid_status(mock_je_cls, _mock_perm):
     assert resp.status_code == 200
     # Verify the status string was forwarded to the model layer.
     assert mock_je_cls.list_for_project.call_args.kwargs["status"] == "completed"
+
+
+# --- internal job-kind exclusion ---
+# JobResponse.job_key is typed PublicJobKey, which is only safe because every path
+# that builds a JobResponse excludes internal job kinds. These pin that invariant.
+
+
+def test_public_job_key_excludes_internal_kinds():
+    public = {member.value for member in PublicJobKey}
+    assert public == {"run-profile", "run-tests", "run-test-generation"}
+    internal = {"run-monitors", "run-score-update", "recalculate-project-scores", "run-data-cleanup"}
+    assert public.isdisjoint(internal)
+    # Every public value must be a real JobKey.
+    assert public <= {member.value for member in JobKey}
+
+
+@patch.object(JobExecution, "list_for_project", return_value=([], 0))
+def test_list_jobs_filters_to_public_job_kinds(_mock_list):
+    list_jobs(project_code="DEFAULT", job_key=None, status=None, page=1, limit=20)
+
+    clause = _mock_list.call_args.args[1]
+    sql = str(clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "run-profile" in sql
+    assert "run-tests" in sql
+    assert "run-test-generation" in sql
+    for internal in ("run-monitors", "run-score-update", "recalculate-project-scores", "run-data-cleanup"):
+        assert internal not in sql
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.JobExecution")
+def test_list_jobs_rejects_internal_job_key(mock_je_cls, _mock_perm):
+    mock_je_cls.list_for_project.return_value = ([], 0)
+    client = TestClient(_client_with_overrides())
+
+    resp = client.get("/api/v1/projects/DEFAULT/jobs?job_key=run-data-cleanup")
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["detail"][0]["loc"] == ["query", "job_key"]
+    assert body["detail"][0]["type"] == "enum"
