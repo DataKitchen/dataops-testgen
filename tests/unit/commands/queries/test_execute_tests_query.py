@@ -11,6 +11,8 @@ from testgen.commands.queries.execute_tests_query import (
     group_cat_tests,
     parse_cat_results,
 )
+from testgen.common.database.database_service import get_flavor_service
+from testgen.common.models.connection import Connection
 
 pytestmark = pytest.mark.unit
 
@@ -476,5 +478,20 @@ def test_resolve_cat_no_freshness_result_uses_band_check(_mock_changed):
     )
     operator, condition = instance._resolve_cat_operator_and_condition(td)
     assert operator == "NOT BETWEEN"
+
+
+def test_aggregate_cat_tests_handles_null_max_query_chars():
+    """A connection with NULL max_query_chars must not crash CAT batching — the
+    `- 400` headroom subtraction falls back to DEFAULT_MAX_QUERY_CHARS."""
+    instance = _make_execution_sql()
+    instance.connection = Connection(sql_flavor="postgresql", max_query_chars=None)
+    instance.flavor = "postgresql"
+    instance.flavor_service = get_flavor_service("postgresql")
+
+    td = _make_td(measure_expression="m_expr", condition_expression="c_expr")
+    queries, grouped_defs = instance.aggregate_cat_tests([td], single=True)
+
+    assert len(queries) == 1
+    assert grouped_defs == [[td]]
 
 

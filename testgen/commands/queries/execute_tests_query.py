@@ -21,7 +21,7 @@ from testgen.common.freshness_service import (
     is_excluded_day,
     resolve_holiday_dates,
 )
-from testgen.common.models.connection import Connection
+from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestRunType, TestScope
@@ -534,7 +534,7 @@ class TestExecutionSQL:
                     null_value=self.null_value,
                 )
 
-        max_query_chars = self.connection.max_query_chars - 400
+        max_query_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - 400
         groups = group_cat_tests(test_defs, max_query_chars, concat_operator, single)
 
         aggregate_queries: list[tuple[str, None]] = []

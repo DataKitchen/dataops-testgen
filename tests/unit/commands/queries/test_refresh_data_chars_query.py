@@ -217,3 +217,16 @@ def test_filter_schema_columns_no_filters_returns_all():
     filtered = sql_generator.filter_schema_columns(columns)
 
     assert {c.table_name for c in filtered} == {"users", "orders"}
+
+
+def test_get_row_counts_handles_null_max_query_chars():
+    """A connection with NULL max_query_chars must not crash chunking — it falls
+    back to DEFAULT_MAX_QUERY_CHARS so the UNION ALL count queries still build."""
+    connection = Connection(sql_flavor="postgresql", max_query_chars=None)
+    table_group = TableGroup(table_group_schema="test_schema")
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+
+    result = sql_generator.get_row_counts(["orders", "customers"])
+
+    assert result
+    assert all(isinstance(query, str) and query for query, _ in result)
