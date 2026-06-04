@@ -28,6 +28,11 @@ from testgen.utils import is_uuid4
 
 SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 
+# Fallback when a connection row has a NULL max_query_chars (no DB default; older
+# rows / non-UI insert paths may not seed it). Matches the UI's non-Salesforce
+# default and the 0160 migration.
+DEFAULT_MAX_QUERY_CHARS = 20000
+
 
 @dataclass
 class ConnectionMinimal(EntityMinimal):
