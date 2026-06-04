@@ -6,7 +6,7 @@ from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 
-from testgen.common.auth import authorize_token, decode_jwt_token
+from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.enums import PublicJobKey
 from testgen.common.models import Session, _current_session_wrapper, get_current_session
 from testgen.common.models.job_execution import JobExecution
@@ -48,7 +48,7 @@ def get_authorized_user(credentials: HTTPAuthorizationCredentials = _bearer_secu
 
     try:
         payload = decode_jwt_token(credentials.credentials)
-    except ValueError:
+    except AuthError:
         raise _invalid from None
 
     username = payload.get("username")
@@ -58,7 +58,7 @@ def get_authorized_user(credentials: HTTPAuthorizationCredentials = _bearer_secu
     session = get_current_session()
     try:
         return authorize_token(credentials.credentials, username, session)
-    except ValueError:
+    except AuthError:
         raise _invalid from None
 
 
