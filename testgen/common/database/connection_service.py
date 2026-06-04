@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
 from testgen.common.database.database_service import empty_cache, get_flavor_service
-from testgen.common.models.connection import Connection
+from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.ui.services.database_service import fetch_from_target_db
 
 try:
@@ -142,4 +142,4 @@ def apply_connection_defaults(connection: Connection) -> None:
     """Fill flavor-dependent defaults for fields the caller didn't supply."""
     if connection.max_query_chars is None:
         # Salesforce Data 360's Hyper engine has a lower expression-depth limit
-        connection.max_query_chars = 15000 if connection.sql_flavor_code == "salesforce_data360" else 20000
+        connection.max_query_chars = 15000 if connection.sql_flavor_code == "salesforce_data360" else DEFAULT_MAX_QUERY_CHARS
