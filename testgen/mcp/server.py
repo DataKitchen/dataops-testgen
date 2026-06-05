@@ -9,7 +9,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 
 from testgen import settings
-from testgen.common.auth import decode_jwt_token
+from testgen.common.auth import AuthError, decode_jwt_token
 from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 
 LOG = logging.getLogger("testgen")
@@ -65,7 +65,7 @@ class JWTTokenVerifier:
                 scopes=[],
                 expires_at=int(payload["exp"]),
             )
-        except (ValueError, KeyError):
+        except (AuthError, KeyError):
             return None
 
 

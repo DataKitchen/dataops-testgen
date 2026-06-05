@@ -7,6 +7,7 @@ import bcrypt
 import jwt
 import pytest
 
+from testgen.common.auth import AuthError
 from testgen.mcp.auth import authenticate_user, validate_token
 from testgen.mcp.server import JWTTokenVerifier
 
@@ -83,7 +84,7 @@ def test_validate_token_returns_user(mock_user_cls, mock_settings):
 def test_validate_token_raises_for_expired_token(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
 
-    with pytest.raises(ValueError, match="Invalid token"):
+    with pytest.raises(AuthError, match="Invalid token"):
         validate_token(_make_token(exp_seconds=-3600))
 
 
@@ -91,7 +92,7 @@ def test_validate_token_raises_for_expired_token(mock_settings):
 def test_validate_token_raises_for_invalid_token(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
 
-    with pytest.raises(ValueError, match="Invalid token"):
+    with pytest.raises(AuthError, match="Invalid token"):
         validate_token("not-a-valid-token")
 
 

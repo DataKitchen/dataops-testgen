@@ -3,7 +3,8 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible
+from testgen.common.auth import AuthError
+from testgen.mcp.exceptions import MCPAuthenticationError, MCPPermissionDenied, MCPResourceNotAccessible
 from testgen.mcp.permissions import (
     _NOT_SET,
     ProjectPermissions,
@@ -38,12 +39,14 @@ def test_get_authorized_mcp_user_raises_when_no_username():
 
 @patch("testgen.common.models.get_current_session")
 @patch("testgen.common.auth.authorize_token")
-def test_get_authorized_mcp_user_raises_when_user_not_found(mock_authorize, mock_get_session):
-    mock_authorize.side_effect = ValueError("User not found")
+def test_get_authorized_mcp_user_translates_unknown_user_to_auth_error(mock_authorize, mock_get_session):
+    """A valid-signature token whose user no longer exists surfaces a clean MCP auth error,
+    not the generic 'unexpected error' the boundary returns for raw exceptions."""
+    mock_authorize.side_effect = AuthError("User not found")
     set_mcp_username("ghost")
     set_mcp_token("some_token")
 
-    with pytest.raises(ValueError, match="User not found"):
+    with pytest.raises(MCPAuthenticationError, match="no longer valid"):
         get_authorized_mcp_user()
 
 
@@ -65,12 +68,12 @@ def test_get_authorized_mcp_user_returns_user(mock_authorize, mock_get_session):
 
 @patch("testgen.common.models.get_current_session")
 @patch("testgen.common.auth.authorize_token")
-def test_get_authorized_mcp_user_rejects_revoked_token(mock_authorize, mock_get_session):
-    mock_authorize.side_effect = ValueError("Token has been revoked")
+def test_get_authorized_mcp_user_translates_revoked_token_to_auth_error(mock_authorize, mock_get_session):
+    mock_authorize.side_effect = AuthError("Token has been revoked")
     set_mcp_username("admin")
     set_mcp_token("revoked_token")
 
-    with pytest.raises(ValueError, match="Token has been revoked"):
+    with pytest.raises(MCPAuthenticationError, match="no longer valid"):
         get_authorized_mcp_user()
 
 

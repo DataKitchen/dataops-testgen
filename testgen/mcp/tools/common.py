@@ -300,6 +300,22 @@ def parse_run_status_filter(value: str) -> list[JobStatus]:
     return statuses
 
 
+class FailureGroupBy(StrEnum):
+    """User-facing values accepted for the ``group_by`` argument on ``get_failure_summary``."""
+
+    TEST_TYPE = "test_type"
+    TABLE = "table"
+    COLUMN = "column"
+
+
+def parse_failure_group_by(value: str) -> FailureGroupBy:
+    try:
+        return FailureGroupBy(value)
+    except ValueError as err:
+        valid = ", ".join(g.value for g in FailureGroupBy)
+        raise MCPUserError(f"Invalid group_by `{value}`. Valid values: {valid}") from err
+
+
 def format_run_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
     """Render an elapsed duration as ``Xs`` / ``Xm Ys`` / ``Xh Ym``. Returns ``None`` if either bound is missing."""
     if not started_at or not completed_at:
@@ -659,6 +675,52 @@ def resolve_notification(notification_id: str) -> NotificationSettings:
     if notif is None:
         raise MCPResourceNotAccessible("Notification", notification_id)
     return notif
+
+
+def resolve_aggregate_scope(
+    project_code: str | None,
+    test_suite_id: str | None = None,
+    table_group_id: str | None = None,
+) -> list[str]:
+    """Validate optional project / test-suite / table-group scope for a cross-run aggregation.
+
+    Resolves any supplied suite or table group (existence + access via the
+    ``resolve_*`` helpers), and — when ``project_code`` is also given — requires the
+    resolved entity to belong to it, raising a clear error on a cross-project mismatch
+    so the query never silently returns empty. Returns the project codes to scope the
+    aggregation to.
+    """
+    perms = get_project_permissions()
+    if project_code:
+        perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
+
+    scoped_projects: set[str] = set()
+    if test_suite_id:
+        suite = resolve_test_suite(test_suite_id)
+        if project_code and suite.project_code != project_code:
+            raise MCPUserError(
+                f"Test suite `{test_suite_id}` belongs to project `{suite.project_code}`, not `{project_code}`."
+            )
+        scoped_projects.add(suite.project_code)
+    if table_group_id:
+        table_group = resolve_table_group(table_group_id)
+        if project_code and table_group.project_code != project_code:
+            raise MCPUserError(
+                f"Table group `{table_group_id}` belongs to project `{table_group.project_code}`, not `{project_code}`."
+            )
+        scoped_projects.add(table_group.project_code)
+
+    if len(scoped_projects) > 1:
+        # Suite and table group resolve to different projects (only reachable when no
+        # project_code pins the scope). The two filters would AND to an empty result —
+        # reject rather than silently return nothing.
+        raise MCPUserError("The test suite and table group belong to different projects — narrow to one scope.")
+
+    if project_code:
+        return [project_code]
+    if scoped_projects:
+        return list(scoped_projects)
+    return perms.allowed_codes
 
 
 # Notification event-type labels.
