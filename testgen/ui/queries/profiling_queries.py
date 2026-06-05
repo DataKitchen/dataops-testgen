@@ -255,6 +255,7 @@ def get_tables_by_condition(
         table_chars.schema_name,
         table_chars.table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
+        table_chars.object_type,
         functional_table_type,
         approx_record_ct,
         table_chars.record_ct,

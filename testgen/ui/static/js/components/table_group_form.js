@@ -55,8 +55,12 @@ import { required } from '../form_validators.js';
 import { Select } from './select.js';
 import { Caption } from './caption.js';
 import { Textarea } from './textarea.js';
+import { Icon } from './icon.js';
 
-const { div } = van.tags;
+// Flavors whose profiling sample clause cannot sample views — views are profiled in full.
+const SAMPLE_SKIPS_VIEWS_FLAVORS = ['mssql', 'postgresql'];
+
+const { div, span } = van.tags;
 
 const normalizeTableSet = (value) => {
     return value?.split(/[,\n]/)
@@ -117,6 +121,13 @@ const TableGroupForm = (props) => {
         const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
         const flavor = selected?.sql_flavor ?? getValue(props.sqlFlavor);
         return flavor === 'salesforce_data360';
+    });
+
+    const sampleSkipsViews = van.derive(() => {
+        const connections = getValue(props.connections) ?? [];
+        const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
+        const flavor = selected?.sql_flavor ?? getValue(props.sqlFlavor);
+        return SAMPLE_SKIPS_VIEWS_FLAVORS.includes(flavor);
     });
 
     const updatedTableGroup = van.derive(() => {
@@ -206,7 +217,7 @@ const TableGroupForm = (props) => {
             addScorecardDefinition,
         ),
         SamplingForm(
-            { setValidity: setFieldValidity },
+            { setValidity: setFieldValidity, sampleSkipsViews },
             profileUseSampling,
             profileSamplePercent,
             profileSampleMinCount,
@@ -447,6 +458,13 @@ const SamplingForm = (
                     },
                 }),
             ),
+            () => (getValue(options.sampleSkipsViews) && profileUseSampling.val)
+                ? div(
+                    { class: 'flex-row fx-align-center fx-gap-1' },
+                    Icon({ style: 'color: var(--orange); font-size: 18px;' }, 'warning'),
+                    span('Views are profiled in full on this database — sampling applies only to tables and materialized views.'),
+                )
+                : '',
         ),
     );
 };
