@@ -4,6 +4,7 @@ from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.mcp.exceptions import MCPResourceNotAccessible
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import DocGroup, resolve_table_group, validate_limit, validate_page
 from testgen.mcp.tools.markdown import MdDoc
@@ -63,7 +64,7 @@ def list_test_suites(project_code: str) -> str:
         return "Missing required parameter `project_code`."
 
     perms = get_project_permissions()
-    perms.verify_access(project_code, not_found=f"No test suites found for project `{project_code}`.")
+    perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
 
     summaries = TestSuite.select_summary(project_code)
 

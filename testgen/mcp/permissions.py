@@ -2,13 +2,16 @@
 
 import contextvars
 import functools
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.user import User
-from testgen.mcp.exceptions import MCPPermissionDenied
+from testgen.mcp.exceptions import MCPAuthenticationError, MCPPermissionDenied
 from testgen.utils.plugins import PluginHook
+
+LOG = logging.getLogger("testgen")
 
 _NOT_SET = object()
 
@@ -83,7 +86,7 @@ def get_authorized_mcp_user() -> User:
     Checks user existence and token revocation status.
     Must be called within @with_database_session scope.
     """
-    from testgen.common.auth import authorize_token
+    from testgen.common.auth import AuthError, authorize_token
     from testgen.common.models import get_current_session
 
     username = _mcp_username.get()
@@ -92,7 +95,13 @@ def get_authorized_mcp_user() -> User:
 
     token_str = _mcp_token.get()
     session = get_current_session()
-    return authorize_token(token_str or "", username, session)
+    try:
+        return authorize_token(token_str or "", username, session)
+    except AuthError as err:
+        LOG.warning("MCP token authorization failed: %s", err)
+        raise MCPAuthenticationError(
+            "Authentication failed: your access token is no longer valid. Please sign in again."
+        ) from err
 
 
 def _compute_project_permissions(user: User, permission: str) -> ProjectPermissions:
