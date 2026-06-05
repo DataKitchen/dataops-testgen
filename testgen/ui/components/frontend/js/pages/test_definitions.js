@@ -1313,6 +1313,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
     const dialogInfo = van.derive(() => getValue(info) ?? null);
     const collision = van.derive(() => dialogInfo.val?.collision ?? null);
 
+    const targetProjectCode = van.state(null);
     const targetTgId = van.state(null);
     const targetTsId = van.state(null);
     const targetTableName = van.state(null);
@@ -1324,6 +1325,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
         const isOpen = open.val;
         if (isOpen && !wasOpen.val) {
             const di = dialogInfo.val;
+            targetProjectCode.val = di?.current_project_code ?? null;
             targetTgId.val = di?.current_table_group_id ?? null;
             targetTsId.val = null;
             targetTableName.val = null;
@@ -1334,9 +1336,15 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
         }
     });
 
-    const tableGroupOptions = van.derive(() =>
-        (dialogInfo.val?.table_groups ?? []).map(tg => ({ label: tg.table_groups_name, value: tg.id }))
+    const projectOptions = van.derive(() =>
+        (dialogInfo.val?.projects ?? []).map(p => ({ label: p.project_name, value: p.project_code }))
     );
+
+    const tableGroupOptions = van.derive(() => {
+        const project = targetProjectCode.val;
+        const tgs = dialogInfo.val?.table_groups_by_project?.[project] ?? [];
+        return tgs.map(tg => ({ label: tg.table_groups_name, value: tg.id }));
+    });
 
     const testSuiteOptions = van.derive(() => {
         const tg = targetTgId.val;
@@ -1413,6 +1421,21 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
         div(
             { class: 'flex-column fx-gap-4 td-form-dialog' },
             () => div({ class: 'text-caption' }, `Selected tests: ${(dialogInfo.val?.selected ?? []).length}`),
+
+            () => Select({
+                label: 'Target Project',
+                value: targetProjectCode.val,
+                options: projectOptions.val,
+                required: true,
+                filterable: true,
+                onChange: (value) => {
+                    targetProjectCode.val = value;
+                    targetTgId.val = null;
+                    targetTsId.val = null;
+                    targetTableName.val = null;
+                    targetColumnName.val = null;
+                },
+            }),
 
             () => Select({
                 label: 'Target Table Group',

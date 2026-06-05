@@ -12,6 +12,7 @@ from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import JobSource
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
     TestDefinition,
@@ -37,6 +38,7 @@ from testgen.ui.services.query_cache import (
     get_connection,
     get_table_group_minimal,
     get_test_suite,
+    select_projects_where,
     select_table_groups_minimal_where,
     select_test_definitions_minimal_where,
     select_test_definitions_page,
@@ -157,11 +159,6 @@ class TestDefinitionsPage(Page):
             test_types = run_test_type_lookup_query().to_dict("records")
             table_columns = get_columns(str(table_group.id))
             filter_columns_df = get_test_suite_columns(test_suite_id)
-            table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
-            all_test_suites = select_test_suites_minimal_where(
-                TestSuite.table_groups_id.in_([str(tg.id) for tg in table_groups]),
-                TestSuite.is_monitor.isnot(True),
-            )
 
         # Build filter options
         table_options = sorted(filter_columns_df["table_name"].dropna().unique().tolist(), key=str.lower)
@@ -230,15 +227,38 @@ class TestDefinitionsPage(Page):
 
         copy_move_dialog = None
         if selected := st.session_state.get(TD_COPY_MOVE_DIALOG_KEY):
+            editable_project_codes = session.auth.get_projects_with_permission("edit")
+            editable_projects = (
+                select_projects_where(Project.project_code.in_(editable_project_codes))
+                if editable_project_codes
+                else []
+            )
+            editable_table_groups = select_table_groups_minimal_where(
+                TableGroup.project_code.in_(editable_project_codes)
+            )
+            editable_test_suites = select_test_suites_minimal_where(
+                TestSuite.table_groups_id.in_([str(tg.id) for tg in editable_table_groups]),
+                TestSuite.is_monitor.isnot(True),
+            )
+            tgs_by_project: dict[str, list] = {}
+            for tg in editable_table_groups:
+                tgs_by_project.setdefault(tg.project_code, []).append(
+                    {"id": str(tg.id), "table_groups_name": tg.table_groups_name}
+                )
             suites_by_tg: dict[str, list] = {}
-            for ts in all_test_suites:
+            for ts in editable_test_suites:
                 suites_by_tg.setdefault(str(ts.table_groups_id), []).append(
                     {"id": str(ts.id), "test_suite": ts.test_suite}
                 )
             copy_move_dialog = {
                 "open": True,
                 "selected": selected,
-                "table_groups": [{"id": str(tg.id), "table_groups_name": tg.table_groups_name} for tg in table_groups],
+                "projects": [
+                    {"project_code": p.project_code, "project_name": p.project_name}
+                    for p in editable_projects
+                ],
+                "current_project_code": project_code,
+                "table_groups_by_project": tgs_by_project,
                 "current_table_group_id": str(table_group.id),
                 "current_test_suite_id": str(test_suite.id),
                 "test_suites_by_table_group": suites_by_tg,
@@ -402,6 +422,10 @@ class TestDefinitionsPage(Page):
                 TestDefinition.set_status_attribute(attribute, all_ids, value)
                 st.cache_data.clear()
 
+        def _resolve_target_project(target_tg_id: str) -> str | None:
+            target_tg = TableGroup.get_minimal(target_tg_id)
+            return target_tg.project_code if target_tg else None
+
         @with_database_session
         def on_copy_confirmed(payload: dict) -> None:
             ids = payload["ids"]
@@ -409,6 +433,11 @@ class TestDefinitionsPage(Page):
             target_ts_id = payload["target_test_suite_id"]
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
+            target_project = _resolve_target_project(target_tg_id)
+            if not target_project or not session.auth.user_has_permission("edit", target_project):
+                LOG.warning("Refusing copy to table group %s — user lacks edit permission", target_tg_id)
+                st.toast("You don't have edit permission for the target project.", icon=":material/error:")
+                return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
                 TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))
@@ -426,6 +455,11 @@ class TestDefinitionsPage(Page):
             target_ts_id = payload["target_test_suite_id"]
             target_table = payload.get("target_table_name")
             target_col = payload.get("target_column_name")
+            target_project = _resolve_target_project(target_tg_id)
+            if not target_project or not session.auth.user_has_permission("edit", target_project):
+                LOG.warning("Refusing move to table group %s — user lacks edit permission", target_tg_id)
+                st.toast("You don't have edit permission for the target project.", icon=":material/error:")
+                return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
                 TestDefinition.delete_where(TestDefinition.id.in_(overwrite_ids))

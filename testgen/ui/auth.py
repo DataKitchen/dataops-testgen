@@ -12,6 +12,7 @@ from testgen.ui.services.javascript_service import execute_javascript
 from testgen.ui.services.query_cache import (
     get_membership_by_user_and_project,
     get_user,
+    select_projects_where,
     select_users_where,
 )
 from testgen.ui.session import session
@@ -54,6 +55,9 @@ class Authentication:
 
     def user_has_project_access(self, project_code: str) -> bool:  # noqa: ARG002
         return True
+
+    def get_projects_with_permission(self, permission: Permission, /) -> list[str]:  # noqa: ARG002
+        return [p.project_code for p in select_projects_where()]
 
     def get_jwt_hashing_key(self) -> bytes:
         try:
