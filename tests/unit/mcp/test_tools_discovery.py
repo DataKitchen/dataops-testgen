@@ -181,7 +181,7 @@ def test_list_test_suites_raises_not_found_for_inaccessible_project(
 
     from testgen.mcp.tools.discovery import list_test_suites
 
-    with pytest.raises(MCPPermissionDenied, match="No test suites found for project `secret_project`"):
+    with pytest.raises(MCPResourceNotAccessible, match="Project `secret_project` not found or not accessible"):
         list_test_suites("secret_project")
 
 

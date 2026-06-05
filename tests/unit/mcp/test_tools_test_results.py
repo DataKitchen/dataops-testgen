@@ -625,7 +625,7 @@ def test_get_failure_summary_cross_run_by_project(mock_compute, mock_result, db_
     assert call_kwargs["since"] is not None
 
 
-@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.common.TestSuite")
 @patch("testgen.mcp.tools.test_results.TestResult")
 @patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_failure_summary_cross_run_by_project_and_suite(
@@ -636,7 +636,7 @@ def test_get_failure_summary_cross_run_by_project_and_suite(
         permission="view",
         username="test_user",
     )
-    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
+    mock_suite_cls.get.return_value = _mock_test_suite(project_code="proj_a")
     mock_result.select_failures.return_value = []
 
     from testgen.mcp.tools.test_results import get_failure_summary
@@ -664,12 +664,13 @@ def test_get_failure_summary_rejects_inaccessible_project(mock_compute, db_sessi
         get_failure_summary(project_code="proj_b", since="7 days")
 
 
-@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.common.TestSuite")
 @patch("testgen.mcp.permissions._compute_project_permissions")
 def test_get_failure_summary_rejects_inaccessible_test_suite(mock_compute, mock_suite_cls, db_session_mock):
-    """test_suite_id branch validates suite access — same contract as list_test_results."""
+    """test_suite_id branch validates suite access — inaccessible suites are filtered out by the
+    access-scoped query in resolve_test_suite, which returns None."""
     mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
-    mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
+    mock_suite_cls.get.return_value = None
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
@@ -677,15 +678,38 @@ def test_get_failure_summary_rejects_inaccessible_test_suite(mock_compute, mock_
         get_failure_summary(test_suite_id=str(uuid4()))
 
 
-@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.common.TestSuite")
 def test_get_failure_summary_rejects_unknown_or_monitor_test_suite(mock_suite_cls, db_session_mock):
-    # TestSuite.get_regular returns None for monitor suites and unknown ids alike.
-    mock_suite_cls.get_regular.return_value = None
+    # resolve_test_suite's access + is_monitor scoped query returns None for monitor suites and unknown ids alike.
+    mock_suite_cls.get.return_value = None
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
     with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
         get_failure_summary(test_suite_id=str(uuid4()))
+
+
+def test_get_failure_summary_rejects_invalid_group_by(db_session_mock):
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPUserError, match="Invalid group_by"):
+        get_failure_summary(job_execution_id=str(uuid4()), group_by="bogus")
+
+
+@patch("testgen.mcp.tools.common.TestSuite")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_summary_rejects_cross_project_suite(mock_compute, mock_suite_cls, db_session_mock):
+    """A suite the caller can access but in a different project than project_code is rejected,
+    not silently scoped away to an empty result."""
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_a"}, permission="view", username="test_user",
+    )
+    mock_suite_cls.get.return_value = _mock_test_suite(project_code="proj_b")
+
+    from testgen.mcp.tools.test_results import get_failure_summary
+
+    with pytest.raises(MCPUserError, match="belongs to project `proj_b`, not `proj_a`"):
+        get_failure_summary(project_code="proj_a", test_suite_id=str(uuid4()))
 
 
 # ----------------------------------------------------------------------
@@ -864,6 +888,55 @@ def test_get_failure_trend_exclude_today_shifts_end_date(mock_compute, mock_fail
     # Explicit exclude_today=False → end_date is today.
     get_failure_trend(since="14 days", exclude_today=False)
     assert mock_failure_trend.call_args.kwargs["end_date"] == real_today
+
+
+@patch("testgen.mcp.tools.common.TestSuite")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_trend_rejects_cross_project_suite(mock_compute, mock_suite_cls, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_a"}, permission="view", username="test_user",
+    )
+    mock_suite_cls.get.return_value = _mock_test_suite(project_code="proj_b")
+
+    from testgen.mcp.tools.test_results import get_failure_trend
+
+    with pytest.raises(MCPUserError, match="belongs to project `proj_b`, not `proj_a`"):
+        get_failure_trend(project_code="proj_a", test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.common.TestSuite")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_trend_rejects_inaccessible_suite(mock_compute, mock_suite_cls, db_session_mock):
+    """An inaccessible (or unknown/monitor) suite errors instead of silently returning an empty trend."""
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"}, permission="view", username="test_user",
+    )
+    mock_suite_cls.get.return_value = None
+
+    from testgen.mcp.tools.test_results import get_failure_trend
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        get_failure_trend(test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.common.TableGroup")
+@patch("testgen.mcp.tools.common.TestSuite")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_failure_trend_rejects_suite_and_table_group_in_different_projects(
+    mock_compute, mock_suite_cls, mock_tg_cls, db_session_mock
+):
+    """No project_code, but the suite and table group resolve to different accessible projects:
+    the two filters would AND to an empty result, so reject instead of silently returning empty."""
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a", "proj_b": "role_a"}, permission="view", username="test_user",
+    )
+    mock_suite_cls.get.return_value = _mock_test_suite(project_code="proj_a")
+    mock_tg_cls.get.return_value = MagicMock(project_code="proj_b")
+
+    from testgen.mcp.tools.test_results import get_failure_trend
+
+    with pytest.raises(MCPUserError, match="different projects"):
+        get_failure_trend(test_suite_id=str(uuid4()), table_group_id=str(uuid4()))
 
 
 # ----------------------------------------------------------------------

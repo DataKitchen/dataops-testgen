@@ -10,6 +10,10 @@ from testgen import settings
 LOG = logging.getLogger("testgen")
 
 
+class AuthError(Exception):
+    """Token authentication failed — invalid/expired token, unknown user, or revoked token."""
+
+
 def get_jwt_signing_key() -> bytes:
     """Decode the base64-encoded JWT signing key from settings."""
     return base64.b64decode(settings.JWT_HASHING_KEY_B64.encode("ascii"))
@@ -27,13 +31,13 @@ def create_jwt_token(username: str, expiry_seconds: int = 86400) -> str:
 def decode_jwt_token(token_str: str) -> dict:
     """Decode and validate a JWT token. Returns the payload dict.
 
-    Raises ValueError if the token is invalid or expired.
+    Raises ``AuthError`` if the token is invalid or expired.
     PyJWT auto-validates the standard ``exp`` claim during decode.
     """
     try:
         return jwt.decode(token_str, get_jwt_signing_key(), algorithms=["HS256"])
     except jwt.InvalidTokenError as e:
-        raise ValueError(f"Invalid token: {e}") from e
+        raise AuthError(f"Invalid token: {e}") from e
 
 
 def authorize_token(token_str: str, username: str, session):
@@ -48,11 +52,11 @@ def authorize_token(token_str: str, username: str, session):
 
     user = session.scalars(select(User).where(func.lower(User.username) == func.lower(username))).first()
     if user is None:
-        raise ValueError("User not found")
+        raise AuthError("User not found")
 
     token_record = session.scalars(select(OAuth2Token).where(OAuth2Token.access_token == token_str)).first()
     if token_record and token_record.access_token_revoked_at:
-        raise ValueError("Token has been revoked")
+        raise AuthError("Token has been revoked")
 
     return user
 

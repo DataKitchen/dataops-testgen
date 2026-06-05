@@ -12,11 +12,14 @@ from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     DocGroup,
+    FailureGroupBy,
     format_page_footer,
     format_page_info,
+    parse_failure_group_by,
     parse_result_status,
     parse_since_arg,
     parse_uuid,
+    resolve_aggregate_scope,
     resolve_test_type,
     validate_limit,
     validate_page,
@@ -26,6 +29,12 @@ from testgen.mcp.tools.markdown import MdDoc
 _DOC_GROUP = DocGroup.INVESTIGATE
 
 _DEFAULT_SEARCH_STATUSES = [TestResultStatus.Failed, TestResultStatus.Warning]
+
+_MODEL_GROUP_COLUMN = {
+    FailureGroupBy.TEST_TYPE: "test_type",
+    FailureGroupBy.TABLE: "table_name",
+    FailureGroupBy.COLUMN: "column_names",
+}
 
 
 @with_database_session
@@ -167,20 +176,20 @@ def get_failure_summary(
         group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
     """
     perms = get_project_permissions()
+    group = parse_failure_group_by(group_by)
 
     if not any((job_execution_id, test_suite_id, since)):
         raise MCPUserError(
             "Provide 'job_execution_id' for a single run, or 'test_suite_id' or 'project_code' "
             "to aggregate across runs. 'since' is required when 'test_suite_id' is not provided."
         )
-    if group_by in ("table", "column") and not (job_execution_id or test_suite_id):
+    if group in (FailureGroupBy.TABLE, FailureGroupBy.COLUMN) and not (job_execution_id or test_suite_id):
         raise MCPUserError(
-            f"'{group_by}' grouping requires a single-suite scope. "
+            f"'{group}' grouping requires a single-suite scope. "
             "Provide 'job_execution_id' or 'test_suite_id'."
         )
 
-    model_group_map = {"table": "table_name", "column": "column_names"}
-    model_group_by = model_group_map.get(group_by, group_by)
+    model_group_by = _MODEL_GROUP_COLUMN[group]
 
     scope_label: str
     test_run_id = None
@@ -197,15 +206,7 @@ def get_failure_summary(
         scope_label = f"run `{job_execution_id}`"
         project_codes = perms.allowed_codes
     else:
-        if project_code:
-            perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
-            project_codes = [project_code]
-        else:
-            project_codes = perms.allowed_codes
-        if test_suite_uuid is not None:
-            suite = TestSuite.get_regular(test_suite_uuid)
-            if suite is None or not perms.has_access(suite.project_code):
-                raise MCPResourceNotAccessible("Test suite", test_suite_id)
+        project_codes = resolve_aggregate_scope(project_code, test_suite_id=test_suite_id)
         scope_parts = []
         if project_code:
             scope_parts.append(f"project `{project_code}`")
@@ -227,14 +228,14 @@ def get_failure_summary(
         return f"No confirmed failures found for {scope_label}."
 
     total = sum(row[-1] for row in failures)
-    if group_by == "test_type":
+    if group is FailureGroupBy.TEST_TYPE:
         type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
     doc = MdDoc()
     doc.heading(1, f"Failure Summary — {scope_label}")
     doc.text(f"**Total confirmed failures (Failed + Warning):** {total}")
 
-    if group_by == "test_type":
+    if group is FailureGroupBy.TEST_TYPE:
         headers = ["Test Type", "Severity", "Count"]
         rows = []
         for row in failures:
@@ -242,7 +243,7 @@ def get_failure_summary(
             name = type_names.get(code, code)
             severity = status.value if status else "Unknown"
             rows.append([name, severity, count])
-    elif group_by == "column":
+    elif group is FailureGroupBy.COLUMN:
         headers = ["Column", "Count"]
         rows = []
         for row in failures:
@@ -253,9 +254,9 @@ def get_failure_summary(
         headers = ["Table Name", "Count"]
         rows = [[row[0], row[-1]] for row in failures]
 
-    doc.table(headers, rows, code=[0] if group_by == "table" else None)
+    doc.table(headers, rows, code=[0] if group is FailureGroupBy.TABLE else None)
 
-    if group_by == "test_type":
+    if group is FailureGroupBy.TEST_TYPE:
         doc.text(
             "Check `testgen://test-types` to understand what each test type checks "
             "and `get_test_type(test_type='...')` to fetch more details."
@@ -450,12 +451,9 @@ def get_failure_trend(
         valid = ", ".join(v.value for v in BucketInterval)
         raise MCPUserError(f"Invalid `bucket`: `{bucket}`. Valid values: {valid}") from err
 
-    perms = get_project_permissions()
-    if project_code:
-        perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
-        project_codes = [project_code]
-    else:
-        project_codes = perms.allowed_codes
+    project_codes = resolve_aggregate_scope(
+        project_code, test_suite_id=test_suite_id, table_group_id=table_group_id
+    )
 
     anchor_today = datetime.now(UTC).date()
     if exclude_today:
