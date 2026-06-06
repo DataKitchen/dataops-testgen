@@ -1005,6 +1005,7 @@ def test_compare_test_runs_happy_path(
     diff = MagicMock()
     diff.total_baseline = 100
     diff.total_target = 100
+    diff.stable_passes = 98
     diff.regressions = [
         _mock_diff_row(
             TestResultStatus.Passed,
@@ -1025,6 +1026,8 @@ def test_compare_test_runs_happy_path(
         out = compare_test_runs(str(uuid4()), str(uuid4()))
 
     assert "Test Run Comparison" in out
+    assert "Stable passes (Baseline passed → Target passed)" in out
+    assert "| Stable passes (Baseline passed → Target passed) | 98 |" in out
     assert "Regressions" in out
     assert "Pattern Match" in out
     assert "Passed → Failed" in out
@@ -1032,6 +1035,51 @@ def test_compare_test_runs_happy_path(
     assert "| 1 | 3 |" in out  # threshold columns populated when thresholds changed
     # diff_with_details called with (baseline_run.id, target_run.id) in that order.
     mock_result.diff_with_details.assert_called_once_with(baseline_run.id, target_run.id)
+
+
+def _fetch_row(test_definition_id, status):
+    row = MagicMock()
+    row.test_definition_id = test_definition_id
+    row.test_type = "Pattern_Match"
+    row.test_name_short = "Pattern Match"
+    row.table_name = "orders"
+    row.column_names = "customer_id"
+    row.status = status
+    row.result_measure = "0"
+    row.threshold_value = "0"
+    return row
+
+
+def test_diff_with_details_counts_stable_passes():
+    from testgen.common.models.test_result import TestResult
+
+    stable_1, stable_2, regressed, improved = uuid4(), uuid4(), uuid4(), uuid4()
+    baseline_rows = [
+        _fetch_row(stable_1, TestResultStatus.Passed),
+        _fetch_row(stable_2, TestResultStatus.Passed),
+        _fetch_row(regressed, TestResultStatus.Passed),
+        _fetch_row(improved, TestResultStatus.Failed),
+    ]
+    target_rows = [
+        _fetch_row(stable_1, TestResultStatus.Passed),
+        _fetch_row(stable_2, TestResultStatus.Passed),
+        _fetch_row(regressed, TestResultStatus.Failed),
+        _fetch_row(improved, TestResultStatus.Passed),
+    ]
+    session = MagicMock()
+    session.execute.side_effect = [baseline_rows, target_rows]
+
+    with patch("testgen.common.models.test_result.get_current_session", return_value=session):
+        diff = TestResult.diff_with_details(uuid4(), uuid4())
+
+    assert diff.stable_passes == 2
+    assert len(diff.regressions) == 1
+    assert len(diff.improvements) == 1
+    assert len(diff.persistent_failures) == 0
+    # Internal consistency: with no out-of-bucket statuses (Error/Log) in the fixture, the four
+    # named buckets account for every shared test definition.
+    shared = diff.total_target - len(diff.new_tests)
+    assert diff.stable_passes + len(diff.regressions) + len(diff.improvements) + len(diff.persistent_failures) == shared
 
 
 @patch("testgen.mcp.tools.test_results.TestSuite")

@@ -593,6 +593,7 @@ def compare_test_runs(
     doc.table(
         headers=["Category", "Count"],
         rows=[
+            ["Stable passes (Baseline passed → Target passed)", diff.stable_passes],
             ["Regressions (Baseline passed → Target failed/warning)", len(diff.regressions)],
             ["Improvements (Baseline failed/warning → Target passed)", len(diff.improvements)],
             ["Persistent failures", len(diff.persistent_failures)],
