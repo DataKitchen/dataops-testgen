@@ -101,6 +101,7 @@ class RunDiff:
 
     total_baseline: int
     total_target: int
+    stable_passes: int = 0
     regressions: list[DiffRow] = field(default_factory=list)
     improvements: list[DiffRow] = field(default_factory=list)
     persistent_failures: list[DiffRow] = field(default_factory=list)
@@ -471,12 +472,16 @@ class TestResult(Entity):
 
         for tid in baseline_results.keys() & target_results.keys():
             baseline_info, target_info = baseline_results[tid], target_results[tid]
+            baseline_status, target_status = baseline_info["status"], target_info["status"]
+            if baseline_status == TestResultStatus.Passed and target_status == TestResultStatus.Passed:
+                diff.stable_passes += 1
+                continue
             row = _row(tid, baseline_info, target_info)
-            if baseline_info["status"] == TestResultStatus.Passed and target_info["status"] in failing:
+            if baseline_status == TestResultStatus.Passed and target_status in failing:
                 diff.regressions.append(row)
-            elif baseline_info["status"] in failing and target_info["status"] == TestResultStatus.Passed:
+            elif baseline_status in failing and target_status == TestResultStatus.Passed:
                 diff.improvements.append(row)
-            elif baseline_info["status"] in failing and target_info["status"] in failing:
+            elif baseline_status in failing and target_status in failing:
                 diff.persistent_failures.append(row)
 
         for tid in target_results.keys() - baseline_results.keys():
