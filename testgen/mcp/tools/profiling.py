@@ -4,6 +4,7 @@ from uuid import UUID
 from sqlalchemy import func, or_
 
 from testgen.common.data_catalog_service import build_create_table_script
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
     SUGGESTED_DATA_TYPE_TO_PREFIX,
@@ -744,7 +745,7 @@ def get_column_profile_detail(
             "Run profiling for the table group first."
         )
 
-    if detail.profile_run_status in ("Running", "Error", "Cancelled"):
+    if detail.profile_run_status in (JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCELED):
         _raise_run_not_ready(detail)
 
     payload = dataclasses.asdict(detail)
@@ -766,11 +767,12 @@ def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
     ended = detail.profile_run_ended_at
     started_label = started.strftime("%Y-%m-%d %H:%M UTC") if started else "—"
     ended_label = ended.strftime("%Y-%m-%d %H:%M UTC") if ended else "—"
+    status_label = JOB_STATUS_LABEL.get(status, status)
     lines = [
-        f"Profiling run `{je}` is in `{status}` state — no profile detail available.",
+        f"Profiling run `{je}` is in `{status_label}` state — no profile detail available.",
         f"Started: {started_label}. Ended: {ended_label}.",
     ]
-    if status == "Error" and detail.profile_run_log_message:
+    if status == JobStatus.ERROR and detail.profile_run_log_message:
         lines.append(f"Error: {detail.profile_run_log_message}")
     raise MCPUserError("\n".join(lines))
 
@@ -953,7 +955,7 @@ def get_column_frequent_values(
     doc = MdDoc()
     doc.heading(1, f"Frequent values: {table_name}.{column_name}")
     doc.field("Table group", tg.id, code=True)
-    doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
+    doc.field("Profiling Run", profiling_run.id, code=True)
     doc.field("Row Count", profile.record_ct)
     doc.field("Distinct values", profile.distinct_value_ct)
     if pii_flag:
@@ -1008,7 +1010,7 @@ def get_column_patterns(
     doc = MdDoc()
     doc.heading(1, f"Character patterns: {table_name}.{column_name}")
     doc.field("Table group", tg.id, code=True)
-    doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
+    doc.field("Profiling Run", profiling_run.id, code=True)
     doc.field("Row Count", profile.record_ct)
     doc.field("Distinct values", profile.distinct_value_ct)
 

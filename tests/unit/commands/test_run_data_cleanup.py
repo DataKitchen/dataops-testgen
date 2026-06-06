@@ -51,17 +51,16 @@ def _patch_orchestrator(
     }
     started = {name: p.start() for name, p in patches.items()}
 
-    started["ProfilingRun"].find_latest_per_table_group.return_value = protected_profiling or set()
-    # get_job_execution_ids returns dict[run_id, je_id]; orchestrator filters nulls.
-    started["ProfilingRun"].get_job_execution_ids.return_value = {
-        uuid4(): je_id for je_id in (protected_profiling_jes or set())
-    }
+    # The run id IS the job execution id, so find_latest_* returns the protected
+    # JE ids directly. The *_jes params let a test name the same set as JE ids.
+    started["ProfilingRun"].find_latest_per_table_group.return_value = (
+        protected_profiling_jes or protected_profiling or set()
+    )
     started["ProfilingRun"].delete_older_than.return_value = deleted_profiling
 
-    started["TestRun"].find_latest_per_test_suite.return_value = protected_tests or set()
-    started["TestRun"].get_job_execution_ids.return_value = {
-        uuid4(): je_id for je_id in (protected_test_jes or set())
-    }
+    started["TestRun"].find_latest_per_test_suite.return_value = (
+        protected_test_jes or protected_tests or set()
+    )
     started["TestRun"].delete_older_than.return_value = deleted_tests
 
     started["JobExecution"].delete_older_than.return_value = deleted_job_executions

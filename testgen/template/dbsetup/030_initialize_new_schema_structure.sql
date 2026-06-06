@@ -144,10 +144,7 @@ CREATE TABLE profiling_runs (
    connection_id           BIGINT      NOT NULL,
    table_groups_id         UUID        NOT NULL,
    profiling_starttime     TIMESTAMP,
-   profiling_endtime       TIMESTAMP,
-   status                  VARCHAR(100) DEFAULT 'Running',
    progress                JSONB,
-   log_message             VARCHAR,
    table_ct                BIGINT,
    column_ct               BIGINT,
    record_ct               BIGINT,
@@ -157,9 +154,7 @@ CREATE TABLE profiling_runs (
    anomaly_column_ct       BIGINT,
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
-   dq_score_profiling      FLOAT,
-   process_id              INTEGER,
-   job_execution_id        UUID
+   dq_score_profiling      FLOAT
 );
 
 CREATE TABLE test_suites (
@@ -612,10 +607,7 @@ CREATE TABLE test_runs (
          PRIMARY KEY,
    test_suite_id           UUID NOT NULL,
    test_starttime          TIMESTAMP,
-   test_endtime            TIMESTAMP,
-   status                  VARCHAR(100) DEFAULT 'Running',
    progress                JSONB,
-   log_message             TEXT,
    test_ct                 INTEGER,
    passed_ct               INTEGER,
    failed_ct               INTEGER,
@@ -629,8 +621,6 @@ CREATE TABLE test_runs (
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
    dq_score_test_run       FLOAT,
-   process_id              INTEGER,
-   job_execution_id        UUID,
    CONSTRAINT test_runs_test_suites_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -1141,3 +1131,26 @@ CREATE TABLE notification_settings (
         REFERENCES score_definitions (id)
         ON DELETE CASCADE
 );
+
+-- Run identity = job execution id, with a cascading delete chain:
+-- deleting a job_executions row removes its run and the run's results.
+-- Declared here because job_executions is created after the run tables.
+ALTER TABLE profiling_runs
+    ADD CONSTRAINT profiling_runs_job_executions_id_fk
+    FOREIGN KEY (id) REFERENCES job_executions (id) ON DELETE CASCADE;
+
+ALTER TABLE test_runs
+    ADD CONSTRAINT test_runs_job_executions_id_fk
+    FOREIGN KEY (id) REFERENCES job_executions (id) ON DELETE CASCADE;
+
+ALTER TABLE test_results
+    ADD CONSTRAINT test_results_test_runs_id_fk
+    FOREIGN KEY (test_run_id) REFERENCES test_runs (id) ON DELETE CASCADE;
+
+ALTER TABLE profile_results
+    ADD CONSTRAINT profile_results_profiling_runs_id_fk
+    FOREIGN KEY (profile_run_id) REFERENCES profiling_runs (id) ON DELETE CASCADE;
+
+ALTER TABLE profile_anomaly_results
+    ADD CONSTRAINT profile_anomaly_results_profiling_runs_id_fk
+    FOREIGN KEY (profile_run_id) REFERENCES profiling_runs (id) ON DELETE CASCADE;

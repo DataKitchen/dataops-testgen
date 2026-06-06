@@ -301,9 +301,6 @@ def on_cancel_run(payload: dict) -> None:
 
     job_exec = JobExecution.get(job_execution_id)
     if job_exec and job_exec.request_cancel():
-        # Stopgap: also update the run status so the UI reflects cancellation immediately.
-        if test_run_id := payload.get("test_run_id"):
-            TestRun.cancel_run(test_run_id)
         get_test_run_summaries.clear()
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
@@ -319,7 +316,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
                 continue
             if job_exec.status in (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
                 job_exec.request_cancel()
-            test_run = next(iter(select_test_runs_where(TestRun.job_execution_id == je_id)), None)
+            test_run = next(iter(select_test_runs_where(TestRun.id == je_id)), None)
             if test_run:
                 TestRun.cascade_delete([str(test_run.id)])
             get_current_session().delete(job_exec)

@@ -22,6 +22,7 @@ from sqlalchemy.dialects import postgresql
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.hygiene_issue import HygieneIssue
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 
@@ -552,11 +553,11 @@ class DataColumnChars(Entity):
                 cls.dq_score_testing,
                 func.coalesce(hygiene_subq.c.hygiene_issue_count, 0).label("hygiene_issue_count"),
                 ProfilingRun.id.label("profile_run_id"),
-                ProfilingRun.job_execution_id.label("profile_run_je_id"),
-                ProfilingRun.status.label("profile_run_status"),
+                ProfilingRun.id.label("profile_run_je_id"),
+                JobExecution.status.label("profile_run_status"),
                 ProfilingRun.profiling_starttime.label("profile_run_started_at"),
-                ProfilingRun.profiling_endtime.label("profile_run_ended_at"),
-                ProfilingRun.log_message.label("profile_run_log_message"),
+                JobExecution.completed_at.label("profile_run_ended_at"),
+                JobExecution.error_message.label("profile_run_log_message"),
             )
             .outerjoin(DataTable, DataTable.id == cls.table_id)
             .outerjoin(
@@ -578,6 +579,7 @@ class DataColumnChars(Entity):
                 ),
             )
             .outerjoin(ProfilingRun, ProfilingRun.id == ProfileResult.profile_run_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .where(
                 cls.table_groups_id == table_groups_id,
                 cls.table_name == table_name,

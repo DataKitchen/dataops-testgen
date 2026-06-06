@@ -2,7 +2,8 @@
 WITH last_profile_date
    AS (SELECT table_groups_id, MAX(profiling_starttime) as last_profile_run_date
          FROM profiling_runs
-        WHERE status = 'Complete'
+         INNER JOIN job_executions ON job_executions.id = profiling_runs.id
+        WHERE job_executions.status = 'completed'
        GROUP BY table_groups_id),
 score_calc
   AS (SELECT run.table_groups_id, run.id as profile_run_id,

@@ -2,7 +2,8 @@
 WITH last_test_date
    AS (SELECT r.test_suite_id, MAX(r.test_starttime) as last_test_run_date
          FROM test_runs r
-        WHERE r.status = 'Complete'
+         INNER JOIN job_executions je ON je.id = r.id
+        WHERE je.status = 'completed'
        GROUP BY r.test_suite_id),
 score_calc
   AS (SELECT ts.table_groups_id,

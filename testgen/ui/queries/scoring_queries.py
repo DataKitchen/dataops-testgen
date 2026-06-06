@@ -42,7 +42,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             groups.table_groups_name,
             results.disposition,
             results.profile_run_id::VARCHAR,
-            runs.job_execution_id::VARCHAR,
+            runs.id::VARCHAR AS job_execution_id,
             types.suggested_action,
             results.table_groups_id::VARCHAR,
             results.project_code,
@@ -108,7 +108,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
                 ELSE 'Passed'
             END as disposition,
             results.test_run_id::VARCHAR,
-            test_runs.job_execution_id::VARCHAR,
+            test_runs.id::VARCHAR AS job_execution_id,
             types.usage_notes,
             types.test_type,
             results.auto_gen,
