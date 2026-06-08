@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.database.column_chars import ObjectType
 from testgen.common.models import get_current_session
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.entity import Entity
@@ -42,6 +43,7 @@ class TableProfilingOverview:
     table_groups_id: UUID
     schema_name: str | None
     table_name: str
+    object_type: ObjectType | None
     record_ct: int | None
     column_ct: int | None
     dq_score_profiling: float | None
@@ -61,6 +63,7 @@ class DataTable(Entity):
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("table_groups.id"))
     schema_name: str | None = Column(String)
     table_name: str = Column(String)
+    object_type: ObjectType | None = Column(String)
     column_ct: int | None = Column(BigInteger)
     record_ct: int | None = Column(BigInteger)
     approx_record_ct: int | None = Column(BigInteger)
@@ -110,6 +113,7 @@ class DataTable(Entity):
                 cls.table_groups_id,
                 cls.schema_name,
                 cls.table_name,
+                cls.object_type,
                 cls.record_ct,
                 cls.column_ct,
                 cls.dq_score_profiling,

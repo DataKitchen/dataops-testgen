@@ -150,6 +150,7 @@
  * @property {string} connection_id
  * @property {string} project_code
  * * Characteristics
+ * @property {string} object_type
  * @property {string} functional_table_type
  * @property {number} approx_record_ct
  * @property {number} record_ct

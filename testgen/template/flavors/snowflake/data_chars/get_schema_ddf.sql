@@ -42,6 +42,12 @@ SELECT
                'X'
            END AS general_type,
        numeric_scale > 0 AS is_decimal,
+       CASE t.table_type
+            WHEN 'BASE TABLE' THEN 'TABLE'
+            WHEN 'VIEW' THEN 'VIEW'
+            WHEN 'MATERIALIZED VIEW' THEN 'MATERIALIZED_VIEW'
+            WHEN 'EXTERNAL TABLE' THEN 'EXTERNAL'
+            ELSE 'OTHER' END AS object_type,
        t.row_count AS approx_record_ct
 FROM information_schema.columns c
     LEFT JOIN information_schema.tables t ON c.table_schema = t.table_schema AND c.table_name = t.table_name

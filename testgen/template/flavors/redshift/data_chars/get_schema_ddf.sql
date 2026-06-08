@@ -39,6 +39,10 @@ SELECT
          WHEN c.data_type = 'numeric' THEN COALESCE(numeric_scale, 1) > 0
          ELSE numeric_scale > 0
        END AS is_decimal,
+       CASE p.relkind
+            WHEN 'r' THEN 'TABLE' WHEN 'p' THEN 'TABLE'
+            WHEN 'v' THEN 'VIEW' WHEN 'm' THEN 'MATERIALIZED_VIEW'
+            ELSE 'OTHER' END AS object_type,
        CASE
          WHEN reltuples > 0 AND reltuples < 1 THEN NULL
          ELSE reltuples::BIGINT

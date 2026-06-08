@@ -30,6 +30,7 @@ class RefreshDataCharsSQL:
         "general_type",
         "column_type",
         "db_data_type",
+        "object_type",
         "approx_record_ct",
         "record_ct",
     )
@@ -157,6 +158,7 @@ class RefreshDataCharsSQL:
                 column.general_type,
                 column.column_type,
                 column.db_data_type,
+                column.object_type,
                 column.approx_record_ct,
                 column.record_ct,
             ]
