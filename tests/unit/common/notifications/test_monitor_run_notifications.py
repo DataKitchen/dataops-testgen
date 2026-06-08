@@ -29,6 +29,12 @@ def create_test_result(table_name, test_type, message, result_code=0):
     return mock
 
 
+def make_monitor_run(completed_at="2024-01-15T10:30:00Z"):
+    run = TestRun(id="monitor-run-id", test_suite_id="monitor-suite-id")
+    run.job_execution = Mock(completed_at=completed_at)
+    return run
+
+
 @pytest.fixture
 def ns_select_result():
     return [
@@ -110,11 +116,7 @@ def test_send_monitor_notifications(
         send_mock,
         persisted_setting_mock,
 ):
-    test_run = TestRun(
-        id="monitor-run-id",
-        test_suite_id="monitor-suite-id",
-        test_endtime="2024-01-15T10:30:00Z",
-    )
+    test_run = make_monitor_run()
 
     table_group = Mock(spec=TableGroup)
     table_group.id = "tg-id"
@@ -193,11 +195,7 @@ def test_send_monitor_notifications_early_exit(
         test_result_select_where_mock,
         send_mock,
 ):
-    test_run = TestRun(
-        id="monitor-run-id",
-        test_suite_id="monitor-suite-id",
-        test_endtime="2024-01-15T10:30:00Z",
-    )
+    test_run = make_monitor_run()
 
     if not has_notifications:
         ns_select_patched.return_value = []
@@ -219,11 +217,7 @@ def test_send_monitor_notifications_anomaly_counts(
         send_mock,
         persisted_setting_mock,
 ):
-    test_run = TestRun(
-        id="monitor-run-id",
-        test_suite_id="monitor-suite-id",
-        test_endtime="2024-01-15T10:30:00Z",
-    )
+    test_run = make_monitor_run()
 
     table_group = Mock(spec=TableGroup)
     table_group.id = "tg-id"
@@ -270,11 +264,7 @@ def test_send_monitor_notifications_url_construction(
         send_mock,
         persisted_setting_mock,
 ):
-    test_run = TestRun(
-        id="monitor-run-id",
-        test_suite_id="monitor-suite-id",
-        test_endtime="2024-01-15T10:30:00Z",
-    )
+    test_run = make_monitor_run()
 
     table_group = Mock(spec=TableGroup)
     table_group.id = "tg-123"

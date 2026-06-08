@@ -1,8 +1,6 @@
 import math
 from datetime import datetime
 
-from testgen.common.models.profiling_run import ProfilingRunStatus
-from testgen.common.models.test_definition import TestRunStatus
 from testgen.common.notifications.base import BaseEmailTemplate
 from testgen.utils import friendly_score
 
@@ -28,12 +26,6 @@ class BaseNotificationTemplate(BaseEmailTemplate):
         ]
         formatted = " ".join([ f"{unit[0]}{unit[1]}" for unit in units if unit[0] ])
         return formatted.strip() or "< 1s"
-
-    def format_status_helper(self, status: TestRunStatus | ProfilingRunStatus) -> str:
-        return {
-            "Complete": "Completed",
-            "Cancelled": "Canceled",
-        }.get(status, status)
 
     def format_score_helper(self, score: float) -> str:
         return friendly_score(score)

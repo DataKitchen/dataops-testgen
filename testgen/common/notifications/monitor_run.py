@@ -236,7 +236,7 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
                 notification.recipients,
                 {
                     "summary": {
-                        "test_endtime": test_run.test_endtime,
+                        "test_endtime": test_run.job_execution.completed_at,
                         "table_groups_name": table_group.table_groups_name,
                         "project_name": project.project_name,
                         "table_name": table_name,
