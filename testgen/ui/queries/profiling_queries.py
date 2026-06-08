@@ -613,7 +613,8 @@ def get_profiling_anomalies(
         COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
         COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
         COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
-        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification
     FROM profile_anomaly_results r
     INNER JOIN profile_anomaly_types t
         ON r.anomaly_id = t.id
@@ -682,7 +683,8 @@ def get_profiling_anomalies_by_ids(anomaly_ids: list[str]) -> pd.DataFrame:
         COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
         COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
         COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
-        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification
     FROM profile_anomaly_results r
     INNER JOIN profile_anomaly_types t
         ON r.anomaly_id = t.id

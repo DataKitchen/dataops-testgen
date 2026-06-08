@@ -214,6 +214,7 @@ def create_table_group(
     stakeholder_group: str | None = None,
     transform_level: str | None = None,
     data_product: str | None = None,
+    data_classification: str | None = None,
 ) -> str:
     """Create a table group on an existing connection.
 
@@ -254,6 +255,8 @@ def create_table_group(
             ``Conformed``, ``Processed``, ``Reporting``) or Medallion level
             (``bronze``, ``silver``, ``gold``).
         data_product: Catalog tag — data domain that comprises the dataset.
+        data_classification: Catalog tag — information classification level of the dataset
+            (e.g. ``Public``, ``Internal``, ``Confidential``, ``Restricted``).
     """
     connection = resolve_connection(connection_id)
 
@@ -288,6 +291,7 @@ def create_table_group(
         stakeholder_group=stakeholder_group,
         transform_level=transform_level,
         data_product=data_product,
+        data_classification=data_classification,
     )
 
     errors = validate_table_group_fields(table_group)
@@ -332,6 +336,7 @@ def update_table_group(
     stakeholder_group: str | None = None,
     transform_level: str | None = None,
     data_product: str | None = None,
+    data_classification: str | None = None,
 ) -> str:
     """Update fields on an existing table group. Atomic — no partial save.
 
@@ -371,6 +376,8 @@ def update_table_group(
             ``Conformed``, ``Processed``, ``Reporting``) or Medallion level
             (``bronze``, ``silver``, ``gold``).
         data_product: Catalog tag — data domain that comprises the dataset.
+        data_classification: Catalog tag — information classification level of the dataset
+            (e.g. ``Public``, ``Internal``, ``Confidential``, ``Restricted``).
     """
     supplied = {
         "table_group_name": table_group_name,
@@ -397,6 +404,7 @@ def update_table_group(
         "stakeholder_group": stakeholder_group,
         "transform_level": transform_level,
         "data_product": data_product,
+        "data_classification": data_classification,
     }
     if all(value is None for value in supplied.values()):
         raise MCPUserError("No fields supplied to update.")
@@ -545,6 +553,7 @@ _DIFF_ATTRS: tuple[str, ...] = (
     "stakeholder_group",
     "transform_level",
     "data_product",
+    "data_classification",
 )
 
 _DIFF_LABELS: dict[str, str] = {
@@ -572,6 +581,7 @@ _DIFF_LABELS: dict[str, str] = {
     "stakeholder_group": "Stakeholder group",
     "transform_level": "Transform level",
     "data_product": "Data product",
+    "data_classification": "Data classification",
 }
 
 _CATALOG_ATTRS: tuple[str, ...] = (
@@ -583,6 +593,7 @@ _CATALOG_ATTRS: tuple[str, ...] = (
     "stakeholder_group",
     "transform_level",
     "data_product",
+    "data_classification",
 )
 
 
@@ -646,6 +657,7 @@ def _apply_args_to_table_group(
     stakeholder_group: str | None = None,
     transform_level: str | None = None,
     data_product: str | None = None,
+    data_classification: str | None = None,
 ) -> None:
     """Apply every non-None arg to its model field.
 
@@ -700,6 +712,8 @@ def _apply_args_to_table_group(
         table_group.transform_level = transform_level
     if data_product is not None:
         table_group.data_product = data_product
+    if data_classification is not None:
+        table_group.data_classification = data_classification
 
 
 def _raise_validation_error(errors: list[str], header: str) -> None:

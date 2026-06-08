@@ -82,6 +82,7 @@ const TRANSLATIONS = {
     dq_dimension: 'Quality Dimension',
     impact_dimension: 'Impact Dimension',
     data_product: 'Data Product',
+    data_classification: 'Data Classification',
 };
 
 const ScoreExplorer = (/** @type {Properties} */ props) => {
@@ -188,6 +189,7 @@ const Toolbar = (
         'dq_dimension',
         'impact_dimension',
         'data_product',
+        'data_classification',
     ];
     const filterableFields = categories.filter((c) => c !== 'dq_dimension' && c !== 'impact_dimension');
     const filters = van.state(definition.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value), others: f.others ?? [] })));

@@ -138,6 +138,7 @@ def build_summary_table(document, hi_data):
                         "transform_level",
                         "aggregation_level",
                         "data_product",
+                        "data_classification",
                     ]
                     if hi_data[tag]
                 ],

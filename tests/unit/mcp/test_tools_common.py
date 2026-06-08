@@ -710,6 +710,7 @@ def test_parse_score_type_invalid_lists_valid_values():
         ("Stakeholder Group", ScoreCategory.stakeholder_group),
         ("Transform Level", ScoreCategory.transform_level),
         ("Data Product", ScoreCategory.data_product),
+        ("Data Classification", ScoreCategory.data_classification),
     ],
 )
 def test_parse_category_display_form_returns_column_form_enum(display_value, expected):
@@ -738,6 +739,7 @@ def test_parse_category_translation_dict_covers_all_args():
         "stakeholder_group",
         "transform_level",
         "data_product",
+        "data_classification",
     ],
 )
 def test_parse_category_rejects_column_form_input(internal):

@@ -261,6 +261,7 @@ class TableGroup(Entity):
     stakeholder_group: str = Column(NullIfEmptyString)
     transform_level: str = Column(NullIfEmptyString)
     data_product: str = Column(NullIfEmptyString)
+    data_classification: str = Column(NullIfEmptyString)
     last_complete_profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float = Column(Float)
     dq_score_testing: float = Column(Float)

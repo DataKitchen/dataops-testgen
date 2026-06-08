@@ -158,6 +158,7 @@ class ScoreGroupBy(StrEnum):
     STAKEHOLDER_GROUP = "Stakeholder Group"
     TRANSFORM_LEVEL = "Transform Level"
     DATA_PRODUCT = "Data Product"
+    DATA_CLASSIFICATION = "Data Classification"
 
 
 # Translates the user-facing label to the internal DB column name used by
@@ -175,6 +176,7 @@ SCORE_GROUP_BY_TO_COLUMN: dict[ScoreGroupBy, str] = {
     ScoreGroupBy.STAKEHOLDER_GROUP: "stakeholder_group",
     ScoreGroupBy.TRANSFORM_LEVEL: "transform_level",
     ScoreGroupBy.DATA_PRODUCT: "data_product",
+    ScoreGroupBy.DATA_CLASSIFICATION: "data_classification",
 }
 
 
@@ -197,6 +199,7 @@ class ScoreFilterField(StrEnum):
     STAKEHOLDER_GROUP = "Stakeholder Group"
     TRANSFORM_LEVEL = "Transform Level"
     DATA_PRODUCT = "Data Product"
+    DATA_CLASSIFICATION = "Data Classification"
 
 
 SCORE_FILTER_FIELD_TO_COLUMN: dict[ScoreFilterField, str] = {
@@ -210,6 +213,7 @@ SCORE_FILTER_FIELD_TO_COLUMN: dict[ScoreFilterField, str] = {
     ScoreFilterField.STAKEHOLDER_GROUP: "stakeholder_group",
     ScoreFilterField.TRANSFORM_LEVEL: "transform_level",
     ScoreFilterField.DATA_PRODUCT: "data_product",
+    ScoreFilterField.DATA_CLASSIFICATION: "data_classification",
 }
 
 
@@ -233,6 +237,7 @@ class ScoreCategoryArg(StrEnum):
     QUALITY_DIMENSION = "Quality Dimension"
     IMPACT_DIMENSION = "Impact Dimension"
     DATA_PRODUCT = "Data Product"
+    DATA_CLASSIFICATION = "Data Classification"
 
 
 SCORE_CATEGORY_ARG_TO_COLUMN: dict[ScoreCategoryArg, str] = {
@@ -247,6 +252,7 @@ SCORE_CATEGORY_ARG_TO_COLUMN: dict[ScoreCategoryArg, str] = {
     ScoreCategoryArg.QUALITY_DIMENSION: "dq_dimension",
     ScoreCategoryArg.IMPACT_DIMENSION: "impact_dimension",
     ScoreCategoryArg.DATA_PRODUCT: "data_product",
+    ScoreCategoryArg.DATA_CLASSIFICATION: "data_classification",
 }
 
 

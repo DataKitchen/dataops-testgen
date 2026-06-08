@@ -61,6 +61,7 @@ const TAG_KEYS = [
     'transform_level',
     'aggregation_level',
     'data_product',
+    'data_classification',
 ];
 const TAG_HELP = {
     data_source: 'Original source of the dataset',
@@ -71,6 +72,7 @@ const TAG_HELP = {
     transform_level: 'Data warehouse processing stage, e.g., Raw, Conformed, Processed, Reporting, or Medallion level (bronze, silver, gold)',
     aggregation_level: 'Data granularity of the dataset, e.g. atomic, historical, snapshot, aggregated, time-rollup, rolling, summary',
     data_product: 'Data domain that comprises the dataset',
+    data_classification: 'Information sensitivity level of the dataset, e.g., Public, Internal, Confidential, Restricted',
 };
 
 /**

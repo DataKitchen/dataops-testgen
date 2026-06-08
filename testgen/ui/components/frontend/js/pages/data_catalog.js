@@ -29,6 +29,7 @@
  * @property {string} transform_level
  * @property {string} aggregation_level
  * @property {string} data_product
+ * @property {string} data_classification
  * @property {string} table_data_source
  * @property {string} table_source_system
  * @property {string} table_source_process
@@ -37,6 +38,15 @@
  * @property {string} table_transform_level
  * @property {string} table_aggregation_level
  * @property {string} table_data_product
+ * @property {string} table_data_classification
+ * @property {string} table_group_data_source
+ * @property {string} table_group_source_system
+ * @property {string} table_group_source_process
+ * @property {string} table_group_business_domain
+ * @property {string} table_group_stakeholder_group
+ * @property {string} table_group_transform_level
+ * @property {string} table_group_data_product
+ * @property {string} table_group_data_classification
  *
  * @typedef Permissions
  * @type {object}
@@ -130,7 +140,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     criticalDataElement: !!item.table_critical_data_element,
                     children: [],
                 };
-                TAG_KEYS.forEach(key => tables[table_id][key] = item[`table_${key}`]);
+                TAG_KEYS.forEach(key => tables[table_id][key] = item[`table_${key}`] ?? item[`table_group_${key}`]);
             }
             const columnNode = {
                 id: column_id,
@@ -156,7 +166,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                 excludedDataElement: !!item.excluded_data_element,
                 piiFlag: !!item.pii_flag,
             };
-            TAG_KEYS.forEach(key => columnNode[key] = item[key] ?? item[`table_${key}`]);
+            TAG_KEYS.forEach(key => columnNode[key] = item[key] ?? item[`table_${key}`] ?? item[`table_group_${key}`]);
             tables[table_id].children.push(columnNode);
         });
         return Object.values(tables);

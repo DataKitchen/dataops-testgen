@@ -71,6 +71,7 @@ def _mock_table_group(**overrides) -> MagicMock:
     tg.stakeholder_group = overrides.get("stakeholder_group", None)
     tg.transform_level = overrides.get("transform_level", None)
     tg.data_product = overrides.get("data_product", None)
+    tg.data_classification = overrides.get("data_classification", None)
     return tg
 
 

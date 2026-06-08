@@ -59,6 +59,7 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             COALESCE(column_chars.transform_level, table_chars.transform_level, groups.transform_level) as transform_level,
             COALESCE(column_chars.aggregation_level, table_chars.aggregation_level) as aggregation_level,
             COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product,
+            COALESCE(column_chars.data_classification, table_chars.data_classification, groups.data_classification) as data_classification,
             types.impact_dimension,
             types.dq_dimension
         FROM profile_anomaly_results results
@@ -128,7 +129,9 @@ def get_score_card_issue_reports(selected_issues: list["SelectedIssue"]) -> list
             COALESCE(column_chars.transform_level, table_chars.transform_level, groups.transform_level) as transform_level,
             COALESCE(column_chars.aggregation_level, table_chars.aggregation_level) as aggregation_level,
             COALESCE(column_chars.data_product, table_chars.data_product, groups.data_product) as data_product,
-            COALESCE(results.impact_dimension, types.impact_dimension) as impact_dimension        FROM test_results results
+            COALESCE(column_chars.data_classification, table_chars.data_classification, groups.data_classification) as data_classification,
+            COALESCE(results.impact_dimension, types.impact_dimension) as impact_dimension
+        FROM test_results results
         INNER JOIN test_types types
             ON (results.test_type = types.test_type)
         INNER JOIN test_suites suites
@@ -179,6 +182,7 @@ def get_score_category_values(project_code: str) -> dict[ScoreCategory, list[str
         "stakeholder_group",
         "transform_level",
         "data_product",
+        "data_classification",
     ]
 
     quote = lambda v: f"'{v}'"
