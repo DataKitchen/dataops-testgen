@@ -236,6 +236,13 @@ class ColumnSearchHit(EntityMinimal):
     column_name: str
 
 
+@dataclass
+class CreateScriptColumn:
+    column_name: str
+    db_data_type: str | None
+    datatype_suggestion: str | None
+
+
 class DataColumnChars(Entity):
     __tablename__ = "data_column_chars"
 
@@ -267,6 +274,52 @@ class DataColumnChars(Entity):
     # fails_7_days_prior, fails_30_days_prior, warnings_last_run,
     # warnings_7_days_prior, warnings_30_days_prior, valid_profile_issue_ct,
     # valid_test_issue_ct
+
+    @classmethod
+    def list_for_create_script(
+        cls, table_groups_id: UUID, table_name: str,
+    ) -> tuple[str | None, list[CreateScriptColumn]]:
+        """Return ``(schema_name, columns)`` for a table's CREATE TABLE script.
+
+        Columns are ordered by ordinal position and carry the profiling-derived type
+        suggestion from their latest complete profiling run. Returns ``(None, [])`` when
+        the table is not in the table group's profiled catalog.
+        """
+        query = (
+            select(
+                cls.schema_name,
+                cls.column_name,
+                cls.db_data_type,
+                ProfileResult.datatype_suggestion,
+            )
+            .outerjoin(
+                ProfileResult,
+                and_(
+                    ProfileResult.profile_run_id == cls.last_complete_profile_run_id,
+                    ProfileResult.schema_name == cls.schema_name,
+                    ProfileResult.table_name == cls.table_name,
+                    ProfileResult.column_name == cls.column_name,
+                ),
+            )
+            .where(
+                cls.table_groups_id == table_groups_id,
+                cls.table_name == table_name,
+                cls.drop_date.is_(None),
+            )
+            .order_by(asc(cls.ordinal_position), asc(cls.column_name))
+        )
+        rows = get_current_session().execute(query).mappings().all()
+        if not rows:
+            return None, []
+        columns = [
+            CreateScriptColumn(
+                column_name=row["column_name"],
+                db_data_type=row["db_data_type"],
+                datatype_suggestion=row["datatype_suggestion"],
+            )
+            for row in rows
+        ]
+        return rows[0]["schema_name"], columns
 
     @classmethod
     def list_for_table_group(

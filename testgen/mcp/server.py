@@ -168,6 +168,7 @@ def build_mcp_server(
         get_schema_history,
     )
     from testgen.mcp.tools.profiling import (
+        generate_create_table_script,
         get_column_frequent_values,
         get_column_patterns,
         get_column_profile_detail,
@@ -203,7 +204,7 @@ def build_mcp_server(
         list_schedules,
         update_schedule,
     )
-    from testgen.mcp.tools.source_data import get_source_data, get_source_data_query
+    from testgen.mcp.tools.source_data import get_source_data, get_source_data_query, get_table_sample
     from testgen.mcp.tools.table_groups import (
         create_table_group,
         preview_table_group,
@@ -281,6 +282,8 @@ def build_mcp_server(
     safe_tool(list_test_notes)
     safe_tool(list_test_types)
     safe_tool(get_table)
+    safe_tool(generate_create_table_script)
+    safe_tool(get_table_sample)
     safe_tool(list_column_profiles)
     safe_tool(list_profiling_summaries)
     safe_tool(list_profiling_runs)

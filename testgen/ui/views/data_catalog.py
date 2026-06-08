@@ -10,7 +10,7 @@ import streamlit as st
 from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
-from testgen.common.database.database_service import get_flavor_service
+from testgen.common.data_catalog_service import build_create_table_script, fetch_table_sample
 from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -22,7 +22,6 @@ from testgen.common.pii_masking import (
     get_pii_columns,
     mask_hygiene_detail,
     mask_profiling_pii,
-    mask_source_data_pii,
 )
 from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
 from testgen.ui.components import widgets as testgen
@@ -46,7 +45,7 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_id,
     get_tables_by_table_group,
 )
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_from_target_db
+from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.services.query_cache import (
     get_profiling_run_summaries,
     get_project_summary,
@@ -61,7 +60,6 @@ from testgen.ui.views.dialogs.import_metadata_dialog import (
     build_import_preview_props,
     parse_import_csv,
 )
-from testgen.ui.views.dialogs.table_create_script_dialog import generate_create_script
 from testgen.utils import friendly_score, is_uuid4, make_json_safe, score
 
 LOG = logging.getLogger("testgen")
@@ -255,12 +253,6 @@ class DataCatalogPage(Page):
                 item["table_name"],
                 item.get("column_name"),
             )
-            if preview_data.get("rows") and not session.auth.user_has_permission("view_pii"):
-                pii_columns = get_pii_columns(item["table_group_id"], item["schema_name"], item["table_name"])
-                if pii_columns:
-                    df = pd.DataFrame(preview_data["rows"], columns=preview_data["columns"])
-                    mask_source_data_pii(df, pii_columns)
-                    preview_data["rows"] = make_json_safe(df.values.tolist())
             st.session_state[DC_DATA_PREVIEW_DIALOG_KEY] = preview_data
 
         def on_data_preview_dialog_closed(*_) -> None:
@@ -302,7 +294,7 @@ class DataCatalogPage(Page):
 
         create_script_dialog_data = None
         if create_script_item := st.session_state.get(DC_CREATE_SCRIPT_DIALOG_KEY):
-            script = generate_create_script(create_script_item["table_name"], columns)
+            script = build_create_table_script(table_group_id, create_script_item["table_name"], annotate_changes=True)
             create_script_dialog_data = {
                 "title": f"Table CREATE Script: {create_script_item['table_name']}",
                 "table_name": create_script_item["table_name"],
@@ -906,32 +898,25 @@ def get_preview_data(
     if not connection:
         return {"title": title, "status": "ERR", "message": "Connection not found."}
 
-    flavor_service = get_flavor_service(connection.sql_flavor)
-    prefix, suffix = flavor_service.row_limit_clauses(100)
-    quote = flavor_service.quote_character
-    table_ref = flavor_service.get_table_ref(schema_name, table_name)
-    query = f"""
-    SELECT DISTINCT
-        {prefix}
-        {f"{quote}{column_name}{quote}" if column_name else "*"}
-    FROM {table_ref}
-    {suffix}
-    """
+    result = fetch_table_sample(
+        connection,
+        table_group_id,
+        schema_name,
+        table_name,
+        limit=100,
+        mask_pii=not session.auth.user_has_permission("view_pii"),
+        column_name=column_name,
+    )
 
-    try:
-        results = fetch_from_target_db(connection, query)
-    except Exception:
+    if result.status == "ERR":
         return {"title": title, "status": "ERR", "message": "The preview data could not be loaded."}
-
-    if not results:
+    if result.status == "ND" or result.df is None:
         return {"title": title, "status": "ND", "message": "No data found."}
 
-    columns_list = list(results[0].keys())
-    rows = [list(row.values()) for row in results]
     return {
         "title": title,
-        "columns": columns_list,
-        "rows": make_json_safe(rows),
+        "columns": list(result.df.columns),
+        "rows": make_json_safe(result.df.values.tolist()),
     }
 
 
