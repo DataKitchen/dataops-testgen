@@ -11,8 +11,8 @@ class MssqlFlavorService(FlavorService):
     escaped_underscore = "[_]"
     row_limiting_clause = "top"
     url_scheme = "mssql+pyodbc"
-    # TABLESAMPLE applies only to tables and materialized views
-    sampleable_object_types = frozenset({ObjectType.TABLE, ObjectType.MATERIALIZED_VIEW})
+    # TABLESAMPLE is rejected on views; SQL Server has no materialized views, so only base tables.
+    sampleable_object_types = frozenset({ObjectType.TABLE})
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         connection_url = URL.create(

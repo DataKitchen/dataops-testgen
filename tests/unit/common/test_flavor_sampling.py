@@ -12,11 +12,15 @@ from testgen.common.database.database_service import get_flavor_service
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.parametrize("flavor", ["mssql", "postgresql"])
-def test_sampleable_restricted_to_physical_where_clause_rejects_views(flavor):
-    # Verified live: TABLESAMPLE errors on a view for these flavors, so only physical
-    # relations are sampleable; views/external/other are profiled in full.
-    assert get_flavor_service(flavor).sampleable_object_types == {
+# Verified live: TABLESAMPLE errors on a view for these flavors, so only physical relations
+# are sampleable; views/external/other are profiled in full.
+def test_mssql_samples_only_base_tables():
+    # SQL Server has no materialized views, so the sampleable set is just base tables.
+    assert get_flavor_service("mssql").sampleable_object_types == {ObjectType.TABLE}
+
+
+def test_postgresql_samples_tables_and_materialized_views():
+    assert get_flavor_service("postgresql").sampleable_object_types == {
         ObjectType.TABLE,
         ObjectType.MATERIALIZED_VIEW,
     }
