@@ -3,12 +3,17 @@ from unittest.mock import ANY, Mock, call, patch
 
 import pytest
 
+from testgen.common.enums import JobStatus
 from testgen.common.models.notification_settings import TestRunNotificationSettings, TestRunNotificationTrigger
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.test_run import send_test_run_notifications
 
 pytestmark = pytest.mark.unit
+
+
+def make_job_execution(status):
+    return Mock(status=status)
 
 
 def create_ns(**kwargs):
@@ -98,19 +103,19 @@ def select_summary_mock():
         "failed_expected", "warning_expected", "error_expected", "expected_triggers"
     ),
     [
-        ("Complete", 0, 0, 0, {}, 0, 0, 0, ["always"]),
-        ("Complete", 0, 5, 0, {}, 0, 5, 0, ["always", "on_warnings"]),
-        ("Complete", 1, 1, 1, {}, 1, 1, 1, ["always", "on_failures", "on_warnings"]),
-        ("Complete", 50, 50, 50, {"failed": 2, "warning": 3}, 10, 5, 5, [
+        (JobStatus.COMPLETED, 0, 0, 0, {}, 0, 0, 0, ["always"]),
+        (JobStatus.COMPLETED, 0, 5, 0, {}, 0, 5, 0, ["always", "on_warnings"]),
+        (JobStatus.COMPLETED, 1, 1, 1, {}, 1, 1, 1, ["always", "on_failures", "on_warnings"]),
+        (JobStatus.COMPLETED, 50, 50, 50, {"failed": 2, "warning": 3}, 10, 5, 5, [
             "always", "on_failures", "on_warnings", "on_changes",
         ]),
-        ("Complete", 0, 0, 50, {"error": 50}, 0, 0, 20, ["always", "on_failures", "on_warnings", "on_changes"]),
-        ("Complete", 50, 0, 0, None, 20, 0, 0, ["always", "on_failures", "on_warnings"]),
-        ("Complete", 50, 0, 10, {"failed": 5}, 15, 0, 5, ["always", "on_failures", "on_warnings", "on_changes"]),
-        ("Error", 0, 0, 0, {}, 0, 0, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
-        ("Error", 20, 10, 0, None, 15, 5, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
-        ("Cancelled", 0, 0, 0, {}, 0, 0, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
-        ("Cancelled", 30, 20, 0, {}, 15, 5, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
+        (JobStatus.COMPLETED, 0, 0, 50, {"error": 50}, 0, 0, 20, ["always", "on_failures", "on_warnings", "on_changes"]),
+        (JobStatus.COMPLETED, 50, 0, 0, None, 20, 0, 0, ["always", "on_failures", "on_warnings"]),
+        (JobStatus.COMPLETED, 50, 0, 10, {"failed": 5}, 15, 0, 5, ["always", "on_failures", "on_warnings", "on_changes"]),
+        (JobStatus.ERROR, 0, 0, 0, {}, 0, 0, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
+        (JobStatus.ERROR, 20, 10, 0, None, 15, 5, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
+        (JobStatus.CANCELED, 0, 0, 0, {}, 0, 0, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
+        (JobStatus.CANCELED, 30, 20, 0, {}, 15, 5, 0, ["always", "on_failures", "on_warnings", "on_changes"]),
     ]
 )
 def test_send_test_run_notification(
@@ -135,12 +140,12 @@ def test_send_test_run_notification(
     test_run = TestRun(
         id="tr-id",
         job_execution_id="tr-id",
-        status=test_run_status,
         test_suite_id="ts-id",
         failed_ct=failed_ct,
         warning_ct=warning_ct,
         error_ct=error_ct,
     )
+    test_run.job_execution = make_job_execution(test_run_status)
 
     # SA 2.0 Row objects expose ._mapping; mock them accordingly
     def _make_row():

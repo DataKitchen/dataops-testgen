@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Column, Float, Integer, String, desc, func, select, text, update
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute, foreign, relationship
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
@@ -116,6 +116,13 @@ class ProfilingRun(Entity):
     dq_score_profiling: float = Column(Float)
     process_id: int = Column(Integer)
     job_execution_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
+
+    job_execution = relationship(
+        JobExecution,
+        primaryjoin=foreign(job_execution_id) == JobExecution.id,
+        uselist=False,
+        viewonly=True,
+    )
 
     _default_order_by = (desc(profiling_starttime),)
     _minimal_columns = (
