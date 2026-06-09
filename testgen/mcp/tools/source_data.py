@@ -1,6 +1,9 @@
 from datetime import datetime
 
+from testgen.common.data_catalog_service import fetch_table_sample
 from testgen.common.models import with_database_session
+from testgen.common.models.connection import Connection
+from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.source_data_service import (
@@ -12,7 +15,13 @@ from testgen.common.source_data_service import (
 )
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import DocGroup, parse_uuid, resolve_hygiene_issue, validate_limit
+from testgen.mcp.tools.common import (
+    DocGroup,
+    parse_uuid,
+    resolve_hygiene_issue,
+    resolve_table_group,
+    validate_limit,
+)
 from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.INVESTIGATE
@@ -205,4 +214,47 @@ def get_source_data(
             doc.text("**Query used:**")
             doc.code_block(result.query, language="sql")
 
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("catalog")
+def get_table_sample(table_group_id: str, table_name: str, limit: int = 100) -> str:
+    """Fetch sample rows from a source table for inspection.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+        limit: Maximum rows to return (default 100, max 500).
+    """
+    validate_limit(limit, 500)
+    tg = resolve_table_group(table_group_id)
+
+    schema_name, _ = DataColumnChars.list_for_create_script(tg.id, table_name)
+    if schema_name is None:
+        raise MCPResourceNotAccessible("Table", table_name)
+
+    connection = Connection.get_by_table_group(tg.id)
+    if connection is None:
+        raise MCPResourceNotAccessible("Table", table_name)
+
+    mask_pii = not get_project_permissions().has_permission("view_pii", tg.project_code)
+    result = fetch_table_sample(
+        connection, tg.id, schema_name, table_name, limit=limit, mask_pii=mask_pii,
+    )
+
+    if result.status == "ERR":
+        raise MCPUserError(
+            f"Could not read from the source database for connection `{connection.connection_name}`."
+        )
+
+    doc = MdDoc()
+    if result.status == "ND":
+        return doc.text("Table has no rows.").render()
+
+    row_count = len(result.df) if result.df is not None else 0
+    doc.field("Rows returned", row_count)
+    if result.pii_redacted:
+        doc.text("_PII columns have been redacted._")
+    doc.table_from_dataframe(result.df)
     return doc.render()

@@ -4,6 +4,7 @@ from uuid import uuid4
 import pandas as pd
 import pytest
 
+from testgen.common.data_catalog_service import TableSampleResult
 from testgen.common.source_data_service import SourceDataResult
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
@@ -493,3 +494,108 @@ def test_get_source_data_hygiene_invalid_uuid(db_session_mock):
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
         get_source_data(issue_id="bad-uuid")
+
+
+# ----------------------------------------------------------------------
+# get_table_sample
+# ----------------------------------------------------------------------
+
+def _mock_table_group(tg_id=None, project_code="demo"):
+    tg = MagicMock()
+    tg.id = tg_id or uuid4()
+    tg.project_code = project_code
+    return tg
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_happy_path(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="main")
+    mock_fetch.return_value = TableSampleResult(
+        "OK", df=pd.DataFrame([{"id": 1, "name": "a"}]), pii_redacted=False,
+    )
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    result = get_table_sample(str(uuid4()), "orders")
+
+    assert "id" in result
+    assert "name" in result
+    assert "PII" not in result
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_empty_table(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="main")
+    mock_fetch.return_value = TableSampleResult("ND")
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    result = get_table_sample(str(uuid4()), "orders")
+
+    assert result.strip() == "Table has no rows."
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_redaction_note(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="main")
+    mock_fetch.return_value = TableSampleResult(
+        "OK", df=pd.DataFrame([{"id": 1}]), pii_redacted=True,
+    )
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    result = get_table_sample(str(uuid4()), "orders")
+
+    assert "redacted" in result.lower()
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_connection_failure_names_connection(
+    mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock,
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="prod-warehouse")
+    mock_fetch.return_value = TableSampleResult("ERR", message="boom")
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    with pytest.raises(MCPUserError) as exc:
+        get_table_sample(str(uuid4()), "orders")
+
+    assert "prod-warehouse" in str(exc.value)
+
+
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_unknown_table(mock_tg_cls, mock_dc, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = (None, [])
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    with pytest.raises(MCPResourceNotAccessible):
+        get_table_sample(str(uuid4()), "missing")
+
+
+@pytest.mark.parametrize("bad_limit", [0, 501])
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_rejects_out_of_range_limit(mock_tg_cls, bad_limit, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    with pytest.raises(MCPUserError):
+        get_table_sample(str(uuid4()), "orders", limit=bad_limit)

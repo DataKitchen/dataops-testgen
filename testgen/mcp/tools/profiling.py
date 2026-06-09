@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import func, or_
 
+from testgen.common.data_catalog_service import build_create_table_script
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
     SUGGESTED_DATA_TYPE_TO_PREFIX,
@@ -1136,3 +1137,21 @@ def search_columns(
     if footer:
         doc.text(footer)
     return doc.render()
+
+
+@with_database_session
+@mcp_permission("catalog")
+def generate_create_table_script(table_group_id: str, table_name: str) -> str:
+    """Generate a CREATE TABLE script for a profiled table from its columns and suggested data types.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+    """
+    tg = resolve_table_group(table_group_id)
+
+    script = build_create_table_script(tg.id, table_name)
+    if script is None:
+        raise MCPResourceNotAccessible("Table", table_name)
+
+    return MdDoc().code_block(script, language="sql").render()

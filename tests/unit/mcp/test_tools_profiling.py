@@ -1898,3 +1898,33 @@ def test_search_columns_table_group_scope_skips_per_project_summary(
 
     assert "Matches by project" not in result
     mock_dcc_cls.summarize_matches_by_project.assert_not_called()
+
+
+# ----------------------------------------------------------------------
+# generate_create_table_script
+# ----------------------------------------------------------------------
+
+@patch("testgen.mcp.tools.profiling.build_create_table_script")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_generate_create_table_script_happy_path(mock_tg_cls, mock_build, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_build.return_value = 'CREATE TABLE "demo"."orders" (\n    "id" INTEGER\n);'
+
+    from testgen.mcp.tools.profiling import generate_create_table_script
+    result = generate_create_table_script(str(uuid4()), "orders")
+
+    assert "CREATE TABLE" in result
+    assert '"id"' in result
+    assert "-- WAS" not in result
+    # MCP tool requests clean DDL (no change annotations)
+    assert mock_build.call_args.kwargs.get("annotate_changes", False) is False
+
+
+@patch("testgen.mcp.tools.profiling.build_create_table_script", return_value=None)
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_generate_create_table_script_unknown_table(mock_tg_cls, _mock_build, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+
+    from testgen.mcp.tools.profiling import generate_create_table_script
+    with pytest.raises(MCPResourceNotAccessible):
+        generate_create_table_script(str(uuid4()), "missing")
