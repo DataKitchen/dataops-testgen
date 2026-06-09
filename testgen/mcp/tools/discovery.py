@@ -1,16 +1,15 @@
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
-from testgen.common.models.connection import Connection
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
-from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
-    SQL_FLAVOR_CODE_TO_LABEL,
     DocGroup,
+    format_flavor_label,
+    resolve_connection,
     resolve_table_group,
     resolve_test_suite,
     validate_limit,
@@ -93,13 +92,17 @@ def get_project(project_code: str) -> str:
     doc.field("Test runs", summary.test_run_count)
 
     doc.heading(2, "Configuration")
-    doc.field("Quality-score weighting", project.use_dq_score_weights)
-    doc.field("Data retention", project.data_retention_enabled)
-    if project.data_retention_enabled and project.data_retention_days is not None:
-        doc.field("Retention period (days)", project.data_retention_days)
-    doc.field("Observability export configured", summary.can_export_to_observability)
+    doc.field("Weighted data quality scoring", project.use_dq_score_weights)
+
+    doc.heading(2, "Observability Integration")
+    doc.field("Configured", summary.can_export_to_observability)
     if project.observability_api_url:
-        doc.field("Observability API URL", project.observability_api_url, code=True)
+        doc.field("API URL", project.observability_api_url, code=True)
+
+    doc.heading(2, "Data Retention")
+    doc.field("Automatically delete old profiling and test history", project.data_retention_enabled)
+    if project.data_retention_enabled and project.data_retention_days is not None:
+        doc.field("Delete history older than (days)", project.data_retention_days)
 
     return doc.render()
 
@@ -159,18 +162,21 @@ def list_test_suites(project_code: str) -> str:
 @with_database_session
 @mcp_permission("view")
 def get_test_suite(test_suite_id: str) -> str:
-    """Get a test suite's configuration: default severity, connection, table group, and per-test-type counts.
+    """Get a test suite's configuration: connection, table group, default severity, and per-test-type counts.
 
     Returns the test suite's identity and configuration along with a breakdown of how many test
-    definitions it contains by type and how many are lock-refreshed (excluded from regeneration).
+    definitions it contains by type and how many are locked (excluded from regeneration).
     Use this before changing a suite's tests to understand what will be affected.
 
     Args:
         test_suite_id: The test suite UUID, e.g. from `list_test_suites`.
     """
     suite = resolve_test_suite(test_suite_id)
-    connection = Connection.get(suite.connection_id) if suite.connection_id else None
-    table_group = TableGroup.get(suite.table_groups_id) if suite.table_groups_id else None
+    # Defense in depth: resolve via perm-filtered helpers rather than `Model.get(...)`.
+    # FK constraints guarantee same-project today; the resolvers are the established wrapper
+    # for project-scoped lookups and keep us aligned if those guarantees ever change.
+    connection = resolve_connection(suite.connection_id) if suite.connection_id else None
+    table_group = resolve_table_group(str(suite.table_groups_id)) if suite.table_groups_id else None
     stats = TestSuite.test_definition_stats(suite.id)
 
     doc = MdDoc()
@@ -179,11 +185,9 @@ def get_test_suite(test_suite_id: str) -> str:
     doc.field("Project", suite.project_code, code=True)
 
     if connection is not None:
-        label = SQL_FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code)
-        flavor_label = label.value if label else connection.sql_flavor_code
         doc.field(
             "Connection",
-            f"{connection.connection_name} (`{connection.connection_id}`, {flavor_label})",
+            f"{connection.connection_name} (`{connection.connection_id}`, {format_flavor_label(connection.sql_flavor_code)})",
         )
     if table_group is not None:
         doc.field(
@@ -201,8 +205,8 @@ def get_test_suite(test_suite_id: str) -> str:
 
     if stats.counts_by_type:
         doc.heading(2, "Tests by type")
-        rows = [[test_type, count] for test_type, count in stats.counts_by_type.items()]
-        doc.table(["Test type", "Count"], rows, code=[0])
+        rows = [[type_label, count] for type_label, count in stats.counts_by_type.items()]
+        doc.table(["Test", "Count"], rows)
 
     return doc.render()
 

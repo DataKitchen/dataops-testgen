@@ -772,9 +772,13 @@ def _list_item(**overrides):
         project_code=overrides.get("project_code", "demo"),
         connection_name=overrides.get("connection_name", "warehouse_prod"),
         table_count=overrides.get("table_count", 12),
+        column_count=overrides.get("column_count", 84),
+        row_count=overrides.get("row_count", 100_000),
         last_profiled_date=overrides.get("last_profiled_date", None),
         last_tested_date=overrides.get("last_tested_date", None),
+        profiling_score=overrides.get("profiling_score", 0.95),
         testing_score=overrides.get("testing_score", 0.97),
+        quality_score=overrides.get("quality_score", 0.92),
     )
 
 
@@ -809,8 +813,12 @@ def test_list_table_groups_by_project_renders_rows(mock_tg_cls, db_session_mock)
     assert "core_tables" in out
     assert "warehouse_prod" in out
     assert "public" in out
+    assert "Quality Score" in out  # column header (#8)
+    assert "Columns" in out  # column header (#10)
+    assert "Rows" in out  # column header (#10)
     assert "12" in out  # table count
-    assert "0.97" in out  # testing score formatted
+    # quality_score 0.92 rendered via friendly_score → "92.0" (percentage form, mirrors UI).
+    assert "92.0" in out
     mock_tg_cls.list_for_project.assert_called_once_with("demo", page=1, limit=20)
 
 
@@ -863,15 +871,22 @@ def test_list_table_groups_rejects_inaccessible_project(mock_compute, db_session
 
 def _read_mock_table_group(**overrides):
     """Variant of _mock_table_group that also sets dq score fields used by get_table_group."""
+    from testgen.utils import score
+
     tg = _mock_table_group(**overrides)
-    tg.dq_score_testing = overrides.get("dq_score_testing", None)
-    tg.dq_score_profiling = overrides.get("dq_score_profiling", None)
+    testing = overrides.get("dq_score_testing", None)
+    profiling = overrides.get("dq_score_profiling", None)
+    tg.dq_score_testing = testing
+    tg.dq_score_profiling = profiling
+    # Mirror TableGroup.quality_score property — MagicMock would return a MagicMock for
+    # the attribute, so wire it explicitly through the same `score` helper the property uses.
+    tg.quality_score = score(profiling, testing)
     return tg
 
 
-@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_connection")
 @patch(f"{MODULE}.resolve_table_group")
-def test_get_table_group_renders_all_dialog_sections(mock_resolve, mock_conn_cls, db_session_mock):
+def test_get_table_group_renders_all_dialog_sections(mock_resolve, mock_resolve_conn, db_session_mock):
     tg = _read_mock_table_group(
         description="Curated payments tables",
         profiling_include_mask="payments_%",
@@ -886,7 +901,7 @@ def test_get_table_group_renders_all_dialog_sections(mock_resolve, mock_conn_cls
     )
     mock_resolve.return_value = tg
     conn = _mock_connection(connection_name="warehouse_prod", sql_flavor_code="snowflake")
-    mock_conn_cls.get.return_value = conn
+    mock_resolve_conn.return_value = conn
 
     from testgen.mcp.tools.table_groups import get_table_group
 
@@ -899,36 +914,38 @@ def test_get_table_group_renders_all_dialog_sections(mock_resolve, mock_conn_cls
     assert "Snowflake" in out
     assert "`public`" in out
     assert "Curated payments tables" in out
-    # Criteria — both table-name and column-name masks rendered
+    # Criteria — both table-name and column-name masks rendered (labels via _DIFF_LABELS)
     assert "## Criteria" in out
     assert "payments_%" in out
     assert "tmp_%" in out
     assert "payments,refunds" in out
-    assert "Profiling ID column mask" in out
-    assert "Profiling surrogate-key column mask" in out
+    assert "ID column mask" in out
+    assert "SK column mask" in out
     # Settings
     assert "## Settings" in out
-    assert "Detect CDE during profiling" in out
-    # Sampling enabled → percent + min count rendered
+    assert "Flag CDEs" in out  # _DIFF_LABELS["profile_flag_cdes"]
+    # Sampling enabled → percent + min count rendered (labels via _DIFF_LABELS)
     assert "## Sampling parameters" in out
-    assert "**Sample percent:** 50" in out
-    assert "Min sample record count" in out
+    assert "**Sample %:** 50" in out
+    assert "Sample min rows" in out
     # Catalog tags only render when set
     assert "## Catalog tags" in out
     assert "DataKitchen" in out
     assert "Finance" in out
-    # Latest activity
+    # Latest activity — scores rendered via friendly_score (percentage form, mirrors UI).
     assert "## Latest activity" in out
-    assert "0.91" in out
-    assert "0.95" in out
+    assert "**Profiling Score:** 95.0" in out
+    assert "**Testing Score:** 91.0" in out
+    # 0.95 * 0.91 = 0.8645 → friendly_score → "86.4" (Python banker's rounding of 86.45).
+    assert "**Quality Score:** 86.4" in out
 
 
-@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_connection")
 @patch(f"{MODULE}.resolve_table_group")
-def test_get_table_group_skips_catalog_when_no_tags(mock_resolve, mock_conn_cls, db_session_mock):
+def test_get_table_group_skips_catalog_when_no_tags(mock_resolve, mock_resolve_conn, db_session_mock):
     tg = _read_mock_table_group()  # all catalog tags None
     mock_resolve.return_value = tg
-    mock_conn_cls.get.return_value = _mock_connection()
+    mock_resolve_conn.return_value = _mock_connection()
 
     from testgen.mcp.tools.table_groups import get_table_group
 
@@ -938,14 +955,14 @@ def test_get_table_group_skips_catalog_when_no_tags(mock_resolve, mock_conn_cls,
     assert "## Catalog tags" not in out
 
 
-@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_connection")
 @patch(f"{MODULE}.resolve_table_group")
 def test_get_table_group_skips_sample_details_when_sampling_off(
-    mock_resolve, mock_conn_cls, db_session_mock,
+    mock_resolve, mock_resolve_conn, db_session_mock,
 ):
     tg = _read_mock_table_group(profile_use_sampling=False)
     mock_resolve.return_value = tg
-    mock_conn_cls.get.return_value = _mock_connection()
+    mock_resolve_conn.return_value = _mock_connection()
 
     from testgen.mcp.tools.table_groups import get_table_group
 
@@ -953,9 +970,9 @@ def test_get_table_group_skips_sample_details_when_sampling_off(
         out = get_table_group(str(tg.id))
 
     # Sampling section header still present (with the toggle), but percent/min not shown
-    assert "Use profile sampling" in out
-    assert "**Sample percent:**" not in out
-    assert "Min sample record count" not in out
+    assert "**Sampling:** No" in out  # _DIFF_LABELS["profile_use_sampling"]
+    assert "**Sample %:**" not in out
+    assert "Sample min rows" not in out
 
 
 @patch("testgen.mcp.tools.common.TableGroup")

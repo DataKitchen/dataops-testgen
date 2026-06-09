@@ -21,7 +21,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
-    SQL_FLAVOR_CODE_TO_LABEL,
+    format_flavor_label,
     format_page_footer,
     format_page_info,
     resolve_connection,
@@ -30,6 +30,7 @@ from testgen.mcp.tools.common import (
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+from testgen.utils import friendly_score
 
 _DUPLICATE_NAME_MESSAGE = "A Table Group with the same name already exists."
 _SCHEMA_LOCKED_MESSAGE = (
@@ -49,7 +50,7 @@ def list_table_groups(
     """List table groups in a project or on a specific connection.
 
     Pass exactly one of `project_code` or `connection_id`. Returns each group's
-    table count, last profile / test timestamps, and current Testing Score.
+    table count, last profile / test timestamps, and current quality score.
 
     Args:
         project_code: List groups in a project.
@@ -82,7 +83,6 @@ def list_table_groups(
     doc.text(format_page_info(total, page, limit))
     table_rows: list[list[object]] = []
     for row in rows:
-        score = f"{row.testing_score:.2f}" if row.testing_score is not None else None
         table_rows.append(
             [
                 str(row.id),
@@ -90,13 +90,15 @@ def list_table_groups(
                 row.connection_name,
                 row.table_group_schema,
                 row.table_count,
+                row.column_count,
+                row.row_count,
                 row.last_profiled_date,
                 row.last_tested_date,
-                score,
+                friendly_score(row.quality_score),
             ]
         )
     doc.table(
-        ["ID", "Name", "Connection", "Schema", "Tables", "Last profiled", "Last tested", "Testing Score"],
+        ["ID", "Name", "Connection", "Schema", "Tables", "Columns", "Rows", "Last profiled", "Last tested", "Quality Score"],
         table_rows,
         code=[0, 3],
     )
@@ -110,25 +112,23 @@ def list_table_groups(
 def get_table_group(table_group_id: str) -> str:
     """Get a table group's full configuration: filters, sampling, profiling flags, catalog tags, and recent activity.
 
-    Mirrors the field set of the table-group edit dialog so an LLM can introspect or modify
-    every setting available in the UI. Use this before editing a table group or generating tests.
+    Use this before editing a table group or generating tests.
 
     Args:
         table_group_id: The table group UUID, e.g. from `list_table_groups` or `get_data_inventory`.
     """
     table_group = resolve_table_group(table_group_id)
-    connection = Connection.get(table_group.connection_id) if table_group.connection_id else None
+    # Defense in depth: route through resolve_connection (perm-scoped) rather than Connection.get.
+    connection = resolve_connection(table_group.connection_id) if table_group.connection_id else None
 
     doc = MdDoc()
     doc.heading(1, f"Table group `{table_group.table_groups_name}`")
     doc.field("ID", str(table_group.id), code=True)
     doc.field("Project", table_group.project_code, code=True)
     if connection is not None:
-        label = SQL_FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code)
-        flavor_label = label.value if label else connection.sql_flavor_code
         doc.field(
             "Connection",
-            f"{connection.connection_name} (`{connection.connection_id}`, {flavor_label})",
+            f"{connection.connection_name} (`{connection.connection_id}`, {format_flavor_label(connection.sql_flavor_code)})",
         )
     doc.field("Schema", table_group.table_group_schema, code=True)
     if table_group.description:
@@ -136,49 +136,42 @@ def get_table_group(table_group_id: str) -> str:
 
     doc.heading(2, "Criteria")
     if table_group.profiling_table_set:
-        doc.field("Explicit table list", table_group.profiling_table_set, code=True)
+        doc.field(_DIFF_LABELS["profiling_table_set"], table_group.profiling_table_set, code=True)
     if table_group.profiling_include_mask:
-        doc.field("Tables to include mask", table_group.profiling_include_mask, code=True)
+        doc.field(_DIFF_LABELS["profiling_include_mask"], table_group.profiling_include_mask, code=True)
     if table_group.profiling_exclude_mask:
-        doc.field("Tables to exclude mask", table_group.profiling_exclude_mask, code=True)
-    doc.field("Profiling ID column mask", table_group.profile_id_column_mask, code=True)
-    doc.field("Profiling surrogate-key column mask", table_group.profile_sk_column_mask, code=True)
+        doc.field(_DIFF_LABELS["profiling_exclude_mask"], table_group.profiling_exclude_mask, code=True)
+    doc.field(_DIFF_LABELS["profile_id_column_mask"], table_group.profile_id_column_mask, code=True)
+    doc.field(_DIFF_LABELS["profile_sk_column_mask"], table_group.profile_sk_column_mask, code=True)
 
     doc.heading(2, "Settings")
-    doc.field("Detect CDE during profiling", table_group.profile_flag_cdes)
-    doc.field("Detect PII during profiling", table_group.profile_flag_pii)
-    doc.field("Exclude XDE columns from profiling", table_group.profile_exclude_xde)
-    doc.field("Include in project dashboard", table_group.include_in_dashboard)
-    doc.field("Min profiling age (days)", table_group.profiling_delay_days)
+    doc.field(_DIFF_LABELS["profile_flag_cdes"], table_group.profile_flag_cdes)
+    doc.field(_DIFF_LABELS["profile_flag_pii"], table_group.profile_flag_pii)
+    doc.field(_DIFF_LABELS["profile_exclude_xde"], table_group.profile_exclude_xde)
+    doc.field(_DIFF_LABELS["include_in_dashboard"], table_group.include_in_dashboard)
+    doc.field(_DIFF_LABELS["profiling_delay_days"], table_group.profiling_delay_days)
 
     doc.heading(2, "Sampling parameters")
-    doc.field("Use profile sampling", table_group.profile_use_sampling)
+    doc.field(_DIFF_LABELS["profile_use_sampling"], table_group.profile_use_sampling)
     if table_group.profile_use_sampling:
-        doc.field("Sample percent", table_group.profile_sample_percent)
-        doc.field("Min sample record count", table_group.profile_sample_min_count)
+        doc.field(_DIFF_LABELS["profile_sample_percent"], table_group.profile_sample_percent)
+        doc.field(_DIFF_LABELS["profile_sample_min_count"], table_group.profile_sample_min_count)
 
-    catalog_fields: list[tuple[str, str | None]] = [
-        ("Data source", table_group.data_source),
-        ("Source system", table_group.source_system),
-        ("Source process", table_group.source_process),
-        ("Business domain", table_group.business_domain),
-        ("Transform level", table_group.transform_level),
-        ("Data location", table_group.data_location),
-        ("Stakeholder group", table_group.stakeholder_group),
-        ("Data product", table_group.data_product),
-    ]
-    if any(value for _, value in catalog_fields):
+    if any(getattr(table_group, attr, None) for attr in _CATALOG_ATTRS):
         doc.heading(2, "Catalog tags")
-        for label, value in catalog_fields:
+        for attr in _CATALOG_ATTRS:
+            value = getattr(table_group, attr, None)
             if value:
-                doc.field(label, value)
+                doc.field(_DIFF_LABELS[attr], value)
 
     if table_group.dq_score_testing is not None or table_group.dq_score_profiling is not None:
         doc.heading(2, "Latest activity")
-        if table_group.dq_score_testing is not None:
-            doc.field("Testing Score", f"{table_group.dq_score_testing:.2f}")
-        if table_group.dq_score_profiling is not None:
-            doc.field("Profiling Score", f"{table_group.dq_score_profiling:.2f}")
+        if (profiling := friendly_score(table_group.dq_score_profiling)) is not None:
+            doc.field("Profiling Score", profiling)
+        if (testing := friendly_score(table_group.dq_score_testing)) is not None:
+            doc.field("Testing Score", testing)
+        if (quality := friendly_score(table_group.quality_score)) is not None:
+            doc.field("Quality Score", quality)
 
     return doc.render()
 

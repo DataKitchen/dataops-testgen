@@ -224,16 +224,22 @@ class TestSuite(Entity):
 
     @classmethod
     def test_definition_stats(cls, test_suite_id: str | UUID) -> "TestDefinitionStats":
-        """Aggregate test-definition counts for a suite: total, locked, and per-test-type."""
+        """Aggregate test-definition counts for a suite: total, locked, and per-test-type.
+
+        The per-type bucket uses the user-facing ``test_name_short`` label from
+        ``test_types``, falling back to the raw ``test_type`` code when the lookup
+        row is missing (defensive — every shipping test type has a short name).
+        """
         query = """
         SELECT
-            test_type,
+            COALESCE(tt.test_name_short, td.test_type) AS type_label,
             COUNT(*) AS total,
-            SUM(CASE WHEN COALESCE(lock_refresh, 'N') = 'Y' THEN 1 ELSE 0 END) AS locked
-        FROM test_definitions
-        WHERE test_suite_id = :test_suite_id
-        GROUP BY test_type
-        ORDER BY test_type;
+            SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'Y' THEN 1 ELSE 0 END) AS locked
+        FROM test_definitions td
+            LEFT JOIN test_types tt ON tt.test_type = td.test_type
+        WHERE td.test_suite_id = :test_suite_id
+        GROUP BY type_label
+        ORDER BY type_label;
         """
         rows = (
             get_current_session()
@@ -241,7 +247,7 @@ class TestSuite(Entity):
             .mappings()
             .all()
         )
-        counts_by_type = {row["test_type"]: int(row["total"]) for row in rows}
+        counts_by_type = {row["type_label"]: int(row["total"]) for row in rows}
         total = sum(counts_by_type.values())
         locked = sum(int(row["locked"]) for row in rows)
         return TestDefinitionStats(total=total, locked=locked, counts_by_type=counts_by_type)

@@ -26,6 +26,7 @@ from testgen.mcp.tools.common import (
     apply_connection_params,
     connection_display_fields,
     connection_field_labels,
+    format_flavor_label,
     format_page_footer,
     format_page_info,
     infer_mode,
@@ -69,13 +70,11 @@ def list_connections(project_code: str, page: int = 1, limit: int = 20) -> str:
     doc.text(format_page_info(total, page, limit))
     table_rows: list[list[object]] = []
     for row in rows:
-        label = SQL_FLAVOR_CODE_TO_LABEL.get(row.sql_flavor_code)
-        database_type = label.value if label else row.sql_flavor_code
         table_rows.append(
             [
                 row.connection_id,
                 row.connection_name,
-                database_type,
+                format_flavor_label(row.sql_flavor_code),
                 row.project_host,
                 row.project_db,
                 row.table_group_count,
@@ -100,38 +99,12 @@ def get_connection(connection_id: int) -> str:
     Use this before editing a connection or creating a table group on it.
 
     Args:
-        connection_id: Bigint connection ID returned by `list_connections` or shown on the connections page.
+        connection_id: Bigint connection ID returned by `list_connections`.
     """
     connection = resolve_connection(connection_id)
-
     doc = MdDoc()
     doc.heading(1, f"Connection `{connection.connection_name}`")
-    doc.field("ID", connection.connection_id, code=True)
-    doc.field("Project", connection.project_code, code=True)
-    label = SQL_FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code)
-    doc.field("Type", label.value if label else connection.sql_flavor_code)
-
-    if connection.project_host:
-        doc.field("Host", connection.project_host, code=True)
-    if connection.project_port:
-        doc.field("Port", connection.project_port)
-    if connection.project_db:
-        doc.field("Database", connection.project_db, code=True)
-    if connection.project_user:
-        doc.field("User", connection.project_user, code=True)
-    if connection.connect_by_url and connection.url:
-        doc.field("URL", connection.url, code=True)
-    if connection.warehouse:
-        doc.field("Warehouse", connection.warehouse, code=True)
-    if connection.http_path:
-        doc.field("HTTP Path", connection.http_path, code=True)
-    doc.field("Authentication", _authentication_label(connection))
-
-    if connection.max_threads is not None:
-        doc.field("Max Threads", connection.max_threads)
-    if connection.max_query_chars is not None:
-        doc.field("Max Expression Length", connection.max_query_chars)
-
+    _render_connection_body(doc, connection)
     return doc.render()
 
 
@@ -236,12 +209,22 @@ def _raise_validation_error(errors: list[str], header: str) -> None:
 def _render_created_connection(connection: Connection) -> str:
     doc = MdDoc()
     doc.heading(1, f"Connection `{connection.connection_name}` created")
+    _render_connection_body(doc, connection)
+    return doc.render()
+
+
+def _render_connection_body(doc: MdDoc, connection: Connection) -> None:
+    """Render every non-secret connection field below the heading.
+
+    Shared by ``create_connection`` (the response after a successful create) and
+    ``get_connection`` (read tool) so the surfaced field set stays consistent.
+    Encrypted columns are filtered out via ``ConnField.secret``.
+    """
     doc.field("ID", connection.connection_id, code=True)
     doc.field("Project", connection.project_code, code=True)
-    label = SQL_FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code)
-    doc.field("Type", label.value if label else connection.sql_flavor_code)
+    doc.field("Type", format_flavor_label(connection.sql_flavor_code))
 
-    # Render each populated, non-secret field under its flavor-specific label
+    # Each populated, non-secret field under its flavor-specific label
     # (e.g. "Catalog" for Databricks, "Login URL" for Salesforce).
     for fld in connection_display_fields(connection):
         if fld.secret:
@@ -256,8 +239,6 @@ def _render_created_connection(connection: Connection) -> str:
         doc.field("Max Threads", connection.max_threads)
     if connection.max_query_chars is not None:
         doc.field("Max Expression Length", connection.max_query_chars)
-
-    return doc.render()
 
 
 def _authentication_label(connection: Connection) -> str:

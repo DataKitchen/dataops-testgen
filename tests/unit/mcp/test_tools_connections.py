@@ -6,6 +6,7 @@ plus an explicit ``connection_mode``; mapping + validation are delegated to
 """
 
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -346,23 +347,52 @@ def test_get_connection_returns_config_with_display_label(mock_resolve, db_sessi
 
 @patch(f"{MODULE}.resolve_connection")
 def test_get_connection_never_returns_secrets(mock_resolve, db_session_mock):
-    """Password, private key, passphrase, service-account key must not leak."""
-    mock_resolve.return_value = _mock_connection(
-        project_pw_encrypted="hunter2",
-        private_key="-----BEGIN PRIVATE KEY-----secret",
-        private_key_passphrase="passphrase",  # noqa: S106
-        service_account_key={"key": "secret-account-json"},
+    """Password, private key, passphrase, service-account key must not leak.
+
+    Uses a real ``Connection`` ORM instance so the test would fail if the rendering
+    started reading the encrypted attributes (a MagicMock would silently return
+    a ``MagicMock`` for any attribute, masking the regression).
+    """
+    from testgen.common.models.connection import Connection
+
+    conn = Connection(
+        id=uuid4(),
+        connection_id=42,
+        project_code="demo",
+        connection_name="warehouse_prod",
+        sql_flavor="postgresql",
+        sql_flavor_code="postgresql",
+        project_host="localhost",
+        project_port="5432",
+        project_db="testgen",
+        project_user="dq_user",
+        project_pw_encrypted="sentinel-password-hunter2",
+        private_key="-----BEGIN PRIVATE KEY-----\nsentinel-private-key-body\n-----END PRIVATE KEY-----",
+        private_key_passphrase="sentinel-passphrase",  # noqa: S106
+        service_account_key={"client_email": "sentinel-account@example.com", "private_key": "sentinel-sak-key"},
     )
+    mock_resolve.return_value = conn
 
     from testgen.mcp.tools.connections import get_connection
 
     with _patch_perms(permission="view"):
         out = get_connection(42)
 
-    assert "hunter2" not in out
-    assert "BEGIN PRIVATE KEY" not in out
-    assert "passphrase" not in out
-    assert "secret-account-json" not in out
+    # Every populated secret value must NOT appear in output.
+    for needle in (
+        "sentinel-password-hunter2",
+        "sentinel-private-key-body",
+        "BEGIN PRIVATE KEY",
+        "sentinel-passphrase",
+        "sentinel-account@example.com",
+        "sentinel-sak-key",
+    ):
+        assert needle not in out, f"secret material `{needle}` leaked into get_connection output"
+
+    # The non-secret content we DO render should be present — sanity check that the
+    # test is exercising the real rendering path (not silently bypassing it).
+    assert "warehouse_prod" in out
+    assert "localhost" in out
 
 
 @patch(f"{MODULE}.resolve_connection")

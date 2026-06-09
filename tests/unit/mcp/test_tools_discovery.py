@@ -276,9 +276,12 @@ def test_get_project_returns_counts_and_config(mock_project_cls, db_session_mock
     assert "**Test definitions:** 142" in out
     assert "**Profiling runs:** 12" in out
     assert "**Test runs:** 38" in out
-    assert "**Quality-score weighting:** Yes" in out
-    assert "**Data retention:** Yes" in out
-    assert "**Retention period (days):** 180" in out
+    assert "**Weighted data quality scoring:** Yes" in out
+    assert "## Observability Integration" in out
+    assert "**Configured:** No" in out  # default summary has can_export_to_observability=False
+    assert "## Data Retention" in out
+    assert "**Automatically delete old profiling and test history:** Yes" in out
+    assert "**Delete history older than (days):** 180" in out
 
 
 @patch("testgen.mcp.permissions._compute_project_permissions")
@@ -323,7 +326,7 @@ def _mock_test_suite(**overrides):
     return suite
 
 
-_DEFAULT_TYPE_COUNTS = {"Aggregate_Balance": 5, "Row_Count": 12}
+_DEFAULT_TYPE_COUNTS = {"Aggregate Balance": 5, "Row Count": 12}
 
 
 def _stats(total=47, locked=3, counts_by_type=None):
@@ -337,19 +340,19 @@ def _stats(total=47, locked=3, counts_by_type=None):
 
 
 @patch("testgen.mcp.tools.discovery.TestSuite")
-@patch("testgen.mcp.tools.discovery.TableGroup")
-@patch("testgen.mcp.tools.discovery.Connection")
+@patch("testgen.mcp.tools.discovery.resolve_table_group")
+@patch("testgen.mcp.tools.discovery.resolve_connection")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_test_suite_returns_full_config(
-    mock_common_suite, mock_conn_cls, mock_tg_cls, mock_suite_cls, db_session_mock,
+    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, db_session_mock,
 ):
     suite = _mock_test_suite()
     mock_common_suite.get.return_value = suite
     conn = MagicMock(connection_id=42, connection_name="warehouse_prod", sql_flavor_code="snowflake")
-    mock_conn_cls.get.return_value = conn
+    mock_resolve_conn.return_value = conn
     tg = MagicMock(table_groups_name="curated_payments")
     tg.id = suite.table_groups_id
-    mock_tg_cls.get.return_value = tg
+    mock_resolve_tg.return_value = tg
     mock_suite_cls.test_definition_stats.return_value = _stats()
 
     from testgen.mcp.tools.discovery import get_test_suite
@@ -367,13 +370,15 @@ def test_get_test_suite_returns_full_config(
     assert "**Total tests:** 47" in out
     assert "**Locked tests:** 3" in out
     assert "Tests by type" in out
-    assert "Aggregate_Balance" in out
-    assert "Row_Count" in out
+    # Renders short_name labels (e.g. "Aggregate Balance"), NOT raw test_type codes (e.g. "Aggregate_Balance")
+    assert "Aggregate Balance" in out
+    assert "Row Count" in out
+    assert "Aggregate_Balance" not in out  # the raw test_type code must NOT appear
 
 
 @patch("testgen.mcp.tools.common.TestSuite")
-def test_get_test_suite_rejects_monitor_suite(mock_common_suite, db_session_mock):
-    """resolve_test_suite returns None when suite is_monitor — uses unified wording."""
+def test_get_test_suite_rejects_inaccessible_id(mock_common_suite, db_session_mock):
+    """A genuinely missing / inaccessible id (TestSuite.get returns None) raises the unified error."""
     mock_common_suite.get.return_value = None
 
     from testgen.mcp.tools.discovery import get_test_suite
@@ -381,6 +386,33 @@ def test_get_test_suite_rejects_monitor_suite(mock_common_suite, db_session_mock
     bogus_id = str(uuid4())
     with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
         get_test_suite(bogus_id)
+
+
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_get_test_suite_rejects_actual_monitor_suite(mock_common_suite, db_session_mock):
+    """An existing ``is_monitor=True`` suite is rejected because resolve_test_suite
+    passes ``TestSuite.is_monitor.isnot(True)`` as a filter clause.
+
+    Simulates the real DB filter behaviour: ``TestSuite.get`` returns the monitor
+    suite when called without the filter clause, ``None`` when the clause is present.
+    """
+    monitor_suite = _mock_test_suite(is_monitor=True)
+
+    def filtered_get(_uuid, *clauses):
+        # The resolver's contract: pass an `is_monitor.isnot(True)` clause to TestSuite.get.
+        # If the clause is present, a DB query against it would not match this monitor row.
+        for clause in clauses:
+            clause_str = str(clause).lower()
+            if "is_monitor" in clause_str and "not" in clause_str:
+                return None
+        return monitor_suite
+
+    mock_common_suite.get.side_effect = filtered_get
+
+    from testgen.mcp.tools.discovery import get_test_suite
+
+    with pytest.raises(MCPResourceNotAccessible, match="Test suite .* not found or not accessible"):
+        get_test_suite(str(monitor_suite.id))
 
 
 @patch("testgen.mcp.tools.common.TestSuite")
@@ -393,16 +425,15 @@ def test_get_test_suite_rejects_invalid_uuid(mock_common_suite, db_session_mock)
 
 
 @patch("testgen.mcp.tools.discovery.TestSuite")
-@patch("testgen.mcp.tools.discovery.TableGroup")
-@patch("testgen.mcp.tools.discovery.Connection")
+@patch("testgen.mcp.tools.discovery.resolve_table_group")
+@patch("testgen.mcp.tools.discovery.resolve_connection")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_test_suite_no_severity_renders_inherit(
-    mock_common_suite, mock_conn_cls, mock_tg_cls, mock_suite_cls, db_session_mock,
+    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, db_session_mock,
 ):
-    suite = _mock_test_suite(severity=None)
+    suite = _mock_test_suite(severity=None, connection_id=None, table_groups_id=None)
     mock_common_suite.get.return_value = suite
-    mock_conn_cls.get.return_value = None
-    mock_tg_cls.get.return_value = None
+    # connection_id / table_groups_id are None, so resolvers should not be called
     mock_suite_cls.test_definition_stats.return_value = _stats(total=0, locked=0, counts_by_type={})
 
     from testgen.mcp.tools.discovery import get_test_suite
@@ -412,3 +443,5 @@ def test_get_test_suite_no_severity_renders_inherit(
     assert "Inherit from test type" in out
     # No "Tests by type" table when there are no test definitions
     assert "Tests by type" not in out
+    mock_resolve_conn.assert_not_called()
+    mock_resolve_tg.assert_not_called()
