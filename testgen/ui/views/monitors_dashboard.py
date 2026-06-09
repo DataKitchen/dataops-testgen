@@ -2,24 +2,24 @@ import dataclasses
 import logging
 from datetime import UTC, date, datetime
 from math import ceil
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 
 import pandas as pd
 import streamlit as st
 
-from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.cron_service import get_cron_sample
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
-from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
     NotificationEvent,
 )
-from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
+from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
+from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -437,39 +437,25 @@ def build_edit_monitor_settings_data(
     get_monitor_suite, set_monitor_suite = temp_value(f"monitors:updated_suite:{monitor_suite_id}", default={})
 
     if should_save():
-        for key, value in get_monitor_suite().items():
-            setattr(monitor_suite, key, value)
-
-        is_new = not monitor_suite.id
-        monitor_suite.save()
-
-        new_schedule_config = get_schedule()
-        if ( # Check if schedule has to be created/recreated
-            not schedule
-            or schedule.cron_tz != new_schedule_config["cron_tz"]
-            or schedule.cron_expr != new_schedule_config["cron_expr"]
-        ):
-            if schedule:
-                JobSchedule.delete(schedule.id)
-
-            new_schedule = JobSchedule(
-                project_code=table_group.project_code,
-                key=RUN_MONITORS_JOB_KEY,
-                kwargs={"test_suite_id": str(monitor_suite.id)},
-                **new_schedule_config,
+        schedule_config = get_schedule()
+        if monitor_suite_id:
+            # An existing monitor suite always has a run-monitors schedule.
+            update_monitoring(
+                monitor_suite,
+                cast(JobSchedule, schedule),
+                suite_attrs=get_monitor_suite(),
+                cron_expr=schedule_config["cron_expr"],
+                cron_tz=schedule_config["cron_tz"],
+                active=schedule_config["active"],
             )
-            new_schedule.save()
-
-        elif schedule.active != new_schedule_config["active"]: # Only active status changed
-            JobSchedule.update_active(schedule.id, new_schedule_config["active"])
-
-        if is_new:
-            updated_table_group = get_table_group(table_group.id)
-            updated_table_group.monitor_test_suite_id = monitor_suite.id
-            updated_table_group.save()
-            # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
-            get_current_session().commit()
-            run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
+        else:
+            enable_monitoring(
+                get_table_group(table_group.id),
+                schedule_config["cron_expr"],
+                schedule_config["cron_tz"],
+                suite_attrs=get_monitor_suite(),
+                active=schedule_config["active"],
+            )
 
         st.session_state.pop(EDIT_MONITOR_SETTINGS_DIALOG_KEY, None)
         safe_rerun()
@@ -497,7 +483,7 @@ def build_edit_monitor_settings_data(
 def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
     try:
         monitor_suite = get_test_suite(table_group.monitor_test_suite_id)
-        TestSuite.cascade_delete([monitor_suite.id])
+        disable_monitoring(monitor_suite)
         st.cache_data.clear()
     except Exception:
         LOG.exception("Failed to delete monitor suite")

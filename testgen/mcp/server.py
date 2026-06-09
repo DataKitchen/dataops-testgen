@@ -172,7 +172,14 @@ def build_mcp_server(
         search_hygiene_issues,
         update_hygiene_issue,
     )
-    from testgen.mcp.tools.monitors import get_monitor_summary, list_monitored_tables
+    from testgen.mcp.tools.monitors import (
+        disable_monitors,
+        enable_monitors,
+        get_monitor_settings,
+        get_monitor_summary,
+        list_monitored_tables,
+        update_monitor_settings,
+    )
     from testgen.mcp.tools.notifications import (
         create_notification,
         delete_notification,
@@ -319,6 +326,10 @@ def build_mcp_server(
     safe_tool(get_schema_history)
     safe_tool(get_monitor_summary)
     safe_tool(list_monitored_tables)
+    safe_tool(enable_monitors)
+    safe_tool(get_monitor_settings)
+    safe_tool(update_monitor_settings)
+    safe_tool(disable_monitors)
     safe_tool(run_tests)
     safe_tool(run_profiling)
     safe_tool(cancel_test_run)

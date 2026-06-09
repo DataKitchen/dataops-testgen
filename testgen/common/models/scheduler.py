@@ -136,6 +136,14 @@ class JobSchedule(Base):
         return list(get_current_session().scalars(query).all())
 
     @classmethod
+    def get_for_monitor_suite(cls, monitor_suite_id: str | UUID) -> Self | None:
+        """The run-monitors schedule for a monitor suite, active or paused."""
+        return cls.get(
+            cls.key == RUN_MONITORS_JOB_KEY,
+            cls.kwargs["test_suite_id"].astext == str(monitor_suite_id),
+        )
+
+    @classmethod
     def upsert_for_retention(
         cls,
         project_code: str,

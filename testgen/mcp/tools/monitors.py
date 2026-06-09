@@ -1,9 +1,18 @@
-from datetime import UTC
+from datetime import UTC, datetime
+from typing import Any, cast
+from uuid import UUID
 
+from sqlalchemy import select
+
+from testgen.common.cron_service import describe_cron, get_cron_sample
 from testgen.common.enums import MonitorType
-from testgen.common.models import with_database_session
-from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY
+from testgen.common.holiday_service import is_supported_holiday_code
+from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import MonitorTableSummary, TableGroup
+from testgen.common.models.test_suite import PredictSensitivity, TestSuite
+from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
 from testgen.mcp.tools.common import (
@@ -315,3 +324,248 @@ def _format_row_count_change(row: MonitorTableSummary) -> str | None:
     if delta == 0:
         return "0"
     return f"{delta:+,}"
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle & settings tools
+# ---------------------------------------------------------------------------
+
+_LOOKBACK_RUNS_RANGE = (1, 200)
+_MIN_TRAINING_LOOKBACK_RANGE = (20, 1000)
+
+
+@with_database_session
+@mcp_permission("edit")
+def enable_monitors(table_group_id: str, cron_expression: str, cron_tz: str = "UTC") -> str:
+    """Turn on monitoring for a table group: create its monitors and put them on a schedule.
+
+    Sets up the initial Volume and Schema monitors with default settings; adjust them afterward
+    with ``update_monitor_settings``. Fails if monitoring is already on for the group.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+        cron_expression: Cron expression for the monitor schedule (required — monitors only run on a schedule), e.g. ``0 6 * * *`` for 6 AM daily.
+        cron_tz: IANA timezone for the schedule. Defaults to ``UTC``.
+    """
+    tg, monitor_suite = resolve_monitored_table_group(table_group_id)
+    if monitor_suite is not None:
+        raise MCPUserError("Monitoring is already enabled for this table group.")
+    _validate_cron_verbatim(cron_expression, cron_tz)
+
+    _, count = enable_monitoring(tg, cron_expression, cron_tz)
+
+    doc = MdDoc()
+    doc.heading(1, f"Monitoring enabled for `{tg.table_groups_name}`")
+    doc.field("Initial monitors created", count)
+    doc.field("Cron expression", cron_expression, code=True)
+    if (readable := describe_cron(cron_expression)) is not None:
+        doc.field("Cron description", readable)
+    doc.field("Timezone", cron_tz)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def get_monitor_settings(table_group_id: str) -> str:
+    """Get a table group's monitor configuration and schedule.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+    """
+    tg, monitor_suite = resolve_monitored_table_group(table_group_id)
+    if monitor_suite is None:
+        return _NOT_MONITORED_OUTPUT
+
+    # A monitored table group always has a run-monitors schedule (enable_monitors creates it).
+    schedule = cast(JobSchedule, JobSchedule.get_for_monitor_suite(monitor_suite.id))
+
+    doc = MdDoc()
+    doc.heading(1, f"Monitor settings for `{tg.table_groups_name}`")
+    doc.field("Project", tg.project_code, code=True)
+    _render_monitor_settings(doc, monitor_suite, schedule)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def update_monitor_settings(
+    table_group_id: str,
+    sensitivity: str | None = None,
+    lookback_runs: int | None = None,
+    min_training_lookback: int | None = None,
+    exclude_weekends: bool | None = None,
+    holiday_codes: list[str] | None = None,
+    regenerate_freshness: bool | None = None,
+    cron_expression: str | None = None,
+    cron_tz: str | None = None,
+    active: bool | None = None,
+) -> str:
+    """Update a table group's monitor configuration and/or schedule. Partial — omitted fields are left unchanged.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+        sensitivity: Anomaly-detection sensitivity. One of ``low`` / ``medium`` / ``high``.
+        lookback_runs: Monitor runs aggregated for dashboard summaries (1-200).
+        min_training_lookback: Minimum runs before predictions activate (20-1000).
+        exclude_weekends: Whether to exclude weekends from prediction baselines.
+        holiday_codes: Holiday calendars to exclude from baselines — ISO country codes (e.g. ``US``, ``GB``) or financial-market codes (e.g. ``NYSE``, ``ECB``); see https://holidays.readthedocs.io/en/latest/#available-countries. Pass an empty list to clear.
+        regenerate_freshness: Whether to auto-regenerate Freshness monitors when the schema shifts.
+        cron_expression: New cron expression for the schedule, e.g. ``0 6 * * *``.
+        cron_tz: New IANA timezone for the schedule, e.g. ``America/New_York``.
+        active: ``True`` to resume the schedule, ``False`` to pause it.
+    """
+    tg, monitor_suite = resolve_monitored_table_group(table_group_id)
+    if monitor_suite is None:
+        return _NOT_MONITORED_OUTPUT
+
+    if all(
+        value is None
+        for value in (
+            sensitivity,
+            lookback_runs,
+            min_training_lookback,
+            exclude_weekends,
+            holiday_codes,
+            regenerate_freshness,
+            cron_expression,
+            cron_tz,
+            active,
+        )
+    ):
+        raise MCPUserError("No fields supplied to update.")
+
+    # A monitored table group always has a run-monitors schedule (enable_monitors creates it).
+    schedule = cast(JobSchedule, JobSchedule.get_for_monitor_suite(monitor_suite.id))
+
+    suite_attrs: dict[str, Any] = {}
+    if sensitivity is not None:
+        suite_attrs["predict_sensitivity"] = _parse_sensitivity(sensitivity)
+    if lookback_runs is not None:
+        _validate_range(lookback_runs, "lookback_runs", *_LOOKBACK_RUNS_RANGE)
+        suite_attrs["monitor_lookback"] = lookback_runs
+    if min_training_lookback is not None:
+        _validate_range(min_training_lookback, "min_training_lookback", *_MIN_TRAINING_LOOKBACK_RANGE)
+        suite_attrs["predict_min_lookback"] = min_training_lookback
+    if exclude_weekends is not None:
+        suite_attrs["predict_exclude_weekends"] = exclude_weekends
+    if holiday_codes is not None:
+        cleaned = [code.strip() for code in holiday_codes if code.strip()]
+        invalid = [code for code in cleaned if not is_supported_holiday_code(code)]
+        if invalid:
+            raise MCPUserError(
+                f"Unknown holiday codes: {', '.join(invalid)}. Use ISO country codes (e.g. `US`, `GB`) "
+                "or financial-market codes (e.g. `NYSE`, `ECB`); see "
+                "https://holidays.readthedocs.io/en/latest/#available-countries."
+            )
+        suite_attrs["predict_holiday_codes"] = ",".join(cleaned) if cleaned else None
+    if regenerate_freshness is not None:
+        suite_attrs["monitor_regenerate_freshness"] = regenerate_freshness
+
+    if cron_expression is not None or cron_tz is not None:
+        effective_expr = cron_expression if cron_expression is not None else schedule.cron_expr
+        effective_tz = cron_tz if cron_tz is not None else schedule.cron_tz
+        _validate_cron_verbatim(effective_expr, effective_tz)
+
+    update_monitoring(
+        monitor_suite,
+        schedule,
+        suite_attrs=suite_attrs,
+        cron_expr=cron_expression,
+        cron_tz=cron_tz,
+        active=active,
+    )
+
+    doc = MdDoc()
+    doc.heading(1, f"Monitor settings updated for `{tg.table_groups_name}`")
+    _render_monitor_settings(doc, monitor_suite, schedule)
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def disable_monitors(table_group_id: str) -> str:
+    """Turn off monitoring for a table group, removing all its monitors, the schedule, and monitor history.
+
+    This is irreversible — the monitors and their accumulated history are deleted.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+    """
+    tg, monitor_suite = resolve_monitored_table_group(table_group_id)
+    if monitor_suite is None:
+        raise MCPUserError("Monitoring is not enabled for this table group.")
+
+    counts = disable_monitoring(monitor_suite)
+
+    doc = MdDoc()
+    doc.heading(1, f"Monitoring disabled for `{tg.table_groups_name}`")
+    doc.text("Removed all monitors, the schedule, and monitor history.")
+    doc.field("Monitors removed", counts["monitors"])
+    doc.field("Events removed", counts["events"])
+    doc.field("Runs removed", counts["runs"])
+    return doc.render()
+
+
+def _parse_sensitivity(value: str) -> PredictSensitivity:
+    try:
+        return PredictSensitivity(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in PredictSensitivity)
+        raise MCPUserError(f"Invalid sensitivity `{value}`. Valid values: {valid}") from err
+
+
+def _validate_range(value: int, label: str, low: int, high: int) -> None:
+    if not low <= value <= high:
+        raise MCPUserError(f"Invalid {label} `{value}`: must be between {low} and {high}.")
+
+
+def _validate_cron_verbatim(cron_expr: str, cron_tz: str) -> None:
+    """Validate a cron expression + timezone, surfacing the parser's message verbatim."""
+    sample = get_cron_sample(cron_expr, cron_tz, sample_count=1)
+    if "error" in sample:
+        raise MCPUserError(sample["error"])
+
+
+def _last_monitor_run(schedule_id: UUID) -> datetime | None:
+    je = (
+        get_current_session()
+        .scalars(
+            select(JobExecution)
+            .where(JobExecution.job_schedule_id == schedule_id)
+            .order_by(JobExecution.created_at.desc())
+            .limit(1)
+        )
+        .first()
+    )
+    if je is None:
+        return None
+    return je.completed_at or je.started_at
+
+
+def _render_monitor_settings(doc: MdDoc, monitor_suite: TestSuite, schedule: JobSchedule) -> None:
+    sensitivity = monitor_suite.predict_sensitivity.value if monitor_suite.predict_sensitivity else None
+    doc.field("Sensitivity", sensitivity)
+    doc.field("Lookback runs", monitor_suite.monitor_lookback)
+    doc.field("Min training lookback", monitor_suite.predict_min_lookback)
+    doc.field("Exclude weekends", monitor_suite.predict_exclude_weekends)
+    holidays = monitor_suite.holiday_codes_list
+    doc.field("Holiday codes", ", ".join(holidays) if holidays else None)
+    doc.field("Regenerate freshness", monitor_suite.monitor_regenerate_freshness)
+
+    doc.heading(2, "Schedule")
+    doc.field("Cron expression", schedule.cron_expr, code=True)
+    if (readable := describe_cron(schedule.cron_expr)) is not None:
+        doc.field("Cron description", readable)
+    doc.field("Timezone", schedule.cron_tz)
+    doc.field("Status", "Active" if schedule.active else "Paused")
+    if schedule.active:
+        try:
+            next_runs = schedule.get_sample_triggering_timestamps(1)
+        except Exception:
+            next_runs = []
+        if next_runs:
+            # Cron samples are tz-aware in the schedule's timezone; convert to UTC so the
+            # rendered " UTC" suffix is accurate.
+            doc.field("Next run", next_runs[0].astimezone(UTC))
+    if (last_run := _last_monitor_run(schedule.id)) is not None:
+        doc.field("Last run", last_run)

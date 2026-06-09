@@ -1,10 +1,10 @@
 import logging
-from datetime import datetime
 
-import holidays
 import numpy as np
 import pandas as pd
 from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+from testgen.common.holiday_service import get_holiday_dates
 
 LOG = logging.getLogger("testgen")
 
@@ -137,31 +137,3 @@ def infer_frequency(datetime_series: pd.Series) -> str:
     return frequency if frequency != "0min" else f"{int(total_seconds)}S"
 
 
-def get_holiday_dates(holiday_codes: list[str], datetime_index: pd.DatetimeIndex) -> set[datetime]:
-    years = list(range(datetime_index.year.min(), datetime_index.year.max() + 1))
-
-    holiday_dates = set()
-    if holiday_codes:
-        for code in holiday_codes:
-            code = code.strip().upper()
-            found = False
-
-            try:
-                country_holidays = holidays.country_holidays(code, years=years)
-                holiday_dates.update(country_holidays.keys())
-                found = True
-            except NotImplementedError:
-                pass # Not a valid country code
-
-            if not found:
-                try:
-                    financial_holidays = holidays.financial_holidays(code, years=years)
-                    holiday_dates.update(financial_holidays.keys())
-                    found = True
-                except NotImplementedError:
-                    pass # Not a valid financial code
-
-            if not found:
-                LOG.warning(f"Holiday code '{code}' could not be resolved as a country or financial market")
-
-    return holiday_dates
