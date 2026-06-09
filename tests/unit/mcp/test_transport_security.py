@@ -30,14 +30,20 @@ def test_loopback_and_base_url_always_present():
     assert "https://localhost:*" in settings.allowed_origins
 
 
-def test_extra_host_without_port_gets_wildcard():
-    """An extras entry without `:` gets `:*` automatically appended."""
+def test_extra_host_without_port_gets_wildcard_and_bare():
+    """An extras entry without `:` is allowed both with a `:*` port wildcard and bare.
+
+    The bare (port-less) form is required because some MCP gateways (e.g. Databricks)
+    send an Origin with no port, which the `:*` wildcard does not match.
+    """
     settings = _build_with("http://localhost:8530", extras=["tg.example.com"])
 
     assert "tg.example.com:*" in settings.allowed_hosts
-    assert "tg.example.com" not in settings.allowed_hosts  # bare entry should NOT be present
+    assert "tg.example.com" in settings.allowed_hosts
     assert "http://tg.example.com:*" in settings.allowed_origins
     assert "https://tg.example.com:*" in settings.allowed_origins
+    assert "http://tg.example.com" in settings.allowed_origins
+    assert "https://tg.example.com" in settings.allowed_origins
 
 
 def test_extra_host_with_explicit_port_preserved_literally():
