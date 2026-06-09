@@ -634,7 +634,8 @@ MCP_EXTRA_ALLOWED_HOSTS: list[str] = [
 Extra Host header values accepted by MCP DNS rebinding protection (comma-separated).
 BASE_URL's hostname and loopback are always allowed; this adds more for multi-domain
 deployments or reverse proxies that rewrite Host. Entries without a port (`tg.example.com`)
-get an automatic `:*` wildcard; entries with a port are matched literally
+are allowed both with an automatic `:*` port wildcard and bare, so gateways that send an
+Origin with no port are accepted; entries with a port are matched literally
 (`tg.example.com:8080`) or with explicit wildcard (`tg.example.com:*`).
 Only affects MCP routes — the parent FastAPI app does not validate Host headers.
 

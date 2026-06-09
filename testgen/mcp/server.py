@@ -110,6 +110,9 @@ def _build_transport_security() -> TransportSecuritySettings:
         host_pattern = host if ":" in host else f"{host}:*"
         allowed_hosts.add(host_pattern)
         allowed_origins.update({f"http://{host_pattern}", f"https://{host_pattern}"})
+        bare = host.split(":", 1)[0]
+        allowed_hosts.add(bare)
+        allowed_origins.update({f"http://{bare}", f"https://{bare}"})
 
     return TransportSecuritySettings(
         enable_dns_rebinding_protection=True,

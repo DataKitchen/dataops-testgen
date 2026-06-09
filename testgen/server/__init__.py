@@ -180,6 +180,17 @@ def run_server() -> None:
     if settings.API_TLS_ENABLED:
         ssl_kwargs["ssl_certfile"] = settings.SSL_CERT_FILE
         ssl_kwargs["ssl_keyfile"] = settings.SSL_KEY_FILE
+        # uvicorn defaults ssl_ciphers to "TLSv1", which restricts TLS 1.2 to legacy
+        # CBC/SHA-1 suites with no AEAD. Hardened TLS clients (e.g. the Databricks
+        # Unity Catalog HTTP-connection gateway) negotiate TLS 1.2 with an AEAD-only
+        # policy and find no shared cipher, so the handshake fails before any request
+        # is sent. Offer a modern AEAD cipher set (Mozilla intermediate).
+        ssl_kwargs["ssl_ciphers"] = (
+            "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+            "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+            "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+            "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
+        )
 
     LOG.info(
         "Starting server on %s:%s (TLS: %s, MCP: %s)",
