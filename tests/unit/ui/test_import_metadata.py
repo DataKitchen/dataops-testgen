@@ -1,4 +1,5 @@
 import base64
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -6,6 +7,7 @@ import pytest
 from testgen.ui.views.dialogs.import_metadata_dialog import (
     DESCRIPTION_MAX_LENGTH,
     TAG_MAX_LENGTH,
+    _build_metadata_fields,
     _extract_metadata_fields,
     _parse_csv,
     _set_row_status,
@@ -326,3 +328,43 @@ def test_preview_props_unmatched_preserved():
     }
     result = build_import_preview_props(preview)
     assert result["preview_rows"][0]["_status"] == "unmatched"
+
+
+# --- _build_metadata_fields ---
+
+_ALL_COLUMNS = ["description", "critical_data_element", "excluded_data_element", "pii_flag", "data_source"]
+
+
+def test_build_fields_table_excludes_column_only_fields():
+    row = {
+        "description": "Orders table",
+        "critical_data_element": True,
+        "excluded_data_element": True,
+        "pii_flag": "MANUAL",
+        "data_source": "Salesforce",
+    }
+    fields = _build_metadata_fields(row, _ALL_COLUMNS, is_column=False)
+    assert fields == {"description": "Orders table", "critical_data_element": True, "data_source": "Salesforce"}
+
+
+def test_build_fields_blank_text_clears():
+    row = {"description": "", "data_source": ""}
+    fields = _build_metadata_fields(row, ["description", "data_source"], is_column=False)
+    assert fields == {"description": None, "data_source": None}
+
+
+def test_build_fields_column_includes_pii_when_permitted():
+    row = {"pii_flag": "MANUAL", "excluded_data_element": True}
+    with patch("testgen.ui.views.dialogs.import_metadata_dialog.session") as mock_session:
+        mock_session.auth.user_has_permission.return_value = True
+        fields = _build_metadata_fields(row, ["pii_flag", "excluded_data_element"], is_column=True)
+    assert fields == {"pii_flag": "MANUAL", "excluded_data_element": True}
+
+
+def test_build_fields_column_drops_pii_without_permission():
+    row = {"pii_flag": "MANUAL", "excluded_data_element": True}
+    with patch("testgen.ui.views.dialogs.import_metadata_dialog.session") as mock_session:
+        mock_session.auth.user_has_permission.return_value = False
+        fields = _build_metadata_fields(row, ["pii_flag", "excluded_data_element"], is_column=True)
+    assert fields == {"excluded_data_element": True}
+    assert "pii_flag" not in fields

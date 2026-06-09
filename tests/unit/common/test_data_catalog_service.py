@@ -1,12 +1,20 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from testgen.common.data_catalog_service import (
+    DESCRIPTION_MAX_LENGTH,
+    TAG_FIELDS,
+    TAG_MAX_LENGTH,
     TableSampleResult,
+    apply_column_metadata,
+    apply_table_metadata,
     build_create_table_script,
+    disable_autoflags,
     fetch_table_sample,
     render_create_table_script,
+    validate_metadata_fields,
 )
 from testgen.common.models.data_column import CreateScriptColumn
 
@@ -192,3 +200,105 @@ def test_table_sample_result_defaults():
     result = TableSampleResult("ND")
     assert result.df is None
     assert result.pii_redacted is False
+
+
+# ---------------------------------------------------------------------------
+# validate_metadata_fields
+# ---------------------------------------------------------------------------
+
+def test_validate_accepts_values_within_limits():
+    fields = {"description": "x" * DESCRIPTION_MAX_LENGTH, "business_domain": "y" * TAG_MAX_LENGTH}
+    assert validate_metadata_fields(fields) == []
+
+
+def test_validate_flags_description_too_long():
+    errors = validate_metadata_fields({"description": "x" * (DESCRIPTION_MAX_LENGTH + 1)})
+    assert len(errors) == 1
+    assert "description" in errors[0]
+
+
+def test_validate_flags_each_tag_too_long():
+    fields = {"data_source": "a" * (TAG_MAX_LENGTH + 1), "data_product": "b" * (TAG_MAX_LENGTH + 1)}
+    errors = validate_metadata_fields(fields)
+    assert len(errors) == 2
+    assert any("data_source" in e for e in errors)
+    assert any("data_product" in e for e in errors)
+
+
+def test_validate_ignores_none_and_absent():
+    # None clears the field — never a length violation; absent keys are skipped.
+    assert validate_metadata_fields({"description": None, "source_system": None}) == []
+    assert validate_metadata_fields({}) == []
+
+
+# ---------------------------------------------------------------------------
+# apply_table_metadata / apply_column_metadata
+# ---------------------------------------------------------------------------
+
+def _table():
+    return SimpleNamespace(description="old", business_domain="old", critical_data_element=False)
+
+
+def _metadata_column():
+    return SimpleNamespace(
+        description="old", data_product="old", critical_data_element=False,
+        excluded_data_element=False, pii_flag=None,
+    )
+
+
+def test_apply_table_sets_present_keys_only():
+    table = _table()
+    apply_table_metadata(table, {"description": "new", "critical_data_element": True})
+    assert table.description == "new"
+    assert table.critical_data_element is True
+    assert table.business_domain == "old"  # absent → unchanged
+
+
+def test_apply_table_none_clears():
+    table = _table()
+    apply_table_metadata(table, {"business_domain": None})
+    assert table.business_domain is None
+
+
+def test_apply_column_sets_column_only_fields():
+    column = _metadata_column()
+    apply_column_metadata(column, {"pii_flag": "MANUAL", "excluded_data_element": True, "data_product": "CRM"})
+    assert column.pii_flag == "MANUAL"
+    assert column.excluded_data_element is True
+    assert column.data_product == "CRM"
+
+
+def test_apply_column_none_clears_pii():
+    column = _metadata_column()
+    column.pii_flag = "MANUAL"
+    apply_column_metadata(column, {"pii_flag": None})
+    assert column.pii_flag is None
+
+
+# ---------------------------------------------------------------------------
+# disable_autoflags
+# ---------------------------------------------------------------------------
+
+def test_disable_autoflags_disables_only_written_and_enabled():
+    tg = SimpleNamespace(profile_flag_cdes=True, profile_flag_pii=True)
+    disabled = disable_autoflags(tg, wrote_cde=True, wrote_pii=False)
+    assert disabled == ["profile_flag_cdes"]
+    assert tg.profile_flag_cdes is False
+    assert tg.profile_flag_pii is True
+
+
+def test_disable_autoflags_noop_when_already_disabled():
+    tg = SimpleNamespace(profile_flag_cdes=False, profile_flag_pii=False)
+    assert disable_autoflags(tg, wrote_cde=True, wrote_pii=True) == []
+
+
+def test_disable_autoflags_disables_both():
+    tg = SimpleNamespace(profile_flag_cdes=True, profile_flag_pii=True)
+    disabled = disable_autoflags(tg, wrote_cde=True, wrote_pii=True)
+    assert disabled == ["profile_flag_cdes", "profile_flag_pii"]
+
+
+def test_tag_fields_has_eight_entries():
+    assert len(TAG_FIELDS) == 8
+    assert "data_source" in TAG_FIELDS
+    assert "aggregation_level" in TAG_FIELDS
