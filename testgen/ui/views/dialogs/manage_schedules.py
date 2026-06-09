@@ -55,7 +55,7 @@ class ScheduleDialog:
                     "readableExpr": cron_descriptor.get_description(job.cron_expr),
                     "cronTz": job.cron_tz_str,
                     "sample": [
-                        sample.strftime("%a %b %-d, %-I:%M %p")
+                        sample.strftime(f"%a %b {sample.day}, {sample.hour % 12 or 12}:%M %p")
                         for sample in job.get_sample_triggering_timestamps(CRON_SAMPLE_COUNT + 1)
                     ],
                     "active": job.active,

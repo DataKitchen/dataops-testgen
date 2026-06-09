@@ -492,7 +492,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
         data[key] = data[key].apply(
-            lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
+            lambda val: val.strftime(f"%b {val.day} %Y, {val.hour % 12 or 12}:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
         )
 
     for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
