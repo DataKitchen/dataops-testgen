@@ -208,6 +208,7 @@ class ProfilingRun(Entity):
         project_code: str | None = None,
         table_group_id: str | UUID | None = None,
         job_execution_id: str | UUID | None = None,
+        schedule_id: str | None = None,
         statuses: list[JobStatus] | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -215,6 +216,7 @@ class ProfilingRun(Entity):
         if (
             (table_group_id and not is_uuid4(table_group_id))
             or (job_execution_id and not is_uuid4(job_execution_id))
+            or (schedule_id and not is_uuid4(schedule_id))
         ):
             return [], 0
 
@@ -271,6 +273,7 @@ class ProfilingRun(Entity):
             {" AND je.project_code = :project_code" if project_code else ""}
             {" AND tg.id = :table_group_id" if table_group_id else ""}
             {" AND je.id = :job_execution_id" if job_execution_id else ""}
+            {" AND je.job_schedule_id = :schedule_id" if schedule_id else ""}
             {" AND je.status IN :statuses" if statuses else ""}
         ORDER BY je.created_at DESC
         LIMIT :limit OFFSET :offset;
@@ -279,6 +282,7 @@ class ProfilingRun(Entity):
             "project_code": project_code,
             "table_group_id": str(table_group_id) if table_group_id else None,
             "job_execution_id": str(job_execution_id) if job_execution_id else None,
+            "schedule_id": schedule_id,
             "statuses": tuple(statuses) if statuses else (),
             "limit": page_size,
             "offset": (page - 1) * page_size,
