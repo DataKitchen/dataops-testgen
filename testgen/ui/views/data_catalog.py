@@ -4,16 +4,25 @@ import typing
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
+from uuid import UUID
 
 import pandas as pd
 import streamlit as st
 from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
-from testgen.common.data_catalog_service import build_create_table_script, fetch_table_sample
+from testgen.common.data_catalog_service import (
+    apply_column_metadata,
+    apply_table_metadata,
+    build_create_table_script,
+    disable_autoflags,
+    fetch_table_sample,
+)
 from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_column import DataColumnChars
+from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -603,60 +612,33 @@ def remove_table_dialog(item: dict) -> None:
 
 
 @with_database_session
-def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DATA_TYPE:
-    attributes = ["description"]
-    attributes.extend(TAG_FIELDS)
-
+def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
     tags = payload["tags"]
-    set_attributes = [ f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags ]
-    params = { key: tags.get(key) or "" for key in attributes if key in tags }
+
+    # Empty string clears the field (matches the prior NULLIF semantics).
+    shared_fields: dict = {key: (tags.get(key) or None) for key in ["description", *TAG_FIELDS] if key in tags}
     if "critical_data_element" in tags:
-        set_attributes.append("critical_data_element = :critical_data_element")
-        params["critical_data_element"] = tags.get("critical_data_element")
+        shared_fields["critical_data_element"] = tags.get("critical_data_element")
 
     # pii_flag and excluded_data_element are column-only fields (not in data_table_chars)
-    column_set_attributes = list(set_attributes)
+    column_fields = dict(shared_fields)
     if "pii_flag" in tags:
-        column_set_attributes.append("pii_flag = :pii_flag")
-        params["pii_flag"] = tags.get("pii_flag")
+        column_fields["pii_flag"] = tags.get("pii_flag")
     if "excluded_data_element" in tags:
-        column_set_attributes.append("excluded_data_element = :excluded_data_element")
-        params["excluded_data_element"] = tags.get("excluded_data_element")
+        column_fields["excluded_data_element"] = tags.get("excluded_data_element")
 
-    params["table_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "table" ]
-    params["column_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "column" ]
+    table_ids = [ UUID(item["id"]) for item in payload["items"] if item["type"] == "table" ]
+    column_ids = [ UUID(item["id"]) for item in payload["items"] if item["type"] == "column" ]
 
     with spinner_container:
         with st.spinner("Saving tags"):
-            if params["table_ids"] and set_attributes:
-                execute_db_query(
-                    f"""
-                    WITH selected as (
-                        SELECT UNNEST(ARRAY [:table_ids]) AS table_id
-                    )
-                    UPDATE data_table_chars
-                    SET {', '.join(set_attributes)}
-                    FROM data_table_chars dtc
-                        INNER JOIN selected ON (dtc.table_id = selected.table_id::UUID)
-                    WHERE dtc.table_id = data_table_chars.table_id;
-                    """,
-                    params,
-                )
+            if table_ids and shared_fields:
+                for table in DataTable.select_where(DataTable.id.in_(table_ids)):
+                    apply_table_metadata(table, shared_fields)
 
-            if params["column_ids"] and column_set_attributes:
-                execute_db_query(
-                    f"""
-                    WITH selected as (
-                        SELECT UNNEST(ARRAY [:column_ids]) AS column_id
-                    )
-                    UPDATE data_column_chars
-                    SET {', '.join(column_set_attributes)}
-                    FROM data_column_chars dcc
-                        INNER JOIN selected ON (dcc.column_id = selected.column_id::UUID)
-                    WHERE dcc.column_id = data_column_chars.column_id;
-                    """,
-                    params,
-                )
+            if column_ids and column_fields:
+                for column in DataColumnChars.select_where(DataColumnChars.id.in_(column_ids)):
+                    apply_column_metadata(column, column_fields)
 
             # Disable autodetection flags on table group if requested
             disable_flags = payload.get("disable_flags", [])
@@ -664,14 +646,12 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                 table_group_id = st.query_params.get("table_group_id")
                 if table_group_id:
                     table_group = get_table_group(table_group_id)
-                    changed = False
-                    if "profile_flag_cdes" in disable_flags and table_group.profile_flag_cdes:
-                        table_group.profile_flag_cdes = False
-                        changed = True
-                    if "profile_flag_pii" in disable_flags and table_group.profile_flag_pii:
-                        table_group.profile_flag_pii = False
-                        changed = True
-                    if changed:
+                    disabled = disable_autoflags(
+                        table_group,
+                        wrote_cde="profile_flag_cdes" in disable_flags,
+                        wrote_pii="profile_flag_pii" in disable_flags,
+                    )
+                    if disabled:
                         table_group.save()
 
     for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:

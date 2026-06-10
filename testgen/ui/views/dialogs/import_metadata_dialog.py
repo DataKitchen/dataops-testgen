@@ -4,8 +4,11 @@ import logging
 
 import pandas as pd
 
+from testgen.common.data_catalog_service import apply_column_metadata, apply_table_metadata, disable_autoflags
+from testgen.common.models.data_column import DataColumnChars
+from testgen.common.models.data_table import DataTable
 from testgen.ui.queries.profiling_queries import TAG_FIELDS
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
+from testgen.ui.services.database_service import fetch_all_from_db
 from testgen.ui.services.query_cache import get_table_group
 from testgen.ui.session import session
 
@@ -296,53 +299,50 @@ def _set_row_status(preview_row: dict, bad_cde: bool, bad_xde: bool, bad_pii: bo
 
 
 def apply_metadata_import(preview: dict, table_group_id: str | None = None) -> dict:
+    metadata_columns = preview["metadata_columns"]
     table_count = 0
     column_count = 0
 
     for row in preview.get("table_rows", []):
-        set_clauses, params = _build_update_params(row, preview["metadata_columns"], is_column=False)
-        if not set_clauses:
+        fields = _build_metadata_fields(row, metadata_columns, is_column=False)
+        if not fields:
             continue
-        params["table_id"] = row["table_id"]
-        execute_db_query(
-            f"UPDATE data_table_chars SET {', '.join(set_clauses)} WHERE table_id = CAST(:table_id AS UUID)",
-            params,
-        )
+        table = DataTable.get(row["table_id"])
+        if table is None:
+            continue
+        apply_table_metadata(table, fields)
         table_count += 1
 
     for row in preview.get("column_rows", []):
-        set_clauses, params = _build_update_params(row, preview["metadata_columns"], is_column=True)
-        if not set_clauses:
+        fields = _build_metadata_fields(row, metadata_columns, is_column=True)
+        if not fields:
             continue
-        params["column_id"] = row["column_id"]
-        execute_db_query(
-            f"UPDATE data_column_chars SET {', '.join(set_clauses)} WHERE column_id = CAST(:column_id AS UUID)",
-            params,
-        )
+        column = DataColumnChars.get(row["column_id"])
+        if column is None:
+            continue
+        apply_column_metadata(column, fields)
         column_count += 1
 
     if table_group_id:
-        _disable_autoflags(table_group_id, preview.get("metadata_columns", []))
+        _disable_autoflags(table_group_id, metadata_columns)
 
     return {"table_count": table_count, "column_count": column_count}
 
 
 def _disable_autoflags(table_group_id: str, metadata_columns: list[str]) -> None:
     table_group = get_table_group(table_group_id)
-    changed = False
-    if "critical_data_element" in metadata_columns and table_group.profile_flag_cdes:
-        table_group.profile_flag_cdes = False
-        changed = True
-    if "pii_flag" in metadata_columns and table_group.profile_flag_pii:
-        table_group.profile_flag_pii = False
-        changed = True
-    if changed:
+    disabled = disable_autoflags(
+        table_group,
+        wrote_cde="critical_data_element" in metadata_columns,
+        wrote_pii="pii_flag" in metadata_columns,
+    )
+    if disabled:
         table_group.save()
 
 
-def _build_update_params(row: dict, metadata_columns: list[str], is_column: bool = False) -> tuple[list[str], dict]:
-    set_clauses = []
-    params = {}
+def _build_metadata_fields(row: dict, metadata_columns: list[str], is_column: bool = False) -> dict:
+    """Map a preview row to a {column_name: value} update dict (empty string clears the field)."""
+    fields: dict = {}
 
     for col in metadata_columns:
         if col not in row:
@@ -350,22 +350,18 @@ def _build_update_params(row: dict, metadata_columns: list[str], is_column: bool
 
         value = row[col]
         if col == "critical_data_element":
-            set_clauses.append("critical_data_element = :critical_data_element")
-            params["critical_data_element"] = value
+            fields[col] = value
         elif col == "excluded_data_element":
             if is_column:
-                set_clauses.append("excluded_data_element = :excluded_data_element")
-                params["excluded_data_element"] = value
+                fields[col] = value
         elif col == "pii_flag":
             # Prevent user from editing PII flag if they cannot view PII
             if is_column and session.auth.user_has_permission("view_pii"):
-                set_clauses.append("pii_flag = :pii_flag")
-                params["pii_flag"] = value
+                fields[col] = value
         else:
-            set_clauses.append(f"{col} = NULLIF(:{col}, '')")
-            params[col] = value if value is not None else ""
+            fields[col] = value or None
 
-    return set_clauses, params
+    return fields
 
 
 def build_import_preview_props(preview: dict) -> dict:

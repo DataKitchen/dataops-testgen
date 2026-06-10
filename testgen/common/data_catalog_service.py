@@ -1,11 +1,13 @@
-"""Shared data catalog convenience service.
+"""Shared Data Catalog service.
 
-Generates CREATE TABLE scripts from profiled column metadata and fetches
-sample rows from source tables. Used by both the Streamlit UI and MCP tools.
+Generates CREATE TABLE scripts from profiled column metadata, fetches sample rows
+from source tables, and reads/writes table/column catalog metadata. Used by both
+the Streamlit UI and the MCP tools so they share one code path.
 """
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 import pandas as pd
@@ -14,11 +16,31 @@ from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import FlavorService
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import CreateScriptColumn, DataColumnChars
+from testgen.common.models.data_table import DataTable
+from testgen.common.models.table_group import TableGroup
 from testgen.common.pii_masking import get_pii_columns, mask_source_data_pii
 from testgen.ui.services.database_service import fetch_from_target_db
 from testgen.utils import to_dataframe
 
 LOG = logging.getLogger("testgen")
+
+DESCRIPTION_MAX_LENGTH = 1000
+TAG_MAX_LENGTH = 40
+
+TAG_FIELDS = [
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "aggregation_level",
+    "data_product",
+]
+
+# Metadata fields settable per target type, keyed by their data_*_chars column names.
+_TABLE_FIELDS = ("description", *TAG_FIELDS, "critical_data_element")
+_COLUMN_FIELDS = ("description", *TAG_FIELDS, "critical_data_element", "excluded_data_element", "pii_flag")
 
 
 @dataclass
@@ -117,3 +139,52 @@ def fetch_table_sample(
         pii_columns = get_pii_columns(str(table_group_id), schema_name, table_name)
         pii_redacted = mask_source_data_pii(df, pii_columns)
     return TableSampleResult("OK", df=df, pii_redacted=pii_redacted)
+
+
+def validate_metadata_fields(fields: Mapping[str, Any]) -> list[str]:
+    """Validate free-text field lengths, returning one message per violation.
+
+    Only checks length: ``description`` and the tag fields. ``None`` values clear the
+    field and are always valid; absent keys are skipped.
+    """
+    errors: list[str] = []
+
+    description = fields.get("description")
+    if description is not None and len(description) > DESCRIPTION_MAX_LENGTH:
+        errors.append(f"description must be {DESCRIPTION_MAX_LENGTH} characters or fewer.")
+
+    for tag in TAG_FIELDS:
+        value = fields.get(tag)
+        if value is not None and len(value) > TAG_MAX_LENGTH:
+            errors.append(f"{tag} must be {TAG_MAX_LENGTH} characters or fewer.")
+
+    return errors
+
+
+def apply_table_metadata(table: DataTable, fields: Mapping[str, Any]) -> None:
+    """Set table metadata attributes for every present key (None clears, value sets)."""
+    for field in _TABLE_FIELDS:
+        if field in fields:
+            setattr(table, field, fields[field])
+
+
+def apply_column_metadata(column: DataColumnChars, fields: Mapping[str, Any]) -> None:
+    """Set column metadata attributes for every present key (None clears, value sets)."""
+    for field in _COLUMN_FIELDS:
+        if field in fields:
+            setattr(column, field, fields[field])
+
+
+def disable_autoflags(table_group: TableGroup, *, wrote_cde: bool, wrote_pii: bool) -> list[str]:
+    """Turn off auto-detect flags so the next profiling pass preserves manual marks.
+
+    Returns the names of the flags that were turned off (skips flags already off).
+    """
+    disabled: list[str] = []
+    if wrote_cde and table_group.profile_flag_cdes:
+        table_group.profile_flag_cdes = False
+        disabled.append("profile_flag_cdes")
+    if wrote_pii and table_group.profile_flag_pii:
+        table_group.profile_flag_pii = False
+        disabled.append("profile_flag_pii")
+    return disabled
