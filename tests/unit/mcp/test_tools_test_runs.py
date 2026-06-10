@@ -43,6 +43,7 @@ def test_list_test_runs_default(mock_suite, mock_run, mock_next, db_session_mock
         project_code="demo",
         table_group_id=None,
         test_suite_id=None,
+        schedule_id=None,
         statuses=None,
         page=1,
         page_size=10,
@@ -65,6 +66,66 @@ def test_list_test_runs_with_status_filter(mock_suite, mock_run, mock_next, db_s
 
     call_kwargs = mock_run.select_summary.call_args.kwargs
     assert call_kwargs["statuses"] == [JobStatus.PENDING, JobStatus.CLAIMED]
+
+
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_list_test_runs_with_schedule_filter(mock_suite, mock_run, mock_next, db_session_mock):
+    mock_run.select_summary.return_value = ([], 0)
+    schedule_id = str(uuid4())
+
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    list_test_runs(project_code="demo", schedule_id=schedule_id, status="Completed")
+
+    call_kwargs = mock_run.select_summary.call_args.kwargs
+    assert call_kwargs["schedule_id"] == schedule_id
+    assert call_kwargs["statuses"] == [JobStatus.COMPLETED]
+
+
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_list_test_runs_unknown_schedule_returns_empty_envelope(mock_suite, mock_run, mock_next, db_session_mock):
+    # Unknown/inaccessible/wrong-kind schedule yields no rows — standard empty envelope, not an error.
+    mock_run.select_summary.return_value = ([], 0)
+
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    result = list_test_runs(project_code="demo", schedule_id=str(uuid4()))
+
+    assert "No test runs" in result
+
+
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_list_test_runs_malformed_schedule_raises(mock_suite, mock_run, mock_next, db_session_mock):
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    with pytest.raises(MCPUserError):
+        list_test_runs(project_code="demo", schedule_id="not-a-uuid")
+    mock_run.select_summary.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_runs.JobExecution")
+@patch("testgen.mcp.tools.test_runs.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.test_runs.TestRun")
+@patch("testgen.mcp.tools.test_runs.TestSuite")
+def test_list_test_runs_schedule_filters_pending(mock_suite, mock_run, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    suite_id = uuid4()
+    mock_suite.select_minimal_where.return_value = [MagicMock(id=suite_id)]
+    mock_run.select_summary.return_value = ([], 0)
+    schedule_id = str(uuid4())
+
+    from testgen.mcp.tools.test_runs import list_test_runs
+
+    list_test_runs(project_code="demo", test_suite="Quality", schedule_id=schedule_id)
+
+    # A schedule clause is forwarded to the pending-JE query (positional *clauses arg).
+    assert mock_je.select_active_by_kwargs.call_args.args
 
 
 @patch("testgen.mcp.tools.test_runs.JobExecution")
