@@ -6,6 +6,7 @@ plus an explicit ``connection_mode``; mapping + validation are delegated to
 """
 
 from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
@@ -231,3 +232,188 @@ def test_test_connection_inline_does_not_save(mock_conn_cls, mock_runner, db_ses
         )
 
     inline.save.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# list_connections
+# ---------------------------------------------------------------------------
+
+
+def _list_item(**overrides):
+    from testgen.common.models.connection import ConnectionListItem
+
+    return ConnectionListItem(
+        connection_id=overrides.get("connection_id", 1),
+        connection_name=overrides.get("connection_name", "warehouse_prod"),
+        project_code=overrides.get("project_code", "demo"),
+        sql_flavor_code=overrides.get("sql_flavor_code", "snowflake"),
+        project_host=overrides.get("project_host", "abc.snowflakecomputing.com"),
+        project_db=overrides.get("project_db", "ANALYTICS"),
+        table_group_count=overrides.get("table_group_count", 4),
+    )
+
+
+@patch(f"{MODULE}.Connection")
+def test_list_connections_returns_rows_with_display_label(mock_conn_cls, db_session_mock):
+    mock_conn_cls.list_for_project.return_value = (
+        [_list_item(project_host="warehouse-host.example.com")],
+        1,
+    )
+
+    from testgen.mcp.tools.connections import list_connections
+
+    with _patch_perms(permission="view"):
+        out = list_connections("demo")
+
+    assert "Connections for `demo`" in out
+    assert "warehouse_prod" in out
+    # Display label is rendered, NOT the raw sql_flavor_code:
+    assert "Snowflake" in out
+    assert "snowflake" not in out
+    assert "warehouse-host.example.com" in out
+    assert "ANALYTICS" in out
+    assert "4" in out  # table_group_count
+
+
+@patch(f"{MODULE}.Connection")
+def test_list_connections_pagination_footer(mock_conn_cls, db_session_mock):
+    rows = [_list_item(connection_id=i, connection_name=f"c{i}") for i in range(1, 3)]
+    mock_conn_cls.list_for_project.return_value = (rows, 25)
+
+    from testgen.mcp.tools.connections import list_connections
+
+    with _patch_perms(permission="view"):
+        out = list_connections("demo", page=1, limit=2)
+
+    assert "Showing 1\u20132 of 25" in out
+    assert "Use `page=2`" in out
+
+
+@patch(f"{MODULE}.Connection")
+def test_list_connections_empty(mock_conn_cls, db_session_mock):
+    mock_conn_cls.list_for_project.return_value = ([], 0)
+
+    from testgen.mcp.tools.connections import list_connections
+
+    with _patch_perms(permission="view"):
+        out = list_connections("demo")
+
+    assert "No connections" in out
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_list_connections_rejects_inaccessible_project(mock_compute, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"other": "role_a"}, permission="view", username="test_user",
+    )
+
+    from testgen.mcp.tools.connections import list_connections
+
+    with pytest.raises(MCPResourceNotAccessible, match="Project `secret` not found or not accessible"):
+        list_connections("secret")
+
+
+def test_list_connections_invalid_limit_raises(db_session_mock):
+    from testgen.mcp.tools.connections import list_connections
+
+    with _patch_perms(permission="view"), pytest.raises(MCPUserError, match="Invalid limit"):
+        list_connections("demo", limit=500)
+
+
+# ---------------------------------------------------------------------------
+# get_connection
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_get_connection_returns_config_with_display_label(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _mock_connection(
+        sql_flavor_code="snowflake",
+        connection_name="warehouse_prod",
+        connection_id=12,
+    )
+
+    from testgen.mcp.tools.connections import get_connection
+
+    with _patch_perms(permission="view"):
+        out = get_connection(12)
+
+    assert "Connection `warehouse_prod`" in out
+    assert "**ID:** `12`" in out
+    assert "**Type:** Snowflake" in out
+    # The raw flavor code MUST NOT appear in the output
+    assert "snowflake" not in out
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_get_connection_never_returns_secrets(mock_resolve, db_session_mock):
+    """Password, private key, passphrase, service-account key must not leak.
+
+    Uses a real ``Connection`` ORM instance so the test would fail if the rendering
+    started reading the encrypted attributes (a MagicMock would silently return
+    a ``MagicMock`` for any attribute, masking the regression).
+    """
+    from testgen.common.models.connection import Connection
+
+    conn = Connection(
+        id=uuid4(),
+        connection_id=42,
+        project_code="demo",
+        connection_name="warehouse_prod",
+        sql_flavor="postgresql",
+        sql_flavor_code="postgresql",
+        project_host="localhost",
+        project_port="5432",
+        project_db="testgen",
+        project_user="dq_user",
+        project_pw_encrypted="sentinel-password-hunter2",
+        private_key="-----BEGIN PRIVATE KEY-----\nsentinel-private-key-body\n-----END PRIVATE KEY-----",
+        private_key_passphrase="sentinel-passphrase",  # noqa: S106
+        service_account_key={"client_email": "sentinel-account@example.com", "private_key": "sentinel-sak-key"},
+    )
+    mock_resolve.return_value = conn
+
+    from testgen.mcp.tools.connections import get_connection
+
+    with _patch_perms(permission="view"):
+        out = get_connection(42)
+
+    # Every populated secret value must NOT appear in output.
+    for needle in (
+        "sentinel-password-hunter2",
+        "sentinel-private-key-body",
+        "BEGIN PRIVATE KEY",
+        "sentinel-passphrase",
+        "sentinel-account@example.com",
+        "sentinel-sak-key",
+    ):
+        assert needle not in out, f"secret material `{needle}` leaked into get_connection output"
+
+    # The non-secret content we DO render should be present — sanity check that the
+    # test is exercising the real rendering path (not silently bypassing it).
+    assert "warehouse_prod" in out
+    assert "localhost" in out
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_get_connection_authentication_password(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _mock_connection(
+        connect_by_key=False, connect_by_url=False, connect_with_identity=False,
+    )
+
+    from testgen.mcp.tools.connections import get_connection
+
+    with _patch_perms(permission="view"):
+        out = get_connection(42)
+
+    assert "**Authentication:** Password" in out
+
+
+@patch("testgen.mcp.tools.common.Connection")
+def test_get_connection_raises_not_found_for_inaccessible(mock_conn_cls, db_session_mock):
+    mock_conn_cls.get.return_value = None
+
+    from testgen.mcp.tools.connections import get_connection
+
+    with pytest.raises(MCPResourceNotAccessible, match="Connection .* not found or not accessible"):
+        get_connection(999)

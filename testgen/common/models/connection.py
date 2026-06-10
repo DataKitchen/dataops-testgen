@@ -43,6 +43,17 @@ class ConnectionMinimal(EntityMinimal):
     connection_name: str
 
 
+@dataclass
+class ConnectionListItem(EntityMinimal):
+    connection_id: int
+    connection_name: str
+    project_code: str
+    sql_flavor_code: SQLFlavorCode
+    project_host: str | None
+    project_db: str | None
+    table_group_count: int
+
+
 class Connection(Entity):
     __tablename__ = "connections"
 
@@ -92,6 +103,35 @@ class Connection(Entity):
     ) -> Iterable[ConnectionMinimal]:
         results = cls._select_columns_where(cls._minimal_columns, *clauses, order_by=order_by)
         return [ConnectionMinimal(**row) for row in results]
+
+    @classmethod
+    def list_for_project(
+        cls, project_code: str, *clauses, page: int = 1, limit: int = 20
+    ) -> tuple[list[ConnectionListItem], int]:
+        """Paginated listing of connections in a project, with their table-group counts."""
+        tg_count_subq = (
+            select(
+                TableGroup.connection_id.label("connection_id"),
+                func.count().label("table_group_count"),
+            )
+            .group_by(TableGroup.connection_id)
+            .subquery()
+        )
+        query = (
+            select(
+                cls.connection_id,
+                cls.connection_name,
+                cls.project_code,
+                cls.sql_flavor_code,
+                cls.project_host,
+                cls.project_db,
+                func.coalesce(tg_count_subq.c.table_group_count, 0).label("table_group_count"),
+            )
+            .outerjoin(tg_count_subq, tg_count_subq.c.connection_id == cls.connection_id)
+            .where(cls.project_code == project_code, *clauses)
+            .order_by(*cls._default_order_by)
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=ConnectionListItem)
 
     @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:

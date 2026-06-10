@@ -755,3 +755,231 @@ def test_preview_requires_edit(db_session_mock):
 
     with _patch_perms(memberships={"demo": "role_c"}), pytest.raises(MCPPermissionDenied):
         preview_table_group(table_group_id=str(uuid4()))
+
+
+# ---------------------------------------------------------------------------
+# list_table_groups
+# ---------------------------------------------------------------------------
+
+
+def _list_item(**overrides):
+    from testgen.common.models.table_group import TableGroupListItem
+
+    return TableGroupListItem(
+        id=overrides.get("id", uuid4()),
+        table_groups_name=overrides.get("table_groups_name", "core_tables"),
+        table_group_schema=overrides.get("table_group_schema", "public"),
+        project_code=overrides.get("project_code", "demo"),
+        connection_name=overrides.get("connection_name", "warehouse_prod"),
+        table_count=overrides.get("table_count", 12),
+        column_count=overrides.get("column_count", 84),
+        row_count=overrides.get("row_count", 100_000),
+        last_profiled_date=overrides.get("last_profiled_date", None),
+        last_tested_date=overrides.get("last_tested_date", None),
+        profiling_score=overrides.get("profiling_score", 0.95),
+        testing_score=overrides.get("testing_score", 0.97),
+        quality_score=overrides.get("quality_score", 0.92),
+    )
+
+
+def test_list_table_groups_requires_one_arg(db_session_mock):
+    from testgen.mcp.tools.table_groups import list_table_groups
+
+    with _patch_perms(permission="view"), pytest.raises(
+        MCPUserError, match="Pass either `project_code` or `connection_id`",
+    ):
+        list_table_groups()
+
+
+def test_list_table_groups_rejects_both_args(db_session_mock):
+    from testgen.mcp.tools.table_groups import list_table_groups
+
+    with _patch_perms(permission="view"), pytest.raises(
+        MCPUserError, match="Pass either `project_code` or `connection_id`",
+    ):
+        list_table_groups(project_code="demo", connection_id=12)
+
+
+@patch(f"{MODULE}.TableGroup")
+def test_list_table_groups_by_project_renders_rows(mock_tg_cls, db_session_mock):
+    mock_tg_cls.list_for_project.return_value = ([_list_item()], 1)
+
+    from testgen.mcp.tools.table_groups import list_table_groups
+
+    with _patch_perms(permission="view"):
+        out = list_table_groups(project_code="demo")
+
+    assert "Table groups for project `demo`" in out
+    assert "core_tables" in out
+    assert "warehouse_prod" in out
+    assert "public" in out
+    assert "Quality Score" in out  # column header (#8)
+    assert "Columns" in out  # column header (#10)
+    assert "Rows" in out  # column header (#10)
+    assert "12" in out  # table count
+    # quality_score 0.92 rendered via friendly_score → "92.0" (percentage form, mirrors UI).
+    assert "92.0" in out
+    mock_tg_cls.list_for_project.assert_called_once_with("demo", page=1, limit=20)
+
+
+@patch(f"{MODULE}.resolve_connection")
+@patch(f"{MODULE}.TableGroup")
+def test_list_table_groups_by_connection_renders_rows(mock_tg_cls, mock_resolve, db_session_mock):
+    conn = _mock_connection()
+    conn.connection_id = 42
+    conn.connection_name = "warehouse_prod"
+    mock_resolve.return_value = conn
+    mock_tg_cls.list_for_connection.return_value = ([_list_item()], 1)
+
+    from testgen.mcp.tools.table_groups import list_table_groups
+
+    with _patch_perms(permission="view"):
+        out = list_table_groups(connection_id=42)
+
+    assert "Table groups on connection `warehouse_prod` (`42`)" in out
+    mock_tg_cls.list_for_connection.assert_called_once_with(42, page=1, limit=20)
+
+
+@patch(f"{MODULE}.TableGroup")
+def test_list_table_groups_empty(mock_tg_cls, db_session_mock):
+    mock_tg_cls.list_for_project.return_value = ([], 0)
+
+    from testgen.mcp.tools.table_groups import list_table_groups
+
+    with _patch_perms(permission="view"):
+        out = list_table_groups(project_code="demo")
+
+    assert "none found" in out
+
+
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_list_table_groups_rejects_inaccessible_project(mock_compute, db_session_mock):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"other": "role_a"}, permission="view", username="test_user",
+    )
+
+    from testgen.mcp.tools.table_groups import list_table_groups
+
+    with pytest.raises(MCPResourceNotAccessible, match="Project `secret` not found or not accessible"):
+        list_table_groups(project_code="secret")
+
+
+# ---------------------------------------------------------------------------
+# get_table_group
+# ---------------------------------------------------------------------------
+
+
+def _read_mock_table_group(**overrides):
+    """Variant of _mock_table_group that also sets dq score fields used by get_table_group."""
+    from testgen.utils import score
+
+    tg = _mock_table_group(**overrides)
+    testing = overrides.get("dq_score_testing", None)
+    profiling = overrides.get("dq_score_profiling", None)
+    tg.dq_score_testing = testing
+    tg.dq_score_profiling = profiling
+    # Mirror TableGroup.quality_score property — MagicMock would return a MagicMock for
+    # the attribute, so wire it explicitly through the same `score` helper the property uses.
+    tg.quality_score = score(profiling, testing)
+    return tg
+
+
+@patch(f"{MODULE}.resolve_connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_get_table_group_renders_all_dialog_sections(mock_resolve, mock_resolve_conn, db_session_mock):
+    tg = _read_mock_table_group(
+        description="Curated payments tables",
+        profiling_include_mask="payments_%",
+        profiling_exclude_mask="tmp_%",
+        profiling_table_set="payments,refunds",
+        profile_use_sampling=True,
+        profile_sample_percent="50",
+        data_source="DataKitchen",
+        business_domain="Finance",
+        dq_score_testing=0.91,
+        dq_score_profiling=0.95,
+    )
+    mock_resolve.return_value = tg
+    conn = _mock_connection(connection_name="warehouse_prod", sql_flavor_code="snowflake")
+    mock_resolve_conn.return_value = conn
+
+    from testgen.mcp.tools.table_groups import get_table_group
+
+    with _patch_perms(permission="view"):
+        out = get_table_group(str(tg.id))
+
+    # Identity
+    assert "Table group `Sample TG`" in out
+    assert "warehouse_prod" in out
+    assert "Snowflake" in out
+    assert "`public`" in out
+    assert "Curated payments tables" in out
+    # Criteria — both table-name and column-name masks rendered (labels via _DIFF_LABELS)
+    assert "## Criteria" in out
+    assert "payments_%" in out
+    assert "tmp_%" in out
+    assert "payments,refunds" in out
+    assert "ID column mask" in out
+    assert "SK column mask" in out
+    # Settings
+    assert "## Settings" in out
+    assert "Flag CDEs" in out  # _DIFF_LABELS["profile_flag_cdes"]
+    # Sampling enabled → percent + min count rendered (labels via _DIFF_LABELS)
+    assert "## Sampling parameters" in out
+    assert "**Sample %:** 50" in out
+    assert "Sample min rows" in out
+    # Catalog tags only render when set
+    assert "## Catalog tags" in out
+    assert "DataKitchen" in out
+    assert "Finance" in out
+    # Latest activity — scores rendered via friendly_score (percentage form, mirrors UI).
+    assert "## Latest activity" in out
+    assert "**Profiling Score:** 95.0" in out
+    assert "**Testing Score:** 91.0" in out
+    # 0.95 * 0.91 = 0.8645 → friendly_score → "86.4" (Python banker's rounding of 86.45).
+    assert "**Quality Score:** 86.4" in out
+
+
+@patch(f"{MODULE}.resolve_connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_get_table_group_skips_catalog_when_no_tags(mock_resolve, mock_resolve_conn, db_session_mock):
+    tg = _read_mock_table_group()  # all catalog tags None
+    mock_resolve.return_value = tg
+    mock_resolve_conn.return_value = _mock_connection()
+
+    from testgen.mcp.tools.table_groups import get_table_group
+
+    with _patch_perms(permission="view"):
+        out = get_table_group(str(tg.id))
+
+    assert "## Catalog tags" not in out
+
+
+@patch(f"{MODULE}.resolve_connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_get_table_group_skips_sample_details_when_sampling_off(
+    mock_resolve, mock_resolve_conn, db_session_mock,
+):
+    tg = _read_mock_table_group(profile_use_sampling=False)
+    mock_resolve.return_value = tg
+    mock_resolve_conn.return_value = _mock_connection()
+
+    from testgen.mcp.tools.table_groups import get_table_group
+
+    with _patch_perms(permission="view"):
+        out = get_table_group(str(tg.id))
+
+    # Sampling section header still present (with the toggle), but percent/min not shown
+    assert "**Sampling:** No" in out  # _DIFF_LABELS["profile_use_sampling"]
+    assert "**Sample %:**" not in out
+    assert "Sample min rows" not in out
+
+
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_group_raises_not_found_for_inaccessible(mock_tg_cls, db_session_mock):
+    mock_tg_cls.get.return_value = None
+
+    from testgen.mcp.tools.table_groups import get_table_group
+
+    with pytest.raises(MCPResourceNotAccessible, match="Table group .* not found or not accessible"):
+        get_table_group(str(uuid4()))

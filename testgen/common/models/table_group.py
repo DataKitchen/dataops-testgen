@@ -48,6 +48,23 @@ class TableGroupStats(EntityMinimal):
 
 
 @dataclass
+class TableGroupListItem(EntityMinimal):
+    id: UUID
+    table_groups_name: str
+    table_group_schema: str
+    project_code: str
+    connection_name: str | None
+    table_count: int
+    column_count: int | None
+    row_count: int | None
+    last_profiled_date: datetime | None
+    last_tested_date: datetime | None
+    profiling_score: float | None
+    testing_score: float | None
+    quality_score: float | None
+
+
+@dataclass
 class TableGroupSummary(EntityMinimal):
     id: UUID
     table_groups_name: str
@@ -148,6 +165,20 @@ class TableGroup(Entity):
         dq_score_profiling,
         dq_score_testing,
     )
+
+    @property
+    def quality_score(self) -> float:
+        """Overall quality score per ``utils.score``: profiling * testing when both
+        exist; the non-null one when only one ran; ``0.0`` when neither has run.
+
+        Mirrors what Project Dashboard, data_catalog, and inventory_service display.
+        Render through ``utils.friendly_score`` to get the user-facing percentage form
+        (``"95.0"`` rather than ``"0.95"``). The list-side equivalent is computed in
+        SQL inside ``_list_with_activity`` — keep both in sync if the formula changes.
+        """
+        from testgen.utils import score
+
+        return score(self.dq_score_profiling, self.dq_score_testing)
 
     @classmethod
     def get_minimal(cls, id_: str | UUID) -> TableGroupMinimal | None:
@@ -383,6 +414,103 @@ class TableGroup(Entity):
         results = get_current_session().execute(text(query), params).mappings().all()
         items = [TableGroupSummary(**row) for row in results]
         total = items[0].total_count if items else 0
+        return items, total
+
+    @classmethod
+    def list_for_project(
+        cls, project_code: str, *, page: int = 1, limit: int = 20
+    ) -> tuple[list[TableGroupListItem], int]:
+        """Config-focused paginated listing for a project, with table count and activity timestamps."""
+        return cls._list_with_activity(
+            scope_sql="groups.project_code = :project_code",
+            scope_params={"project_code": project_code},
+            page=page,
+            limit=limit,
+        )
+
+    @classmethod
+    def list_for_connection(
+        cls, connection_id: int, *, page: int = 1, limit: int = 20
+    ) -> tuple[list[TableGroupListItem], int]:
+        """Config-focused paginated listing for a connection, with table count and activity timestamps."""
+        return cls._list_with_activity(
+            scope_sql="groups.connection_id = :connection_id",
+            scope_params={"connection_id": connection_id},
+            page=page,
+            limit=limit,
+        )
+
+    @classmethod
+    def _list_with_activity(
+        cls,
+        *,
+        scope_sql: str,
+        scope_params: dict,
+        page: int,
+        limit: int,
+    ) -> tuple[list[TableGroupListItem], int]:
+        session = get_current_session()
+
+        # Separate COUNT(*) query — keeps `total` correct on out-of-range pages where
+        # the page rows are empty (a window function over zero rows would return 0).
+        total_query = f"SELECT COUNT(*) FROM table_groups AS groups WHERE {scope_sql};"
+        total = session.execute(text(total_query), scope_params).scalar() or 0
+        if total == 0:
+            return [], 0
+
+        params: dict = {**scope_params, "limit": limit, "offset": (page - 1) * limit}
+        rows_query = f"""
+        WITH stats AS (
+            SELECT table_groups_id,
+                COUNT(*) AS table_count,
+                SUM(column_ct) AS column_count,
+                SUM(COALESCE(record_ct, approx_record_ct)) AS row_count
+            FROM data_table_chars
+            GROUP BY table_groups_id
+        ),
+        latest_profile AS (
+            SELECT pr.table_groups_id, MAX(je.started_at) AS started_at
+            FROM profiling_runs pr
+                LEFT JOIN job_executions je ON je.id = pr.job_execution_id
+            GROUP BY pr.table_groups_id
+        ),
+        latest_test AS (
+            SELECT ts.table_groups_id, MAX(tr.test_starttime) AS test_starttime
+            FROM test_runs tr
+                JOIN test_suites ts ON ts.id = tr.test_suite_id
+            WHERE ts.is_monitor IS NOT TRUE
+            GROUP BY ts.table_groups_id
+        )
+        SELECT
+            groups.id,
+            groups.table_groups_name,
+            groups.table_group_schema,
+            groups.project_code,
+            connections.connection_name,
+            COALESCE(stats.table_count, 0) AS table_count,
+            stats.column_count,
+            stats.row_count,
+            latest_profile.started_at AS last_profiled_date,
+            latest_test.test_starttime AS last_tested_date,
+            groups.dq_score_profiling AS profiling_score,
+            groups.dq_score_testing AS testing_score,
+            -- Mirrors utils.score: product when both exist, else the non-null one, else NULL.
+            CASE
+                WHEN groups.dq_score_profiling IS NOT NULL AND groups.dq_score_testing IS NOT NULL
+                    THEN groups.dq_score_profiling * groups.dq_score_testing
+                ELSE COALESCE(groups.dq_score_profiling, groups.dq_score_testing)
+            END AS quality_score
+        FROM table_groups AS groups
+            LEFT JOIN connections ON connections.connection_id = groups.connection_id
+            LEFT JOIN stats ON stats.table_groups_id = groups.id
+            LEFT JOIN latest_profile ON latest_profile.table_groups_id = groups.id
+            LEFT JOIN latest_test ON latest_test.table_groups_id = groups.id
+        WHERE {scope_sql}
+        ORDER BY LOWER(groups.table_groups_name)
+        LIMIT :limit OFFSET :offset;
+        """
+        rows = session.execute(text(rows_query), params).mappings().all()
+        items = [TableGroupListItem(**row) for row in rows]
         return items, total
 
     @classmethod
