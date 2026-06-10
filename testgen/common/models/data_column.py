@@ -260,6 +260,15 @@ class DataColumnChars(Entity):
     critical_data_element: bool | None = Column(Boolean)
     excluded_data_element: bool | None = Column(Boolean, nullable=True)
     pii_flag: str | None = Column(String(50), nullable=True)
+    description: str | None = Column(String(1000))
+    data_source: str | None = Column(String(40))
+    source_system: str | None = Column(String(40))
+    source_process: str | None = Column(String(40))
+    business_domain: str | None = Column(String(40))
+    stakeholder_group: str | None = Column(String(40))
+    transform_level: str | None = Column(String(40))
+    aggregation_level: str | None = Column(String(40))
+    data_product: str | None = Column(String(40))
     drop_date: datetime | None = Column(postgresql.TIMESTAMP)
     last_complete_profile_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float | None = Column(Float)
@@ -267,9 +276,7 @@ class DataColumnChars(Entity):
 
     _default_order_by = (asc(ordinal_position), asc(column_name))
 
-    # Unmapped columns: description, data_source, source_system, source_process,
-    # business_domain, stakeholder_group, transform_level, aggregation_level,
-    # data_product, add_date, last_mod_date, test_ct, last_test_date,
+    # Unmapped columns: add_date, last_mod_date, test_ct, last_test_date,
     # tests_last_run, tests_7_days_prior, tests_30_days_prior, fails_last_run,
     # fails_7_days_prior, fails_30_days_prior, warnings_last_run,
     # warnings_7_days_prior, warnings_30_days_prior, valid_profile_issue_ct,

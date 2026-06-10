@@ -146,6 +146,7 @@ def build_mcp_server(
         table_health,
     )
     from testgen.mcp.tools.connections import test_connection
+    from testgen.mcp.tools.data_catalog import update_catalog_metadata
     from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
     from testgen.mcp.tools.execution import (
         cancel_profiling_run,
@@ -337,6 +338,7 @@ def build_mcp_server(
     safe_tool(create_table_group)
     safe_tool(update_table_group)
     safe_tool(preview_table_group)
+    safe_tool(update_catalog_metadata)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)

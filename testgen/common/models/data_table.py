@@ -68,14 +68,25 @@ class DataTable(Entity):
     record_ct: int | None = Column(BigInteger)
     approx_record_ct: int | None = Column(BigInteger)
     critical_data_element: bool | None = Column(Boolean)
+    description: str | None = Column(String(1000))
+    data_source: str | None = Column(String(40))
+    source_system: str | None = Column(String(40))
+    source_process: str | None = Column(String(40))
+    business_domain: str | None = Column(String(40))
+    stakeholder_group: str | None = Column(String(40))
+    transform_level: str | None = Column(String(40))
+    aggregation_level: str | None = Column(String(40))
+    data_product: str | None = Column(String(40))
     drop_date: datetime | None = Column(postgresql.TIMESTAMP)
     last_complete_profile_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float | None = Column(Float)
     dq_score_testing: float | None = Column(Float)
 
-    # Unmapped columns: functional_table_type, description, data_source,
-    # source_system, source_process, business_domain, stakeholder_group,
-    # transform_level, aggregation_level, data_product, add_date,
+    # The inherited Entity default orders by the textual label "id", but this model's
+    # primary key column is "table_id" — order by a real column instead.
+    _default_order_by = (asc(table_name),)
+
+    # Unmapped columns: functional_table_type, add_date,
     # last_refresh_date, last_profile_record_ct
 
     @classmethod
