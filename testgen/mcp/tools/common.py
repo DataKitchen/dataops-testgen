@@ -874,6 +874,18 @@ def parse_sql_flavor(value: str) -> tuple[SqlFlavorLabel, str, str]:
     return label, code, SQL_FLAVOR_CODE_TO_FAMILY[code]
 
 
+def format_flavor_label(sql_flavor_code: str | None) -> str:
+    """Map a stored ``sql_flavor_code`` to its user-facing display label.
+
+    Returns the raw code as a fallback when the code is not in the registry — defensive
+    against a never-shipping-but-still-stored value rather than letting an LLM see ``None``.
+    """
+    if sql_flavor_code is None:
+        return ""
+    label = SQL_FLAVOR_CODE_TO_LABEL.get(sql_flavor_code)
+    return label.value if label else sql_flavor_code
+
+
 # ===========================================================================
 # Connection-parameter contract (MCP input vocabulary)
 #
