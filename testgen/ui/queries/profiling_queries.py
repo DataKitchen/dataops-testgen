@@ -3,19 +3,10 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
+from testgen.common.data_catalog_service import TAG_FIELDS
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_one_from_db
 from testgen.utils import is_uuid4
 
-TAG_FIELDS = [
-    "data_source",
-    "source_system",
-    "source_process",
-    "business_domain",
-    "stakeholder_group",
-    "transform_level",
-    "aggregation_level",
-    "data_product",
-]
 COLUMN_PROFILING_FIELDS = """
 -- Value Counts
 profile_results.record_ct,
