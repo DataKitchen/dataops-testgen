@@ -415,6 +415,7 @@ def _render_column_profile_row(c: ColumnProfileSummary) -> list:
 @mcp_permission("catalog")
 def list_profiling_runs(
     table_group_id: str,
+    schedule_id: str | None = None,
     status: str | None = None,
     limit: int = 10,
     page: int = 1,
@@ -424,6 +425,8 @@ def list_profiling_runs(
 
     Args:
         table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        schedule_id: Optional UUID of a schedule, e.g. from `list_schedules`. Returns only runs
+            triggered by that schedule.
         status: Optional run status filter. One of: Pending, Running, Completed, Canceled, Error.
         limit: Page size (default 10, max 100).
         page: Page number starting at 1 (default 1).
@@ -432,11 +435,14 @@ def list_profiling_runs(
     validate_page(page)
 
     statuses = parse_run_status_filter(status) if status else None
+    if schedule_id:
+        parse_uuid(schedule_id, "schedule_id")
     tg = resolve_table_group(table_group_id)
 
     summaries, total = ProfilingRun.select_summary(
         project_code=tg.project_code,
         table_group_id=tg.id,
+        schedule_id=schedule_id,
         statuses=statuses,
         page=page,
         page_size=limit,
@@ -446,7 +452,9 @@ def list_profiling_runs(
     # joined-run queries. Surface them as a separate "Pending" section on page 1.
     pending_jes: list[JobExecution] = []
     if page == 1:
+        clauses = [JobExecution.job_schedule_id == schedule_id] if schedule_id else []
         pending_jes = JobExecution.select_active_by_kwargs(
+            *clauses,
             project_code=tg.project_code,
             job_key=RUN_PROFILE_JOB_KEY,
             kwargs_match={"table_group_id": str(tg.id)},
@@ -454,7 +462,12 @@ def list_profiling_runs(
         )
 
     doc = MdDoc()
-    scope = f" — status `{status}`" if status else ""
+    scope_parts = []
+    if schedule_id:
+        scope_parts.append(f"schedule `{schedule_id}`")
+    if status:
+        scope_parts.append(f"status `{status}`")
+    scope = f" — {', '.join(scope_parts)}" if scope_parts else ""
     doc.heading(1, f"Profiling runs for `{tg.table_groups_name}`{scope}")
 
     next_run = next_scheduled_run(

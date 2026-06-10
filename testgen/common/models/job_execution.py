@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, Text, case, delete, func, select, text, update
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.elements import ColumnElement
 
 from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import Base, database_session, get_current_session
@@ -97,6 +98,7 @@ class JobExecution(Base):
     @classmethod
     def select_active_by_kwargs(
         cls,
+        *clauses: ColumnElement[bool],
         project_code: str,
         job_key: str,
         kwargs_match: dict[str, str | list[str]],
@@ -105,6 +107,7 @@ class JobExecution(Base):
         """Find JE rows whose ``kwargs`` JSONB matches the given (key, value) pairs.
 
         Values may be a single string or a list of strings (which becomes an ``IN`` filter).
+        Additional caller-supplied WHERE expressions may be passed as ``*clauses``.
         Defaults to active (non-terminal) statuses.
         """
         statuses = statuses or cls._ACTIVE_STATUSES
@@ -112,6 +115,7 @@ class JobExecution(Base):
             cls.project_code == project_code,
             cls.job_key == job_key,
             cls.status.in_(statuses),
+            *clauses,
         )
         for k, v in kwargs_match.items():
             if isinstance(v, list):
