@@ -219,6 +219,7 @@ class TestRun(Entity):
         test_suite_id: str | None = None,
         test_run_ids: list[str | UUID] | None = None,
         job_execution_id: str | UUID | None = None,
+        schedule_id: str | None = None,
         statuses: list[JobStatus] | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -228,6 +229,7 @@ class TestRun(Entity):
             or (test_suite_id and not is_uuid4(test_suite_id))
             or (test_run_ids and not all(is_uuid4(run_id) for run_id in test_run_ids))
             or (job_execution_id and not is_uuid4(job_execution_id))
+            or (schedule_id and not is_uuid4(schedule_id))
         ):
             return [], 0
 
@@ -290,6 +292,7 @@ class TestRun(Entity):
             {" AND ts.id = :test_suite_id" if test_suite_id else ""}
             {" AND tr.id IN :test_run_ids" if test_run_ids else ""}
             {" AND je.id = :job_execution_id" if job_execution_id else ""}
+            {" AND je.job_schedule_id = :schedule_id" if schedule_id else ""}
             {" AND je.status IN :statuses" if statuses else ""}
         ORDER BY je.created_at DESC
         LIMIT :limit OFFSET :offset;
@@ -300,6 +303,7 @@ class TestRun(Entity):
             "test_suite_id": test_suite_id,
             "test_run_ids": tuple(test_run_ids or []),
             "job_execution_id": str(job_execution_id) if job_execution_id else None,
+            "schedule_id": schedule_id,
             "statuses": tuple(statuses) if statuses else (),
             "limit": page_size,
             "offset": (page - 1) * page_size,
