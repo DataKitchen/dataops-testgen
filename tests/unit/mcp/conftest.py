@@ -5,12 +5,16 @@ import pytest
 
 from testgen.mcp.permissions import set_mcp_token, set_mcp_username
 
-# Fictional role matrix for tests. role_a has full access, role_c is restricted.
+# Fictional role matrix for tests. role_a has full access (but NOT view_pii — several
+# tests rely on that to exercise the no-view_pii path), role_c is restricted, and
+# role_d holds edit + view_pii so deny/allow pairs can be distinguished against a real
+# ProjectPermissions without role_a accidentally granting view_pii.
 TEST_PERM_MATRIX = {
     "view": ["role_a", "role_b"],
     "catalog": ["role_a", "role_b", "role_c"],
-    "edit": ["role_a"],
+    "edit": ["role_a", "role_d"],
     "administer": ["role_a"],
+    "view_pii": ["role_d"],
 }
 
 
