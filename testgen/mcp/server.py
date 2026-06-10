@@ -140,9 +140,20 @@ def build_mcp_server(
         profiling_overview,
         table_health,
     )
-    from testgen.mcp.tools.connections import test_connection
+    from testgen.mcp.tools.connections import (
+            get_connection,
+        list_connections,
+        test_connection,
+        )
     from testgen.mcp.tools.data_catalog import update_catalog_metadata
-    from testgen.mcp.tools.discovery import get_data_inventory, list_projects, list_tables, list_test_suites
+    from testgen.mcp.tools.discovery import (
+        get_data_inventory,
+        get_project,
+        get_test_suite,
+        list_projects,
+        list_tables,
+        list_test_suites,
+    )
     from testgen.mcp.tools.execution import (
         cancel_profiling_run,
         cancel_test_run,
@@ -208,6 +219,8 @@ def build_mcp_server(
     from testgen.mcp.tools.source_data import get_source_data, get_source_data_query, get_table_sample
     from testgen.mcp.tools.table_groups import (
         create_table_group,
+        get_table_group,
+        list_table_groups,
         preview_table_group,
         update_table_group,
     )
@@ -263,8 +276,10 @@ def build_mcp_server(
     # Tools
     safe_tool(get_data_inventory)
     safe_tool(list_projects)
+    safe_tool(get_project)
     safe_tool(list_tables)
     safe_tool(list_test_suites)
+    safe_tool(get_test_suite)
     safe_tool(list_test_runs)
     safe_tool(get_test_run)
     safe_tool(list_test_results)
@@ -329,7 +344,11 @@ def build_mcp_server(
     safe_tool(create_notification)
     safe_tool(update_notification)
     safe_tool(delete_notification)
+    safe_tool(list_connections)
+    safe_tool(get_connection)
     safe_tool(test_connection)
+    safe_tool(list_table_groups)
+    safe_tool(get_table_group)
     safe_tool(create_table_group)
     safe_tool(update_table_group)
     safe_tool(preview_table_group)
