@@ -539,10 +539,14 @@ class TableGroupsPage(Page):
         is_in_use = TableGroup.is_in_use([table_group_id])
 
         edit_tg_data = get_edit_tg()
+        can_view_pii = session.auth.user_has_permission("view_pii")
         add_scorecard_definition = False
         for key, value in edit_tg_data.items():
             if key == "add_scorecard_definition":
                 add_scorecard_definition = value
+            elif key == "profile_flag_pii" and not can_view_pii:
+                # Users without view_pii cannot change the PII flag — keep the stored value.
+                continue
             else:
                 setattr(table_group, key, value)
 
