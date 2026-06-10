@@ -19,8 +19,9 @@ MODULE = "testgen.mcp.tools.table_groups"
 # ---------------------------------------------------------------------------
 
 
-def _patch_perms(allowed=("demo",), memberships=None, permission="edit"):
-    memberships = memberships or dict.fromkeys(allowed, "role_a")
+def _patch_perms(allowed=("demo",), memberships=None, permission="edit", role="role_a"):
+    # role_a has edit but NOT view_pii; role_d has edit + view_pii (see conftest matrix).
+    memberships = memberships or dict.fromkeys(allowed, role)
     return patch(
         "testgen.mcp.permissions._compute_project_permissions",
         return_value=ProjectPermissions(
@@ -364,6 +365,34 @@ def test_create_table_group_requires_edit(db_session_mock):
 
 
 # ---------------------------------------------------------------------------
+# create_table_group — PII flag is not gated on create
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_pii_on_allowed_without_view_pii(mock_resolve, mock_tg_cls, db_session_mock):
+    """A new table group has no manually-marked PII to overwrite, so creating with the
+    flag on is allowed even without view_pii — the gate applies only to editing it."""
+    mock_resolve.return_value = _mock_connection()
+    instance = _mock_table_group(profile_flag_pii=False)
+    mock_tg_cls.return_value = instance
+
+    from testgen.mcp.tools.table_groups import create_table_group
+
+    with _patch_perms():  # role_a: edit, no view_pii
+        create_table_group(
+            connection_id=42,
+            table_group_name="Sample TG",
+            schema="public",
+            profile_flag_pii=True,
+        )
+
+    instance.save.assert_called_once()
+    assert instance.profile_flag_pii is True
+
+
+# ---------------------------------------------------------------------------
 # update_table_group
 # ---------------------------------------------------------------------------
 
@@ -523,6 +552,85 @@ def test_update_table_group_delay_days_int_cast_to_str(mock_resolve, mock_tg_cls
         update_table_group(table_group_id=str(tg.id), profiling_delay_days=3)
 
     assert tg.profiling_delay_days == "3"
+
+
+# ---------------------------------------------------------------------------
+# update_table_group — PII flag gating (view_pii permission)
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_enable_pii_denied_without_view_pii(mock_resolve, mock_tg_cls, db_session_mock):
+    """role_a has edit but not view_pii (real ProjectPermissions) — enabling PII is denied.
+
+    role_a *does* hold administer, so this also proves the gate checks view_pii
+    specifically, not some broader permission.
+    """
+    tg = _mock_table_group(profile_flag_pii=False)
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms(role="role_a"), pytest.raises(MCPPermissionDenied):
+        update_table_group(table_group_id=str(tg.id), profile_flag_pii=True)
+    tg.save.assert_not_called()
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_disable_pii_denied_without_view_pii(mock_resolve, mock_tg_cls, db_session_mock):
+    """Change-detection mirrors the disabled checkbox — the value can't be touched either way."""
+    tg = _mock_table_group(profile_flag_pii=True)
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms(role="role_a"), pytest.raises(MCPPermissionDenied):
+        update_table_group(table_group_id=str(tg.id), profile_flag_pii=False)
+    tg.save.assert_not_called()
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_unchanged_pii_allowed_without_view_pii(mock_resolve, mock_tg_cls, db_session_mock):
+    """Re-sending the current PII value (as the disabled UI checkbox does) is not a change."""
+    tg = _mock_table_group(profile_flag_pii=True, description=None)
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms(role="role_a"):
+        out = update_table_group(
+            table_group_id=str(tg.id),
+            profile_flag_pii=True,
+            description="Edited elsewhere",
+        )
+
+    tg.save.assert_called_once()
+    assert tg.profile_flag_pii is True
+    assert "Description" in out
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_enable_pii_allowed_with_view_pii(mock_resolve, mock_tg_cls, db_session_mock):
+    """role_d holds edit + view_pii (real ProjectPermissions) — enabling PII is allowed."""
+    tg = _mock_table_group(profile_flag_pii=False)
+    mock_resolve.return_value = tg
+    mock_tg_cls.is_in_use.return_value = False
+
+    from testgen.mcp.tools.table_groups import update_table_group
+
+    with _patch_perms(role="role_d"):
+        out = update_table_group(table_group_id=str(tg.id), profile_flag_pii=True)
+
+    tg.save.assert_called_once()
+    assert tg.profile_flag_pii is True
+    assert "Flag PII" in out
 
 
 # ---------------------------------------------------------------------------

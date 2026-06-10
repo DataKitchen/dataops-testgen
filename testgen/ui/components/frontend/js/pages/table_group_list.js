@@ -120,6 +120,7 @@ const TableGroupList = (props) => {
                 connections: van.derive(() => getValue(props.edit_dialog)?.connections),
                 table_group: van.derive(() => getValue(props.edit_dialog)?.table_group),
                 is_in_use: van.derive(() => getValue(props.edit_dialog)?.is_in_use),
+                can_view_pii: van.derive(() => getValue(props.permissions)?.can_view_pii),
                 table_group_preview: van.derive(() => getValue(props.edit_dialog)?.table_group_preview),
                 result: van.derive(() => getValue(props.edit_dialog)?.result),
             }));
