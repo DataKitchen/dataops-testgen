@@ -18,7 +18,7 @@ from testgen.common.database.table_group_service import validate_table_group_fie
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
-from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     format_flavor_label,
@@ -33,6 +33,10 @@ from testgen.mcp.tools.markdown import MdDoc
 from testgen.utils import friendly_score
 
 _DUPLICATE_NAME_MESSAGE = "A Table Group with the same name already exists."
+_PII_FLAG_DENIED_MESSAGE = (
+    "Changing PII detection requires permission to view PII. "
+    "Leave this setting unchanged or contact your administrator."
+)
 _SCHEMA_LOCKED_MESSAGE = (
     "Schema cannot be changed once the table group has been used. "
     "Delete and recreate the table group to use a different schema."
@@ -401,6 +405,13 @@ def update_table_group(
         and TableGroup.is_in_use([table_group.id])
     ):
         raise MCPUserError(_SCHEMA_LOCKED_MESSAGE)
+
+    if (
+        profile_flag_pii is not None
+        and profile_flag_pii != table_group.profile_flag_pii
+        and not get_project_permissions().has_permission("view_pii", table_group.project_code)
+    ):
+        raise MCPPermissionDenied(_PII_FLAG_DENIED_MESSAGE)
 
     before = _snapshot(table_group)
     _apply_args_to_table_group(table_group, **supplied)
