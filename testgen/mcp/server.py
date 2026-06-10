@@ -93,8 +93,12 @@ def _build_transport_security() -> TransportSecuritySettings:
     netloc = parsed.netloc
     scheme = parsed.scheme or "http"
 
+    # base_host (bare) is allowed alongside netloc: when BASE_URL carries a non-default
+    # port, netloc and the :* wildcard only match a host that includes a port, but some
+    # clients (e.g. hosted MCP gateways) send a port-less Host/Origin for their own host.
     allowed_hosts: set[str] = {
         netloc,
+        base_host,
         f"{base_host}:*",
         "127.0.0.1:*",
         "localhost:*",
@@ -102,6 +106,7 @@ def _build_transport_security() -> TransportSecuritySettings:
     }
     allowed_origins: set[str] = {
         f"{scheme}://{netloc}",
+        f"{scheme}://{base_host}",
         "http://127.0.0.1:*", "https://127.0.0.1:*",
         "http://localhost:*", "https://localhost:*",
         "http://[::1]:*", "https://[::1]:*",
