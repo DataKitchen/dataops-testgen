@@ -583,6 +583,53 @@ def test_list_profiling_runs_invalid_status(mock_tg_cls, mock_run_cls, mock_next
         list_profiling_runs(table_group_id=str(uuid4()), status="Bogus")
 
 
+@patch("testgen.mcp.tools.profiling.JobExecution")
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_schedule_filter(mock_tg_cls, mock_run_cls, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_run_cls.select_summary.return_value = ([], 0)
+    schedule_id = str(uuid4())
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    list_profiling_runs(table_group_id=str(uuid4()), schedule_id=schedule_id, status="Completed")
+
+    call_kwargs = mock_run_cls.select_summary.call_args.kwargs
+    assert call_kwargs["schedule_id"] == schedule_id
+    assert call_kwargs["statuses"] == [JobStatus.COMPLETED]
+    # The schedule clause is forwarded to the pending-JE query (positional *clauses arg).
+    assert mock_je.select_active_by_kwargs.call_args.args
+
+
+@patch("testgen.mcp.tools.profiling.JobExecution")
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_unknown_schedule_returns_empty_envelope(mock_tg_cls, mock_run_cls, mock_next, mock_je, db_session_mock):
+    mock_je.select_active_by_kwargs.return_value = []
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_run_cls.select_summary.return_value = ([], 0)
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    result = list_profiling_runs(table_group_id=str(uuid4()), schedule_id=str(uuid4()))
+
+    assert "No profiling runs" in result
+
+
+@patch("testgen.mcp.tools.profiling.next_scheduled_run", return_value=None)
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_list_profiling_runs_malformed_schedule_raises(mock_tg_cls, mock_run_cls, mock_next, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+
+    from testgen.mcp.tools.profiling import list_profiling_runs
+    with pytest.raises(MCPUserError):
+        list_profiling_runs(table_group_id=str(uuid4()), schedule_id="not-a-uuid")
+    mock_run_cls.select_summary.assert_not_called()
+
+
 # ----------------------------------------------------------------------
 # get_profiling_run
 # ----------------------------------------------------------------------
