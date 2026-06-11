@@ -6,7 +6,15 @@ from uuid import UUID
 from sqlalchemy import select
 
 from testgen.common.date_service import parse_since
-from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, JobStatus, PiiRisk, QualityDimension
+from testgen.common.enums import (
+    Disposition,
+    ImpactDimension,
+    IssueLikelihood,
+    JobStatus,
+    MonitorType,
+    PiiRisk,
+    QualityDimension,
+)
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorLabel
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
@@ -57,6 +65,7 @@ class DocGroup(StrEnum):
     DISCOVER = "Discover what TestGen knows about"
     INVESTIGATE = "Investigate quality issues"
     BROWSE_PROFILING = "Browse profiling results"
+    MONITORS = "Browse monitor health and events"
     TRIGGER = "Trigger profiling, tests, and test generation"
     SCORING = "Track data quality scores"
     MANAGE = "Manage TestGen configuration"
@@ -340,6 +349,58 @@ def next_scheduled_run(
     return min(s.get_sample_triggering_timestamps(1)[0] for s in schedules)
 
 
+# Monitor type — internal ``test_type`` value ↔ user-facing short label (the form
+# callers pass and the form rendered in output).
+_MONITOR_TYPE_USER_TO_DB: dict[str, MonitorType] = {
+    "freshness": MonitorType.FRESHNESS,
+    "volume": MonitorType.VOLUME,
+    "schema": MonitorType.SCHEMA,
+    "metric": MonitorType.METRIC,
+}
+_MONITOR_TYPE_DB_TO_USER: dict[MonitorType, str] = {v: k for k, v in _MONITOR_TYPE_USER_TO_DB.items()}
+
+
+def parse_monitor_type(value: str) -> MonitorType:
+    """Validate a user-facing monitor type label and return the stored ``MonitorType``.
+
+    Accepts ``freshness`` / ``volume`` / ``schema`` / ``metric``.
+    """
+    db_value = _MONITOR_TYPE_USER_TO_DB.get(value)
+    if db_value is None:
+        valid = ", ".join(_MONITOR_TYPE_USER_TO_DB)
+        raise MCPUserError(f"Invalid monitor_type `{value}`. Valid values: {valid}")
+    return db_value
+
+
+def format_monitor_type(value: MonitorType | str) -> str:
+    """Map a stored monitor ``test_type`` to its user-facing short label."""
+    try:
+        return _MONITOR_TYPE_DB_TO_USER[MonitorType(value)]
+    except ValueError:
+        return str(value)
+
+
+class MonitorTableSort(StrEnum):
+    """User-facing values accepted for the ``sort_by`` argument on ``list_monitored_tables``.
+
+    When an ``anomaly_type`` filter is set, ``anomaly_count_desc`` sorts by that type's
+    count; with no filter, it sorts by total anomalies across all types.
+    """
+
+    TABLE_NAME = "table_name"
+    ANOMALY_COUNT_DESC = "anomaly_count_desc"
+    LATEST_UPDATE_DESC = "latest_update_desc"
+    ROW_COUNT_CHANGE_DESC = "row_count_change_desc"
+
+
+def parse_monitor_table_sort(value: str) -> MonitorTableSort:
+    try:
+        return MonitorTableSort(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in MonitorTableSort)
+        raise MCPUserError(f"Invalid sort_by `{value}`. Valid values: {valid}") from err
+
+
 def parse_disposition(value: str) -> Disposition:
     """Validate a user-facing disposition label and return the stored ``Disposition``.
 
@@ -529,10 +590,17 @@ def resolve_issue_type(name: str) -> str:
 
 
 def format_page_info(total: int, page: int, limit: int) -> str:
-    """Shared pagination summary line for MCP tool output."""
+    """Shared pagination summary line for MCP tool output.
+
+    Returns empty for a zero total *or* when ``page`` is past the last page \u2014
+    the caller's own "no rows on page N" message is more useful than a
+    ``Showing 6\u20135 of 5`` nonsense range.
+    """
     if total == 0:
         return ""
     start = (page - 1) * limit + 1
+    if start > total:
+        return ""
     end = min(start + limit - 1, total)
     return f"Showing {start}\u2013{end} of {total} (page {page})."
 
@@ -593,6 +661,23 @@ def resolve_test_suite(test_suite_id: str) -> TestSuite:
     if suite is None:
         raise MCPResourceNotAccessible("Test suite", test_suite_id)
     return suite
+
+
+def resolve_monitored_table_group(table_group_id: str) -> tuple[TableGroup, TestSuite | None]:
+    """Resolve a table group ID and look up its linked monitor suite.
+
+    Returns ``(table_group, monitor_suite)``. ``monitor_suite`` is ``None`` when the
+    table group has no ``monitor_test_suite_id`` set, or that pointer doesn't resolve
+    to an ``is_monitor=True`` suite — callers render the "not monitored" output in
+    that case rather than raising an inaccessible error. Raises
+    ``MCPResourceNotAccessible`` when the table group itself is missing or out of
+    scope.
+    """
+    tg = resolve_table_group(table_group_id)
+    if tg.monitor_test_suite_id is None:
+        return tg, None
+    suite = TestSuite.get(tg.monitor_test_suite_id, TestSuite.is_monitor.is_(True))
+    return tg, suite
 
 
 def resolve_profiling_run(job_execution_id: str) -> ProfilingRun:

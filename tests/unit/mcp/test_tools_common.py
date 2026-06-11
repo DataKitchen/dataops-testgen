@@ -834,3 +834,142 @@ def test_resolve_test_result_invalid_uuid():
 
     with pytest.raises(MCPUserError, match="Invalid test_result_id"):
         resolve_test_result("not-a-uuid")
+
+
+# --- Monitor helpers ---
+
+
+@pytest.mark.parametrize(
+    "label,expected_value",
+    [
+        ("freshness", "Freshness_Trend"),
+        ("volume", "Volume_Trend"),
+        ("schema", "Schema_Drift"),
+        ("metric", "Metric_Trend"),
+    ],
+)
+def test_parse_monitor_type_user_labels(label, expected_value):
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    assert parse_monitor_type(label).value == expected_value
+
+
+def test_parse_monitor_type_rejects_db_codes():
+    """Internal codes like ``Freshness_Trend`` are not accepted on the input boundary —
+    only the lowercase user-facing short labels are."""
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    with pytest.raises(MCPUserError, match="Invalid monitor_type"):
+        parse_monitor_type("Freshness_Trend")
+
+
+def test_parse_monitor_type_lists_valid_values_on_error():
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    with pytest.raises(MCPUserError, match="Valid values:") as exc:
+        parse_monitor_type("metrics")
+    msg = str(exc.value)
+    for label in ("freshness", "volume", "schema", "metric"):
+        assert label in msg
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["table_name", "anomaly_count_desc", "latest_update_desc", "row_count_change_desc"],
+)
+def test_parse_monitor_table_sort_accepts_documented_values(value):
+    from testgen.mcp.tools.common import parse_monitor_table_sort
+
+    assert parse_monitor_table_sort(value).value == value
+
+
+def test_parse_monitor_table_sort_rejects_unknown():
+    from testgen.mcp.tools.common import parse_monitor_table_sort
+
+    with pytest.raises(MCPUserError, match="Invalid sort_by") as exc:
+        parse_monitor_table_sort("alphabetical")
+    msg = str(exc.value)
+    for valid in ("table_name", "anomaly_count_desc", "latest_update_desc", "row_count_change_desc"):
+        assert valid in msg
+
+
+def test_format_monitor_type_round_trips():
+    from testgen.common.enums import MonitorType
+    from testgen.mcp.tools.common import format_monitor_type
+
+    for member in MonitorType:
+        formatted = format_monitor_type(member)
+        assert format_monitor_type(member.value) == formatted
+
+
+def test_resolve_monitored_table_group_returns_suite():
+    from testgen.common.models.table_group import TableGroup
+    from testgen.common.models.test_suite import TestSuite
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    tg = MagicMock(spec=TableGroup)
+    tg.id = uuid4()
+    tg.monitor_test_suite_id = uuid4()
+    suite = MagicMock(spec=TestSuite)
+    suite.is_monitor = True
+
+    with (
+        patch("testgen.mcp.tools.common.resolve_table_group", return_value=tg),
+        patch("testgen.mcp.tools.common.TestSuite.get", return_value=suite) as mock_get,
+    ):
+        out_tg, out_suite = resolve_monitored_table_group(str(tg.id))
+
+    assert out_tg is tg
+    assert out_suite is suite
+    assert mock_get.call_args.args[0] == tg.monitor_test_suite_id
+
+
+def test_resolve_monitored_table_group_returns_none_when_unlinked():
+    """Table group exists but has no monitor suite pointer."""
+    from testgen.common.models.table_group import TableGroup
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    tg = MagicMock(spec=TableGroup)
+    tg.id = uuid4()
+    tg.monitor_test_suite_id = None
+
+    with patch("testgen.mcp.tools.common.resolve_table_group", return_value=tg):
+        out_tg, suite = resolve_monitored_table_group(str(tg.id))
+
+    assert out_tg is tg
+    assert suite is None
+
+
+def test_resolve_monitored_table_group_returns_none_when_pointer_stale():
+    """Pointer set, but suite no longer exists or no longer ``is_monitor=True``."""
+    from testgen.common.models.table_group import TableGroup
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    tg = MagicMock(spec=TableGroup)
+    tg.id = uuid4()
+    tg.monitor_test_suite_id = uuid4()
+
+    with (
+        patch("testgen.mcp.tools.common.resolve_table_group", return_value=tg),
+        patch("testgen.mcp.tools.common.TestSuite.get", return_value=None),
+    ):
+        out_tg, suite = resolve_monitored_table_group(str(tg.id))
+
+    assert out_tg is tg
+    assert suite is None
+
+
+def test_resolve_monitored_table_group_raises_when_tg_inaccessible():
+    """Inaccessible TG propagates ``MCPResourceNotAccessible`` from ``resolve_table_group``
+    — the "not monitored" path must not mask an access failure."""
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    bad_id = str(uuid4())
+    with (
+        patch(
+            "testgen.mcp.tools.common.resolve_table_group",
+            side_effect=MCPResourceNotAccessible("Table group", bad_id),
+        ),
+        pytest.raises(MCPResourceNotAccessible),
+    ):
+        resolve_monitored_table_group(bad_id)
