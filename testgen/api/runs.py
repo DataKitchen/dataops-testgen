@@ -6,10 +6,10 @@ from sqlalchemy import select
 from testgen.api.deps import db_session, resolve_job
 from testgen.api.schemas import (
     ErrorResponse,
-    IssueBreakdown,
+    IssueCounts,
     ProfilingRunResponse,
     ProfilingRunResult,
-    TestBreakdown,
+    ResultCounts,
     TestRunResponse,
     TestRunResult,
 )
@@ -42,14 +42,7 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
         counts = TestResult.count_by_status(test_run.id)
         result = TestRunResult(
             score=test_run.dq_score_test_run,
-            tests=TestBreakdown(
-                passed=counts.passed,
-                failed=counts.failed,
-                warning=counts.warning,
-                error=counts.error,
-                log=counts.log,
-                dismissed=counts.dismissed,
-            ),
+            result_counts=ResultCounts.model_validate(counts, from_attributes=True),
         )
 
     test_suite_id = test_run.test_suite_id if test_run else None
@@ -80,18 +73,13 @@ def get_profiling_run(job: JobExecution = resolve_job("view", JobExecution.job_k
 
     result = None
     if profiling_run:
-        counts = HygieneIssue.count_by_likelihood(profiling_run.id)
+        counts = HygieneIssue.count_for_run(profiling_run.id)
         result = ProfilingRunResult(
             score=profiling_run.dq_score_profiling,
             table_ct=profiling_run.table_ct,
             column_ct=profiling_run.column_ct,
             record_ct=profiling_run.record_ct,
-            issues=IssueBreakdown(
-                definite=counts.definite,
-                likely=counts.likely,
-                possible=counts.possible,
-                dismissed=counts.dismissed,
-            ),
+            issue_counts=IssueCounts.model_validate(counts, from_attributes=True),
         )
 
     return ProfilingRunResponse(
