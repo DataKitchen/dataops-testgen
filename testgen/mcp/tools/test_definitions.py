@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import NoReturn
 
+from pydantic import ValidationError
 from sqlalchemy import update
 
 from testgen.common.custom_test_validation import validate_custom_query
@@ -17,15 +18,32 @@ from testgen.common.models.test_definition import (
     TestType,
 )
 from testgen.common.models.test_result import TestResult
+from testgen.common.test_definition_export_import_service import (
+    ImportAction,
+    ImportConfig,
+    ImportMode,
+    ImportPayload,
+    ImportResponse,
+    ImportStrictViolation,
+    InvalidImportPayload,
+    OnAbsence,
+    OnMatch,
+    OnNew,
+    Origin,
+    export_definitions,
+    import_definitions,
+)
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     DocGroup,
     format_page_footer,
     format_page_info,
+    parse_enum,
     parse_impact_dimension,
     parse_quality_dimension,
     parse_uuid,
+    raise_validation_error,
     resolve_test_definition,
     resolve_test_note,
     resolve_test_suite,
@@ -698,11 +716,7 @@ def bulk_update_tests(
         table_name: Optional table-name filter. Case-sensitive.
         test_type: Optional test type name (e.g. ``Alpha Truncation``).
     """
-    try:
-        bulk_action = BulkAction(action)
-    except ValueError as err:
-        valid = ", ".join(f"`{a.value}`" for a in BulkAction)
-        raise MCPUserError(f"`action` must be one of: {valid}.") from err
+    bulk_action = parse_enum(action, BulkAction, "action")
     suite = resolve_test_suite(test_suite_id)
     tt_code = resolve_test_type(test_type) if test_type else None
 
@@ -741,4 +755,153 @@ def bulk_update_tests(
 
     doc.heading(1, f"{verb} {count} test(s) in suite `{suite.test_suite}`")
     doc.field("Filter", filter_str)
+    return doc.render()
+
+
+# ---------------------------------------------------------------------------
+# Export / import
+#
+# Thin wrappers over ``testgen.common.test_definition_export_import_service`` — the
+# same export document and import semantics as the REST API.
+# ---------------------------------------------------------------------------
+
+
+def _parse_import_payload(payload: str) -> ImportPayload:
+    try:
+        return ImportPayload.model_validate_json(payload)
+    except ValidationError as err:
+        errors = err.errors()
+        bullets = [f"`{'.'.join(str(part) for part in e['loc']) or 'payload'}`: {e['msg']}" for e in errors[:5]]
+        if len(errors) > 5:
+            bullets.append(f"…and {len(errors) - 5} more")
+        raise_validation_error(bullets, "`payload` is not a valid export document.")
+
+
+def _append_import_result(doc: MdDoc, result: ImportResponse, preview: bool) -> None:
+    verb_suffix = " (projected)" if preview else ""
+    doc.field(f"Created{verb_suffix}", result.summary.created)
+    doc.field(f"Updated{verb_suffix}", result.summary.updated)
+    doc.field(f"Skipped{verb_suffix}", result.summary.skipped)
+    doc.field(f"Deleted{verb_suffix}", result.summary.deleted)
+
+    rows_by_action: dict[ImportAction, list[list]] = {}
+    for item in result.items:
+        for td in item.tds:
+            rows_by_action.setdefault(item.action, []).append(
+                [item.reason.value, td.idx, td.target_id]
+            )
+
+    for action in ImportAction:
+        rows = rows_by_action.get(action)
+        if not rows:
+            continue
+        doc.heading(2, f"{action.value.capitalize()} ({len(rows)})")
+        doc.table(["Reason", "Index", "Test Definition ID"], rows, code=[2])
+
+
+@with_database_session
+@mcp_permission("view")
+def export_tests(
+    test_suite_id: str,
+    origin: str = "both",
+    table_name: str | None = None,
+    test_type: str | None = None,
+) -> str:
+    """Export test definitions from a test suite as a portable JSON document.
+
+    The returned JSON payload can be applied to another suite (or back to the same
+    suite) with ``import_tests`` — as-is for promotion or copying, or after editing
+    it for bulk changes such as threshold calibration.
+
+    Args:
+        test_suite_id: UUID of the test suite to export from.
+        origin: Which tests to include: ``both`` (default), ``manual`` (only manually
+            created tests), or ``auto`` (only auto-generated tests).
+        table_name: Optional table-name filter. Case-sensitive.
+        test_type: Optional test type name filter, e.g. ``Alpha Truncation``.
+    """
+    origin_enum = parse_enum(origin, Origin, "origin")
+    suite = resolve_test_suite(test_suite_id)
+    table_name = table_name or None
+    test_type_code = resolve_test_type(test_type) if test_type else None
+
+    export = export_definitions(suite, origin_enum, table_name, test_type_code)
+
+    filters = []
+    if origin_enum is not Origin.both:
+        filters.append(f"{origin_enum.value} tests only")
+    if table_name:
+        filters.append(f"table `{table_name}`")
+    if test_type:
+        filters.append(f"type `{test_type}`")
+
+    doc = MdDoc()
+    doc.heading(1, f"Test Definition Export from suite `{suite.test_suite}`")
+    doc.field("Project", export.source.project_code, code=True)
+    doc.field("Table Group", export.source.table_group)
+    doc.field("Schema", export.source.table_group_schema, code=True)
+    doc.field("Exported At", export.source.exported_at)
+    if filters:
+        doc.field("Filters", ", ".join(filters))
+    doc.field("Tests Exported", len(export.definitions))
+    doc.code_block(export.model_dump_json(indent=2, exclude_defaults=True), language="json")
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def import_tests(
+    test_suite_id: str,
+    payload: str,
+    mode: str = "preview",
+    on_match: str = "overwrite_unlocked",
+    on_new: str = "create",
+    on_absence: str = "do_nothing",
+) -> str:
+    """Apply an export document from ``export_tests`` to a test suite, defaulting to ``preview`` mode that reports the projected changes without persisting.
+
+    Args:
+        test_suite_id: UUID of the target test suite.
+        payload: The export document as a JSON string (the fenced JSON returned by
+            ``export_tests``).
+        mode: ``preview`` (default) reports the projected changes without persisting;
+            ``apply`` persists, skipping entries that can't be applied; ``apply_strict``
+            persists only if nothing would be skipped, otherwise applies nothing.
+        on_match: What to do when an incoming test matches an existing one:
+            ``overwrite_unlocked`` (default), ``overwrite_all``, or ``skip``.
+        on_new: What to do when an incoming test has no match: ``create`` (default),
+            ``create_and_lock``, or ``skip``.
+        on_absence: What to do with existing tests that are absent from the payload:
+            ``do_nothing`` (default), ``delete_all``, or ``delete_unlocked``.
+    """
+    config = ImportConfig(
+        mode=parse_enum(mode, ImportMode, "mode"),
+        on_match=parse_enum(on_match, OnMatch, "on_match"),
+        on_new=parse_enum(on_new, OnNew, "on_new"),
+        on_absence=parse_enum(on_absence, OnAbsence, "on_absence"),
+    )
+    suite = resolve_test_suite(test_suite_id)
+    parsed_payload = _parse_import_payload(payload)
+
+    try:
+        result = import_definitions(suite, config, parsed_payload)
+    except InvalidImportPayload as err:
+        raise MCPUserError(str(err)) from err
+    except ImportStrictViolation as err:
+        breakdown = MdDoc()
+        _append_import_result(breakdown, err.result, preview=True)
+        raise MCPUserError(
+            f"Strict import failed: {err.result.summary.skipped} tests would be skipped. "
+            f"Nothing was applied.\n\n{breakdown.render()}\n\n"
+            "Retry with `mode='apply'` to import while skipping these, or adjust the payload or policies."
+        ) from err
+
+    preview = config.mode is ImportMode.preview
+    doc = MdDoc()
+    if preview:
+        doc.heading(1, f"Test Definition Import Preview for suite `{suite.test_suite}`")
+        doc.text("Preview only — no changes were persisted. Re-run with `mode='apply'` to persist.")
+    else:
+        doc.heading(1, f"Test Definition Import into suite `{suite.test_suite}`")
+    _append_import_result(doc, result, preview=preview)
     return doc.render()
