@@ -25,6 +25,7 @@ from .conftest import (
     _gen_subdaily_gap_schedule_phase,
     _gen_subdaily_regular,
     _gen_training_only,
+    _gen_twice_daily_outage,
     _gen_weekly_early,
     _run_scenario,
 )
@@ -472,3 +473,48 @@ class Test_MWFLate:
         assert post_recovery[0].result_code == 0
         # Second update after recovery should pass
         assert post_recovery[1].result_code == 1
+
+
+# ─── Scenario 9: Twice-Daily Outage (full-week schedule) ────────────
+
+
+class Test_TwiceDailyOutage:
+    """Updates every 12h around the clock for 5 weeks, then updates stop.
+
+    Full-week "daily"-frequency schedule: no excluded days and no sub-daily
+    window, so the staleness threshold must come from the first-pass gap
+    computation. With a 720-min median gap, staleness = 720 * 0.85 = 612 min,
+    so the first missed check (gap 720 min) flags Late.
+    """
+
+    @pytest.fixture(scope="class")
+    def results(self) -> list[ScenarioPoint]:
+        rows = _gen_twice_daily_outage()
+        return _run_scenario(rows, PredictSensitivity.medium, exclude_weekends=False, tz="UTC")
+
+    def test_schedule_goes_active_all_days(self, results: list[ScenarioPoint]) -> None:
+        sched = _schedule(_updates(results)[-1])
+        assert sched is not None
+        assert sched.get("schedule_stage") == "active"
+        assert sched.get("active_days") == [0, 1, 2, 3, 4, 5, 6]
+
+    def test_staleness_stored_once_active(self, results: list[ScenarioPoint]) -> None:
+        last_update = _updates(results)[-1]
+        assert last_update.staleness == pytest.approx(720 * 0.85)
+
+    def test_no_anomalies_before_outage(self, results: list[ScenarioPoint]) -> None:
+        outage_start = pd.Timestamp("2025-11-10")
+        assert all(p.timestamp >= outage_start for p in _anomalies(results))
+
+    def test_first_missed_check_flags_late(self, results: list[ScenarioPoint]) -> None:
+        anomalies = _anomalies(results)
+        assert len(anomalies) > 0
+        first = anomalies[0]
+        assert first.timestamp == pd.Timestamp("2025-11-10 00:00")
+        assert first.value == 720
+
+    def test_all_missed_checks_flag(self, results: list[ScenarioPoint]) -> None:
+        outage_start = pd.Timestamp("2025-11-10")
+        missed_checks = [p for p in results if p.timestamp >= outage_start]
+        assert len(missed_checks) == 4
+        assert all(p.result_code == 0 for p in missed_checks)
