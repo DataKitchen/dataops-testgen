@@ -54,5 +54,5 @@ SELECT
 FROM information_schema.columns c
     LEFT JOIN approx_cts a ON c.table_schema = a.schema_name AND c.table_name = a.table_name
     LEFT JOIN information_schema.tables it ON c.table_schema = it.table_schema AND c.table_name = it.table_name
-WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
+WHERE c.table_schema = '{DATA_SCHEMA}' COLLATE Latin1_General_BIN {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;
