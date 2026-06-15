@@ -44,6 +44,7 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.job_executions,
     {SCHEMA_NAME}.settings,
     {SCHEMA_NAME}.notification_settings,
+    {SCHEMA_NAME}.project_memberships,
     {SCHEMA_NAME}.test_definition_notes,
     {SCHEMA_NAME}.oauth2_clients,
     {SCHEMA_NAME}.oauth2_authorization_codes,
