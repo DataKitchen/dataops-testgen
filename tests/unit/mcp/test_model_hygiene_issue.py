@@ -95,14 +95,14 @@ def _stub_paginate(session_mock, *, total=0, rows=()):
 # ---------------------------------------------------------------------------
 
 
-def test_list_for_run_filters_by_je_id_not_run_pk(session_mock):
+def test_list_for_run_filters_by_run_id(session_mock):
     _stub_paginate(session_mock)
 
     HygieneIssue.list_for_run(uuid4())
 
     sql = _all_compiled_sql(session_mock)
-    assert "profiling_runs.job_execution_id =" in sql
-    # The legacy run PK must NOT be the filter:
+    # The run id is the job execution id; filter targets the profiling run id directly.
+    assert "profiling_runs.id =" in sql
     assert "profile_anomaly_results.profile_run_id =" not in sql
 
 

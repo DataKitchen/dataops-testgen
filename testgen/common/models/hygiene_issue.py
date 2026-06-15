@@ -301,7 +301,7 @@ class HygieneIssue(Entity):
                     ProfileResult.column_name == cls.column_name,
                 ),
             )
-            .where(ProfilingRun.job_execution_id == job_execution_id, *clauses)
+            .where(ProfilingRun.id == job_execution_id, *clauses)
             .order_by(cls._priority_order(), cls.table_name, cls.column_name, cls.id)
         )
         return cls._paginate(query, page=page, limit=limit, data_class=HygieneIssueListRow)
@@ -325,7 +325,7 @@ class HygieneIssue(Entity):
                 cls.project_code.label("project_code"),
                 HygieneIssueType.name.label("issue_type_name"),
                 TableGroup.table_groups_name.label("table_groups_name"),
-                ProfilingRun.job_execution_id.label("job_execution_id"),
+                ProfilingRun.id.label("job_execution_id"),
                 JobExecution.started_at.label("started_at"),
                 cls.schema_name.label("schema_name"),
                 cls.table_name.label("table_name"),
@@ -340,7 +340,7 @@ class HygieneIssue(Entity):
             )
             .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
             .join(ProfilingRun, ProfilingRun.id == cls.profile_run_id)
-            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .join(TableGroup, TableGroup.id == cls.table_groups_id)
             .outerjoin(
                 ProfileResult,
@@ -384,7 +384,7 @@ class HygieneIssue(Entity):
                 cls.detail.label("detail"),
                 HygieneIssueType.detail_redactable.label("detail_redactable"),
                 ProfileResult.pii_flag.label("pii_flag"),
-                ProfilingRun.job_execution_id.label("job_execution_id"),
+                ProfilingRun.id.label("job_execution_id"),
                 JobExecution.started_at.label("started_at"),
                 ProfileResult.general_type.label("column_general_type"),
                 ProfileResult.db_data_type.label("column_db_data_type"),
@@ -394,7 +394,7 @@ class HygieneIssue(Entity):
             )
             .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
             .join(ProfilingRun, ProfilingRun.id == cls.profile_run_id)
-            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .outerjoin(
                 ProfileResult,
                 and_(

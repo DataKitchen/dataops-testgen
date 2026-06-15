@@ -137,7 +137,7 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 {{/if}}
                 {{#if (eq test_run.status 'error')}}
                 <tr>
-                  <td><div class="code">{{test_run.log_message}}</div></td>
+                  <td><div class="code">{{test_run.error_message}}</div></td>
                 </tr>
                 {{/if}}
                 {{#if (eq test_run.status 'completed')}}
@@ -330,7 +330,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
             "/test-runs:results?project_code=",
             str(tr_summary.project_code),
             "&run_id=",
-            str(test_run.job_execution_id),
+            str(test_run.id),
             "&source=email"
         )
     )

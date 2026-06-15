@@ -1,9 +1,10 @@
 WITH prev_run AS (
-    SELECT id
+    SELECT test_runs.id
     FROM test_runs
+    INNER JOIN job_executions ON job_executions.id = test_runs.id
     WHERE test_suite_id = :TEST_SUITE_ID ::UUID
-        AND id <> :TEST_RUN_ID ::UUID
-        AND status = 'Complete'
+        AND test_runs.id <> :TEST_RUN_ID ::UUID
+        AND job_executions.status = 'completed'
     ORDER BY test_starttime DESC
     LIMIT 1
 )

@@ -2,7 +2,6 @@ from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
-from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -126,10 +125,6 @@ def list_test_suites(project_code: str) -> str:
     if not summaries:
         return f"No test suites found for project `{project_code}`."
 
-    # Batch-lookup job_execution_ids for latest runs
-    run_ids = [s.latest_run_id for s in summaries if s.latest_run_id]
-    job_exec_map = TestRun.get_job_execution_ids(run_ids) if run_ids else {}
-
     doc = MdDoc()
     doc.heading(1, f"Test Suites for `{project_code}`")
     for s in summaries:
@@ -141,8 +136,7 @@ def list_test_suites(project_code: str) -> str:
         doc.field("Test definitions", s.test_ct or 0)
 
         if s.latest_run_id:
-            run_id = job_exec_map.get(s.latest_run_id) or s.latest_run_id
-            doc.field("Latest run", f"`{run_id}` ({s.latest_run_start})")
+            doc.field("Latest run", f"`{s.latest_run_id}` ({s.latest_run_start})")
             results_summary = (
                 f"{s.last_run_test_ct or 0} tests: "
                 f"{s.last_run_passed_ct or 0} passed, "

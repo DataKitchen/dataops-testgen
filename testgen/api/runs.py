@@ -35,7 +35,7 @@ router = APIRouter(tags=["runs"], dependencies=[Depends(db_session)], responses=
 )
 def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_tests)):  # noqa: B008
     """Get a test run by the job execution ID that created it."""
-    test_run = TestRun.get_by_id_or_job(job.id)
+    test_run = TestRun.get(job.id)
 
     result = None
     if test_run:
@@ -69,7 +69,7 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
 )
 def get_profiling_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile)):  # noqa: B008
     """Get a profiling run by the job execution ID that created it."""
-    profiling_run = ProfilingRun.get_by_id_or_job(job.id)
+    profiling_run = ProfilingRun.get(job.id)
 
     result = None
     if profiling_run:

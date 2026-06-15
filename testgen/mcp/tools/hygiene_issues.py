@@ -87,12 +87,12 @@ def _resolve_profile_run_je_id(
         return je_uuid
 
     job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-    run = ProfilingRun.get_by_id_or_job(job_uuid)
+    run = ProfilingRun.get(job_uuid)
     perms = get_project_permissions()
     tg = TableGroup.get(run.table_groups_id) if run else None
     if run is None or tg is None or not perms.has_access(tg.project_code):
         raise MCPResourceNotAccessible("Profiling run", job_execution_id)
-    return run.job_execution_id
+    return run.id
 
 
 @with_database_session

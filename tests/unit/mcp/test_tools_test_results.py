@@ -24,7 +24,7 @@ def _mock_test_run(test_run_id=None):
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_list_test_results_basic(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
     job_id = str(uuid4())
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
 
     r1 = MagicMock()
@@ -59,7 +59,7 @@ def test_list_test_results_basic(mock_result, mock_tt_cls, mock_test_run_cls, mo
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_list_test_results_emits_test_result_id(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
 
     result_id = uuid4()
@@ -93,7 +93,7 @@ def test_list_test_results_emits_test_result_id(mock_result, mock_tt_cls, mock_t
 @patch("testgen.mcp.tools.test_results.TestType")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_list_test_results_table_level_title(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
 
     r1 = MagicMock()
@@ -124,7 +124,7 @@ def test_list_test_results_table_level_title(mock_result, mock_tt_cls, mock_test
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_list_test_results_empty(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
     mock_result.select_results.return_value = []
 
@@ -143,7 +143,7 @@ def test_list_test_results_empty(mock_result, mock_test_run_cls, mock_suite_cls,
 def test_list_test_results_with_filters(
     mock_result, mock_tt_cls, mock_test_run_cls, mock_tt_common, mock_suite_cls, db_session_mock
 ):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
@@ -171,7 +171,7 @@ def test_list_test_results_invalid_uuid(db_session_mock):
 @patch("testgen.mcp.tools.test_results.TestSuite")
 @patch("testgen.mcp.tools.test_results.TestRun")
 def test_list_test_results_invalid_status(mock_test_run_cls, mock_suite_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -182,7 +182,7 @@ def test_list_test_results_invalid_status(mock_test_run_cls, mock_suite_cls, db_
 
 @patch("testgen.mcp.tools.test_results.TestRun")
 def test_list_test_results_run_not_found(mock_test_run_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = None
+    mock_test_run_cls.get.return_value = None
 
     from testgen.mcp.tools.test_results import list_test_results
 
@@ -194,7 +194,7 @@ def test_list_test_results_run_not_found(mock_test_run_cls, db_session_mock):
 @patch("testgen.mcp.tools.test_results.TestRun")
 def test_list_test_results_run_in_monitor_suite_rejected(mock_test_run_cls, mock_suite_cls, db_session_mock):
     # Run exists, but the resolved suite is monitor → TestSuite.get_regular returns None.
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = None
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -210,7 +210,7 @@ def test_list_test_results_run_in_forbidden_project(
     mock_compute, mock_test_run_cls, mock_suite_cls, db_session_mock
 ):
     mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -231,7 +231,7 @@ def test_list_test_results_passes_project_codes(
         permission="view",
         username="test_user",
     )
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
     mock_result.select_results.return_value = []
 
@@ -247,12 +247,12 @@ def test_list_test_results_passes_project_codes(
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
 @patch("testgen.mcp.tools.test_results.TestType")
-def test_list_test_results_resolves_via_get_by_id_or_job(
+def test_list_test_results_resolves_via_get(
     mock_tt_cls, mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock
 ):
     """Verify the resolved test_run.id is passed to select_results."""
     resolved_run_id = uuid4()
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run(resolved_run_id)
+    mock_test_run_cls.get.return_value = _mock_test_run(resolved_run_id)
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
     mock_result.select_results.return_value = []
 
@@ -332,10 +332,8 @@ def test_list_test_results_by_suite_id_resolves_latest_run(
     mock_suite_cls.get_regular.return_value = _mock_test_suite(last_complete_test_run_id=last_run_id)
 
     resolved_run_id = uuid4()
-    resolved_je_id = uuid4()
     resolved_run = _mock_test_run(resolved_run_id)
-    resolved_run.job_execution_id = resolved_je_id
-    mock_test_run_cls.get_by_id_or_job.return_value = resolved_run
+    mock_test_run_cls.get.return_value = resolved_run
 
     r1 = MagicMock()
     r1.status = TestResultStatus.Failed
@@ -358,11 +356,11 @@ def test_list_test_results_by_suite_id_resolves_latest_run(
     suite_id = str(uuid4())
     result = list_test_results(test_suite_id=suite_id)
 
-    # Resolution chain: suite.last_complete_test_run_id → TestRun.get_by_id_or_job → test_run.id → select_results
-    mock_test_run_cls.get_by_id_or_job.assert_called_once_with(last_run_id)
+    # Resolution chain: suite.last_complete_test_run_id → TestRun.get → test_run.id → select_results
+    mock_test_run_cls.get.assert_called_once_with(last_run_id)
     assert mock_result.select_results.call_args.kwargs["test_run_id"] == resolved_run_id
-    # Output indicates which run the suite was resolved to.
-    assert str(resolved_je_id) in result
+    # Output indicates which run the suite was resolved to (run id is the job execution id).
+    assert str(resolved_run_id) in result
     assert f"Latest completed run of test suite `{suite_id}`" in result
 
 
@@ -373,7 +371,7 @@ def test_list_test_results_by_suite_id_resolves_latest_run(
 def test_get_failure_summary_by_test_type(
     mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock,
 ):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = [
         ("Alpha_Trunc", TestResultStatus.Failed, 5),
@@ -405,7 +403,7 @@ def test_get_failure_summary_by_test_type(
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_get_failure_summary_empty(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = []
 
@@ -420,7 +418,7 @@ def test_get_failure_summary_empty(mock_result, mock_test_run_cls, mock_suite_cl
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_get_failure_summary_by_table(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = [("orders", 10)]
 
@@ -437,7 +435,7 @@ def test_get_failure_summary_by_table(mock_result, mock_test_run_cls, mock_suite
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_get_failure_summary_by_column(mock_result, mock_test_run_cls, mock_suite_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="demo")
     mock_result.select_failures.return_value = [("orders", "total_value", 34), ("orders", None, 2)]
 
@@ -460,7 +458,7 @@ def test_get_failure_summary_invalid_uuid(db_session_mock):
 
 @patch("testgen.mcp.tools.test_results.TestRun")
 def test_get_failure_summary_run_not_found(mock_test_run_cls, db_session_mock):
-    mock_test_run_cls.get_by_id_or_job.return_value = None
+    mock_test_run_cls.get.return_value = None
 
     from testgen.mcp.tools.test_results import get_failure_summary
 
@@ -475,7 +473,7 @@ def test_get_failure_summary_run_in_forbidden_project(
     mock_compute, mock_test_run_cls, mock_suite_cls, db_session_mock,
 ):
     mock_compute.return_value = ProjectPermissions(memberships={"proj_a": "role_a"}, permission="view", username="test_user")
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="forbidden_project")
 
     from testgen.mcp.tools.test_results import get_failure_summary
@@ -488,7 +486,7 @@ def test_get_failure_summary_run_in_forbidden_project(
 @patch("testgen.mcp.tools.test_results.TestRun")
 def test_get_failure_summary_run_in_monitor_suite_rejected(mock_test_run_cls, mock_suite_cls, db_session_mock):
     # Run exists, but the resolved suite is monitor → TestSuite.get_regular returns None.
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = None
 
     from testgen.mcp.tools.test_results import get_failure_summary
@@ -509,7 +507,7 @@ def test_get_failure_summary_passes_project_codes(
         permission="view",
         username="test_user",
     )
-    mock_test_run_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(project_code="proj_a")
     mock_result.select_failures.return_value = []
 
@@ -1034,7 +1032,7 @@ def test_compare_test_runs_happy_path(
     baseline_run = _mock_run(suite_id)
     target_run = _mock_run(suite_id)
     # Tool resolves target first, then baseline.
-    mock_test_run_cls.get_by_id_or_job.side_effect = [target_run, baseline_run]
+    mock_test_run_cls.get.side_effect = [target_run, baseline_run]
     mock_test_suite_cls.get_regular.return_value = _mock_test_suite(suite_id=suite_id, project_code="proj_a")
 
     diff = MagicMock()
@@ -1134,7 +1132,7 @@ def test_compare_test_runs_single_arg_resolves_previous(
     target_run = _mock_run(suite_id)
     baseline_run = _mock_run(suite_id)
     target_run.get_previous.return_value = baseline_run
-    mock_test_run_cls.get_by_id_or_job.return_value = target_run
+    mock_test_run_cls.get.return_value = target_run
     mock_test_suite_cls.get_regular.return_value = _mock_test_suite(suite_id=suite_id, project_code="proj_a")
 
     diff = MagicMock(
@@ -1150,8 +1148,8 @@ def test_compare_test_runs_single_arg_resolves_previous(
 
     target_run.get_previous.assert_called_once_with()
     mock_result.diff_with_details.assert_called_once_with(baseline_run.id, target_run.id)
-    # Rendered Baseline cell shows the resolved JE ID, not an input string.
-    assert str(baseline_run.job_execution_id) in out
+    # Rendered Baseline cell shows the resolved run id (the job execution id), not an input string.
+    assert str(baseline_run.id) in out
 
 
 @patch("testgen.mcp.tools.test_results.TestSuite")
@@ -1169,7 +1167,7 @@ def test_compare_test_runs_single_arg_no_previous_raises(
     suite_id = uuid4()
     target_run = _mock_run(suite_id)
     target_run.get_previous.return_value = None
-    mock_test_run_cls.get_by_id_or_job.return_value = target_run
+    mock_test_run_cls.get.return_value = target_run
     mock_test_suite_cls.get_regular.return_value = _mock_test_suite(suite_id=suite_id, project_code="proj_a")
 
     from testgen.mcp.tools.test_results import compare_test_runs
@@ -1192,7 +1190,7 @@ def test_compare_test_runs_single_arg_inaccessible_target(
     )
     suite_id = uuid4()
     target_run = _mock_run(suite_id)
-    mock_test_run_cls.get_by_id_or_job.return_value = target_run
+    mock_test_run_cls.get.return_value = target_run
     # Monitor suite or inaccessible project — get_regular returns None either way.
     mock_test_suite_cls.get_regular.return_value = None
 
@@ -1215,7 +1213,7 @@ def test_compare_test_runs_run_not_found(
         permission="view",
         username="test_user",
     )
-    mock_test_run_cls.get_by_id_or_job.return_value = None
+    mock_test_run_cls.get.return_value = None
 
     from testgen.mcp.tools.test_results import compare_test_runs
 
@@ -1237,7 +1235,7 @@ def test_compare_test_runs_rejects_inaccessible_project(
     )
     suite_id = uuid4()
     run = _mock_run(suite_id)
-    mock_test_run_cls.get_by_id_or_job.return_value = run
+    mock_test_run_cls.get.return_value = run
     mock_test_suite_cls.get_regular.return_value = _mock_test_suite(suite_id=suite_id, project_code="proj_forbidden")
 
     from testgen.mcp.tools.test_results import compare_test_runs
@@ -1262,7 +1260,7 @@ def test_compare_test_runs_rejects_different_suites(
     suite_id_baseline = uuid4()
     target_run = _mock_run(suite_id_target)
     baseline_run = _mock_run(suite_id_baseline)
-    mock_test_run_cls.get_by_id_or_job.side_effect = [target_run, baseline_run]
+    mock_test_run_cls.get.side_effect = [target_run, baseline_run]
     mock_test_suite_cls.get_regular.side_effect = [
         _mock_test_suite(suite_id=suite_id_target, project_code="proj_a"),
         _mock_test_suite(suite_id=suite_id_baseline, project_code="proj_a"),
@@ -1295,7 +1293,7 @@ def test_compare_test_runs_rejects_monitor_suite(
     )
     suite_id = uuid4()
     run = _mock_run(suite_id)
-    mock_test_run_cls.get_by_id_or_job.return_value = run
+    mock_test_run_cls.get.return_value = run
     mock_test_suite_cls.get_regular.return_value = None
 
     from testgen.mcp.tools.test_results import compare_test_runs
@@ -1318,7 +1316,7 @@ def test_compare_test_runs_rejects_target_not_completed(
     )
     suite_id = uuid4()
     target_run = _mock_run(suite_id)
-    mock_test_run_cls.get_by_id_or_job.return_value = target_run
+    mock_test_run_cls.get.return_value = target_run
     mock_test_suite_cls.get_regular.return_value = _mock_test_suite(suite_id=suite_id, project_code="proj_a")
 
     from testgen.mcp.tools.test_results import compare_test_runs
@@ -1344,7 +1342,7 @@ def test_compare_test_runs_rejects_baseline_not_completed(
     suite_id = uuid4()
     target_run = _mock_run(suite_id)
     baseline_run = _mock_run(suite_id)
-    mock_test_run_cls.get_by_id_or_job.side_effect = [target_run, baseline_run]
+    mock_test_run_cls.get.side_effect = [target_run, baseline_run]
     mock_test_suite_cls.get_regular.return_value = _mock_test_suite(suite_id=suite_id, project_code="proj_a")
 
     from testgen.mcp.tools.test_results import compare_test_runs
@@ -1456,7 +1454,7 @@ def test_bulk_update_uses_latest_run_when_run_omitted(
     mock_session.return_value.scalars.return_value.all.return_value = matched_ids
     mock_set.return_value = DispositionUpdate(matched=2, passed_skipped=0)
 
-    with patch("testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+    with patch("testgen.mcp.tools.test_results.TestRun.get",
                return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
         out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Dismissed")
 
@@ -1488,7 +1486,7 @@ def test_bulk_update_reports_passed_exclusions(
     mock_session.return_value.scalars.return_value.all.return_value = [uuid4(), uuid4(), uuid4()]
     mock_set.return_value = DispositionUpdate(matched=2, passed_skipped=1)
 
-    with patch("testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+    with patch("testgen.mcp.tools.test_results.TestRun.get",
                return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
         out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Muted")
 
@@ -1508,7 +1506,7 @@ def test_bulk_update_no_matches(mock_resolve_suite, mock_session, mock_set, db_s
     mock_session.return_value.scalars.return_value.all.return_value = []
     mock_set.return_value = DispositionUpdate(matched=0, passed_skipped=0)
 
-    with patch("testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+    with patch("testgen.mcp.tools.test_results.TestRun.get",
                return_value=MagicMock(id=run_id, job_execution_id=run_id, test_suite_id=suite.id)):
         out = bulk_update_test_results(test_suite_id=str(uuid4()), disposition="Confirmed")
 
@@ -1538,7 +1536,7 @@ def test_bulk_update_explicit_run_in_suite(
     mock_set.return_value = DispositionUpdate(matched=1, passed_skipped=0)
 
     with patch(
-        "testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+        "testgen.mcp.tools.test_results.TestRun.get",
         return_value=MagicMock(id=uuid4(), job_execution_id=run_id, test_suite_id=suite.id),
     ):
         out = bulk_update_test_results(
@@ -1559,7 +1557,7 @@ def test_bulk_update_explicit_run_from_other_suite_rejected(
     mock_resolve_suite.return_value = suite
 
     with patch(
-        "testgen.mcp.tools.test_results.TestRun.get_by_id_or_job",
+        "testgen.mcp.tools.test_results.TestRun.get",
         return_value=MagicMock(test_suite_id=uuid4()),  # different suite
     ):
         with pytest.raises(MCPResourceNotAccessible, match=r"Test run .* not found or not accessible"):
