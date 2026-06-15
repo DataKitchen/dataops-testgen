@@ -1,5 +1,4 @@
 import logging
-import os
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -24,7 +23,6 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
-from testgen.utils import get_exception_message
 
 from .run_refresh_data_chars import run_data_chars_refresh
 from .run_test_validation import run_test_validation
@@ -52,12 +50,10 @@ def run_test_execution(
 
     LOG.info("Creating test run record")
     test_run = TestRun(
+        id=job_context.get().job_id,
         test_suite_id=test_suite_id,
         test_starttime=datetime.now(UTC) + time_delta,
-        process_id=os.getpid(),
     )
-    if job_id := job_context.get().job_id:
-        test_run.job_execution_id = job_id
 
     # This runs in a subprocess — commit after every save so progress is visible
     # to the UI (separate session) and to execute_db_queries (independent connection).
@@ -134,22 +130,12 @@ def run_test_execution(
         # Refresh needed because previous query updates the test run too
         test_run.refresh()
 
-    except Exception as e:
+    except Exception:
         LOG.exception("Test execution encountered an error.")
-        LOG.info("Setting test run status to Error")
-        test_run.log_message = get_exception_message(e)
-        test_run.test_endtime = datetime.now(UTC) + time_delta
-        test_run.status = "Error"
-        test_run.save()
-        session.commit()
+        end_time = datetime.now(UTC) + time_delta
         raise
     else:
-        LOG.info("Setting test run status to Completed")
-        test_run.test_endtime = datetime.now(UTC) + time_delta
-        test_run.status = "Complete"
-        test_run.save()
-        session.commit()
-
+        end_time = datetime.now(UTC) + time_delta
         LOG.info("Updating latest run for test suite")
         test_suite.last_complete_test_run_id = test_run.id
         test_suite.save()
@@ -167,7 +153,7 @@ def run_test_execution(
             username=username,
             sql_flavor=connection.sql_flavor_code,
             test_count=test_run.test_ct,
-            run_duration=(test_run.test_endtime - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
+            run_duration=(end_time - test_run.test_starttime.replace(tzinfo=UTC)).total_seconds(),
             prediction_duration=(datetime.now(UTC) + time_delta - prediction_start).total_seconds(),
         )
 

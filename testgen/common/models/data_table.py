@@ -134,7 +134,7 @@ class DataTable(Entity):
                 JobExecution.id.label("latest_profile_job_execution_id"),
             )
             .outerjoin(ProfilingRun, ProfilingRun.id == cls.last_complete_profile_run_id)
-            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .where(
                 cls.table_groups_id == table_groups_id,
                 cls.table_name == table_name,

@@ -90,14 +90,14 @@ def list_test_results(
             raise MCPResourceNotAccessible("Test suite", test_suite_id)
         if suite.last_complete_test_run_id is None:
             raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
-        test_run = TestRun.get_by_id_or_job(suite.last_complete_test_run_id)
+        test_run = TestRun.get(suite.last_complete_test_run_id)
         if test_run is None:
             raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
         resolved_via_suite = True
-        run_id_label = str(test_run.job_execution_id)
+        run_id_label = str(test_run.id)
     else:
         job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-        test_run = TestRun.get_by_id_or_job(job_uuid)
+        test_run = TestRun.get(job_uuid)
         suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
         if test_run is None or suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test run", job_execution_id)
@@ -208,7 +208,7 @@ def get_failure_summary(
 
     if job_execution_id:
         job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-        test_run = TestRun.get_by_id_or_job(job_uuid)
+        test_run = TestRun.get(job_uuid)
         suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
         if test_run is None or suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test run", job_execution_id)
@@ -548,7 +548,7 @@ def compare_test_runs(
     perms = get_project_permissions()
 
     def _resolve_accessible(je_id_str: str, je_uuid: UUID) -> TestRun:
-        run = TestRun.get_by_id_or_job(je_uuid)
+        run = TestRun.get(je_uuid)
         if run is None:
             raise MCPResourceNotAccessible("Test run", je_id_str)
         suite = TestSuite.get_regular(run.test_suite_id)
@@ -557,7 +557,7 @@ def compare_test_runs(
         return run
 
     def _require_completed(run: TestRun, label: str) -> None:
-        je = get_current_session().get(JobExecution, run.job_execution_id)
+        je = get_current_session().get(JobExecution, run.id)
         if je.status != JobStatus.COMPLETED:
             status_label = TestRunSummary.STATUS_LABEL.get(je.status, je.status)
             raise MCPUserError(
@@ -595,8 +595,8 @@ def compare_test_runs(
         ["", "Target", "Baseline"],
         [
             ["Test Run",
-             MdDoc.code(str(target_run.job_execution_id)),
-             MdDoc.code(str(baseline_run.job_execution_id))],
+             MdDoc.code(str(target_run.id)),
+             MdDoc.code(str(baseline_run.id))],
             ["Started", target_run.test_starttime, baseline_run.test_starttime],
         ],
     )
@@ -705,12 +705,12 @@ def bulk_update_test_results(
     db_disposition = parse_test_result_disposition(disposition)
 
     if job_execution_id:
-        run = TestRun.get_by_id_or_job(parse_uuid(job_execution_id, "job_execution_id"))
+        run = TestRun.get(parse_uuid(job_execution_id, "job_execution_id"))
         if run is None or run.test_suite_id != suite.id:
             raise MCPResourceNotAccessible("Test run", job_execution_id)
     else:
         run = (
-            TestRun.get_by_id_or_job(suite.last_complete_test_run_id)
+            TestRun.get(suite.last_complete_test_run_id)
             if suite.last_complete_test_run_id
             else None
         )
@@ -751,7 +751,7 @@ def bulk_update_test_results(
 
     doc.heading(1, f"Updated {update.matched} test results in suite `{suite.test_suite}`")
     doc.field("Disposition", disposition)
-    doc.field("Run", run.job_execution_id, code=True)
+    doc.field("Run", run.id, code=True)
     doc.field("Filter", filter_str)
     if update.passed_skipped:
         doc.text(

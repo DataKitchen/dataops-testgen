@@ -252,7 +252,7 @@ def test_resolve_je_id_table_group_no_completed_runs(mock_latest, mock_resolve_t
 
 
 @patch("testgen.mcp.tools.hygiene_issues.TableGroup")
-@patch.object(ProfilingRun, "get_by_id_or_job")
+@patch.object(ProfilingRun, "get")
 def test_resolve_je_id_je_branch_unknown_run(mock_get, mock_tg_cls, db_session_mock):
     from testgen.mcp.tools.hygiene_issues import _resolve_profile_run_je_id
 
@@ -267,7 +267,7 @@ def test_resolve_je_id_je_branch_unknown_run(mock_get, mock_tg_cls, db_session_m
 
 
 @patch("testgen.mcp.tools.hygiene_issues.TableGroup")
-@patch.object(ProfilingRun, "get_by_id_or_job")
+@patch.object(ProfilingRun, "get")
 def test_resolve_je_id_je_branch_inaccessible_tg(mock_get, mock_tg_cls, db_session_mock):
     from testgen.mcp.tools.hygiene_issues import _resolve_profile_run_je_id
 
@@ -309,7 +309,7 @@ def test_list_hygiene_issues_invalid_je_uuid(db_session_mock):
 
 
 @patch("testgen.mcp.tools.hygiene_issues.TableGroup")
-@patch.object(ProfilingRun, "get_by_id_or_job")
+@patch.object(ProfilingRun, "get")
 @patch.object(HygieneIssue, "list_for_run")
 def test_list_hygiene_issues_resolves_via_je_id(mock_list, mock_get, mock_tg_cls, db_session_mock):
     from testgen.mcp.tools.hygiene_issues import list_hygiene_issues
@@ -321,7 +321,8 @@ def test_list_hygiene_issues_resolves_via_je_id(mock_list, mock_get, mock_tg_cls
 
     list_hygiene_issues(job_execution_id=str(uuid4()))
 
-    assert mock_list.call_args.args[0] == run.job_execution_id
+    # The run id is the job execution id — list_for_run is called with run.id.
+    assert mock_list.call_args.args[0] == run.id
 
 
 @patch("testgen.mcp.tools.hygiene_issues.resolve_table_group")

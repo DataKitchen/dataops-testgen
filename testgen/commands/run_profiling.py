@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -52,14 +51,12 @@ def run_profiling(
 
     LOG.info("Creating profiling run record")
     profiling_run = ProfilingRun(
+        id=job_context.get().job_id,
         project_code=table_group.project_code,
         connection_id=connection.connection_id,
         table_groups_id=table_group.id,
         profiling_starttime=datetime.now(UTC) + time_delta,
-        process_id=os.getpid(),
     )
-    if job_id := job_context.get().job_id:
-        profiling_run.job_execution_id = job_id
 
     # This runs in a subprocess — commit after every save so progress is visible
     # to the UI (separate session) and to execute_db_queries (independent connection).
@@ -96,19 +93,12 @@ def run_profiling(
             #     run_pairwise_contingency_check(profiling_run.id, table_group.profile_pair_rule_pct)
         else:
             LOG.info("No columns were selected to profile.")
-    except Exception as e:
+    except Exception:
         LOG.exception("Profiling encountered an error.")
-        LOG.info("Setting profiling run status to Error")
-        profiling_run.log_message = get_exception_message(e)
-        profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
-        profiling_run.status = "Error"
-        profiling_run.save()
-        session.commit()
+        end_time = datetime.now(UTC) + time_delta
         raise
     else:
-        LOG.info("Setting profiling run status to Completed")
-        profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
-        profiling_run.status = "Complete"
+        end_time = datetime.now(UTC) + time_delta
         profiling_run.save()
         session.commit()
 
@@ -122,7 +112,7 @@ def run_profiling(
             sampling=table_group.profile_use_sampling,
             table_count=profiling_run.table_ct or 0,
             column_count=profiling_run.column_ct or 0,
-            run_duration=(profiling_run.profiling_endtime - profiling_run.profiling_starttime).total_seconds(),
+            run_duration=(end_time - profiling_run.profiling_starttime.replace(tzinfo=UTC)).total_seconds(),
         )
 
     return profiling_run.id

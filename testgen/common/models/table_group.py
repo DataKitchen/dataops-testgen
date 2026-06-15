@@ -255,7 +255,6 @@ class TableGroup(Entity):
         latest_profile AS (
             SELECT latest_run.table_groups_id,
                 latest_run.id,
-                latest_run.job_execution_id,
                 MAX(latest_je.started_at) AS started_at,
                 latest_run.anomaly_ct,
                 SUM(
@@ -290,7 +289,7 @@ class TableGroup(Entity):
                     groups.last_complete_profile_run_id = latest_run.id
                 )
                 LEFT JOIN job_executions latest_je ON (
-                    latest_run.job_execution_id = latest_je.id
+                    latest_run.id = latest_je.id
                 )
                 LEFT JOIN profile_anomaly_results latest_anomalies ON (
                     latest_run.id = latest_anomalies.profile_run_id
@@ -365,7 +364,7 @@ class TableGroup(Entity):
             groups.dq_score_profiling,
             groups.dq_score_testing,
             latest_profile.id AS latest_profile_id,
-            latest_profile.job_execution_id AS latest_profile_job_execution_id,
+            latest_profile.id AS latest_profile_job_execution_id,
             latest_profile.started_at AS latest_profile_start,
             latest_profile.anomaly_ct AS latest_hygiene_issues_ct,
             latest_profile.definite_ct AS latest_hygiene_issues_definite_ct,
@@ -545,8 +544,8 @@ class TableGroup(Entity):
 
         DELETE FROM job_executions
         WHERE id IN (
-            SELECT pr.job_execution_id FROM profiling_runs pr
-            WHERE pr.table_groups_id IN :table_group_ids AND pr.job_execution_id IS NOT NULL
+            SELECT pr.id FROM profiling_runs pr
+            WHERE pr.table_groups_id IN :table_group_ids
         );
 
         DELETE FROM profiling_runs pr

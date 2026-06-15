@@ -309,7 +309,7 @@ class TestResult(Entity):
             select(
                 cls.test_definition_id.label("test_definition_id"),
                 cls.test_run_id.label("test_run_id"),
-                TestRun.job_execution_id.label("job_execution_id"),
+                TestRun.id.label("job_execution_id"),
                 cls.test_time.label("test_time"),
                 TestSuite.id.label("test_suite_id"),
                 TestSuite.test_suite.label("test_suite_name"),

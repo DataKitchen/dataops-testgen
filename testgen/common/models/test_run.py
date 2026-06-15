@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, String, Text, desc, func, select, text, update
+from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, delete, desc, func, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import foreign, relationship
 from sqlalchemy.orm.attributes import flag_modified
@@ -20,7 +20,6 @@ from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import is_uuid4
 
-TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 ProgressKey = Literal["data_chars", "validation", "QUERY", "CAT", "METADATA"]
 ProgressStatus = Literal["Pending", "Running", "Completed", "Warning"]
 
@@ -59,8 +58,6 @@ class TestRunSummary(EntityMinimal):
     test_suite: str | None
     project_code: str
     project_name: str
-    process_id: int | None
-    log_message: str | None
     test_ct: int | None
     passed_ct: int | None
     warning_ct: int | None
@@ -99,13 +96,14 @@ class LatestTestRun(NamedTuple):
 class TestRun(Entity):
     __tablename__ = "test_runs"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, nullable=False, default=uuid4)
+    id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("job_executions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     test_suite_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("test_suites.id"), nullable=False)
     test_starttime: datetime = Column(postgresql.TIMESTAMP)
-    test_endtime: datetime = Column(postgresql.TIMESTAMP)
-    status: TestRunStatus = Column(String, default="Running")
     progress: list[ProgressStep] = Column(postgresql.JSONB, default=[])
-    log_message: str = Column(Text)
     test_ct: int = Column(Integer)
     passed_ct: int = Column(Integer)
     failed_ct: int = Column(Integer)
@@ -119,12 +117,10 @@ class TestRun(Entity):
     dq_affected_data_points: int = Column(BigInteger)
     dq_total_data_points: int = Column(BigInteger)
     dq_score_test_run: float = Column(Float)
-    process_id: int = Column(Integer)
-    job_execution_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
 
     job_execution = relationship(
         JobExecution,
-        primaryjoin=foreign(job_execution_id) == JobExecution.id,
+        primaryjoin=foreign(id) == JobExecution.id,
         uselist=False,
         viewonly=True,
     )
@@ -145,21 +141,6 @@ class TestRun(Entity):
     )
 
     @classmethod
-    def get_by_id_or_job(cls, identifier: UUID) -> Self | None:
-        """Look up a test run by its own ID or by job_execution_id."""
-        query = select(cls).where((cls.id == identifier) | (cls.job_execution_id == identifier))
-        return get_current_session().scalars(query).first()
-
-    @classmethod
-    def get_job_execution_ids(cls, test_run_ids: list[UUID]) -> dict[UUID, UUID | None]:
-        """Map test_run PKs to their job_execution_ids (batch lookup)."""
-        if not test_run_ids:
-            return {}
-        query = select(cls.id, cls.job_execution_id).where(cls.id.in_(test_run_ids))
-        rows = get_current_session().execute(query).all()
-        return {row.id: row.job_execution_id for row in rows}
-
-    @classmethod
     def get_minimal(cls, run_id: str | UUID) -> TestRunMinimal | None:
         if not is_uuid4(run_id):
             return None
@@ -167,7 +148,7 @@ class TestRun(Entity):
         query = (
             select(*cls._minimal_columns)
             .join(TestSuite)
-            .where((cls.id == run_id) | (cls.job_execution_id == run_id))
+            .where(cls.id == run_id)
         )
         result = get_current_session().execute(query).mappings().first()
         return TestRunMinimal(**result) if result else None
@@ -176,7 +157,7 @@ class TestRun(Entity):
     def get_latest_run(cls, project_code: str) -> LatestTestRun | None:
         query = (
             select(TestRun.id, JobExecution.started_at.label("run_time"))
-            .join(JobExecution, TestRun.job_execution_id == JobExecution.id)
+            .join(JobExecution, TestRun.id == JobExecution.id)
             .join(TestSuite)
             .where(TestSuite.project_code == project_code, JobExecution.status == JobStatus.COMPLETED)
             .order_by(desc(JobExecution.started_at))
@@ -190,7 +171,7 @@ class TestRun(Entity):
     def get_previous(self) -> Self | None:
         query = (
             select(TestRun)
-            .join(JobExecution, TestRun.job_execution_id == JobExecution.id)
+            .join(JobExecution, TestRun.id == JobExecution.id)
             .where(
                 TestRun.test_suite_id == self.test_suite_id,
                 JobExecution.status == JobStatus.COMPLETED,
@@ -268,8 +249,6 @@ class TestRun(Entity):
             ts.test_suite,
             je.project_code,
             p.project_name,
-            tr.process_id,
-            tr.log_message,
             tr.test_ct,
             rr.passed_ct,
             rr.warning_ct,
@@ -280,7 +259,7 @@ class TestRun(Entity):
             tr.dq_score_test_run AS dq_score_testing,
             COUNT(*) OVER() AS total_count
         FROM job_executions je
-            LEFT JOIN test_runs tr ON tr.job_execution_id = je.id
+            LEFT JOIN test_runs tr ON tr.id = je.id
             LEFT JOIN test_suites ts ON ts.id = tr.test_suite_id
             LEFT JOIN table_groups tg ON tg.id = ts.table_groups_id
             LEFT JOIN projects p ON p.project_code = je.project_code
@@ -329,7 +308,7 @@ class TestRun(Entity):
         ))
         projection = [
             TestRun.id.label("test_run_id"),
-            TestRun.test_endtime,
+            JobExecution.completed_at.label("test_endtime"),
             TableGroup.id.label("table_group_id"),
             TableGroup.table_groups_name,
             Project.project_name,
@@ -339,7 +318,7 @@ class TestRun(Entity):
         ]
         group_by = [
             TestRun.id,
-            TestRun.test_endtime,
+            JobExecution.completed_at,
             TableGroup.id,
             TableGroup.table_groups_name,
             Project.project_name,
@@ -353,6 +332,7 @@ class TestRun(Entity):
             .join(TableGroup, TableGroup.monitor_test_suite_id == TestRun.test_suite_id)
             .join(Project, Project.project_code == TableGroup.project_code)
             .join(TestResult, TestResult.test_run_id == TestRun.id)
+            .join(JobExecution, JobExecution.id == TestRun.id)
             .where(
                 TestRun.id == self.id,
                 (TestResult.table_name == table_name) if table_name else True,
@@ -369,7 +349,7 @@ class TestRun(Entity):
         """Check whether any active test run job exists for the given entity or entities."""
         query = (
             select(func.count(cls.id))
-            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .join(JobExecution, cls.id == JobExecution.id)
             .where(JobExecution.status.in_(cls._ACTIVE_JOB_STATUSES))
         )
         if entity_cls is cls:
@@ -387,26 +367,13 @@ class TestRun(Entity):
         return get_current_session().execute(query).scalar() > 0
 
     @classmethod
-    def cancel_run(cls, run_id: str | UUID) -> None:
-        query = update(cls).where(cls.id == run_id).values(status="Cancelled", test_endtime=datetime.now(UTC))
-        db_session = get_current_session()
-        db_session.execute(query)
-
-    @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
-        query = """
-        DELETE FROM test_results
-        WHERE test_run_id IN :test_run_ids;
+        """Delete runs and their results by removing the parent job executions.
 
-        DELETE FROM job_executions
-        WHERE id IN (
-            SELECT job_execution_id FROM test_runs
-            WHERE id IN :test_run_ids AND job_execution_id IS NOT NULL
-        );
+        The run id is the job execution id, and the foreign-key chain
+        (test_results -> test_runs -> job_executions) cascades on delete.
         """
-        db_session = get_current_session()
-        db_session.execute(text(query), {"test_run_ids": tuple(ids)})
-        cls.delete_where(cls.id.in_(ids))
+        get_current_session().execute(delete(JobExecution).where(JobExecution.id.in_(ids)))
 
     @classmethod
     def find_latest_per_test_suite(cls, project_code: str) -> set[UUID]:
@@ -421,7 +388,7 @@ class TestRun(Entity):
         rows = get_current_session().scalars(
             select(cls.id)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .join(JobExecution, cls.id == JobExecution.id)
             .where(
                 TestSuite.project_code == project_code,
                 JobExecution.status == JobStatus.COMPLETED,
@@ -463,7 +430,7 @@ class TestRun(Entity):
         base_select = (
             select(cls.id)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .join(JobExecution, cls.id == JobExecution.id)
         )
 
         if dry_run:
