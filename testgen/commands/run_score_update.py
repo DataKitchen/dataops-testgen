@@ -36,7 +36,7 @@ def run_score_update(parent_job_id: str, parent_job_key: str) -> None:
 def _rollup_profiling(parent_je_id: UUID) -> None:
     with database_session() as session:
         profiling_run = session.scalars(
-            select(ProfilingRun).where(ProfilingRun.job_execution_id == parent_je_id)
+            select(ProfilingRun).where(ProfilingRun.id == parent_je_id)
         ).first()
         if not profiling_run:
             LOG.error("No profiling_run found for job execution %s; skipping score rollup", parent_je_id)
@@ -60,7 +60,7 @@ def _rollup_test(parent_je_id: UUID) -> None:
         row = session.execute(
             select(TestRun.id, TestRun.test_starttime, TestSuite.table_groups_id, TestSuite.project_code)
             .join(TestSuite, TestRun.test_suite_id == TestSuite.id)
-            .where(TestRun.job_execution_id == parent_je_id)
+            .where(TestRun.id == parent_je_id)
         ).first()
         if not row:
             LOG.error("No test_run found for job execution %s; skipping score rollup", parent_je_id)

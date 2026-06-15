@@ -669,7 +669,7 @@ def get_profiling_anomalies_by_ids(anomaly_ids: list[str]) -> pd.DataFrame:
         t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
         t.dq_dimension, r.impact_dimension,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
-        p.job_execution_id::VARCHAR as job_execution_id,
+        p.id::VARCHAR as job_execution_id,
         tg.table_groups_name, tg.project_code,
         dcc.functional_data_type,
         dcc.description as column_description,

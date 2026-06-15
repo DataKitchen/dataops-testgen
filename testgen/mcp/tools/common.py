@@ -602,7 +602,7 @@ def resolve_profiling_run(job_execution_id: str) -> ProfilingRun:
     so callers don't leak existence of runs they shouldn't see.
     """
     run_uuid = parse_uuid(job_execution_id, "job_execution_id")
-    run = ProfilingRun.get_by_id_or_job(run_uuid)
+    run = ProfilingRun.get(run_uuid)
     perms = get_project_permissions()
     if run is None or not perms.has_access(run.project_code):
         raise MCPResourceNotAccessible("Profiling run", job_execution_id)

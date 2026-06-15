@@ -42,13 +42,9 @@ def run_data_cleanup(project_code: str, retention_days: int) -> None:
     with database_session():
         protected_profiling_ids = ProfilingRun.find_latest_per_table_group(project_code)
         protected_test_run_ids = TestRun.find_latest_per_test_suite(project_code)
-        # Translate protected run ids → their job_execution_ids so the JE sweep
-        # can carve them out. Nulls (older runs without a JE) are filtered here.
-        je_map = {
-            **ProfilingRun.get_job_execution_ids(list(protected_profiling_ids)),
-            **TestRun.get_job_execution_ids(list(protected_test_run_ids)),
-        }
-        protected_job_execution_ids = {je for je in je_map.values() if je is not None}
+        # The run id is the job execution id, so the protected run ids are
+        # already the job executions the sweep must carve out.
+        protected_job_execution_ids = protected_profiling_ids | protected_test_run_ids
 
     LOG.info(
         "Protected latest runs: profiling=%d test=%d job_executions=%d",
