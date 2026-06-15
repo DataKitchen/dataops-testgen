@@ -96,7 +96,6 @@ def _profile_row(
 
 def _profiling_run(
     id_=None,
-    job_execution_id=None,
     table_groups_id=None,
     status="Complete",
     profiling_starttime=None,
@@ -105,7 +104,6 @@ def _profiling_run(
 ):
     run = MagicMock()
     run.id = id_ or uuid4()
-    run.job_execution_id = job_execution_id or uuid4()
     run.table_groups_id = table_groups_id or uuid4()
     run.status = status
     run.profiling_starttime = profiling_starttime or datetime(2026, 5, 10, 12, 0)
@@ -283,7 +281,7 @@ def test_compare_profiling_runs_auto_baseline(
     mock_iss_type.select_where.return_value = []
 
     with _patch_session([_je(), _je()]):
-        result = compare_profiling_runs(str(target_run.job_execution_id))
+        result = compare_profiling_runs(str(target_run.id))
 
     assert "Profiling Run Comparison" in result
     assert "Target" in result and "Baseline" in result
@@ -298,7 +296,7 @@ def test_compare_profiling_runs_rejects_non_completed_target(mock_resolve, db_se
 
     with _patch_session([_je(status=JobStatus.RUNNING)]):
         with pytest.raises(MCPUserError, match="Target run is in `Running` state"):
-            compare_profiling_runs(str(target_run.job_execution_id))
+            compare_profiling_runs(str(target_run.id))
 
 
 @patch("testgen.mcp.tools.profile_history.resolve_profiling_run")
@@ -308,7 +306,7 @@ def test_compare_profiling_runs_rejects_canceled_target(mock_resolve, db_session
 
     with _patch_session([_je(status=JobStatus.CANCELED)]):
         with pytest.raises(MCPUserError, match="`Canceled`"):
-            compare_profiling_runs(str(target_run.job_execution_id))
+            compare_profiling_runs(str(target_run.id))
 
 
 @patch("testgen.mcp.tools.profile_history.resolve_profiling_run")
@@ -320,8 +318,8 @@ def test_compare_profiling_runs_rejects_cross_table_group(mock_resolve, db_sessi
     with _patch_session([_je()]):
         with pytest.raises(MCPUserError, match="same table group"):
             compare_profiling_runs(
-                str(target_run.job_execution_id),
-                str(baseline_run.job_execution_id),
+                str(target_run.id),
+                str(baseline_run.id),
             )
 
 
@@ -338,7 +336,7 @@ def test_compare_profiling_runs_auto_baseline_first_run(mock_resolve, db_session
 
     with _patch_session([_je()]):
         with pytest.raises(MCPUserError, match="no earlier completed profiling run"):
-            compare_profiling_runs(str(target_run.job_execution_id))
+            compare_profiling_runs(str(target_run.id))
 
 
 @patch("testgen.mcp.tools.profile_history.HygieneIssue")
@@ -361,7 +359,7 @@ def test_compare_profiling_runs_identical_runs_renders_no_changes(
     mock_iss_type.select_where.return_value = []
 
     with _patch_session([_je(), _je()]):
-        result = compare_profiling_runs(str(target_run.job_execution_id))
+        result = compare_profiling_runs(str(target_run.id))
 
     assert "No changes between target and baseline" in result
 

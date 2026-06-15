@@ -319,7 +319,8 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
             test_run = next(iter(select_test_runs_where(TestRun.id == je_id)), None)
             if test_run:
                 TestRun.cascade_delete([str(test_run.id)])
-            get_current_session().delete(job_exec)
+            else:
+                get_current_session().delete(job_exec)
         get_test_run_summaries.clear()
         Router().set_query_params({"page": 1})
     except Exception:
