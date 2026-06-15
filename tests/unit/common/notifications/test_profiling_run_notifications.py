@@ -107,7 +107,6 @@ def test_send_profiling_run_notification(
 ):
     profiling_run = ProfilingRun(
         id="pr-id",
-        job_execution_id="pr-id",
         table_groups_id="tg-id",
         project_code="proj",
     )

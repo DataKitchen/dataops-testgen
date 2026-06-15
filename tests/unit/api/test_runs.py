@@ -70,7 +70,7 @@ def _mock_profiling_run(**overrides):
 @patch(f"{MODULE}.TestRun")
 def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
     job = _mock_job()
-    mock_tr_cls.get_by_id_or_job.return_value = _mock_test_run()
+    mock_tr_cls.get.return_value = _mock_test_run()
     mock_result_cls.count_by_status.return_value = ResultStatusCounts(
         passed=90, failed=5, warning=3, error=2, log=0, dismissed=12,
     )
@@ -92,7 +92,7 @@ def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
 @patch(f"{MODULE}.TestRun")
 def test_get_test_run_pending_no_run(mock_tr_cls):
     job = _mock_job(status="pending", started_at=None, completed_at=None)
-    mock_tr_cls.get_by_id_or_job.return_value = None
+    mock_tr_cls.get.return_value = None
 
     result = get_test_run(job)
 
@@ -110,7 +110,7 @@ def test_get_test_run_pending_no_run(mock_tr_cls):
 @patch(f"{MODULE}.ProfilingRun")
 def test_get_profiling_run_completed(mock_pr_cls, mock_issue_cls):
     job = _mock_job()
-    mock_pr_cls.get_by_id_or_job.return_value = _mock_profiling_run()
+    mock_pr_cls.get.return_value = _mock_profiling_run()
     mock_issue_cls.count_by_likelihood.return_value = IssueLikelihoodCounts(
         definite=5, likely=3, possible=8, dismissed=2,
     )
@@ -131,7 +131,7 @@ def test_get_profiling_run_completed(mock_pr_cls, mock_issue_cls):
 @patch(f"{MODULE}.ProfilingRun")
 def test_get_profiling_run_pending_no_run(mock_pr_cls):
     job = _mock_job(status="pending", started_at=None, completed_at=None)
-    mock_pr_cls.get_by_id_or_job.return_value = None
+    mock_pr_cls.get.return_value = None
 
     result = get_profiling_run(job)
 

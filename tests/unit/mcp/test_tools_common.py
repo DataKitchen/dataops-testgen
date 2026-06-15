@@ -311,7 +311,7 @@ def _mock_perms(allowed_projects=("demo",)):
 def test_resolve_profiling_run_happy_path(mock_pr_cls, mock_get_perms, db_session_mock):
     run = MagicMock()
     run.project_code = "demo"
-    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_pr_cls.get.return_value = run
     mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
 
     result = resolve_profiling_run(str(uuid4()))
@@ -322,7 +322,7 @@ def test_resolve_profiling_run_happy_path(mock_pr_cls, mock_get_perms, db_sessio
 @patch("testgen.mcp.tools.common.get_project_permissions")
 @patch("testgen.mcp.tools.common.ProfilingRun")
 def test_resolve_profiling_run_unknown_run_id(mock_pr_cls, mock_get_perms, db_session_mock):
-    mock_pr_cls.get_by_id_or_job.return_value = None
+    mock_pr_cls.get.return_value = None
     mock_get_perms.return_value = _mock_perms()
 
     with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
@@ -335,7 +335,7 @@ def test_resolve_profiling_run_inaccessible_project(mock_pr_cls, mock_get_perms,
     """Run exists but caller can't access its project — same unified error as unknown run."""
     run = MagicMock()
     run.project_code = "forbidden"
-    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_pr_cls.get.return_value = run
     mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
 
     with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):

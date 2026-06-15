@@ -267,7 +267,7 @@ def test_list_column_profiles_with_valid_job_execution_id(
     pr.project_code = tg.project_code
 
     mock_tg_cls.get.return_value = tg
-    mock_pr_cls.get_by_id_or_job.return_value = pr
+    mock_pr_cls.get.return_value = pr
     mock_dcc_cls.list_for_table_group.return_value = ([_column_summary()], 1)
 
     from testgen.mcp.tools.profiling import list_column_profiles
@@ -289,7 +289,7 @@ def test_list_column_profiles_rejects_je_from_different_tg(
     pr.project_code = tg.project_code
 
     mock_tg_cls.get.return_value = tg
-    mock_pr_cls.get_by_id_or_job.return_value = pr
+    mock_pr_cls.get.return_value = pr
 
     from testgen.mcp.tools.profiling import list_column_profiles
     with pytest.raises(MCPResourceNotAccessible, match="Profiling run .* not found or not accessible"):
@@ -300,7 +300,7 @@ def test_list_column_profiles_rejects_je_from_different_tg(
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_list_column_profiles_rejects_unknown_je(mock_tg_cls, mock_pr_cls, db_session_mock):
     mock_tg_cls.get.return_value = _mock_table_group()
-    mock_pr_cls.get_by_id_or_job.return_value = None
+    mock_pr_cls.get.return_value = None
 
     from testgen.mcp.tools.profiling import list_column_profiles
     with pytest.raises(MCPResourceNotAccessible, match="Profiling run .* not found or not accessible"):
@@ -640,7 +640,7 @@ def test_get_profiling_run_returns_detail(mock_run_cls, db_session_mock):
     summary = _mock_profiling_run()
     mock_run_cls.select_summary.return_value = ([summary], 1)
     mock_run = MagicMock(project_code="demo")
-    mock_run_cls.get_by_id_or_job.return_value = mock_run
+    mock_run_cls.get.return_value = mock_run
     mock_run_cls.select_table_breakdown.return_value = [
         MagicMock(schema_name="demo", table_name="orders", record_ct=1000, column_ct=5, anomaly_ct=2),
     ]
@@ -671,7 +671,7 @@ def test_get_profiling_run_pending_no_breakdown(mock_run_cls, db_session_mock):
         anomalies_possible_ct=None, dq_score_profiling=None,
     )
     mock_run_cls.select_summary.return_value = ([summary], 1)
-    mock_run_cls.get_by_id_or_job.return_value = MagicMock(project_code="demo")
+    mock_run_cls.get.return_value = MagicMock(project_code="demo")
 
     with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
         mock_compute.return_value = ProjectPermissions(
@@ -807,7 +807,7 @@ def _column_detail(**overrides) -> ColumnProfileDetail:
         # Run identity
         "profile_run_id": uuid4(),
         "profile_run_je_id": uuid4(),
-        "profile_run_status": "Complete",
+        "profile_run_status": JobStatus.COMPLETED,
         "profile_run_started_at": datetime(2026, 5, 1, 12, 0, 0),
         "profile_run_ended_at": datetime(2026, 5, 1, 12, 5, 0),
         "profile_run_log_message": None,
@@ -1073,7 +1073,7 @@ def test_get_column_profile_detail_pinned_run_without_column_rejects(
     pr.project_code = tg.project_code
 
     mock_tg_cls.get.return_value = tg
-    mock_pr_cls.get_by_id_or_job.return_value = pr
+    mock_pr_cls.get.return_value = pr
     mock_dcc_cls.get_column_detail.return_value = _column_detail(
         profile_run_id=None,
         profile_run_je_id=None,
@@ -1152,7 +1152,7 @@ def test_get_column_profile_detail_pinned_run_passes_id_to_model(
     pr.project_code = tg.project_code
 
     mock_tg_cls.get.return_value = tg
-    mock_pr_cls.get_by_id_or_job.return_value = pr
+    mock_pr_cls.get.return_value = pr
     mock_dcc_cls.get_column_detail.return_value = _column_detail()
 
     from testgen.mcp.tools.profiling import get_column_profile_detail
@@ -1173,7 +1173,7 @@ def test_get_column_profile_detail_pinned_run_from_different_tg_unified_error(
     pr.project_code = tg.project_code
 
     mock_tg_cls.get.return_value = tg
-    mock_pr_cls.get_by_id_or_job.return_value = pr
+    mock_pr_cls.get.return_value = pr
 
     from testgen.mcp.tools.profiling import get_column_profile_detail
     with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
@@ -1188,7 +1188,7 @@ def test_get_column_profile_detail_pinned_run_unknown_unified_error(
     mock_tg_cls, mock_pr_cls, db_session_mock,
 ):
     mock_tg_cls.get.return_value = _mock_table_group()
-    mock_pr_cls.get_by_id_or_job.return_value = None
+    mock_pr_cls.get.return_value = None
 
     from testgen.mcp.tools.profiling import get_column_profile_detail
     with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
@@ -1208,7 +1208,7 @@ def test_get_column_profile_detail_running_run_rejects_with_status(
     mock_tg_cls.get.return_value = _mock_table_group()
     je_id = uuid4()
     mock_dcc_cls.get_column_detail.return_value = _column_detail(
-        profile_run_status="Running",
+        profile_run_status=JobStatus.RUNNING,
         profile_run_je_id=je_id,
         profile_run_ended_at=None,
     )
@@ -1230,7 +1230,7 @@ def test_get_column_profile_detail_error_run_includes_log_message(
     mock_tg_cls.get.return_value = _mock_table_group()
     je_id = uuid4()
     mock_dcc_cls.get_column_detail.return_value = _column_detail(
-        profile_run_status="Error",
+        profile_run_status=JobStatus.ERROR,
         profile_run_je_id=je_id,
         profile_run_log_message="connection timed out",
     )
@@ -1668,8 +1668,8 @@ def test_get_column_frequent_values_surfaces_job_execution_id_not_profile_run_id
     from testgen.mcp.tools.profiling import get_column_frequent_values
     result = get_column_frequent_values(str(uuid4()), "customers", "country")
 
-    # The internal profile_run_id PK must not leak; only the job_execution_id is followable.
-    assert str(run.job_execution_id) in result
+    # The internal profile_run_id PK must not leak; only the run id (the job execution id) is followable.
+    assert str(run.id) in result
     assert str(profile.profile_run_id) not in result
 
 
