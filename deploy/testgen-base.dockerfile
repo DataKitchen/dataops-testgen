@@ -27,9 +27,7 @@ RUN apk update && apk upgrade && apk add --no-cache \
     openblas=0.3.30-r2 \
     openblas-dev=0.3.30-r2 \
     unixodbc=2.3.14-r0 \
-    unixodbc-dev=2.3.14-r0 \
-    libarrow=21.0.0-r4 \
-    apache-arrow-dev=21.0.0-r4
+    unixodbc-dev=2.3.14-r0
 
 COPY --chmod=775 ./deploy/install_linuxodbc.sh /tmp/dk/install_linuxodbc.sh
 RUN /tmp/dk/install_linuxodbc.sh
@@ -39,7 +37,7 @@ COPY ./pyproject.toml /tmp/dk/pyproject.toml
 RUN mkdir /dk
 
 # Upgrading pip for security
-RUN python3 -m pip install --no-cache-dir --upgrade pip==26.0
+RUN python3 -m pip install --no-cache-dir --upgrade pip==26.1.2
 
 # hdbcli only ships manylinux wheels (no musl). pip 26+ correctly rejects these on Alpine.
 # We download the wheel for the correct arch, then extract it directly into site-packages
@@ -73,8 +71,7 @@ RUN apk del \
     openssl \
     linux-headers \
     openblas-dev \
-    unixodbc-dev \
-    apache-arrow-dev
+    unixodbc-dev
 
 # Remove interactive ODBC tools — not needed at runtime, and iusql triggers
 # false-positive secret detection in security scanners (SECRET-3010)
