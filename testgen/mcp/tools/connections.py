@@ -19,19 +19,23 @@ from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     SQL_FLAVOR_CODE_TO_LABEL,
+    DocGroup,
     apply_connection_params,
-    connection_display_fields,
+    effective_mode,
     format_flavor_label,
     format_page_footer,
     format_page_info,
-    infer_mode,
     parse_sql_flavor,
+    raise_validation_error,
+    render_connection_body,
     resolve_connection,
     validate_connection_fields,
     validate_limit,
     validate_page,
 )
 from testgen.mcp.tools.markdown import MdDoc
+
+_DOC_GROUP = DocGroup.MANAGE
 
 
 @with_database_session
@@ -99,7 +103,7 @@ def get_connection(connection_id: int) -> str:
     connection = resolve_connection(connection_id)
     doc = MdDoc()
     doc.heading(1, f"Connection `{connection.connection_name}`")
-    _render_connection_body(doc, connection)
+    render_connection_body(doc, connection)
     return doc.render()
 
 
@@ -151,7 +155,7 @@ def test_connection(
         connection = Connection(sql_flavor=family, sql_flavor_code=code)
 
     if connection_params is not None or connection_mode is not None:
-        mode = connection_mode if inline else _effective_mode(connection, connection_mode)
+        mode = connection_mode if inline else effective_mode(connection, connection_mode)
         apply_connection_params(connection, connection.sql_flavor_code, mode, connection_params or {})
 
     normalize_auth_fields(connection)
@@ -160,7 +164,7 @@ def test_connection(
 
     errors = validate_connection_fields(connection)
     if errors:
-        _raise_validation_error(errors, "Cannot test connection. Required fields missing or invalid.")
+        raise_validation_error(errors, "Cannot test connection. Required fields missing or invalid.")
 
     status = test_connection_status(connection)
 
@@ -181,59 +185,3 @@ def test_connection(
     if status.details:
         doc.code_block(status.details)
     return doc.render()
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _effective_mode(connection: Connection, connection_mode: str | None) -> str | None:
-    """Mode label to apply: the explicit override, else the connection's current mode."""
-    if connection_mode is not None:
-        return connection_mode
-    inferred = infer_mode(connection)
-    return str(inferred) if inferred is not None else None
-
-
-def _raise_validation_error(errors: list[str], header: str) -> None:
-    bullets = "\n".join(f"- {err}" for err in errors)
-    raise MCPUserError(f"{header}\n\n{bullets}")
-
-
-def _render_connection_body(doc: MdDoc, connection: Connection) -> None:
-    """Render every non-secret connection field below the heading.
-
-    Encrypted columns are filtered out via ``ConnField.secret``.
-    """
-    doc.field("ID", connection.connection_id, code=True)
-    doc.field("Project", connection.project_code, code=True)
-    doc.field("Type", format_flavor_label(connection.sql_flavor_code))
-
-    # Each populated, non-secret field under its flavor-specific label
-    # (e.g. "Catalog" for Databricks, "Login URL" for Salesforce).
-    for fld in connection_display_fields(connection):
-        if fld.secret:
-            continue
-        value = getattr(connection, fld.column, None)
-        if value in (None, ""):
-            continue
-        doc.field(fld.label, value, code=fld.column != "project_port")
-
-    doc.field("Authentication", _authentication_label(connection))
-    if connection.max_threads is not None:
-        doc.field("Max Threads", connection.max_threads)
-    if connection.max_query_chars is not None:
-        doc.field("Max Expression Length", connection.max_query_chars)
-
-
-def _authentication_label(connection: Connection) -> str:
-    """The connection's auth method: the active connection mode for multi-mode
-    flavors, else the implicit method (service account key, else password).
-    """
-    mode = infer_mode(connection)
-    if mode is not None:
-        return str(mode)
-    if connection.service_account_key:
-        return "Service Account Key"
-    return "Password"

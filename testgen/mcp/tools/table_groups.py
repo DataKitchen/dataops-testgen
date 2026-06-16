@@ -21,6 +21,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
+    DocGroup,
     format_flavor_label,
     format_page_footer,
     format_page_info,
@@ -31,6 +32,8 @@ from testgen.mcp.tools.common import (
 )
 from testgen.mcp.tools.markdown import MdDoc
 from testgen.utils import friendly_score
+
+_DOC_GROUP = DocGroup.MANAGE
 
 _DUPLICATE_NAME_MESSAGE = "A Table Group with the same name already exists."
 _PII_FLAG_DENIED_MESSAGE = (
