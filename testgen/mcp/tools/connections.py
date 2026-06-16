@@ -1,23 +1,19 @@
-"""MCP tools for database connection — create, update, and test database connections.
+"""MCP tools for database connections — list, get, and test database connections.
 
-Each tool gates on the ``administer`` permission. The per-flavor connection shape
-(which auth modes exist and which ``connection_params`` keys each needs) lives in
-``testgen.common.database.connection_service`` and is exposed to the model through
-the ``testgen://connection-parameters/{flavor}`` resource. Validation and
-auth-path normalization are delegated to that same module so the rules stay in
-one place.
+The per-flavor connection shape (which auth modes exist and which ``connection_params`` keys
+each needs) lives in ``testgen.common.database.connection_service`` and is exposed to the
+model through the ``testgen://connection-parameters/{flavor}`` resource. Validation and
+auth-path normalization are delegated to that same module so the rules stay in one place.
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 from testgen.common.database.connection_service import (
     apply_connection_defaults,
     normalize_auth_fields,
     test_connection_status,
 )
-from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -25,7 +21,6 @@ from testgen.mcp.tools.common import (
     SQL_FLAVOR_CODE_TO_LABEL,
     apply_connection_params,
     connection_display_fields,
-    connection_field_labels,
     format_flavor_label,
     format_page_footer,
     format_page_info,
@@ -206,18 +201,9 @@ def _raise_validation_error(errors: list[str], header: str) -> None:
     raise MCPUserError(f"{header}\n\n{bullets}")
 
 
-def _render_created_connection(connection: Connection) -> str:
-    doc = MdDoc()
-    doc.heading(1, f"Connection `{connection.connection_name}` created")
-    _render_connection_body(doc, connection)
-    return doc.render()
-
-
 def _render_connection_body(doc: MdDoc, connection: Connection) -> None:
     """Render every non-secret connection field below the heading.
 
-    Shared by ``create_connection`` (the response after a successful create) and
-    ``get_connection`` (read tool) so the surfaced field set stays consistent.
     Encrypted columns are filtered out via ``ConnField.secret``.
     """
     doc.field("ID", connection.connection_id, code=True)
@@ -251,67 +237,3 @@ def _authentication_label(connection: Connection) -> str:
     if connection.service_account_key:
         return "Service Account Key"
     return "Password"
-
-
-def _snapshot(connection: Connection) -> dict[str, Any]:
-    return {attr: getattr(connection, attr, None) for attr in _DIFF_ATTRS}
-
-
-def _render_field_value(attr: str, value: Any) -> str | None:
-    if attr == "sql_flavor_code" and value is not None:
-        return SQL_FLAVOR_CODE_TO_LABEL.get(value, value).value
-    if isinstance(value, bool):
-        return "Yes" if value else "No"
-    if value is None or value == "":
-        return None
-    return str(value)
-
-
-_DIFF_ATTRS: tuple[str, ...] = (
-    "connection_name",
-    "sql_flavor_code",
-    "project_host",
-    "project_port",
-    "project_db",
-    "project_user",
-    "project_pw_encrypted",
-    "url",
-    "connect_by_url",
-    "connect_by_key",
-    "private_key",
-    "private_key_passphrase",
-    "connect_with_identity",
-    "warehouse",
-    "http_path",
-    "service_account_key",
-    "max_threads",
-    "max_query_chars",
-)
-
-_DIFF_LABELS: dict[str, str] = {
-    "connection_name": "Name",
-    "sql_flavor_code": "Type",
-    "project_host": "Host",
-    "project_port": "Port",
-    "project_db": "Database",
-    "project_user": "Username",
-    "project_pw_encrypted": "Password",
-    "url": "URL",
-    "connect_by_url": "Connect by URL",
-    "connect_by_key": "Connect by Key-Pair",
-    "private_key": "Private Key",
-    "private_key_passphrase": "Private Key Passphrase",
-    "connect_with_identity": "Connect with Managed Identity",
-    "warehouse": "Warehouse",
-    "http_path": "HTTP Path",
-    "service_account_key": "Service Account Key",
-    "max_threads": "Max Threads",
-    "max_query_chars": "Max Expression Length",
-}
-
-_ATTR_IS_SECRET: dict[str, bool] = {
-    "project_pw_encrypted": True,
-    "private_key": True,
-    "private_key_passphrase": True,
-    "service_account_key": True,
-}

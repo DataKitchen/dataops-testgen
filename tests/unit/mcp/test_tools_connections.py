@@ -1,4 +1,4 @@
-"""Tests for the MCP connection CRUD tools — create / update / test.
+"""Tests for the core MCP connection tools — list / get / test.
 
 The tools take a flavor-shaped ``connection_params`` dict (keyed by UI label)
 plus an explicit ``connection_mode``; mapping + validation are delegated to
@@ -11,7 +11,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.database.connection_service import ConnectionStatus
-from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
+from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
 pytestmark = pytest.mark.unit

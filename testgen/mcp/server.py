@@ -146,10 +146,10 @@ def build_mcp_server(
         table_health,
     )
     from testgen.mcp.tools.connections import (
-            get_connection,
+        get_connection,
         list_connections,
         test_connection,
-        )
+    )
     from testgen.mcp.tools.data_catalog import update_catalog_metadata
     from testgen.mcp.tools.discovery import (
         get_data_inventory,
