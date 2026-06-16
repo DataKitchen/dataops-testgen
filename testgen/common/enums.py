@@ -102,3 +102,12 @@ class PiiRisk(StrEnum):
     """Risk level extracted from PII issue ``detail`` strings via ``priority`` hybrid."""
     HIGH = "High"
     MODERATE = "Moderate"
+
+
+class MonitorType(StrEnum):
+    """Stored ``test_type`` values for the four monitor test types. Surfaced to users
+    as the lowercase short labels (freshness / volume / schema / metric)."""
+    FRESHNESS = "Freshness_Trend"
+    VOLUME = "Volume_Trend"
+    SCHEMA = "Schema_Drift"
+    METRIC = "Metric_Trend"

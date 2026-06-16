@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 from datetime import UTC, date, datetime
 from math import ceil
@@ -24,7 +25,7 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.database_service import fetch_all_from_db
 from testgen.ui.services.query_cache import (
     get_monitor_schedule,
     get_project_summary,
@@ -40,6 +41,15 @@ from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
+
+# Maps the user-facing ``anomaly_type_filter`` values supplied by the dashboard
+# frontend to the internal ``test_type`` codes the model method expects.
+_DASHBOARD_ANOMALY_TYPE_TO_DB: dict[str, str] = {
+    "freshness": "Freshness_Trend",
+    "volume": "Volume_Trend",
+    "schema": "Schema_Drift",
+    "metrics": "Metric_Trend",
+}
 
 PAGE_ICON = "apps_outage"
 PAGE_TITLE = "Monitors"
@@ -106,7 +116,7 @@ class MonitorsDashboardPage(Page):
         all_monitored_tables_count = 0
         monitor_changes_summary = None
         auto_open_table = None
-        
+
         current_page = int(current_page)
         items_per_page = int(items_per_page)
         page_start = current_page * items_per_page
@@ -123,7 +133,7 @@ class MonitorsDashboardPage(Page):
                     if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
                         sort_field = None
 
-                    monitored_tables_page = get_monitor_changes_by_tables(
+                    monitored_tables_page, all_monitored_tables_count = get_monitor_changes_by_tables(
                         table_group_id,
                         table_name_filter=table_name_filter,
                         anomaly_type_filter=anomaly_type_filter,
@@ -131,11 +141,6 @@ class MonitorsDashboardPage(Page):
                         sort_order=sort_order,
                         limit=int(items_per_page),
                         offset=page_start,
-                    )
-                    all_monitored_tables_count = count_monitor_changes_by_tables(
-                        table_group_id,
-                        table_name_filter=table_name_filter,
-                        anomaly_type_filter=anomaly_type_filter,
                     )
                     monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
@@ -348,249 +353,54 @@ def get_monitor_changes_by_tables(
     sort_order: Literal["asc"] | Literal["desc"] | None = None,
     limit: int | None = None,
     offset: int | None = None,
-) -> list[dict]:
-    query, params = _monitor_changes_by_tables_query(
+) -> tuple[list[dict], int]:
+    """Per-monitored-table summaries shaped for the dashboard's JSON payload.
+
+    Returns ``(rows, total)`` so the dashboard can fill its pager without an extra
+    round-trip to the model (which would re-run the heavy CTE twice — once for the
+    rows, once for the count — just to throw the rows away). Rows are dicts (rather
+    than ``MonitorTableSummary`` dataclasses) because the monitor-dashboard widget
+    consumes the payload via ``make_json_safe``. Each row is augmented with
+    ``table_group_id`` to match the historical payload shape.
+    """
+    page = 1 + (offset // limit) if limit and offset else 1
+    summaries, total = TableGroup.list_monitor_table_summaries(
         table_group_id,
+        anomaly_types=_dashboard_anomaly_types(anomaly_type_filter),
+        sort_by=_dashboard_sort_to_model(sort_field, sort_order),
         table_name_filter=table_name_filter,
-        anomaly_type_filter=anomaly_type_filter,
-        sort_field=sort_field,
-        sort_order=sort_order,
-        limit=limit,
-        offset=offset,
+        page=page,
+        limit=limit or 1000,
     )
-
-    results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
-
-
-@st.cache_data(show_spinner=False)
-def count_monitor_changes_by_tables(
-    table_group_id: str,
-    table_name_filter: str | None = None,
-    anomaly_type_filter: list[str] | None = None,
-) -> int:
-    query, params = _monitor_changes_by_tables_query(
-        table_group_id,
-        table_name_filter=table_name_filter,
-        anomaly_type_filter=anomaly_type_filter,
-    )
-    count_query = f"SELECT COUNT(*) AS count FROM ({query}) AS subquery"
-    result = execute_db_query(count_query, params)
-    return result or 0
+    rows = [{**dataclasses.asdict(s), "table_group_id": table_group_id} for s in summaries]
+    return rows, total
 
 
 @st.cache_data(show_spinner=False)
 def summarize_monitor_changes(table_group_id: str) -> dict:
-    query, params = _monitor_changes_by_tables_query(table_group_id)
-    count_query = f"""
-    SELECT
-        lookback,
-        MIN(lookback_start) AS lookback_start,
-        MAX(lookback_end) AS lookback_end,
-        SUM(freshness_anomalies)::INTEGER AS freshness_anomalies,
-        SUM(volume_anomalies)::INTEGER AS volume_anomalies,
-        SUM(schema_anomalies)::INTEGER AS schema_anomalies,
-        SUM(metric_anomalies)::INTEGER AS metric_anomalies,
-        BOOL_OR(freshness_error_message IS NOT NULL) AS freshness_has_errors,
-        BOOL_OR(volume_error_message IS NOT NULL) AS volume_has_errors,
-        BOOL_OR(schema_error_message IS NOT NULL) AS schema_has_errors,
-        BOOL_OR(metric_error_message IS NOT NULL) AS metric_has_errors,
-        BOOL_OR(freshness_is_training) AND BOOL_AND(freshness_is_training OR freshness_is_pending) AS freshness_is_training,
-        BOOL_OR(volume_is_training) AND BOOL_AND(volume_is_training OR volume_is_pending) AS volume_is_training,
-        BOOL_OR(metric_is_training) AND BOOL_AND(metric_is_training OR metric_is_pending) AS metric_is_training,
-        BOOL_AND(freshness_is_pending) AS freshness_is_pending,
-        BOOL_AND(volume_is_pending) AS volume_is_pending,
-        BOOL_AND(schema_is_pending) AS schema_is_pending,
-        BOOL_AND(metric_is_pending) AS metric_is_pending
-    FROM ({query}) AS subquery
-    GROUP BY lookback
-    """
-
-    result = fetch_one_from_db(count_query, params)
-    return {**result} if result else {
-        "lookback": 0,
-        "freshness_anomalies": 0,
-        "volume_anomalies": 0,
-        "schema_anomalies": 0,
-        "metric_anomalies": 0,
-        "freshness_is_training": False,
-        "volume_is_training": False,
-        "metric_is_training": False,
-        "freshness_is_pending": False,
-        "volume_is_pending": False,
-        "schema_is_pending": False,
-        "metric_is_pending": False,
-        "freshness_has_errors": False,
-        "volume_has_errors": False,
-        "schema_has_errors": False,
-        "metric_has_errors": False,
-    }
+    return dataclasses.asdict(TableGroup.get_monitor_group_summary(table_group_id))
 
 
-def _monitor_changes_by_tables_query(
-    table_group_id: str,
-    table_name_filter: str | None = None,
-    anomaly_type_filter: list[str] | None = None,
-    sort_field: str | None = None,
-    sort_order: Literal["asc"] | Literal["desc"] | None = None,
-    limit: int | None = None,
-    offset: int | None = None,
-) -> tuple[str, dict]:
-    query = f"""
-    WITH ranked_test_runs AS (
-        SELECT
-            test_runs.id,
-            test_runs.test_starttime,
-            COALESCE(test_suites.monitor_lookback, 1) AS lookback,
-            ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
-        FROM table_groups
-        INNER JOIN test_runs
-            ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
-        INNER JOIN test_suites
-            ON (table_groups.monitor_test_suite_id = test_suites.id)
-        WHERE table_groups.id = :table_group_id
-    ),
-    lookback_window AS (
-        SELECT MIN(test_starttime) AS lookback_start
-        FROM ranked_test_runs
-        WHERE position <= lookback
-    ),
-    latest_tables AS (
-        SELECT DISTINCT
-            table_chars.schema_name,
-            table_chars.table_name
-        FROM data_table_chars table_chars
-        CROSS JOIN lookback_window
-        WHERE table_chars.table_groups_id = :table_group_id
-            -- Include current tables and tables dropped within lookback window
-            AND (table_chars.drop_date IS NULL OR table_chars.drop_date >= lookback_window.lookback_start)
-            {"AND table_chars.table_name ILIKE :table_name_filter" if table_name_filter else ''}
-    ),
-    monitor_results AS (
-        SELECT
-            latest_tables.table_name,
-            results.test_time,
-            results.test_type,
-            results.result_code,
-            ranked_test_runs.lookback,
-            ranked_test_runs.position,
-            ranked_test_runs.test_starttime,
-            -- result_code = -1 indicates training mode
-            CASE WHEN results.result_code = -1 THEN 1 ELSE 0 END AS is_training,
-            CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
-            CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS volume_anomaly,
-            CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END AS schema_anomaly,
-            CASE WHEN results.test_type = 'Metric_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS metric_anomaly,
-            CASE WHEN results.test_type = 'Freshness_Trend' THEN results.result_signal ELSE NULL END AS freshness_interval,
-            CASE WHEN results.test_type = 'Volume_Trend' THEN results.result_signal::BIGINT ELSE NULL END AS row_count,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN SPLIT_PART(results.result_signal, '|', 1) ELSE NULL END AS table_change,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 2), '')::INT ELSE 0 END AS col_adds,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 3), '')::INT ELSE 0 END AS col_drops,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 4), '')::INT ELSE 0 END AS col_mods,
-            CASE WHEN results.result_status = 'Error' THEN results.result_message ELSE NULL END AS error_message
-        FROM latest_tables
-        LEFT JOIN ranked_test_runs ON TRUE
-        LEFT JOIN test_results AS results
-            ON results.test_run_id = ranked_test_runs.id
-            AND results.table_name = latest_tables.table_name
-        WHERE ranked_test_runs.position IS NULL
-            -- Also capture 1 run before the lookback to get baseline results
-            OR ranked_test_runs.position <= ranked_test_runs.lookback + 1
-    ),
-    monitor_tables AS (
-        SELECT
-            :table_group_id AS table_group_id,
-            table_name,
-            MAX(lookback) AS lookback,
-            SUM(freshness_anomaly) AS freshness_anomalies,
-            SUM(volume_anomaly) AS volume_anomalies,
-            SUM(schema_anomaly) AS schema_anomalies,
-            SUM(metric_anomaly) AS metric_anomalies,
-            MAX(test_time - (COALESCE(NULLIF(freshness_interval, 'Unknown')::INTEGER, 0) * INTERVAL '1 minute'))
-                FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS latest_update,
-            MAX(row_count) FILTER (WHERE position = 1) AS row_count,
-            SUM(col_adds) AS column_adds,
-            SUM(col_drops) AS column_drops,
-            SUM(col_mods) AS column_mods,
-            MAX(error_message) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_error_message,
-            MAX(error_message) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_error_message,
-            MAX(error_message) FILTER (WHERE test_type = 'Schema_Drift' AND position = 1) AS schema_error_message,
-            MAX(error_message) FILTER (WHERE test_type = 'Metric_Trend' AND position = 1) AS metric_error_message,
-            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_is_training,
-            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_is_training,
-            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Metric_Trend' AND position = 1) AS metric_is_training,
-            BOOL_OR(test_type = 'Freshness_Trend') IS NOT TRUE AS freshness_is_pending,
-            BOOL_OR(test_type = 'Volume_Trend') IS NOT TRUE AS volume_is_pending,
-            -- Schema monitor only creates results on schema changes (Failed)
-            -- Mark it as pending only if there are no results of any test type
-            BOOL_OR(test_time IS NOT NULL) IS NOT TRUE AS schema_is_pending,
-            BOOL_OR(test_type = 'Metric_Trend') IS NOT TRUE AS metric_is_pending,
-            CASE
-                -- Mark as Dropped if latest Schema Drift result for the table indicates it was dropped
-                WHEN (ARRAY_AGG(table_change ORDER BY test_time DESC) FILTER (WHERE table_change IS NOT NULL))[1] = 'D'
-                    THEN 'dropped'
-                -- Only mark as Added if latest change does not indicate a drop
-                WHEN MAX(CASE WHEN table_change = 'A' THEN 1 ELSE 0 END) = 1
-                    THEN 'added'
-                WHEN SUM(schema_anomaly) > 0
-                    THEN 'modified'
-                ELSE NULL
-            END AS table_state
-        FROM monitor_results
-        -- Only aggregate within lookback runs
-        WHERE position IS NULL OR position <= COALESCE(lookback, 1)
-        GROUP BY table_name
-    ),
-    table_bounds AS (
-        SELECT
-            table_name,
-            MIN(position) AS min_position,
-            MAX(position) AS max_position
-        FROM monitor_results
-        WHERE position IS NOT NULL
-        GROUP BY table_name
-    ),
-    baseline_tables AS (
-        SELECT
-            monitor_results.table_name,
-            MIN(monitor_results.test_starttime) FILTER (
-                WHERE monitor_results.position = LEAST(monitor_results.lookback + 1, table_bounds.max_position)
-            ) AS lookback_start,
-            MAX(monitor_results.test_starttime) FILTER (
-                WHERE monitor_results.position = GREATEST(1, table_bounds.min_position)
-            ) AS lookback_end,
-            MAX(monitor_results.row_count) FILTER (
-                WHERE monitor_results.test_type = 'Volume_Trend'
-                AND monitor_results.position = LEAST(monitor_results.lookback + 1, table_bounds.max_position)
-            ) AS previous_row_count
-        FROM monitor_results
-        JOIN table_bounds ON monitor_results.table_name = table_bounds.table_name
-        GROUP BY monitor_results.table_name
-    )
-    SELECT
-        monitor_tables.*,
-        baseline_tables.lookback_start,
-        baseline_tables.lookback_end,
-        baseline_tables.previous_row_count
-    FROM monitor_tables
-    LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
-    {f"WHERE ({' OR '.join(f'{ANOMALY_TYPE_FILTERS[t]} > 0' for t in anomaly_type_filter)})" if anomaly_type_filter else ""}
-    ORDER BY {"LOWER(monitor_tables.table_name)" if not sort_field or sort_field == "table_name" else f"monitor_tables.{sort_field}"}
-    {"DESC" if sort_order == "desc" else "ASC"} NULLS LAST
-    {"LIMIT :limit" if limit else ""}
-    {"OFFSET :offset" if offset else ""}
-    """
+def _dashboard_anomaly_types(anomaly_type_filter: list[str] | None) -> list[str] | None:
+    """Map dashboard-form anomaly type labels to internal ``test_type`` codes."""
+    if not anomaly_type_filter:
+        return None
+    return [
+        _DASHBOARD_ANOMALY_TYPE_TO_DB[t]
+        for t in anomaly_type_filter
+        if t in _DASHBOARD_ANOMALY_TYPE_TO_DB
+    ] or None
 
-    escaped_table_name_filter = table_name_filter.replace("_", "\\_") if table_name_filter else None
-    params = {
-        "table_group_id": table_group_id,
-        "table_name_filter": f"%{escaped_table_name_filter}%" if escaped_table_name_filter else None,
-        "sort_field": sort_field,
-        "limit": limit,
-        "offset": offset,
-    }
 
-    return query, params
+def _dashboard_sort_to_model(
+    sort_field: str | None,
+    sort_order: Literal["asc"] | Literal["desc"] | None,
+) -> str | None:
+    """Translate the dashboard's (sort_field, sort_order) pair into the model's
+    ``sort_by`` form (the field name, optionally suffixed with ``_desc``)."""
+    if not sort_field:
+        return None
+    return f"{sort_field}_desc" if sort_order == "desc" else sort_field
 
 
 def set_param_values(payload: dict) -> None:
@@ -913,7 +723,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_m
     CROSS JOIN target_tests tt
     LEFT JOIN test_results AS results
         ON (
-            results.test_run_id = active_runs.id 
+            results.test_run_id = active_runs.id
             AND results.test_type = tt.test_type
             AND results.table_name = :table_name
         )
