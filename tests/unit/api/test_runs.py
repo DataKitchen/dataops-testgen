@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.api.runs import get_profiling_run, get_test_run
-from testgen.common.models.hygiene_issue import IssueLikelihoodCounts
+from testgen.common.models.hygiene_issue import HygieneIssueCounts, IssueCounts, PotentialPiiCounts
 from testgen.common.models.test_result import ResultStatusCounts
 
 pytestmark = pytest.mark.unit
@@ -84,9 +84,9 @@ def test_get_test_run_completed(mock_tr_cls, mock_result_cls, mock_session):
     assert result.table_group_id == TABLE_GROUP_ID
     assert result.result is not None
     assert result.result.score == 0.95
-    assert result.result.tests.passed == 90
-    assert result.result.tests.failed == 5
-    assert result.result.tests.dismissed == 12
+    assert result.result.result_counts.passed == 90
+    assert result.result.result_counts.failed == 5
+    assert result.result.result_counts.dismissed == 12
 
 
 @patch(f"{MODULE}.TestRun")
@@ -111,8 +111,10 @@ def test_get_test_run_pending_no_run(mock_tr_cls):
 def test_get_profiling_run_completed(mock_pr_cls, mock_issue_cls):
     job = _mock_job()
     mock_pr_cls.get.return_value = _mock_profiling_run()
-    mock_issue_cls.count_by_likelihood.return_value = IssueLikelihoodCounts(
-        definite=5, likely=3, possible=8, dismissed=2,
+    mock_issue_cls.count_for_run.return_value = IssueCounts(
+        hygiene_issues=HygieneIssueCounts(definite=5, likely=3, possible=8),
+        potential_pii=PotentialPiiCounts(high=4, moderate=6),
+        dismissed=2,
     )
 
     result = get_profiling_run(job)
@@ -123,9 +125,12 @@ def test_get_profiling_run_completed(mock_pr_cls, mock_issue_cls):
     assert result.result is not None
     assert result.result.score == 0.88
     assert result.result.table_ct == 10
-    assert result.result.issues.definite == 5
-    assert result.result.issues.likely == 3
-    assert result.result.issues.dismissed == 2
+    assert result.result.issue_counts.hygiene_issues.definite == 5
+    assert result.result.issue_counts.hygiene_issues.likely == 3
+    assert result.result.issue_counts.hygiene_issues.possible == 8
+    assert result.result.issue_counts.potential_pii.high == 4
+    assert result.result.issue_counts.potential_pii.moderate == 6
+    assert result.result.issue_counts.dismissed == 2
 
 
 @patch(f"{MODULE}.ProfilingRun")

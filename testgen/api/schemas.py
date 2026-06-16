@@ -48,8 +48,8 @@ class JobListResponse(BaseModel):
 # --- Test Runs ---
 
 
-class TestBreakdown(BaseModel):
-    """Counts of test results by outcome status."""
+class ResultCounts(BaseModel):
+    """Counts of test results by outcome status, with dismissed results separated."""
 
     passed: int = 0
     failed: int = 0
@@ -63,7 +63,7 @@ class TestRunResult(BaseModel):
     """Run-specific data populated when execution completes."""
 
     score: float | None = None
-    tests: TestBreakdown
+    result_counts: ResultCounts
 
 
 class TestRunResponse(BaseModel):
@@ -81,12 +81,26 @@ class TestRunResponse(BaseModel):
 # --- Profiling Runs ---
 
 
-class IssueBreakdown(BaseModel):
-    """Counts of hygiene issues by likelihood category."""
+class HygieneIssueCounts(BaseModel):
+    """Counts of active data-quality hygiene issues by likelihood category."""
 
     definite: int = 0
     likely: int = 0
     possible: int = 0
+
+
+class PotentialPiiCounts(BaseModel):
+    """Counts of active Potential PII findings by risk level."""
+
+    high: int = 0
+    moderate: int = 0
+
+
+class IssueCounts(BaseModel):
+    """Profiling-finding breakdown: active counts by kind, plus a single dismissed total."""
+
+    hygiene_issues: HygieneIssueCounts
+    potential_pii: PotentialPiiCounts
     dismissed: int = 0
 
 
@@ -97,7 +111,7 @@ class ProfilingRunResult(BaseModel):
     table_ct: int | None = None
     column_ct: int | None = None
     record_ct: int | None = None
-    issues: IssueBreakdown
+    issue_counts: IssueCounts
 
 
 class ProfilingRunResponse(BaseModel):
