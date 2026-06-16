@@ -689,7 +689,7 @@ class TableGroup(Entity):
         )
         query = f"""
         SELECT
-            COALESCE(MAX(lookback), :default_lookback)::INTEGER AS lookback,
+            COALESCE(MAX(lookback), 0)::INTEGER AS lookback,
             MIN(lookback_start) AS lookback_start,
             MAX(lookback_end) AS lookback_end,
             COUNT(*)::INTEGER AS total_monitored_tables,
@@ -719,9 +719,10 @@ class TableGroup(Entity):
             COALESCE(BOOL_AND(metric_is_pending), TRUE) AS metric_is_pending
         FROM ({inner_query}) AS subquery
         """
-        params = {**params, "default_lookback": lookback_override or 1}
         # Outer query has no GROUP BY — aggregates over zero rows still yield one
-        # COALESCE'd row, so .first() never returns None here.
+        # COALESCE'd row, so .first() never returns None here. ``lookback`` is 0
+        # when the per-table CTE has no rows OR no runs against the monitor suite,
+        # so the dashboard / MCP can render the "no monitor runs yet" state.
         row = get_current_session().execute(text(query), params).mappings().first()
         return MonitorGroupSummary(**row)
 

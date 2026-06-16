@@ -357,27 +357,20 @@ _MONITOR_TYPE_USER_TO_DB: dict[str, MonitorType] = {
     "schema": MonitorType.SCHEMA,
     "metric": MonitorType.METRIC,
 }
-_MONITOR_TYPE_DB_TO_USER: dict[MonitorType, str] = {v: k for k, v in _MONITOR_TYPE_USER_TO_DB.items()}
 
 
-def parse_monitor_type(value: str) -> MonitorType:
+def parse_monitor_type(value: str, label: str = "monitor_type") -> MonitorType:
     """Validate a user-facing monitor type label and return the stored ``MonitorType``.
 
-    Accepts ``freshness`` / ``volume`` / ``schema`` / ``metric``.
+    Accepts ``freshness`` / ``volume`` / ``schema`` / ``metric``. ``label`` names the
+    caller's argument in the error message — pass ``"anomaly_type"`` when the
+    public arg is named differently from ``monitor_type``.
     """
     db_value = _MONITOR_TYPE_USER_TO_DB.get(value)
     if db_value is None:
         valid = ", ".join(_MONITOR_TYPE_USER_TO_DB)
-        raise MCPUserError(f"Invalid monitor_type `{value}`. Valid values: {valid}")
+        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
     return db_value
-
-
-def format_monitor_type(value: MonitorType | str) -> str:
-    """Map a stored monitor ``test_type`` to its user-facing short label."""
-    try:
-        return _MONITOR_TYPE_DB_TO_USER[MonitorType(value)]
-    except ValueError:
-        return str(value)
 
 
 class MonitorTableSort(StrEnum):

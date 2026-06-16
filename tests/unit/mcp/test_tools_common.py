@@ -873,6 +873,15 @@ def test_parse_monitor_type_lists_valid_values_on_error():
         assert label in msg
 
 
+def test_parse_monitor_type_label_override():
+    """``label`` argument lets callers tailor the error to their public arg name
+    (e.g. ``list_monitored_tables`` exposes it as ``anomaly_type``)."""
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    with pytest.raises(MCPUserError, match=r"Invalid anomaly_type `bogus`"):
+        parse_monitor_type("bogus", "anomaly_type")
+
+
 @pytest.mark.parametrize(
     "value",
     ["table_name", "anomaly_count_desc", "latest_update_desc", "row_count_change_desc"],
@@ -891,15 +900,6 @@ def test_parse_monitor_table_sort_rejects_unknown():
     msg = str(exc.value)
     for valid in ("table_name", "anomaly_count_desc", "latest_update_desc", "row_count_change_desc"):
         assert valid in msg
-
-
-def test_format_monitor_type_round_trips():
-    from testgen.common.enums import MonitorType
-    from testgen.mcp.tools.common import format_monitor_type
-
-    for member in MonitorType:
-        formatted = format_monitor_type(member)
-        assert format_monitor_type(member.value) == formatted
 
 
 def test_resolve_monitored_table_group_returns_suite():

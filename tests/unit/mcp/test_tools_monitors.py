@@ -207,6 +207,45 @@ def test_get_monitor_summary_lookback_out_of_range(db_session_mock):
 @patch(f"{MODULE}.next_scheduled_run", return_value=None)
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_monitored_table_group")
+def test_get_monitor_summary_empty_state_lookback_zero(
+    mock_resolve, mock_tg_cls, mock_next, db_session_mock,
+):
+    """When a monitor suite is configured but no runs have happened yet, the model
+    method returns ``lookback=0`` (preserves the pre-refactor signal the dashboard
+    uses to render "No monitor runs yet"). The MCP output reflects the empty state
+    rather than fabricating a one-run window."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tg_cls.get_monitor_group_summary.return_value = _group_summary(
+        lookback=0,
+        lookback_start=None,
+        lookback_end=None,
+        total_monitored_tables=0,
+        freshness_anomalies=0, volume_anomalies=0,
+        schema_anomalies=0, metric_anomalies=0,
+        freshness_is_pending=True, volume_is_pending=True,
+        schema_is_pending=True, metric_is_pending=True,
+        freshness_is_training=False, volume_is_training=False,
+        metric_is_training=False,
+    )
+
+    from testgen.mcp.tools.monitors import get_monitor_summary
+
+    with _patch_perms():
+        out = get_monitor_summary(str(tg.id))
+
+    assert "**Lookback:** 0 runs" in out, "must show 0, not a fabricated default like 1"
+    # Window start / end fields are absent in the empty case (None values render as em-dash
+    # at most, but the tool omits them when the value is falsy)
+    assert "**Window start:**" not in out
+    assert "**Window end:**" not in out
+    # All per-type status cells reflect "no results"
+    assert out.count("no results yet or not configured") == 4
+
+
+@patch(f"{MODULE}.next_scheduled_run", return_value=None)
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_monitored_table_group")
 def test_get_monitor_summary_renders_error_and_pending_states(
     mock_resolve, mock_tg_cls, mock_next, db_session_mock,
 ):
@@ -320,11 +359,15 @@ def test_list_monitored_tables_not_monitored(mock_resolve, db_session_mock):
 
 
 def test_list_monitored_tables_invalid_anomaly_type(db_session_mock):
+    """Error message must reference the caller's public arg name (``anomaly_type``)
+    rather than the helper's internal arg name (``monitor_type``)."""
     from testgen.mcp.tools.monitors import list_monitored_tables
 
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
         list_monitored_tables(str(uuid4()), anomaly_type="bogus")
-    assert "Invalid monitor_type" in str(exc.value)
+    msg = str(exc.value)
+    assert "Invalid anomaly_type" in msg
+    assert "Invalid monitor_type" not in msg
 
 
 def test_list_monitored_tables_invalid_sort_by(db_session_mock):
@@ -403,15 +446,16 @@ def test_list_monitored_tables_schema_change_column(
 def test_list_monitored_tables_training_and_pending_cells(
     mock_resolve, mock_tg_cls, db_session_mock,
 ):
+    """Status words render when the per-type count is zero."""
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
     mock_tg_cls.list_monitor_table_summaries.return_value = (
         [
             _table_summary(
                 table_name="t1",
-                freshness_is_training=True,
-                volume_is_pending=True,
-                metric_error_message="boom",
+                freshness_anomalies=0, freshness_is_training=True,
+                volume_anomalies=0, volume_is_pending=True,
+                metric_anomalies=0, metric_error_message="boom",
             ),
         ],
         1,
@@ -426,6 +470,54 @@ def test_list_monitored_tables_training_and_pending_cells(
     assert "training" in row
     assert "pending" in row
     assert "error" in row
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitored_tables_count_wins_over_training_and_pending(
+    mock_resolve, mock_tg_cls, db_session_mock,
+):
+    """A positive anomaly count must surface even when the monitor is in training
+    or pending state — otherwise the cell hides the value that made the row match
+    an ``anomaly_type`` filter, and the table doesn't agree with itself.
+
+    Precedence is error > positive count > pending > training > zero. Errors still
+    win (the latest measurement is suspect, so the historic count is misleading).
+    """
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tg_cls.list_monitor_table_summaries.return_value = (
+        [
+            _table_summary(
+                table_name="t_busy_during_learn",
+                freshness_anomalies=5, freshness_is_training=True,
+                volume_anomalies=3, volume_is_pending=True,
+                metric_anomalies=2, metric_is_training=True,
+            ),
+            _table_summary(
+                table_name="t_error_with_count",
+                freshness_anomalies=4, freshness_error_message="db down",
+            ),
+        ],
+        2,
+    )
+
+    from testgen.mcp.tools.monitors import list_monitored_tables
+
+    with _patch_perms():
+        out = list_monitored_tables(str(tg.id))
+
+    # Row 1: counts visible despite training/pending
+    row_count = next(line for line in out.splitlines() if "`t_busy_during_learn`" in line)
+    assert " 5 " in row_count, "freshness count should render despite is_training"
+    assert " 3 " in row_count, "volume count should render despite is_pending"
+    assert " 2 " in row_count, "metric count should render despite is_training"
+    assert "training" not in row_count
+    assert "pending" not in row_count
+    # Row 2: error still wins over count
+    row_error = next(line for line in out.splitlines() if "`t_error_with_count`" in line)
+    assert "error" in row_error
+    assert " 4 " not in row_error, "error must win over count (measurement is suspect)"
 
 
 @patch(f"{MODULE}.TableGroup")

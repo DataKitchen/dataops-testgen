@@ -150,7 +150,7 @@ def list_monitored_tables(
     validate_page(page)
     validate_limit(limit, 100)
 
-    monitor_type = parse_monitor_type(anomaly_type) if anomaly_type is not None else None
+    monitor_type = parse_monitor_type(anomaly_type, "anomaly_type") if anomaly_type is not None else None
     sort = parse_monitor_table_sort(sort_by) if sort_by is not None else None
 
     tg, monitor_suite = resolve_monitored_table_group(table_group_id)
@@ -245,14 +245,22 @@ def _format_monitor_cell(
     is_training: bool | None,
     has_error: bool,
 ) -> str:
-    """Render a per-table, per-monitor cell (non-schema)."""
+    """Render a per-table, per-monitor cell (non-schema).
+
+    Precedence: error > positive count > pending > training > zero. A positive
+    count wins over training/pending so anomalies stay visible when a monitor is
+    still learning, and so a row that surfaces via ``anomaly_type=X`` actually
+    shows the X count in its column.
+    """
     if has_error:
         return "error"
+    if count > 0:
+        return str(count)
     if is_pending:
         return "pending"
     if is_training:
         return "training"
-    return str(count)
+    return "0"
 
 
 def _format_schema_cell(row: MonitorTableSummary) -> str:
