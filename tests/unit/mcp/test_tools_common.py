@@ -902,6 +902,18 @@ def test_parse_monitor_table_sort_rejects_unknown():
         assert valid in msg
 
 
+def test_parse_monitor_table_sort_rejects_legacy_row_count_desc():
+    """Guard against the pre-review-feedback ``row_count_desc`` name accidentally
+    coming back: the rename to ``row_count_change_desc`` is the canonical signal
+    that the column shows a delta, not the raw current count. Drop this only when
+    introducing a deliberate replacement."""
+    from testgen.mcp.tools.common import parse_monitor_table_sort
+
+    with pytest.raises(MCPUserError, match="Invalid sort_by") as exc:
+        parse_monitor_table_sort("row_count_desc")
+    assert "row_count_change_desc" in str(exc.value)
+
+
 def test_resolve_monitored_table_group_returns_suite():
     from testgen.common.models.table_group import TableGroup
     from testgen.common.models.test_suite import TestSuite

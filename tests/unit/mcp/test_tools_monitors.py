@@ -196,12 +196,15 @@ def test_get_monitor_summary_lookback_override_applied(mock_resolve, mock_tg_cls
     assert "**Lookback:** 14 runs (override)" in out
 
 
-def test_get_monitor_summary_lookback_out_of_range(db_session_mock):
+@pytest.mark.parametrize("bad_lookback", [0, 366, 500, -1])
+def test_get_monitor_summary_lookback_out_of_range(bad_lookback, db_session_mock):
+    """Both bounds (and beyond) are pinned — the model accepts 1..365 inclusive."""
     from testgen.mcp.tools.monitors import get_monitor_summary
 
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
-        get_monitor_summary(str(uuid4()), lookback=0)
+        get_monitor_summary(str(uuid4()), lookback=bad_lookback)
     assert "between 1 and 365" in str(exc.value)
+    assert f"`{bad_lookback}`" in str(exc.value)
 
 
 @patch(f"{MODULE}.next_scheduled_run", return_value=None)

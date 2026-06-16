@@ -133,7 +133,7 @@ class MonitorsDashboardPage(Page):
                     if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
                         sort_field = None
 
-                    monitored_tables_page = get_monitor_changes_by_tables(
+                    monitored_tables_page, all_monitored_tables_count = get_monitor_changes_by_tables(
                         table_group_id,
                         table_name_filter=table_name_filter,
                         anomaly_type_filter=anomaly_type_filter,
@@ -141,11 +141,6 @@ class MonitorsDashboardPage(Page):
                         sort_order=sort_order,
                         limit=int(items_per_page),
                         offset=page_start,
-                    )
-                    all_monitored_tables_count = count_monitor_changes_by_tables(
-                        table_group_id,
-                        table_name_filter=table_name_filter,
-                        anomaly_type_filter=anomaly_type_filter,
                     )
                     monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
@@ -358,15 +353,18 @@ def get_monitor_changes_by_tables(
     sort_order: Literal["asc"] | Literal["desc"] | None = None,
     limit: int | None = None,
     offset: int | None = None,
-) -> list[dict]:
+) -> tuple[list[dict], int]:
     """Per-monitored-table summaries shaped for the dashboard's JSON payload.
 
-    Returns plain dicts (rather than ``MonitorTableSummary`` dataclasses) because the
-    monitor-dashboard widget consumes the payload via ``make_json_safe``. Each row is
-    augmented with ``table_group_id`` to match the historical payload shape.
+    Returns ``(rows, total)`` so the dashboard can fill its pager without an extra
+    round-trip to the model (which would re-run the heavy CTE twice — once for the
+    rows, once for the count — just to throw the rows away). Rows are dicts (rather
+    than ``MonitorTableSummary`` dataclasses) because the monitor-dashboard widget
+    consumes the payload via ``make_json_safe``. Each row is augmented with
+    ``table_group_id`` to match the historical payload shape.
     """
     page = 1 + (offset // limit) if limit and offset else 1
-    summaries, _total = TableGroup.list_monitor_table_summaries(
+    summaries, total = TableGroup.list_monitor_table_summaries(
         table_group_id,
         anomaly_types=_dashboard_anomaly_types(anomaly_type_filter),
         sort_by=_dashboard_sort_to_model(sort_field, sort_order),
@@ -374,23 +372,8 @@ def get_monitor_changes_by_tables(
         page=page,
         limit=limit or 1000,
     )
-    return [{**dataclasses.asdict(s), "table_group_id": table_group_id} for s in summaries]
-
-
-@st.cache_data(show_spinner=False)
-def count_monitor_changes_by_tables(
-    table_group_id: str,
-    table_name_filter: str | None = None,
-    anomaly_type_filter: list[str] | None = None,
-) -> int:
-    _items, total = TableGroup.list_monitor_table_summaries(
-        table_group_id,
-        anomaly_types=_dashboard_anomaly_types(anomaly_type_filter),
-        table_name_filter=table_name_filter,
-        page=1,
-        limit=1,
-    )
-    return total
+    rows = [{**dataclasses.asdict(s), "table_group_id": table_group_id} for s in summaries]
+    return rows, total
 
 
 @st.cache_data(show_spinner=False)
