@@ -38,6 +38,7 @@ test_types:
   usage_notes: |-
     This test verifies that combinations of values are not repeated within the table. By default when auto-generated, the test considers all columns to protect against duplication of entire rows. If you know the minimum columns that should constitute a unique record, such as a set of ID's, you should use those to make the test as sensitive as possible. Alternatively, if you know of columns you can always exclude, such as file_date or refresh_snapshot_id, remove them to tighten the test somewhat.
   active: Y
+  algorithm: Counting
   cat_test_conditions: []
   target_data_lookups:
   - id: '1409'

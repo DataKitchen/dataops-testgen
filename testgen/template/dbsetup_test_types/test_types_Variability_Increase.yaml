@@ -45,6 +45,8 @@ test_types:
     \ that should be noted and assessed by business users. If the average does not\
     \ shift, this may point to a data quality or data collection problem. "
   active: Y
+  algorithm: Statistical drift
+  statistical_technique: SD Shift
   cat_test_conditions:
   - id: '7031'
     test_type: Variability_Increase

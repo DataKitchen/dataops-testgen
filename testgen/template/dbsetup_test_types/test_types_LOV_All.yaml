@@ -34,6 +34,7 @@ test_types:
   usage_notes: |-
     This is a more restrictive form of Value Match, testing that all values in the dataset match the list provided, and also that all values present in the list appear at least once in the dataset. This would be appropriate for tables where all category values in the column are represented at least once.
   active: Y
+  algorithm: Set / lookup
   cat_test_conditions:
   - id: '7013'
     test_type: LOV_All

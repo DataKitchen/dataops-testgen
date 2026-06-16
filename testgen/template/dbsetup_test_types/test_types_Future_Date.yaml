@@ -28,13 +28,14 @@ test_types:
   test_scope: column
   dq_dimension: Timeliness
   impact_dimension: Conformance
-  health_dimension: Recency
+  health_dimension: Freshness
   threshold_description: |-
     Expected count of future dates
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: null
   active: Y
+  algorithm: Boundary check
   cat_test_conditions:
   - id: '7010'
     test_type: Future_Date

@@ -36,6 +36,7 @@ test_types:
   usage_notes: |-
     This test is appropriate for a cumulative dataset only, because it assumes all prior values are still present. It's appropriate where new records are added with more recent dates, but old dates dates do not change.
   active: Y
+  algorithm: Boundary check
   cat_test_conditions:
   - id: '7015'
     test_type: Min_Date

@@ -37,6 +37,8 @@ test_types:
   usage_notes: |-
     You can think of this as a test of similarity that measures whether the percentage of unique values is consistent with the percentage at baseline.  A significant change might indicate duplication or a telling shift in cardinality between entities. The test uses Cohen's H, a statistical test to identify a significant difference between two ratios.  Results are reported on a standardized scale, which can be interpreted via a rule-of-thumb from small to huge.  You can refine the expected threshold value as you view legitimate results of the measure over time.
   active: Y
+  algorithm: Statistical drift
+  statistical_technique: Cohen's H
   cat_test_conditions:
   - id: '7029'
     test_type: Unique_Pct

@@ -20,6 +20,7 @@ from testgen.common.models.test_definition import (
     TestDefinitionNote,
     TestDefinitionSummary,
     TestType,
+    derive_test_criteria,
 )
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
@@ -195,6 +196,15 @@ class TestDefinitionsPage(Page):
 
         add_dialog = None
         if st.session_state.get(TD_ADD_DIALOG_KEY):
+            # Pre-fill the picker's column filter from the page's table+column filter when a
+            # specific column is filtered. The frontend resolves general_type from table_columns,
+            # so only the column identity is passed here. The prefilled column stays editable --
+            # the user can change or clear it inside the picker.
+            prefill_column = (
+                {"table_name": table_name, "column_name": column_name}
+                if table_name and column_name
+                else None
+            )
             add_dialog = {
                 "open": True,
                 "test_types": test_types,
@@ -203,6 +213,7 @@ class TestDefinitionsPage(Page):
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
                 "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
+                "prefill_column": prefill_column,
             }
 
         edit_dialog = None
@@ -805,6 +816,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         tt.measure_uom, COALESCE(tt.measure_uom_description, '') as measure_uom_description,
         tt.default_parm_columns, tt.default_severity,
         tt.run_type, tt.test_scope, tt.dq_dimension, tt.impact_dimension, tt.threshold_description,
+        tt.health_dimension, tt.algorithm, tt.statistical_technique,
         tt.column_name_prompt, tt.column_name_help,
         tt.default_parm_prompts, tt.default_parm_help, tt.usage_notes,
         CASE tt.test_scope
@@ -836,7 +848,14 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         END,
         tt.test_name_short;
     """
-    return fetch_df_from_db(query, {"test_type": test_type})
+    df = fetch_df_from_db(query, {"test_type": test_type})
+    if not df.empty:
+        # Criteria facet is derived (not stored) via the shared classifier so UI and MCP agree.
+        df["criteria"] = df.apply(
+            lambda row: str(derive_test_criteria(row["test_type"], row["test_scope"], row["algorithm"])),
+            axis=1,
+        )
+    return df
 
 
 @st.cache_data(show_spinner=False)
@@ -994,7 +1013,7 @@ def get_test_definitions_collision(
 def get_columns(table_groups_id: str) -> list[dict]:
     results = fetch_all_from_db(
         """
-        SELECT table_name, column_name
+        SELECT table_name, column_name, general_type
         FROM data_column_chars
         WHERE table_groups_id = :table_groups_id
             AND drop_date IS NULL

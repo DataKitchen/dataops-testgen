@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. It's ideal for confirming that two datasets exactly match -- that the sum of a measure or count of a value hasn't changed or shifted between categories. Use this test to compare a raw and processed version of the same dataset, or to confirm that an aggregated table exactly matches the detail table that it's built from. An error here means that one or more value combinations fail to match. New categories or combinations will cause failure.
   active: Y
+  algorithm: Aggregate reconciliation
   cat_test_conditions: []
   target_data_lookups:
   - id: '1400'

@@ -36,6 +36,7 @@ test_types:
   usage_notes: |-
     This test is appropriate for character fields that are expected to appear in a consistent format. It uses pattern matching syntax as appropriate for your database:  REGEX matching if available, otherwise LIKE expressions. The expected threshold is the number of records that fail to match the defined pattern.
   active: Y
+  algorithm: Pattern / regex
   cat_test_conditions:
   - id: '7021'
     test_type: Pattern_Match
