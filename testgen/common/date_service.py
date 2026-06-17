@@ -97,12 +97,19 @@ def accommodate_dataframe_to_timezone(df, streamlit_session, time_columns=None):
             df[time_column] = df[time_column].dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def format_friendly_datetime(dt: datetime, fmt: str) -> str:
+    """Cross-platform strftime: replaces Linux-only %-d and %-I before calling strftime."""
+    return dt.strftime(fmt.replace("%-d", str(dt.day)).replace("%-I", str(dt.hour % 12 or 12)))
+
+
 def get_timezoned_timestamp(streamlit_session, value, dateformat="%b %-d, %-I:%M %p"):
     ret = None
     if value and "browser_timezone" in streamlit_session:
         data = {"value": [value]}
         df = pd.DataFrame(data)
         timezone = streamlit_session["browser_timezone"]
-        df["value"] = df["value"].dt.tz_localize("UTC").dt.tz_convert(timezone).dt.strftime(dateformat)
+        df["value"] = df["value"].dt.tz_localize("UTC").dt.tz_convert(timezone).apply(
+            lambda dt: format_friendly_datetime(dt, dateformat) if pd.notna(dt) else ""
+        )
         ret = df.iloc[0, 0]
     return ret

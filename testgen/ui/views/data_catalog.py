@@ -11,6 +11,7 @@ import streamlit as st
 from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
+from testgen.common import date_service
 from testgen.common.data_catalog_service import (
     apply_column_metadata,
     apply_table_metadata,
@@ -492,7 +493,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
         data[key] = data[key].apply(
-            lambda val: val.strftime(f"%b {val.day} %Y, {val.hour % 12 or 12}:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
+            lambda val: date_service.format_friendly_datetime(val, "%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
         )
 
     for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
