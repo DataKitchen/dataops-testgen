@@ -42,6 +42,7 @@ from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
+from testgen.mcp.tools.markdown import MdDoc
 
 # User-facing label for ``Disposition.INACTIVE`` is "Muted" — accept that label on input.
 _DISPOSITION_USER_TO_DB: dict[str, Disposition] = {
@@ -1374,3 +1375,54 @@ def validate_connection_fields(connection: Connection) -> list[str]:
         errors.append(f"`max_query_chars` must be between {_MAX_QUERY_CHARS_MIN} and {_MAX_QUERY_CHARS_MAX}.")
 
     return errors
+
+
+def effective_mode(connection: Connection, connection_mode: str | None) -> str | None:
+    """Mode label to apply: the explicit override, else the connection's current mode."""
+    if connection_mode is not None:
+        return connection_mode
+    inferred = infer_mode(connection)
+    return str(inferred) if inferred is not None else None
+
+
+def raise_validation_error(errors: list[str], header: str) -> None:
+    bullets = "\n".join(f"- {err}" for err in errors)
+    raise MCPUserError(f"{header}\n\n{bullets}")
+
+
+def render_connection_body(doc: MdDoc, connection: Connection) -> None:
+    """Render every non-secret connection field below the heading.
+
+    Encrypted columns are filtered out via ``ConnField.secret``.
+    """
+    doc.field("ID", connection.connection_id, code=True)
+    doc.field("Project", connection.project_code, code=True)
+    doc.field("Type", format_flavor_label(connection.sql_flavor_code))
+
+    # Each populated, non-secret field under its flavor-specific label
+    # (e.g. "Catalog" for Databricks, "Login URL" for Salesforce).
+    for fld in connection_display_fields(connection):
+        if fld.secret:
+            continue
+        value = getattr(connection, fld.column, None)
+        if value in (None, ""):
+            continue
+        doc.field(fld.label, value, code=fld.column != "project_port")
+
+    doc.field("Authentication", authentication_label(connection))
+    if connection.max_threads is not None:
+        doc.field("Max Threads", connection.max_threads)
+    if connection.max_query_chars is not None:
+        doc.field("Max Expression Length", connection.max_query_chars)
+
+
+def authentication_label(connection: Connection) -> str:
+    """The connection's auth method: the active connection mode for multi-mode
+    flavors, else the implicit method (service account key, else password).
+    """
+    mode = infer_mode(connection)
+    if mode is not None:
+        return str(mode)
+    if connection.service_account_key:
+        return "Service Account Key"
+    return "Password"

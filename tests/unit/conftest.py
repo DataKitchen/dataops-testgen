@@ -1,15 +1,2 @@
-from unittest.mock import patch
-
-import pytest
-
-
-@pytest.fixture(autouse=True)
-def patched_settings():
-    with patch("testgen.settings.UI_BASE_URL", "http://tg-base-url"):
-        yield
-
-
-@pytest.fixture
-def db_session_mock():
-    with patch("testgen.common.models.Session") as factory_mock:
-        yield factory_mock().__enter__()
+# Importing the fixtures registers them for this test subtree (autouse flags preserved).
+from testgen.testing.fixtures import db_session_mock, patched_settings  # noqa: F401

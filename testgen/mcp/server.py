@@ -146,10 +146,10 @@ def build_mcp_server(
         table_health,
     )
     from testgen.mcp.tools.connections import (
-            get_connection,
+        get_connection,
         list_connections,
         test_connection,
-        )
+    )
     from testgen.mcp.tools.data_catalog import update_catalog_metadata
     from testgen.mcp.tools.discovery import (
         get_data_inventory,
@@ -377,6 +377,17 @@ def build_mcp_server(
     safe_prompt(compare_runs)
     safe_prompt(profiling_overview)
     safe_prompt(hygiene_triage)
+
+    # Register plugin-provided tools through the same safe_tool wrapper as the core tools above.
+    from testgen.utils.plugins import discover
+
+    for plugin in discover():
+        try:
+            spec = plugin.load()
+            for tool in spec.get_mcp_tools():
+                safe_tool(tool)
+        except Exception:
+            LOG.warning("Plugin %s failed to load; skipping its MCP tools", plugin.package)
 
     return mcp
 
