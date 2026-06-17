@@ -145,7 +145,7 @@ include-package-data = true
 include = [
       "testgen*",
 ]
-exclude = [ "*.tests", "tests*", "deploy*", "invocations*", "testlib*"]
+exclude = [ "*.tests", "tests*", "deploy*", "invocations*", "testgen.testing*"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

@@ -410,8 +410,7 @@ def _append_mode(doc: MdDoc, mode: FlavorMode, schema: FlavorSchema, *, url_offe
 
 def connection_parameters_resource(flavor: str) -> str:
     """Per-flavor connection parameter shapes: the auth modes and the exact
-    ``connection_params`` keys (with required/optional + secret notes) used by
-    ``create_connection`` / ``update_connection`` / ``test_connection``.
+    ``connection_params`` keys (with required/optional + secret notes) for the flavor.
 
     Args:
         flavor: Flavor code, e.g. ``snowflake``, ``azure_mssql``, ``salesforce_data360``.
