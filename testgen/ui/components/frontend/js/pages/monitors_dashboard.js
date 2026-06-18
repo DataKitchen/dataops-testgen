@@ -1,13 +1,13 @@
 /**
  * @import { MonitorSummary } from '/app/static/js/components/monitor_anomalies_summary.js';
  * @import { CronSample, FilterOption, ProjectSummary } from '../types.js';
- * 
+ *
  * @typedef Schedule
  * @type {object}
  * @property {boolean} active
  * @property {string} cron_tz
  * @property {CronSample} cron_sample
- * 
+ *
  * @typedef Monitor
  * @type {object}
  * @property {string} table_group_id
@@ -36,25 +36,25 @@
  * @property {number?} column_adds
  * @property {number?} column_drops
  * @property {number?} column_mods
- * 
+ *
  * @typedef MonitorList
  * @type {object}
  * @property {Monitor[]} items
  * @property {number} current_page
  * @property {number} items_per_page
  * @property {number} total_count
- * 
+ *
  * @typedef MonitorListFilters
  * @type {object}
  * @property {string?} table_group_id
  * @property {string?} table_name_filter
  * @property {string?} anomaly_type_filter
- * 
+ *
  * @typedef MonitorListSort
  * @type {object}
  * @property {string?} sort_field
  * @property {('asc'|'desc')?} sort_order
- * 
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} can_edit
@@ -213,17 +213,17 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                 class: 'flex-row fx-gap-1 schema-changes',
                                 onclick: () => {
                                     const summary = getValue(props.summary);
-                                    emit('OpenSchemaChanges', { payload: { 
+                                    emit('OpenSchemaChanges', { payload: {
                                         table_name: monitor.table_name,
                                         start_time: summary?.lookback_start,
                                         end_time: summary?.lookback_end,
                                     }});
                                 },
                             },
-                            monitor.table_state === 'added' 
+                            monitor.table_state === 'added'
                                 ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'add_box')
                                 : null,
-                            monitor.table_state === 'dropped' 
+                            monitor.table_state === 'dropped'
                                 ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'indeterminate_check_box')
                                 : null,
                             monitor.column_adds ? div(
@@ -245,7 +245,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         {
                             text: div(
                                 {class: 'flex-column fx-align-flex-start'},
-                                monitor.table_state === 'added' 
+                                monitor.table_state === 'added'
                                     ? span({class: 'mb-1', style: 'font-size: 14px;'}, 'Table added.')
                                     : null,
                                 monitor.table_state === 'dropped'
@@ -329,7 +329,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             tooltipPosition: 'bottom-left',
                             color: 'basic',
                             type: 'stroked',
-                            style: 'background: var(--button-generic-background-color);', 
+                            style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('EditNotifications', {}),
                         }),
                         Button({
@@ -338,7 +338,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                             tooltipPosition: 'bottom-left',
                             color: 'basic',
                             type: 'stroked',
-                            style: 'background: var(--button-generic-background-color);', 
+                            style: 'background: var(--button-generic-background-color);',
                             onclick: () => emit('EditMonitorSettings', {}),
                         }),
                         Button({
@@ -517,14 +517,14 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             result: van.derive(() => getValue(props.notifications_dialog)?.result),
             onClose: () => emit('NotificationsDialogClosed', {}),
         }),
-        EditMonitorSettings({ emit, 
+        EditMonitorSettings({ emit,
             table_group: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.table_group),
             schedule: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.schedule),
             monitor_suite: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.monitor_suite),
             cron_sample: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.cron_sample),
             dialog: van.derive(() => getValue(props.edit_monitor_settings_dialog)?.dialog),
         }),
-        TableMonitoringTrend({ emit, 
+        TableMonitoringTrend({ emit,
             freshness_events: van.derive(() => getValue(props.trends_dialog)?.freshness_events ?? []),
             volume_events: van.derive(() => getValue(props.trends_dialog)?.volume_events ?? []),
             schema_events: van.derive(() => getValue(props.trends_dialog)?.schema_events ?? []),
@@ -534,14 +534,14 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             extended_history: van.derive(() => getValue(props.trends_dialog)?.extended_history),
             dialog: van.derive(() => getValue(props.trends_dialog)?.dialog),
         }),
-        EditTableMonitors({ emit, 
+        EditTableMonitors({ emit,
             table_name: van.derive(() => getValue(props.edit_table_monitors_dialog)?.table_name),
             definitions: van.derive(() => getValue(props.edit_table_monitors_dialog)?.definitions ?? []),
             metric_test_type: van.derive(() => getValue(props.edit_table_monitors_dialog)?.metric_test_type),
             result: van.derive(() => getValue(props.edit_table_monitors_dialog)?.result),
             dialog: van.derive(() => getValue(props.edit_table_monitors_dialog)?.dialog),
         }),
-        SchemaChangesDialog({ emit, 
+        SchemaChangesDialog({ emit,
             window_start: van.derive(() => getValue(props.schema_changes_dialog)?.window_start),
             window_end: van.derive(() => getValue(props.schema_changes_dialog)?.window_end),
             data_structure_logs: van.derive(() => getValue(props.schema_changes_dialog)?.data_structure_logs),
@@ -568,9 +568,6 @@ const AnomalyTag = (anomalies, errorMessage = null, isTraining = false, isPendin
 
     const hasErrors = !!errorMessage;
     const content = van.derive(() => {
-        if (anomalies > 0) {
-            return span(anomalies);
-        }
         if (hasErrors) {
             return withTooltip(
                 i({class: 'material-symbols-rounded'}, 'warning'),
@@ -583,6 +580,9 @@ const AnomalyTag = (anomalies, errorMessage = null, isTraining = false, isPendin
                     width: 360,
                 },
             );
+        }
+        if (anomalies > 0) {
+            return span(anomalies);
         }
         if (isTraining) {
             return withTooltip(
@@ -597,7 +597,7 @@ const AnomalyTag = (anomalies, errorMessage = null, isTraining = false, isPendin
         { class: `anomaly-tag-wrapper flex-row p-1 ${onClick ? 'clickable' : ''}`, onclick: onClick },
         div(
             {
-                class: `anomaly-tag ${anomalies > 0 ? 'has-anomalies' : ''} ${hasErrors ? 'has-errors' : ''} ${isTraining ? 'is-training' : ''}`,
+                class: `anomaly-tag ${hasErrors ? 'has-errors' : anomalies > 0 ? 'has-anomalies' : ''} ${isTraining ? 'is-training' : ''}`,
             },
             content,
         ),
@@ -646,8 +646,8 @@ const ConditionalEmptyState = (projectSummary, userCanEdit, emit) => {
             },
         };
     }
-    
-    return EmptyState({ emit, 
+
+    return EmptyState({ emit,
         icon: 'apps_outage',
         ...args,
     });
