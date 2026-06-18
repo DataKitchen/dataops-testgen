@@ -1,4 +1,7 @@
+import functools
 import logging
+import time
+from enum import StrEnum
 from urllib.parse import urlparse
 
 from mcp.server.auth.provider import AccessToken
@@ -10,9 +13,25 @@ from starlette.applications import Starlette
 
 from testgen import settings
 from testgen.common.auth import AuthError, decode_jwt_token
-from testgen.mcp.permissions import set_mcp_token, set_mcp_username
+from testgen.common.mixpanel_service import MixpanelService
+from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
+from testgen.mcp.permissions import get_mcp_username, set_mcp_token, set_mcp_username
 
 LOG = logging.getLogger("testgen")
+
+
+class MCPCallStatus(StrEnum):
+    SUCCESS = "success"
+    ERROR = "error"
+    PERMISSION_DENIED = "permission_denied"
+    USER_ERROR = "user_error"
+
+
+class HandlerKind(StrEnum):
+    TOOL = "tool"
+    RESOURCE = "resource"
+    PROMPT = "prompt"
+
 
 SERVER_INSTRUCTIONS = """\
 TestGen is a data quality platform that profiles databases, generates tests, and monitors tables.
@@ -124,6 +143,42 @@ def _build_transport_security() -> TransportSecuritySettings:
         allowed_hosts=sorted(allowed_hosts),
         allowed_origins=sorted(allowed_origins),
     )
+
+
+def _instrument(fn, kind: HandlerKind):
+    """Wrap an MCP handler to emit one ``mcp-call`` event per invocation.
+
+    Sits inside ``mcp_error_handler`` so it observes the raised exception type
+    before it is converted to a text response. ``kind`` distinguishes tools,
+    resources, and prompts in the emitted event.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        start = time.monotonic()
+        status = MCPCallStatus.SUCCESS
+        try:
+            return fn(*args, **kwargs)
+        except MCPPermissionDenied:
+            status = MCPCallStatus.PERMISSION_DENIED
+            raise
+        except MCPUserError:
+            status = MCPCallStatus.USER_ERROR
+            raise
+        except Exception:
+            status = MCPCallStatus.ERROR
+            raise
+        finally:
+            MixpanelService().send_event(
+                "mcp-call",
+                kind=kind,
+                handler_name=fn.__name__,
+                username=get_mcp_username(),
+                latency_ms=int((time.monotonic() - start) * 1000),
+                status=status,
+            )
+
+    return wrapper
 
 
 def build_mcp_server(
@@ -284,109 +339,109 @@ def build_mcp_server(
     )
     _configure_mcp_logging()
 
-    def safe_tool(fn):
-        mcp.tool()(mcp_error_handler(fn))
+    def tool_wrapper(fn):
+        mcp.tool()(mcp_error_handler(_instrument(fn, HandlerKind.TOOL)))
 
     def safe_resource(uri, fn):
-        mcp.resource(uri)(mcp_error_handler(fn))
+        mcp.resource(uri)(mcp_error_handler(_instrument(fn, HandlerKind.RESOURCE)))
 
     def safe_prompt(fn):
-        mcp.prompt()(mcp_error_handler(fn))
+        mcp.prompt()(mcp_error_handler(_instrument(fn, HandlerKind.PROMPT)))
 
     # Tools
-    safe_tool(get_data_inventory)
-    safe_tool(list_projects)
-    safe_tool(get_project)
-    safe_tool(list_tables)
-    safe_tool(list_test_suites)
-    safe_tool(get_test_suite)
-    safe_tool(list_test_runs)
-    safe_tool(get_test_run)
-    safe_tool(list_test_results)
-    safe_tool(list_test_result_history)
-    safe_tool(get_failure_summary)
-    safe_tool(search_test_results)
-    safe_tool(get_failure_trend)
-    safe_tool(compare_test_runs)
-    safe_tool(update_test_result)
-    safe_tool(bulk_update_test_results)
-    safe_tool(get_test_type)
-    safe_tool(get_source_data)
-    safe_tool(get_source_data_query)
-    safe_tool(list_tests)
-    safe_tool(get_test)
-    safe_tool(list_test_notes)
-    safe_tool(list_test_types)
-    safe_tool(get_table)
-    safe_tool(generate_create_table_script)
-    safe_tool(get_table_sample)
-    safe_tool(list_column_profiles)
-    safe_tool(list_profiling_summaries)
-    safe_tool(list_profiling_runs)
-    safe_tool(get_profiling_run)
-    safe_tool(get_column_profile_detail)
-    safe_tool(get_column_frequent_values)
-    safe_tool(get_column_patterns)
-    safe_tool(search_columns)
-    safe_tool(compare_profiling_runs)
-    safe_tool(get_profiling_trends)
-    safe_tool(get_schema_history)
-    safe_tool(get_monitor_summary)
-    safe_tool(list_monitored_tables)
-    safe_tool(list_monitor_events)
-    safe_tool(list_monitors)
-    safe_tool(list_monitor_schema_changes)
-    safe_tool(enable_monitors)
-    safe_tool(get_monitor_settings)
-    safe_tool(update_monitor_settings)
-    safe_tool(disable_monitors)
-    safe_tool(run_tests)
-    safe_tool(run_profiling)
-    safe_tool(cancel_test_run)
-    safe_tool(cancel_profiling_run)
-    safe_tool(generate_tests)
-    safe_tool(create_test)
-    safe_tool(update_test)
-    safe_tool(validate_custom_test)
-    safe_tool(bulk_update_tests)
-    safe_tool(export_tests)
-    safe_tool(import_tests)
-    safe_tool(create_test_note)
-    safe_tool(update_test_note)
-    safe_tool(delete_test_note)
-    safe_tool(list_hygiene_issues)
-    safe_tool(get_hygiene_issue)
-    safe_tool(search_hygiene_issues)
-    safe_tool(update_hygiene_issue)
-    safe_tool(create_profiling_schedule)
-    safe_tool(create_test_run_schedule)
-    safe_tool(list_schedules)
-    safe_tool(get_schedule)
-    safe_tool(update_schedule)
-    safe_tool(delete_schedule)
-    safe_tool(get_quality_scores)
-    safe_tool(list_scorecards)
-    safe_tool(get_scorecard)
-    safe_tool(create_scorecard)
-    safe_tool(update_scorecard)
-    safe_tool(delete_scorecard)
-    safe_tool(list_notifications)
-    safe_tool(get_notification)
-    safe_tool(create_notification)
-    safe_tool(update_notification)
-    safe_tool(delete_notification)
-    safe_tool(list_connections)
-    safe_tool(get_connection)
-    safe_tool(test_connection)
-    safe_tool(list_table_groups)
-    safe_tool(get_table_group)
-    safe_tool(create_table_group)
-    safe_tool(update_table_group)
-    safe_tool(preview_table_group)
-    safe_tool(update_project)
-    safe_tool(create_test_suite)
-    safe_tool(update_test_suite)
-    safe_tool(update_catalog_metadata)
+    tool_wrapper(get_data_inventory)
+    tool_wrapper(list_projects)
+    tool_wrapper(get_project)
+    tool_wrapper(list_tables)
+    tool_wrapper(list_test_suites)
+    tool_wrapper(get_test_suite)
+    tool_wrapper(list_test_runs)
+    tool_wrapper(get_test_run)
+    tool_wrapper(list_test_results)
+    tool_wrapper(list_test_result_history)
+    tool_wrapper(get_failure_summary)
+    tool_wrapper(search_test_results)
+    tool_wrapper(get_failure_trend)
+    tool_wrapper(compare_test_runs)
+    tool_wrapper(update_test_result)
+    tool_wrapper(bulk_update_test_results)
+    tool_wrapper(get_test_type)
+    tool_wrapper(get_source_data)
+    tool_wrapper(get_source_data_query)
+    tool_wrapper(list_tests)
+    tool_wrapper(get_test)
+    tool_wrapper(list_test_notes)
+    tool_wrapper(list_test_types)
+    tool_wrapper(get_table)
+    tool_wrapper(generate_create_table_script)
+    tool_wrapper(get_table_sample)
+    tool_wrapper(list_column_profiles)
+    tool_wrapper(list_profiling_summaries)
+    tool_wrapper(list_profiling_runs)
+    tool_wrapper(get_profiling_run)
+    tool_wrapper(get_column_profile_detail)
+    tool_wrapper(get_column_frequent_values)
+    tool_wrapper(get_column_patterns)
+    tool_wrapper(search_columns)
+    tool_wrapper(compare_profiling_runs)
+    tool_wrapper(get_profiling_trends)
+    tool_wrapper(get_schema_history)
+    tool_wrapper(get_monitor_summary)
+    tool_wrapper(list_monitored_tables)
+    tool_wrapper(list_monitor_events)
+    tool_wrapper(list_monitors)
+    tool_wrapper(list_monitor_schema_changes)
+    tool_wrapper(enable_monitors)
+    tool_wrapper(get_monitor_settings)
+    tool_wrapper(update_monitor_settings)
+    tool_wrapper(disable_monitors)
+    tool_wrapper(run_tests)
+    tool_wrapper(run_profiling)
+    tool_wrapper(cancel_test_run)
+    tool_wrapper(cancel_profiling_run)
+    tool_wrapper(generate_tests)
+    tool_wrapper(create_test)
+    tool_wrapper(update_test)
+    tool_wrapper(validate_custom_test)
+    tool_wrapper(bulk_update_tests)
+    tool_wrapper(export_tests)
+    tool_wrapper(import_tests)
+    tool_wrapper(create_test_note)
+    tool_wrapper(update_test_note)
+    tool_wrapper(delete_test_note)
+    tool_wrapper(list_hygiene_issues)
+    tool_wrapper(get_hygiene_issue)
+    tool_wrapper(search_hygiene_issues)
+    tool_wrapper(update_hygiene_issue)
+    tool_wrapper(create_profiling_schedule)
+    tool_wrapper(create_test_run_schedule)
+    tool_wrapper(list_schedules)
+    tool_wrapper(get_schedule)
+    tool_wrapper(update_schedule)
+    tool_wrapper(delete_schedule)
+    tool_wrapper(get_quality_scores)
+    tool_wrapper(list_scorecards)
+    tool_wrapper(get_scorecard)
+    tool_wrapper(create_scorecard)
+    tool_wrapper(update_scorecard)
+    tool_wrapper(delete_scorecard)
+    tool_wrapper(list_notifications)
+    tool_wrapper(get_notification)
+    tool_wrapper(create_notification)
+    tool_wrapper(update_notification)
+    tool_wrapper(delete_notification)
+    tool_wrapper(list_connections)
+    tool_wrapper(get_connection)
+    tool_wrapper(test_connection)
+    tool_wrapper(list_table_groups)
+    tool_wrapper(get_table_group)
+    tool_wrapper(create_table_group)
+    tool_wrapper(update_table_group)
+    tool_wrapper(preview_table_group)
+    tool_wrapper(update_project)
+    tool_wrapper(create_test_suite)
+    tool_wrapper(update_test_suite)
+    tool_wrapper(update_catalog_metadata)
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)
@@ -404,14 +459,14 @@ def build_mcp_server(
     safe_prompt(profiling_overview)
     safe_prompt(hygiene_triage)
 
-    # Register plugin-provided tools through the same safe_tool wrapper as the core tools above.
+    # Register plugin-provided tools through the same tool_wrapper as the core tools above.
     from testgen.utils.plugins import discover
 
     for plugin in discover():
         try:
             spec = plugin.load()
             for tool in spec.get_mcp_tools():
-                safe_tool(tool)
+                tool_wrapper(tool)
         except Exception:
             LOG.warning("Plugin %s failed to load; skipping its MCP tools", plugin.package)
 

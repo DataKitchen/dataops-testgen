@@ -80,6 +80,11 @@ def set_mcp_token(token: str | None) -> None:
     _mcp_token.set(token)
 
 
+def get_mcp_username() -> str | None:
+    """Return the authenticated username for the current MCP request (or None)."""
+    return _mcp_username.get()
+
+
 def get_authorized_mcp_user() -> User:
     """Get the authenticated and authorized User for the current MCP request.
 

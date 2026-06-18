@@ -23,6 +23,7 @@ from testgen.api.oauth.routes import init_routes
 from testgen.api.oauth.routes import router as oauth_router
 from testgen.api.oauth.server import create_authorization_server
 from testgen.common import version_service
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.server.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
@@ -85,11 +86,14 @@ def create_app(version: str | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        if mcp_session_manager is not None:
-            async with mcp_session_manager.run():
+        try:
+            if mcp_session_manager is not None:
+                async with mcp_session_manager.run():
+                    yield
+            else:
                 yield
-        else:
-            yield
+        finally:
+            MixpanelService().drain()
 
     tags_metadata = [
         {"name": "Jobs", "description": "Submit, poll, cancel, and list job executions (profiling, tests, generation)."},
