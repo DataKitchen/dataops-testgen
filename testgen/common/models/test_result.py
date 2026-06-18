@@ -65,6 +65,23 @@ class TestResultSearchRow:
 
 
 @dataclass
+class TestRunResultRow:
+    """One individual result within a single test run for the API results endpoint."""
+
+    test_definition_id: UUID
+    test_type: str
+    schema_name: str
+    table_name: str | None
+    column_names: str | None
+    status: TestResultStatus | None
+    result_measure: str | None
+    threshold_value: str | None
+    message: str | None
+    test_time: datetime | None
+    disposition: str | None
+
+
+@dataclass
 class TrendBucket:
     """One time-bucket of failure aggregates for ``get_failure_trend``."""
 
@@ -174,6 +191,38 @@ class TestResult(Entity):
             query = query.where(TestSuite.project_code.in_(project_codes))
         query = query.order_by(cls.status, cls.table_name, cls.column_names).offset(offset).limit(limit)
         return get_current_session().scalars(query).all()
+
+    @classmethod
+    def list_for_run(
+        cls,
+        test_run_id: UUID,
+        *clauses,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[TestRunResultRow], int]:
+        """Paginated individual results for a single run, scoped by caller-supplied WHERE clauses.
+
+        Monitor suites are always filtered out.
+        """
+        query = (
+            select(
+                cls.test_definition_id.label("test_definition_id"),
+                cls.test_type.label("test_type"),
+                cls.schema_name.label("schema_name"),
+                cls.table_name.label("table_name"),
+                cls.column_names.label("column_names"),
+                cls.status.label("status"),
+                cls.result_measure.label("result_measure"),
+                cls.threshold_value.label("threshold_value"),
+                cls.message.label("message"),
+                cls.test_time.label("test_time"),
+                cls.disposition.label("disposition"),
+            )
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(cls.test_run_id == test_run_id, TestSuite.is_monitor.isnot(True), *clauses)
+            .order_by(cls.status, cls.table_name, cls.column_names, cls.id)
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=TestRunResultRow)
 
     @classmethod
     def select_failures(
