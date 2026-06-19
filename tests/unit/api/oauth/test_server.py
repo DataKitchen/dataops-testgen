@@ -5,12 +5,10 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from authlib.oauth2.rfc6749 import grants
 
 from testgen import settings
 from testgen.api.oauth.server import (
     AuthorizationCodeGrant,
-    ClientCredentialsGrant,
     RefreshTokenGrant,
     TestGenAuthorizationServer,
     TestGenRevocationEndpoint,
@@ -335,63 +333,6 @@ def test_generate_bearer_token_no_scope_omits_field(mock_jwt):
     assert "scope" not in token
 
 
-# --- ClientCredentialsGrant ---
-
-
-@patch("testgen.api.oauth.server.get_current_session")
-def test_client_credentials_resolves_owner(mock_get_session):
-    mock_session = MagicMock()
-    mock_get_session.return_value = mock_session
-
-    mock_owner = MagicMock()
-    mock_owner.username = "owner_user"
-    mock_session.scalars.return_value.first.return_value = mock_owner
-
-    grant = ClientCredentialsGrant.__new__(ClientCredentialsGrant)
-    grant.request = MagicMock()
-    grant.request.client.user_id = uuid4()
-    grant.request.client.check_grant_type.return_value = True
-
-    with patch.object(grants.ClientCredentialsGrant, "validate_token_request"):
-        grant.validate_token_request()
-
-    assert grant.request.user is mock_owner
-
-
-@patch("testgen.api.oauth.server.get_current_session")
-def test_client_credentials_rejects_client_without_owner(mock_get_session):
-    from authlib.oauth2.rfc6749.errors import InvalidGrantError
-
-    grant = ClientCredentialsGrant.__new__(ClientCredentialsGrant)
-    grant.request = MagicMock()
-    grant.request.client.user_id = None
-
-    with (
-        patch.object(grants.ClientCredentialsGrant, "validate_token_request"),
-        pytest.raises(InvalidGrantError),
-    ):
-        grant.validate_token_request()
-
-
-@patch("testgen.api.oauth.server.get_current_session")
-def test_client_credentials_rejects_deleted_owner(mock_get_session):
-    from authlib.oauth2.rfc6749.errors import InvalidGrantError
-
-    mock_session = MagicMock()
-    mock_get_session.return_value = mock_session
-    mock_session.scalars.return_value.first.return_value = None
-
-    grant = ClientCredentialsGrant.__new__(ClientCredentialsGrant)
-    grant.request = MagicMock()
-    grant.request.client.user_id = uuid4()
-
-    with (
-        patch.object(grants.ClientCredentialsGrant, "validate_token_request"),
-        pytest.raises(InvalidGrantError),
-    ):
-        grant.validate_token_request()
-
-
 # --- RevocationEndpoint ---
 
 
@@ -460,6 +401,6 @@ def test_create_authorization_server_returns_configured_server():
     assert isinstance(server, TestGenAuthorizationServer)
     token_grant_classes = [entry[0] for entry in server._token_grants]
     assert RefreshTokenGrant in token_grant_classes
-    assert ClientCredentialsGrant in token_grant_classes
+    assert AuthorizationCodeGrant in token_grant_classes
 
     assert "revocation" in server._endpoints

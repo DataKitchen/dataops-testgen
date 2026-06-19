@@ -533,6 +533,17 @@ REFRESH_TOKEN_EXPIRES_IN: int = 2_592_000  # 30 days
 Lifetime of OAuth access and refresh tokens.
 """
 
+PAT_DEFAULT_LIFETIME_SECONDS: int = 31_536_000  # 365 days
+"""
+Default maximum lifetime a personal access token can be created with.
+"""
+
+PAT_MAX_LIFETIME_SECONDS: int = 63_072_000  # 2 years (730 days)
+"""
+Absolute ceiling on the admin-configurable personal access token maximum lifetime.
+The configured maximum cannot exceed this.
+"""
+
 JWT_HASHING_KEY_B64: str = getenv("TG_JWT_HASHING_KEY")
 """
 Random key used to sign/verify the authentication token

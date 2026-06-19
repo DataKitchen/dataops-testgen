@@ -36,6 +36,7 @@
  * @property {string} support_email
  * @property {boolean} global_context
  * @property {boolean} is_global_admin
+ * @property {(string|null)} account_path
  */
 const van = window.top.van;
 const { a, button, div, i, img, label, option, select, span } = van.tags;
@@ -93,11 +94,7 @@ const Sidebar = (/** @type {Properties} */ props) => {
             },
         ),
         div(
-            div(
-                { class: 'menu--user' },
-                span({class: 'menu--username', title: props.username}, props.username),
-                span({class: 'menu--role'}, () => props.role.val?.replace('_', ' ')),
-            ),
+            () => UserBlock(props, currentProject),
             div(
                 { class: 'menu--buttons' },
                 button(
@@ -164,6 +161,36 @@ const ProjectSelect = (/** @type Project[] */ projects, /** @type string */ curr
                 )),
             )
             : '',
+    );
+};
+
+const UserBlock = (/** @type Properties */ props, currentProject) => {
+    const roleAndProject = () => {
+        const role = props.role.val?.replace('_', ' ');
+        const projectName = currentProject.val?.name;
+        return [role, projectName].filter(Boolean).join(' · ');
+    };
+
+    const userInfo = div(
+        { class: 'menu--user--info' },
+        span({ class: 'menu--username', title: props.username }, props.username),
+        span({ class: 'menu--role' }, roleAndProject),
+    );
+
+    const accountPath = props.account_path?.val;
+    if (!accountPath) {
+        return div({ class: 'menu--user' }, userInfo);
+    }
+
+    return a(
+        {
+            class: () => isCurrentPage(accountPath, props.current_page?.val) ? 'menu--user--link active' : 'menu--user--link',
+            href: `/${accountPath}?${PROJECT_CODE_QUERY_PARAM}=${currentProject.val?.code ?? ''}`,
+            onclick: (event) => navigate(event, accountPath, { [PROJECT_CODE_QUERY_PARAM]: currentProject.val?.code }),
+        },
+        i({ class: 'menu--user--icon material-symbols-rounded' }, 'manage_accounts'),
+        userInfo,
+        i({ class: 'menu--user--chevron material-symbols-rounded' }, 'chevron_right'),
     );
 };
 
@@ -336,6 +363,49 @@ stylesheet.replace(`
     padding: 16px;
 }
 
+.menu .menu--user--link {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin: 4px 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: var(--primary-text-color);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.menu .menu--user--link:hover {
+    background: var(--sidebar-item-hover-color);
+}
+
+.menu .menu--user--link.active {
+    color: var(--primary-color);
+    background: var(--sidebar-active-item-color);
+}
+
+.menu .menu--user--info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+
+.menu .menu--user--icon {
+    flex: none;
+    font-size: 24px;
+    line-height: 24px;
+}
+
+.menu .menu--user--chevron {
+    flex: none;
+    margin-left: auto;
+    font-size: 18px;
+    line-height: 18px;
+    color: var(--secondary-text-color);
+}
+
 .menu .menu--username {
     overflow-x: hidden;
     text-overflow: ellipsis;
@@ -346,6 +416,9 @@ stylesheet.replace(`
     text-transform: uppercase;
     font-size: 12px;
     color: var(--secondary-text-color);
+    overflow-x: hidden;
+    text-overflow: ellipsis;
+    text-wrap: nowrap;
 }
 
 .menu .content > .menu--section > .menu--section--label {

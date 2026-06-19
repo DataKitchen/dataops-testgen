@@ -2,7 +2,6 @@
 
 Grant types:
 - Authorization Code + PKCE (for MCP clients)
-- Client Credentials (for automation scripts)
 - Refresh Token (for token renewal)
 
 All DB operations use get_current_session() for thread-local session access.
@@ -13,15 +12,14 @@ import time
 from typing import ClassVar
 
 from authlib.oauth2.rfc6749 import AuthorizationServer, JsonRequest, OAuth2Request, grants
-from authlib.oauth2.rfc6749.errors import InvalidGrantError
 from authlib.oauth2.rfc7009 import RevocationEndpoint
 from authlib.oauth2.rfc7636 import CodeChallenge
 from sqlalchemy import select
 
 from testgen import settings
-from testgen.api.oauth.models import OAuth2AuthorizationCode, OAuth2Client, OAuth2Token
 from testgen.common.auth import create_jwt_token
 from testgen.common.models import get_current_session
+from testgen.common.models.oauth import OAuth2AuthorizationCode, OAuth2Client, OAuth2Token
 from testgen.common.models.user import User
 
 
@@ -83,24 +81,6 @@ class RefreshTokenGrant(grants.RefreshTokenGrant):
         # Rotation is off (INCLUDE_NEW_REFRESH_TOKEN=False): keep the refresh token
         # live so clients can reuse it until its independent expiry.
         credential.access_token_revoked_at = int(time.time())
-
-
-class ClientCredentialsGrant(grants.ClientCredentialsGrant):
-    """Client credentials grant that resolves the client's owner as the token user.
-
-    Ensures every token has a real User identity — no "ghost" usernames.
-    """
-
-    def validate_token_request(self):
-        super().validate_token_request()
-        client = self.request.client
-        if not client.user_id:
-            raise InvalidGrantError(description="Client has no registered owner.")
-        session = get_current_session()
-        owner = session.scalars(select(User).where(User.id == client.user_id)).first()
-        if owner is None:
-            raise InvalidGrantError(description="Client owner no longer exists.")
-        self.request.user = owner
 
 
 class TestGenRevocationEndpoint(RevocationEndpoint):
@@ -183,7 +163,6 @@ def create_authorization_server() -> TestGenAuthorizationServer:
     """Create and configure the authorization server with all grant types."""
     server = TestGenAuthorizationServer()
     server.register_grant(AuthorizationCodeGrant, [CodeChallenge(required=True)])
-    server.register_grant(ClientCredentialsGrant)
     server.register_grant(RefreshTokenGrant)
     server.register_endpoint(TestGenRevocationEndpoint)
     server.register_token_generator("default", _generate_bearer_token)

@@ -21,10 +21,10 @@ from sqlalchemy import select
 from testgen import settings
 from testgen.api.deps import db_session
 from testgen.api.oauth.login import render_login_page
-from testgen.api.oauth.models import OAuth2Client
 from testgen.api.oauth.server import TestGenAuthorizationServer
 from testgen.common.auth import create_jwt_token, decode_jwt_token, verify_password
 from testgen.common.models import get_current_session
+from testgen.common.models.oauth import OAuth2Client
 from testgen.common.models.user import User
 
 LOG = logging.getLogger("testgen")
