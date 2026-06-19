@@ -74,6 +74,20 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
     )
 
 
+def _disposition_from_db(value: str | None) -> Disposition:
+    """Map a stored ``disposition`` to the API enum, degrading unknown values to ``no_decision``.
+
+    A NULL or unmapped value resolves to ``no_decision`` rather than raising, so a single odd
+    row never fails serialization of the whole results page.
+    """
+    if not value:
+        return Disposition.no_decision
+    try:
+        return DISPOSITION_FROM_DB[DbDisposition(value)]
+    except (ValueError, KeyError):
+        return Disposition.no_decision
+
+
 def _to_item(row: TestRunResultRow) -> TestResultItem:
     """Map a DB-valued result row to the API item, normalizing enum casing."""
     return TestResultItem(
@@ -87,7 +101,7 @@ def _to_item(row: TestRunResultRow) -> TestResultItem:
         threshold_value=row.threshold_value,
         result_message=row.message,
         test_time=row.test_time,
-        disposition=DISPOSITION_FROM_DB[DbDisposition(row.disposition)] if row.disposition else Disposition.no_decision,
+        disposition=_disposition_from_db(row.disposition),
     )
 
 

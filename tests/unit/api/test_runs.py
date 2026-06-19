@@ -246,9 +246,11 @@ def test_list_results_status_render(mock_list, db_status, expected):
     "db_disposition,expected",
     [
         (None, Disposition.no_decision),
+        ("", Disposition.no_decision),
         ("Confirmed", Disposition.confirmed),
         ("Dismissed", Disposition.dismissed),
         ("Inactive", Disposition.muted),
+        ("Bogus", Disposition.no_decision),
     ],
 )
 @patch.object(TestResult, "list_for_run")
