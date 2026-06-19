@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from testgen.api.enums import Disposition, ResultStatus
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
@@ -76,6 +77,31 @@ class TestRunResponse(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     result: TestRunResult | None = None
+
+
+class TestResultItem(BaseModel):
+    """One individual test result within a test run."""
+
+    test_definition_id: UUID
+    test_type: str
+    schema_name: str
+    table_name: str | None = None
+    column_names: str | None = None
+    result_status: ResultStatus | None = None
+    result_measure: str | None = None
+    threshold_value: str | None = None
+    result_message: str | None = None
+    test_time: datetime | None = None
+    disposition: Disposition
+
+
+class TestResultListResponse(BaseModel):
+    """Paginated list of individual test results."""
+
+    items: list[TestResultItem]
+    page: int
+    limit: int
+    total: int
 
 
 # --- Profiling Runs ---

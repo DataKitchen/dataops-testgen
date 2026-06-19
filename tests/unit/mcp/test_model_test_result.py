@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.models.test_result import TestResult, TestResultStatus
+from testgen.common.models.test_result import TestResult, TestResultStatus, TestRunResultRow
 
 
 @pytest.fixture
@@ -126,6 +126,26 @@ def test_select_results_excludes_monitor_suites_with_project_codes(session_mock)
     sql = _compiled_sql(session_mock.scalars.call_args[0][0])
     assert "test_suites.is_monitor IS NOT true" in sql
     assert "test_suites.project_code IN" in sql
+
+
+def test_list_for_run_excludes_monitor_suites():
+    with patch.object(TestResult, "_paginate", return_value=([], 0)) as mock_paginate:
+        TestResult.list_for_run(uuid4())
+
+    sql = _compiled_sql(mock_paginate.call_args.args[0])
+    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "JOIN test_suites" in sql
+
+
+def test_list_for_run_applies_caller_clauses_and_pagination():
+    with patch.object(TestResult, "_paginate", return_value=([], 0)) as mock_paginate:
+        TestResult.list_for_run(uuid4(), TestResult.table_name == "orders", page=3, limit=10)
+
+    sql = _compiled_sql(mock_paginate.call_args.args[0])
+    assert "test_results.table_name = " in sql
+    assert mock_paginate.call_args.kwargs["page"] == 3
+    assert mock_paginate.call_args.kwargs["limit"] == 10
+    assert mock_paginate.call_args.kwargs["data_class"] is TestRunResultRow
 
 
 def test_select_failures_excludes_monitor_suites(session_mock):
