@@ -858,7 +858,7 @@ def import_tests(
     on_new: str = "create",
     on_absence: str = "do_nothing",
 ) -> str:
-    """Apply an export document from ``export_tests`` to a test suite, defaulting to ``preview`` mode that reports the projected changes without persisting.
+    """Apply an export document from ``export_tests`` to a test suite.
 
     Args:
         test_suite_id: UUID of the target test suite.
