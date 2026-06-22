@@ -768,7 +768,7 @@ def get_excel_report_data(
 
     for key in ["profiling_as_of_date", "last_manual_update"]:
         data[key] = data[key].apply(
-            lambda val: datetime.strptime(val, "%Y-%m-%d %H:%M:%S").strftime("%b %-d %Y, %-I:%M %p")
+            lambda val: date_service.format_friendly_datetime(datetime.strptime(val, "%Y-%m-%d %H:%M:%S"), "%b %-d %Y, %-I:%M %p")
             if (val and not pd.isna(val) and val != "NaT")
             else None
         )

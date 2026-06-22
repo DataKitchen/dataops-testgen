@@ -5,6 +5,8 @@ from typing import TypedDict
 import cron_converter
 import cron_descriptor
 
+from testgen.common import date_service
+
 
 class CronSample(TypedDict, total=False):
     id: str | None
@@ -26,7 +28,7 @@ def get_cron_sample(
         cron_schedule = cron_obj.schedule(reference_time or datetime.now(zoneinfo.ZoneInfo(cron_tz)))
         readable_cron_schedule = cron_descriptor.get_description(cron_expr)
         if formatted:
-            samples = [cron_schedule.next().strftime("%a %b %-d, %-I:%M %p") for _ in range(sample_count)]
+            samples = [date_service.format_friendly_datetime(cron_schedule.next(), "%a %b %-d, %-I:%M %p") for _ in range(sample_count)]
         else:
             samples = [int(cron_schedule.next().timestamp()) for _ in range(sample_count)]
     except zoneinfo.ZoneInfoNotFoundError:
