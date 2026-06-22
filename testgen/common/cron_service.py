@@ -8,7 +8,6 @@ import cron_descriptor
 from testgen.common import date_service
 
 
-
 class CronSample(TypedDict, total=False):
     id: str | None
     error: str | None
