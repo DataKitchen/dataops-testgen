@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
+from typing import NoReturn, TypeVar
 from uuid import UUID
 
 from sqlalchemy import select
@@ -77,6 +78,17 @@ def parse_uuid(value: str, label: str = "ID") -> UUID:
         return UUID(value)
     except (ValueError, AttributeError) as err:
         raise MCPUserError(f"Invalid {label}: `{value}` is not a valid UUID.") from err
+
+
+_ParsedEnum = TypeVar("_ParsedEnum", bound=StrEnum)
+
+
+def parse_enum(value: str, enum_cls: type[_ParsedEnum], label: str) -> _ParsedEnum:
+    try:
+        return enum_cls(value)
+    except ValueError as err:
+        valid = ", ".join(member.value for member in enum_cls)
+        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}") from err
 
 
 def parse_result_status(value: str) -> TestResultStatus:
@@ -1385,7 +1397,7 @@ def effective_mode(connection: Connection, connection_mode: str | None) -> str |
     return str(inferred) if inferred is not None else None
 
 
-def raise_validation_error(errors: list[str], header: str) -> None:
+def raise_validation_error(errors: list[str], header: str) -> NoReturn:
     bullets = "\n".join(f"- {err}" for err in errors)
     raise MCPUserError(f"{header}\n\n{bullets}")
 

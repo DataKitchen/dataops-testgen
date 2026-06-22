@@ -235,7 +235,9 @@ def build_mcp_server(
         create_test,
         create_test_note,
         delete_test_note,
+        export_tests,
         get_test,
+        import_tests,
         list_test_notes,
         list_test_types,
         list_tests,
@@ -328,6 +330,8 @@ def build_mcp_server(
     safe_tool(update_test)
     safe_tool(validate_custom_test)
     safe_tool(bulk_update_tests)
+    safe_tool(export_tests)
+    safe_tool(import_tests)
     safe_tool(create_test_note)
     safe_tool(update_test_note)
     safe_tool(delete_test_note)
