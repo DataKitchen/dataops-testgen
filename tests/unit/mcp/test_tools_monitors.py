@@ -1,4 +1,6 @@
-"""Tests for the MCP monitor read tools — ``get_monitor_summary`` and ``list_monitored_tables``."""
+"""Tests for the MCP monitor tools — read (``get_monitor_summary`` / ``list_monitored_tables``)
+and lifecycle/settings (``enable_monitors`` / ``get_monitor_settings`` / ``update_monitor_settings``
+/ ``disable_monitors``)."""
 
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -7,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.models.table_group import MonitorGroupSummary, MonitorTableSummary
+from testgen.common.models.test_suite import PredictSensitivity
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -551,3 +554,303 @@ def test_list_monitored_tables_empty_beyond_last_page(mock_resolve, mock_tg_cls,
         out = list_monitored_tables(str(tg.id), page=99)
 
     assert "No tables on page 99 (total: 7)." in out
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle & settings helpers
+# ---------------------------------------------------------------------------
+
+
+def _mock_schedule(**overrides) -> MagicMock:
+    sched = MagicMock()
+    sched.id = overrides.get("id", uuid4())
+    sched.cron_expr = overrides.get("cron_expr", "0 6 * * *")
+    sched.cron_tz = overrides.get("cron_tz", "UTC")
+    sched.active = overrides.get("active", True)
+    sched.get_sample_triggering_timestamps.return_value = [
+        overrides.get("next_run", datetime(2026, 6, 10, 6, 0, tzinfo=UTC))
+    ]
+    return sched
+
+
+def _settings_suite(**overrides) -> MagicMock:
+    suite = _mock_monitor_suite(**overrides)
+    suite.predict_sensitivity = overrides.get("predict_sensitivity", PredictSensitivity.medium)
+    suite.monitor_lookback = overrides.get("monitor_lookback", 14)
+    suite.predict_min_lookback = overrides.get("predict_min_lookback", 30)
+    suite.predict_exclude_weekends = overrides.get("predict_exclude_weekends", False)
+    suite.monitor_regenerate_freshness = overrides.get("monitor_regenerate_freshness", True)
+    suite.holiday_codes_list = overrides.get("holiday_codes_list", None)
+    return suite
+
+
+# ---------------------------------------------------------------------------
+# enable_monitors
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.enable_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_enable_monitors_happy_path(mock_resolve, mock_enable, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+    mock_enable.return_value = (MagicMock(), 4)
+
+    from testgen.mcp.tools.monitors import enable_monitors
+
+    with _patch_perms(permission="edit"):
+        out = enable_monitors(str(tg.id), "0 6 * * *", "America/New_York")
+
+    assert "# Monitoring enabled for `Sales`" in out
+    assert "**Initial monitors created:** 4" in out
+    assert "**Cron expression:** `0 6 * * *`" in out
+    assert "America/New_York" in out
+    mock_enable.assert_called_once_with(tg, "0 6 * * *", "America/New_York")
+
+
+@patch(f"{MODULE}.enable_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_enable_monitors_already_enabled(mock_resolve, mock_enable, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+
+    from testgen.mcp.tools.monitors import enable_monitors
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="already enabled"):
+        enable_monitors(str(tg.id), "0 6 * * *")
+
+    mock_enable.assert_not_called()
+
+
+@patch(f"{MODULE}.enable_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_enable_monitors_invalid_cron_rejected_before_side_effects(mock_resolve, mock_enable, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+
+    from testgen.mcp.tools.monitors import enable_monitors
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError):
+        enable_monitors(str(tg.id), "not a cron")
+
+    mock_enable.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# get_monitor_settings
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}._last_monitor_run", return_value=None)
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_get_monitor_settings_happy_path(mock_resolve, mock_js, mock_last, db_session_mock):
+    tg = _mock_table_group()
+    suite = _settings_suite(
+        predict_sensitivity=PredictSensitivity.high, monitor_lookback=50, holiday_codes_list=["US", "NYSE"]
+    )
+    mock_resolve.return_value = (tg, suite)
+    mock_js.get_for_monitor_suite.return_value = _mock_schedule(cron_expr="0 */12 * * *", cron_tz="UTC", active=True)
+
+    from testgen.mcp.tools.monitors import get_monitor_settings
+
+    with _patch_perms():
+        out = get_monitor_settings(str(tg.id))
+
+    assert "# Monitor settings for `Sales`" in out
+    assert "**Sensitivity:** high" in out
+    assert "**Lookback runs:** 50" in out
+    assert "**Holiday codes:** US, NYSE" in out
+    assert "**Regenerate freshness:** Yes" in out
+    assert "## Schedule" in out
+    assert "**Cron expression:** `0 */12 * * *`" in out
+    assert "**Status:** Active" in out
+    assert "Next run" in out
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_get_monitor_settings_not_monitored(mock_resolve, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+
+    from testgen.mcp.tools.monitors import get_monitor_settings
+
+    with _patch_perms():
+        out = get_monitor_settings(str(tg.id))
+
+    assert out == "This table group is not monitored."
+
+
+# ---------------------------------------------------------------------------
+# update_monitor_settings
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}._last_monitor_run", return_value=None)
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.update_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_partial_maps_args(mock_resolve, mock_update, mock_js, mock_last, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _settings_suite(predict_sensitivity=PredictSensitivity.high))
+    mock_js.get_for_monitor_suite.return_value = _mock_schedule()
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"):
+        out = update_monitor_settings(str(tg.id), sensitivity="high", lookback_runs=50, exclude_weekends=True)
+
+    assert "# Monitor settings updated for `Sales`" in out
+    mock_update.assert_called_once()
+    suite_attrs = mock_update.call_args.kwargs["suite_attrs"]
+    assert suite_attrs["predict_sensitivity"] == PredictSensitivity.high
+    assert suite_attrs["monitor_lookback"] == 50
+    assert suite_attrs["predict_exclude_weekends"] is True
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_not_monitored(mock_resolve, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"):
+        out = update_monitor_settings(str(tg.id), sensitivity="high")
+
+    assert out == "This table group is not monitored."
+
+
+@patch(f"{MODULE}.update_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_no_fields(mock_resolve, mock_update, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="No fields supplied"):
+        update_monitor_settings(str(tg.id))
+
+    mock_update.assert_not_called()
+
+
+@patch(f"{MODULE}.update_monitoring")
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_invalid_sensitivity(mock_resolve, mock_js, mock_update, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_js.get_for_monitor_suite.return_value = _mock_schedule()
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="Invalid sensitivity"):
+        update_monitor_settings(str(tg.id), sensitivity="extreme")
+
+    mock_update.assert_not_called()
+
+
+@patch(f"{MODULE}.update_monitoring")
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_lookback_out_of_range(mock_resolve, mock_js, mock_update, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_js.get_for_monitor_suite.return_value = _mock_schedule()
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="between 1 and 200"):
+        update_monitor_settings(str(tg.id), lookback_runs=5000)
+
+    mock_update.assert_not_called()
+
+
+@patch(f"{MODULE}.update_monitoring")
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_unknown_holiday_code(mock_resolve, mock_js, mock_update, db_session_mock):
+    # ``is_supported_holiday_code`` runs for real here — ``US_FEDERAL`` is not a valid calendar.
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_js.get_for_monitor_suite.return_value = _mock_schedule()
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="Unknown holiday codes"):
+        update_monitor_settings(str(tg.id), holiday_codes=["US_FEDERAL"])
+
+    mock_update.assert_not_called()
+
+
+@patch(f"{MODULE}._last_monitor_run", return_value=None)
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.update_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_holiday_codes_serialized(mock_resolve, mock_update, mock_js, mock_last, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _settings_suite())
+    mock_js.get_for_monitor_suite.return_value = _mock_schedule()
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"):
+        update_monitor_settings(str(tg.id), holiday_codes=["US", "NYSE"])
+
+    assert mock_update.call_args.kwargs["suite_attrs"]["predict_holiday_codes"] == "US,NYSE"
+
+
+@patch(f"{MODULE}._last_monitor_run", return_value=None)
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.update_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_update_monitor_settings_empty_holiday_codes_clears(mock_resolve, mock_update, mock_js, mock_last, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _settings_suite())
+    mock_js.get_for_monitor_suite.return_value = _mock_schedule()
+
+    from testgen.mcp.tools.monitors import update_monitor_settings
+
+    with _patch_perms(permission="edit"):
+        update_monitor_settings(str(tg.id), holiday_codes=[])
+
+    assert mock_update.call_args.kwargs["suite_attrs"]["predict_holiday_codes"] is None
+
+
+# ---------------------------------------------------------------------------
+# disable_monitors
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.disable_monitoring", return_value={"monitors": 4, "events": 2, "runs": 1})
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_disable_monitors_happy_path(mock_resolve, mock_disable, db_session_mock):
+    tg = _mock_table_group()
+    suite = _mock_monitor_suite()
+    mock_resolve.return_value = (tg, suite)
+
+    from testgen.mcp.tools.monitors import disable_monitors
+
+    with _patch_perms(permission="edit"):
+        out = disable_monitors(str(tg.id))
+
+    assert "# Monitoring disabled for `Sales`" in out
+    assert "**Monitors removed:** 4" in out
+    assert "**Events removed:** 2" in out
+    assert "**Runs removed:** 1" in out
+    mock_disable.assert_called_once_with(suite)
+
+
+@patch(f"{MODULE}.disable_monitoring")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_disable_monitors_not_enabled(mock_resolve, mock_disable, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+
+    from testgen.mcp.tools.monitors import disable_monitors
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPUserError, match="not enabled"):
+        disable_monitors(str(tg.id))
+
+    mock_disable.assert_not_called()

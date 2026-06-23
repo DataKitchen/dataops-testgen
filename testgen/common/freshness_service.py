@@ -8,7 +8,8 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 
-from testgen.common.time_series_service import NotEnoughData, get_holiday_dates
+from testgen.common.holiday_service import get_holiday_dates
+from testgen.common.time_series_service import NotEnoughData
 
 LOG = logging.getLogger("testgen")
 
