@@ -337,10 +337,11 @@ _MIN_TRAINING_LOOKBACK_RANGE = (20, 1000)
 @with_database_session
 @mcp_permission("edit")
 def enable_monitors(table_group_id: str, cron_expression: str, cron_tz: str = "UTC") -> str:
-    """Turn on monitoring for a table group: create its monitors and put them on a schedule.
+    """Turn on monitoring for a table group: create its monitors and schedule them to run.
 
     Sets up the initial Volume and Schema monitors with default settings; adjust them afterward
-    with ``update_monitor_settings``. Fails if monitoring is already on for the group.
+    with ``update_monitor_settings``. Freshness monitors are added automatically once the table
+    group has profiling data. Fails if monitoring is already on for the group.
 
     Args:
         table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
@@ -404,12 +405,12 @@ def update_monitor_settings(
 
     Args:
         table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        sensitivity: Anomaly-detection sensitivity. One of ``low`` / ``medium`` / ``high``.
-        lookback_runs: Monitor runs aggregated for dashboard summaries (1-200).
-        min_training_lookback: Minimum runs before predictions activate (20-1000).
-        exclude_weekends: Whether to exclude weekends from prediction baselines.
-        holiday_codes: Holiday calendars to exclude from baselines — ISO country codes (e.g. ``US``, ``GB``) or financial-market codes (e.g. ``NYSE``, ``ECB``); see https://holidays.readthedocs.io/en/latest/#available-countries. Pass an empty list to clear.
-        regenerate_freshness: Whether to auto-regenerate Freshness monitors when the schema shifts.
+        sensitivity: How readily monitors flag a deviation. ``high`` flags smaller deviations (more alerts), ``low`` only large ones (fewer alerts), ``medium`` is balanced.
+        lookback_runs: Monitor runs aggregated for dashboard summaries. Display only — does not affect detection (1-200).
+        min_training_lookback: Minimum monitor runs required to train the prediction model (20-1000).
+        exclude_weekends: Whether to exclude weekends from the model's training data.
+        holiday_codes: Holiday calendars to exclude from the model's training data — ISO country codes (e.g. ``US``, ``GB``) or financial-market codes (e.g. ``NYSE``, ``ECB``); see https://holidays.readthedocs.io/en/latest/#available-countries. Pass an empty list to clear.
+        regenerate_freshness: Whether to automatically reconfigure Freshness monitors with new fingerprints after each profiling run.
         cron_expression: New cron expression for the schedule, e.g. ``0 6 * * *``.
         cron_tz: New IANA timezone for the schedule, e.g. ``America/New_York``.
         active: ``True`` to resume the schedule, ``False`` to pause it.
@@ -543,14 +544,16 @@ def _last_monitor_run(schedule_id: UUID) -> datetime | None:
 
 
 def _render_monitor_settings(doc: MdDoc, monitor_suite: TestSuite, schedule: JobSchedule) -> None:
+    doc.field("Lookback runs", monitor_suite.monitor_lookback)
+    doc.field("Regenerate freshness", monitor_suite.monitor_regenerate_freshness)
+
+    doc.heading(2, "Prediction Model")
     sensitivity = monitor_suite.predict_sensitivity.value if monitor_suite.predict_sensitivity else None
     doc.field("Sensitivity", sensitivity)
-    doc.field("Lookback runs", monitor_suite.monitor_lookback)
     doc.field("Min training lookback", monitor_suite.predict_min_lookback)
     doc.field("Exclude weekends", monitor_suite.predict_exclude_weekends)
     holidays = monitor_suite.holiday_codes_list
     doc.field("Holiday codes", ", ".join(holidays) if holidays else None)
-    doc.field("Regenerate freshness", monitor_suite.monitor_regenerate_freshness)
 
     doc.heading(2, "Schedule")
     doc.field("Cron expression", schedule.cron_expr, code=True)
@@ -568,4 +571,5 @@ def _render_monitor_settings(doc: MdDoc, monitor_suite: TestSuite, schedule: Job
             # rendered " UTC" suffix is accurate.
             doc.field("Next run", next_runs[0].astimezone(UTC))
     if (last_run := _last_monitor_run(schedule.id)) is not None:
-        doc.field("Last run", last_run)
+        # job_executions timestamps are tz-aware UTC; convert so the rendered " UTC" suffix is accurate.
+        doc.field("Last run", last_run.astimezone(UTC))
