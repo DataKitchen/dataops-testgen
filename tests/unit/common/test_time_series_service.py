@@ -617,3 +617,37 @@ class Test_GetSarimaxForecast_TimezoneExog:
         forecast_with_tz = get_sarimax_forecast(history, num_forecast=3, exclude_weekends=False, tz="America/New_York")
 
         pd.testing.assert_frame_equal(forecast_no_tz, forecast_with_tz)
+
+
+class Test_GetSarimaxForecast_EventSpace:
+    """Event-space (event_space=True) vs default calendar-regularized fitting for irregular series."""
+
+    @staticmethod
+    def _irregular_refresh_history() -> pd.DataFrame:
+        """A refresh-driven series: irregular gaps (1-3 days), jumps that scale with the gap.
+        This is the shape that calendar interpolation smooths into uniform daily increments."""
+        times = pd.to_datetime([
+            "2026-01-01", "2026-01-02", "2026-01-03", "2026-01-05", "2026-01-06",
+            "2026-01-09", "2026-01-10", "2026-01-12", "2026-01-15", "2026-01-16",
+            "2026-01-18", "2026-01-21",
+        ])
+        values = [100.0, 110, 121, 150, 162, 200, 212, 240, 290, 303, 330, 375]
+        return pd.DataFrame({"result_signal": values}, index=times)
+
+    def test_event_space_centers_on_full_refresh_jump(self):
+        history = self._irregular_refresh_history()
+
+        regularized = get_sarimax_forecast(history, num_forecast=1, event_space=False)
+        event_space = get_sarimax_forecast(history, num_forecast=1, event_space=True)
+
+        last = history["result_signal"].iloc[-1]
+        # Calendar interpolation forecasts a single per-day increment; event-space forecasts a
+        # full refresh-to-refresh jump, so its next-point prediction sits meaningfully higher.
+        assert (event_space["mean"].iloc[0] - last) > (regularized["mean"].iloc[0] - last)
+
+    def test_event_space_returns_requested_forecast_length(self):
+        history = self._irregular_refresh_history()
+        forecast = get_sarimax_forecast(history, num_forecast=5, event_space=True)
+        assert len(forecast) == 5
+        assert forecast["mean"].notna().all()
+        assert forecast["se"].notna().all()

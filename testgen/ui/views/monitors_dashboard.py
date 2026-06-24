@@ -516,6 +516,96 @@ def _resolve_holiday_dates(test_suite: TestSuite) -> set[date] | None:
     return resolve_holiday_dates(test_suite.holiday_codes_list, idx)
 
 
+def _freshness_next_update_window(
+    freshness_definition: TestDefinition | None,
+    events: dict,
+    test_suite: TestSuite,
+    monitor_schedule,
+) -> dict | None:
+    """Predicted next freshness-update window as {"start", "end"} epoch-ms, or None.
+
+    The schedule-derived business-time interval from the last detected update out to the
+    lower/upper staleness tolerance. Drives the Freshness_Trend display window and couples the
+    freshness-gated Volume/Metric forecast to the expected next refresh.
+    """
+    if (
+        freshness_definition is None
+        or freshness_definition.history_calculation != "PREDICT"
+        or (freshness_definition.prediction and not freshness_definition.prediction.get("schedule_stage"))
+        or freshness_definition.upper_tolerance is None
+    ):
+        return None
+
+    last_update_events = [
+        e for e in events["freshness_events"]
+        if e["changed"] and not e["is_training"] and not e["is_pending"]
+    ]
+    if not last_update_events:
+        return None
+
+    last_detection_time = max(e["time"] for e in last_update_events)
+    holiday_dates = _resolve_holiday_dates(test_suite)
+    tz = monitor_schedule.cron_tz or "UTC" if monitor_schedule else None
+    sched = get_schedule_params(freshness_definition.prediction)
+
+    window_end = add_business_minutes(
+        pd.Timestamp(last_detection_time),
+        float(freshness_definition.upper_tolerance),
+        test_suite.predict_exclude_weekends,
+        holiday_dates, tz,
+        excluded_days=sched.excluded_days,
+    )
+    window_start = None
+    if lower_minutes := (float(freshness_definition.lower_tolerance) if freshness_definition.lower_tolerance else None):
+        window_start = add_business_minutes(
+            pd.Timestamp(last_detection_time),
+            lower_minutes,
+            test_suite.predict_exclude_weekends,
+            holiday_dates, tz,
+            excluded_days=sched.excluded_days,
+        )
+
+    return {
+        "start": int(window_start.timestamp() * 1000) if window_start else None,
+        "end": int(window_end.timestamp() * 1000),
+    }
+
+
+def _build_gated_forecast_prediction(
+    definition: TestDefinition,
+    freshness_window: dict | None,
+    last_run_time: datetime | None,
+) -> dict | None:
+    """Coupled forecast payload for a freshness-gated Volume/Metric monitor.
+
+    Holds a flat baseline line from the latest run up to the predicted next-update window, then
+    steps to the forecast's next-refresh value with the band opening to its tolerance. The anchor
+    is never earlier than the latest run, so the forecast extends forward rather than back over
+    history. Returns None when there is no usable forward window — the caller then falls back to a
+    flat band — i.e. when freshness has no predicted window, the window has already elapsed, or the
+    gated prediction carries no baseline.
+    """
+    baseline = definition.prediction.get("baseline_value") if definition.prediction else None
+    window_end = freshness_window.get("end") if freshness_window else None
+    now_ms = int(pd.Timestamp(last_run_time).timestamp() * 1000) if last_run_time is not None else None
+    if window_end is None or now_ms is None or window_end <= now_ms or baseline is None:
+        return None
+
+    forecast_means = (definition.prediction.get("mean") if definition.prediction else None) or {}
+    next_refresh_mean = forecast_means[min(forecast_means, key=lambda k: int(k))] if forecast_means else baseline
+    flat_anchor = max(freshness_window.get("start") or now_ms, now_ms)
+    # lower/upper_tolerance are VARCHAR columns — coerce to float so the band dicts are numerically
+    # typed throughout (baseline is already a float).
+    lower_tol = float(definition.lower_tolerance) if definition.lower_tolerance is not None else None
+    upper_tol = float(definition.upper_tolerance) if definition.upper_tolerance is not None else None
+    return {
+        "method": "predict",
+        "mean": {flat_anchor: baseline, window_end: next_refresh_mean},
+        "lower_tolerance": {flat_anchor: baseline, window_end: lower_tol},
+        "upper_tolerance": {flat_anchor: baseline, window_end: upper_tol},
+    }
+
+
 @with_database_session
 def build_table_trends_data(
     table_group: TableGroupMinimal, payload: dict, dialog: dict | None = None,
@@ -571,9 +661,20 @@ def build_table_trends_data(
             metric_definition_id = metric_group["test_definition_id"]
             last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
 
+        # Predicted next freshness-update window for the table — shared by the Freshness_Trend
+        # display window and the freshness-gated Volume/Metric forecast (which expects no change
+        # until a refresh lands in this window).
+        freshness_definition = next((d for d in definitions if d.test_type == "Freshness_Trend"), None)
+        freshness_window = _freshness_next_update_window(freshness_definition, events, test_suite, monitor_schedule)
+
         for definition in definitions:
             test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
-            if definition.history_calculation == "PREDICT" and definition.prediction and (base_mean_predictions := definition.prediction.get("mean")):
+            if (
+                definition.history_calculation == "PREDICT"
+                and definition.prediction
+                and not definition.prediction.get("freshness_gated")
+                and (base_mean_predictions := definition.prediction.get("mean"))
+            ):
                 predicted_times = sorted([datetime.fromtimestamp(int(timestamp) / 1000.0, UTC) for timestamp in base_mean_predictions.keys()])
                 # Limit predictions to 1/3 of the lookback, with minimum 3 points
                 predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < 3 or idx < monitor_lookback / 3]
@@ -592,6 +693,43 @@ def build_table_trends_data(
                     "lower_tolerance": lower_tolerance_predictions,
                     "upper_tolerance": upper_tolerance_predictions,
                 }
+            elif (
+                definition.history_calculation == "PREDICT"
+                and definition.prediction
+                and definition.prediction.get("freshness_gated")
+                and (definition.lower_tolerance is not None or definition.upper_tolerance is not None)
+            ):
+                # A freshness-gated monitor holds at its baseline between refreshes (the stale-period
+                # check is value == baseline), so it must never render the rising forecast cone.
+                gated_prediction = _build_gated_forecast_prediction(
+                    definition, freshness_window, last_run_time_per_test_key.get(test_key),
+                )
+                if gated_prediction is not None:
+                    predictions[test_key] = gated_prediction
+                else:
+                    # No freshness window available — fall back to a flat band at the next-refresh
+                    # tolerance sampled across upcoming scheduled runs.
+                    cron_sample = get_cron_sample(
+                        monitor_schedule.cron_expr,
+                        monitor_schedule.cron_tz,
+                        sample_count=ceil(min(max(3, monitor_lookback / 3), 10)),
+                        reference_time=last_run_time_per_test_key.get(test_key),
+                    )
+                    mean_predictions: dict = {}
+                    lower_tolerance_predictions: dict = {}
+                    upper_tolerance_predictions: dict = {}
+                    sample_next_runs = [timestamp * 1000 for timestamp in (cron_sample.get("samples") or [])]
+                    for timestamp in sample_next_runs:
+                        mean_predictions[timestamp] = None
+                        lower_tolerance_predictions[timestamp] = definition.lower_tolerance
+                        upper_tolerance_predictions[timestamp] = definition.upper_tolerance
+
+                    predictions[test_key] = {
+                        "method": "static",
+                        "mean": mean_predictions,
+                        "lower_tolerance": lower_tolerance_predictions,
+                        "upper_tolerance": upper_tolerance_predictions,
+                    }
             elif definition.history_calculation is None and (definition.lower_tolerance is not None or definition.upper_tolerance is not None):
                 cron_sample = get_cron_sample(
                     monitor_schedule.cron_expr,
@@ -614,46 +752,11 @@ def build_table_trends_data(
                     "lower_tolerance": lower_tolerance_predictions,
                     "upper_tolerance": upper_tolerance_predictions,
                 }
-            elif (
-                definition.test_type == "Freshness_Trend"
-                and definition.history_calculation == "PREDICT"
-                and (not definition.prediction or definition.prediction.get("schedule_stage"))
-                and definition.upper_tolerance is not None
-            ):
-                last_update_events = [
-                    e for e in events["freshness_events"]
-                    if e["changed"] and not e["is_training"] and not e["is_pending"]
-                ]
-                if last_update_events:
-                    last_detection_time = max(e["time"] for e in last_update_events)
-                    holiday_dates = _resolve_holiday_dates(test_suite)
-                    tz = monitor_schedule.cron_tz or "UTC" if monitor_schedule else None
-                    sched = get_schedule_params(definition.prediction)
-
-                    window_end = add_business_minutes(
-                        pd.Timestamp(last_detection_time),
-                        float(definition.upper_tolerance),
-                        test_suite.predict_exclude_weekends,
-                        holiday_dates, tz,
-                        excluded_days=sched.excluded_days,
-                    )
-                    window_start = None
-                    if lower_minutes := float(definition.lower_tolerance) if definition.lower_tolerance else None:
-                        window_start = add_business_minutes(
-                            pd.Timestamp(last_detection_time),
-                            lower_minutes,
-                            test_suite.predict_exclude_weekends,
-                            holiday_dates, tz,
-                            excluded_days=sched.excluded_days,
-                        )
-
-                    predictions["freshness_trend"] = {
-                        "method": "freshness_window",
-                        "window": {
-                            "start": int(window_start.timestamp() * 1000) if window_start else None,
-                            "end": int(window_end.timestamp() * 1000),
-                        },
-                    }
+            elif definition.test_type == "Freshness_Trend" and freshness_window is not None:
+                predictions["freshness_trend"] = {
+                    "method": "freshness_window",
+                    "window": freshness_window,
+                }
 
     data = {
         **make_json_safe(events),

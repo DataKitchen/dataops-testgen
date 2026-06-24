@@ -299,8 +299,11 @@ def compute_sarimax_threshold(
     exclude_weekends: bool = False,
     holiday_codes: list[str] | None = None,
     schedule_tz: str | None = None,
+    event_space: bool = False,
 ) -> tuple[float | None, float | None, str | None]:
     """Compute SARIMAX-based thresholds for the next forecast point.
+
+    `event_space=True` fits in event-space (one step per observation, no interpolation).
 
     Returns (lower, upper, forecast_json) or (None, None, None) if insufficient data.
     """
@@ -311,6 +314,7 @@ def compute_sarimax_threshold(
             exclude_weekends=exclude_weekends,
             holiday_codes=holiday_codes,
             tz=schedule_tz,
+            event_space=event_space,
         )
 
         num_points = len(history)
@@ -359,6 +363,9 @@ def compute_volume_or_metric_threshold(
     Freshness_Trend detected a fingerprint change.
     """
     filtered_history = history.loc[history["test_run_id"].astype(str).isin(freshness_updates)]
+    # Event-space fit: the filtered series has one point per refresh and is irregularly spaced.
+    # Calendar resampling + interpolation would smooth the refresh jumps into small uniform
+    # increments and collapse the jump variance, biasing the forecast low and the band too tight.
     lower, upper, prediction = compute_sarimax_threshold(
         filtered_history,
         sensitivity=sensitivity,
@@ -366,6 +373,7 @@ def compute_volume_or_metric_threshold(
         exclude_weekends=exclude_weekends,
         holiday_codes=holiday_codes,
         schedule_tz=schedule_tz,
+        event_space=True,
     )
     if prediction is not None:
         # Pull the baseline value from the most-recent filtered row.
