@@ -7,6 +7,8 @@ __pycache__/
 work_area/
 .envrc
 environment.list
+.claude/settings.local.json
+.claude/repo.yml
 
 # C extensions
 *.so
