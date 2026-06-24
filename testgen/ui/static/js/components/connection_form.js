@@ -784,7 +784,7 @@ const AzureMSSQLForm = (
     );
 };
 
-const SynapseMSSQLForm = RedshiftForm;
+const SynapseMSSQLForm = AzureMSSQLForm;
 
 const MSSQLForm = RedshiftForm;
 
