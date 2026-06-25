@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     This test compares sums or counts of a column rolled up to one or more category combinations, but requires a match or increase in the aggregate value, rather than an exact match, across two different tables. Both tables must be accessible at the same time. Use this to confirm that aggregate values have not dropped for any set of categories, even if some values may rise. This test is useful to compare an older and newer version of a cumulative dataset. An error here means that one or more values per category set fail to match or exceed the prior dataset. New categories or combinations are allowed (but can be restricted independently with a Combo_Match test). Both tables must be present to run this test.
   active: Y
+  algorithm: Aggregate reconciliation
   cat_test_conditions: []
   target_data_lookups:
   - id: '1401'

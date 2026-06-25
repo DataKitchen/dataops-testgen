@@ -576,6 +576,8 @@ CREATE TABLE test_types (
    dq_dimension                  VARCHAR(50),
    impact_dimension              VARCHAR(20),
    health_dimension              VARCHAR(50),
+   algorithm                     VARCHAR(64),
+   statistical_technique         VARCHAR(64),
    threshold_description         VARCHAR(200),
    result_visualization          VARCHAR(50) DEFAULT 'line_chart',
    result_visualization_params   TEXT DEFAULT NULL,

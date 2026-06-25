@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import (
     Boolean,
     Column,
+    Enum,
     ForeignKey,
     String,
     Text,
@@ -38,6 +39,87 @@ TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 class Severity(StrEnum):
     FAIL = "Fail"
     WARNING = "Warning"
+
+
+class TestAlgorithm(StrEnum):
+    """SQL-derived algorithm family for a test type (faceted picker axis)."""
+
+    BOUNDARY_CHECK = "Boundary check"
+    COUNTING = "Counting"
+    PATTERN_REGEX = "Pattern / regex"
+    SET_LOOKUP = "Set / lookup"
+    STATISTICAL_DRIFT = "Statistical drift"
+    AGGREGATE_RECONCILIATION = "Aggregate reconciliation"
+    FRESHNESS_TIME = "Freshness / time"
+    SCHEMA_METADATA = "Schema / metadata"
+    CUSTOM_SQL = "Custom SQL"
+
+
+class StatisticalTechnique(StrEnum):
+    """Named statistical technique a test type uses to evaluate its measure."""
+
+    COHENS_D = "Cohen's D"
+    COHENS_H = "Cohen's H"
+    OUTLIER_DETECTION = "Outlier Detection"
+    SD_SHIFT = "SD Shift"
+    JENSEN_SHANNON_DIVERGENCE = "Jensen-Shannon Divergence"
+    PREDICTIVE_MODEL = "Predictive Model"
+
+
+class TestCriteria(StrEnum):
+    """What a test type needs to be set up (faceted picker axis).
+
+    Derived, not stored: ``derive_test_criteria`` is the single source of truth, shared by the
+    UI lookup and MCP so the value never drifts between surfaces.
+    """
+
+    DEFINED_RULE = "Defined Rule"
+    DEFINED_THRESHOLD = "Defined Threshold"
+    DEFINED_VALUE = "Defined Value"
+    LIST_OF_VALUES = "List of Values"
+    REFERENCE_DATASET = "Reference Dataset"
+    CUSTOM_CRITERIA = "Custom Criteria"
+
+
+# Predefined validity/integrity rules — the user just enables them; the rule itself is fixed
+# (dedup/uniqueness and standard format validators). Not separable from structural attributes
+# alone: e.g. Valid_Month is structurally identical to the Defined-Value test Pattern_Match
+# (both column-scoped, Pattern / regex, with baseline_value + threshold_value params).
+_DEFINED_RULE_TESTS = frozenset({
+    "Dupe_Rows", "Unique", "Email_Format", "Street_Addr_Pattern",
+    "Valid_Characters", "Valid_Month", "Valid_US_Zip", "Valid_US_Zip3",
+})
+# The user asserts the expected value/pattern the column should hold (a constant, a regex
+# baseline, or simply that a value is present). Enumerated for the same reason as above.
+_DEFINED_VALUE_TESTS = frozenset({
+    "Constant", "Pattern_Match", "Required",
+})
+
+
+def derive_test_criteria(
+    test_type: str,
+    test_scope: str | None,
+    algorithm: str | None,
+) -> TestCriteria:
+    """Classify a test type by the kind of setup it requires.
+
+    Single source of truth for the Criteria facet — call from both the UI lookup and MCP rather
+    than reproducing the rules. Scope and algorithm resolve the cleanly-typed buckets (referential
+    is checked before Set / lookup so Combo_Match stays Reference Dataset). Defined Rule, Defined
+    Value, and Defined Threshold can't be told apart from structural attributes, so the first two
+    are enumerated and Defined Threshold is the fallthrough.
+    """
+    if test_scope == "custom":
+        return TestCriteria.CUSTOM_CRITERIA
+    if test_scope == "referential":
+        return TestCriteria.REFERENCE_DATASET
+    if algorithm == TestAlgorithm.SET_LOOKUP:
+        return TestCriteria.LIST_OF_VALUES
+    if test_type in _DEFINED_RULE_TESTS:
+        return TestCriteria.DEFINED_RULE
+    if test_type in _DEFINED_VALUE_TESTS:
+        return TestCriteria.DEFINED_VALUE
+    return TestCriteria.DEFINED_THRESHOLD
 
 
 class InvalidTestDefinitionFields(ValueError):
@@ -175,6 +257,15 @@ class QueryString(TypeDecorator):
         return value or None
 
 
+def _enum_by_value(enum_cls: type[StrEnum]) -> Enum:
+    """Map a StrEnum to its VARCHAR column by member value (not name) so reads return enum members.
+
+    These columns store the display value (e.g. ``"Boundary check"``), which differs from the enum
+    member name, so the default name-based mapping would not round-trip.
+    """
+    return Enum(enum_cls, native_enum=False, values_callable=lambda cls: [member.value for member in cls])
+
+
 class TestType(ParamFieldsMixin, Entity):
     __tablename__ = "test_types"
 
@@ -204,11 +295,18 @@ class TestType(ParamFieldsMixin, Entity):
     dq_dimension: str = Column(String)
     impact_dimension: str = Column(String)
     health_dimension: str = Column(String)
+    algorithm: TestAlgorithm | None = Column(_enum_by_value(TestAlgorithm))
+    statistical_technique: StatisticalTechnique | None = Column(_enum_by_value(StatisticalTechnique))
     threshold_description: str = Column(String)
     usage_notes: str = Column(String)
     active: str = Column(String)
 
     # Unmapped columns: generation_template, result_visualization, result_visualization_params
+
+    @property
+    def criteria(self) -> TestCriteria:
+        """Setup-kind facet, derived via the shared classifier (see ``derive_test_criteria``)."""
+        return derive_test_criteria(self.test_type, self.test_scope, self.algorithm)
 
     _summary_columns = (
         *[key for key in TestTypeSummary.__annotations__.keys() if key not in ("default_test_description", "default_impact_dimension")],

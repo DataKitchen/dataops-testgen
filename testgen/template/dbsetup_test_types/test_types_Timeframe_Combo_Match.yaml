@@ -36,6 +36,7 @@ test_types:
   usage_notes: |-
     This test checks a single transactional table (such as a fact table) to verify that categorical values or combinations that are present in the most recent time window you define match those found in the prior time window of the same duration. New or missing values in the latest time window will trigger the test to fail. Use this test to confirm the consistency in the occurrence of codes or categories across successive time periods in a transactional table.
   active: Y
+  algorithm: Aggregate reconciliation
   cat_test_conditions: []
   target_data_lookups:
   - id: '1407'

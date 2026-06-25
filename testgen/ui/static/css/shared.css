@@ -26,6 +26,20 @@ body {
     --empty-dark: #BDBDBD;
     --empty-teal: #E7F1F0;
 
+    /* Faceted test-picker taxonomy palette (test_picker_taxonomy.js). Deep, saturated hues tuned
+       for light backgrounds; overridden with lighter, higher-contrast variants in dark mode below. */
+    --facet-crimson: #9F1239;
+    --facet-blue: #1E40AF;
+    --facet-amber: #B45309;
+    --facet-purple: #6B21A8;
+    --facet-rust: #7C2D12;
+    --facet-teal: #0E5F4F;
+    --facet-bronze: #92400E;
+    --facet-indigo: #312E81;
+    --facet-orange: #C75D2C;
+    --facet-emerald: #1B7C68;
+    --facet-grey: #6A6F7E;
+
     --primary-text-color: #000000de;
     --secondary-text-color: #0000008a;
     --disabled-text-color: #00000042;
@@ -96,6 +110,19 @@ body {
         --empty-light: #212121;
         --empty-dark: #757575;
         --empty-teal: #242E2D;
+
+        /* Lighter, higher-contrast facet hues for dark backgrounds (chip text + facet dots). */
+        --facet-crimson: #FB7185;
+        --facet-blue: #60A5FA;
+        --facet-amber: #FBBF24;
+        --facet-purple: #C084FC;
+        --facet-rust: #F4845F;
+        --facet-teal: #2DD4BF;
+        --facet-bronze: #D9A05B;
+        --facet-indigo: #A5B4FC;
+        --facet-orange: #FB923C;
+        --facet-emerald: #34D399;
+        --facet-grey: #9CA3AF;
 
         --primary-text-color: rgba(255, 255, 255);
         --secondary-text-color: rgba(255, 255, 255, .7);

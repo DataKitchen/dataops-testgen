@@ -28,7 +28,7 @@ test_types:
   test_scope: column
   dq_dimension: Accuracy
   impact_dimension: Regularity
-  health_dimension: Data Drift
+  health_dimension: Statistical Drift
   threshold_description: |-
     Expected maximum pct records over upper 2 SD limit
   result_visualization: line_chart
@@ -41,6 +41,8 @@ test_types:
     \ you expect to see.  This test uses the baseline mean rather than the mean for\
     \ the latest dataset to capture systemic shift as well as individual outliers. "
   active: Y
+  algorithm: Statistical drift
+  statistical_technique: Outlier Detection
   cat_test_conditions:
   - id: '7019'
     test_type: Outlier_Pct_Above

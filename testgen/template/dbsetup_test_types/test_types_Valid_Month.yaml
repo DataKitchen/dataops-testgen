@@ -36,6 +36,7 @@ test_types:
   result_visualization_params: null
   usage_notes: null
   active: N
+  algorithm: Pattern / regex
   cat_test_conditions:
   - id: '7033'
     test_type: Valid_Month

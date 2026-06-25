@@ -1,0 +1,5 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE test_types
+    ADD COLUMN IF NOT EXISTS algorithm VARCHAR(64),
+    ADD COLUMN IF NOT EXISTS statistical_technique VARCHAR(64);
