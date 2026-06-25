@@ -35,6 +35,7 @@ test_types:
   usage_notes: |-
     This test is better than Row Count for an incremental or windowed dataset where you would expect the row count to range within a percentage of baseline.
   active: Y
+  algorithm: Counting
   cat_test_conditions:
   - id: '7025'
     test_type: Row_Ct_Pct

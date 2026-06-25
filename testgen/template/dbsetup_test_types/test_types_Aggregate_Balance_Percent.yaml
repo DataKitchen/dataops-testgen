@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     This test compares sums or counts of a column rolled up to one or more category combinations across two different tables. Both tables must be accessible at the same time. Use it to confirm that two datasets closely match within the tolerance you set -- that the sum of a measure or count of a value remains sufficiently consistent between categories. You could use this test compare sales per product within one month to another, when you want to be alerted if the difference for any product falls outside of the range defined as 5% below to 10% above the prior month. An error here means that one or more value combinations fail to match within the set tolerances. New categories or combinations will cause failure.
   active: Y
+  algorithm: Aggregate reconciliation
   cat_test_conditions: []
   target_data_lookups:
   - id: '1404'

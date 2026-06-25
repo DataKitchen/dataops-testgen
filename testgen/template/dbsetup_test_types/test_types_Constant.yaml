@@ -36,6 +36,7 @@ test_types:
   usage_notes: |-
     Constant Match tests that a single value determined to be a constant in baseline profiling is still the only value for the column that appears in subsequent versions of the dataset. Sometimes new data or business knowledge may reveal that the value is not a constant at all, even though only one value was present at profiling. In this case, you will want to disable this test. Alternatively, you can use the Value Match test to provide a limited number of valid values for the column.
   active: Y
+  algorithm: Boundary check
   cat_test_conditions:
   - id: '7004'
     test_type: Constant

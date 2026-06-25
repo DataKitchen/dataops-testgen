@@ -25,7 +25,7 @@ test_types:
   test_scope: table
   dq_dimension: Validity
   impact_dimension: Regularity
-  health_dimension: null
+  health_dimension: Data Drift
   threshold_description: |-
     Expected aggregate metric range.
   result_visualization: line_chart
@@ -33,6 +33,7 @@ test_types:
   usage_notes: |-
     This test compares the aggregate metric of all or a subset of records in a table against a derived tolerance range.
   active: Y
+  algorithm: Custom SQL
   cat_test_conditions:
   - id: '2516'
     test_type: Metric_Trend

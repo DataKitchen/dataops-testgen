@@ -34,6 +34,7 @@ test_types:
   usage_notes: |-
     Because this tests the row count against a constant minimum threshold, it's appropriate for any dataset, as long as the number of rows doesn't radically change from refresh to refresh.  But it's not responsive to change over time. You may want to adjust the threshold periodically if you are dealing with a cumulative dataset.
   active: Y
+  algorithm: Counting
   cat_test_conditions:
   - id: '7024'
     test_type: Row_Ct

@@ -29,7 +29,7 @@ test_types:
   test_scope: table
   dq_dimension: Recency
   impact_dimension: Reliability
-  health_dimension: Recency
+  health_dimension: Freshness
   threshold_description: |-
     Most recent prior table fingerprint
   result_visualization: binary_chart
@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
   active: Y
+  algorithm: Freshness / time
   cat_test_conditions: []
   target_data_lookups: []
   test_templates:

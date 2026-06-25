@@ -27,6 +27,7 @@ test_types:
   dq_dimension: Completeness
   impact_dimension: Reliability
   health_dimension: Volume
+  statistical_technique: Predictive Model
   threshold_description: |-
     Expected row count range.
   result_visualization: line_chart
@@ -34,6 +35,7 @@ test_types:
   usage_notes: |-
     This test compares the row count of all or a subset of records in a table against a derived tolerance range.
   active: Y
+  algorithm: Custom SQL
   cat_test_conditions:
   - id: '2515'
     test_type: Volume_Trend
