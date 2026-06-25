@@ -128,6 +128,17 @@ def dataframe_to_json_records(df: pd.DataFrame) -> list[dict]:
     return [{key: make_json_safe(value) for key, value in record.items()} for record in df.to_dict(orient="records")]
 
 
+def dict_from_kv(value: str | None, pairs_seprator: str = ";", kv_separator: str = "=") -> dict:
+    if not value:
+        return {}
+    pairs = [pair.split(kv_separator) for raw_pair in value.split(pairs_seprator) if (pair := raw_pair.strip())]
+    return {
+        pair_key: pair_value
+        for pair in pairs
+        if (pair_key := pair[0].strip()) and (pair_value := pair[1].strip())
+    }
+
+
 def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -> list[str]:
     full_query = join_string.join(queries)
     if len(full_query) <= max_query_length:
