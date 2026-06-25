@@ -1,8 +1,10 @@
-"""Tests for the MCP monitor tools — read (``get_monitor_summary`` / ``list_monitored_tables``)
-and lifecycle/settings (``enable_monitors`` / ``get_monitor_settings`` / ``update_monitor_settings``
+"""Tests for the MCP monitor tools — read (``get_monitor_summary`` / ``list_monitored_tables`` /
+``list_monitor_events`` / ``list_monitors`` / ``list_monitor_schema_changes``) and
+lifecycle/settings (``enable_monitors`` / ``get_monitor_settings`` / ``update_monitor_settings``
 / ``disable_monitors``)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -43,10 +45,13 @@ def _mock_table_group(**overrides) -> MagicMock:
 
 
 def _mock_monitor_suite(**overrides) -> MagicMock:
+    from testgen.common.models.test_suite import PredictSensitivity
+
     suite = MagicMock()
     suite.id = overrides.get("id", uuid4())
     suite.is_monitor = True
     suite.monitor_lookback = overrides.get("monitor_lookback", 7)
+    suite.predict_sensitivity = overrides.get("predict_sensitivity", PredictSensitivity.medium)
     return suite
 
 
@@ -135,10 +140,10 @@ def test_get_monitor_summary_happy_path(mock_resolve, mock_tg_cls, mock_next, db
     assert "(override)" not in out
     assert "**Next scheduled run:** not scheduled" in out
     # Per-type rows
-    assert "| Freshness | 2 | ok |" in out
-    assert "| Volume | 0 | ok |" in out
-    assert "| Schema | 1 | ok |" in out
-    assert "| Metric | 0 | training |" in out
+    assert "| Freshness | 2 | Ok |" in out
+    assert "| Volume | 0 | Ok |" in out
+    assert "| Schema | 1 | Ok |" in out
+    assert "| Metric | 0 | Training |" in out
 
 
 @patch(f"{MODULE}.next_scheduled_run", return_value=datetime(2026, 6, 2, 18, 0, tzinfo=UTC))
@@ -246,7 +251,7 @@ def test_get_monitor_summary_empty_state_lookback_zero(
     assert "**Window start:**" not in out
     assert "**Window end:**" not in out
     # All per-type status cells reflect "no results"
-    assert out.count("no results yet or not configured") == 4
+    assert out.count("No results yet or not configured") == 4
 
 
 @patch(f"{MODULE}.next_scheduled_run", return_value=None)
@@ -269,10 +274,10 @@ def test_get_monitor_summary_renders_error_and_pending_states(
     with _patch_perms():
         out = get_monitor_summary(str(tg.id))
 
-    assert "| Freshness | 2 | error |" in out
-    assert "| Volume | 0 | no results yet or not configured |" in out
-    assert "| Schema | 1 | no results yet or not configured |" in out
-    assert "| Metric | 0 | no results yet or not configured |" in out
+    assert "| Freshness | 2 | Error |" in out
+    assert "| Volume | 0 | No results yet or not configured |" in out
+    assert "| Schema | 1 | No results yet or not configured |" in out
+    assert "| Metric | 0 | No results yet or not configured |" in out
 
 
 # ---------------------------------------------------------------------------
@@ -473,9 +478,9 @@ def test_list_monitored_tables_training_and_pending_cells(
         out = list_monitored_tables(str(tg.id))
 
     row = next(line for line in out.splitlines() if "`t1`" in line)
-    assert "training" in row
-    assert "pending" in row
-    assert "error" in row
+    assert "Training" in row
+    assert "Pending" in row
+    assert "Error" in row
 
 
 @patch(f"{MODULE}.TableGroup")
@@ -518,11 +523,11 @@ def test_list_monitored_tables_count_wins_over_training_and_pending(
     assert " 5 " in row_count, "freshness count should render despite is_training"
     assert " 3 " in row_count, "volume count should render despite is_pending"
     assert " 2 " in row_count, "metric count should render despite is_training"
-    assert "training" not in row_count
-    assert "pending" not in row_count
+    assert "Training" not in row_count
+    assert "Pending" not in row_count
     # Row 2: error still wins over count
     row_error = next(line for line in out.splitlines() if "`t_error_with_count`" in line)
-    assert "error" in row_error
+    assert "Error" in row_error
     assert " 4 " not in row_error, "error must win over count (measurement is suspect)"
 
 
@@ -677,6 +682,304 @@ def test_get_monitor_settings_not_monitored(mock_resolve, db_session_mock):
 
     with _patch_perms():
         out = get_monitor_settings(str(tg.id))
+# list_monitor_events (TG-1092)
+# ---------------------------------------------------------------------------
+
+
+def _monitor_event(test_type="Volume_Trend", **overrides):
+    from testgen.common.models.test_result import MonitorEvent
+
+    defaults: dict = {
+        "monitor_id": uuid4(),
+        "test_type": test_type,
+        "test_time": datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+        "is_anomaly": False,
+        "is_training": False,
+        "is_pending": False,
+        "is_error": False,
+        "message": None,
+        "signal": "1000",
+        "lower_bound": "900",
+        "upper_bound": "1100",
+        "schema_change_kind": None,
+        "column_adds": None,
+        "column_drops": None,
+        "column_mods": None,
+        "metric_name": None,
+    }
+    defaults.update(overrides)
+    return MonitorEvent(**defaults)
+
+
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_happy_volume(mock_resolve, mock_tr_cls, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = (
+        [
+            _monitor_event(signal="1000", is_anomaly=True),
+            _monitor_event(signal="800", is_training=True),
+        ],
+        2,
+    )
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "volume")
+
+    assert "Monitor events: `orders` — `volume` in `Sales`" in out
+    assert "| Time | Status | Row count | Lower bound | Upper bound |" in out
+    assert "Anomaly" in out
+    assert "Training" in out
+    # Volume rendering must not pull in Metric's name header
+    assert "Metric name" not in out
+    mock_tr_cls.list_monitor_events_for_table.assert_called_once_with(
+        mock_resolve.return_value[1].id,
+        "orders",
+        monitor_type="Volume_Trend",
+        page=1,
+        limit=20,
+    )
+
+
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_freshness_parses_message_into_columns(
+    mock_resolve, mock_tr_cls, db_session_mock,
+):
+    """Freshness events carry a structured message from the SQL template:
+    ``"Table update detected: {Yes|No}[. {Detail}]"``. Render it as two
+    distinct columns so the LLM consumer doesn't have to re-parse the text."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = (
+        [
+            _monitor_event(test_type="Freshness_Trend", message="Table update detected: Yes. On time."),
+            _monitor_event(test_type="Freshness_Trend", message="Table update detected: No. Late.", is_anomaly=True),
+            _monitor_event(test_type="Freshness_Trend", message="Table update detected: Yes. Later than expected.", is_anomaly=True),
+            _monitor_event(test_type="Freshness_Trend", message="Table update detected: No"),
+        ],
+        4,
+    )
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "freshness")
+
+    assert "| Time | Status | Update detected | Detail |" in out
+    # Freshness rendering should not surface raw bound columns (they map to
+    # the static-mode upper_tolerance, which is configuration, not per-event data).
+    assert "Lower bound" not in out
+    assert "Row count" not in out
+    # Each row's structured fields land in their own columns.
+    assert "| Yes | On time |" in out
+    assert "| No | Late |" in out
+    assert "| Yes | Later than expected |" in out
+    # Missing detail renders as em-dash.
+    assert "| No | — |" in out
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_metric_renders_name_in_heading(
+    mock_resolve, mock_tr_cls, mock_td_cls, db_session_mock,
+):
+    """For Metric monitors the metric name belongs in the heading (one metric
+    per call — see the ``monitor_id`` requirement). The data table itself
+    only carries Time / Status / Value / bounds."""
+    monitor_id = str(uuid4())
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_metric_monitor_events.return_value = (
+        [_monitor_event(test_type="Metric_Trend", metric_name="total_amount")],
+        1,
+    )
+    mock_td_cls.get.return_value = SimpleNamespace(
+        test_type="Metric_Trend",
+        column_name="total_amount",
+    )
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "metric", monitor_id=monitor_id)
+
+    assert "Monitor events: `total_amount` on `orders` in `Sales`" in out
+    assert "| Time | Status | Value | Lower bound | Upper bound |" in out
+    # metric_name lives in the heading, not as a column
+    assert "Metric name" not in out
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_metric_requires_monitor_id(mock_resolve, db_session_mock):
+    """Metric is the only multi-instance monitor type — without ``monitor_id``
+    the query would interleave every metric on the table."""
+    from testgen.mcp.exceptions import MCPUserError
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="monitor_id.*required.*metric"):
+        list_monitor_events(str(tg.id), "orders", "metric")
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_monitor_id_rejected_for_non_metric(mock_resolve, db_session_mock):
+    """Singleton monitor types (freshness/volume/schema) are uniquely
+    identified by table + type; ``monitor_id`` is meaningless for them and
+    must be rejected so the caller gets a clear discovery path."""
+    from testgen.mcp.exceptions import MCPUserError
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="monitor_id.*only applies.*metric"):
+        list_monitor_events(str(tg.id), "orders", "volume", monitor_id=str(uuid4()))
+
+
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_schema_uses_dedicated_columns(mock_resolve, mock_tr_cls, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = (
+        [
+            _monitor_event(
+                test_type="Schema_Drift",
+                signal="A|3|1|0|2026-05-01T00:00:00",
+                schema_change_kind="A",
+                column_adds=3, column_drops=1, column_mods=0,
+                is_anomaly=True,
+            ),
+        ],
+        1,
+    )
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "schema")
+
+    assert "| Time | Status | Table change | Columns added | Columns dropped | Columns modified |" in out
+    assert "added" in out
+    # Internal codes never leak
+    assert "Schema_Drift" not in out
+    assert "| A |" not in out
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_forecast_renders_separate_section(
+    mock_resolve, mock_tr_cls, mock_td_cls, db_session_mock,
+):
+    """``include_predictions=True`` against a Prediction-Model monitor appends
+    a ``## Forecast`` section listing forecast points (future timestamps with
+    predicted bounds). Predictions never bleed into the historical events
+    table — the LLM consumer can distinguish observed from predicted at a
+    glance."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = (
+        [_monitor_event()],
+        1,
+    )
+    # Build a prediction JSONB the helper will read at render time. Keys are
+    # epoch-ms strings — same format the dashboard uses.
+    def _epoch_ms(ts):
+        return str(int(ts.timestamp() * 1000))
+
+    forecast_t1 = datetime(2026, 6, 22, 12, 0, tzinfo=UTC)
+    forecast_t2 = datetime(2026, 6, 29, 12, 0, tzinfo=UTC)
+    monitor_def = MagicMock()
+    monitor_def.history_calculation = "PREDICT"
+    monitor_def.prediction = {
+        "lower_tolerance|medium": {_epoch_ms(forecast_t1): 500.4, _epoch_ms(forecast_t2): 500.3},
+        "upper_tolerance|medium": {_epoch_ms(forecast_t1): 503.6, _epoch_ms(forecast_t2): 503.7},
+    }
+    mock_td_cls.get_singleton_monitor.return_value = monitor_def
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "volume", include_predictions=True)
+
+    # Forecast section is separate from the historical table
+    assert "## Forecast" in out
+    assert "**Sensitivity:** medium" in out
+    assert "| Time | Predicted lower | Predicted upper |" in out
+    assert "500.4" in out and "503.6" in out
+    # Singleton lookup ran for the non-metric forecast path
+    mock_td_cls.get_singleton_monitor.assert_called_once()
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_predictions_unavailable_note(
+    mock_resolve, mock_tr_cls, mock_td_cls, db_session_mock,
+):
+    """include_predictions=True against a non-Prediction-Model monitor surfaces
+    a note under the forecast heading explaining why no forecast follows. The
+    historical events table itself stays clean."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = ([_monitor_event()], 1)
+    monitor_def = MagicMock()
+    monitor_def.history_calculation = None  # Static or Historical, not Prediction
+    mock_td_cls.get_singleton_monitor.return_value = monitor_def
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "volume", include_predictions=True)
+
+    assert "## Forecast" in out
+    assert "Predictions not available" in out
+    assert "Static or Historical Calculation" in out
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_predictions_not_applicable_for_schema(
+    mock_resolve, mock_tr_cls, mock_td_cls, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = (
+        [_monitor_event(test_type="Schema_Drift", schema_change_kind="M", column_mods=1)],
+        1,
+    )
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "schema", include_predictions=True)
+
+    assert "## Forecast" in out
+    assert "Predictions not applicable" in out
+    assert "Schema monitors are presence-only" in out
+    # Schema short-circuits before any TestDefinition lookup — predictions
+    # never apply, so don't waste a DB round-trip.
+    mock_td_cls.get_singleton_monitor.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_not_monitored(mock_resolve, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "volume")
 
     assert out == "This table group is not monitored."
 
@@ -854,3 +1157,219 @@ def test_disable_monitors_not_enabled(mock_resolve, mock_disable, db_session_moc
         disable_monitors(str(tg.id))
 
     mock_disable.assert_not_called()
+def test_list_monitor_events_invalid_monitor_type(db_session_mock):
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        list_monitor_events(str(uuid4()), "orders", "metrics")
+    assert "Invalid monitor_type" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# list_monitors (TG-1092)
+# ---------------------------------------------------------------------------
+
+
+def _monitor_config(**overrides):
+    from testgen.common.models.test_definition import (
+        THRESHOLD_MODE_STATIC,
+        MonitorConfig,
+    )
+
+    defaults: dict = {
+        "monitor_id": uuid4(),
+        "test_type": "Volume_Trend",
+        "table_name": "orders",
+        "metric_name": None,
+        "threshold_mode": THRESHOLD_MODE_STATIC,
+        "threshold_lower": "900",
+        "threshold_upper": "1100",
+        "custom_query": None,
+    }
+    defaults.update(overrides)
+    return MonitorConfig(**defaults)
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitors_happy_path(mock_resolve, mock_td_cls, db_session_mock):
+    tg = _mock_table_group()
+    suite = _mock_monitor_suite()
+    mock_resolve.return_value = (tg, suite)
+    mock_td_cls.list_monitor_configs_for_table.return_value = [
+        _monitor_config(test_type="Freshness_Trend", threshold_lower=None, threshold_upper="60"),
+        _monitor_config(
+            test_type="Volume_Trend",
+            threshold_mode="Prediction Model",
+            threshold_lower=None, threshold_upper=None,
+        ),
+        _monitor_config(
+            test_type="Metric_Trend",
+            metric_name="total_amount",
+            custom_query="SUM(total_amount)",
+        ),
+    ]
+
+    from testgen.mcp.tools.monitors import list_monitors
+
+    with _patch_perms():
+        out = list_monitors(str(tg.id), "orders")
+
+    assert "Monitors on `orders` in `Sales`" in out
+    assert "**Prediction model sensitivity:** medium" in out
+    # Type column uses Title Case (reuses _MONITOR_LABEL — no duplicate
+    # lowercase dict needed; parse_monitor_type accepts either casing).
+    assert "Freshness" in out
+    assert "Volume" in out
+    assert "Metric" in out
+    # Metric expression column only populated for Metric
+    assert "SUM(total_amount)" in out
+    # Configuration tool must not surface runtime prediction bands
+    assert "Prediction bands" not in out
+    # Internal codes never leak
+    assert "Volume_Trend" not in out
+    assert "Freshness_Trend" not in out
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitors_empty(mock_resolve, mock_td_cls, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_td_cls.list_monitor_configs_for_table.return_value = []
+
+    from testgen.mcp.tools.monitors import list_monitors
+
+    with _patch_perms():
+        out = list_monitors(str(tg.id), "orders")
+
+    assert "_No monitors configured for this table._" in out
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitors_not_monitored(mock_resolve, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+
+    from testgen.mcp.tools.monitors import list_monitors
+
+    with _patch_perms():
+        out = list_monitors(str(tg.id), "orders")
+
+    assert out == "This table group is not monitored."
+
+
+# ---------------------------------------------------------------------------
+# list_monitor_schema_changes (TG-1092)
+# ---------------------------------------------------------------------------
+
+
+def _schema_log_entry(**overrides):
+    from testgen.common.models.data_structure_log import DataStructureLogEntry
+
+    defaults: dict = {
+        "log_id": uuid4(),
+        "table_groups_id": uuid4(),
+        "table_name": "orders",
+        "column_name": "customer_id",
+        "change_date": datetime(2026, 6, 1, 12, 0, tzinfo=UTC),
+        "change": "A",
+        "old_data_type": None,
+        "new_data_type": "INTEGER",
+    }
+    defaults.update(overrides)
+    return DataStructureLogEntry(**defaults)
+
+
+@patch(f"{MODULE}.DataStructureLog")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_schema_changes_happy_path(mock_resolve, mock_dsl_cls, db_session_mock):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_dsl_cls.list_for_table_group.return_value = (
+        [
+            _schema_log_entry(change="A", column_name="new_col", old_data_type=None, new_data_type="TEXT"),
+            _schema_log_entry(change="D", column_name="old_col", old_data_type="INTEGER", new_data_type=None),
+            _schema_log_entry(change="M", column_name="total", old_data_type="NUMERIC", new_data_type="DECIMAL(10,2)"),
+        ],
+        3,
+    )
+
+    from testgen.mcp.tools.monitors import list_monitor_schema_changes
+
+    with _patch_perms():
+        out = list_monitor_schema_changes(str(tg.id))
+
+    assert "Schema changes in `Sales`" in out
+    assert "| Time | Change | Table | Column | Old type | New type |" in out
+    # Codes are mapped to user-facing words; raw codes don't leak
+    assert "added" in out
+    assert "dropped" in out
+    assert "modified" in out
+    out_row_section = out.split("| --- |", 1)[1]
+    assert "| A |" not in out_row_section
+    assert "| D |" not in out_row_section
+    assert "| M |" not in out_row_section
+
+
+@patch(f"{MODULE}.DataStructureLog")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_schema_changes_table_filter_in_heading(
+    mock_resolve, mock_dsl_cls, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_dsl_cls.list_for_table_group.return_value = ([], 0)
+
+    from testgen.mcp.tools.monitors import list_monitor_schema_changes
+
+    with _patch_perms():
+        out = list_monitor_schema_changes(str(tg.id), table_name="orders", since="7 days")
+
+    assert "table `orders`" in out
+    assert "since `7 days`" in out
+
+
+@patch(f"{MODULE}.DataStructureLog")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_schema_changes_since_passed_to_model(
+    mock_resolve, mock_dsl_cls, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_dsl_cls.list_for_table_group.return_value = ([], 0)
+
+    from testgen.mcp.tools.monitors import list_monitor_schema_changes
+
+    with _patch_perms():
+        list_monitor_schema_changes(str(tg.id), since="2026-05-01")
+
+    call = mock_dsl_cls.list_for_table_group.call_args
+    assert call.kwargs["since"] == date(2026, 5, 1)
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_schema_changes_not_monitored(mock_resolve, db_session_mock):
+    tg = _mock_table_group(monitor_test_suite_id=None)
+    mock_resolve.return_value = (tg, None)
+
+    from testgen.mcp.tools.monitors import list_monitor_schema_changes
+
+    with _patch_perms():
+        out = list_monitor_schema_changes(str(tg.id))
+
+    assert out == "This table group is not monitored."
+
+
+def test_list_monitor_schema_changes_invalid_since(db_session_mock):
+    from testgen.mcp.tools.monitors import list_monitor_schema_changes
+
+    with _patch_perms(), pytest.raises(MCPUserError):
+        list_monitor_schema_changes(str(uuid4()), since="bogus")
+
+
+def test_list_monitor_schema_changes_limit_out_of_range(db_session_mock):
+    from testgen.mcp.tools.monitors import list_monitor_schema_changes
+
+    with _patch_perms(), pytest.raises(MCPUserError):
+        list_monitor_schema_changes(str(uuid4()), limit=500)

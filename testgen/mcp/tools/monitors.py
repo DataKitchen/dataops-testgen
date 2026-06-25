@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -8,9 +9,20 @@ from testgen.common.cron_service import describe_cron, get_cron_sample
 from testgen.common.enums import MonitorType
 from testgen.common.holiday_service import is_supported_holiday_code
 from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.data_structure_log import (
+    SCHEMA_CHANGE_ADDED,
+    SCHEMA_CHANGE_DROPPED,
+    SCHEMA_CHANGE_MODIFIED,
+    DataStructureLog,
+)
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import MonitorTableSummary, TableGroup
+from testgen.common.models.test_definition import (
+    TestDefinition,
+    forecast_points_from_prediction,
+)
+from testgen.common.models.test_result import MonitorEvent, TestResult
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.mcp.exceptions import MCPUserError
@@ -23,6 +35,7 @@ from testgen.mcp.tools.common import (
     next_scheduled_run,
     parse_monitor_table_sort,
     parse_monitor_type,
+    parse_since_arg,
     resolve_monitored_table_group,
     validate_limit,
     validate_page,
@@ -239,12 +252,12 @@ def list_monitored_tables(
 def _summary_status(*, is_pending: bool, is_training: bool, has_errors: bool) -> str:
     """Single status word for the group-level summary cell."""
     if has_errors:
-        return "error"
+        return "Error"
     if is_pending:
-        return "no results yet or not configured"
+        return "No results yet or not configured"
     if is_training:
-        return "training"
-    return "ok"
+        return "Training"
+    return "Ok"
 
 
 def _format_monitor_cell(
@@ -262,13 +275,13 @@ def _format_monitor_cell(
     shows the X count in its column.
     """
     if has_error:
-        return "error"
+        return "Error"
     if count > 0:
         return str(count)
     if is_pending:
-        return "pending"
+        return "Pending"
     if is_training:
-        return "training"
+        return "Training"
     return "0"
 
 
@@ -276,9 +289,9 @@ def _format_schema_cell(row: MonitorTableSummary) -> str:
     """Schema anomaly count, or pending / error status. Verbose detail is in the
     sibling ``Schema change`` column."""
     if row.schema_error_message is not None:
-        return "error"
+        return "Error"
     if row.schema_is_pending:
-        return "pending"
+        return "Pending"
     return str(row.schema_anomalies)
 
 
@@ -573,3 +586,396 @@ def _render_monitor_settings(doc: MdDoc, monitor_suite: TestSuite, schedule: Job
     if (last_run := _last_monitor_run(schedule.id)) is not None:
         # job_executions timestamps are tz-aware UTC; convert so the rendered " UTC" suffix is accurate.
         doc.field("Last run", last_run.astimezone(UTC))
+# list_monitor_events
+# ---------------------------------------------------------------------------
+
+
+@with_database_session
+@mcp_permission("view")
+def list_monitor_events(
+    table_group_id: str,
+    table_name: str,
+    monitor_type: str,
+    monitor_id: str | None = None,
+    include_predictions: bool = False,
+    limit: int = 20,
+    page: int = 1,
+) -> str:
+    """List per-table monitor events for one monitor type within the lookback window, newest first.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+        monitor_type: One of ``freshness`` / ``volume`` / ``schema`` / ``metric``.
+        monitor_id: Required when ``monitor_type="metric"``; rejected otherwise. Metric monitors are user-defined (many per table), so events must be scoped to one ``monitor_id`` to avoid interleaving every metric's history. Find the id via ``list_monitors(table_group_id, table_name)``. Singleton types (``freshness`` / ``volume`` / ``schema``) are uniquely identified by table + type.
+        include_predictions: When True, append the monitor's forecasted future events (predicted bounds for upcoming time points) after the historical events. Only Volume / Metric / Freshness monitors in Prediction Model mode have a forecast; Schema and other modes render a note explaining why no forecast follows.
+        limit: Page size (default 20, max 100).
+        page: Page number starting at 1 (default 1).
+    """
+    validate_page(page)
+    validate_limit(limit, 100)
+    parsed_type = parse_monitor_type(monitor_type)
+
+    if parsed_type == MonitorType.METRIC and monitor_id is None:
+        raise MCPUserError(
+            '`monitor_id` is required for `monitor_type="metric"`. '
+            "Metric monitors are user-defined and many can apply to one table — "
+            "use `list_monitors(table_group_id, table_name)` to find the metric's "
+            "`monitor_id` first, then call this tool with it."
+        )
+    if monitor_id is not None and parsed_type != MonitorType.METRIC:
+        raise MCPUserError(
+            '`monitor_id` only applies when `monitor_type="metric"`. '
+            "For singleton monitor types (`freshness`, `volume`, `schema`), "
+            "the monitor is uniquely identified by table + type."
+        )
+
+    tg, suite = resolve_monitored_table_group(table_group_id)
+    if suite is None:
+        return _NOT_MONITORED_OUTPUT
+
+    if parsed_type == MonitorType.METRIC:
+        events, total = TestResult.list_metric_monitor_events(
+            suite.id,
+            monitor_id,
+            page=page,
+            limit=limit,
+        )
+        monitor_def = TestDefinition.get(monitor_id)
+        metric_name = (
+            monitor_def.column_name or None
+            if monitor_def is not None and monitor_def.test_type == MonitorType.METRIC.value
+            else None
+        )
+    else:
+        events, total = TestResult.list_monitor_events_for_table(
+            suite.id,
+            table_name,
+            monitor_type=parsed_type.value,
+            page=page,
+            limit=limit,
+        )
+        # Singleton lookup only needed when we will render a forecast — Schema
+        # short-circuits to "not applicable" without touching the definition.
+        monitor_def = (
+            TestDefinition.get_singleton_monitor(suite.id, table_name, parsed_type.value)
+            if include_predictions and parsed_type != MonitorType.SCHEMA
+            else None
+        )
+        metric_name = None
+
+    doc = MdDoc()
+    if parsed_type == MonitorType.METRIC and metric_name:
+        doc.heading(
+            1,
+            f"Monitor events: `{metric_name}` on `{table_name}` in `{tg.table_groups_name}`",
+        )
+    else:
+        doc.heading(
+            1,
+            f"Monitor events: `{table_name}` — `{monitor_type}` in `{tg.table_groups_name}`",
+        )
+
+    page_info = format_page_info(total, page, limit)
+    if page_info:
+        doc.text(page_info)
+
+    if not events:
+        if page > 1:
+            doc.text(f"No events on page {page} (total: {total}).")
+        else:
+            doc.text("_No monitor events in the active lookback window._")
+        if include_predictions:
+            _render_forecast_section(doc, parsed_type, monitor_def, suite)
+        return doc.render()
+
+    if parsed_type == MonitorType.SCHEMA:
+        doc.table(
+            ["Time", "Status", "Table change", "Columns added", "Columns dropped", "Columns modified"],
+            [
+                [
+                    event.test_time,
+                    _event_status(event),
+                    _format_schema_change_kind(event.schema_change_kind),
+                    event.column_adds,
+                    event.column_drops,
+                    event.column_mods,
+                ]
+                for event in events
+            ],
+        )
+    elif parsed_type == MonitorType.FRESHNESS:
+        doc.table(
+            ["Time", "Status", "Update detected", "Detail"],
+            [
+                [event.test_time, _event_status(event), *_parse_freshness_message(event.message)]
+                for event in events
+            ],
+        )
+    elif parsed_type == MonitorType.METRIC:
+        doc.table(
+            ["Time", "Status", "Value", "Lower bound", "Upper bound"],
+            [
+                [
+                    event.test_time,
+                    _event_status(event),
+                    event.signal,
+                    event.lower_bound,
+                    event.upper_bound,
+                ]
+                for event in events
+            ],
+        )
+    else:  # VOLUME
+        doc.table(
+            ["Time", "Status", "Row count", "Lower bound", "Upper bound"],
+            [
+                [
+                    event.test_time,
+                    _event_status(event),
+                    event.signal,
+                    event.lower_bound,
+                    event.upper_bound,
+                ]
+                for event in events
+            ],
+        )
+
+    if footer := format_page_footer(total, page, limit):
+        doc.text(footer)
+
+    if include_predictions:
+        _render_forecast_section(doc, parsed_type, monitor_def, suite)
+
+    return doc.render()
+
+
+def _render_forecast_section(doc, parsed_type, monitor_def, suite) -> None:
+    """Append the forecast section (or an explanatory note) under the
+    historical events table. Predictions are NEVER mixed into the events
+    table — they live on their own under a `## Forecast` heading so the LLM
+    consumer can tell observed-past from predicted-future at a glance."""
+    doc.heading(2, "Forecast")
+
+    if parsed_type == MonitorType.SCHEMA:
+        doc.text(
+            "_Predictions not applicable — Schema monitors are presence-only and "
+            "do not have tolerance bands._"
+        )
+        return
+
+    if monitor_def is None:
+        doc.text("_No monitor configured for this table._")
+        return
+
+    if monitor_def.history_calculation != "PREDICT":
+        doc.text(
+            "_Predictions not available — this monitor's threshold mode is "
+            "Static or Historical Calculation, not Prediction Model._"
+        )
+        return
+
+    sensitivity = (
+        suite.predict_sensitivity.value
+        if suite.predict_sensitivity is not None
+        else "medium"
+    )
+    points = forecast_points_from_prediction(monitor_def.prediction, sensitivity)
+    if not points:
+        doc.text(
+            "_No forecast stored yet — Prediction Model monitors populate their "
+            "forecast after the first successful run._"
+        )
+        return
+
+    doc.field("Sensitivity", sensitivity)
+    doc.table(
+        ["Time", "Predicted lower", "Predicted upper"],
+        [[p.test_time, p.lower_bound, p.upper_bound] for p in points],
+    )
+
+
+def _event_status(event: MonitorEvent) -> str:
+    """Single status word for a monitor-event row."""
+    if event.is_error:
+        return "Error"
+    if event.is_pending:
+        return "Pending"
+    if event.is_training:
+        return "Training"
+    if event.is_anomaly:
+        return "Anomaly"
+    return "Ok"
+
+
+# Freshness events carry a structured message of the form
+# ``"Table update detected: {Yes|No}[. {Detail}]"`` — see the SQL templates at
+# ``template/dbsetup_test_types/test_types_Freshness_Trend.yaml``. Parse it into
+# separate columns so the LLM doesn't have to re-derive the same fields.
+_FRESHNESS_MESSAGE_RE = re.compile(
+    r"^Table update detected:\s*(Yes|No)(?:\.\s*(.+?))?\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _parse_freshness_message(message: str | None) -> tuple[str, str]:
+    """Return ``(update_detected, detail)``: ``"Yes"``/``"No"``/``"—"`` and the
+    descriptive tail (``"On time"`` / ``"Earlier than expected"`` /
+    ``"Later than expected"`` / ``"Late"`` / ``"—"``). Falls back to the raw
+    message text when the format doesn't match (e.g. error rows)."""
+    if not message:
+        return "—", "—"
+    match = _FRESHNESS_MESSAGE_RE.match(message.strip())
+    if not match:
+        return "—", message
+    detected = match.group(1).capitalize()
+    detail = match.group(2) or "—"
+    return detected, detail
+
+
+# ---------------------------------------------------------------------------
+# list_monitors
+# ---------------------------------------------------------------------------
+
+
+_SCHEMA_CHANGE_LABEL: dict[str, str] = {
+    SCHEMA_CHANGE_ADDED: "added",
+    SCHEMA_CHANGE_DROPPED: "dropped",
+    SCHEMA_CHANGE_MODIFIED: "modified",
+}
+
+
+def _format_schema_change_kind(code: str | None) -> str | None:
+    """Map an audit-log change code (``A`` / ``D`` / ``M``) to its user-facing word."""
+    if code is None:
+        return None
+    return _SCHEMA_CHANGE_LABEL.get(code, code)
+
+
+@with_database_session
+@mcp_permission("view")
+def list_monitors(table_group_id: str, table_name: str) -> str:
+    """List configured monitors for a table: monitor IDs, types, threshold modes, and bounds.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+    """
+    tg, suite = resolve_monitored_table_group(table_group_id)
+    if suite is None:
+        return _NOT_MONITORED_OUTPUT
+
+    configs = TestDefinition.list_monitor_configs_for_table(suite.id, table_name)
+
+    doc = MdDoc()
+    doc.heading(1, f"Monitors on `{table_name}` in `{tg.table_groups_name}`")
+    sensitivity = (
+        suite.predict_sensitivity.value
+        if suite.predict_sensitivity is not None
+        else "medium"
+    )
+    doc.field("Prediction model sensitivity", sensitivity)
+
+    if not configs:
+        doc.text("_No monitors configured for this table._")
+        return doc.render()
+
+    doc.table(
+        ["Monitor ID", "Type", "Metric name", "Threshold mode", "Lower", "Upper", "Metric expression"],
+        [
+            [
+                str(c.monitor_id),
+                _MONITOR_LABEL[MonitorType(c.test_type)],
+                c.metric_name,
+                c.threshold_mode,
+                c.threshold_lower,
+                c.threshold_upper,
+                c.custom_query,
+            ]
+            for c in configs
+        ],
+        code=[0, 6],
+    )
+
+    return doc.render()
+
+
+# ---------------------------------------------------------------------------
+# list_monitor_schema_changes
+# ---------------------------------------------------------------------------
+
+
+@with_database_session
+@mcp_permission("view")
+def list_monitor_schema_changes(
+    table_group_id: str,
+    table_name: str | None = None,
+    since: str | None = None,
+    limit: int = 20,
+    page: int = 1,
+) -> str:
+    """List schema changes detected for a table group, newest first.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+        table_name: Filter to one table (exact, case-sensitive). Omit to list changes across every table in the group.
+        since: Lower-bound date (e.g. ``'7 days'``, ``'2 weeks'``, ``'2026-04-01'``). Omit to include the entire stored history.
+        limit: Page size (default 20, max 100).
+        page: Page number starting at 1 (default 1).
+    """
+    validate_page(page)
+    validate_limit(limit, 100)
+    since_date = parse_since_arg(since) if since is not None else None
+
+    tg, suite = resolve_monitored_table_group(table_group_id)
+    if suite is None:
+        return _NOT_MONITORED_OUTPUT
+
+    entries, total = DataStructureLog.list_for_table_group(
+        tg.id,
+        table_name=table_name,
+        since=since_date,
+        page=page,
+        limit=limit,
+    )
+
+    doc = MdDoc()
+    scope_parts: list[str] = []
+    if table_name:
+        scope_parts.append(f"table `{table_name}`")
+    if since:
+        scope_parts.append(f"since `{since}`")
+    scope = f" — {' — '.join(scope_parts)}" if scope_parts else ""
+    doc.heading(1, f"Schema changes in `{tg.table_groups_name}`{scope}")
+
+    page_info = format_page_info(total, page, limit)
+    if page_info:
+        doc.text(page_info)
+
+    if not entries:
+        if page > 1:
+            doc.text(f"No schema changes on page {page} (total: {total}).")
+        else:
+            doc.text("_No schema changes recorded for this scope._")
+        return doc.render()
+
+    doc.table(
+        ["Time", "Change", "Table", "Column", "Old type", "New type"],
+        [
+            [
+                entry.change_date,
+                _format_schema_change_kind(entry.change),
+                entry.table_name,
+                entry.column_name,
+                entry.old_data_type,
+                entry.new_data_type,
+            ]
+            for entry in entries
+        ],
+        code=[2, 3],
+    )
+
+    if footer := format_page_footer(total, page, limit):
+        doc.text(footer)
+
+    return doc.render()

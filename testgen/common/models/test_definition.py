@@ -27,6 +27,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
+from testgen.common.enums import MonitorType
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -268,6 +269,96 @@ class TestDefinitionMinimal(EntityMinimal):
     test_active: bool
     lock_refresh: bool
     test_name_short: str
+
+
+# Threshold-mode labels for monitor TestDefinitions — derived from which fields
+# on the definition are populated. See ``TestDefinition._derive_threshold_mode``.
+THRESHOLD_MODE_PREDICTION = "Prediction Model"
+THRESHOLD_MODE_HISTORICAL = "Historical Calculation"
+THRESHOLD_MODE_STATIC = "Static"
+THRESHOLD_MODE_NONE = "N/A"
+
+
+@dataclass
+class MonitorForecastPoint(EntityMinimal):
+    """One future forecast point read from a Prediction-Model monitor's stored
+    ``prediction`` JSONB. Each point is a ``(test_time, lower_bound, upper_bound)``
+    triple at a specific upcoming timestamp; collectively they extend the
+    historical event series forward under the suite's active prediction
+    sensitivity. Surfaced as a separate forecast section on
+    ``list_monitor_events``, never as an event."""
+    test_time: datetime
+    lower_bound: float | None
+    upper_bound: float | None
+
+
+def forecast_points_from_prediction(
+    prediction: dict | None,
+    sensitivity: str,
+) -> list[MonitorForecastPoint]:
+    """Extract forecast points for a sensitivity from a monitor's stored
+    ``prediction`` JSONB, sorted by time ascending (nearest future point
+    first).
+
+    The JSONB is keyed as ``"lower_tolerance|<sensitivity>" → {epoch_ms: value}``
+    and ``"upper_tolerance|<sensitivity>" → {epoch_ms: value}`` — matches the
+    format the dashboard reads at ``monitors_dashboard.py`` via
+    ``datetime.fromtimestamp(int(timestamp) / 1000.0, UTC)``. Returns ``[]``
+    when the monitor isn't in Prediction Model mode (no JSONB) or when the
+    sensitivity has no stored series. Standalone so it works against either
+    the ``TestDefinition`` ORM row or the ``TestDefinitionSummary`` dataclass
+    — both carry the same ``prediction`` field shape.
+    """
+    if not prediction:
+        return []
+    lower_series = prediction.get(f"lower_tolerance|{sensitivity}") or {}
+    upper_series = prediction.get(f"upper_tolerance|{sensitivity}") or {}
+    if not lower_series and not upper_series:
+        return []
+
+    all_keys = sorted(set(lower_series) | set(upper_series), key=int)
+    points: list[MonitorForecastPoint] = []
+    for k in all_keys:
+        ts = datetime.fromtimestamp(int(k) / 1000.0, UTC)
+        lower = lower_series.get(k)
+        upper = upper_series.get(k)
+        points.append(MonitorForecastPoint(
+            test_time=ts,
+            lower_bound=float(lower) if lower is not None else None,
+            upper_bound=float(upper) if upper is not None else None,
+        ))
+    return points
+
+
+@dataclass
+class MonitorConfig(EntityMinimal):
+    """One configured monitor — produced by ``TestDefinition.list_monitor_configs_for_table``.
+
+    ``threshold_mode`` is derived from the underlying definition's
+    ``history_calculation``: ``"PREDICT"`` flags Prediction Model; any other
+    non-empty value flags Historical Calculation (not available for Freshness);
+    empty falls through to Static — the default for Freshness, Volume, and
+    Metric. Schema_Drift is presence-only and reports N/A.
+
+    ``threshold_lower`` / ``threshold_upper`` carry the bounds active under
+    the current mode — static tolerances for Static, history-calc expressions
+    (e.g. ``"Minimum"`` / ``"Maximum"``) for Historical, ``None`` for
+    Prediction (the runtime bands live on each event, not the configuration).
+    For Freshness in Static mode only the upper bound applies.
+
+    ``metric_name`` is the user-defined name for a Metric monitor (stored on
+    the underlying definition's ``column_name`` column, but it is the metric's
+    name rather than a column reference). ``custom_query`` is the metric's SQL
+    expression. Both are only set for ``Metric_Trend``.
+    """
+    monitor_id: UUID
+    test_type: str
+    table_name: str
+    metric_name: str | None
+    threshold_mode: str
+    threshold_lower: str | None
+    threshold_upper: str | None
+    custom_query: str | None
 
 
 class QueryString(TypeDecorator):
@@ -556,6 +647,95 @@ class TestDefinition(Entity):
             query = query.where(cls.test_active == test_active)
         query = query.order_by(*cls._default_order_by)
         return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
+
+    @classmethod
+    def get_singleton_monitor(
+        cls,
+        test_suite_id: str | UUID,
+        table_name: str,
+        test_type: str,
+    ) -> "TestDefinition | None":
+        """Return the single ``TestDefinition`` row for a singleton monitor
+        type (Freshness / Volume / Schema) on a given table. Metric is
+        multi-instance and should be looked up by ``id`` instead — this
+        helper would silently pick the first match. Returns ``None`` when no
+        monitor is configured."""
+        session = get_current_session()
+        return session.execute(
+            select(cls)
+            .where(cls.test_suite_id == test_suite_id)
+            .where(cls.table_name == table_name)
+            .where(cls.test_type == test_type)
+            .limit(1)
+        ).scalars().first()
+
+    @classmethod
+    def list_monitor_configs_for_table(
+        cls,
+        test_suite_id: str | UUID,
+        table_name: str,
+    ) -> list[MonitorConfig]:
+        """List configured monitors for a single table within a monitor suite.
+
+        Returns one entry per ``test_definition`` row whose ``test_type`` is one
+        of the four monitor types. Typically 3-4 rows per table; Metric_Trend
+        contributes one entry per metric, so a table may have more.
+        """
+        monitor_codes = [m.value for m in MonitorType]
+        defs = cls.select_where(
+            cls.test_suite_id == test_suite_id,
+            cls.table_name == table_name,
+            cls.test_type.in_(monitor_codes),
+        )
+        return [cls._build_monitor_config(td) for td in defs]
+
+    @classmethod
+    def _build_monitor_config(cls, td: "TestDefinition") -> MonitorConfig:
+        mode, threshold_lower, threshold_upper = cls._derive_threshold_mode(td)
+        return MonitorConfig(
+            monitor_id=td.id,
+            test_type=td.test_type,
+            table_name=td.table_name,
+            metric_name=td.column_name or None if td.test_type == MonitorType.METRIC.value else None,
+            threshold_mode=mode,
+            threshold_lower=threshold_lower,
+            threshold_upper=threshold_upper,
+            custom_query=td.custom_query if td.test_type == MonitorType.METRIC.value else None,
+        )
+
+    @classmethod
+    def _derive_threshold_mode(
+        cls, td: "TestDefinition",
+    ) -> tuple[str, str | None, str | None]:
+        """Pick a mode and the bounds tuple that applies under that mode.
+
+        Detection mirrors the UI form (``test_definition_form.js``): a
+        ``history_calculation`` of exactly ``"PREDICT"`` flags Prediction
+        mode; any other non-empty value flags Historical (not available for
+        Freshness); empty falls through to Static — the default for
+        Freshness / Volume / Metric. Schema never has thresholds.
+
+        Bounds returned per mode:
+
+        * Prediction: ``None, None``. Runtime bounds live in the per-run
+          prediction JSONB; they are not configuration and do not surface
+          here.
+        * Historical: ``(history_calculation, history_calculation_upper)`` —
+          stored as expressions like ``"Minimum"`` / ``"Maximum"`` that the
+          execution layer evaluates against the lookback window.
+        * Static for Freshness: ``(None, upper_tolerance)``. Only an upper
+          bound applies.
+        * Static (Volume / Metric): ``(lower_tolerance, upper_tolerance)``.
+        """
+        if td.test_type == MonitorType.SCHEMA.value:
+            return THRESHOLD_MODE_NONE, None, None
+        if td.history_calculation == "PREDICT":
+            return THRESHOLD_MODE_PREDICTION, None, None
+        if td.history_calculation and td.test_type != MonitorType.FRESHNESS.value:
+            return THRESHOLD_MODE_HISTORICAL, td.history_calculation, td.history_calculation_upper
+        if td.test_type == MonitorType.FRESHNESS.value:
+            return THRESHOLD_MODE_STATIC, None, td.upper_tolerance
+        return THRESHOLD_MODE_STATIC, td.lower_tolerance, td.upper_tolerance
 
     @classmethod
     def select_page(

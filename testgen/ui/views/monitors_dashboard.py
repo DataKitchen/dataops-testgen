@@ -10,6 +10,7 @@ import streamlit as st
 from testgen.common.cron_service import get_cron_sample
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
 from testgen.common.models import with_database_session
+from testgen.common.models.data_structure_log import DataStructureLog
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
@@ -894,29 +895,32 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_m
 
 
 @st.cache_data(show_spinner=False)
-def get_data_structure_logs(table_group_id: str, table_name: str, start_time: str, end_time: str):
-    query = """
-    SELECT
-        change_date,
-        change,
-        old_data_type,
-        new_data_type,
-        column_name
-    FROM data_structure_log
-    WHERE table_groups_id = :table_group_id
-        AND table_name = :table_name
-        AND change_date > :start_time ::TIMESTAMP
-        AND change_date <= :end_time ::TIMESTAMP;
-    """
-    params = {
-        "table_group_id": str(table_group_id),
-        "table_name": table_name,
-        "start_time": datetime.fromtimestamp(start_time, UTC),
-        "end_time": datetime.fromtimestamp(end_time, UTC),
-    }
+def get_data_structure_logs(table_group_id: str, table_name: str, start_time: float, end_time: float):
+    """Schema-change rows for a (table-group, table) inside an epoch-seconds window.
 
-    results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
+    The dashboard's chart layer sends timestamps as epoch seconds (the JS-side
+    convention); we convert to UTC datetimes for the model method, which expects
+    real date/datetime bounds.
+    """
+    since = datetime.fromtimestamp(start_time, UTC)
+    until = datetime.fromtimestamp(end_time, UTC)
+    entries, _total = DataStructureLog.list_for_table_group(
+        table_group_id,
+        table_name=table_name,
+        since=since,
+        until=until,
+        limit=None,
+    )
+    return [
+        {
+            "change_date": entry.change_date,
+            "change": entry.change,
+            "old_data_type": entry.old_data_type,
+            "new_data_type": entry.new_data_type,
+            "column_name": entry.column_name,
+        }
+        for entry in entries
+    ]
 
 
 @with_database_session
