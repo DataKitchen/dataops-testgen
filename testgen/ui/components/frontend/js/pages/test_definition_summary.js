@@ -126,7 +126,6 @@ const TestDefinitionSummary = (props) => {
                                 href: testDefinition.external_url.trim(),
                                 label: testDefinition.external_url.trim(),
                                 open_new: true,
-                                underline: true,
                                 right_icon: 'open_in_new',
                                 right_icon_size: 16,
                             })
@@ -174,7 +173,6 @@ stylesheet.replace(`
     overflow-wrap: anywhere;
 }
 .external-url-attribute .tg-link {
-    width: 100%;
     max-width: 100%;
 }
 .external-url-attribute .tg-link--wrapper {
