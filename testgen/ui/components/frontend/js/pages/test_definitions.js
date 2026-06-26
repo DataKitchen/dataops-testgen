@@ -19,7 +19,7 @@ import { Icon } from '/app/static/js/components/icon.js';
 import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 import { AXES, FACET_AXES, GROUP_BY_AXES, EMPTY, appliesToSelectedColumn } from '/app/static/js/components/test_picker_taxonomy.js';
 import { enterPage, exitPage, getPageSignal } from '/app/static/js/page_lifecycle.js';
-import { jsonObject } from '/app/static/js/form_validators.js';
+import { jsonObject, maxLength } from '/app/static/js/form_validators.js';
 
 const { button: btn, div, i: icon, span, strong } = van.tags;
 
@@ -1482,7 +1482,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             value: metadataText,
             placeholder: '{\n  "pipeline": "daily_load",\n  "task": "transform_orders"\n}',
             height: 120,
-            validators: [jsonObject],
+            validators: [jsonObject, maxLength(10240)],
             onChange: (value, state) => {
                 metadataText.val = value;
                 metadataValid.val = state.valid;

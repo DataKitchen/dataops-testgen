@@ -249,7 +249,7 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
     if td.custom_metadata:
         doc.heading(2, "Custom Metadata")
         for key, value in td.custom_metadata.items():
-            doc.field(key, value)
+            doc.field(MdDoc.escape(key), value)
 
     # Parameters (editable fields from test type metadata)
     _append_parameters_section(doc, td)

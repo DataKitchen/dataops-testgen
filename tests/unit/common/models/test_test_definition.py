@@ -7,6 +7,8 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.models.test_definition import (
+    CUSTOM_METADATA_MAX_BYTES,
+    CUSTOM_METADATA_MAX_KEYS,
     InvalidTestDefinitionFields,
     Severity,
     TestDefinition,
@@ -246,6 +248,24 @@ def test_validate_custom_metadata_accepts_object_and_none():
 def test_validate_custom_metadata_rejects_non_object(bad_value):
     tt = make_test_type()
     td = make_td(column_name="email", threshold_value="10", custom_metadata=bad_value)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "custom_metadata" in exc_info.value.errors
+
+
+def test_validate_custom_metadata_rejects_too_many_keys():
+    tt = make_test_type()
+    too_many = {f"k{i}": "v" for i in range(CUSTOM_METADATA_MAX_KEYS + 1)}
+    td = make_td(column_name="email", threshold_value="10", custom_metadata=too_many)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "custom_metadata" in exc_info.value.errors
+
+
+def test_validate_custom_metadata_rejects_oversized():
+    tt = make_test_type()
+    oversized = {"blob": "x" * (CUSTOM_METADATA_MAX_BYTES + 1)}
+    td = make_td(column_name="email", threshold_value="10", custom_metadata=oversized)
     with pytest.raises(InvalidTestDefinitionFields) as exc_info:
         td.validate(tt)
     assert "custom_metadata" in exc_info.value.errors

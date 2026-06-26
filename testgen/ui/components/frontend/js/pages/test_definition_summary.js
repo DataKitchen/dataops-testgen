@@ -26,14 +26,12 @@
  * @property {TestDefinition} test_definition
  */
 import van from '/app/static/js/van.min.js';
-import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, isHttpUrl, loadStylesheet } from '/app/static/js/utils.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
 import { Link } from '/app/static/js/components/link.js';
 
 const { div, strong } = van.tags;
-
-const isHttpUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim());
 
 const metadataDisplayValue = (value) =>
     (value !== null && typeof value === 'object') ? JSON.stringify(value) : value;
@@ -125,8 +123,8 @@ const TestDefinitionSummary = (props) => {
                         label: 'External URL',
                         value: isHttpUrl(testDefinition.external_url)
                             ? Link({
-                                href: testDefinition.external_url,
-                                label: testDefinition.external_url,
+                                href: testDefinition.external_url.trim(),
+                                label: testDefinition.external_url.trim(),
                                 open_new: true,
                                 underline: true,
                                 right_icon: 'open_in_new',

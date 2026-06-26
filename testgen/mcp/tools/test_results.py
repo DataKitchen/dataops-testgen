@@ -165,7 +165,7 @@ def list_test_results(
         if custom_metadata:
             doc.heading(3, "Custom Metadata")
             for key, value in custom_metadata.items():
-                doc.field(key, value)
+                doc.field(MdDoc.escape(key), value)
 
     return doc.render()
 

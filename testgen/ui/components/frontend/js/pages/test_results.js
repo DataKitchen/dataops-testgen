@@ -42,7 +42,7 @@
  * @property {object} filter_options
  */
 import van from '/app/static/js/van.min.js';
-import { createEmitter, getValue, isEqual, loadStylesheet, parseDate } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, isHttpUrl, loadStylesheet, parseDate } from '/app/static/js/utils.js';
 import { Table } from '/app/static/js/components/table.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Tabs, Tab } from '/app/static/js/components/tabs.js';
@@ -152,8 +152,6 @@ const formatNumber = (v) => {
     return n.toLocaleString(undefined, { maximumFractionDigits: 5 });
 };
 
-const isHttpUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim());
-
 const buildExternalLinkCell = (url) => {
     if (!isHttpUrl(url)) {
         return '';
@@ -162,7 +160,7 @@ const buildExternalLinkCell = (url) => {
     return span(
         { class: 'flex-row fx-justify-center', onclick: (event) => event.stopPropagation() },
         Link({
-            href: url,
+            href: url.trim(),
             label: '',
             open_new: true,
             left_icon: 'open_in_new',

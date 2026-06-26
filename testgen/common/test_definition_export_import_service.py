@@ -14,7 +14,7 @@ from testgen import settings
 from testgen.common.models import get_current_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestType
+from testgen.common.models.test_definition import TestDefinition, TestType, validate_custom_metadata
 from testgen.common.models.test_suite import TestSuite
 
 EXPORT_FORMAT_VERSION = 1
@@ -137,6 +137,17 @@ class TestDefinitionExport(BaseModel):
     @classmethod
     def _coerce_none_to_zero(cls, v: int | None) -> int:
         return v if v is not None else 0
+
+    @field_validator("custom_metadata")
+    @classmethod
+    def _check_custom_metadata(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        # The import path does not run TestDefinition.validate(), so this is the only enforcement
+        # of the custom_metadata shape/size bound on import. Shares validate_custom_metadata with
+        # the model so the rule has a single definition.
+        error = validate_custom_metadata(v)
+        if error:
+            raise ValueError(f"custom_metadata {error}")
+        return v
 
 
 class ExportSource(BaseModel):

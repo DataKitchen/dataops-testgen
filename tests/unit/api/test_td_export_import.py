@@ -1098,6 +1098,14 @@ class Test_schema:
         with pytest.raises(ValidationError):
             TestDefinitionExport(test_type="Alpha", custom_metadata=bad_value)
 
+    def test_custom_metadata_rejects_too_many_keys(self):
+        with pytest.raises(ValidationError):
+            TestDefinitionExport(test_type="Alpha", custom_metadata={f"k{i}": "v" for i in range(51)})
+
+    def test_custom_metadata_rejects_oversized(self):
+        with pytest.raises(ValidationError):
+            TestDefinitionExport(test_type="Alpha", custom_metadata={"blob": "x" * 10_241})
+
 
 # --- Click-through fields: export + import ---
 
