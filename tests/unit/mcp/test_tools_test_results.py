@@ -21,8 +21,9 @@ def _mock_test_run(test_run_id=None):
 @patch("testgen.mcp.tools.test_results.TestSuite")
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestDefinition")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_list_test_results_basic(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
+def test_list_test_results_basic(mock_result, mock_td_cls, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
     job_id = str(uuid4())
     mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
@@ -37,6 +38,7 @@ def test_list_test_results_basic(mock_result, mock_tt_cls, mock_test_run_cls, mo
     r1.threshold_value = "10.0"
     r1.message = "Truncation detected"
     mock_result.select_results.return_value = [r1]
+    mock_td_cls.select_where.return_value = []
 
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
@@ -57,8 +59,9 @@ def test_list_test_results_basic(mock_result, mock_tt_cls, mock_test_run_cls, mo
 @patch("testgen.mcp.tools.test_results.TestSuite")
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestDefinition")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_list_test_results_emits_test_result_id(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
+def test_list_test_results_emits_test_result_id(mock_result, mock_td_cls, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
     mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
 
@@ -74,6 +77,7 @@ def test_list_test_results_emits_test_result_id(mock_result, mock_tt_cls, mock_t
     r1.threshold_value = "10.0"
     r1.message = "Truncation detected"
     mock_result.select_results.return_value = [r1]
+    mock_td_cls.select_where.return_value = []
 
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
@@ -91,8 +95,9 @@ def test_list_test_results_emits_test_result_id(mock_result, mock_tt_cls, mock_t
 @patch("testgen.mcp.tools.test_results.TestSuite")
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestDefinition")
 @patch("testgen.mcp.tools.test_results.TestResult")
-def test_list_test_results_table_level_title(mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
+def test_list_test_results_table_level_title(mock_result, mock_td_cls, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock):
     mock_test_run_cls.get.return_value = _mock_test_run()
     mock_suite_cls.get_regular.return_value = _mock_test_suite()
 
@@ -106,6 +111,7 @@ def test_list_test_results_table_level_title(mock_result, mock_tt_cls, mock_test
     r1.threshold_value = "500"
     r1.message = None
     mock_result.select_results.return_value = [r1]
+    mock_td_cls.select_where.return_value = []
 
     tt = MagicMock()
     tt.test_type = "Row_Ct"
@@ -324,9 +330,10 @@ def test_list_test_results_by_suite_id_no_completed_runs(mock_suite_cls, db_sess
 @patch("testgen.mcp.tools.test_results.TestSuite")
 @patch("testgen.mcp.tools.test_results.TestRun")
 @patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestDefinition")
 @patch("testgen.mcp.tools.test_results.TestResult")
 def test_list_test_results_by_suite_id_resolves_latest_run(
-    mock_result, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock
+    mock_result, mock_td_cls, mock_tt_cls, mock_test_run_cls, mock_suite_cls, db_session_mock
 ):
     last_run_id = uuid4()
     mock_suite_cls.get_regular.return_value = _mock_test_suite(last_complete_test_run_id=last_run_id)
@@ -345,6 +352,7 @@ def test_list_test_results_by_suite_id_resolves_latest_run(
     r1.threshold_value = "1"
     r1.message = None
     mock_result.select_results.return_value = [r1]
+    mock_td_cls.select_where.return_value = []
 
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"

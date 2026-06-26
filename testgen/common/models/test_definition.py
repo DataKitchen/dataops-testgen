@@ -224,6 +224,8 @@ class TestDefinitionSummary(TestTypeSummary):
     prediction: dict[str, dict[str, float]] | None
     flagged: bool
     impact_dimension: str | None
+    external_url: str
+    custom_metadata: dict | None
 
     @property
     def display_name(self) -> str:
@@ -397,6 +399,8 @@ class TestDefinition(Entity):
     flagged: bool = Column(Boolean, default=False, nullable=False)
     external_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     impact_dimension: str | None = Column(String, nullable=True)
+    external_url: str = Column(NullIfEmptyString)
+    custom_metadata: dict | None = Column(postgresql.JSONB)
 
     _default_order_by = (
         asc(func.lower(schema_name)),
@@ -555,6 +559,7 @@ class TestDefinition(Entity):
     # Fields editable on every test type regardless of param_columns.
     EDITABLE_BASE_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "external_url", "custom_metadata",
     })
 
     def editable_fields(self, test_type: TestType) -> set[str]:
@@ -600,6 +605,9 @@ class TestDefinition(Entity):
             errors["custom_query"] = (
                 f"test type `{test_type.test_type}` does not accept a custom query"
             )
+
+        if self.custom_metadata is not None and not isinstance(self.custom_metadata, dict):
+            errors["custom_metadata"] = "must be a JSON object of key-value pairs"
 
         for required in _required_fields_for(test_type):
             if _is_blank(getattr(self, required, None)):

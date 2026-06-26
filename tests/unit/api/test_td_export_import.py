@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from testgen.api.schemas import ImportRequest
 from testgen.common.test_definition_export_import_service import (
@@ -1080,4 +1081,89 @@ class Test_schema:
         assert td.skip_errors == 0
         assert td.window_days == 0
         assert td.history_lookback == 0
+
+    def test_click_through_fields_default_none(self):
+        td = TestDefinitionExport(test_type="Alpha")
+        assert td.external_url is None
+        assert td.custom_metadata is None
+        assert "external_url" not in td.model_fields_set
+        assert "custom_metadata" not in td.model_fields_set
+
+    def test_custom_metadata_accepts_object(self):
+        td = TestDefinitionExport(test_type="Alpha", custom_metadata={"pipeline": "daily_load", "task": "t1"})
+        assert td.custom_metadata == {"pipeline": "daily_load", "task": "t1"}
+
+    @pytest.mark.parametrize("bad_value", ["not-json", ["a", "b"], 42])
+    def test_custom_metadata_rejects_non_object(self, bad_value):
+        with pytest.raises(ValidationError):
+            TestDefinitionExport(test_type="Alpha", custom_metadata=bad_value)
+
+
+# --- Click-through fields: export + import ---
+
+
+class Test_click_through_fields:
+
+    @patch(f"{SERVICE_MODULE}.settings")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_export_includes_external_url_and_custom_metadata(self, mock_session_fn, mock_tg_cls, mock_settings):
+        mock_settings.VERSION = "5.12.0"
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+
+        ts = _make_test_suite()
+
+        td_obj = MagicMock(spec=[])
+        for field in TestDefinitionExport.model_fields:
+            setattr(td_obj, field, None)
+        td_obj.test_type = "Alpha"
+        td_obj.test_active = True
+        td_obj.lock_refresh = False
+        td_obj.skip_errors = 0
+        td_obj.window_days = 0
+        td_obj.history_lookback = 0
+        td_obj.external_url = "https://example.com/notebook"
+        td_obj.custom_metadata = {"pipeline": "daily_load", "task": "transform_orders"}
+
+        session.scalars.return_value.all.return_value = [td_obj]
+
+        from testgen.common.test_definition_export_import_service import export_definitions
+
+        result = export_definitions(ts, Origin.both, None, None)
+
+        exported = result.definitions[0]
+        assert exported.external_url == "https://example.com/notebook"
+        assert exported.custom_metadata == {"pipeline": "daily_load", "task": "transform_orders"}
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_create_sets_click_through_fields(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        ts = _make_test_suite()
+        td = _make_import_td(
+            test_type="Alpha",
+            table_name="t1",
+            external_url="https://example.com/task",
+            custom_metadata={"node": "n1"},
+        )
+        config = _make_config(mode=ImportMode.apply, on_new=OnNew.create)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+                created_td = MagicMock(id=uuid4())
+                mock_td_cls.return_value = created_td
+                import_definitions(ts, config, _make_payload(td))
+
+        assert created_td.external_url == "https://example.com/task"
+        assert created_td.custom_metadata == {"node": "n1"}
 

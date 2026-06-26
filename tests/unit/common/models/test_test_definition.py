@@ -99,6 +99,13 @@ def test_editable_fields_includes_param_columns():
     assert {"threshold_value", "baseline_value"} <= accepted
 
 
+def test_editable_fields_includes_click_through_fields():
+    tt = make_test_type(param_columns=set(), default_parm_columns=None)
+    td = make_td()
+    accepted = td.editable_fields(tt)
+    assert {"external_url", "custom_metadata"} <= accepted
+
+
 def test_editable_fields_includes_impact_dimension_only_for_custom_or_referential_scope():
     """impact_dimension is overridable only for user-defined-semantic scopes."""
     td = make_td()
@@ -220,6 +227,22 @@ def test_validate_severity_empty_string_treated_as_unset():
     td.validate(tt)  # empty severity is OK — falls back to test type default
 
 
+def test_validate_custom_metadata_accepts_object_and_none():
+    tt = make_test_type()
+    make_td(column_name="email", threshold_value="10", custom_metadata={"pipeline": "p1"}).validate(tt)
+    make_td(column_name="email", threshold_value="10", custom_metadata=None).validate(tt)
+    make_td(column_name="email", threshold_value="10", custom_metadata={}).validate(tt)
+
+
+@pytest.mark.parametrize("bad_value", ["a string", ["a", "b"], 42])
+def test_validate_custom_metadata_rejects_non_object(bad_value):
+    tt = make_test_type()
+    td = make_td(column_name="email", threshold_value="10", custom_metadata=bad_value)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "custom_metadata" in exc_info.value.errors
+
+
 def test_validate_aggregates_errors():
     tt = make_test_type(scope="column")
     td = make_td(severity="critical", custom_query="SELECT 1")  # no column_name
@@ -294,6 +317,8 @@ def _make_summary_row(table_name: str = "my_table") -> dict:
         "prediction": None,
         "flagged": False,
         "impact_dimension": None,
+        "external_url": None,
+        "custom_metadata": None,
         "test_name_short": "Custom",
         "default_test_description": "A test",
         "measure_uom": "",

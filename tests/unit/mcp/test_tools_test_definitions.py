@@ -1099,6 +1099,36 @@ def test_update_test_multi_field(mock_resolve_td, mock_tt_model, db_session_mock
     td.save.assert_called_once()
 
 
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_custom_metadata_json_string_coerced(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    td.editable_fields.return_value = td.editable_fields.return_value | {"custom_metadata"}
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    update_test(str(td.id), fields={"custom_metadata": '{"pipeline": "p1", "task": "t1"}'})
+    assert td.custom_metadata == {"pipeline": "p1", "task": "t1"}
+    td.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_custom_metadata_invalid_json_rejected(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    td.editable_fields.return_value = td.editable_fields.return_value | {"custom_metadata"}
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    with pytest.raises(MCPUserError, match="custom_metadata"):
+        update_test(str(td.id), fields={"custom_metadata": "{not valid json"})
+    td.save.assert_not_called()
+
+
 # -- validate_custom_test -----------------------------------------------------
 
 

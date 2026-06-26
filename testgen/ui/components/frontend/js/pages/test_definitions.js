@@ -19,6 +19,7 @@ import { Icon } from '/app/static/js/components/icon.js';
 import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 import { AXES, FACET_AXES, GROUP_BY_AXES, EMPTY, appliesToSelectedColumn } from '/app/static/js/components/test_picker_taxonomy.js';
 import { enterPage, exitPage, getPageSignal } from '/app/static/js/page_lifecycle.js';
+import { jsonObject } from '/app/static/js/form_validators.js';
 
 const { button: btn, div, i: icon, span, strong } = van.tags;
 
@@ -1384,6 +1385,13 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         onFormChange({ [key]: value });
     };
 
+    // Custom Metadata is stored as a JSON object (JSONB). Keep the raw text the user edits in a
+    // local state, and only commit a parsed object to the form when the JSON is valid.
+    const metadataText = van.state(
+        formValues.custom_metadata ? JSON.stringify(formValues.custom_metadata, null, 2) : ''
+    );
+    const metadataValid = van.state(true);
+
     const inheritedSeverity = testSuite.severity ?? formValues.default_severity ?? 'Warning';
     const severityOptions = [
         { label: `Inherited (${inheritedSeverity})`, value: null },
@@ -1457,6 +1465,31 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             placeholder: `Inherited (${formValues.default_test_description ?? ''})`,
             height: 72,
             onChange: (value) => updateField('test_description', value || null),
+        }),
+
+        // External link + custom metadata
+        Input({
+            name: 'external_url',
+            label: 'External URL',
+            help: 'Optional link to the code, pipeline step, or system that produces this data.',
+            value: () => fv.val.external_url ?? '',
+            onChange: (value) => updateField('external_url', value || null),
+        }),
+        Textarea({
+            name: 'custom_metadata',
+            label: 'Custom Metadata',
+            help: 'Optional JSON object of key-value pairs, e.g. {"pipeline": "daily_load", "task": "transform_orders"}.',
+            value: metadataText,
+            placeholder: '{\n  "pipeline": "daily_load",\n  "task": "transform_orders"\n}',
+            height: 120,
+            validators: [jsonObject],
+            onChange: (value, state) => {
+                metadataText.val = value;
+                metadataValid.val = state.valid;
+                if (state.valid) {
+                    updateField('custom_metadata', value && value.trim() ? JSON.parse(value) : null);
+                }
+            },
         }),
 
         // Checkboxes
@@ -1644,6 +1677,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     color: 'primary',
                     label: mode === 'edit' ? 'Save' : 'Add',
                     width: 'auto',
+                    disabled: () => !metadataValid.val,
                     onclick: onSave,
                 }),
             ),

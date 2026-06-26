@@ -129,6 +129,10 @@ class TestDefinitionExport(BaseModel):
     history_calculation_upper: str | None = None
     history_lookback: int = 0
 
+    # URL / metadata
+    external_url: str | None = None
+    custom_metadata: dict[str, Any] | None = None
+
     @field_validator("skip_errors", "window_days", "history_lookback", mode="before")
     @classmethod
     def _coerce_none_to_zero(cls, v: int | None) -> int:

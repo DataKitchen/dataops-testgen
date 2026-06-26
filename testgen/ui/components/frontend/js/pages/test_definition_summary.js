@@ -17,8 +17,10 @@
  * @property {string} export_to_observability
  * @property {string?} last_manual_update
  * @property {string?} usage_notes
+ * @property {string?} external_url
+ * @property {object?} custom_metadata
  * @property {Array<TestDefinitionAttribute>} attributes
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {TestDefinition} test_definition
@@ -27,8 +29,14 @@ import van from '/app/static/js/van.min.js';
 import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
+import { Link } from '/app/static/js/components/link.js';
 
 const { div, strong } = van.tags;
+
+const isHttpUrl = (value) => typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+
+const metadataDisplayValue = (value) =>
+    (value !== null && typeof value === 'object') ? JSON.stringify(value) : value;
 
 /**
  * @param {Properties} props 
@@ -112,6 +120,38 @@ const TestDefinitionSummary = (props) => {
                         ),
                     ),
                 ),
+                testDefinition.external_url
+                    ? Attribute({
+                        label: 'External URL',
+                        value: isHttpUrl(testDefinition.external_url)
+                            ? Link({
+                                href: testDefinition.external_url,
+                                label: testDefinition.external_url,
+                                open_new: true,
+                                underline: true,
+                                right_icon: 'open_in_new',
+                                right_icon_size: 16,
+                            })
+                            : testDefinition.external_url,
+                        class: 'mt-4 external-url-attribute',
+                      })
+                    : '',
+                testDefinition.custom_metadata && Object.keys(testDefinition.custom_metadata).length
+                    ? div(
+                        { class: 'flex-column fx-gap-3 mt-4' },
+                        strong({}, 'Custom Metadata'),
+                        div(
+                            { class: 'flex-row fx-flex-wrap fx-gap-4 test-definition-attributes' },
+                            Object.entries(testDefinition.custom_metadata).map(([key, value]) =>
+                                Attribute({
+                                    label: key,
+                                    value: metadataDisplayValue(value),
+                                    class: 'fx-flex',
+                                })
+                            ),
+                        ),
+                      )
+                    : '',
                 testDefinition.usage_notes
                     ? Alert(
                         { type: 'info', class: 'mt-4' },
@@ -131,6 +171,21 @@ stylesheet.replace(`
 }
 .test-definition-attributes > div .attribute-value {
     font-size: 16px;
+}
+.external-url-attribute .attribute-value {
+    overflow-wrap: anywhere;
+}
+.external-url-attribute .tg-link {
+    width: 100%;
+    max-width: 100%;
+}
+.external-url-attribute .tg-link--wrapper {
+    flex-wrap: wrap;
+}
+.external-url-attribute .tg-link--text {
+    overflow-wrap: anywhere;
+    word-break: break-all;
+    min-width: 0;
 }
 `);
 

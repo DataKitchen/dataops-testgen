@@ -6,7 +6,7 @@ from sqlalchemy import select
 from testgen.common.enums import JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.test_definition import TestType
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_result import BucketInterval, TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
@@ -130,6 +130,12 @@ def list_test_results(
 
     type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
+    td_ids = {r.test_definition_id for r in results if r.test_definition_id}
+    source_by_td = {
+        td.id: (td.external_url, td.custom_metadata)
+        for td in (TestDefinition.select_where(TestDefinition.id.in_(td_ids)) if td_ids else [])
+    }
+
     doc = MdDoc()
     doc.heading(1, f"Test Results for run `{run_id_label}`")
     if resolved_via_suite:
@@ -153,6 +159,13 @@ def list_test_results(
             doc.field("Threshold", r.threshold_value)
         if r.message:
             doc.field("Message", r.message)
+        external_url, custom_metadata = source_by_td.get(r.test_definition_id, (None, None))
+        if external_url:
+            doc.field("External URL", external_url)
+        if custom_metadata:
+            doc.heading(3, "Custom Metadata")
+            for key, value in custom_metadata.items():
+                doc.field(key, value)
 
     return doc.render()
 
