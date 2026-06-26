@@ -124,18 +124,6 @@ const TableMonitoringTrend = (props) => {
       div(
         { class: '', style: 'width: 100%;' },
         () => {
-          const extendedHistory = getValue(props.extended_history) ?? false;
-          return div(
-            { class: 'extended-history-toggle' },
-            Button({
-              label: extendedHistory ? 'Show default view' : 'Show more history',
-              icon: extendedHistory ? 'history_toggle_off' : 'history',
-              width: 'auto',
-              onclick: () => emit('ToggleExtendedHistory', { payload: {} }),
-            }),
-          );
-        },
-        () => {
           if (!getValue(props.dialog)?.open) return div();
           return ChartsSection(props, { schemaChartSelection, getDataStructureLogs });
         },
@@ -229,12 +217,22 @@ const TableMonitoringTrend = (props) => {
   );
 
   const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
+  const historyToggle = () => {
+    const extendedHistory = getValue(props.extended_history) ?? false;
+    return Button({
+      label: extendedHistory ? 'Show default view' : 'Show more history',
+      icon: extendedHistory ? 'history_toggle_off' : 'history',
+      width: 'auto',
+      onclick: () => emit('ToggleExtendedHistory', { payload: {} }),
+    });
+  };
   return Dialog(
     {
       title: dialogTitle,
       open: dialogOpen,
       onClose: () => { dialogOpen.val = false; emit('CloseTrendsDialog', {}); },
       width: '75rem',
+      headerActions: historyToggle,
     },
     content,
   );
@@ -823,13 +821,6 @@ stylesheet.replace(`
     min-height: 200px;
     padding-top: 24px;
     position: relative;
-  }
-
-  .extended-history-toggle {
-    position: absolute;
-    top: -70px;
-    right: 48px;
-    z-index: 1;
   }
 
   .table-monitoring-trend-wrapper:not(.has-sidebar) > .tg-dualpane-divider {

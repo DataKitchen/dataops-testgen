@@ -370,6 +370,36 @@ def test_freshness_gating_fits_on_filtered_series(mock_forecast):
 
 
 @patch(MOCK_TARGET)
+def test_freshness_gating_filtered_fit_uses_event_space(mock_forecast):
+    """The freshness-filtered fit must run in event-space (event_space=True): the filtered
+    series has one point per refresh and is irregularly spaced, so calendar resampling would
+    interpolate the refresh jumps into uniform increments and bias the forecast low."""
+    mock_forecast.return_value = _make_forecast([220.0], [1.0])
+    timestamps = [f"2026-01-{day:02d}" for day in range(1, 21)]
+    run_ids = [f"run_{i:02d}" for i in range(len(timestamps))]
+    history = _history_with_run_ids(timestamps, run_ids, value=220.0)
+
+    compute_volume_or_metric_threshold(history, run_ids[:8], PredictSensitivity.medium)
+
+    assert mock_forecast.call_args.kwargs["event_space"] is True
+
+
+@patch(MOCK_TARGET)
+def test_freshness_gating_raw_fallback_uses_calendar(mock_forecast):
+    """The raw-history fallback (when the filtered fit fails) keeps calendar regularization."""
+    mock_forecast.side_effect = [NotEnoughData("not enough"), _make_forecast([220.0], [1.0])]
+    timestamps = [f"2026-01-{day:02d}" for day in range(1, 21)]
+    run_ids = [f"run_{i:02d}" for i in range(len(timestamps))]
+    history = _history_with_run_ids(timestamps, run_ids, value=220.0)
+
+    compute_volume_or_metric_threshold(history, run_ids[:5], PredictSensitivity.medium)
+
+    assert mock_forecast.call_count == 2  # filtered (event-space) failed, raw retried
+    assert mock_forecast.call_args_list[0].kwargs["event_space"] is True
+    assert mock_forecast.call_args_list[1].kwargs["event_space"] is False
+
+
+@patch(MOCK_TARGET)
 def test_freshness_gating_baseline_from_filtered_when_events_extend_past_history(mock_forecast):
     """When freshness_updates includes runs beyond the (retention-trimmed) history window,
     baseline_value must come from the most recent filtered row — not from a run that's no

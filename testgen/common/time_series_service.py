@@ -23,6 +23,7 @@ def get_sarimax_forecast(
     exclude_weekends: bool = False,
     holiday_codes: list[str] | None = None,
     tz: str | None = None,
+    event_space: bool = False,
 ) -> pd.DataFrame:
     """
     # Parameters
@@ -33,6 +34,14 @@ def get_sarimax_forecast(
     :param exclude_weekends: Whether weekends should be considered exogenous when training the model and forecasting.
     :param holiday_codes: List of country or financial market codes defining holidays to be considered exogenous when training the model and forecasting.
     :param tz: IANA timezone (e.g. "America/New_York") for day-of-week/holiday checks. Naive timestamps are treated as UTC and converted to this timezone before determining weekday/holiday status.
+    :param event_space: When False (default), resample the series onto a regular calendar grid and
+                    linearly interpolate gaps before fitting — appropriate for series sampled at a
+                    steady cadence, and where weekend/holiday exogenous flags apply. When True, fit
+                    in event-space: one model step per observation, no interpolation, no calendar
+                    exog. Required for irregularly-spaced series (e.g. the freshness-update points of
+                    a refresh-driven table) where interpolation would smooth multi-period jumps into
+                    small uniform increments and collapse the very jump variance the forecast must
+                    capture.
 
     # Return value
     Returns a Pandas dataframe with forecast DatetimeIndex, "mean" column, and "se" (standard error) column.
@@ -40,23 +49,33 @@ def get_sarimax_forecast(
     if len(history) < MIN_TRAIN_VALUES:
         raise NotEnoughData("Not enough data points in history.")
 
-    # statsmodels requires DatetimeIndex with a regular frequency
-    # Resample the data to get a regular time series
-    datetimes = history.index.to_series()
-    frequency = infer_frequency(datetimes)
-    resampled_history = history.resample(frequency).mean().interpolate(method="linear")
-
-    if len(resampled_history) < MIN_TRAIN_VALUES:
-        raise NotEnoughData("Not enough data points after resampling.")
+    if event_space:
+        # Event-space: one step per observation. Map the values onto a synthetic regular grid
+        # stepped by the median observed interval, so forecast timestamps remain realistic while
+        # the model sees each observation as a single step (no interpolated points between them).
+        median_step = history.index.to_series().diff().median()
+        if pd.isna(median_step) or median_step <= pd.Timedelta(0):
+            median_step = pd.Timedelta(days=1)
+        step = median_step
+        synthetic_index = pd.date_range(end=history.index[-1], periods=len(history), freq=step)
+        train_history = pd.DataFrame(history.iloc[:, 0].values, index=synthetic_index, columns=[history.columns[0]])
+    else:
+        # statsmodels requires DatetimeIndex with a regular frequency
+        # Resample the data to get a regular time series
+        datetimes = history.index.to_series()
+        frequency = infer_frequency(datetimes)
+        train_history = history.resample(frequency).mean().interpolate(method="linear")
+        if len(train_history) < MIN_TRAIN_VALUES:
+            raise NotEnoughData("Not enough data points after resampling.")
+        step = pd.to_timedelta(frequency)
 
     # Generate DatetimeIndex with future dates
-    forecast_start = resampled_history.index[-1] + pd.to_timedelta(frequency)
-    forecast_index = pd.date_range(start=forecast_start, periods=num_forecast, freq=frequency)
+    forecast_index = pd.date_range(start=train_history.index[-1] + step, periods=num_forecast, freq=step)
 
-    # Detect holidays in entire date range
+    # Detect holidays in entire date range (calendar-aware path only)
     holiday_dates = None
-    if holiday_codes:
-        all_dates_index = resampled_history.index.append(forecast_index)
+    if not event_space and holiday_codes:
+        all_dates_index = train_history.index.append(forecast_index)
         holiday_dates = get_holiday_dates(holiday_codes, all_dates_index)
 
     def get_exog_flags(index: pd.DatetimeIndex) -> pd.DataFrame:
@@ -71,11 +90,13 @@ def get_sarimax_forecast(
             exog.loc[pd.Index(check_index.date).isin(holiday_dates), "is_excluded"] = 1
         return exog
 
-    exog_train = get_exog_flags(resampled_history.index)
+    # Calendar exogenous flags only apply when fitting against real calendar time.
+    exog_train = None if event_space else get_exog_flags(train_history.index)
+    exog_forecast = None if event_space else get_exog_flags(forecast_index)
 
     # When seasonal_order is not specified, this is effectively the ARIMAX model
     model = SARIMAX(
-        resampled_history.iloc[:, 0],
+        train_history.iloc[:, 0],
         exog=exog_train,
         # This is a good starting point according to Gemini - tune if needed
         order=(1, 1, 1),
@@ -85,12 +106,6 @@ def get_sarimax_forecast(
     )
     fitted_model = model.fit(disp=False)
 
-    forecast_index = pd.date_range(
-        start=resampled_history.index[-1] + pd.to_timedelta(frequency),
-        periods=num_forecast,
-        freq=frequency
-    )
-    exog_forecast = get_exog_flags(forecast_index)
     forecast = fitted_model.get_forecast(steps=num_forecast, exog=exog_forecast)
 
     results = pd.DataFrame(index=forecast_index)
