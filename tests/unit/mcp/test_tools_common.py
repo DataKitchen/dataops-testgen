@@ -5,6 +5,7 @@ import pytest
 
 from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, PiiRisk, QualityDimension
 from testgen.common.models.scores import ScoreCategory
+from testgen.common.models.test_definition import Severity
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
@@ -28,6 +29,7 @@ from testgen.mcp.tools.common import (
     parse_score_filter_field,
     parse_score_group_by,
     parse_score_type,
+    parse_severity,
     parse_uuid,
     resolve_hygiene_issue,
     resolve_issue_type,
@@ -86,6 +88,32 @@ def test_parse_result_status_invalid_lists_valid_values():
         parse_result_status("nope")
     for status in TestResultStatus:
         assert status.value in str(exc_info.value)
+
+
+# --- parse_severity ---
+
+
+def test_parse_severity_valid():
+    assert parse_severity("Fail") == Severity.FAIL
+    assert parse_severity("Warning") == Severity.WARNING
+
+
+def test_parse_severity_invalid_names_value():
+    with pytest.raises(MCPUserError, match="Invalid severity `Critical`"):
+        parse_severity("Critical")
+
+
+def test_parse_severity_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_severity("nope")
+    for severity in Severity:
+        assert severity.value in str(exc_info.value)
+
+
+def test_parse_severity_case_sensitive():
+    """Severity stores 'Fail' / 'Warning' verbatim; lowercase rejected by design."""
+    with pytest.raises(MCPUserError, match="Invalid severity `fail`"):
+        parse_severity("fail")
 
 
 # --- validate_page ---

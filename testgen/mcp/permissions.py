@@ -138,17 +138,29 @@ def mcp_permission(permission: str) -> Callable:
     Raises ``MCPPermissionDenied`` if the user has no projects with the required
     permission. Other ``MCPPermissionDenied`` exceptions from tool code propagate
     through — the ``safe_tool`` error boundary handles conversion to text.
+
+    ``global_admin`` is a user-level flag, not a per-project role: the check
+    consults ``User.is_global_admin`` and the resulting ``ProjectPermissions``
+    has empty ``memberships``. Tools gated on ``global_admin`` operate above
+    project scope and should not call ``get_project_permissions()``.
     """
 
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             user = get_authorized_mcp_user()
-            perms = _compute_project_permissions(user, permission)
-            if not perms.allowed_codes:
-                raise MCPPermissionDenied(
-                    "Your role does not include the necessary permission for this operation on any project."
-                )
+            if permission == "global_admin":
+                if not user.is_global_admin:
+                    raise MCPPermissionDenied(
+                        "Your role does not include the necessary permission for this operation."
+                    )
+                perms = ProjectPermissions(memberships={}, permission=permission, username=user.username)
+            else:
+                perms = _compute_project_permissions(user, permission)
+                if not perms.allowed_codes:
+                    raise MCPPermissionDenied(
+                        "Your role does not include the necessary permission for this operation on any project."
+                    )
             tok = _mcp_project_permissions.set(perms)
             try:
                 return fn(*args, **kwargs)

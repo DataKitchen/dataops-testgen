@@ -38,7 +38,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestType
+from testgen.common.models.test_definition import Severity, TestDefinition, TestDefinitionNote, TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -130,6 +130,15 @@ def parse_quality_dimension(value: str) -> QualityDimension:
     except ValueError as err:
         valid = ", ".join(d.value for d in QualityDimension)
         raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}") from err
+
+
+def parse_severity(value: str) -> Severity:
+    """Validate a test-suite default severity. Accepts ``Fail`` or ``Warning``."""
+    try:
+        return Severity(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in Severity)
+        raise MCPUserError(f"Invalid severity `{value}`. Valid values: {valid}") from err
 
 
 class ScoreGroupBy(StrEnum):
