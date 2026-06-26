@@ -1461,6 +1461,8 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             { activeTab },
             Tab(
                 { label: 'Parameters' },
+                div(
+                    { class: 'flex-column fx-gap-3' },
 
                 // Schema (read-only)
                 qualifiesTableRefsWithSchema
@@ -1552,9 +1554,12 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                         onChange: (value) => updateField('skip_errors', value ?? 0),
                     })
                     : null,
+                ),
             ),
             Tab(
                 { label: 'Settings' },
+                div(
+                    { class: 'flex-column fx-gap-3' },
 
                 // Description override
                 Textarea({
@@ -1640,6 +1645,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                             onChange: (value) => updateField('impact_dimension', value),
                         }),
                     ) : null,
+                ),
                 ),
             ),
         ),
@@ -1941,7 +1947,7 @@ stylesheet.replace(`
 .td-form-params-section {
     border-top: 1px solid var(--border-color);
     padding-top: 12px;
-    margin-top: 4px;
+    margin-top: 16px;
 }
 
 .tg-test-picker { display: flex; flex-direction: column; gap: 12px; height: 70vh; min-height: 0; }
