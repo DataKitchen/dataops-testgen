@@ -720,6 +720,8 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
         "locked": readable_boolean(test_definition.lock_refresh),
         "active": readable_boolean(test_definition.test_active),
         "usage_notes": test_definition.usage_notes,
+        "external_url": test_definition.external_url,
+        "custom_metadata": test_definition.custom_metadata,
         "last_manual_update": (
             test_definition.last_manual_update.isoformat() if test_definition.last_manual_update else None
         ),

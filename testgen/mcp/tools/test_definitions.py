@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import NoReturn
@@ -241,6 +242,14 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
         doc.field("Last Updated", f"{td.last_manual_update} (manual edit)")
     elif td.last_auto_gen_date:
         doc.field("Last Updated", f"{td.last_auto_gen_date} (auto-generated)")
+
+    # URL and metadata
+    if td.external_url:
+        doc.field("External URL", td.external_url)
+    if td.custom_metadata:
+        doc.heading(2, "Custom Metadata")
+        for key, value in td.custom_metadata.items():
+            doc.field(MdDoc.escape(key), value)
 
     # Parameters (editable fields from test type metadata)
     _append_parameters_section(doc, td)
@@ -506,6 +515,25 @@ def _raise_validation_errors(err: InvalidTestDefinitionFields, header: str) -> N
     raise MCPUserError(f"{header}\n\n{bullets}") from err
 
 
+def _coerce_custom_metadata(fields: dict) -> None:
+    """Accept ``custom_metadata`` as a JSON string for convenience, parsing it to an object in place.
+
+    A blank string becomes ``None`` (clears the field). Non-object JSON is left for model
+    validation to reject with a consistent message.
+    """
+    value = fields.get("custom_metadata")
+    if not isinstance(value, str):
+        return
+    stripped = value.strip()
+    if not stripped:
+        fields["custom_metadata"] = None
+        return
+    try:
+        fields["custom_metadata"] = json.loads(stripped)
+    except json.JSONDecodeError as e:
+        raise MCPUserError("`custom_metadata` must be a JSON object of key-value pairs.") from e
+
+
 @with_database_session
 @mcp_permission("edit")
 def create_test(
@@ -547,6 +575,7 @@ def create_test(
     )
 
     fields = fields or {}
+    _coerce_custom_metadata(fields)
     accepted = td.editable_fields(tt)
     rejected = sorted(set(fields) - accepted)
     if rejected:
@@ -591,6 +620,7 @@ def update_test(test_definition_id: str, fields: dict) -> str:
     if not fields:
         raise MCPUserError("No fields supplied to update.")
 
+    _coerce_custom_metadata(fields)
     accepted = td.editable_fields(tt)
     rejected = sorted(set(fields) - accepted)
     if rejected:

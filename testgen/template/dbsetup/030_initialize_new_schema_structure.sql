@@ -241,6 +241,8 @@ CREATE TABLE test_definitions (
    flagged                BOOLEAN DEFAULT FALSE NOT NULL,
    external_id            UUID,
    impact_dimension       VARCHAR(20),
+   external_url           VARCHAR,
+   custom_metadata        JSONB,
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );

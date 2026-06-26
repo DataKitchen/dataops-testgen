@@ -11,6 +11,7 @@ import { Attribute } from '/app/static/js/components/attribute.js';
 import { TestDefinitionForm } from '/app/static/js/components/test_definition_form.js';
 import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
 import { Textarea } from '/app/static/js/components/textarea.js';
+import { Tabs, Tab } from '/app/static/js/components/tabs.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
@@ -19,6 +20,7 @@ import { Icon } from '/app/static/js/components/icon.js';
 import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 import { AXES, FACET_AXES, GROUP_BY_AXES, EMPTY, appliesToSelectedColumn } from '/app/static/js/components/test_picker_taxonomy.js';
 import { enterPage, exitPage, getPageSignal } from '/app/static/js/page_lifecycle.js';
+import { jsonObject, maxLength } from '/app/static/js/form_validators.js';
 
 const { button: btn, div, i: icon, span, strong } = van.tags;
 
@@ -894,6 +896,8 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
     const step = van.state(1);
     const selectedTestType = van.state(null);
     const formValues = van.state({});
+    // Hoisted so the active form tab survives the form re-render on each field change.
+    const formActiveTab = van.state(0);
 
     // ---- Picker state ----
     const searchQuery = van.state('');
@@ -1040,6 +1044,7 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
             }
         }
         formValues.val = fv;
+        formActiveTab.val = 0;
         step.val = 2;
     };
 
@@ -1291,6 +1296,7 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
         qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
         validateResult: getValue(validateResult),
         mode: 'add',
+        activeTab: formActiveTab,
         onFormChange: (changes) => { formValues.val = { ...formValues.rawVal, ...changes }; },
         onValidate: () => emit('ValidateTest', { payload: formValues.rawVal }),
         onSave: () => emit('AddTestSaved', { payload: formValues.rawVal }),
@@ -1315,6 +1321,8 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const formValues = van.state(null);
+    // Hoisted so the active form tab survives the form re-render on each field change.
+    const formActiveTab = van.state(0);
 
     const initFormFromInfo = () => {
         const di = dialogInfo.rawVal;
@@ -1327,6 +1335,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
             column_name_prompt: ttRow.column_name_prompt ?? null,
             column_name_help: ttRow.column_name_help ?? null,
         };
+        formActiveTab.val = 0;
     };
 
     // Reset form when dialog opens (closed→open), clear when it closes
@@ -1358,6 +1367,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
                     qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     validateResult: vr,
                     mode: 'edit',
+                    activeTab: formActiveTab,
                     onFormChange: (changes) => {
                         formValues.val = { ...formValues.rawVal, ...changes };
                     },
@@ -1371,7 +1381,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
 };
 
 // Shared form content for add/edit dialogs
-const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, onFormChange, onValidate, onSave, onCancel, onBack }) => {
+const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, activeTab, onFormChange, onValidate, onSave, onCancel, onBack }) => {
     const testScope = formValues.test_scope ?? 'column';
     const runType = formValues.run_type ?? 'CAT';
     const testType = formValues.test_type ?? '';
@@ -1383,6 +1393,13 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         fv.val = updated;
         onFormChange({ [key]: value });
     };
+
+    // Custom Metadata is stored as a JSON object (JSONB). Keep the raw text the user edits in a
+    // local state, and only commit a parsed object to the form when the JSON is valid.
+    const metadataText = van.state(
+        formValues.custom_metadata ? JSON.stringify(formValues.custom_metadata, null, 2) : ''
+    );
+    const metadataValid = van.state(true);
 
     const inheritedSeverity = testSuite.severity ?? formValues.default_severity ?? 'Warning';
     const severityOptions = [
@@ -1425,8 +1442,8 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
     return div(
         { class: 'flex-column fx-gap-3' },
 
-        // Test type header (add mode) or read-only test type (edit mode)
-        mode === 'add' && formValues.test_name_short
+        // Header — test type identity, shown above the tabs in both add and edit modes
+        formValues.test_name_short
             ? div(
                 { class: 'mb-1' },
                 div({ class: 'text-large' }, formValues.test_name_short),
@@ -1436,169 +1453,202 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             )
             : null,
 
-        mode === 'edit'
-            ? Input({
-                name: 'test_type_display',
-                label: 'Test Type',
-                value: formValues.test_name_short ?? formValues.test_type ?? '',
-                disabled: true,
-            })
-            : null,
-
         formValues.usage_notes
             ? Alert({ type: 'info' }, strong({ class: 'mb-1' }, 'Usage Notes'), div({}, formValues.usage_notes))
             : null,
 
-        // Description override
-        Textarea({
-            name: 'test_description',
-            label: 'Test Description Override',
-            value: () => fv.val.test_description ?? '',
-            placeholder: `Inherited (${formValues.default_test_description ?? ''})`,
-            height: 72,
-            onChange: (value) => updateField('test_description', value || null),
-        }),
+        Tabs(
+            { activeTab },
+            Tab(
+                { label: 'Parameters' },
+                div(
+                    { class: 'flex-column fx-gap-3' },
 
-        // Checkboxes
-        div(
-            { class: 'flex-row fx-gap-4' },
-            Checkbox({
-                label: 'Test Active',
-                checked: () => fv.val.test_active ?? true,
-                onChange: (v) => updateField('test_active', v),
-            }),
-            Checkbox({
-                label: 'Lock Refresh',
-                checked: () => fv.val.lock_refresh ?? false,
-                onChange: (v) => updateField('lock_refresh', v),
-            }),
-        ),
+                // Schema (read-only)
+                qualifiesTableRefsWithSchema
+                    ? Input({
+                        name: 'schema_name',
+                        label: 'Schema',
+                        value: formValues.schema_name ?? '',
+                        disabled: true,
+                    })
+                    : null,
 
-        // Severity + Observability + Impact Dimension selects
-        div(
-            { class: 'flex-row fx-gap-3 fx-flex-wrap' },
-            div(
-                { style: 'flex: calc(50% - 8px) 0 0;' },
-                () => Select({
-                    label: 'Urgency Override',
-                    value: fv.val.severity ?? null,
-                    options: severityOptions,
-                    allowNull: false,
-                    onChange: (value) => updateField('severity', value),
-                }),
+                // Table name
+                testScope !== 'tablegroup'
+                    ? testScope === 'custom'
+                        ? Input({
+                            name: 'table_name',
+                            label: 'Table',
+                            value: () => fv.val.table_name ?? '',
+                            onChange: (value) => updateField('table_name', value || null),
+                        })
+                        : () => Select({
+                            label: 'Table',
+                            value: fv.val.table_name ?? null,
+                            options: tableNameOptions,
+                            allowNull: true,
+                            filterable: true,
+                            disabled: mode === 'edit',
+                            onChange: (value) => {
+                                updateField('table_name', value);
+                                updateField('column_name', null);
+                            },
+                        })
+                    : null,
+
+                // Column name (scope-dependent)
+                testScope === 'column'
+                    ? () => Select({
+                        label: 'Column',
+                        value: fv.val.column_name ?? null,
+                        options: columnNameOptions.val,
+                        allowNull: true,
+                        filterable: true,
+                        onChange: (value) => updateField('column_name', value),
+                    })
+                    : testScope === 'referential' || testScope === 'custom'
+                        ? Input({
+                            name: 'column_name',
+                            label: columnLabel,
+                            help: columnHelp,
+                            value: () => fv.val.column_name ?? '',
+                            onChange: (value) => updateField('column_name', value || null),
+                        })
+                        : null,
+
+                // Validation status (edit mode only)
+                mode === 'edit' && formValues.test_definition_status
+                    ? Input({
+                        name: 'test_definition_status',
+                        label: 'Validation Status',
+                        value: formValues.test_definition_status || 'OK',
+                        disabled: true,
+                    })
+                    : null,
+
+                // Dynamic parameter fields
+                div(
+                    { class: 'td-form-params-section' },
+                    TestDefinitionForm({
+                        definition: formValues,
+                        qualifiesTableRefsWithSchema,
+                        hideHeader: true,
+                        onChange: (changes) => {
+                            if (Object.keys(changes).length === 0) return;
+                            const updated = { ...fv.rawVal, ...changes };
+                            fv.val = updated;
+                            onFormChange(changes);
+                        },
+                    }),
+                ),
+
+                // Skip errors (QUERY run type only)
+                runType === 'QUERY'
+                    ? Input({
+                        name: 'skip_errors',
+                        label: 'Threshold Error Count',
+                        type: 'number',
+                        value: () => fv.val.skip_errors ?? 0,
+                        step: 1,
+                        onChange: (value) => updateField('skip_errors', value ?? 0),
+                    })
+                    : null,
+                ),
             ),
-            div(
-                { style: 'flex: calc(50% - 8px) 0 0;' },
-                () => Select({
-                    label: 'Send to Observability - Override',
-                    value: fv.val.export_to_observability ?? null,
-                    options: obsOptions,
-                    allowNull: false,
-                    onChange: (value) => updateField('export_to_observability', value),
-                }),
-            ),
-            showImpactDimensionOverride ? div(
-                { style: 'flex: calc(50% - 8px) 0 0;' },
-                () => Select({
-                    label: 'Impact Dimension Override',
-                    value: fv.val.impact_dimension ?? null,
-                    options: impactDimensionOptions,
-                    allowNull: false,
-                    helpText: 'Override the default impact classification for this test. Affects how the test result is categorized in score breakdowns.',
-                    onChange: (value) => updateField('impact_dimension', value),
-                }),
-            ) : null,
-        ),
+            Tab(
+                { label: 'Settings' },
+                div(
+                    { class: 'flex-column fx-gap-3' },
 
-        // Schema (read-only)
-        qualifiesTableRefsWithSchema
-            ? Input({
-                name: 'schema_name',
-                label: 'Schema',
-                value: formValues.schema_name ?? '',
-                disabled: true,
-            })
-            : null,
+                // Description override
+                Textarea({
+                    name: 'test_description',
+                    label: 'Test Description Override',
+                    value: () => fv.val.test_description ?? '',
+                    placeholder: `Inherited (${formValues.default_test_description ?? ''})`,
+                    height: 72,
+                    onChange: (value) => updateField('test_description', value || null),
+                }),
 
-        // Table name
-        testScope !== 'tablegroup'
-            ? testScope === 'custom'
-                ? Input({
-                    name: 'table_name',
-                    label: 'Table',
-                    value: () => fv.val.table_name ?? '',
-                    onChange: (value) => updateField('table_name', value || null),
-                })
-                : () => Select({
-                    label: 'Table',
-                    value: fv.val.table_name ?? null,
-                    options: tableNameOptions,
-                    allowNull: true,
-                    filterable: true,
-                    disabled: mode === 'edit',
-                    onChange: (value) => {
-                        updateField('table_name', value);
-                        updateField('column_name', null);
+                // External link + custom metadata
+                Input({
+                    name: 'external_url',
+                    label: 'External URL',
+                    help: 'Optional link to the code, pipeline step, or system that produces this data.',
+                    value: () => fv.val.external_url ?? '',
+                    onChange: (value) => updateField('external_url', value || null),
+                }),
+                Textarea({
+                    name: 'custom_metadata',
+                    label: 'Custom Metadata',
+                    help: 'Optional JSON object of key-value pairs, e.g. {"pipeline": "daily_load", "task": "transform_orders"}.',
+                    value: metadataText,
+                    placeholder: '{\n  "pipeline": "daily_load",\n  "task": "transform_orders"\n}',
+                    height: 120,
+                    validators: [jsonObject, maxLength(10240)],
+                    onChange: (value, state) => {
+                        metadataText.val = value;
+                        metadataValid.val = state.valid;
+                        if (state.valid) {
+                            updateField('custom_metadata', value && value.trim() ? JSON.parse(value) : null);
+                        }
                     },
-                })
-            : null,
+                }),
 
-        // Column name (scope-dependent)
-        testScope === 'column'
-            ? () => Select({
-                label: 'Column',
-                value: fv.val.column_name ?? null,
-                options: columnNameOptions.val,
-                allowNull: true,
-                filterable: true,
-                onChange: (value) => updateField('column_name', value),
-            })
-            : testScope === 'referential' || testScope === 'custom'
-                ? Input({
-                    name: 'column_name',
-                    label: columnLabel,
-                    help: columnHelp,
-                    value: () => fv.val.column_name ?? '',
-                    onChange: (value) => updateField('column_name', value || null),
-                })
-                : null,
+                // Checkboxes
+                div(
+                    { class: 'flex-row fx-gap-4' },
+                    Checkbox({
+                        label: 'Test Active',
+                        checked: () => fv.val.test_active ?? true,
+                        onChange: (v) => updateField('test_active', v),
+                    }),
+                    Checkbox({
+                        label: 'Lock Refresh',
+                        checked: () => fv.val.lock_refresh ?? false,
+                        onChange: (v) => updateField('lock_refresh', v),
+                    }),
+                ),
 
-        // Validation status (edit mode only)
-        mode === 'edit' && formValues.test_definition_status
-            ? Input({
-                name: 'test_definition_status',
-                label: 'Validation Status',
-                value: formValues.test_definition_status || 'OK',
-                disabled: true,
-            })
-            : null,
-
-        // Dynamic parameter fields
-        div(
-            { class: 'td-form-params-section' },
-            TestDefinitionForm({
-                definition: formValues,
-                qualifiesTableRefsWithSchema,
-                onChange: (changes) => {
-                    if (Object.keys(changes).length === 0) return;
-                    const updated = { ...fv.rawVal, ...changes };
-                    fv.val = updated;
-                    onFormChange(changes);
-                },
-            }),
+                // Severity + Observability + Impact Dimension selects
+                div(
+                    { class: 'flex-row fx-gap-3 fx-flex-wrap' },
+                    div(
+                        { style: 'flex: calc(50% - 8px) 0 0;' },
+                        () => Select({
+                            label: 'Urgency Override',
+                            value: fv.val.severity ?? null,
+                            options: severityOptions,
+                            allowNull: false,
+                            onChange: (value) => updateField('severity', value),
+                        }),
+                    ),
+                    div(
+                        { style: 'flex: calc(50% - 8px) 0 0;' },
+                        () => Select({
+                            label: 'Send to Observability - Override',
+                            value: fv.val.export_to_observability ?? null,
+                            options: obsOptions,
+                            allowNull: false,
+                            onChange: (value) => updateField('export_to_observability', value),
+                        }),
+                    ),
+                    showImpactDimensionOverride ? div(
+                        { style: 'flex: calc(50% - 8px) 0 0;' },
+                        () => Select({
+                            label: 'Impact Dimension Override',
+                            value: fv.val.impact_dimension ?? null,
+                            options: impactDimensionOptions,
+                            allowNull: false,
+                            helpText: 'Override the default impact classification for this test. Affects how the test result is categorized in score breakdowns.',
+                            onChange: (value) => updateField('impact_dimension', value),
+                        }),
+                    ) : null,
+                ),
+                ),
+            ),
         ),
-
-        // Skip errors (QUERY run type only)
-        runType === 'QUERY'
-            ? Input({
-                name: 'skip_errors',
-                label: 'Threshold Error Count',
-                type: 'number',
-                value: () => fv.val.skip_errors ?? 0,
-                step: 1,
-                onChange: (value) => updateField('skip_errors', value ?? 0),
-            })
-            : null,
 
         // Validate feedback
         validateResult
@@ -1644,6 +1694,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     color: 'primary',
                     label: mode === 'edit' ? 'Save' : 'Add',
                     width: 'auto',
+                    disabled: () => !metadataValid.val,
                     onclick: onSave,
                 }),
             ),
@@ -1896,7 +1947,7 @@ stylesheet.replace(`
 .td-form-params-section {
     border-top: 1px solid var(--border-color);
     padding-top: 12px;
-    margin-top: 4px;
+    margin-top: 16px;
 }
 
 .tg-test-picker { display: flex; flex-direction: column; gap: 12px; height: 70vh; min-height: 0; }

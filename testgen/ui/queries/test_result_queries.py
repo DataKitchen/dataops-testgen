@@ -115,6 +115,7 @@ def get_test_results(
             r.test_definition_id::VARCHAR,
             r.auto_gen,
             td.flagged,
+            td.external_url,
             (SELECT COUNT(*) FROM test_definition_notes tdn WHERE tdn.test_definition_id = td.id) as notes_count,
 
             -- These are used in the PDF report

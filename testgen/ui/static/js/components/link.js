@@ -20,6 +20,7 @@
  * @property {((event: any) => void)?} onClick
  */
 import { getValue, loadStylesheet } from '../utils.js';
+import { Tooltip } from './tooltip.js';
 import van from '../van.min.js';
 
 const { a, div, i, span } = van.tags;

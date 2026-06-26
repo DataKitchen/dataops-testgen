@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -135,6 +136,28 @@ def _is_blank(value: object) -> bool:
     return value is None or value == ""
 
 
+CUSTOM_METADATA_MAX_KEYS = 50
+CUSTOM_METADATA_MAX_BYTES = 10_240
+
+
+def validate_custom_metadata(value: object) -> str | None:
+    """Return an error message if ``value`` is not a valid ``custom_metadata`` payload, else ``None``.
+
+    ``custom_metadata`` must be a JSON object (key-value pairs), bounded in key count and serialized
+    size. Shared by every write path — ``TestDefinition.validate`` (UI/CLI/MCP) and the
+    ``TestDefinitionExport`` import schema — so the rule has a single definition.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return "must be a JSON object of key-value pairs"
+    if len(value) > CUSTOM_METADATA_MAX_KEYS:
+        return f"must have at most {CUSTOM_METADATA_MAX_KEYS} keys"
+    if len(json.dumps(value)) > CUSTOM_METADATA_MAX_BYTES:
+        return f"must be at most {CUSTOM_METADATA_MAX_BYTES} bytes when serialized as JSON"
+    return None
+
+
 class ParamFieldsMixin:
     """Parsed access to default_parm_columns/prompts/help metadata.
 
@@ -224,6 +247,8 @@ class TestDefinitionSummary(TestTypeSummary):
     prediction: dict[str, dict[str, float]] | None
     flagged: bool
     impact_dimension: str | None
+    external_url: str | None
+    custom_metadata: dict | None
 
     @property
     def display_name(self) -> str:
@@ -397,6 +422,8 @@ class TestDefinition(Entity):
     flagged: bool = Column(Boolean, default=False, nullable=False)
     external_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     impact_dimension: str | None = Column(String, nullable=True)
+    external_url: str | None = Column(NullIfEmptyString)
+    custom_metadata: dict | None = Column(postgresql.JSONB)
 
     _default_order_by = (
         asc(func.lower(schema_name)),
@@ -555,14 +582,16 @@ class TestDefinition(Entity):
     # Fields editable on every test type regardless of param_columns.
     EDITABLE_BASE_FIELDS: ClassVar[frozenset[str]] = frozenset({
         "test_active", "severity", "lock_refresh", "flagged", "test_description",
+        "external_url", "custom_metadata",
     })
 
     def editable_fields(self, test_type: TestType) -> set[str]:
         """Fields a caller may set or change on this test definition under the given test type."""
         fields = self.EDITABLE_BASE_FIELDS | test_type.param_columns
-        # column_name is meaningful for column-scoped tests (the column under test) and
-        # custom-scoped tests (a "Test Focus" label). Other scopes don't use it.
-        if test_type.test_scope in ("column", "custom"):
+        # column_name is meaningful for column-scoped tests (the column under test),
+        # custom-scoped tests (a "Test Focus" label), and referential tests (the aggregate
+        # expression or categorical column list under test). Table-scoped tests don't use it.
+        if test_type.test_scope in ("column", "custom", "referential"):
             fields = fields | {"column_name"}
         # impact_dimension is overridable only for user-defined-semantic scopes
         # (custom-scope = user-authored SQL; referential-scope = comparison-based tests).
@@ -588,9 +617,10 @@ class TestDefinition(Entity):
                     f"(got `{self.severity}`)"
                 )
 
-        # column_name applies to column-scoped tests (the column under test) and
-        # custom-scoped tests (a "Test Focus" label). Other scopes don't use it.
-        if test_type.test_scope not in ("column", "custom") and not _is_blank(self.column_name):
+        # column_name applies to column-scoped tests (the column under test),
+        # custom-scoped tests (a "Test Focus" label), and referential tests (the aggregate
+        # expression or categorical column list under test). Table-scoped tests don't use it.
+        if test_type.test_scope not in ("column", "custom", "referential") and not _is_blank(self.column_name):
             errors["column_name"] = (
                 f"test type `{test_type.test_type}` has scope `{test_type.test_scope}`; "
                 f"column_name does not apply to this scope"
@@ -600,6 +630,10 @@ class TestDefinition(Entity):
             errors["custom_query"] = (
                 f"test type `{test_type.test_type}` does not accept a custom query"
             )
+
+        metadata_error = validate_custom_metadata(self.custom_metadata)
+        if metadata_error:
+            errors["custom_metadata"] = metadata_error
 
         for required in _required_fields_for(test_type):
             if _is_blank(getattr(self, required, None)):
