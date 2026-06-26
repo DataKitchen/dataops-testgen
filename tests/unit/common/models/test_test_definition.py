@@ -123,8 +123,9 @@ def test_editable_fields_includes_impact_dimension_only_for_custom_or_referentia
     assert "impact_dimension" not in td.editable_fields(table_tt)
 
 
-def test_editable_fields_includes_column_name_only_for_column_or_custom_scope():
-    """column_name is meaningful for column-scope (column under test) and custom-scope (label)."""
+def test_editable_fields_includes_column_name_except_for_table_scope():
+    """column_name is meaningful for column (column under test), custom (label), and referential
+    (aggregate expression / categorical column list) scopes — but not table scope."""
     td = make_td()
 
     column_tt = make_test_type(scope="column", param_columns={"threshold_value"})
@@ -133,11 +134,11 @@ def test_editable_fields_includes_column_name_only_for_column_or_custom_scope():
     custom_tt = make_test_type(scope="custom", param_columns={"custom_query"})
     assert "column_name" in td.editable_fields(custom_tt)
 
+    referential_tt = make_test_type(scope="referential", param_columns={"match_column_names"})
+    assert "column_name" in td.editable_fields(referential_tt)
+
     table_tt = make_test_type(scope="table", param_columns=set())
     assert "column_name" not in td.editable_fields(table_tt)
-
-    referential_tt = make_test_type(scope="referential", param_columns={"match_column_names"})
-    assert "column_name" not in td.editable_fields(referential_tt)
 
 
 def test_editable_fields_does_not_leak_identity_or_internal_columns():
@@ -175,6 +176,13 @@ def test_validate_wrong_scope_column_name_rejected():
     with pytest.raises(InvalidTestDefinitionFields) as exc_info:
         td.validate(tt)
     assert "column_name" in exc_info.value.errors
+
+
+def test_validate_referential_scope_accepts_column_name():
+    # Referential tests use column_name as the aggregate expression / categorical column list.
+    tt = make_test_type(code="Aggregate_Balance", scope="referential", param_columns={"match_column_names"})
+    td = make_td(column_name="SUM(total_amount)", match_column_names="SUM(total_amount)")
+    td.validate(tt)  # no raise
 
 
 def test_validate_custom_scope_accepts_column_name_as_label():

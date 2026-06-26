@@ -565,9 +565,10 @@ class TestDefinition(Entity):
     def editable_fields(self, test_type: TestType) -> set[str]:
         """Fields a caller may set or change on this test definition under the given test type."""
         fields = self.EDITABLE_BASE_FIELDS | test_type.param_columns
-        # column_name is meaningful for column-scoped tests (the column under test) and
-        # custom-scoped tests (a "Test Focus" label). Other scopes don't use it.
-        if test_type.test_scope in ("column", "custom"):
+        # column_name is meaningful for column-scoped tests (the column under test),
+        # custom-scoped tests (a "Test Focus" label), and referential tests (the aggregate
+        # expression or categorical column list under test). Table-scoped tests don't use it.
+        if test_type.test_scope in ("column", "custom", "referential"):
             fields = fields | {"column_name"}
         # impact_dimension is overridable only for user-defined-semantic scopes
         # (custom-scope = user-authored SQL; referential-scope = comparison-based tests).
@@ -593,9 +594,10 @@ class TestDefinition(Entity):
                     f"(got `{self.severity}`)"
                 )
 
-        # column_name applies to column-scoped tests (the column under test) and
-        # custom-scoped tests (a "Test Focus" label). Other scopes don't use it.
-        if test_type.test_scope not in ("column", "custom") and not _is_blank(self.column_name):
+        # column_name applies to column-scoped tests (the column under test),
+        # custom-scoped tests (a "Test Focus" label), and referential tests (the aggregate
+        # expression or categorical column list under test). Table-scoped tests don't use it.
+        if test_type.test_scope not in ("column", "custom", "referential") and not _is_blank(self.column_name):
             errors["column_name"] = (
                 f"test type `{test_type.test_type}` has scope `{test_type.test_scope}`; "
                 f"column_name does not apply to this scope"
