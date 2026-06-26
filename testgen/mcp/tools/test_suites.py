@@ -19,6 +19,7 @@ from testgen.mcp.tools.common import (
     DocGroup,
     parse_severity,
     raise_validation_error,
+    render_diff_table,
     resolve_table_group,
     resolve_test_suite,
 )
@@ -193,24 +194,17 @@ def update_test_suite(
     for attr, value in updates.items():
         setattr(suite, attr, value)
     after = {attr: getattr(suite, attr, None) for attr in updates}
-    changed = {attr for attr in before if before[attr] != after[attr]}
 
     doc = MdDoc()
     doc.heading(1, f"Test Suite `{suite.test_suite}` updated")
     doc.field("ID", str(suite.id), code=True)
 
-    if not changed:
+    rendered = render_diff_table(doc, before, after, attrs=_DIFF_ORDER, labels=_DIFF_LABELS)
+    if not rendered:
         doc.text("No fields changed — supplied values matched the current state.")
         return doc.render()
 
     suite.save()
-
-    rows: list[list[object]] = []
-    for attr in _DIFF_ORDER:
-        if attr not in changed:
-            continue
-        rows.append([_DIFF_LABELS[attr], _render_field_value(before[attr]), _render_field_value(after[attr])])
-    doc.table(["Field", "Before", "After"], rows, code=[0])
     return doc.render()
 
 
@@ -270,11 +264,3 @@ _DIFF_LABELS: dict[str, str] = {
     "component_name": "Component name",
     "dq_score_exclude": "Exclude from quality scoring",
 }
-
-
-def _render_field_value(value: Any) -> str | None:
-    if isinstance(value, bool):
-        return "Yes" if value else "No"
-    if value is None or value == "":
-        return None
-    return str(value)

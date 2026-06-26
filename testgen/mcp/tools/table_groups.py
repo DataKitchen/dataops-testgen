@@ -25,6 +25,7 @@ from testgen.mcp.tools.common import (
     format_flavor_label,
     format_page_footer,
     format_page_info,
+    render_diff_table,
     resolve_connection,
     resolve_table_group,
     validate_limit,
@@ -424,13 +425,13 @@ def update_table_group(
         _raise_validation_error(errors, "Update rejected. No changes saved.")
 
     after = _snapshot(table_group)
-    changed = {attr for attr in before if before[attr] != after[attr]}
 
     doc = MdDoc()
     doc.heading(1, f"Table Group `{table_group.table_groups_name}` updated")
     doc.field("ID", str(table_group.id), code=True)
 
-    if not changed:
+    rendered = render_diff_table(doc, before, after, attrs=_DIFF_ATTRS, labels=_DIFF_LABELS)
+    if not rendered:
         doc.text("No fields changed — supplied values matched the current state.")
         return doc.render()
 
@@ -440,13 +441,6 @@ def update_table_group(
         _maybe_raise_duplicate_name(err)
         raise
 
-    rows: list[list[object]] = []
-    for attr in _DIFF_ATTRS:
-        if attr not in changed:
-            continue
-        label = _DIFF_LABELS.get(attr, attr)
-        rows.append([label, _render_field_value(before[attr]), _render_field_value(after[attr])])
-    doc.table(["Field", "Before", "After"], rows, code=[0])
     return doc.render()
 
 
@@ -720,14 +714,6 @@ def _maybe_raise_duplicate_name(err: IntegrityError) -> None:
 
 def _snapshot(table_group: TableGroup) -> dict[str, Any]:
     return {attr: getattr(table_group, attr, None) for attr in _DIFF_ATTRS}
-
-
-def _render_field_value(value: Any) -> str | None:
-    if isinstance(value, bool):
-        return "Yes" if value else "No"
-    if value is None or value == "":
-        return None
-    return str(value)
 
 
 def _render_created_table_group(table_group: TableGroup, connection: Connection) -> str:

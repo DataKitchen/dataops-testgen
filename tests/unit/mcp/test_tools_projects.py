@@ -56,7 +56,12 @@ def test_update_project_no_fields_supplied(db_session_mock):
     assert str(exc.value) == "No fields supplied to update."
 
 
-def test_update_project_inaccessible_uses_unified_wording(db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_inaccessible_uses_unified_wording(mock_resolve, db_session_mock):
+    """When resolve_project raises (out-of-scope or missing), the tool re-raises with the
+    unified wording. resolve_project's own behaviour is covered in test_tools_common.py."""
+    mock_resolve.side_effect = MCPResourceNotAccessible("Project", "secret")
+
     from testgen.mcp.tools.projects import update_project
 
     with _patch_perms(allowed=("demo",)), pytest.raises(MCPResourceNotAccessible) as exc:
@@ -65,10 +70,10 @@ def test_update_project_inaccessible_uses_unified_wording(db_session_mock):
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_not_found_uses_unified_wording(mock_project_cls, mock_schedule_cls, db_session_mock):
-    """User has the project code in scope, but Project.get returns None — still the unified error."""
-    mock_project_cls.get.return_value = None
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_not_found_uses_unified_wording(mock_resolve, mock_schedule_cls, db_session_mock):
+    """resolve_project collapses 'no row' into the unified error."""
+    mock_resolve.side_effect = MCPResourceNotAccessible("Project", "demo")
     mock_schedule_cls.get.return_value = None
 
     from testgen.mcp.tools.projects import update_project
@@ -92,10 +97,10 @@ def test_update_project_requires_administer(db_session_mock):
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_renames(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_renames(mock_resolve, mock_schedule_cls, db_session_mock):
     project = _mock_project(project_name="Demo Project")
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -111,10 +116,10 @@ def test_update_project_renames(mock_project_cls, mock_schedule_cls, db_session_
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_no_op_when_value_unchanged(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_no_op_when_value_unchanged(mock_resolve, mock_schedule_cls, db_session_mock):
     project = _mock_project(project_name="Demo Project")
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -127,10 +132,10 @@ def test_update_project_no_op_when_value_unchanged(mock_project_cls, mock_schedu
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_empty_name_rejected(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_empty_name_rejected(mock_resolve, mock_schedule_cls, db_session_mock):
     project = _mock_project(project_name="Demo")
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -142,10 +147,10 @@ def test_update_project_empty_name_rejected(mock_project_cls, mock_schedule_cls,
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_strips_whitespace(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_strips_whitespace(mock_resolve, mock_schedule_cls, db_session_mock):
     project = _mock_project(project_name="Demo Project")
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -163,12 +168,12 @@ def test_update_project_strips_whitespace(mock_project_cls, mock_schedule_cls, d
 
 @patch(f"{MODULE}.JobExecution")
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_weights_toggle_submits_recalc(
-    mock_project_cls, mock_schedule_cls, mock_job_exec_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, mock_job_exec_cls, db_session_mock,
 ):
     project = _mock_project(use_dq_score_weights=True)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -185,12 +190,12 @@ def test_update_project_weights_toggle_submits_recalc(
 
 @patch(f"{MODULE}.JobExecution")
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_weights_unchanged_no_recalc(
-    mock_project_cls, mock_schedule_cls, mock_job_exec_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, mock_job_exec_cls, db_session_mock,
 ):
     project = _mock_project(use_dq_score_weights=True)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -208,10 +213,10 @@ def test_update_project_weights_unchanged_no_recalc(
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_observability_url_diff_visible(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_observability_url_diff_visible(mock_resolve, mock_schedule_cls, db_session_mock):
     project = _mock_project(observability_api_url=None)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -225,11 +230,11 @@ def test_update_project_observability_url_diff_visible(mock_project_cls, mock_sc
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_observability_key_redacted_in_diff(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_observability_key_redacted_in_diff(mock_resolve, mock_schedule_cls, db_session_mock):
     """Per mcp-patterns 'Secrets in inputs': the key is consumed but never echoed back."""
     project = _mock_project(observability_api_key=None)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -244,13 +249,13 @@ def test_update_project_observability_key_redacted_in_diff(mock_project_cls, moc
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_observability_url_empty_string_clears(
-    mock_project_cls, mock_schedule_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, db_session_mock,
 ):
     """Empty string clears the field (NullIfEmptyString column)."""
     project = _mock_project(observability_api_url="https://existing.example")
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -268,12 +273,12 @@ def test_update_project_observability_url_empty_string_clears(
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_disable_retention_deletes_schedule(
-    mock_project_cls, mock_schedule_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, db_session_mock,
 ):
     project = _mock_project(data_retention_enabled=True, data_retention_days=180)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -290,12 +295,12 @@ def test_update_project_disable_retention_deletes_schedule(
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_change_retention_days_upserts_schedule(
-    mock_project_cls, mock_schedule_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, db_session_mock,
 ):
     project = _mock_project(data_retention_enabled=True, data_retention_days=180)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule(cron_expr="0 1 * * *", cron_tz="UTC")
 
     from testgen.mcp.tools.projects import update_project
@@ -314,11 +319,11 @@ def test_update_project_change_retention_days_upserts_schedule(
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_enable_retention_with_defaults(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_enable_retention_with_defaults(mock_resolve, mock_schedule_cls, db_session_mock):
     """Re-enabling retention without explicit days/cron falls back to the system defaults."""
     project = _mock_project(data_retention_enabled=False, data_retention_days=None)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = None  # no current schedule
 
     from testgen.mcp.tools.projects import update_project
@@ -334,10 +339,10 @@ def test_update_project_enable_retention_with_defaults(mock_project_cls, mock_sc
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
-def test_update_project_change_cron_only(mock_project_cls, mock_schedule_cls, db_session_mock):
+@patch(f"{MODULE}.resolve_project")
+def test_update_project_change_cron_only(mock_resolve, mock_schedule_cls, db_session_mock):
     project = _mock_project(data_retention_enabled=True, data_retention_days=180)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule(cron_expr="0 1 * * *", cron_tz="UTC")
 
     from testgen.mcp.tools.projects import update_project
@@ -354,13 +359,13 @@ def test_update_project_change_cron_only(mock_project_cls, mock_schedule_cls, db
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_retention_days_rejected_when_disabled(
-    mock_project_cls, mock_schedule_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, db_session_mock,
 ):
     """Setting days while disabling retention is inconsistent — reject loudly instead of silently dropping."""
     project = _mock_project(data_retention_enabled=True)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -379,12 +384,12 @@ def test_update_project_retention_days_rejected_when_disabled(
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_cron_rejected_when_retention_currently_disabled(
-    mock_project_cls, mock_schedule_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, db_session_mock,
 ):
     project = _mock_project(data_retention_enabled=False, data_retention_days=None)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = None
 
     from testgen.mcp.tools.projects import update_project
@@ -395,12 +400,12 @@ def test_update_project_cron_rejected_when_retention_currently_disabled(
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_retention_days_must_be_positive(
-    mock_project_cls, mock_schedule_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, db_session_mock,
 ):
     project = _mock_project(data_retention_enabled=True)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project
@@ -411,13 +416,13 @@ def test_update_project_retention_days_must_be_positive(
 
 
 @patch(f"{MODULE}.JobSchedule")
-@patch(f"{MODULE}.Project")
+@patch(f"{MODULE}.resolve_project")
 def test_update_project_name_only_does_not_touch_schedule(
-    mock_project_cls, mock_schedule_cls, db_session_mock,
+    mock_resolve, mock_schedule_cls, db_session_mock,
 ):
     """Renaming a project must NOT incidentally upsert / delete the retention schedule."""
     project = _mock_project(project_name="Old", data_retention_enabled=True)
-    mock_project_cls.get.return_value = project
+    mock_resolve.return_value = project
     mock_schedule_cls.get.return_value = _mock_schedule()
 
     from testgen.mcp.tools.projects import update_project

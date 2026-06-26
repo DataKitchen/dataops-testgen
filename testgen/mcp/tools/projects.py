@@ -18,9 +18,14 @@ from testgen.common.models.scheduler import (
     DEFAULT_RETENTION_CRON_TZ,
     JobSchedule,
 )
-from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
-from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import DocGroup, raise_validation_error
+from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.permissions import mcp_permission
+from testgen.mcp.tools.common import (
+    DocGroup,
+    raise_validation_error,
+    render_diff_table,
+    resolve_project,
+)
 from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.MANAGE
@@ -77,12 +82,7 @@ def update_project(
     if all(value is None for value in supplied.values()):
         raise MCPUserError("No fields supplied to update.")
 
-    perms = get_project_permissions()
-    perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
-
-    project = Project.get(project_code)
-    if project is None:
-        raise MCPResourceNotAccessible("Project", project_code)
+    project = resolve_project(project_code)
 
     schedule = JobSchedule.get(
         JobSchedule.project_code == project_code,
@@ -164,12 +164,15 @@ def update_project(
         if effective_enabled
         else None,
     )
-    changed = {attr for attr in before if before[attr] != after[attr]}
 
     doc = MdDoc()
     doc.heading(1, f"Project `{project_code}` updated")
 
-    if not changed:
+    rendered = render_diff_table(
+        doc, before, after,
+        attrs=_DIFF_ORDER, labels=_DIFF_LABELS, secret_attrs=_SECRET_ATTRS,
+    )
+    if not rendered:
         doc.text("No fields changed — supplied values matched the current state.")
         return doc.render()
 
@@ -196,12 +199,6 @@ def update_project(
             project_code=project_code,
         )
 
-    rows: list[list[object]] = []
-    for attr in _DIFF_ORDER:
-        if attr not in changed:
-            continue
-        rows.append([_DIFF_LABELS[attr], _render_field_value(attr, before[attr]), _render_field_value(attr, after[attr])])
-    doc.table(["Field", "Before", "After"], rows, code=[0])
     return doc.render()
 
 
@@ -249,14 +246,4 @@ _DIFF_LABELS: dict[str, str] = {
     "retention_cron_tz": "Retention timezone",
 }
 
-
-def _render_field_value(attr: str, value: Any) -> str | None:
-    # Redact the API key — mcp-patterns "Secrets in inputs" rule. The diff still tells the LLM
-    # the field changed; it just never echoes the value (cleartext OR masked).
-    if attr == "observability_api_key" and value:
-        return "[secret]"
-    if isinstance(value, bool):
-        return "Yes" if value else "No"
-    if value is None or value == "":
-        return None
-    return str(value)
+_SECRET_ATTRS: frozenset[str] = frozenset({"observability_api_key"})
