@@ -21,6 +21,7 @@ class Page(abc.ABC):
     menu_item: MenuItem | None = None
     permission: Permission | None = "view"
     can_activate: typing.ClassVar[list[CanActivateGuard] | None] = None
+    is_account_page: bool = False
 
     def __init__(self, router: testgen.ui.navigation.router.Router) -> None:
         self.router = router

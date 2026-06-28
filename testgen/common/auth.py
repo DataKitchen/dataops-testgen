@@ -4,8 +4,11 @@ from datetime import UTC, datetime, timedelta
 
 import bcrypt
 import jwt
+from sqlalchemy import func, select
 
 from testgen import settings
+from testgen.common.models.oauth import OAuth2Token
+from testgen.common.models.user import User
 
 LOG = logging.getLogger("testgen")
 
@@ -45,11 +48,6 @@ def authorize_token(token_str: str, username: str, session):
 
     Shared implementation for API and MCP authorization.
     """
-    from sqlalchemy import func, select
-
-    from testgen.api.oauth.models import OAuth2Token
-    from testgen.common.models.user import User
-
     user = session.scalars(select(User).where(func.lower(User.username) == func.lower(username))).first()
     if user is None:
         raise AuthError("User not found")

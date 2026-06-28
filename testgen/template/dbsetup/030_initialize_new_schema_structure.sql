@@ -742,12 +742,12 @@ CREATE INDEX ix_pm_role ON project_memberships(role);
 
 CREATE TABLE oauth2_clients (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID REFERENCES auth_users(id) ON DELETE SET NULL,
     client_id       VARCHAR(48) NOT NULL UNIQUE,
     client_secret   VARCHAR(120),
     client_id_issued_at     INTEGER NOT NULL DEFAULT 0,
     client_secret_expires_at INTEGER NOT NULL DEFAULT 0,
-    client_metadata TEXT NOT NULL DEFAULT '{}'
+    client_metadata TEXT NOT NULL DEFAULT '{}',
+    client_type     VARCHAR(20) NOT NULL DEFAULT 'external'
 );
 CREATE INDEX idx_oauth2_clients_client_id ON oauth2_clients(client_id);
 
@@ -778,7 +778,8 @@ CREATE TABLE oauth2_tokens (
     issued_at       INTEGER NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::INTEGER,
     access_token_revoked_at  INTEGER NOT NULL DEFAULT 0,
     refresh_token_revoked_at INTEGER NOT NULL DEFAULT 0,
-    expires_in      INTEGER NOT NULL DEFAULT 0
+    expires_in      INTEGER NOT NULL DEFAULT 0,
+    name            VARCHAR(255)
 );
 CREATE INDEX idx_oauth2_tokens_refresh_token ON oauth2_tokens(refresh_token);
 
