@@ -177,7 +177,10 @@ def build_mcp_server(
         enable_monitors,
         get_monitor_settings,
         get_monitor_summary,
+        list_monitor_events,
+        list_monitor_schema_changes,
         list_monitored_tables,
+        list_monitors,
         update_monitor_settings,
     )
     from testgen.mcp.tools.notifications import (
@@ -330,6 +333,9 @@ def build_mcp_server(
     safe_tool(get_schema_history)
     safe_tool(get_monitor_summary)
     safe_tool(list_monitored_tables)
+    safe_tool(list_monitor_events)
+    safe_tool(list_monitors)
+    safe_tool(list_monitor_schema_changes)
     safe_tool(enable_monitors)
     safe_tool(get_monitor_settings)
     safe_tool(update_monitor_settings)

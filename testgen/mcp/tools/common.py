@@ -392,11 +392,13 @@ _MONITOR_TYPE_USER_TO_DB: dict[str, MonitorType] = {
 def parse_monitor_type(value: str, label: str = "monitor_type") -> MonitorType:
     """Validate a user-facing monitor type label and return the stored ``MonitorType``.
 
-    Accepts ``freshness`` / ``volume`` / ``schema`` / ``metric``. ``label`` names the
-    caller's argument in the error message — pass ``"anomaly_type"`` when the
-    public arg is named differently from ``monitor_type``.
+    Accepts ``Freshness`` / ``Volume`` / ``Schema`` / ``Metric`` (Title Case
+    as rendered in tool output) or the equivalent lowercase forms. ``label``
+    names the caller's argument in the error message — pass
+    ``"anomaly_type"`` when the public arg is named differently from
+    ``monitor_type``.
     """
-    db_value = _MONITOR_TYPE_USER_TO_DB.get(value)
+    db_value = _MONITOR_TYPE_USER_TO_DB.get(value.lower()) if isinstance(value, str) else None
     if db_value is None:
         valid = ", ".join(_MONITOR_TYPE_USER_TO_DB)
         raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")

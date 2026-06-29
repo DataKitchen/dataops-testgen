@@ -4,14 +4,14 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from testgen.ui.views.monitors_dashboard import (
-    _build_gated_forecast_prediction,
-    _freshness_next_update_window,
-)
+from testgen.common.monitor_forecast import gated_forecast_prediction
+from testgen.ui.views.monitors_dashboard import _freshness_next_update_window
 
 pytestmark = pytest.mark.unit
 
-MODULE = "testgen.ui.views.monitors_dashboard"
+# The business-time helpers live in (and are called from) the shared forecast
+# module, so patch them there even when exercising the dashboard wrapper.
+MODULE = "testgen.common.monitor_forecast"
 
 
 def _freshness_def(history_calculation="PREDICT", prediction=None, upper="1000", lower="500"):
@@ -93,7 +93,7 @@ def test_window_start_is_none_when_no_lower_tolerance(mock_abm, _mock_sched):
     assert window["end"] == int(pd.Timestamp("2026-06-23 19:00").timestamp() * 1000)
 
 
-# --- _build_gated_forecast_prediction ---
+# --- gated_forecast_prediction ---
 
 LAST_RUN = datetime(2026, 6, 23, 16, 0)
 NOW_MS = int(pd.Timestamp(LAST_RUN).timestamp() * 1000)
@@ -111,29 +111,29 @@ def _gated_def(baseline=1000.0, mean=None, lower="950", upper="1400"):
 
 
 def test_gated_prediction_none_without_window():
-    assert _build_gated_forecast_prediction(_gated_def(), None, LAST_RUN) is None
+    assert gated_forecast_prediction(_gated_def(), None, LAST_RUN) is None
 
 
 def test_gated_prediction_none_when_window_elapsed():
     window = {"start": NOW_MS - 12 * HOUR, "end": NOW_MS - HOUR}  # window_end already in the past
-    assert _build_gated_forecast_prediction(_gated_def(), window, LAST_RUN) is None
+    assert gated_forecast_prediction(_gated_def(), window, LAST_RUN) is None
 
 
 def test_gated_prediction_none_without_baseline():
     window = {"start": NOW_MS - HOUR, "end": NOW_MS + 3 * HOUR}
-    assert _build_gated_forecast_prediction(_gated_def(baseline=None), window, LAST_RUN) is None
+    assert gated_forecast_prediction(_gated_def(baseline=None), window, LAST_RUN) is None
 
 
 def test_gated_prediction_none_without_last_run():
     window = {"start": NOW_MS - HOUR, "end": NOW_MS + 3 * HOUR}
-    assert _build_gated_forecast_prediction(_gated_def(), window, None) is None
+    assert gated_forecast_prediction(_gated_def(), window, None) is None
 
 
 def test_gated_prediction_anchors_at_now_when_window_started():
     # window_start is before the latest run → anchor clamps to now (forecast never draws backward)
     window = {"start": NOW_MS - 12 * HOUR, "end": NOW_MS + 3 * HOUR}
     mean = {str(NOW_MS + 3 * HOUR): 1200.0, str(NOW_MS + 27 * HOUR): 1300.0}
-    result = _build_gated_forecast_prediction(_gated_def(mean=mean), window, LAST_RUN)
+    result = gated_forecast_prediction(_gated_def(mean=mean), window, LAST_RUN)
     assert result["method"] == "predict"
     assert result["mean"] == {NOW_MS: 1000.0, NOW_MS + 3 * HOUR: 1200.0}
     # tolerances coerced from VARCHAR to float
@@ -145,11 +145,11 @@ def test_gated_prediction_anchors_at_window_start_when_future():
     # window opens after the latest run → flat segment runs out to window_start
     window = {"start": NOW_MS + HOUR, "end": NOW_MS + 3 * HOUR}
     mean = {str(NOW_MS + 3 * HOUR): 1200.0}
-    result = _build_gated_forecast_prediction(_gated_def(mean=mean), window, LAST_RUN)
+    result = gated_forecast_prediction(_gated_def(mean=mean), window, LAST_RUN)
     assert set(result["mean"].keys()) == {NOW_MS + HOUR, NOW_MS + 3 * HOUR}
 
 
 def test_gated_prediction_next_mean_falls_back_to_baseline_without_forecast():
     window = {"start": NOW_MS - HOUR, "end": NOW_MS + 3 * HOUR}
-    result = _build_gated_forecast_prediction(_gated_def(mean=None), window, LAST_RUN)
+    result = gated_forecast_prediction(_gated_def(mean=None), window, LAST_RUN)
     assert result["mean"][NOW_MS + 3 * HOUR] == 1000.0  # baseline used as the step value
