@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, String, asc, desc, select
@@ -54,19 +54,17 @@ class DataStructureLog(Entity):
     def list_for_table_group(
         cls,
         table_group_id: str | UUID,
-        *,
-        table_name: str | None = None,
-        since: date | datetime | None = None,
-        until: date | datetime | None = None,
+        *clauses,
         page: int = 1,
         limit: int | None = 20,
     ) -> tuple[list[DataStructureLogEntry], int]:
         """Paginated schema-change audit log for one table group, newest first.
 
-        Filters by ``table_name`` (exact match; the audit log stores names
-        case-sensitively as the source emitted them), ``since`` (lower-bound on
-        ``change_date``), and ``until`` (upper-bound). ``limit=None`` skips
-        pagination — the caller gets every matching row in one shot.
+        Caller-supplied ``*clauses`` are WHERE expressions on this model — e.g.
+        ``cls.table_name == name`` (exact match; the audit log stores names
+        case-sensitively as the source emitted them) or a ``cls.change_date``
+        bound. ``limit=None`` skips pagination — the caller gets every matching
+        row in one shot.
         """
         query = select(
             cls.log_id,
@@ -77,13 +75,7 @@ class DataStructureLog(Entity):
             cls.change,
             cls.old_data_type,
             cls.new_data_type,
-        ).where(cls.table_groups_id == table_group_id)
-        if table_name is not None:
-            query = query.where(cls.table_name == table_name)
-        if since is not None:
-            query = query.where(cls.change_date >= since)
-        if until is not None:
-            query = query.where(cls.change_date <= until)
+        ).where(cls.table_groups_id == table_group_id, *clauses)
         query = query.order_by(*cls._default_order_by)
 
         if limit is None:

@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -19,11 +20,19 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import MonitorTableSummary, TableGroup
 from testgen.common.models.test_definition import (
+    MonitorForecastPoint,
     TestDefinition,
+    TestDefinitionSummary,
     forecast_points_from_prediction,
 )
 from testgen.common.models.test_result import MonitorEvent, TestResult
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
+from testgen.common.monitor_forecast import (
+    forecast_band_points,
+    gated_forecast_prediction,
+    next_update_window,
+    resolve_suite_holiday_dates,
+)
 from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
@@ -36,6 +45,7 @@ from testgen.mcp.tools.common import (
     parse_monitor_table_sort,
     parse_monitor_type,
     parse_since_arg,
+    parse_uuid,
     resolve_monitored_table_group,
     validate_limit,
     validate_page,
@@ -45,6 +55,11 @@ from testgen.mcp.tools.markdown import MdDoc
 _DOC_GROUP = DocGroup.MONITORS
 
 _NOT_MONITORED_OUTPUT = "This table group is not monitored."
+
+_FORECAST_PENDING_NOTE = (
+    "_No forecast yet — monitors in Prediction Model mode produce a forecast once they "
+    "have trained on enough history._"
+)
 
 _MONITOR_LABEL: dict[MonitorType, str] = {
     MonitorType.FRESHNESS: "Freshness",
@@ -607,8 +622,8 @@ def list_monitor_events(
         table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
         table_name: Table name exactly as stored in TestGen (case-sensitive).
         monitor_type: One of ``freshness`` / ``volume`` / ``schema`` / ``metric``.
-        monitor_id: Required when ``monitor_type="metric"``; rejected otherwise. Metric monitors are user-defined (many per table), so events must be scoped to one ``monitor_id`` to avoid interleaving every metric's history. Find the id via ``list_monitors(table_group_id, table_name)``. Singleton types (``freshness`` / ``volume`` / ``schema``) are uniquely identified by table + type.
-        include_predictions: When True, append the monitor's forecasted future events (predicted bounds for upcoming time points) after the historical events. Only Volume / Metric / Freshness monitors in Prediction Model mode have a forecast; Schema and other modes render a note explaining why no forecast follows.
+        monitor_id: Required for ``monitor_type="metric"``, rejected for other types. Get it from ``list_monitors``.
+        include_predictions: When True, append the monitor's forecast after the historical events, if available.
         limit: Page size (default 20, max 100).
         page: Page number starting at 1 (default 1).
     """
@@ -634,19 +649,35 @@ def list_monitor_events(
     if suite is None:
         return _NOT_MONITORED_OUTPUT
 
+    monitor_def: TestDefinition | TestDefinitionSummary | None
     if parsed_type == MonitorType.METRIC:
+        monitor_uuid = parse_uuid(monitor_id, "monitor_id")
+        # Scope the lookup to this suite + table + Metric_Trend so a monitor_id
+        # for a metric on another table (or another suite) can't be rendered
+        # under this table's heading.
+        monitor_def = next(
+            iter(
+                TestDefinition.select_where(
+                    TestDefinition.id == monitor_uuid,
+                    TestDefinition.test_suite_id == suite.id,
+                    TestDefinition.table_name == table_name,
+                    TestDefinition.test_type == MonitorType.METRIC.value,
+                )
+            ),
+            None,
+        )
+        if monitor_def is None:
+            raise MCPUserError(
+                f"No metric monitor `{monitor_id}` found on table `{table_name}`. "
+                "Use `list_monitors(table_group_id, table_name)` to find a metric's `monitor_id`."
+            )
         events, total = TestResult.list_metric_monitor_events(
             suite.id,
-            monitor_id,
+            monitor_uuid,
             page=page,
             limit=limit,
         )
-        monitor_def = TestDefinition.get(monitor_id)
-        metric_name = (
-            monitor_def.column_name or None
-            if monitor_def is not None and monitor_def.test_type == MonitorType.METRIC.value
-            else None
-        )
+        metric_name = monitor_def.column_name or None
     else:
         events, total = TestResult.list_monitor_events_for_table(
             suite.id,
@@ -668,7 +699,7 @@ def list_monitor_events(
     if parsed_type == MonitorType.METRIC and metric_name:
         doc.heading(
             1,
-            f"Monitor events: `{metric_name}` on `{table_name}` in `{tg.table_groups_name}`",
+            f"Monitor events: Metric `{metric_name}` on `{table_name}` in `{tg.table_groups_name}`",
         )
     else:
         doc.heading(
@@ -686,7 +717,7 @@ def list_monitor_events(
         else:
             doc.text("_No monitor events in the active lookback window._")
         if include_predictions:
-            _render_forecast_section(doc, parsed_type, monitor_def, suite)
+            _render_forecast_section(doc, _compute_forecast(suite, table_name, parsed_type, monitor_def, events))
         return doc.render()
 
     if parsed_type == MonitorType.SCHEMA:
@@ -745,54 +776,129 @@ def list_monitor_events(
         doc.text(footer)
 
     if include_predictions:
-        _render_forecast_section(doc, parsed_type, monitor_def, suite)
+        _render_forecast_section(doc, _compute_forecast(suite, table_name, parsed_type, monitor_def, events))
 
     return doc.render()
 
 
-def _render_forecast_section(doc, parsed_type, monitor_def, suite) -> None:
-    """Append the forecast section (or an explanatory note) under the
-    historical events table. Predictions are NEVER mixed into the events
-    table — they live on their own under a `## Forecast` heading so the LLM
-    consumer can tell observed-past from predicted-future at a glance."""
-    doc.heading(2, "Forecast")
+@dataclass
+class _Forecast:
+    """The forecast to render under a monitor's events. Exactly one of
+    ``window`` / ``points`` / ``note`` is meaningful — see ``_compute_forecast``."""
+    note: str | None = None
+    sensitivity: str | None = None
+    points: list[MonitorForecastPoint] = field(default_factory=list)
+    window: dict | None = None  # {"start": epoch_ms | None, "end": epoch_ms}
 
+
+def _compute_forecast(
+    suite: TestSuite,
+    table_name: str,
+    parsed_type: MonitorType,
+    monitor_def: TestDefinition | TestDefinitionSummary | None,
+    events: list[MonitorEvent],
+) -> _Forecast:
+    """Compute the same forecast the monitors dashboard plots for this monitor.
+
+    Volume / Metric in Prediction Model mode get a forward value band — the
+    coupled baseline-then-refresh band when the monitor is tied to a Freshness
+    monitor, otherwise the per-step prediction band. Freshness gets its predicted
+    next-update window. Everything else gets an explanatory note."""
     if parsed_type == MonitorType.SCHEMA:
-        doc.text(
-            "_Predictions not applicable — Schema monitors are presence-only and "
-            "do not have tolerance bands._"
+        return _Forecast(
+            note="_Predictions not applicable to Schema monitors._"
         )
-        return
-
     if monitor_def is None:
-        doc.text("_No monitor configured for this table._")
-        return
-
+        return _Forecast(note="_No monitor configured for this table._")
     if monitor_def.history_calculation != "PREDICT":
-        doc.text(
-            "_Predictions not available — this monitor's threshold mode is "
+        return _Forecast(
+            note="_Predictions not available — this monitor's threshold mode is "
             "Static or Historical Calculation, not Prediction Model._"
         )
-        return
 
-    sensitivity = (
-        suite.predict_sensitivity.value
-        if suite.predict_sensitivity is not None
-        else "medium"
-    )
+    if parsed_type == MonitorType.FRESHNESS:
+        window = _next_update_window_for_table(suite, monitor_def, events)
+        if window is None:
+            return _Forecast(note=_FORECAST_PENDING_NOTE)
+        return _Forecast(window=window)
+
+    last_run_time = max((e.test_time for e in events if e.test_time is not None), default=None)
+
+    # A monitor coupled to a Freshness monitor holds at its baseline until the
+    # next expected refresh, so its band is the coupled baseline-then-refresh
+    # shape keyed off the freshness next-update window — not the raw per-step
+    # prediction series.
+    if monitor_def.prediction and monitor_def.prediction.get("freshness_gated"):
+        freshness_def = TestDefinition.get_singleton_monitor(
+            suite.id, table_name, MonitorType.FRESHNESS.value
+        )
+        freshness_events, _ = TestResult.list_monitor_events_for_table(
+            suite.id, table_name, monitor_type=MonitorType.FRESHNESS.value, limit=None
+        )
+        window = _next_update_window_for_table(suite, freshness_def, freshness_events)
+        points = forecast_band_points(gated_forecast_prediction(monitor_def, window, last_run_time))
+        if not points:
+            return _Forecast(note=_FORECAST_PENDING_NOTE)
+        return _Forecast(points=points)
+
+    sensitivity = suite.predict_sensitivity.value if suite.predict_sensitivity is not None else "medium"
     points = forecast_points_from_prediction(monitor_def.prediction, sensitivity)
     if not points:
-        doc.text(
-            "_No forecast stored yet — Prediction Model monitors populate their "
-            "forecast after the first successful run._"
+        return _Forecast(note=_FORECAST_PENDING_NOTE)
+    return _Forecast(sensitivity=sensitivity, points=points)
+
+
+def _next_update_window_for_table(
+    suite: TestSuite,
+    freshness_def: TestDefinition | TestDefinitionSummary | None,
+    freshness_events: list[MonitorEvent],
+) -> dict | None:
+    """Predicted next-update window from the table's Freshness monitor, computed
+    the same way the dashboard does (last detected update + business-time tolerance)."""
+    last_detection = max(
+        (
+            e.test_time for e in freshness_events
+            if e.test_time is not None and not e.is_training and not e.is_pending
+            and _parse_freshness_message(e.message)[0] == "Yes"
+        ),
+        default=None,
+    )
+    schedule = JobSchedule.get_for_monitor_suite(suite.id)
+    return next_update_window(
+        freshness_def,
+        last_detection,
+        exclude_weekends=suite.predict_exclude_weekends,
+        holiday_dates=resolve_suite_holiday_dates(suite),
+        cron_tz=schedule.cron_tz if schedule else None,
+    )
+
+
+def _render_forecast_section(doc: MdDoc, forecast: _Forecast) -> None:
+    """Append the forecast under its own `## Forecast` heading. Predictions are
+    NEVER mixed into the events table so the consumer can tell observed-past from
+    predicted-future at a glance."""
+    doc.heading(2, "Forecast")
+
+    if forecast.window is not None:
+        end = datetime.fromtimestamp(forecast.window["end"] / 1000.0, UTC)
+        start_ms = forecast.window.get("start")
+        if start_ms is not None:
+            start = datetime.fromtimestamp(start_ms / 1000.0, UTC)
+            doc.field("Next update expected", f"{start:%Y-%m-%d %H:%M} to {end:%Y-%m-%d %H:%M} UTC")
+        else:
+            doc.field("Next update expected by", f"{end:%Y-%m-%d %H:%M} UTC")
+        return
+
+    if forecast.points:
+        if forecast.sensitivity:
+            doc.field("Sensitivity", forecast.sensitivity)
+        doc.table(
+            ["Time", "Predicted lower", "Predicted upper"],
+            [[p.test_time, p.lower_bound, p.upper_bound] for p in forecast.points],
         )
         return
 
-    doc.field("Sensitivity", sensitivity)
-    doc.table(
-        ["Time", "Predicted lower", "Predicted upper"],
-        [[p.test_time, p.lower_bound, p.upper_bound] for p in points],
-    )
+    doc.text(forecast.note or "_No forecast available._")
 
 
 def _event_status(event: MonitorEvent) -> str:
@@ -931,10 +1037,15 @@ def list_monitor_schema_changes(
     if suite is None:
         return _NOT_MONITORED_OUTPUT
 
+    clauses = []
+    if table_name is not None:
+        clauses.append(DataStructureLog.table_name == table_name)
+    if since_date is not None:
+        clauses.append(DataStructureLog.change_date >= since_date)
+
     entries, total = DataStructureLog.list_for_table_group(
         tg.id,
-        table_name=table_name,
-        since=since_date,
+        *clauses,
         page=page,
         limit=limit,
     )

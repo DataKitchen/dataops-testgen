@@ -3,13 +3,14 @@
 lifecycle/settings (``enable_monitors`` / ``get_monitor_settings`` / ``update_monitor_settings``
 / ``disable_monitors``)."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
 
+from testgen.common.models.data_structure_log import DataStructureLog
 from testgen.common.models.table_group import MonitorGroupSummary, MonitorTableSummary
 from testgen.common.models.test_suite import PredictSensitivity
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -798,17 +799,17 @@ def test_list_monitor_events_metric_renders_name_in_heading(
         [_monitor_event(test_type="Metric_Trend", metric_name="total_amount")],
         1,
     )
-    mock_td_cls.get.return_value = SimpleNamespace(
-        test_type="Metric_Trend",
-        column_name="total_amount",
-    )
+    # Scoped lookup returns the metric's summary (select_where, not the bare get).
+    mock_td_cls.select_where.return_value = [
+        SimpleNamespace(test_type="Metric_Trend", column_name="total_amount"),
+    ]
 
     from testgen.mcp.tools.monitors import list_monitor_events
 
     with _patch_perms():
         out = list_monitor_events(str(tg.id), "orders", "metric", monitor_id=monitor_id)
 
-    assert "Monitor events: `total_amount` on `orders` in `Sales`" in out
+    assert "Monitor events: Metric `total_amount` on `orders` in `Sales`" in out
     assert "| Time | Status | Value | Lower bound | Upper bound |" in out
     # metric_name lives in the heading, not as a column
     assert "Metric name" not in out
@@ -841,6 +842,45 @@ def test_list_monitor_events_monitor_id_rejected_for_non_metric(mock_resolve, db
 
     with _patch_perms(), pytest.raises(MCPUserError, match="monitor_id.*only applies.*metric"):
         list_monitor_events(str(tg.id), "orders", "volume", monitor_id=str(uuid4()))
+
+
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_metric_invalid_monitor_id(mock_resolve, db_session_mock):
+    """A malformed ``monitor_id`` is rejected with a clean MCPUserError before
+    it reaches the query — not surfaced as a raw Postgres UUID-cast error."""
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="Invalid monitor_id"):
+        list_monitor_events(str(tg.id), "orders", "metric", monitor_id="not-a-uuid")
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_metric_monitor_id_scoped_and_not_found(
+    mock_resolve, mock_tr_cls, mock_td_cls, db_session_mock,
+):
+    """The metric lookup is scoped to this suite + table + Metric_Trend, so a
+    ``monitor_id`` that doesn't resolve within scope (wrong table, wrong suite,
+    or not a metric) yields a discovery-hint error rather than another table's
+    events under this table's heading."""
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    tg = _mock_table_group()
+    suite = _mock_monitor_suite()
+    mock_resolve.return_value = (tg, suite)
+    mock_td_cls.select_where.return_value = []  # no metric matches the scoped clauses
+
+    with _patch_perms(), pytest.raises(MCPUserError, match=r"No metric monitor.*list_monitors"):
+        list_monitor_events(str(tg.id), "orders", "metric", monitor_id=str(uuid4()))
+
+    # The events query never runs when the scoped definition lookup fails.
+    mock_tr_cls.list_metric_monitor_events.assert_not_called()
+    # Lookup was scoped (id + suite + table + type clauses), not a bare PK fetch.
+    assert len(mock_td_cls.select_where.call_args[0]) == 4
 
 
 @patch(f"{MODULE}.TestResult")
@@ -964,11 +1004,97 @@ def test_list_monitor_events_predictions_not_applicable_for_schema(
         out = list_monitor_events(str(tg.id), "orders", "schema", include_predictions=True)
 
     assert "## Forecast" in out
-    assert "Predictions not applicable" in out
-    assert "Schema monitors are presence-only" in out
+    assert "Predictions not applicable to Schema monitors" in out
     # Schema short-circuits before any TestDefinition lookup — predictions
     # never apply, so don't waste a DB round-trip.
     mock_td_cls.get_singleton_monitor.assert_not_called()
+
+
+@patch(f"{MODULE}.next_update_window")
+@patch(f"{MODULE}.resolve_suite_holiday_dates")
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_freshness_prediction_shows_window(
+    mock_resolve, mock_tr_cls, mock_td_cls, mock_sched, mock_holidays, mock_window, db_session_mock,
+):
+    """A Freshness monitor in Prediction Model mode forecasts a next-update time
+    window (the same one the dashboard computes), not a value band — so the
+    forecast section presents that window rather than a band table or a note."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = (
+        [_monitor_event(test_type="Freshness_Trend", message="Table update detected: Yes. On time.")],
+        1,
+    )
+    monitor_def = MagicMock()
+    monitor_def.history_calculation = "PREDICT"
+    mock_td_cls.get_singleton_monitor.return_value = monitor_def
+    mock_holidays.return_value = None
+    mock_sched.get_for_monitor_suite.return_value = SimpleNamespace(cron_tz="UTC")
+    start_ms = int(datetime(2026, 7, 1, 9, 0, tzinfo=UTC).timestamp() * 1000)
+    end_ms = int(datetime(2026, 7, 1, 17, 0, tzinfo=UTC).timestamp() * 1000)
+    mock_window.return_value = {"start": start_ms, "end": end_ms}
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "freshness", include_predictions=True)
+
+    assert "## Forecast" in out
+    assert "Next update expected" in out
+    assert "2026-07-01 09:00 to 2026-07-01 17:00 UTC" in out
+    # A window, not a value-band table.
+    assert "| Time | Predicted lower | Predicted upper |" not in out
+
+
+@patch(f"{MODULE}.next_update_window")
+@patch(f"{MODULE}.resolve_suite_holiday_dates")
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_freshness_coupled_volume_shows_gated_band(
+    mock_resolve, mock_tr_cls, mock_td_cls, mock_sched, mock_holidays, mock_window, db_session_mock,
+):
+    """A Volume/Metric monitor coupled to a Freshness monitor holds at its
+    baseline until the next expected refresh — the forecast renders that coupled
+    band (the UI's), and the internal coupling is never named in the output."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    # First call: the volume monitor's own events; second: the freshness events
+    # the window is derived from.
+    mock_tr_cls.list_monitor_events_for_table.side_effect = [
+        ([_monitor_event()], 1),
+        ([_monitor_event(test_type="Freshness_Trend", message="Table update detected: Yes.")], 1),
+    ]
+    volume_def = MagicMock()
+    volume_def.history_calculation = "PREDICT"
+    end_ms = int(datetime(2026, 6, 2, 12, 0, tzinfo=UTC).timestamp() * 1000)
+    volume_def.prediction = {"freshness_gated": True, "baseline_value": 500.0, "mean": {str(end_ms): 480.0}}
+    volume_def.lower_tolerance = "450"
+    volume_def.upper_tolerance = "550"
+    freshness_def = MagicMock()
+    # list_monitor_events looks up the volume singleton; _compute_forecast then
+    # looks up the table's freshness definition for the window.
+    mock_td_cls.get_singleton_monitor.side_effect = [volume_def, freshness_def]
+    mock_holidays.return_value = None
+    mock_sched.get_for_monitor_suite.return_value = SimpleNamespace(cron_tz="UTC")
+    start_ms = int(datetime(2026, 6, 1, 18, 0, tzinfo=UTC).timestamp() * 1000)
+    mock_window.return_value = {"start": start_ms, "end": end_ms}
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "volume", include_predictions=True)
+
+    assert "## Forecast" in out
+    # The coupled band IS rendered (the step to the next-refresh tolerances).
+    assert "| Time | Predicted lower | Predicted upper |" in out
+    assert "450" in out and "550" in out
+    # Internal coupling terminology must never reach the client.
+    assert "gated" not in out.lower()
 
 
 @patch(f"{MODULE}.resolve_monitored_table_group")
@@ -1172,8 +1298,8 @@ def test_list_monitor_events_invalid_monitor_type(db_session_mock):
 
 def _monitor_config(**overrides):
     from testgen.common.models.test_definition import (
-        THRESHOLD_MODE_STATIC,
         MonitorConfig,
+        ThresholdMode,
     )
 
     defaults: dict = {
@@ -1181,7 +1307,7 @@ def _monitor_config(**overrides):
         "test_type": "Volume_Trend",
         "table_name": "orders",
         "metric_name": None,
-        "threshold_mode": THRESHOLD_MODE_STATIC,
+        "threshold_mode": ThresholdMode.STATIC,
         "threshold_lower": "900",
         "threshold_upper": "1100",
         "custom_query": None,
@@ -1281,12 +1407,12 @@ def _schema_log_entry(**overrides):
     return DataStructureLogEntry(**defaults)
 
 
-@patch(f"{MODULE}.DataStructureLog")
+@patch.object(DataStructureLog, "list_for_table_group")
 @patch(f"{MODULE}.resolve_monitored_table_group")
-def test_list_monitor_schema_changes_happy_path(mock_resolve, mock_dsl_cls, db_session_mock):
+def test_list_monitor_schema_changes_happy_path(mock_resolve, mock_list, db_session_mock):
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
-    mock_dsl_cls.list_for_table_group.return_value = (
+    mock_list.return_value = (
         [
             _schema_log_entry(change="A", column_name="new_col", old_data_type=None, new_data_type="TEXT"),
             _schema_log_entry(change="D", column_name="old_col", old_data_type="INTEGER", new_data_type=None),
@@ -1312,14 +1438,14 @@ def test_list_monitor_schema_changes_happy_path(mock_resolve, mock_dsl_cls, db_s
     assert "| M |" not in out_row_section
 
 
-@patch(f"{MODULE}.DataStructureLog")
+@patch.object(DataStructureLog, "list_for_table_group")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_list_monitor_schema_changes_table_filter_in_heading(
-    mock_resolve, mock_dsl_cls, db_session_mock,
+    mock_resolve, mock_list, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
-    mock_dsl_cls.list_for_table_group.return_value = ([], 0)
+    mock_list.return_value = ([], 0)
 
     from testgen.mcp.tools.monitors import list_monitor_schema_changes
 
@@ -1328,24 +1454,37 @@ def test_list_monitor_schema_changes_table_filter_in_heading(
 
     assert "table `orders`" in out
     assert "since `7 days`" in out
+    # table_name + since reach the model as WHERE clauses, not named kwargs.
+    sql = _compile_clauses(mock_list)
+    assert "data_structure_log.table_name = 'orders'" in sql
+    assert "data_structure_log.change_date >=" in sql
 
 
-@patch(f"{MODULE}.DataStructureLog")
+@patch.object(DataStructureLog, "list_for_table_group")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_list_monitor_schema_changes_since_passed_to_model(
-    mock_resolve, mock_dsl_cls, db_session_mock,
+    mock_resolve, mock_list, db_session_mock,
 ):
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
-    mock_dsl_cls.list_for_table_group.return_value = ([], 0)
+    mock_list.return_value = ([], 0)
 
     from testgen.mcp.tools.monitors import list_monitor_schema_changes
 
     with _patch_perms():
         list_monitor_schema_changes(str(tg.id), since="2026-05-01")
 
-    call = mock_dsl_cls.list_for_table_group.call_args
-    assert call.kwargs["since"] == date(2026, 5, 1)
+    # ``since`` is passed as a ``change_date >= <date>`` WHERE clause, not a kwarg.
+    sql = _compile_clauses(mock_list)
+    assert "data_structure_log.change_date >=" in sql
+    assert "2026-05-01" in sql
+
+
+def _compile_clauses(mock_method) -> str:
+    """Compile the ``*clauses`` positional args of a captured
+    ``list_for_table_group`` call into one SQL string."""
+    clauses = mock_method.call_args[0][1:]  # drop table_group_id (first positional)
+    return " ".join(str(c.compile(compile_kwargs={"literal_binds": True})) for c in clauses)
 
 
 @patch(f"{MODULE}.resolve_monitored_table_group")

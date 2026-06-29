@@ -7,11 +7,8 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.test_definition import (
-    THRESHOLD_MODE_HISTORICAL,
-    THRESHOLD_MODE_NONE,
-    THRESHOLD_MODE_PREDICTION,
-    THRESHOLD_MODE_STATIC,
     TestDefinition,
+    ThresholdMode,
 )
 
 
@@ -89,7 +86,7 @@ def _td(**overrides):
 def test_derive_threshold_mode_schema_returns_none():
     td = _td(test_type="Schema_Drift", history_calculation="PREDICT", lower_tolerance="5")
     mode, lower, upper = TestDefinition._derive_threshold_mode(td)
-    assert (mode, lower, upper) == (THRESHOLD_MODE_NONE, None, None)
+    assert (mode, lower, upper) == (ThresholdMode.NONE, None, None)
 
 
 def test_derive_threshold_mode_prediction_keys_on_history_calculation_not_prediction_jsonb():
@@ -98,7 +95,7 @@ def test_derive_threshold_mode_prediction_keys_on_history_calculation_not_predic
     keying off it would misreport prediction monitors as Static."""
     td = _td(test_type="Volume_Trend", history_calculation="PREDICT", prediction=None)
     mode, lower, upper = TestDefinition._derive_threshold_mode(td)
-    assert mode == THRESHOLD_MODE_PREDICTION
+    assert mode == ThresholdMode.PREDICTION
     assert lower is None and upper is None
 
 
@@ -109,7 +106,7 @@ def test_derive_threshold_mode_historical_for_non_freshness():
         history_calculation_upper="Maximum",
     )
     mode, lower, upper = TestDefinition._derive_threshold_mode(td)
-    assert (mode, lower, upper) == (THRESHOLD_MODE_HISTORICAL, "Minimum", "Maximum")
+    assert (mode, lower, upper) == (ThresholdMode.HISTORICAL, "Minimum", "Maximum")
 
 
 def test_derive_threshold_mode_historical_blocked_for_freshness():
@@ -121,7 +118,7 @@ def test_derive_threshold_mode_historical_blocked_for_freshness():
         upper_tolerance="720",
     )
     mode, lower, upper = TestDefinition._derive_threshold_mode(td)
-    assert mode == THRESHOLD_MODE_STATIC
+    assert mode == ThresholdMode.STATIC
     assert lower is None  # Freshness has no lower bound
     assert upper == "720"
 
@@ -129,7 +126,7 @@ def test_derive_threshold_mode_historical_blocked_for_freshness():
 def test_derive_threshold_mode_static_freshness_uses_upper_only():
     td = _td(test_type="Freshness_Trend", lower_tolerance="60", upper_tolerance="720")
     mode, lower, upper = TestDefinition._derive_threshold_mode(td)
-    assert mode == THRESHOLD_MODE_STATIC
+    assert mode == ThresholdMode.STATIC
     assert lower is None  # lower is silently dropped for Freshness even if populated
     assert upper == "720"
 
@@ -137,7 +134,7 @@ def test_derive_threshold_mode_static_freshness_uses_upper_only():
 def test_derive_threshold_mode_static_volume_uses_both_tolerances():
     td = _td(test_type="Volume_Trend", lower_tolerance="900", upper_tolerance="1100")
     mode, lower, upper = TestDefinition._derive_threshold_mode(td)
-    assert (mode, lower, upper) == (THRESHOLD_MODE_STATIC, "900", "1100")
+    assert (mode, lower, upper) == (ThresholdMode.STATIC, "900", "1100")
 
 
 def test_derive_threshold_mode_threshold_value_never_returned():
@@ -145,7 +142,7 @@ def test_derive_threshold_mode_threshold_value_never_returned():
     tolerances are set it must not leak into the bounds."""
     td = _td(test_type="Volume_Trend", threshold_value="42")
     mode, lower, upper = TestDefinition._derive_threshold_mode(td)
-    assert mode == THRESHOLD_MODE_STATIC
+    assert mode == ThresholdMode.STATIC
     assert lower is None
     assert upper is None
 

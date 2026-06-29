@@ -149,7 +149,7 @@ class MonitorEvent:
     Pending rows have no underlying ``test_results`` row — ``monitor_id``,
     ``test_time``, and result flags are ``None``; ``is_pending`` is True.
     Forecast points (future timestamps with predicted bounds) are NOT
-    events and surface separately via ``TestDefinition.get_forecast_points``.
+    events and surface separately via ``forecast_points_from_prediction``.
     """
     monitor_id: UUID | None
     test_type: str
@@ -675,7 +675,7 @@ class TestResult(Entity):
 
         Forecast points for Prediction-Model monitors are NOT included here —
         events are only past, observed runs. Read forecasts separately via
-        ``TestDefinition.get_forecast_points(sensitivity)``.
+        ``forecast_points_from_prediction(prediction, sensitivity)``.
         """
         monitor_codes = (
             [monitor_type] if monitor_type is not None

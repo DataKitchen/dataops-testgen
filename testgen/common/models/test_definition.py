@@ -271,12 +271,13 @@ class TestDefinitionMinimal(EntityMinimal):
     test_name_short: str
 
 
-# Threshold-mode labels for monitor TestDefinitions — derived from which fields
-# on the definition are populated. See ``TestDefinition._derive_threshold_mode``.
-THRESHOLD_MODE_PREDICTION = "Prediction Model"
-THRESHOLD_MODE_HISTORICAL = "Historical Calculation"
-THRESHOLD_MODE_STATIC = "Static"
-THRESHOLD_MODE_NONE = "N/A"
+class ThresholdMode(StrEnum):
+    """How a monitor's bounds are determined — derived from which fields on the
+    definition are populated. See ``TestDefinition._derive_threshold_mode``."""
+    PREDICTION = "Prediction Model"
+    HISTORICAL = "Historical Calculation"
+    STATIC = "Static"
+    NONE = "N/A"
 
 
 @dataclass
@@ -355,7 +356,7 @@ class MonitorConfig(EntityMinimal):
     test_type: str
     table_name: str
     metric_name: str | None
-    threshold_mode: str
+    threshold_mode: ThresholdMode
     threshold_lower: str | None
     threshold_upper: str | None
     custom_query: str | None
@@ -706,7 +707,7 @@ class TestDefinition(Entity):
     @classmethod
     def _derive_threshold_mode(
         cls, td: "TestDefinition",
-    ) -> tuple[str, str | None, str | None]:
+    ) -> tuple[ThresholdMode, str | None, str | None]:
         """Pick a mode and the bounds tuple that applies under that mode.
 
         Detection mirrors the UI form (``test_definition_form.js``): a
@@ -728,14 +729,14 @@ class TestDefinition(Entity):
         * Static (Volume / Metric): ``(lower_tolerance, upper_tolerance)``.
         """
         if td.test_type == MonitorType.SCHEMA.value:
-            return THRESHOLD_MODE_NONE, None, None
+            return ThresholdMode.NONE, None, None
         if td.history_calculation == "PREDICT":
-            return THRESHOLD_MODE_PREDICTION, None, None
+            return ThresholdMode.PREDICTION, None, None
         if td.history_calculation and td.test_type != MonitorType.FRESHNESS.value:
-            return THRESHOLD_MODE_HISTORICAL, td.history_calculation, td.history_calculation_upper
+            return ThresholdMode.HISTORICAL, td.history_calculation, td.history_calculation_upper
         if td.test_type == MonitorType.FRESHNESS.value:
-            return THRESHOLD_MODE_STATIC, None, td.upper_tolerance
-        return THRESHOLD_MODE_STATIC, td.lower_tolerance, td.upper_tolerance
+            return ThresholdMode.STATIC, None, td.upper_tolerance
+        return ThresholdMode.STATIC, td.lower_tolerance, td.upper_tolerance
 
     @classmethod
     def select_page(
