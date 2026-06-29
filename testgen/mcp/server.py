@@ -204,6 +204,7 @@ def build_mcp_server(
         list_profiling_summaries,
         search_columns,
     )
+    from testgen.mcp.tools.projects import update_project
     from testgen.mcp.tools.quality_scores import (
         create_scorecard,
         delete_scorecard,
@@ -263,6 +264,7 @@ def build_mcp_server(
         update_test_result,
     )
     from testgen.mcp.tools.test_runs import get_test_run, list_test_runs
+    from testgen.mcp.tools.test_suites import create_test_suite, update_test_suite
 
     if server_url is None:
         server_url = f"{api_base_url}/mcp"
@@ -375,6 +377,9 @@ def build_mcp_server(
     safe_tool(create_table_group)
     safe_tool(update_table_group)
     safe_tool(preview_table_group)
+    safe_tool(update_project)
+    safe_tool(create_test_suite)
+    safe_tool(update_test_suite)
     safe_tool(update_catalog_metadata)
 
     # Resources

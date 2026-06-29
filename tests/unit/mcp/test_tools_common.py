@@ -5,6 +5,7 @@ import pytest
 
 from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, PiiRisk, QualityDimension
 from testgen.common.models.scores import ScoreCategory
+from testgen.common.models.test_definition import Severity
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
@@ -28,6 +29,7 @@ from testgen.mcp.tools.common import (
     parse_score_filter_field,
     parse_score_group_by,
     parse_score_type,
+    parse_severity,
     parse_uuid,
     resolve_hygiene_issue,
     resolve_issue_type,
@@ -86,6 +88,32 @@ def test_parse_result_status_invalid_lists_valid_values():
         parse_result_status("nope")
     for status in TestResultStatus:
         assert status.value in str(exc_info.value)
+
+
+# --- parse_severity ---
+
+
+def test_parse_severity_valid():
+    assert parse_severity("Fail") == Severity.FAIL
+    assert parse_severity("Warning") == Severity.WARNING
+
+
+def test_parse_severity_invalid_names_value():
+    with pytest.raises(MCPUserError, match="Invalid severity `Critical`"):
+        parse_severity("Critical")
+
+
+def test_parse_severity_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_severity("nope")
+    for severity in Severity:
+        assert severity.value in str(exc_info.value)
+
+
+def test_parse_severity_case_sensitive():
+    """Severity stores 'Fail' / 'Warning' verbatim; lowercase rejected by design."""
+    with pytest.raises(MCPUserError, match="Invalid severity `fail`"):
+        parse_severity("fail")
 
 
 # --- validate_page ---
@@ -985,3 +1013,186 @@ def test_resolve_monitored_table_group_raises_when_tg_inaccessible():
         pytest.raises(MCPResourceNotAccessible),
     ):
         resolve_monitored_table_group(bad_id)
+
+
+
+# --- resolve_project ---
+
+
+def test_resolve_project_returns_project_when_in_scope(db_session_mock):
+    """Happy path: project_code in allowed_codes, Project.get returns the row."""
+    from testgen.mcp.permissions import ProjectPermissions, _mcp_project_permissions
+    from testgen.mcp.tools.common import resolve_project
+
+    project = MagicMock()
+    project.project_code = "demo"
+
+    with patch("testgen.mcp.tools.common.Project") as mock_project_cls:
+        mock_project_cls.get.return_value = project
+        mock_project_cls.project_code = MagicMock()  # for the .in_() filter clause
+        perms = ProjectPermissions(memberships={"demo": "admin"}, permission="administer", username="t")
+        token = _mcp_project_permissions.set(perms)
+        try:
+            with patch(
+                "testgen.mcp.permissions.PluginHook"
+            ) as mock_hook:
+                mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
+                assert resolve_project("demo") is project
+        finally:
+            _mcp_project_permissions.reset(token)
+
+
+def test_resolve_project_raises_unified_when_get_returns_none(db_session_mock):
+    """Project not in scope (or absent) → unified ``MCPResourceNotAccessible``."""
+    from testgen.mcp.permissions import ProjectPermissions, _mcp_project_permissions
+    from testgen.mcp.tools.common import resolve_project
+
+    with patch("testgen.mcp.tools.common.Project") as mock_project_cls:
+        mock_project_cls.get.return_value = None
+        mock_project_cls.project_code = MagicMock()
+        perms = ProjectPermissions(memberships={"demo": "admin"}, permission="administer", username="t")
+        token = _mcp_project_permissions.set(perms)
+        try:
+            with patch(
+                "testgen.mcp.permissions.PluginHook"
+            ) as mock_hook:
+                mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
+                with pytest.raises(MCPResourceNotAccessible) as exc:
+                    resolve_project("secret")
+                assert "Project `secret` not found or not accessible" in str(exc.value)
+        finally:
+            _mcp_project_permissions.reset(token)
+
+
+# --- render_diff_table / _default_render_diff_value ---
+
+
+def test_render_diff_table_emits_rows_for_changed_attrs(db_session_mock):
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"name": "Old", "active": True, "label": "x"}
+    after = {"name": "New", "active": True, "label": "y"}
+
+    rendered = render_diff_table(
+        doc, before, after,
+        attrs=("name", "active", "label"),
+        labels={"name": "Name", "active": "Active", "label": "Label"},
+    )
+
+    assert rendered is True
+    out = doc.render()
+    assert "| Field | Before | After |" in out
+    assert "Old" in out and "New" in out
+    assert "Label" in out and "x" in out and "y" in out
+    # Unchanged attr "active" must not appear
+    assert "Active" not in out
+
+
+def test_render_diff_table_returns_false_when_nothing_changes(db_session_mock):
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    snap = {"name": "Same", "count": 3}
+
+    rendered = render_diff_table(
+        doc, snap, snap,
+        attrs=("name", "count"),
+        labels={"name": "Name", "count": "Count"},
+    )
+
+    assert rendered is False
+    assert doc.render() == ""  # nothing appended
+
+
+def test_render_diff_table_redacts_secret_attrs(db_session_mock):
+    """secret_attrs render as ``[secret]`` when present and em-dash when absent — value
+    is never echoed."""
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"name": "Demo", "api_key": None}
+    after = {"name": "Demo", "api_key": "super-secret-value"}
+
+    rendered = render_diff_table(
+        doc, before, after,
+        attrs=("name", "api_key"),
+        labels={"name": "Name", "api_key": "API key"},
+        secret_attrs=frozenset({"api_key"}),
+    )
+
+    assert rendered is True
+    out = doc.render()
+    assert "API key" in out
+    assert "[secret]" in out
+    assert "super-secret-value" not in out
+
+
+def test_render_diff_table_honors_attr_ordering(db_session_mock):
+    """Row order matches the supplied ``attrs`` tuple, not dict insertion order."""
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"b": 1, "a": 1, "c": 1}
+    after = {"b": 2, "a": 2, "c": 2}
+
+    render_diff_table(
+        doc, before, after,
+        attrs=("a", "b", "c"),
+        labels={"a": "A", "b": "B", "c": "C"},
+    )
+
+    out = doc.render()
+    # Body rows render in attrs order. Label cells are code-wrapped (column 0 uses
+    # ``code=[0]`` in ``MdDoc.table``).
+    pos_a = out.find("| `A` |")
+    pos_b = out.find("| `B` |")
+    pos_c = out.find("| `C` |")
+    assert 0 < pos_a < pos_b < pos_c
+
+
+def test_render_diff_table_custom_value_renderer(db_session_mock):
+    """``value_renderer`` overrides the default Yes/No/em-dash formatting."""
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"n": 1}
+    after = {"n": 2}
+
+    rendered = render_diff_table(
+        doc, before, after,
+        attrs=("n",),
+        labels={"n": "N"},
+        value_renderer=lambda v: f"#{v}",
+    )
+
+    assert rendered is True
+    out = doc.render()
+    assert "#1" in out
+    assert "#2" in out
+
+
+def test_default_render_diff_value_bool_yes_no():
+    from testgen.mcp.tools.common import _default_render_diff_value
+
+    assert _default_render_diff_value(True) == "Yes"
+    assert _default_render_diff_value(False) == "No"
+
+
+def test_default_render_diff_value_none_and_empty():
+    from testgen.mcp.tools.common import _default_render_diff_value
+
+    assert _default_render_diff_value(None) is None
+    assert _default_render_diff_value("") is None
+
+
+def test_default_render_diff_value_str():
+    from testgen.mcp.tools.common import _default_render_diff_value
+
+    assert _default_render_diff_value("hello") == "hello"
+    assert _default_render_diff_value(42) == "42"

@@ -1,3 +1,4 @@
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
@@ -35,10 +36,11 @@ from testgen.common.models.notification_settings import (
     TestRunNotificationTrigger,
 )
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.project import Project
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestType
+from testgen.common.models.test_definition import Severity, TestDefinition, TestDefinitionNote, TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -130,6 +132,15 @@ def parse_quality_dimension(value: str) -> QualityDimension:
     except ValueError as err:
         valid = ", ".join(d.value for d in QualityDimension)
         raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}") from err
+
+
+def parse_severity(value: str) -> Severity:
+    """Validate a test-suite default severity. Accepts ``Fail`` or ``Warning``."""
+    try:
+        return Severity(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in Severity)
+        raise MCPUserError(f"Invalid severity `{value}`. Valid values: {valid}") from err
 
 
 class ScoreGroupBy(StrEnum):
@@ -619,9 +630,88 @@ def format_page_footer(total: int, page: int, limit: int) -> str:
     return f"_Page {page} of {total_pages}. Use `page={page + 1}` for more._"
 
 
+def _default_render_diff_value(value: object) -> str | None:
+    """Default formatter for before/after cells in :func:`render_diff_table`.
+
+    * ``bool`` → ``"Yes"`` / ``"No"``
+    * ``None`` or ``""`` → ``None`` (rendered as em-dash by the table cell)
+    * else → ``str(value)``
+    """
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
+def render_diff_table(
+    doc: MdDoc,
+    before: Mapping[str, object],
+    after: Mapping[str, object],
+    *,
+    attrs: Sequence[str],
+    labels: Mapping[str, str],
+    secret_attrs: frozenset[str] = frozenset(),
+    value_renderer: Callable[[object], str | None] | None = None,
+) -> bool:
+    """Emit a ``Field / Before / After`` table for attrs whose values changed.
+
+    Update tools across the MCP surface share this shape: snapshot before, apply
+    field-by-field, snapshot after, render the delta. The shared helper keeps the
+    ordering, label lookup, and secret redaction consistent.
+
+    Args:
+        doc: ``MdDoc`` to append the table to.
+        before / after: same-shape dicts of the snapshot keyed by attr name.
+            Only entries in ``attrs`` are inspected.
+        attrs: ordered tuple of attrs to consider; controls row order.
+        labels: attr → user-facing label for the first column.
+        secret_attrs: attrs whose values must not be echoed (API keys, passwords).
+            Rendered as ``[secret]`` when present, em-dash when absent — distinct
+            from a "rotated" cue. Tools that need to communicate rotation
+            specifically (e.g. ``update_connection``) keep their own renderer.
+        value_renderer: override for the non-secret cells. Defaults to
+            :func:`_default_render_diff_value`.
+
+    Returns ``True`` if at least one row was rendered, ``False`` when nothing
+    changed (lets the caller emit a "No fields changed" message instead).
+    """
+    changed = {attr for attr in attrs if before.get(attr) != after.get(attr)}
+    if not changed:
+        return False
+    render = value_renderer or _default_render_diff_value
+    rows: list[list[object]] = []
+    for attr in attrs:
+        if attr not in changed:
+            continue
+        if attr in secret_attrs:
+            b = "[secret]" if before.get(attr) else None
+            a = "[secret]" if after.get(attr) else None
+        else:
+            b = render(before.get(attr))
+            a = render(after.get(attr))
+        rows.append([labels.get(attr, attr), b, a])
+    doc.table(["Field", "Before", "After"], rows, code=[0])
+    return True
+
+
 # Entity resolution helpers — see mcp-roadmap.md "Entity Resolution Helpers" guideline.
 # Extract a new resolve_<entity> here when a second caller needs the same parse-uuid +
 # perm-scoped lookup + collapsed-error pattern.
+
+
+def resolve_project(project_code: str) -> Project:
+    """Resolve a project code to a Project, scoped to the user's allowed projects.
+
+    Collapses missing-or-inaccessible into a single ``MCPResourceNotAccessible`` so
+    callers can't enumerate whether a project they can't see exists.
+    """
+    perms = get_project_permissions()
+    project = Project.get(project_code, Project.project_code.in_(perms.allowed_codes))
+    if project is None:
+        raise MCPResourceNotAccessible("Project", project_code)
+    return project
+
 
 def resolve_connection(connection_id: int) -> Connection:
     """Resolve a connection ID, collapsing missing-or-inaccessible into one error path."""

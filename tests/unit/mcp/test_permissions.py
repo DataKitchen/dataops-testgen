@@ -332,3 +332,51 @@ def test_mcp_permission_preserves_function_metadata():
 
     assert my_tool.__name__ == "my_tool"
     assert my_tool.__doc__ == "Tool docstring."
+
+
+# --- mcp_permission("global_admin") ---
+
+
+def test_mcp_permission_global_admin_allows_when_flag_set(mcp_user):
+    """global_admin gates on User.is_global_admin, not on project memberships."""
+    set_mcp_username("test")
+    mcp_user.is_global_admin = True
+
+    captured = {}
+
+    @mcp_permission("global_admin")
+    def tool_fn():
+        captured["perms"] = get_project_permissions()
+        return "ok"
+
+    assert tool_fn() == "ok"
+    assert captured["perms"].permission == "global_admin"
+    assert captured["perms"].memberships == {}
+
+
+def test_mcp_permission_global_admin_denies_when_flag_false(mcp_user):
+    set_mcp_username("test")
+    mcp_user.is_global_admin = False
+
+    @mcp_permission("global_admin")
+    def tool_fn():
+        raise AssertionError("Should not be called")
+
+    with pytest.raises(MCPPermissionDenied, match="necessary permission"):
+        tool_fn()
+
+
+def test_mcp_permission_global_admin_allows_with_zero_memberships(mcp_user):
+    """A global admin with no project memberships still passes the gate — the standard
+    'no allowed_codes' bailout would otherwise refuse a fresh super-user."""
+    set_mcp_username("test")
+    mcp_user.is_global_admin = True
+
+    # global_admin path must NOT call _compute_project_permissions — the tool still runs
+    # even though the conftest's membership mock would yield zero allowed_codes for an
+    # unknown permission.
+    @mcp_permission("global_admin")
+    def tool_fn():
+        return "ok"
+
+    assert tool_fn() == "ok"
