@@ -31,7 +31,6 @@ from testgen.common.monitor_forecast import (
     forecast_band_points,
     gated_forecast_prediction,
     next_update_window,
-    resolve_suite_holiday_dates,
 )
 from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.mcp.exceptions import MCPUserError
@@ -60,6 +59,11 @@ _FORECAST_PENDING_NOTE = (
     "_No forecast yet — monitors in Prediction Model mode produce a forecast once they "
     "have trained on enough history._"
 )
+
+# Used where a forecast can be absent for reasons other than training (e.g. the
+# predicted next-update window has already passed, or no baseline is stored), so
+# the message must not claim the model still needs to train.
+_FORECAST_UNAVAILABLE_NOTE = "_No forecast available for this monitor right now._"
 
 _MONITOR_LABEL: dict[MonitorType, str] = {
     MonitorType.FRESHNESS: "Freshness",
@@ -623,7 +627,7 @@ def list_monitor_events(
         table_name: Table name exactly as stored in TestGen (case-sensitive).
         monitor_type: One of ``freshness`` / ``volume`` / ``schema`` / ``metric``.
         monitor_id: Required for ``monitor_type="metric"``, rejected for other types. Get it from ``list_monitors``.
-        include_predictions: When True, append the monitor's forecast after the historical events, if available.
+        include_predictions: When True, append the monitor's forecast, if available (shown on the first page only).
         limit: Page size (default 20, max 100).
         page: Page number starting at 1 (default 1).
     """
@@ -716,7 +720,7 @@ def list_monitor_events(
             doc.text(f"No events on page {page} (total: {total}).")
         else:
             doc.text("_No monitor events in the active lookback window._")
-        if include_predictions:
+        if include_predictions and page == 1:
             _render_forecast_section(doc, _compute_forecast(suite, table_name, parsed_type, monitor_def, events))
         return doc.render()
 
@@ -827,8 +831,11 @@ def _compute_forecast(
     # A monitor coupled to a Freshness monitor holds at its baseline until the
     # next expected refresh, so its band is the coupled baseline-then-refresh
     # shape keyed off the freshness next-update window — not the raw per-step
-    # prediction series.
+    # prediction series. The tolerance precondition mirrors the dashboard: a
+    # coupled monitor with no configured tolerance has no band on either surface.
     if monitor_def.prediction and monitor_def.prediction.get("freshness_gated"):
+        if monitor_def.lower_tolerance is None and monitor_def.upper_tolerance is None:
+            return _Forecast(note=_FORECAST_UNAVAILABLE_NOTE)
         freshness_def = TestDefinition.get_singleton_monitor(
             suite.id, table_name, MonitorType.FRESHNESS.value
         )
@@ -838,7 +845,7 @@ def _compute_forecast(
         window = _next_update_window_for_table(suite, freshness_def, freshness_events)
         points = forecast_band_points(gated_forecast_prediction(monitor_def, window, last_run_time))
         if not points:
-            return _Forecast(note=_FORECAST_PENDING_NOTE)
+            return _Forecast(note=_FORECAST_UNAVAILABLE_NOTE)
         return _Forecast(points=points)
 
     sensitivity = suite.predict_sensitivity.value if suite.predict_sensitivity is not None else "medium"
@@ -858,7 +865,7 @@ def _next_update_window_for_table(
     last_detection = max(
         (
             e.test_time for e in freshness_events
-            if e.test_time is not None and not e.is_training and not e.is_pending
+            if e.test_time is not None and not e.is_training and not e.is_pending and not e.is_error
             and _parse_freshness_message(e.message)[0] == "Yes"
         ),
         default=None,
@@ -867,8 +874,7 @@ def _next_update_window_for_table(
     return next_update_window(
         freshness_def,
         last_detection,
-        exclude_weekends=suite.predict_exclude_weekends,
-        holiday_dates=resolve_suite_holiday_dates(suite),
+        test_suite=suite,
         cron_tz=schedule.cron_tz if schedule else None,
     )
 

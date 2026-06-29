@@ -1011,13 +1011,12 @@ def test_list_monitor_events_predictions_not_applicable_for_schema(
 
 
 @patch(f"{MODULE}.next_update_window")
-@patch(f"{MODULE}.resolve_suite_holiday_dates")
 @patch(f"{MODULE}.JobSchedule")
 @patch(f"{MODULE}.TestDefinition")
 @patch(f"{MODULE}.TestResult")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_list_monitor_events_freshness_prediction_shows_window(
-    mock_resolve, mock_tr_cls, mock_td_cls, mock_sched, mock_holidays, mock_window, db_session_mock,
+    mock_resolve, mock_tr_cls, mock_td_cls, mock_sched, mock_window, db_session_mock,
 ):
     """A Freshness monitor in Prediction Model mode forecasts a next-update time
     window (the same one the dashboard computes), not a value band — so the
@@ -1031,7 +1030,6 @@ def test_list_monitor_events_freshness_prediction_shows_window(
     monitor_def = MagicMock()
     monitor_def.history_calculation = "PREDICT"
     mock_td_cls.get_singleton_monitor.return_value = monitor_def
-    mock_holidays.return_value = None
     mock_sched.get_for_monitor_suite.return_value = SimpleNamespace(cron_tz="UTC")
     start_ms = int(datetime(2026, 7, 1, 9, 0, tzinfo=UTC).timestamp() * 1000)
     end_ms = int(datetime(2026, 7, 1, 17, 0, tzinfo=UTC).timestamp() * 1000)
@@ -1050,13 +1048,12 @@ def test_list_monitor_events_freshness_prediction_shows_window(
 
 
 @patch(f"{MODULE}.next_update_window")
-@patch(f"{MODULE}.resolve_suite_holiday_dates")
 @patch(f"{MODULE}.JobSchedule")
 @patch(f"{MODULE}.TestDefinition")
 @patch(f"{MODULE}.TestResult")
 @patch(f"{MODULE}.resolve_monitored_table_group")
 def test_list_monitor_events_freshness_coupled_volume_shows_gated_band(
-    mock_resolve, mock_tr_cls, mock_td_cls, mock_sched, mock_holidays, mock_window, db_session_mock,
+    mock_resolve, mock_tr_cls, mock_td_cls, mock_sched, mock_window, db_session_mock,
 ):
     """A Volume/Metric monitor coupled to a Freshness monitor holds at its
     baseline until the next expected refresh — the forecast renders that coupled
@@ -1079,7 +1076,6 @@ def test_list_monitor_events_freshness_coupled_volume_shows_gated_band(
     # list_monitor_events looks up the volume singleton; _compute_forecast then
     # looks up the table's freshness definition for the window.
     mock_td_cls.get_singleton_monitor.side_effect = [volume_def, freshness_def]
-    mock_holidays.return_value = None
     mock_sched.get_for_monitor_suite.return_value = SimpleNamespace(cron_tz="UTC")
     start_ms = int(datetime(2026, 6, 1, 18, 0, tzinfo=UTC).timestamp() * 1000)
     mock_window.return_value = {"start": start_ms, "end": end_ms}
@@ -1095,6 +1091,39 @@ def test_list_monitor_events_freshness_coupled_volume_shows_gated_band(
     assert "450" in out and "550" in out
     # Internal coupling terminology must never reach the client.
     assert "gated" not in out.lower()
+
+
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.TestResult")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitor_events_freshness_coupled_volume_without_tolerances_shows_note(
+    mock_resolve, mock_tr_cls, mock_td_cls, db_session_mock,
+):
+    """A coupled Volume/Metric monitor with no configured tolerance has no band on
+    the dashboard either, so the MCP shows a note (and skips the window queries),
+    rather than diverging by computing a band the UI never plots."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_tr_cls.list_monitor_events_for_table.return_value = ([_monitor_event()], 1)
+    volume_def = MagicMock()
+    volume_def.history_calculation = "PREDICT"
+    volume_def.prediction = {"freshness_gated": True, "baseline_value": 500.0}
+    volume_def.lower_tolerance = None
+    volume_def.upper_tolerance = None
+    mock_td_cls.get_singleton_monitor.return_value = volume_def
+
+    from testgen.mcp.tools.monitors import list_monitor_events
+
+    with _patch_perms():
+        out = list_monitor_events(str(tg.id), "orders", "volume", include_predictions=True)
+
+    assert "## Forecast" in out
+    assert "No forecast available for this monitor right now" in out
+    # No band, and no terminology leak.
+    assert "| Time | Predicted lower | Predicted upper |" not in out
+    assert "gated" not in out.lower()
+    # The freshness window queries are skipped when there's no tolerance to band.
+    assert mock_td_cls.get_singleton_monitor.call_count == 1  # only the volume singleton lookup
 
 
 @patch(f"{MODULE}.resolve_monitored_table_group")

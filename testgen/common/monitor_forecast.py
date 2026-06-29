@@ -41,8 +41,7 @@ def next_update_window(
     freshness_definition: MonitorDefinition | None,
     last_detection_time: datetime | None,
     *,
-    exclude_weekends: bool,
-    holiday_dates: set[date] | None,
+    test_suite: TestSuite,
     cron_tz: str | None,
 ) -> dict | None:
     """Predicted next-update window as ``{"start", "end"}`` epoch-ms, or ``None``.
@@ -63,6 +62,8 @@ def next_update_window(
         return None
 
     tz = cron_tz or "UTC"
+    exclude_weekends = test_suite.predict_exclude_weekends
+    holiday_dates = resolve_suite_holiday_dates(test_suite)
     sched = get_schedule_params(freshness_definition.prediction)
 
     window_end = add_business_minutes(

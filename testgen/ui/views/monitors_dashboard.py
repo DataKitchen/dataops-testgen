@@ -21,7 +21,6 @@ from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.common.monitor_forecast import (
     gated_forecast_prediction,
     next_update_window,
-    resolve_suite_holiday_dates,
 )
 from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.ui.components import widgets as testgen
@@ -530,8 +529,7 @@ def _freshness_next_update_window(
     return next_update_window(
         freshness_definition,
         last_detection_time,
-        exclude_weekends=test_suite.predict_exclude_weekends,
-        holiday_dates=resolve_suite_holiday_dates(test_suite),
+        test_suite=test_suite,
         cron_tz=monitor_schedule.cron_tz if monitor_schedule else None,
     )
 
