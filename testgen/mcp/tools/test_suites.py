@@ -51,11 +51,11 @@ def create_test_suite(
     *,
     description: str | None = None,
     severity_default: str | None = None,
+    dq_score_exclude: bool = False,
     export_to_observability: bool = False,
     component_key: str | None = None,
     component_type: str | None = "dataset",
     component_name: str | None = None,
-    dq_score_exclude: bool = False,
 ) -> str:
     """Create a test suite under a table group.
 
@@ -67,14 +67,14 @@ def create_test_suite(
         description: Optional free-text description.
         severity_default: Optional default severity applied to tests that do
             not set their own. Accepts `Fail` or `Warning`.
+        dq_score_exclude: Whether to exclude this suite's results from data
+            quality scoring. Defaults to False.
         export_to_observability: Whether to export test results to the
-            configured DataOps Observability backend. Defaults to False.
+            configured DataOps Observability API. Defaults to False.
         component_key: Component identifier in DataOps Observability.
         component_type: Component type in DataOps Observability
             (e.g. `dataset`). Defaults to `dataset`.
         component_name: Component display name in DataOps Observability.
-        dq_score_exclude: Whether to exclude this suite's results from data
-            quality scoring. Defaults to False.
     """
     name = test_suite_name.strip() if test_suite_name else ""
     errors: list[str] = []
@@ -93,11 +93,11 @@ def create_test_suite(
         test_suite=name,
         test_suite_description=_empty_to_none(description),
         severity=parsed_severity.value if parsed_severity is not None else None,
+        dq_score_exclude=dq_score_exclude,
         export_to_observability=export_to_observability,
         component_key=_empty_to_none(component_key),
         component_type=_empty_to_none(component_type),
         component_name=_empty_to_none(component_name),
-        dq_score_exclude=dq_score_exclude,
         is_monitor=False,
     )
     session = get_current_session()
@@ -116,11 +116,11 @@ def update_test_suite(
     test_suite_name: str | None = None,
     description: str | None = None,
     severity_default: str | None = None,
+    dq_score_exclude: bool | None = None,
     export_to_observability: bool | None = None,
     component_key: str | None = None,
     component_type: str | None = None,
     component_name: str | None = None,
-    dq_score_exclude: bool | None = None,
 ) -> str:
     """Update fields on a test suite. Atomic — nothing saved unless every supplied value is valid.
 
@@ -130,26 +130,26 @@ def update_test_suite(
         description: New free-text description. Pass an empty string to clear.
         severity_default: New default severity for tests that do not set their
             own. Accepts `Fail` or `Warning`.
+        dq_score_exclude: Whether this suite's results are excluded from data
+            quality scoring.
         export_to_observability: Whether test results are exported to the
-            configured DataOps Observability backend.
+            configured DataOps Observability API.
         component_key: Component identifier in DataOps Observability.
             Pass an empty string to clear.
         component_type: Component type in DataOps Observability
             (e.g. `dataset`). Pass an empty string to clear.
         component_name: Component display name in DataOps Observability.
             Pass an empty string to clear.
-        dq_score_exclude: Whether this suite's results are excluded from data
-            quality scoring.
     """
     supplied = {
         "test_suite_name": test_suite_name,
         "description": description,
         "severity_default": severity_default,
+        "dq_score_exclude": dq_score_exclude,
         "export_to_observability": export_to_observability,
         "component_key": component_key,
         "component_type": component_type,
         "component_name": component_name,
-        "dq_score_exclude": dq_score_exclude,
     }
     if all(value is None for value in supplied.values()):
         raise MCPUserError("No fields supplied to update.")
@@ -175,6 +175,8 @@ def update_test_suite(
         if parsed is not None:
             updates["severity"] = parsed.value
 
+    if dq_score_exclude is not None:
+        updates["dq_score_exclude"] = dq_score_exclude
     if export_to_observability is not None:
         updates["export_to_observability"] = export_to_observability
     if component_key is not None:
@@ -183,8 +185,6 @@ def update_test_suite(
         updates["component_type"] = _empty_to_none(component_type)
     if component_name is not None:
         updates["component_name"] = _empty_to_none(component_name)
-    if dq_score_exclude is not None:
-        updates["dq_score_exclude"] = dq_score_exclude
 
     if errors:
         raise_validation_error(errors, "Update rejected. No changes saved.")
@@ -230,6 +230,7 @@ def _render_created_suite(suite: TestSuite, *, table_group_name: str) -> str:
         doc.field("Description", suite.test_suite_description)
     if suite.severity:
         doc.field("Default severity", suite.severity)
+    doc.field("Exclude from quality scoring", suite.dq_score_exclude)
     doc.field("Export to Observability", suite.export_to_observability)
     if suite.component_key:
         doc.field("Component key", suite.component_key)
@@ -237,7 +238,6 @@ def _render_created_suite(suite: TestSuite, *, table_group_name: str) -> str:
         doc.field("Component type", suite.component_type)
     if suite.component_name:
         doc.field("Component name", suite.component_name)
-    doc.field("Exclude from quality scoring", suite.dq_score_exclude)
     return doc.render()
 
 
@@ -247,20 +247,20 @@ _DIFF_ORDER: tuple[str, ...] = (
     "test_suite",
     "test_suite_description",
     "severity",
+    "dq_score_exclude",
     "export_to_observability",
     "component_key",
     "component_type",
     "component_name",
-    "dq_score_exclude",
 )
 
 _DIFF_LABELS: dict[str, str] = {
     "test_suite": "Name",
     "test_suite_description": "Description",
     "severity": "Default severity",
+    "dq_score_exclude": "Exclude from quality scoring",
     "export_to_observability": "Export to Observability",
     "component_key": "Component key",
     "component_type": "Component type",
     "component_name": "Component name",
-    "dq_score_exclude": "Exclude from quality scoring",
 }

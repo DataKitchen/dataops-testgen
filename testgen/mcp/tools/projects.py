@@ -63,7 +63,7 @@ def update_project(
             Never echoed back in tool output.
         data_retention_enabled: Whether old profiling and test history is automatically deleted.
         data_retention_days: How many days of history to keep (only when retention is enabled).
-            Defaults to 180 when retention is being enabled without specifying days.
+            Defaults to 180 when retention is enabled without specifying days.
         retention_cron_expr: Cron expression for the retention cleanup job
             (only when retention is enabled). Defaults to daily at 01:00.
         retention_cron_tz: Timezone for the retention cleanup cron
