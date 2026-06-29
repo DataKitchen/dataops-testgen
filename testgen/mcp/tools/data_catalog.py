@@ -48,7 +48,8 @@ def update_catalog_metadata(updates: list[dict]) -> str:
             pii: Whether the column contains personally identifiable information
                 (true/false). Columns only.
             data_source, source_system, source_process, business_domain,
-                stakeholder_group, transform_level, aggregation_level, data_product:
+                stakeholder_group, transform_level, aggregation_level, data_product,
+                data_classification:
                 Catalog tags (max 40 characters each).
     """
     if not updates:

@@ -29,6 +29,7 @@
  * @property {string?} stakeholder_group
  * @property {string?} transform_level
  * @property {string?} data_product
+ * @property {string?} data_classification
  *
  * @typedef FormState
  * @type {object}
@@ -104,6 +105,7 @@ const TableGroupForm = (props) => {
     const stakeholderGroup = van.state(tableGroup.stakeholder_group);
     const transformLevel = van.state(tableGroup.transform_level);
     const dataProduct = van.state(tableGroup.data_product);
+    const dataClassification = van.state(tableGroup.data_classification);
 
     const connectionOptions = van.derive(() => {
         const connections = getValue(props.connections) ?? [];
@@ -159,6 +161,7 @@ const TableGroupForm = (props) => {
             stakeholder_group: stakeholderGroup.val,
             transform_level: transformLevel.val,
             data_product: dataProduct.val,
+            data_classification: dataClassification.val,
         };
     });
     const dirty = van.derive(() => !isEqual(updatedTableGroup.val, tableGroup));
@@ -233,6 +236,7 @@ const TableGroupForm = (props) => {
             stakeholderGroup,
             transformLevel,
             dataProduct,
+            dataClassification,
         ),
     );
 };
@@ -480,6 +484,7 @@ const TaggingForm = (
     stakeholderGroup,
     transformLevel,
     dataProduct,
+    dataClassification,
 ) => {
     return ExpansionPanel(
         { title: 'Table Group Tags' },
@@ -573,6 +578,16 @@ const TaggingForm = (
                 onChange: (value, state) => {
                     dataProduct.val = value;
                     options.setValidity?.('data_product', state.valid);
+                },
+            }),
+            Input({
+                name: 'data_classification',
+                label: 'Data Classification',
+                value: dataClassification,
+                help: 'Information sensitivity level of the dataset, e.g., Public, Internal, Confidential, Restricted',
+                onChange: (value, state) => {
+                    dataClassification.val = value;
+                    options.setValidity?.('data_classification', state.valid);
                 },
             }),
         ),

@@ -9,3 +9,4 @@ sys.modules.setdefault("testgen.ui.components.widgets.testgen_component", MagicM
 # widgets/__init__.py calls components_v2.component() at module level; stub it out so
 # views that import widgets don't fail collection without a Streamlit runtime.
 sys.modules.setdefault("testgen.ui.components.widgets", MagicMock())
+sys.modules.setdefault("testgen.ui.components.widgets.download_dialog", MagicMock())

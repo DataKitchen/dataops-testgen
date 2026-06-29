@@ -55,6 +55,7 @@
  * @property {string?} transform_level
  * @property {string?} aggregation_level
  * @property {string?} data_product
+ * @property {string?} data_classification
  * * Table Tags
  * @property {boolean?} table_critical_data_element
  * @property {string?} table_data_source
@@ -65,6 +66,7 @@
  * @property {string?} table_transform_level
  * @property {string?} table_aggregation_level
  * @property {string?} table_data_product
+ * @property {string?} table_data_classification
  * * Table Group Tags
  * @property {string} table_group_data_source
  * @property {string} table_group_source_system
@@ -73,6 +75,7 @@
  * @property {string} table_group_stakeholder_group
  * @property {string} table_group_transform_level
  * @property {string} table_group_data_product
+ * @property {string} table_group_data_classification
  * * Profile & Test Runs
  * @property {string?} profile_run_id
  * @property {number?} profile_run_date
@@ -169,6 +172,7 @@
  * @property {string} transform_level
  * @property {string} aggregation_level
  * @property {string} data_product
+ * @property {string} data_classification
  * * Table Group Tags
  * @property {string} table_group_data_source
  * @property {string} table_group_source_system
@@ -177,6 +181,7 @@
  * @property {string} table_group_stakeholder_group
  * @property {string} table_group_transform_level
  * @property {string} table_group_data_product
+ * @property {string} table_group_data_classification
  * * Profile & Test Runs
  * @property {string} profile_run_id
  * @property {number} profile_run_date

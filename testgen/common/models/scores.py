@@ -52,6 +52,7 @@ SCORE_CATEGORIES = [
     "stakeholder_group",
     "transform_level",
     "data_product",
+    "data_classification",
 ]
 Categories = Literal[
     "column_name",
@@ -68,6 +69,7 @@ Categories = Literal[
     "stakeholder_group",
     "transform_level",
     "data_product",
+    "data_classification",
 ]
 ScoreTypes = Literal["score", "cde_score"]
 
@@ -88,6 +90,7 @@ class ScoreCategory(enum.Enum):
     dq_dimension = "dq_dimension"
     impact_dimension = "impact_dimension"
     data_product = "data_product"
+    data_classification = "data_classification"
 
 
 class ScoreDefinition(Base):
@@ -826,6 +829,7 @@ class ScoreDefinitionBreakdownItem(Base):
     stakeholder_group: str = Column(String, nullable=True)
     transform_level: str = Column(String, nullable=True)
     data_product: str = Column(String, nullable=True)
+    data_classification: str = Column(String, nullable=True)
     impact: float = Column(Float)
     score: float = Column(Float)
     issue_ct: int = Column(Integer)

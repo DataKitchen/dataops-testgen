@@ -14,6 +14,7 @@ _CATALOG_METADATA_COLUMNS = {
     "transform_level",
     "aggregation_level",
     "data_product",
+    "data_classification",
 }
 
 

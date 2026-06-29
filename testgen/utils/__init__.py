@@ -181,6 +181,7 @@ def format_score_card(score_card: ScoreCard | None) -> ScoreCard:
         "dq_dimension": "Quality Dimension",
         "impact_dimension": "Impact Dimension",
         "data_product": "Data Product",
+        "data_classification": "Data Classification",
     }
     if not score_card:
         return {

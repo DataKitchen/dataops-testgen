@@ -298,7 +298,8 @@ def test_disable_autoflags_disables_both():
     assert disabled == ["profile_flag_cdes", "profile_flag_pii"]
 
 
-def test_tag_fields_has_eight_entries():
-    assert len(TAG_FIELDS) == 8
+def test_tag_fields_has_nine_entries():
+    assert len(TAG_FIELDS) == 9
     assert "data_source" in TAG_FIELDS
     assert "aggregation_level" in TAG_FIELDS
+    assert "data_classification" in TAG_FIELDS

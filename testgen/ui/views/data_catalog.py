@@ -496,7 +496,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
             lambda val: date_service.format_friendly_datetime(val, "%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
         )
 
-    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
+    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product", "data_classification"]:
         data[key] = data.apply(
             lambda row: row[key] or row[f"table_{key}"] or row.get(f"table_group_{key}"),
             axis=1,
@@ -587,6 +587,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "transform_level": {},
         "aggregation_level": {},
         "data_product": {},
+        "data_classification": {},
     }
     return get_excel_file_data(
         data,
@@ -686,7 +687,8 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
         column_chars.pii_flag,
         column_chars.excluded_data_element,
         {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
-        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])}
+        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])},
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])}
     FROM data_column_chars column_chars
         LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
@@ -695,6 +697,9 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
             AND column_chars.table_name = profile_results.table_name
             AND column_chars.column_name = profile_results.column_name
+        )
+        LEFT JOIN table_groups ON (
+            column_chars.table_groups_id = table_groups.id
         )
     WHERE column_chars.table_groups_id = :table_group_id
     ORDER BY LOWER(table_chars.table_name), ordinal_position;
@@ -901,6 +906,25 @@ def get_preview_data(
     }
 
 
+TAG_FIELD_DEFAULTS: dict[str, list[str]] = {
+    "data_classification": ["Public", "Internal", "Confidential", "Restricted"],
+}
+
+
+def merge_tag_defaults(
+    values: dict[str, list[str]],
+    defaults: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = defaultdict(list, {k: list(v) for k, v in values.items()})
+    for tag, tag_defaults in defaults.items():
+        existing_lower = {v.lower() for v in result[tag]}
+        for default in tag_defaults:
+            if default.lower() not in existing_lower:
+                result[tag].append(default)
+        result[tag] = sorted(result[tag], key=str.lower)
+    return result
+
+
 @st.cache_data(show_spinner=False)
 def get_tag_values() -> dict[str, list[str]]:
     quote = lambda v: f"'{v}'"
@@ -926,8 +950,8 @@ def get_tag_values() -> dict[str, list[str]]:
     """
     results = fetch_all_from_db(query)
 
-    values = defaultdict(list)
+    values: dict[str, list[str]] = defaultdict(list)
     for row in results:
         if row.tag and row.value:
             values[row.tag].append(row.value)
-    return values
+    return merge_tag_defaults(values, TAG_FIELD_DEFAULTS)

@@ -270,6 +270,7 @@ class DataColumnChars(Entity):
     transform_level: str | None = Column(String(40))
     aggregation_level: str | None = Column(String(40))
     data_product: str | None = Column(String(40))
+    data_classification: str | None = Column(String(40))
     drop_date: datetime | None = Column(postgresql.TIMESTAMP)
     last_complete_profile_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float | None = Column(Float)

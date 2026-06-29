@@ -36,6 +36,7 @@ TAG_FIELDS = [
     "transform_level",
     "aggregation_level",
     "data_product",
+    "data_classification",
 ]
 
 # Metadata fields settable per target type, keyed by their data_*_chars column names.

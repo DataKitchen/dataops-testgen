@@ -32,7 +32,8 @@ HEADER_MAP = {
     "stakeholder group": "stakeholder_group",
     "transform level": "transform_level",
     "aggregation level": "aggregation_level",
-    "data product": "data_product",    
+    "data product": "data_product",
+    "data classification": "data_classification",
 }
 
 METADATA_COLUMNS = ["description", "critical_data_element", "excluded_data_element", "pii_flag", *TAG_FIELDS]

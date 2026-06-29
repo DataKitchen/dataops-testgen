@@ -131,6 +131,7 @@ CREATE TABLE table_groups
     stakeholder_group        VARCHAR(40),
     transform_level          VARCHAR(40),
     data_product             VARCHAR(40),
+    data_classification      VARCHAR(40),
     last_complete_profile_run_id UUID,
     dq_score_profiling       FLOAT,
     dq_score_testing         FLOAT
@@ -429,6 +430,7 @@ CREATE TABLE data_table_chars (
    transform_level       VARCHAR(40),
    aggregation_level     VARCHAR(40),
    data_product          VARCHAR(40),
+   data_classification   VARCHAR(40),
    add_date              TIMESTAMP,
    drop_date             TIMESTAMP,
    last_refresh_date     TIMESTAMP,
@@ -468,6 +470,7 @@ CREATE TABLE data_column_chars (
    transform_level        VARCHAR(40),
    aggregation_level      VARCHAR(40),
    data_product           VARCHAR(40),
+   data_classification    VARCHAR(40),
    add_date               TIMESTAMP,
    last_mod_date          TIMESTAMP,
    drop_date              TIMESTAMP,
@@ -851,6 +854,7 @@ CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
     stakeholder_group    TEXT                DEFAULT NULL,
     transform_level      TEXT                DEFAULT NULL,
     data_product         TEXT                DEFAULT NULL,
+    data_classification  TEXT                DEFAULT NULL,
     impact               DOUBLE PRECISION    DEFAULT 0.0,
     score                DOUBLE PRECISION    DEFAULT 0.0,
     issue_ct             INTEGER             DEFAULT 0
