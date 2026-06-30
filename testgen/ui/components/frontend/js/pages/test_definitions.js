@@ -21,6 +21,7 @@ import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 import { AXES, FACET_AXES, GROUP_BY_AXES, EMPTY, appliesToSelectedColumn } from '/app/static/js/components/test_picker_taxonomy.js';
 import { enterPage, exitPage, getPageSignal } from '/app/static/js/page_lifecycle.js';
 import { jsonObject, maxLength } from '/app/static/js/form_validators.js';
+import { capitalize } from '/app/static/js/display_utils.js';
 
 const { button: btn, div, i: icon, span, strong } = van.tags;
 
@@ -820,6 +821,8 @@ const DetailPanel = (row) => {
     const paramCols = row.default_parm_columns
         ? row.default_parm_columns.split(',').map(c => c.trim()).filter(Boolean)
         : [];
+    const paramLabels = (row.default_parm_prompts || '').split(',').map(v => v.trim());
+    const paramHelp = (row.default_parm_help || '').split('|').map(v => v.trim());
 
     return div(
         { class: 'flex-column fx-gap-3 border border-radius-1 p-4 mt-2' },
@@ -836,7 +839,11 @@ const DetailPanel = (row) => {
                 Attribute({ label: 'Lock Refresh', value: row.lock_refresh_display }),
                 Attribute({ label: 'Urgency', value: row.urgency }),
                 Attribute({ label: 'Export to Observability', value: row.export_to_observability_display }),
-                ...paramCols.map(col => Attribute({ label: col, value: String(row[col] ?? '') })),
+                ...paramCols.map((col, index) => Attribute({
+                    label: paramLabels[index] || capitalize(col.replaceAll('_', ' ')),
+                    help: paramHelp[index] || null,
+                    value: String(row[col] ?? ''),
+                })),
             ),
             div(
                 { class: 'flex-column fx-flex fx-gap-3' },
