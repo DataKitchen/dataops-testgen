@@ -120,11 +120,16 @@ def gated_forecast_prediction(
     # typed throughout (baseline is already a float).
     lower_tol = float(definition.lower_tolerance) if definition.lower_tolerance is not None else None
     upper_tol = float(definition.upper_tolerance) if definition.upper_tolerance is not None else None
+    # The band carries the next-refresh tolerance across the whole forecast, flat anchor included.
+    # Anchoring the band to the tolerance — rather than collapsing it to the baseline at the flat
+    # anchor — keeps it a continuous width that connects to the historical band and avoids a
+    # zero-width pinch (which renders as an hourglass for a future window, or a band detached from
+    # history for an imminent one). The mean line still holds flat at baseline, then steps.
     return {
         "method": "predict",
         "mean": {flat_anchor: baseline, window_end: next_refresh_mean},
-        "lower_tolerance": {flat_anchor: baseline, window_end: lower_tol},
-        "upper_tolerance": {flat_anchor: baseline, window_end: upper_tol},
+        "lower_tolerance": {flat_anchor: lower_tol, window_end: lower_tol},
+        "upper_tolerance": {flat_anchor: upper_tol, window_end: upper_tol},
     }
 
 

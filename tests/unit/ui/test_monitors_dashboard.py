@@ -135,10 +135,12 @@ def test_gated_prediction_anchors_at_now_when_window_started():
     mean = {str(NOW_MS + 3 * HOUR): 1200.0, str(NOW_MS + 27 * HOUR): 1300.0}
     result = gated_forecast_prediction(_gated_def(mean=mean), window, LAST_RUN)
     assert result["method"] == "predict"
+    # mean holds flat at baseline then steps to the next-refresh forecast
     assert result["mean"] == {NOW_MS: 1000.0, NOW_MS + 3 * HOUR: 1200.0}
-    # tolerances coerced from VARCHAR to float
-    assert result["lower_tolerance"] == {NOW_MS: 1000.0, NOW_MS + 3 * HOUR: 950.0}
-    assert result["upper_tolerance"] == {NOW_MS: 1000.0, NOW_MS + 3 * HOUR: 1400.0}
+    # band carries the next-refresh tolerance across the whole forecast (continuous width, no
+    # zero-width pinch at the flat anchor); coerced from VARCHAR to float
+    assert result["lower_tolerance"] == {NOW_MS: 950.0, NOW_MS + 3 * HOUR: 950.0}
+    assert result["upper_tolerance"] == {NOW_MS: 1400.0, NOW_MS + 3 * HOUR: 1400.0}
 
 
 def test_gated_prediction_anchors_at_window_start_when_future():
