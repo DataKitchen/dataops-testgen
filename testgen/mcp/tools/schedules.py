@@ -205,6 +205,7 @@ def create_profiling_schedule(
         active=active,
     )
     sched.save()
+    get_current_session().flush()  # populate the default-generated id before rendering
 
     doc = MdDoc()
     doc.heading(1, f"Profiling schedule created for `{table_group.table_groups_name}`")
@@ -239,6 +240,7 @@ def create_test_run_schedule(
         active=active,
     )
     sched.save()
+    get_current_session().flush()  # populate the default-generated id before rendering
 
     doc = MdDoc()
     doc.heading(1, f"Test run schedule created for `{suite.test_suite}`")

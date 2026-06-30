@@ -14,6 +14,7 @@ from testgen.common.models.data_column import (
     DataColumnChars,
 )
 from testgen.common.models.data_table import DataTable
+from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
@@ -543,13 +544,19 @@ def get_profiling_run(job_execution_id: str) -> str:
         doc.field("Columns profiled", summary.column_ct or 0)
         if summary.record_ct is not None:
             doc.field("Records", summary.record_ct)
-        doc.field(
-            "Hygiene issues (confirmed)",
-            f"{(summary.anomalies_definite_ct or 0) + (summary.anomalies_likely_ct or 0) + (summary.anomalies_possible_ct or 0)} total "
-            f"— {summary.anomalies_definite_ct or 0} definite, "
-            f"{summary.anomalies_likely_ct or 0} likely, "
-            f"{summary.anomalies_possible_ct or 0} possible",
-        )
+        if summary.profiling_run_id:
+            # Count from the canonical source so likelihood buckets and Potential PII
+            # stay separate (matches the REST profiling-run issue_counts).
+            counts = HygieneIssue.count_for_run(summary.profiling_run_id)
+            hygiene = counts.hygiene_issues
+            doc.field(
+                "Hygiene issues (confirmed)",
+                f"{hygiene.definite + hygiene.likely + hygiene.possible} total "
+                f"— {hygiene.definite} definite, {hygiene.likely} likely, {hygiene.possible} possible",
+            )
+            pii = counts.potential_pii
+            if pii.high or pii.moderate:
+                doc.field("Potential PII", f"{pii.high} high, {pii.moderate} moderate")
         if summary.dq_score_profiling is not None:
             doc.field("Profiling Score", friendly_score(summary.dq_score_profiling))
 
