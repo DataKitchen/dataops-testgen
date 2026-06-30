@@ -583,7 +583,7 @@ class TableGroup(Entity):
         latest_profile AS (
             SELECT pr.table_groups_id, MAX(je.started_at) AS started_at
             FROM profiling_runs pr
-                LEFT JOIN job_executions je ON je.id = pr.job_execution_id
+                LEFT JOIN job_executions je ON je.id = pr.id
             GROUP BY pr.table_groups_id
         ),
         latest_test AS (

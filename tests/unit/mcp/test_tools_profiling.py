@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.models.data_column import ColumnProfileDetail, ColumnProfileSummary, DataColumnChars
+from testgen.common.models.hygiene_issue import HygieneIssueCounts, IssueCounts, PotentialPiiCounts
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
@@ -635,8 +636,9 @@ def test_list_profiling_runs_malformed_schedule_raises(mock_tg_cls, mock_run_cls
 # ----------------------------------------------------------------------
 
 
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
-def test_get_profiling_run_returns_detail(mock_run_cls, db_session_mock):
+def test_get_profiling_run_returns_detail(mock_run_cls, mock_hygiene_cls, db_session_mock):
     summary = _mock_profiling_run()
     mock_run_cls.select_summary.return_value = ([summary], 1)
     mock_run = MagicMock(project_code="demo")
@@ -644,6 +646,11 @@ def test_get_profiling_run_returns_detail(mock_run_cls, db_session_mock):
     mock_run_cls.select_table_breakdown.return_value = [
         MagicMock(schema_name="demo", table_name="orders", record_ct=1000, column_ct=5, anomaly_ct=2),
     ]
+    mock_hygiene_cls.count_for_run.return_value = IssueCounts(
+        hygiene_issues=HygieneIssueCounts(definite=2, likely=2, possible=4),
+        potential_pii=PotentialPiiCounts(high=0, moderate=8),
+        dismissed=0,
+    )
 
     with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
         mock_compute.return_value = ProjectPermissions(
@@ -659,6 +666,10 @@ def test_get_profiling_run_returns_detail(mock_run_cls, db_session_mock):
     assert "Completed" in result
     assert "Per-table breakdown" in result
     assert "orders" in result
+    # Hygiene breakdown comes from count_for_run, keeping Potential PII separate from "possible".
+    mock_hygiene_cls.count_for_run.assert_called_once_with(summary.profiling_run_id)
+    assert "8 total — 2 definite, 2 likely, 4 possible" in result
+    assert "Potential PII:** 0 high, 8 moderate" in result
 
 
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
