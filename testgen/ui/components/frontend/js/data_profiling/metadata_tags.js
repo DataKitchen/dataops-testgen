@@ -100,6 +100,7 @@ const MetadataTagsCard = (props, item) => {
             help: TAG_HELP[key],
             label: key === 'pii_flag' ? 'PII Data' : capitalize(key.replaceAll('_', ' ')),
             state: van.state(value),
+            initialValue: value,
             inheritTableGroup: item[`table_group_${key}`] ?? null, // Table group values inherited by table or column
             inheritTable: item[`table_${key}`] ?? null, // Table values inherited by column
         };
@@ -198,13 +199,15 @@ const MetadataTagsCard = (props, item) => {
             content, editingContent,
             onSave: () => {
                 const items = [{ type: item.type, id: item.id }];
-                const tags = attributes.reduce((object, { key, state }) => {
-                    object[key] = state.rawVal;
+                const tags = attributes.reduce((object, { key, state, initialValue }) => {
+                    if (state.rawVal !== initialValue) {
+                        object[key] = state.rawVal;
+                    }
                     return object;
                 }, {});
 
-                warnCde.val = props.autoflagSettings.profile_flag_cdes && tags.critical_data_element !== item.critical_data_element;
-                warnPii.val = props.autoflagSettings.profile_flag_pii && tags.pii_flag !== item.pii_flag;
+                warnCde.val = props.autoflagSettings.profile_flag_cdes && 'critical_data_element' in tags;
+                warnPii.val = props.autoflagSettings.profile_flag_pii && 'pii_flag' in tags;
 
                 if (warnCde.val || warnPii.val) {
                     const disableFlags = [];
@@ -221,8 +224,8 @@ const MetadataTagsCard = (props, item) => {
                 } 
             },
             // Reset states to original values on cancel
-            onCancel: () => attributes.forEach(({ key, state }) => state.val = item[key]),
-            hasChanges: () => attributes.some(({ key, state }) => state.val !== item[key]),
+            onCancel: () => attributes.forEach(({ state, initialValue }) => state.val = initialValue),
+            hasChanges: () => attributes.some(({ state, initialValue }) => state.val !== initialValue),
         }),
         WarningDialog(warningDialogOpen, pendingSaveAction, warnCde, warnPii),
     );
