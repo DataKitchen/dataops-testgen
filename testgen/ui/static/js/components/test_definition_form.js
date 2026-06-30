@@ -73,6 +73,7 @@ import { Textarea } from './textarea.js';
 import { RadioGroup } from './radio_group.js';
 import { Caption } from './caption.js';
 import { numberBetween, required } from '../form_validators.js';
+import { capitalize } from '../display_utils.js';
 
 const { div, span } = van.tags;
 
@@ -108,7 +109,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
         .map((column, index) => ({
             ...(PARAMETER_CONFIG[column] || { type: 'text' }),
             column,
-            label: paramLabels[index] || column.replaceAll('_', ' '),
+            label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
             help: paramHelp[index] || null,
             validators: paramRequired[index] ? [required] : undefined,
         }))
