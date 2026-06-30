@@ -1,5 +1,7 @@
 variable "TESTGEN_LABELS" {}
-variable "TESTGEN_BASE_LABEL" {}
+variable "TESTGEN_BASE_LABEL" {
+  default = null
+}
 variable "TESTGEN_VERSION" {}
 variable "TESTGEN_DOCKER_HUB_REPO" {
   default = "datakitchen/dataops-testgen"
