@@ -7,6 +7,8 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.models.test_definition import (
+    CUSTOM_METADATA_MAX_BYTES,
+    CUSTOM_METADATA_MAX_KEYS,
     InvalidTestDefinitionFields,
     Severity,
     TestDefinition,
@@ -99,6 +101,13 @@ def test_editable_fields_includes_param_columns():
     assert {"threshold_value", "baseline_value"} <= accepted
 
 
+def test_editable_fields_includes_click_through_fields():
+    tt = make_test_type(param_columns=set(), default_parm_columns=None)
+    td = make_td()
+    accepted = td.editable_fields(tt)
+    assert {"external_url", "custom_metadata"} <= accepted
+
+
 def test_editable_fields_includes_impact_dimension_only_for_custom_or_referential_scope():
     """impact_dimension is overridable only for user-defined-semantic scopes."""
     td = make_td()
@@ -116,8 +125,9 @@ def test_editable_fields_includes_impact_dimension_only_for_custom_or_referentia
     assert "impact_dimension" not in td.editable_fields(table_tt)
 
 
-def test_editable_fields_includes_column_name_only_for_column_or_custom_scope():
-    """column_name is meaningful for column-scope (column under test) and custom-scope (label)."""
+def test_editable_fields_includes_column_name_except_for_table_scope():
+    """column_name is meaningful for column (column under test), custom (label), and referential
+    (aggregate expression / categorical column list) scopes — but not table scope."""
     td = make_td()
 
     column_tt = make_test_type(scope="column", param_columns={"threshold_value"})
@@ -126,11 +136,11 @@ def test_editable_fields_includes_column_name_only_for_column_or_custom_scope():
     custom_tt = make_test_type(scope="custom", param_columns={"custom_query"})
     assert "column_name" in td.editable_fields(custom_tt)
 
+    referential_tt = make_test_type(scope="referential", param_columns={"match_column_names"})
+    assert "column_name" in td.editable_fields(referential_tt)
+
     table_tt = make_test_type(scope="table", param_columns=set())
     assert "column_name" not in td.editable_fields(table_tt)
-
-    referential_tt = make_test_type(scope="referential", param_columns={"match_column_names"})
-    assert "column_name" not in td.editable_fields(referential_tt)
 
 
 def test_editable_fields_does_not_leak_identity_or_internal_columns():
@@ -168,6 +178,13 @@ def test_validate_wrong_scope_column_name_rejected():
     with pytest.raises(InvalidTestDefinitionFields) as exc_info:
         td.validate(tt)
     assert "column_name" in exc_info.value.errors
+
+
+def test_validate_referential_scope_accepts_column_name():
+    # Referential tests use column_name as the aggregate expression / categorical column list.
+    tt = make_test_type(code="Aggregate_Balance", scope="referential", param_columns={"match_column_names"})
+    td = make_td(column_name="SUM(total_amount)", match_column_names="SUM(total_amount)")
+    td.validate(tt)  # no raise
 
 
 def test_validate_custom_scope_accepts_column_name_as_label():
@@ -218,6 +235,40 @@ def test_validate_severity_empty_string_treated_as_unset():
     tt = make_test_type()
     td = make_td(column_name="email", threshold_value="10", severity="")
     td.validate(tt)  # empty severity is OK — falls back to test type default
+
+
+def test_validate_custom_metadata_accepts_object_and_none():
+    tt = make_test_type()
+    make_td(column_name="email", threshold_value="10", custom_metadata={"pipeline": "p1"}).validate(tt)
+    make_td(column_name="email", threshold_value="10", custom_metadata=None).validate(tt)
+    make_td(column_name="email", threshold_value="10", custom_metadata={}).validate(tt)
+
+
+@pytest.mark.parametrize("bad_value", ["a string", ["a", "b"], 42])
+def test_validate_custom_metadata_rejects_non_object(bad_value):
+    tt = make_test_type()
+    td = make_td(column_name="email", threshold_value="10", custom_metadata=bad_value)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "custom_metadata" in exc_info.value.errors
+
+
+def test_validate_custom_metadata_rejects_too_many_keys():
+    tt = make_test_type()
+    too_many = {f"k{i}": "v" for i in range(CUSTOM_METADATA_MAX_KEYS + 1)}
+    td = make_td(column_name="email", threshold_value="10", custom_metadata=too_many)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "custom_metadata" in exc_info.value.errors
+
+
+def test_validate_custom_metadata_rejects_oversized():
+    tt = make_test_type()
+    oversized = {"blob": "x" * (CUSTOM_METADATA_MAX_BYTES + 1)}
+    td = make_td(column_name="email", threshold_value="10", custom_metadata=oversized)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "custom_metadata" in exc_info.value.errors
 
 
 def test_validate_aggregates_errors():
@@ -294,6 +345,8 @@ def _make_summary_row(table_name: str = "my_table") -> dict:
         "prediction": None,
         "flagged": False,
         "impact_dimension": None,
+        "external_url": None,
+        "custom_metadata": None,
         "test_name_short": "Custom",
         "default_test_description": "A test",
         "measure_uom": "",

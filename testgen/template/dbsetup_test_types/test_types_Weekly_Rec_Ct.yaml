@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     Weekly Records tests that at least one record is present for every calendar week within the minimum and maximum date range for the column. The test is relevant for transactional data, where you would expect at least one transaction to be recorded each week. A failure here would suggest missing records for the number of weeks identified without data. You can adjust the threshold to accept a number of weeks that you know legitimately have no records.
   active: Y
+  algorithm: Counting
   cat_test_conditions:
   - id: '7030'
     test_type: Weekly_Rec_Ct

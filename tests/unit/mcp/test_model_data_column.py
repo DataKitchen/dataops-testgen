@@ -4,6 +4,32 @@ from uuid import uuid4
 
 from testgen.common.models.data_column import ColumnProfileDetail, DataColumnChars
 
+_CATALOG_METADATA_COLUMNS = {
+    "description",
+    "data_source",
+    "source_system",
+    "source_process",
+    "business_domain",
+    "stakeholder_group",
+    "transform_level",
+    "aggregation_level",
+    "data_product",
+    "data_classification",
+}
+
+
+def test_catalog_metadata_columns_are_mapped():
+    mapped = set(DataColumnChars.__table__.columns.keys())
+    assert _CATALOG_METADATA_COLUMNS <= mapped
+
+
+def test_catalog_metadata_attributes_settable():
+    column = DataColumnChars()
+    column.description = "Primary email"
+    column.data_product = "CRM"
+    assert column.description == "Primary email"
+    assert column.data_product == "CRM"
+
 
 def _detail_row(**overrides) -> dict:
     """Build a dict matching every ColumnProfileDetail field."""

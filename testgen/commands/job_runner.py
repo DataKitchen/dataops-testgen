@@ -71,14 +71,14 @@ def _print_run_summary(job_id: UUID, job_key: str) -> None:
         session = get_current_session()
         match job_key:
             case "run-profile":
-                run = session.scalars(select(ProfilingRun).where(ProfilingRun.job_execution_id == job_id)).first()
+                run = session.scalars(select(ProfilingRun).where(ProfilingRun.id == job_id)).first()
                 if run:
-                    status_msg = "Profiling encountered an error. Check log for details." if run.status == "Error" else "Profiling completed."
+                    status_msg = "Profiling encountered an error. Check log for details." if run.job_execution.status == JobStatus.ERROR else "Profiling completed."
                     click.echo(f"\n        {status_msg}\n        Run ID: {run.id}\n    ")
             case "run-tests" | "run-monitors":
-                run = session.scalars(select(TestRun).where(TestRun.job_execution_id == job_id)).first()
+                run = session.scalars(select(TestRun).where(TestRun.id == job_id)).first()
                 if run:
-                    status_msg = "Test execution encountered an error. Check log for details." if run.status == "Error" else "Test execution completed."
+                    status_msg = "Test execution encountered an error. Check log for details." if run.job_execution.status == JobStatus.ERROR else "Test execution completed."
                     click.echo(f"\n        {status_msg}\n        Run ID: {run.id}\n    ")
             case "run-test-generation":
                 click.echo("Test generation completed.")

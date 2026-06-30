@@ -1,38 +1,230 @@
-"""Business logic for test definition export/import."""
+"""Test definition export/import — portable document schemas and import/export logic."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
+from pydantic import BaseModel, field_validator
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Row
 
 from testgen import settings
-from testgen.api.deps import api_error
-from testgen.api.schemas import (
-    ExportDocument,
-    ExportSource,
-    ImportAction,
-    ImportConfig,
-    ImportItem,
-    ImportItemTD,
-    ImportMode,
-    ImportPayload,
-    ImportReason,
-    ImportResponse,
-    ImportSummary,
-    OnAbsence,
-    OnMatch,
-    OnNew,
-    Origin,
-    TestDefinitionExport,
-)
 from testgen.common.models import get_current_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestType
+from testgen.common.models.test_definition import TestDefinition, TestType, validate_custom_metadata
 from testgen.common.models.test_suite import TestSuite
+
+EXPORT_FORMAT_VERSION = 1
+
+
+class Origin(StrEnum):
+    manual = "manual"
+    auto = "auto"
+    both = "both"
+
+
+class ImportMode(StrEnum):
+    preview = "preview"
+    apply = "apply"
+    apply_strict = "apply_strict"
+
+
+class OnMatch(StrEnum):
+    overwrite_all = "overwrite_all"
+    overwrite_unlocked = "overwrite_unlocked"
+    skip = "skip"
+
+
+class OnNew(StrEnum):
+    skip = "skip"
+    create = "create"
+    create_and_lock = "create_and_lock"
+
+
+class OnAbsence(StrEnum):
+    do_nothing = "do_nothing"
+    delete_all = "delete_all"
+    delete_unlocked = "delete_unlocked"
+
+
+class ImportAction(StrEnum):
+    create = "create"
+    update = "update"
+    skip = "skip"
+    delete = "delete"
+
+
+class ImportReason(StrEnum):
+    matched = "matched"
+    no_match = "no_match"
+    policy = "policy"
+    locked = "locked"
+    invalid_test_type = "invalid_test_type"
+    invalid_table = "invalid_table"
+    missing_external_id = "missing_external_id"
+    absent = "absent"
+
+
+# Non-None defaults must match the ORM column defaults in TestDefinition:
+#   test_active=True (YNString default="Y"), lock_refresh=False (YNString default="N"),
+#   skip_errors=0 (ZeroIfEmptyInteger), window_days=0 (ZeroIfEmptyInteger),
+#   history_lookback=0 (Column default=0).
+# On export, fields equal to these defaults are omitted to keep the file compact — any
+# serialization of the document must pass ``exclude_defaults=True`` (the REST route does this
+# via ``response_model_exclude_defaults=True``). On import, model_fields_set distinguishes
+# explicit from defaulted, so a non-compact file would force-write every defaulted field.
+class TestDefinitionExport(BaseModel):
+    """Test definition fields included in the export/import file."""
+
+    model_config = {"from_attributes": True}
+
+    # Matching / identity
+    test_type: str
+    external_id: UUID | None = None
+    last_auto_gen_date: datetime | None = None
+
+    # Definition fields
+    table_name: str | None = None
+    column_name: str | None = None
+    test_description: str | None = None
+    test_active: bool = True
+    severity: str | None = None
+    lock_refresh: bool = False
+    export_to_observability: bool | None = None
+    skip_errors: int = 0
+
+    # Calibration fields
+    baseline_ct: str | None = None
+    baseline_unique_ct: str | None = None
+    baseline_value: str | None = None
+    baseline_value_ct: str | None = None
+    threshold_value: str | None = None
+    baseline_sum: str | None = None
+    baseline_avg: str | None = None
+    baseline_sd: str | None = None
+    lower_tolerance: str | None = None
+    upper_tolerance: str | None = None
+
+    # Subset / grouping
+    subset_condition: str | None = None
+    groupby_names: str | None = None
+    having_condition: str | None = None
+    window_date_column: str | None = None
+    window_days: int = 0
+
+    # Referential
+    match_schema_name: str | None = None
+    match_table_name: str | None = None
+    match_column_names: str | None = None
+    match_subset_condition: str | None = None
+    match_groupby_names: str | None = None
+    match_having_condition: str | None = None
+
+    # Query / history
+    custom_query: str | None = None
+    history_calculation: str | None = None
+    history_calculation_upper: str | None = None
+    history_lookback: int = 0
+
+    # URL / metadata
+    external_url: str | None = None
+    custom_metadata: dict[str, Any] | None = None
+
+    @field_validator("skip_errors", "window_days", "history_lookback", mode="before")
+    @classmethod
+    def _coerce_none_to_zero(cls, v: int | None) -> int:
+        return v if v is not None else 0
+
+    @field_validator("custom_metadata")
+    @classmethod
+    def _check_custom_metadata(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        # The import path does not run TestDefinition.validate(), so this is the only enforcement
+        # of the custom_metadata shape/size bound on import. Shares validate_custom_metadata with
+        # the model so the rule has a single definition.
+        error = validate_custom_metadata(v)
+        if error:
+            raise ValueError(f"custom_metadata {error}")
+        return v
+
+
+class ExportSource(BaseModel):
+    project_code: str
+    test_suite: str
+    table_group: str
+    table_group_schema: str
+    exported_at: datetime
+    testgen_version: str | None = None
+
+
+class ExportDocument(BaseModel):
+    # No default: a defaulted version is stripped by default-omitting serialization,
+    # leaving exported documents without their schema-version marker.
+    version: int
+    source: ExportSource
+    definitions: list[TestDefinitionExport]
+
+
+class ImportConfig(BaseModel):
+    mode: ImportMode
+    on_match: OnMatch
+    on_new: OnNew
+    on_absence: OnAbsence
+
+
+class ImportPayload(BaseModel):
+    """Import payload — same structure as an export document, but definitions are typed."""
+
+    version: int = EXPORT_FORMAT_VERSION
+    source: ExportSource | None = None
+    definitions: list[TestDefinitionExport]
+
+
+class ImportItemTD(BaseModel):
+    idx: int | None = None
+    target_id: UUID | None = None
+
+
+class ImportItem(BaseModel):
+    action: ImportAction
+    reason: ImportReason
+    tds: list[ImportItemTD]
+
+
+class ImportSummary(BaseModel):
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    deleted: int = 0
+
+
+class ImportResponse(BaseModel):
+    summary: ImportSummary
+    items: list[ImportItem]
+
+
+class ImportErrorCode(StrEnum):
+    duplicate_natural_key = "duplicate_natural_key"
+    unsupported_version = "unsupported_version"
+
+
+class InvalidImportPayload(ValueError):
+    """Import payload rejected before any matching or persistence."""
+
+    def __init__(self, code: ImportErrorCode, detail: str):
+        super().__init__(detail)
+        self.code = code
+
+
+class ImportStrictViolation(Exception):
+    """``apply_strict`` import with test definitions that would be skipped; nothing was applied."""
+
+    def __init__(self, result: ImportResponse):
+        super().__init__(f"{result.summary.skipped} test definitions would be skipped")
+        self.result = result
+
 
 # Fields that must never be written from the import payload on update.
 # These are either identity fields (set once on create) or determined by matching logic.
@@ -87,6 +279,7 @@ def export_definitions(
     definitions = [TestDefinitionExport.model_validate(td, from_attributes=True) for td in tds]
 
     return ExportDocument(
+        version=EXPORT_FORMAT_VERSION,
         source=ExportSource(
             project_code=test_suite.project_code,
             test_suite=test_suite.test_suite,
@@ -110,6 +303,11 @@ def import_definitions(
     profiled_tables = set(DataTable.select_table_names(test_suite.table_groups_id, limit=None))
 
     # --- Phase 1: Upfront validation ---
+    if payload.version != EXPORT_FORMAT_VERSION:
+        raise InvalidImportPayload(
+            ImportErrorCode.unsupported_version,
+            f"Unsupported export document version {payload.version}; supported version: {EXPORT_FORMAT_VERSION}",
+        )
     _check_duplicate_keys(incoming)
 
     # --- Phase 2: Matching ---
@@ -175,10 +373,13 @@ def import_definitions(
                 # Locked TDs surviving delete_unlocked are omitted entirely (per design)
 
     # --- Phase 3: Apply ---
-    should_apply = config.mode in (ImportMode.apply, ImportMode.apply_strict)
     has_skips = any(a.action == ImportAction.skip for a in actions)
+    if config.mode == ImportMode.apply_strict and has_skips:
+        # Built before apply, so created TDs have no target_id — correct, nothing was persisted.
+        # The post-apply build below is NOT redundant: _apply_actions fills planned.target for creates.
+        raise ImportStrictViolation(_build_response(actions))
 
-    if should_apply and not (config.mode == ImportMode.apply_strict and has_skips):
+    if config.mode in (ImportMode.apply, ImportMode.apply_strict):
         _apply_actions(actions, test_suite, table_group, config)
 
     return _build_response(actions)
@@ -218,9 +419,8 @@ def _check_duplicate_keys(incoming: list[TestDefinitionExport]) -> None:
         if td.last_auto_gen_date is not None:
             key = (td.test_type, td.table_name, td.column_name)
             if key in auto_keys:
-                raise api_error(
-                    400,
-                    "duplicate_natural_key",
+                raise InvalidImportPayload(
+                    ImportErrorCode.duplicate_natural_key,
                     f"Duplicate auto-gen key at index {idx}: ({td.test_type}, {td.table_name}, {td.column_name})",
                 )
             auto_keys.add(key)
@@ -228,9 +428,8 @@ def _check_duplicate_keys(incoming: list[TestDefinitionExport]) -> None:
             if td.external_id is None:
                 continue
             if td.external_id in manual_keys:
-                raise api_error(
-                    400,
-                    "duplicate_natural_key",
+                raise InvalidImportPayload(
+                    ImportErrorCode.duplicate_natural_key,
                     f"Duplicate external_id at index {idx}: {td.external_id}",
                 )
             manual_keys.add(td.external_id)

@@ -1,25 +1,17 @@
 import base64
 import logging
-import random
 import typing
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 
 import streamlit as st
 
-from testgen.commands.test_generation import run_monitor_generation
-from testgen.ui.queries import table_group_queries
-
-try:
-    from pyodbc import Error as PyODBCError
-except ImportError:
-    PyODBCError = None
-from sqlalchemy.exc import DatabaseError, DBAPIError
-
-import testgen.ui.services.database_service as db
 from testgen import settings
-from testgen.common.database.database_service import empty_cache, get_flavor_service
+from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.database.connection_service import ConnectionStatus, test_connection_status
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.enums import JobSource
+from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.job_execution import JobExecution
@@ -30,6 +22,7 @@ from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.queries import table_group_queries
 from testgen.ui.services.query_cache import (
     get_connection,
     select_connections_where,
@@ -256,43 +249,8 @@ class ConnectionsPage(Page):
             formatted_connection["status"] = asdict(self.test_connection(connection))
         return formatted_connection
 
-    def test_connection(self, connection: Connection) -> "ConnectionStatus":
-        empty_cache()
-        try:
-            flavor_service = get_flavor_service(connection.sql_flavor)
-            results = db.fetch_from_target_db(connection, flavor_service.test_query)
-            connection_successful = len(results) == 1 and next(iter(results[0].values())) == 1
-
-            if not connection_successful:
-                return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
-            return ConnectionStatus(message="The connection was successful.", successful=True)
-        except KeyError:
-            return ConnectionStatus(
-                message="Error attempting the connection. ",
-                details="Complete all the required fields.",
-                successful=False,
-            )
-        except DatabaseError as error:
-            LOG.exception("Error testing database connection")
-            return ConnectionStatus(message="Error attempting the connection.", details=str(error.orig), successful=False)
-        except DBAPIError as error:
-            LOG.exception("Error testing database connection")
-            details = str(error.orig)
-            if PyODBCError and isinstance(error.orig, PyODBCError) and error.orig.args:
-                details = error.orig.args[1]
-            return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
-        except (TypeError, ValueError) as error:
-            LOG.exception("Error testing database connection")
-            details = str(error)
-            if is_open_ssl_error(error):
-                details = error.args[0]
-            return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
-        except Exception as error:
-            details = "Something went wrong while testing the connection."
-            if connection.connect_by_key and not connection.private_key:
-                details = "The private key is missing."
-            LOG.exception("Error testing database connection")
-            return ConnectionStatus(message="Error attempting the connection.", details=details, successful=False)
+    def test_connection(self, connection: Connection) -> ConnectionStatus:
+        return test_connection_status(connection)
 
     @with_database_session
     def setup_data_configuration(self, project_code: str, connection_id: str) -> None:
@@ -539,24 +497,6 @@ class ConnectionsPage(Page):
         return wizard_data, wizard_handlers
 
 
-@dataclass(frozen=True, slots=True)
-class ConnectionStatus:
-    message: str
-    successful: bool
-    details: str | None = field(default=None)
-    _: float = field(default_factory=random.random)
-
-
-def is_open_ssl_error(error: Exception):
-    return (
-        error.args
-        and len(error.args) > 1
-        and isinstance(error.args[1], list)
-        and len(error.args[1]) > 0
-        and type(error.args[1][0]).__name__ == "OpenSSLError"
-    )
-
-
 def format_connection(connection: Connection | ConnectionMinimal) -> dict:
     formatted_connection = connection.to_dict(json_safe=True)
 
@@ -582,79 +522,31 @@ class ConnectionFlavor:
     flavor: str
 
 
+# Labels and families come from the shared source in ``common/flavors.py`` (the
+# same labels MCP uses); only the icon + display order are UI-specific.
+_FLAVOR_ICONS: dict[str, str] = {
+    "redshift": "flavors/redshift.svg",
+    "redshift_spectrum": "flavors/redshift.svg",
+    "azure_mssql": "flavors/azure_sql.svg",
+    "synapse_mssql": "flavors/azure_synapse_table.svg",
+    "databricks": "flavors/databricks.svg",
+    "bigquery": "flavors/bigquery.svg",
+    "mssql": "flavors/mssql.svg",
+    "oracle": "flavors/oracle.svg",
+    "postgresql": "flavors/postgresql.svg",
+    "sap_hana": "flavors/sap_hana.svg",
+    "salesforce_data360": "flavors/salesforce_data360.svg",
+    "snowflake": "flavors/snowflake.svg",
+}
+
 FLAVOR_OPTIONS = [
     ConnectionFlavor(
-        label="Amazon Redshift",
-        value="redshift",
-        flavor="redshift",
-        icon=get_asset_data_url("flavors/redshift.svg"),
-    ),
-    ConnectionFlavor(
-        label="Amazon Redshift Spectrum",
-        value="redshift_spectrum",
-        flavor="redshift_spectrum",
-        icon=get_asset_data_url("flavors/redshift.svg"),
-    ),
-    ConnectionFlavor(
-        label="Azure SQL Database",
-        value="azure_mssql",
-        flavor="mssql",
-        icon=get_asset_data_url("flavors/azure_sql.svg"),
-    ),
-    ConnectionFlavor(
-        label="Azure Synapse Analytics",
-        value="synapse_mssql",
-        flavor="mssql",
-        icon=get_asset_data_url("flavors/azure_synapse_table.svg"),
-    ),
-    ConnectionFlavor(
-        label="Databricks",
-        value="databricks",
-        flavor="databricks",
-        icon=get_asset_data_url("flavors/databricks.svg"),
-    ),
-    ConnectionFlavor(
-        label="Google BigQuery",
-        value="bigquery",
-        flavor="bigquery",
-        icon=get_asset_data_url("flavors/bigquery.svg"),
-    ),
-    ConnectionFlavor(
-        label="Microsoft SQL Server",
-        value="mssql",
-        flavor="mssql",
-        icon=get_asset_data_url("flavors/mssql.svg"),
-    ),
-    ConnectionFlavor(
-        label="Oracle",
-        value="oracle",
-        flavor="oracle",
-        icon=get_asset_data_url("flavors/oracle.svg"),
-    ),
-    ConnectionFlavor(
-        label="PostgreSQL",
-        value="postgresql",
-        flavor="postgresql",
-        icon=get_asset_data_url("flavors/postgresql.svg"),
-    ),
-    ConnectionFlavor(
-        label="SAP HANA",
-        value="sap_hana",
-        flavor="sap_hana",
-        icon=get_asset_data_url("flavors/sap_hana.svg"),
-    ),
-    ConnectionFlavor(
-        label="Salesforce Data 360",
-        value="salesforce_data360",
-        flavor="salesforce_data360",
-        icon=get_asset_data_url("flavors/salesforce_data360.svg"),
-    ),
-    ConnectionFlavor(
-        label="Snowflake",
-        value="snowflake",
-        flavor="snowflake",
-        icon=get_asset_data_url("flavors/snowflake.svg"),
-    ),
+        value=code,
+        label=str(FLAVOR_CODE_TO_LABEL[code]),
+        flavor=FLAVOR_CODE_TO_FAMILY[code],
+        icon=get_asset_data_url(icon),
+    )
+    for code, icon in _FLAVOR_ICONS.items()
 ]
 
 # SAP HANA is hidden in the Docker image because pyhdbcli is glibc-only and fails to load on Alpine/musl.

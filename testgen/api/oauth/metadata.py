@@ -12,7 +12,7 @@ router = APIRouter(tags=["OAuth"])
 def authorization_server_metadata():
     """Return OAuth 2.1 Authorization Server Metadata per RFC 8414.
 
-    MCP clients use this for server discovery.
+    OAuth clients use this for server discovery.
     """
     base_url = settings.BASE_URL.rstrip("/")
 

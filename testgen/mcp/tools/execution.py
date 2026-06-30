@@ -133,7 +133,7 @@ def _render_submission(
 ) -> str:
     doc = MdDoc()
     doc.heading(1, f"{kind} submitted for `{scope_name}`")
-    doc.field("Job ID", job.id, code=True)
+    doc.field(kind.title(), job.id, code=True)
     doc.field(scope_label, scope_name)
     doc.field("Status", "Pending")
     doc.text(f"Use `{poll_tool}` {poll_hint}.")
@@ -147,7 +147,7 @@ def _render_cancel(job: JobExecution, kind: str, poll_tool: str) -> str:
         )
     doc = MdDoc()
     doc.heading(1, f"{kind} cancellation requested")
-    doc.field("Job ID", job.id, code=True)
+    doc.field(kind.title(), job.id, code=True)
     doc.field("Status", job.status)
     doc.text(f"Use `{poll_tool}` to confirm cancellation.")
     return doc.render()

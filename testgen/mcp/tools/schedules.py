@@ -6,12 +6,11 @@ from enum import StrEnum
 from sqlalchemy import select
 
 from testgen.common.cron_service import describe_cron, get_cron_sample
-from testgen.common.enums import JobKey
+from testgen.common.enums import JOB_STATUS_LABEL, JobKey
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_run import TestRunSummary  # STATUS_LABEL is shared with ProfilingRunSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -206,6 +205,7 @@ def create_profiling_schedule(
         active=active,
     )
     sched.save()
+    get_current_session().flush()  # populate the default-generated id before rendering
 
     doc = MdDoc()
     doc.heading(1, f"Profiling schedule created for `{table_group.table_groups_name}`")
@@ -240,6 +240,7 @@ def create_test_run_schedule(
         active=active,
     )
     sched.save()
+    get_current_session().flush()  # populate the default-generated id before rendering
 
     doc = MdDoc()
     doc.heading(1, f"Test run schedule created for `{suite.test_suite}`")
@@ -421,13 +422,13 @@ def get_schedule(schedule_id: str) -> str:
     for je in history:
         rows.append([
             je.id,
-            TestRunSummary.STATUS_LABEL.get(je.status, je.status),
+            JOB_STATUS_LABEL.get(je.status, je.status),
             je.started_at,
             je.completed_at,
             format_run_duration(je.started_at, je.completed_at),
         ])
     doc.table(
-        ["Job ID", "Status", "Started", "Completed", "Duration"],
+        [_kind_display(sched.key), "Status", "Started", "Completed", "Duration"],
         rows,
         code=[0],
     )

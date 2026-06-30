@@ -6,9 +6,10 @@ from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 
-from testgen.common.auth import authorize_token, decode_jwt_token
+from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
+from testgen.common.enums import PublicJobKey
 from testgen.common.models import Session, _current_session_wrapper, get_current_session
-from testgen.common.models.job_execution import PUBLIC_JOB_KEYS, JobExecution
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -47,7 +48,7 @@ def get_authorized_user(credentials: HTTPAuthorizationCredentials = _bearer_secu
 
     try:
         payload = decode_jwt_token(credentials.credentials)
-    except ValueError:
+    except AuthError:
         raise _invalid from None
 
     username = payload.get("username")
@@ -57,7 +58,7 @@ def get_authorized_user(credentials: HTTPAuthorizationCredentials = _bearer_secu
     session = get_current_session()
     try:
         return authorize_token(credentials.credentials, username, session)
-    except ValueError:
+    except AuthError:
         raise _invalid from None
 
 
@@ -122,7 +123,7 @@ def resolve_test_suite(permission: str):
 def resolve_job(permission: str, *extra_filters):
     """Resolve a JobExecution by ``job_id`` path param and verify project permission.
 
-    Only jobs whose ``job_key`` is in ``PUBLIC_JOB_KEYS`` are exposed via the API.
+    Only externally-triggerable jobs (``PublicJobKey``) are exposed via the API.
     Internal kinds (score rollups, recalculations, monitor runs) are filtered out
     by construction. Extra ORM clauses are appended to the WHERE clause to further
     restrict by job_key when a caller wants a single kind.
@@ -130,7 +131,7 @@ def resolve_job(permission: str, *extra_filters):
     def dependency(job_id: UUID, user: User = _require_user) -> JobExecution:
         query = select(JobExecution).where(
             JobExecution.id == job_id,
-            JobExecution.job_key.in_(PUBLIC_JOB_KEYS),
+            JobExecution.job_key.in_(list(PublicJobKey)),
             *extra_filters,
         )
         return _check_access(get_current_session().scalars(query).first(), user, permission)

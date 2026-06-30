@@ -289,9 +289,6 @@ def on_cancel_run(payload: dict) -> None:
 
     job_exec = JobExecution.get(job_execution_id)
     if job_exec and job_exec.request_cancel():
-        # Stopgap: also update the run status so the UI reflects cancellation immediately.
-        if profiling_run_id := payload.get("profiling_run_id"):
-            ProfilingRun.cancel_run(profiling_run_id)
         get_profiling_run_summaries.clear()
         fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
     else:
@@ -307,10 +304,11 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
                 continue
             if job_exec.status in (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
                 job_exec.request_cancel()
-            profiling_run = next(iter(select_profiling_runs_where(ProfilingRun.job_execution_id == je_id)), None)
+            profiling_run = next(iter(select_profiling_runs_where(ProfilingRun.id == je_id)), None)
             if profiling_run:
                 ProfilingRun.cascade_delete([str(profiling_run.id)])
-            get_current_session().delete(job_exec)
+            else:
+                get_current_session().delete(job_exec)
         get_profiling_run_summaries.clear()
         Router().set_query_params({"page": 1})
     except Exception:

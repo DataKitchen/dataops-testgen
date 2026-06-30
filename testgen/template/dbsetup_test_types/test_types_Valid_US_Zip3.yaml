@@ -21,7 +21,8 @@ test_types:
   default_parm_columns: threshold_value
   default_parm_values: |-
     0
-  default_parm_prompts: null
+  default_parm_prompts: |-
+    Threshold Invalid Value Count
   default_parm_help: null
   default_severity: Warning
   run_type: CAT
@@ -36,6 +37,7 @@ test_types:
   usage_notes: |-
     This test looks for the presence of values that fail to match the three-digit numeric code expected for US Zip Code regional prefixes. These prefixes are often used to roll up Zip Code data to a regional level, and may be critical to anonymize detailed data and protect PID. Depending on your needs and regulatory requirements, longer zip codes could place PID at risk.
   active: Y
+  algorithm: Pattern / regex
   cat_test_conditions:
   - id: '7035'
     test_type: Valid_US_Zip3

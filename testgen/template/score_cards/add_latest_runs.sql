@@ -1,11 +1,12 @@
 -- Insert latest profiling runs as of cutoff
 WITH ranked_profiling
- AS (SELECT project_code, table_groups_id, id as profiling_run_id,
+ AS (SELECT r.project_code, table_groups_id, r.id as profiling_run_id,
             ROW_NUMBER() OVER (PARTITION BY table_groups_id ORDER BY profiling_starttime DESC) as rank
       FROM profiling_runs r
-     WHERE project_code = :project_code
+      INNER JOIN job_executions je ON je.id = r.id
+     WHERE r.project_code = :project_code
        AND profiling_starttime <= :score_history_cutoff_time
-       AND r.status = 'Complete')
+       AND je.status = 'completed')
 INSERT INTO score_history_latest_runs
        (definition_id, score_history_cutoff_time, table_groups_id, last_profiling_run_id)
 SELECT :definition_id as definition_id, :score_history_cutoff_time as score_history_cutoff_time, table_groups_id, profiling_run_id
@@ -20,9 +21,11 @@ WITH ranked_test_runs
        FROM test_runs r
      INNER JOIN test_suites s
         ON (r.test_suite_id = s.id)
+     INNER JOIN job_executions je
+        ON (je.id = r.id)
       WHERE s.project_code = :project_code
         AND r.test_starttime <= :score_history_cutoff_time
-        AND r.status = 'Complete')
+        AND je.status = 'completed')
 INSERT INTO score_history_latest_runs
        (definition_id, score_history_cutoff_time, test_suite_id, last_test_run_id)
 SELECT :definition_id as definition_id, :score_history_cutoff_time as score_history_cutoff_time, test_suite_id, test_run_id

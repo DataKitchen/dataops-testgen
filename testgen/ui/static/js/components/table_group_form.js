@@ -29,6 +29,7 @@
  * @property {string?} stakeholder_group
  * @property {string?} transform_level
  * @property {string?} data_product
+ * @property {string?} data_classification
  *
  * @typedef FormState
  * @type {object}
@@ -55,8 +56,12 @@ import { required } from '../form_validators.js';
 import { Select } from './select.js';
 import { Caption } from './caption.js';
 import { Textarea } from './textarea.js';
+import { Icon } from './icon.js';
 
-const { div } = van.tags;
+// Flavors whose profiling sample clause cannot sample views — views are profiled in full.
+const SAMPLE_SKIPS_VIEWS_FLAVORS = ['mssql', 'postgresql'];
+
+const { div, span } = van.tags;
 
 const normalizeTableSet = (value) => {
     return value?.split(/[,\n]/)
@@ -100,6 +105,7 @@ const TableGroupForm = (props) => {
     const stakeholderGroup = van.state(tableGroup.stakeholder_group);
     const transformLevel = van.state(tableGroup.transform_level);
     const dataProduct = van.state(tableGroup.data_product);
+    const dataClassification = van.state(tableGroup.data_classification);
 
     const connectionOptions = van.derive(() => {
         const connections = getValue(props.connections) ?? [];
@@ -117,6 +123,13 @@ const TableGroupForm = (props) => {
         const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
         const flavor = selected?.sql_flavor ?? getValue(props.sqlFlavor);
         return flavor === 'salesforce_data360';
+    });
+
+    const sampleSkipsViews = van.derive(() => {
+        const connections = getValue(props.connections) ?? [];
+        const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
+        const flavor = selected?.sql_flavor ?? getValue(props.sqlFlavor);
+        return SAMPLE_SKIPS_VIEWS_FLAVORS.includes(flavor);
     });
 
     const updatedTableGroup = van.derive(() => {
@@ -148,6 +161,7 @@ const TableGroupForm = (props) => {
             stakeholder_group: stakeholderGroup.val,
             transform_level: transformLevel.val,
             data_product: dataProduct.val,
+            data_classification: dataClassification.val,
         };
     });
     const dirty = van.derive(() => !isEqual(updatedTableGroup.val, tableGroup));
@@ -206,7 +220,7 @@ const TableGroupForm = (props) => {
             addScorecardDefinition,
         ),
         SamplingForm(
-            { setValidity: setFieldValidity },
+            { setValidity: setFieldValidity, sampleSkipsViews },
             profileUseSampling,
             profileSamplePercent,
             profileSampleMinCount,
@@ -222,6 +236,7 @@ const TableGroupForm = (props) => {
             stakeholderGroup,
             transformLevel,
             dataProduct,
+            dataClassification,
         ),
     );
 };
@@ -447,6 +462,13 @@ const SamplingForm = (
                     },
                 }),
             ),
+            () => (getValue(options.sampleSkipsViews) && profileUseSampling.val)
+                ? div(
+                    { class: 'flex-row fx-align-center fx-gap-1' },
+                    Icon({ style: 'color: var(--orange); font-size: 18px;' }, 'warning'),
+                    span('Views are profiled in full on this database — sampling applies only to tables and materialized views.'),
+                )
+                : '',
         ),
     );
 };
@@ -462,6 +484,7 @@ const TaggingForm = (
     stakeholderGroup,
     transformLevel,
     dataProduct,
+    dataClassification,
 ) => {
     return ExpansionPanel(
         { title: 'Table Group Tags' },
@@ -555,6 +578,16 @@ const TaggingForm = (
                 onChange: (value, state) => {
                     dataProduct.val = value;
                     options.setValidity?.('data_product', state.valid);
+                },
+            }),
+            Input({
+                name: 'data_classification',
+                label: 'Data Classification',
+                value: dataClassification,
+                help: 'Information sensitivity level of the dataset, e.g., Public, Internal, Confidential, Restricted',
+                onChange: (value, state) => {
+                    dataClassification.val = value;
+                    options.setValidity?.('data_classification', state.valid);
                 },
             }),
         ),

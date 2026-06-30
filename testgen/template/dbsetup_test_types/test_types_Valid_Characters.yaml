@@ -21,7 +21,8 @@ test_types:
   default_parm_columns: threshold_value
   default_parm_values: |-
     0
-  default_parm_prompts: null
+  default_parm_prompts: |-
+    Threshold Invalid Value Count
   default_parm_help: |-
     The acceptable number of records with invalid character values present.
   default_severity: Warning
@@ -37,6 +38,7 @@ test_types:
   usage_notes: |-
     This test looks for the presence of non-printing ASCII characters that are considered non-standard in basic text processing. It also identifies leading spaces and values enclosed in quotes. Values that fail this test may be artifacts of data conversion, or just more difficult to process or analyze downstream.
   active: N
+  algorithm: Pattern / regex
   cat_test_conditions:
   - id: '7036'
     test_type: Valid_Characters

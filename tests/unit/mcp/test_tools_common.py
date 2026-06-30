@@ -5,6 +5,7 @@ import pytest
 
 from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, PiiRisk, QualityDimension
 from testgen.common.models.scores import ScoreCategory
+from testgen.common.models.test_definition import Severity
 from testgen.common.models.test_result import TestResultStatus
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.tools.common import (
@@ -28,7 +29,9 @@ from testgen.mcp.tools.common import (
     parse_score_filter_field,
     parse_score_group_by,
     parse_score_type,
+    parse_severity,
     parse_uuid,
+    resolve_hygiene_issue,
     resolve_issue_type,
     resolve_profiling_run,
     resolve_test_note,
@@ -85,6 +88,32 @@ def test_parse_result_status_invalid_lists_valid_values():
         parse_result_status("nope")
     for status in TestResultStatus:
         assert status.value in str(exc_info.value)
+
+
+# --- parse_severity ---
+
+
+def test_parse_severity_valid():
+    assert parse_severity("Fail") == Severity.FAIL
+    assert parse_severity("Warning") == Severity.WARNING
+
+
+def test_parse_severity_invalid_names_value():
+    with pytest.raises(MCPUserError, match="Invalid severity `Critical`"):
+        parse_severity("Critical")
+
+
+def test_parse_severity_invalid_lists_valid_values():
+    with pytest.raises(MCPUserError, match="Valid values:") as exc_info:
+        parse_severity("nope")
+    for severity in Severity:
+        assert severity.value in str(exc_info.value)
+
+
+def test_parse_severity_case_sensitive():
+    """Severity stores 'Fail' / 'Warning' verbatim; lowercase rejected by design."""
+    with pytest.raises(MCPUserError, match="Invalid severity `fail`"):
+        parse_severity("fail")
 
 
 # --- validate_page ---
@@ -310,7 +339,7 @@ def _mock_perms(allowed_projects=("demo",)):
 def test_resolve_profiling_run_happy_path(mock_pr_cls, mock_get_perms, db_session_mock):
     run = MagicMock()
     run.project_code = "demo"
-    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_pr_cls.get.return_value = run
     mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
 
     result = resolve_profiling_run(str(uuid4()))
@@ -321,7 +350,7 @@ def test_resolve_profiling_run_happy_path(mock_pr_cls, mock_get_perms, db_sessio
 @patch("testgen.mcp.tools.common.get_project_permissions")
 @patch("testgen.mcp.tools.common.ProfilingRun")
 def test_resolve_profiling_run_unknown_run_id(mock_pr_cls, mock_get_perms, db_session_mock):
-    mock_pr_cls.get_by_id_or_job.return_value = None
+    mock_pr_cls.get.return_value = None
     mock_get_perms.return_value = _mock_perms()
 
     with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
@@ -334,7 +363,7 @@ def test_resolve_profiling_run_inaccessible_project(mock_pr_cls, mock_get_perms,
     """Run exists but caller can't access its project — same unified error as unknown run."""
     run = MagicMock()
     run.project_code = "forbidden"
-    mock_pr_cls.get_by_id_or_job.return_value = run
+    mock_pr_cls.get.return_value = run
     mock_get_perms.return_value = _mock_perms(allowed_projects=("demo",))
 
     with pytest.raises(MCPResourceNotAccessible, match=r"Profiling run .* not found or not accessible"):
@@ -377,6 +406,35 @@ def test_resolve_test_note_missing_or_inaccessible(mock_get_session, mock_get_pe
 def test_resolve_test_note_invalid_uuid():
     with pytest.raises(MCPUserError, match="Invalid test_note_id"):
         resolve_test_note("not-a-uuid")
+
+
+# --- resolve_hygiene_issue ---
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.HygieneIssue")
+def test_resolve_hygiene_issue_happy_path(mock_hi_cls, mock_get_perms, db_session_mock):
+    issue = MagicMock()
+    mock_hi_cls.get.return_value = issue
+    mock_get_perms.return_value = _mock_perms()
+
+    assert resolve_hygiene_issue(str(uuid4())) is issue
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.HygieneIssue")
+def test_resolve_hygiene_issue_missing_or_inaccessible(mock_hi_cls, mock_get_perms, db_session_mock):
+    """Missing issue and forbidden-project issue both collapse to one error (project scoped in the query)."""
+    mock_hi_cls.get.return_value = None
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Hygiene issue .* not found or not accessible"):
+        resolve_hygiene_issue(str(uuid4()))
+
+
+def test_resolve_hygiene_issue_invalid_uuid():
+    with pytest.raises(MCPUserError, match="Invalid issue_id"):
+        resolve_hygiene_issue("not-a-uuid")
 
 
 # --- parse_pii_category ---
@@ -652,6 +710,7 @@ def test_parse_score_type_invalid_lists_valid_values():
         ("Stakeholder Group", ScoreCategory.stakeholder_group),
         ("Transform Level", ScoreCategory.transform_level),
         ("Data Product", ScoreCategory.data_product),
+        ("Data Classification", ScoreCategory.data_classification),
     ],
 )
 def test_parse_category_display_form_returns_column_form_enum(display_value, expected):
@@ -680,6 +739,7 @@ def test_parse_category_translation_dict_covers_all_args():
         "stakeholder_group",
         "transform_level",
         "data_product",
+        "data_classification",
     ],
 )
 def test_parse_category_rejects_column_form_input(internal):
@@ -711,3 +771,430 @@ def test_score_chain_leaf_field_values():
 def test_score_chain_leaf_to_column_mapping():
     assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.TABLE] == "table_name"
     assert SCORE_CHAIN_LEAF_TO_COLUMN[ScoreChainLeafField.COLUMN] == "column_name"
+
+
+# --- SqlFlavorLabel ---
+
+
+def test_sql_flavor_label_set_matches_common_layer():
+    """Codes covered by the MCP enum and the common-layer maps must stay in sync."""
+    from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL
+    from testgen.mcp.tools.common import SQL_FLAVOR_CODE_TO_LABEL, SQL_FLAVOR_LABEL_TO_CODE
+
+    assert set(SQL_FLAVOR_CODE_TO_LABEL) == set(FLAVOR_CODE_TO_LABEL)
+    assert set(SQL_FLAVOR_LABEL_TO_CODE.values()) == set(FLAVOR_CODE_TO_FAMILY.keys())
+
+
+def test_parse_sql_flavor_returns_label_code_family():
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+
+    label, code, family = parse_sql_flavor("Azure SQL Database")
+    assert label == SqlFlavorLabel.AZURE_MSSQL
+    assert code == "azure_mssql"
+    assert family == "mssql"
+
+
+def test_parse_sql_flavor_invalid_lists_display_values():
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+
+    with pytest.raises(MCPUserError, match="Invalid sql_flavor `bogus`") as exc:
+        parse_sql_flavor("bogus")
+    msg = str(exc.value)
+    for member in SqlFlavorLabel:
+        assert member.value in msg
+
+
+# --- parse_test_result_disposition ---
+
+
+@pytest.mark.parametrize(
+    "user_label,expected",
+    [
+        ("Confirmed", Disposition.CONFIRMED),
+        ("Dismissed", Disposition.DISMISSED),
+        ("Muted", Disposition.INACTIVE),
+        ("No Decision", None),
+    ],
+)
+def test_parse_test_result_disposition_user_labels(user_label, expected):
+    from testgen.mcp.tools.common import parse_test_result_disposition
+
+    assert parse_test_result_disposition(user_label) is expected
+
+
+def test_parse_test_result_disposition_rejects_unknown_and_lists_accepted():
+    from testgen.mcp.tools.common import parse_test_result_disposition
+
+    with pytest.raises(MCPUserError) as exc:
+        parse_test_result_disposition("Inactive")  # DB value, not user-facing
+    msg = str(exc.value)
+    for label in ("Confirmed", "Dismissed", "Muted", "No Decision"):
+        assert label in msg
+
+
+# --- resolve_test_result ---
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_result_happy_path(mock_session, mock_perms, db_session_mock):
+    from testgen.mcp.tools.common import resolve_test_result
+
+    result = MagicMock()
+    mock_session.return_value.scalars.return_value.first.return_value = result
+    mock_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    assert resolve_test_result(str(uuid4())) is result
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_result_missing_or_inaccessible(mock_session, mock_perms, db_session_mock):
+    from testgen.mcp.tools.common import resolve_test_result
+
+    mock_session.return_value.scalars.return_value.first.return_value = None
+    mock_perms.return_value = _mock_perms(allowed_projects=("demo",))
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Test result .* not found or not accessible"):
+        resolve_test_result(str(uuid4()))
+
+
+def test_resolve_test_result_invalid_uuid():
+    from testgen.mcp.tools.common import resolve_test_result
+
+    with pytest.raises(MCPUserError, match="Invalid test_result_id"):
+        resolve_test_result("not-a-uuid")
+
+
+# --- Monitor helpers ---
+
+
+@pytest.mark.parametrize(
+    "label,expected_value",
+    [
+        ("freshness", "Freshness_Trend"),
+        ("volume", "Volume_Trend"),
+        ("schema", "Schema_Drift"),
+        ("metric", "Metric_Trend"),
+    ],
+)
+def test_parse_monitor_type_user_labels(label, expected_value):
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    assert parse_monitor_type(label).value == expected_value
+
+
+def test_parse_monitor_type_rejects_db_codes():
+    """Internal codes like ``Freshness_Trend`` are not accepted on the input boundary —
+    only the lowercase user-facing short labels are."""
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    with pytest.raises(MCPUserError, match="Invalid monitor_type"):
+        parse_monitor_type("Freshness_Trend")
+
+
+def test_parse_monitor_type_lists_valid_values_on_error():
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    with pytest.raises(MCPUserError, match="Valid values:") as exc:
+        parse_monitor_type("metrics")
+    msg = str(exc.value)
+    for label in ("freshness", "volume", "schema", "metric"):
+        assert label in msg
+
+
+def test_parse_monitor_type_label_override():
+    """``label`` argument lets callers tailor the error to their public arg name
+    (e.g. ``list_monitored_tables`` exposes it as ``anomaly_type``)."""
+    from testgen.mcp.tools.common import parse_monitor_type
+
+    with pytest.raises(MCPUserError, match=r"Invalid anomaly_type `bogus`"):
+        parse_monitor_type("bogus", "anomaly_type")
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["table_name", "anomaly_count_desc", "latest_update_desc", "row_count_change_desc"],
+)
+def test_parse_monitor_table_sort_accepts_documented_values(value):
+    from testgen.mcp.tools.common import parse_monitor_table_sort
+
+    assert parse_monitor_table_sort(value).value == value
+
+
+def test_parse_monitor_table_sort_rejects_unknown():
+    from testgen.mcp.tools.common import parse_monitor_table_sort
+
+    with pytest.raises(MCPUserError, match="Invalid sort_by") as exc:
+        parse_monitor_table_sort("alphabetical")
+    msg = str(exc.value)
+    for valid in ("table_name", "anomaly_count_desc", "latest_update_desc", "row_count_change_desc"):
+        assert valid in msg
+
+
+def test_parse_monitor_table_sort_rejects_legacy_row_count_desc():
+    """Guard against the pre-review-feedback ``row_count_desc`` name accidentally
+    coming back: the rename to ``row_count_change_desc`` is the canonical signal
+    that the column shows a delta, not the raw current count. Drop this only when
+    introducing a deliberate replacement."""
+    from testgen.mcp.tools.common import parse_monitor_table_sort
+
+    with pytest.raises(MCPUserError, match="Invalid sort_by") as exc:
+        parse_monitor_table_sort("row_count_desc")
+    assert "row_count_change_desc" in str(exc.value)
+
+
+def test_resolve_monitored_table_group_returns_suite():
+    from testgen.common.models.table_group import TableGroup
+    from testgen.common.models.test_suite import TestSuite
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    tg = MagicMock(spec=TableGroup)
+    tg.id = uuid4()
+    tg.monitor_test_suite_id = uuid4()
+    suite = MagicMock(spec=TestSuite)
+    suite.is_monitor = True
+
+    with (
+        patch("testgen.mcp.tools.common.resolve_table_group", return_value=tg),
+        patch("testgen.mcp.tools.common.TestSuite.get", return_value=suite) as mock_get,
+    ):
+        out_tg, out_suite = resolve_monitored_table_group(str(tg.id))
+
+    assert out_tg is tg
+    assert out_suite is suite
+    assert mock_get.call_args.args[0] == tg.monitor_test_suite_id
+
+
+def test_resolve_monitored_table_group_returns_none_when_unlinked():
+    """Table group exists but has no monitor suite pointer."""
+    from testgen.common.models.table_group import TableGroup
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    tg = MagicMock(spec=TableGroup)
+    tg.id = uuid4()
+    tg.monitor_test_suite_id = None
+
+    with patch("testgen.mcp.tools.common.resolve_table_group", return_value=tg):
+        out_tg, suite = resolve_monitored_table_group(str(tg.id))
+
+    assert out_tg is tg
+    assert suite is None
+
+
+def test_resolve_monitored_table_group_returns_none_when_pointer_stale():
+    """Pointer set, but suite no longer exists or no longer ``is_monitor=True``."""
+    from testgen.common.models.table_group import TableGroup
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    tg = MagicMock(spec=TableGroup)
+    tg.id = uuid4()
+    tg.monitor_test_suite_id = uuid4()
+
+    with (
+        patch("testgen.mcp.tools.common.resolve_table_group", return_value=tg),
+        patch("testgen.mcp.tools.common.TestSuite.get", return_value=None),
+    ):
+        out_tg, suite = resolve_monitored_table_group(str(tg.id))
+
+    assert out_tg is tg
+    assert suite is None
+
+
+def test_resolve_monitored_table_group_raises_when_tg_inaccessible():
+    """Inaccessible TG propagates ``MCPResourceNotAccessible`` from ``resolve_table_group``
+    — the "not monitored" path must not mask an access failure."""
+    from testgen.mcp.tools.common import resolve_monitored_table_group
+
+    bad_id = str(uuid4())
+    with (
+        patch(
+            "testgen.mcp.tools.common.resolve_table_group",
+            side_effect=MCPResourceNotAccessible("Table group", bad_id),
+        ),
+        pytest.raises(MCPResourceNotAccessible),
+    ):
+        resolve_monitored_table_group(bad_id)
+
+
+
+# --- resolve_project ---
+
+
+def test_resolve_project_returns_project_when_in_scope(db_session_mock):
+    """Happy path: project_code in allowed_codes, Project.get returns the row."""
+    from testgen.mcp.permissions import ProjectPermissions, _mcp_project_permissions
+    from testgen.mcp.tools.common import resolve_project
+
+    project = MagicMock()
+    project.project_code = "demo"
+
+    with patch("testgen.mcp.tools.common.Project") as mock_project_cls:
+        mock_project_cls.get.return_value = project
+        mock_project_cls.project_code = MagicMock()  # for the .in_() filter clause
+        perms = ProjectPermissions(memberships={"demo": "admin"}, permission="administer", username="t")
+        token = _mcp_project_permissions.set(perms)
+        try:
+            with patch(
+                "testgen.mcp.permissions.PluginHook"
+            ) as mock_hook:
+                mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
+                assert resolve_project("demo") is project
+        finally:
+            _mcp_project_permissions.reset(token)
+
+
+def test_resolve_project_raises_unified_when_get_returns_none(db_session_mock):
+    """Project not in scope (or absent) → unified ``MCPResourceNotAccessible``."""
+    from testgen.mcp.permissions import ProjectPermissions, _mcp_project_permissions
+    from testgen.mcp.tools.common import resolve_project
+
+    with patch("testgen.mcp.tools.common.Project") as mock_project_cls:
+        mock_project_cls.get.return_value = None
+        mock_project_cls.project_code = MagicMock()
+        perms = ProjectPermissions(memberships={"demo": "admin"}, permission="administer", username="t")
+        token = _mcp_project_permissions.set(perms)
+        try:
+            with patch(
+                "testgen.mcp.permissions.PluginHook"
+            ) as mock_hook:
+                mock_hook.instance.return_value.rbac.get_roles_with_permission.return_value = ["admin"]
+                with pytest.raises(MCPResourceNotAccessible) as exc:
+                    resolve_project("secret")
+                assert "Project `secret` not found or not accessible" in str(exc.value)
+        finally:
+            _mcp_project_permissions.reset(token)
+
+
+# --- render_diff_table / _default_render_diff_value ---
+
+
+def test_render_diff_table_emits_rows_for_changed_attrs(db_session_mock):
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"name": "Old", "active": True, "label": "x"}
+    after = {"name": "New", "active": True, "label": "y"}
+
+    rendered = render_diff_table(
+        doc, before, after,
+        attrs=("name", "active", "label"),
+        labels={"name": "Name", "active": "Active", "label": "Label"},
+    )
+
+    assert rendered is True
+    out = doc.render()
+    assert "| Field | Before | After |" in out
+    assert "Old" in out and "New" in out
+    assert "Label" in out and "x" in out and "y" in out
+    # Unchanged attr "active" must not appear
+    assert "Active" not in out
+
+
+def test_render_diff_table_returns_false_when_nothing_changes(db_session_mock):
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    snap = {"name": "Same", "count": 3}
+
+    rendered = render_diff_table(
+        doc, snap, snap,
+        attrs=("name", "count"),
+        labels={"name": "Name", "count": "Count"},
+    )
+
+    assert rendered is False
+    assert doc.render() == ""  # nothing appended
+
+
+def test_render_diff_table_redacts_secret_attrs(db_session_mock):
+    """secret_attrs render as ``[secret]`` when present and em-dash when absent — value
+    is never echoed."""
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"name": "Demo", "api_key": None}
+    after = {"name": "Demo", "api_key": "super-secret-value"}
+
+    rendered = render_diff_table(
+        doc, before, after,
+        attrs=("name", "api_key"),
+        labels={"name": "Name", "api_key": "API key"},
+        secret_attrs=frozenset({"api_key"}),
+    )
+
+    assert rendered is True
+    out = doc.render()
+    assert "API key" in out
+    assert "[secret]" in out
+    assert "super-secret-value" not in out
+
+
+def test_render_diff_table_honors_attr_ordering(db_session_mock):
+    """Row order matches the supplied ``attrs`` tuple, not dict insertion order."""
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"b": 1, "a": 1, "c": 1}
+    after = {"b": 2, "a": 2, "c": 2}
+
+    render_diff_table(
+        doc, before, after,
+        attrs=("a", "b", "c"),
+        labels={"a": "A", "b": "B", "c": "C"},
+    )
+
+    out = doc.render()
+    # Body rows render in attrs order. Label cells are code-wrapped (column 0 uses
+    # ``code=[0]`` in ``MdDoc.table``).
+    pos_a = out.find("| `A` |")
+    pos_b = out.find("| `B` |")
+    pos_c = out.find("| `C` |")
+    assert 0 < pos_a < pos_b < pos_c
+
+
+def test_render_diff_table_custom_value_renderer(db_session_mock):
+    """``value_renderer`` overrides the default Yes/No/em-dash formatting."""
+    from testgen.mcp.tools.common import render_diff_table
+    from testgen.mcp.tools.markdown import MdDoc
+
+    doc = MdDoc()
+    before = {"n": 1}
+    after = {"n": 2}
+
+    rendered = render_diff_table(
+        doc, before, after,
+        attrs=("n",),
+        labels={"n": "N"},
+        value_renderer=lambda v: f"#{v}",
+    )
+
+    assert rendered is True
+    out = doc.render()
+    assert "#1" in out
+    assert "#2" in out
+
+
+def test_default_render_diff_value_bool_yes_no():
+    from testgen.mcp.tools.common import _default_render_diff_value
+
+    assert _default_render_diff_value(True) == "Yes"
+    assert _default_render_diff_value(False) == "No"
+
+
+def test_default_render_diff_value_none_and_empty():
+    from testgen.mcp.tools.common import _default_render_diff_value
+
+    assert _default_render_diff_value(None) is None
+    assert _default_render_diff_value("") is None
+
+
+def test_default_render_diff_value_str():
+    from testgen.mcp.tools.common import _default_render_diff_value
+
+    assert _default_render_diff_value("hello") == "hello"
+    assert _default_render_diff_value(42) == "42"

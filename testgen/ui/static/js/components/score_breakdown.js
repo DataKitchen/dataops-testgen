@@ -194,6 +194,7 @@ const CATEGORIES = {
     stakeholder_group: 'Stakeholder Group',
     transform_level: 'Transform Level',
     data_product: 'Data Product',
+    data_classification: 'Data Classification',
 };
 
 const BREAKDOWN_COLUMN_LABEL = {

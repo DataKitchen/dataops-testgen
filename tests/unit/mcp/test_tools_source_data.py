@@ -1,9 +1,10 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pandas as pd
 import pytest
 
+from testgen.common.data_catalog_service import TableSampleResult
 from testgen.common.source_data_service import SourceDataResult
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
@@ -19,6 +20,21 @@ def _make_context(**overrides):
     }
     base.update(overrides)
     return base
+
+
+def _make_hygiene_issue(**overrides):
+    issue = MagicMock()
+    issue.table_groups_id = uuid4()
+    issue.type_id = "1001"
+    issue.detail = "Empty String: 12"
+    issue.schema_name = "public"
+    issue.table_name = "users"
+    issue.column_name = "address"
+    issue.profile_run_id = uuid4()
+    issue.project_code = "demo"
+    for key, value in overrides.items():
+        setattr(issue, key, value)
+    return issue
 
 
 # --- get_source_data_query ---
@@ -281,3 +297,305 @@ def test_get_source_data_passes_project_codes(mock_compute, mock_td, mock_fetch,
 
     call_kwargs = mock_td.get_source_data_context.call_args.kwargs
     assert call_kwargs["project_codes"] == ["proj_a"]
+
+
+# --- argument mutual-exclusion + reference_date rule ---
+
+
+@pytest.mark.parametrize("tool_name", ["get_source_data", "get_source_data_query"])
+def test_source_data_both_ids_rejected(tool_name, db_session_mock):
+    import testgen.mcp.tools.source_data as mod
+
+    tool = getattr(mod, tool_name)
+    with pytest.raises(MCPUserError, match="Provide exactly one of test_definition_id or issue_id"):
+        tool(test_definition_id=str(uuid4()), issue_id=str(uuid4()))
+
+
+@pytest.mark.parametrize("tool_name", ["get_source_data", "get_source_data_query"])
+def test_source_data_neither_id_rejected(tool_name, db_session_mock):
+    import testgen.mcp.tools.source_data as mod
+
+    tool = getattr(mod, tool_name)
+    with pytest.raises(MCPUserError, match="Provide exactly one of test_definition_id or issue_id"):
+        tool()
+
+
+@pytest.mark.parametrize("tool_name", ["get_source_data", "get_source_data_query"])
+def test_source_data_reference_date_with_issue_id_rejected(tool_name, db_session_mock):
+    import testgen.mcp.tools.source_data as mod
+
+    tool = getattr(mod, tool_name)
+    with pytest.raises(MCPUserError, match="reference_date"):
+        tool(issue_id=str(uuid4()), reference_date="2026-01-01")
+
+
+# --- get_source_data_query: hygiene issue ---
+
+
+@patch("testgen.mcp.tools.source_data.build_hygiene_query")
+@patch("testgen.mcp.tools.source_data.ProfilingRun")
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_query_hygiene_basic(mock_resolve, mock_pr, mock_build, db_session_mock):
+    issue_id = str(uuid4())
+    mock_resolve.return_value = _make_hygiene_issue()
+    mock_pr.get.return_value = MagicMock(profiling_starttime="2026-05-12 00:00:00")
+    mock_build.return_value = "SELECT * FROM users WHERE address = ''"
+
+    from testgen.mcp.tools.source_data import get_source_data_query
+
+    result = get_source_data_query(issue_id=issue_id)
+
+    assert f"# Source Data Query for Hygiene Issue `{issue_id}`" in result
+    assert "public.users" in result
+    assert "`address`" in result
+    assert "SELECT * FROM users" in result
+    assert "Test Definition" not in result
+
+
+@patch("testgen.mcp.tools.source_data.build_hygiene_query")
+@patch("testgen.mcp.tools.source_data.ProfilingRun")
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_query_hygiene_no_query_available(mock_resolve, mock_pr, mock_build, db_session_mock):
+    mock_resolve.return_value = _make_hygiene_issue()
+    mock_pr.get.return_value = MagicMock(profiling_starttime="2026-05-12 00:00:00")
+    mock_build.return_value = None
+
+    from testgen.mcp.tools.source_data import get_source_data_query
+
+    result = get_source_data_query(issue_id=str(uuid4()))
+
+    assert "not available" in result
+
+
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_query_hygiene_not_accessible(mock_resolve, db_session_mock):
+    mock_resolve.side_effect = MCPResourceNotAccessible("Hygiene issue", "x")
+
+    from testgen.mcp.tools.source_data import get_source_data_query
+
+    with pytest.raises(MCPResourceNotAccessible, match="Hygiene issue"):
+        get_source_data_query(issue_id=str(uuid4()))
+
+
+def test_get_source_data_query_hygiene_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.source_data import get_source_data_query
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        get_source_data_query(issue_id="bad-uuid")
+
+
+# --- get_source_data: hygiene issue ---
+
+
+@patch("testgen.mcp.tools.source_data.fetch_hygiene_source_data")
+@patch("testgen.mcp.tools.source_data.ProfilingRun")
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_hygiene_ok(mock_resolve, mock_pr, mock_fetch, db_session_mock):
+    issue_id = str(uuid4())
+    mock_resolve.return_value = _make_hygiene_issue()
+    mock_pr.get.return_value = MagicMock(profiling_starttime="2026-05-12 00:00:00")
+    df = pd.DataFrame({"address": ["", ""], "count": [12, 3]})
+    mock_fetch.return_value = SourceDataResult(status="OK", message=None, query="SELECT ...", df=df)
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    result = get_source_data(issue_id=issue_id)
+
+    assert f"# Source Data for Hygiene Issue `{issue_id}`" in result
+    assert "**Rows returned:** 2" in result
+    assert "public.users" in result
+    assert "`address`" in result
+    assert "SELECT ..." in result
+    assert "Test Definition" not in result
+
+
+@patch("testgen.mcp.tools.source_data.fetch_hygiene_source_data")
+@patch("testgen.mcp.tools.source_data.ProfilingRun")
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_hygiene_na(mock_resolve, mock_pr, mock_fetch, db_session_mock):
+    mock_resolve.return_value = _make_hygiene_issue()
+    mock_pr.get.return_value = MagicMock(profiling_starttime="2026-05-12 00:00:00")
+    mock_fetch.return_value = SourceDataResult(
+        status="NA", message="Source data lookup is not available for this hygiene issue.", query=None, df=None,
+    )
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    result = get_source_data(issue_id=str(uuid4()))
+
+    assert "not available for this hygiene issue" in result
+
+
+@patch("testgen.mcp.tools.source_data.fetch_hygiene_source_data")
+@patch("testgen.mcp.tools.source_data.ProfilingRun")
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_hygiene_nd(mock_resolve, mock_pr, mock_fetch, db_session_mock):
+    mock_resolve.return_value = _make_hygiene_issue()
+    mock_pr.get.return_value = MagicMock(profiling_starttime="2026-05-12 00:00:00")
+    mock_fetch.return_value = SourceDataResult(
+        status="ND", message="No matching data.", query="SELECT * FROM users WHERE 1=0", df=None,
+    )
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    result = get_source_data(issue_id=str(uuid4()))
+
+    assert "No matching data." in result
+    assert "SELECT * FROM users WHERE 1=0" in result
+
+
+@patch("testgen.mcp.tools.source_data.fetch_hygiene_source_data")
+@patch("testgen.mcp.tools.source_data.ProfilingRun")
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_hygiene_err(mock_resolve, mock_pr, mock_fetch, db_session_mock):
+    mock_resolve.return_value = _make_hygiene_issue()
+    mock_pr.get.return_value = MagicMock(profiling_starttime="2026-05-12 00:00:00")
+    mock_fetch.return_value = SourceDataResult(
+        status="ERR", message="Connection refused", query="SELECT 1", df=None,
+    )
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    result = get_source_data(issue_id=str(uuid4()))
+
+    assert "**Error:** Connection refused" in result
+    assert "SELECT 1" in result
+
+
+@patch("testgen.mcp.tools.source_data.fetch_hygiene_source_data")
+@patch("testgen.mcp.tools.source_data.ProfilingRun")
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_hygiene_mask_pii_passed(mock_resolve, mock_pr, mock_fetch, db_session_mock):
+    mock_resolve.return_value = _make_hygiene_issue()
+    mock_pr.get.return_value = MagicMock(profiling_starttime="2026-05-12 00:00:00")
+    df = pd.DataFrame({"address": [""]})
+    mock_fetch.return_value = SourceDataResult(status="OK", message=None, query=None, df=df)
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    get_source_data(issue_id=str(uuid4()))
+
+    # mask_pii is the third positional arg
+    assert isinstance(mock_fetch.call_args[0][2], bool)
+
+
+@patch("testgen.mcp.tools.source_data.resolve_hygiene_issue")
+def test_get_source_data_hygiene_not_accessible(mock_resolve, db_session_mock):
+    mock_resolve.side_effect = MCPResourceNotAccessible("Hygiene issue", "x")
+
+    from testgen.mcp.tools.source_data import get_source_data
+
+    with pytest.raises(MCPResourceNotAccessible, match="Hygiene issue"):
+        get_source_data(issue_id=str(uuid4()))
+
+
+def test_get_source_data_hygiene_invalid_uuid(db_session_mock):
+    from testgen.mcp.tools.source_data import get_source_data
+
+    with pytest.raises(MCPUserError, match="not a valid UUID"):
+        get_source_data(issue_id="bad-uuid")
+
+
+# ----------------------------------------------------------------------
+# get_table_sample
+# ----------------------------------------------------------------------
+
+def _mock_table_group(tg_id=None, project_code="demo"):
+    tg = MagicMock()
+    tg.id = tg_id or uuid4()
+    tg.project_code = project_code
+    return tg
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_happy_path(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="main")
+    mock_fetch.return_value = TableSampleResult(
+        "OK", df=pd.DataFrame([{"id": 1, "name": "a"}]), pii_redacted=False,
+    )
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    result = get_table_sample(str(uuid4()), "orders")
+
+    assert "id" in result
+    assert "name" in result
+    assert "PII" not in result
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_empty_table(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="main")
+    mock_fetch.return_value = TableSampleResult("ND")
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    result = get_table_sample(str(uuid4()), "orders")
+
+    assert result.strip() == "Table has no rows."
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_redaction_note(mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="main")
+    mock_fetch.return_value = TableSampleResult(
+        "OK", df=pd.DataFrame([{"id": 1}]), pii_redacted=True,
+    )
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    result = get_table_sample(str(uuid4()), "orders")
+
+    assert "redacted" in result.lower()
+
+
+@patch("testgen.mcp.tools.source_data.fetch_table_sample")
+@patch("testgen.mcp.tools.source_data.Connection")
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_connection_failure_names_connection(
+    mock_tg_cls, mock_dc, mock_conn, mock_fetch, db_session_mock,
+):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = ("demo", [])
+    mock_conn.get_by_table_group.return_value = MagicMock(connection_name="prod-warehouse")
+    mock_fetch.return_value = TableSampleResult("ERR", message="boom")
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    with pytest.raises(MCPUserError) as exc:
+        get_table_sample(str(uuid4()), "orders")
+
+    assert "prod-warehouse" in str(exc.value)
+
+
+@patch("testgen.mcp.tools.source_data.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_unknown_table(mock_tg_cls, mock_dc, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dc.list_for_create_script.return_value = (None, [])
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    with pytest.raises(MCPResourceNotAccessible):
+        get_table_sample(str(uuid4()), "missing")
+
+
+@pytest.mark.parametrize("bad_limit", [0, 501])
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_sample_rejects_out_of_range_limit(mock_tg_cls, bad_limit, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+
+    from testgen.mcp.tools.source_data import get_table_sample
+    with pytest.raises(MCPUserError):
+        get_table_sample(str(uuid4()), "orders", limit=bad_limit)

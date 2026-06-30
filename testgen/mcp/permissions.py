@@ -2,13 +2,16 @@
 
 import contextvars
 import functools
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.user import User
-from testgen.mcp.exceptions import MCPPermissionDenied
+from testgen.mcp.exceptions import MCPAuthenticationError, MCPPermissionDenied
 from testgen.utils.plugins import PluginHook
+
+LOG = logging.getLogger("testgen")
 
 _NOT_SET = object()
 
@@ -77,13 +80,18 @@ def set_mcp_token(token: str | None) -> None:
     _mcp_token.set(token)
 
 
+def get_mcp_username() -> str | None:
+    """Return the authenticated username for the current MCP request (or None)."""
+    return _mcp_username.get()
+
+
 def get_authorized_mcp_user() -> User:
     """Get the authenticated and authorized User for the current MCP request.
 
     Checks user existence and token revocation status.
     Must be called within @with_database_session scope.
     """
-    from testgen.common.auth import authorize_token
+    from testgen.common.auth import AuthError, authorize_token
     from testgen.common.models import get_current_session
 
     username = _mcp_username.get()
@@ -92,7 +100,13 @@ def get_authorized_mcp_user() -> User:
 
     token_str = _mcp_token.get()
     session = get_current_session()
-    return authorize_token(token_str or "", username, session)
+    try:
+        return authorize_token(token_str or "", username, session)
+    except AuthError as err:
+        LOG.warning("MCP token authorization failed: %s", err)
+        raise MCPAuthenticationError(
+            "Authentication failed: your access token is no longer valid. Please sign in again."
+        ) from err
 
 
 def _compute_project_permissions(user: User, permission: str) -> ProjectPermissions:
@@ -129,17 +143,29 @@ def mcp_permission(permission: str) -> Callable:
     Raises ``MCPPermissionDenied`` if the user has no projects with the required
     permission. Other ``MCPPermissionDenied`` exceptions from tool code propagate
     through — the ``safe_tool`` error boundary handles conversion to text.
+
+    ``global_admin`` is a user-level flag, not a per-project role: the check
+    consults ``User.is_global_admin`` and the resulting ``ProjectPermissions``
+    has empty ``memberships``. Tools gated on ``global_admin`` operate above
+    project scope and should not call ``get_project_permissions()``.
     """
 
     def decorator(fn: Callable) -> Callable:
         @functools.wraps(fn)
         def wrapper(*args, **kwargs):
             user = get_authorized_mcp_user()
-            perms = _compute_project_permissions(user, permission)
-            if not perms.allowed_codes:
-                raise MCPPermissionDenied(
-                    "Your role does not include the necessary permission for this operation on any project."
-                )
+            if permission == "global_admin":
+                if not user.is_global_admin:
+                    raise MCPPermissionDenied(
+                        "Your role does not include the necessary permission for this operation."
+                    )
+                perms = ProjectPermissions(memberships={}, permission=permission, username=user.username)
+            else:
+                perms = _compute_project_permissions(user, permission)
+                if not perms.allowed_codes:
+                    raise MCPPermissionDenied(
+                        "Your role does not include the necessary permission for this operation on any project."
+                    )
             tok = _mcp_project_permissions.set(perms)
             try:
                 return fn(*args, **kwargs)

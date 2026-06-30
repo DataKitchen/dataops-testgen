@@ -35,6 +35,7 @@ CREATE TABLE stg_data_chars_updates (
    general_type          VARCHAR(1),
    column_type           VARCHAR(50),
    db_data_type          VARCHAR(50),
+   object_type           VARCHAR(20),
    approx_record_ct      BIGINT,
    record_ct             BIGINT
 );
@@ -130,6 +131,7 @@ CREATE TABLE table_groups
     stakeholder_group        VARCHAR(40),
     transform_level          VARCHAR(40),
     data_product             VARCHAR(40),
+    data_classification      VARCHAR(40),
     last_complete_profile_run_id UUID,
     dq_score_profiling       FLOAT,
     dq_score_testing         FLOAT
@@ -143,10 +145,7 @@ CREATE TABLE profiling_runs (
    connection_id           BIGINT      NOT NULL,
    table_groups_id         UUID        NOT NULL,
    profiling_starttime     TIMESTAMP,
-   profiling_endtime       TIMESTAMP,
-   status                  VARCHAR(100) DEFAULT 'Running',
    progress                JSONB,
-   log_message             VARCHAR,
    table_ct                BIGINT,
    column_ct               BIGINT,
    record_ct               BIGINT,
@@ -156,9 +155,7 @@ CREATE TABLE profiling_runs (
    anomaly_column_ct       BIGINT,
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
-   dq_score_profiling      FLOAT,
-   process_id              INTEGER,
-   job_execution_id        UUID
+   dq_score_profiling      FLOAT
 );
 
 CREATE TABLE test_suites (
@@ -245,6 +242,8 @@ CREATE TABLE test_definitions (
    flagged                BOOLEAN DEFAULT FALSE NOT NULL,
    external_id            UUID,
    impact_dimension       VARCHAR(20),
+   external_url           VARCHAR,
+   custom_metadata        JSONB,
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -419,6 +418,7 @@ CREATE TABLE data_table_chars (
    table_groups_id       UUID,
    schema_name           VARCHAR(50),
    table_name            VARCHAR(120),
+   object_type           VARCHAR(20),
    functional_table_type VARCHAR(50),
    description           VARCHAR(1000),
    critical_data_element BOOLEAN,
@@ -430,6 +430,7 @@ CREATE TABLE data_table_chars (
    transform_level       VARCHAR(40),
    aggregation_level     VARCHAR(40),
    data_product          VARCHAR(40),
+   data_classification   VARCHAR(40),
    add_date              TIMESTAMP,
    drop_date             TIMESTAMP,
    last_refresh_date     TIMESTAMP,
@@ -469,6 +470,7 @@ CREATE TABLE data_column_chars (
    transform_level        VARCHAR(40),
    aggregation_level      VARCHAR(40),
    data_product           VARCHAR(40),
+   data_classification    VARCHAR(40),
    add_date               TIMESTAMP,
    last_mod_date          TIMESTAMP,
    drop_date              TIMESTAMP,
@@ -579,6 +581,8 @@ CREATE TABLE test_types (
    dq_dimension                  VARCHAR(50),
    impact_dimension              VARCHAR(20),
    health_dimension              VARCHAR(50),
+   algorithm                     VARCHAR(64),
+   statistical_technique         VARCHAR(64),
    threshold_description         VARCHAR(200),
    result_visualization          VARCHAR(50) DEFAULT 'line_chart',
    result_visualization_params   TEXT DEFAULT NULL,
@@ -610,10 +614,7 @@ CREATE TABLE test_runs (
          PRIMARY KEY,
    test_suite_id           UUID NOT NULL,
    test_starttime          TIMESTAMP,
-   test_endtime            TIMESTAMP,
-   status                  VARCHAR(100) DEFAULT 'Running',
    progress                JSONB,
-   log_message             TEXT,
    test_ct                 INTEGER,
    passed_ct               INTEGER,
    failed_ct               INTEGER,
@@ -627,8 +628,6 @@ CREATE TABLE test_runs (
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
    dq_score_test_run       FLOAT,
-   process_id              INTEGER,
-   job_execution_id        UUID,
    CONSTRAINT test_runs_test_suites_fk
       FOREIGN KEY (test_suite_id) REFERENCES test_suites
 );
@@ -746,12 +745,12 @@ CREATE INDEX ix_pm_role ON project_memberships(role);
 
 CREATE TABLE oauth2_clients (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         UUID REFERENCES auth_users(id) ON DELETE SET NULL,
     client_id       VARCHAR(48) NOT NULL UNIQUE,
     client_secret   VARCHAR(120),
     client_id_issued_at     INTEGER NOT NULL DEFAULT 0,
     client_secret_expires_at INTEGER NOT NULL DEFAULT 0,
-    client_metadata TEXT NOT NULL DEFAULT '{}'
+    client_metadata TEXT NOT NULL DEFAULT '{}',
+    client_type     VARCHAR(20) NOT NULL DEFAULT 'external'
 );
 CREATE INDEX idx_oauth2_clients_client_id ON oauth2_clients(client_id);
 
@@ -782,7 +781,8 @@ CREATE TABLE oauth2_tokens (
     issued_at       INTEGER NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::INTEGER,
     access_token_revoked_at  INTEGER NOT NULL DEFAULT 0,
     refresh_token_revoked_at INTEGER NOT NULL DEFAULT 0,
-    expires_in      INTEGER NOT NULL DEFAULT 0
+    expires_in      INTEGER NOT NULL DEFAULT 0,
+    name            VARCHAR(255)
 );
 CREATE INDEX idx_oauth2_tokens_refresh_token ON oauth2_tokens(refresh_token);
 
@@ -854,6 +854,7 @@ CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
     stakeholder_group    TEXT                DEFAULT NULL,
     transform_level      TEXT                DEFAULT NULL,
     data_product         TEXT                DEFAULT NULL,
+    data_classification  TEXT                DEFAULT NULL,
     impact               DOUBLE PRECISION    DEFAULT 0.0,
     score                DOUBLE PRECISION    DEFAULT 0.0,
     issue_ct             INTEGER             DEFAULT 0
@@ -1139,3 +1140,26 @@ CREATE TABLE notification_settings (
         REFERENCES score_definitions (id)
         ON DELETE CASCADE
 );
+
+-- Run identity = job execution id, with a cascading delete chain:
+-- deleting a job_executions row removes its run and the run's results.
+-- Declared here because job_executions is created after the run tables.
+ALTER TABLE profiling_runs
+    ADD CONSTRAINT profiling_runs_job_executions_id_fk
+    FOREIGN KEY (id) REFERENCES job_executions (id) ON DELETE CASCADE;
+
+ALTER TABLE test_runs
+    ADD CONSTRAINT test_runs_job_executions_id_fk
+    FOREIGN KEY (id) REFERENCES job_executions (id) ON DELETE CASCADE;
+
+ALTER TABLE test_results
+    ADD CONSTRAINT test_results_test_runs_id_fk
+    FOREIGN KEY (test_run_id) REFERENCES test_runs (id) ON DELETE CASCADE;
+
+ALTER TABLE profile_results
+    ADD CONSTRAINT profile_results_profiling_runs_id_fk
+    FOREIGN KEY (profile_run_id) REFERENCES profiling_runs (id) ON DELETE CASCADE;
+
+ALTER TABLE profile_anomaly_results
+    ADD CONSTRAINT profile_anomaly_results_profiling_runs_id_fk
+    FOREIGN KEY (profile_run_id) REFERENCES profiling_runs (id) ON DELETE CASCADE;

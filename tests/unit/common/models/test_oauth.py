@@ -1,8 +1,8 @@
-"""Tests for testgen.api.oauth.models — OAuth2 ORM model business logic."""
+"""Tests for testgen.common.models.oauth — OAuth2 ORM model business logic."""
 
 import time
 
-from testgen.api.oauth.models import OAuth2Token
+from testgen.common.models.oauth import OAuth2Token, PersonalAccessTokenStatus
 
 
 def _make_token(**overrides):
@@ -37,3 +37,31 @@ def test_is_refresh_token_active_ignores_access_revocation():
 def test_is_refresh_token_active_returns_false_when_expired():
     token = _make_token(issued_at=int(time.time()) - (31 * 86400))
     assert token.is_refresh_token_active() is False
+
+
+# --- status (hybrid_property) ---
+
+
+def test_status_active_when_unrevoked_and_unexpired():
+    token = _make_token(issued_at=int(time.time()) - 10, expires_in=3600)
+    assert token.status == PersonalAccessTokenStatus.ACTIVE
+
+
+def test_status_expired_when_past_expiry():
+    token = _make_token(issued_at=int(time.time()) - 3600, expires_in=60)
+    assert token.status == PersonalAccessTokenStatus.EXPIRED
+
+
+def test_status_revoked_when_access_revoked():
+    token = _make_token(access_token_revoked_at=int(time.time()))
+    assert token.status == PersonalAccessTokenStatus.REVOKED
+
+
+def test_status_revoked_takes_precedence_over_expired():
+    # Past expiry AND revoked: revoked wins.
+    token = _make_token(
+        issued_at=int(time.time()) - 3600,
+        expires_in=60,
+        access_token_revoked_at=int(time.time()),
+    )
+    assert token.status == PersonalAccessTokenStatus.REVOKED

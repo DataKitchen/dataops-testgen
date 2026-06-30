@@ -21,7 +21,8 @@ test_types:
   default_parm_columns: threshold_value
   default_parm_values: |-
     0
-  default_parm_prompts: null
+  default_parm_prompts: |-
+    Threshold Invalid Value Count
   default_parm_help: null
   default_severity: Warning
   run_type: CAT
@@ -35,6 +36,7 @@ test_types:
   result_visualization_params: null
   usage_notes: null
   active: Y
+  algorithm: Pattern / regex
   cat_test_conditions:
   - id: '7034'
     test_type: Valid_US_Zip

@@ -20,8 +20,15 @@ SELECT
            ELSE 'X'
        END AS general_type,
        REGEXP_CONTAINS(LOWER(c.data_type), r'(decimal|numeric|bignumeric)') AS is_decimal,
+       CASE it.table_type
+            WHEN 'BASE TABLE' THEN 'TABLE'
+            WHEN 'VIEW' THEN 'VIEW'
+            WHEN 'MATERIALIZED VIEW' THEN 'MATERIALIZED_VIEW'
+            WHEN 'EXTERNAL' THEN 'EXTERNAL'
+            ELSE 'OTHER' END AS object_type,
        t.row_count AS approx_record_ct
 FROM `{DATA_SCHEMA}.INFORMATION_SCHEMA.COLUMNS` c
     LEFT JOIN `{DATA_SCHEMA}.__TABLES__` t ON c.table_name = t.table_id
+    LEFT JOIN `{DATA_SCHEMA}.INFORMATION_SCHEMA.TABLES` it ON c.table_name = it.table_name
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

@@ -140,6 +140,28 @@ function notIn(values, options) {
     };
 }
 
+/**
+ * Validate that the value is empty (optional) or a well-formed JSON object of key-value pairs.
+ *
+ * @param {any} value
+ * @returns {string}
+ */
+function jsonObject(value) {
+    if (!value || !String(value).trim()) {
+        return null;
+    }
+    let parsed;
+    try {
+        parsed = JSON.parse(value);
+    } catch {
+        return 'Must be valid JSON.';
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        return 'Must be a JSON object of key-value pairs.';
+    }
+    return null;
+}
+
 export {
     maxLength,
     minLength,
@@ -149,4 +171,5 @@ export {
     requiredIf,
     sizeLimit,
     notIn,
+    jsonObject,
 };

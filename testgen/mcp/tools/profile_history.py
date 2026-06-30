@@ -203,7 +203,7 @@ def _delta_cell(metric: ProfileMetric, baseline: object | None, target: object |
 
 def _require_completed(run: ProfilingRun, label: str) -> None:
     """Raise if the run's job execution isn't completed."""
-    je = get_current_session().get(JobExecution, run.job_execution_id)
+    je = get_current_session().get(JobExecution, run.id)
     if je.status != JobStatus.COMPLETED:
         status_label = ProfilingRunSummary.STATUS_LABEL.get(je.status, je.status)
         raise MCPUserError(
@@ -475,8 +475,8 @@ def _render_run_comparison(
         ["", "Target", "Baseline"],
         [
             ["Profiling Run",
-             MdDoc.code(str(target_run.job_execution_id)),
-             MdDoc.code(str(baseline_run.job_execution_id))],
+             MdDoc.code(str(target_run.id)),
+             MdDoc.code(str(baseline_run.id))],
             ["Started", target_run.profiling_starttime, baseline_run.profiling_starttime],
         ],
     )
@@ -792,7 +792,7 @@ def _render_schema_history(
             baseline_snap=snapshots.get(baseline.id, {}),
         )
         doc.heading(2, f"Run started {_format_run_label(target)}")
-        doc.field("Profiling Run", target.job_execution_id, code=True)
+        doc.field("Profiling Run", target.id, code=True)
         if section_lines:
             doc.bullets(section_lines)
         else:

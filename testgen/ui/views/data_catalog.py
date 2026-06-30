@@ -4,16 +4,26 @@ import typing
 from collections import defaultdict
 from datetime import datetime
 from functools import partial
+from uuid import UUID
 
 import pandas as pd
 import streamlit as st
 from sqlalchemy.sql.expression import func as sa_func
 from streamlit.delta_generator import DeltaGenerator
 
-from testgen.common.database.database_service import get_flavor_service
+from testgen.common import date_service
+from testgen.common.data_catalog_service import (
+    apply_column_metadata,
+    apply_table_metadata,
+    build_create_table_script,
+    disable_autoflags,
+    fetch_table_sample,
+)
 from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.data_column import DataColumnChars
+from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -22,7 +32,6 @@ from testgen.common.pii_masking import (
     get_pii_columns,
     mask_hygiene_detail,
     mask_profiling_pii,
-    mask_source_data_pii,
 )
 from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
 from testgen.ui.components import widgets as testgen
@@ -46,7 +55,7 @@ from testgen.ui.queries.profiling_queries import (
     get_tables_by_id,
     get_tables_by_table_group,
 )
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_from_target_db
+from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db
 from testgen.ui.services.query_cache import (
     get_profiling_run_summaries,
     get_project_summary,
@@ -61,7 +70,6 @@ from testgen.ui.views.dialogs.import_metadata_dialog import (
     build_import_preview_props,
     parse_import_csv,
 )
-from testgen.ui.views.dialogs.table_create_script_dialog import generate_create_script
 from testgen.utils import friendly_score, is_uuid4, make_json_safe, score
 
 LOG = logging.getLogger("testgen")
@@ -255,12 +263,6 @@ class DataCatalogPage(Page):
                 item["table_name"],
                 item.get("column_name"),
             )
-            if preview_data.get("rows") and not session.auth.user_has_permission("view_pii"):
-                pii_columns = get_pii_columns(item["table_group_id"], item["schema_name"], item["table_name"])
-                if pii_columns:
-                    df = pd.DataFrame(preview_data["rows"], columns=preview_data["columns"])
-                    mask_source_data_pii(df, pii_columns)
-                    preview_data["rows"] = make_json_safe(df.values.tolist())
             st.session_state[DC_DATA_PREVIEW_DIALOG_KEY] = preview_data
 
         def on_data_preview_dialog_closed(*_) -> None:
@@ -302,7 +304,7 @@ class DataCatalogPage(Page):
 
         create_script_dialog_data = None
         if create_script_item := st.session_state.get(DC_CREATE_SCRIPT_DIALOG_KEY):
-            script = generate_create_script(create_script_item["table_name"], columns)
+            script = build_create_table_script(table_group_id, create_script_item["table_name"], annotate_changes=True)
             create_script_dialog_data = {
                 "title": f"Table CREATE Script: {create_script_item['table_name']}",
                 "table_name": create_script_item["table_name"],
@@ -491,10 +493,10 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
 
     for key in ["min_date", "max_date", "add_date", "last_mod_date", "drop_date"]:
         data[key] = data[key].apply(
-            lambda val: val.strftime("%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
+            lambda val: date_service.format_friendly_datetime(val, "%b %-d %Y, %-I:%M %p") if not pd.isna(val) and not isinstance(val, str) else val
         )
 
-    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product"]:
+    for key in ["data_source", "source_system", "source_process", "business_domain", "stakeholder_group", "transform_level", "aggregation_level", "data_product", "data_classification"]:
         data[key] = data.apply(
             lambda row: row[key] or row[f"table_{key}"] or row.get(f"table_group_{key}"),
             axis=1,
@@ -585,6 +587,7 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "transform_level": {},
         "aggregation_level": {},
         "data_product": {},
+        "data_classification": {},
     }
     return get_excel_file_data(
         data,
@@ -611,60 +614,33 @@ def remove_table_dialog(item: dict) -> None:
 
 
 @with_database_session
-def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DATA_TYPE:
-    attributes = ["description"]
-    attributes.extend(TAG_FIELDS)
-
+def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
     tags = payload["tags"]
-    set_attributes = [ f"{key} = NULLIF(:{key}, '')" for key in attributes if key in tags ]
-    params = { key: tags.get(key) or "" for key in attributes if key in tags }
+
+    # Empty string clears the field (matches the prior NULLIF semantics).
+    shared_fields: dict = {key: (tags.get(key) or None) for key in ["description", *TAG_FIELDS] if key in tags}
     if "critical_data_element" in tags:
-        set_attributes.append("critical_data_element = :critical_data_element")
-        params["critical_data_element"] = tags.get("critical_data_element")
+        shared_fields["critical_data_element"] = tags.get("critical_data_element")
 
     # pii_flag and excluded_data_element are column-only fields (not in data_table_chars)
-    column_set_attributes = list(set_attributes)
+    column_fields = dict(shared_fields)
     if "pii_flag" in tags:
-        column_set_attributes.append("pii_flag = :pii_flag")
-        params["pii_flag"] = tags.get("pii_flag")
+        column_fields["pii_flag"] = tags.get("pii_flag")
     if "excluded_data_element" in tags:
-        column_set_attributes.append("excluded_data_element = :excluded_data_element")
-        params["excluded_data_element"] = tags.get("excluded_data_element")
+        column_fields["excluded_data_element"] = tags.get("excluded_data_element")
 
-    params["table_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "table" ]
-    params["column_ids"] = [ item["id"] for item in payload["items"] if item["type"] == "column" ]
+    table_ids = [ UUID(item["id"]) for item in payload["items"] if item["type"] == "table" ]
+    column_ids = [ UUID(item["id"]) for item in payload["items"] if item["type"] == "column" ]
 
     with spinner_container:
         with st.spinner("Saving tags"):
-            if params["table_ids"] and set_attributes:
-                execute_db_query(
-                    f"""
-                    WITH selected as (
-                        SELECT UNNEST(ARRAY [:table_ids]) AS table_id
-                    )
-                    UPDATE data_table_chars
-                    SET {', '.join(set_attributes)}
-                    FROM data_table_chars dtc
-                        INNER JOIN selected ON (dtc.table_id = selected.table_id::UUID)
-                    WHERE dtc.table_id = data_table_chars.table_id;
-                    """,
-                    params,
-                )
+            if table_ids and shared_fields:
+                for table in DataTable.select_where(DataTable.id.in_(table_ids)):
+                    apply_table_metadata(table, shared_fields)
 
-            if params["column_ids"] and column_set_attributes:
-                execute_db_query(
-                    f"""
-                    WITH selected as (
-                        SELECT UNNEST(ARRAY [:column_ids]) AS column_id
-                    )
-                    UPDATE data_column_chars
-                    SET {', '.join(column_set_attributes)}
-                    FROM data_column_chars dcc
-                        INNER JOIN selected ON (dcc.column_id = selected.column_id::UUID)
-                    WHERE dcc.column_id = data_column_chars.column_id;
-                    """,
-                    params,
-                )
+            if column_ids and column_fields:
+                for column in DataColumnChars.select_where(DataColumnChars.id.in_(column_ids)):
+                    apply_column_metadata(column, column_fields)
 
             # Disable autodetection flags on table group if requested
             disable_flags = payload.get("disable_flags", [])
@@ -672,14 +648,12 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> FILE_DA
                 table_group_id = st.query_params.get("table_group_id")
                 if table_group_id:
                     table_group = get_table_group(table_group_id)
-                    changed = False
-                    if "profile_flag_cdes" in disable_flags and table_group.profile_flag_cdes:
-                        table_group.profile_flag_cdes = False
-                        changed = True
-                    if "profile_flag_pii" in disable_flags and table_group.profile_flag_pii:
-                        table_group.profile_flag_pii = False
-                        changed = True
-                    if changed:
+                    disabled = disable_autoflags(
+                        table_group,
+                        wrote_cde="profile_flag_cdes" in disable_flags,
+                        wrote_pii="profile_flag_pii" in disable_flags,
+                    )
+                    if disabled:
                         table_group.save()
 
     for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:
@@ -713,7 +687,8 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
         column_chars.pii_flag,
         column_chars.excluded_data_element,
         {", ".join([ f"column_chars.{tag}" for tag in TAG_FIELDS ])},
-        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])}
+        {", ".join([ f"table_chars.{tag} AS table_{tag}" for tag in TAG_FIELDS ])},
+        {", ".join([ f"table_groups.{tag} AS table_group_{tag}" for tag in TAG_FIELDS if tag != "aggregation_level" ])}
     FROM data_column_chars column_chars
         LEFT JOIN data_table_chars table_chars ON (
             column_chars.table_id = table_chars.table_id
@@ -722,6 +697,9 @@ def get_table_group_columns(table_group_id: str) -> list[dict]:
             column_chars.last_complete_profile_run_id = profile_results.profile_run_id
             AND column_chars.table_name = profile_results.table_name
             AND column_chars.column_name = profile_results.column_name
+        )
+        LEFT JOIN table_groups ON (
+            column_chars.table_groups_id = table_groups.id
         )
     WHERE column_chars.table_groups_id = :table_group_id
     ORDER BY LOWER(table_chars.table_name), ordinal_position;
@@ -906,33 +884,45 @@ def get_preview_data(
     if not connection:
         return {"title": title, "status": "ERR", "message": "Connection not found."}
 
-    flavor_service = get_flavor_service(connection.sql_flavor)
-    prefix, suffix = flavor_service.row_limit_clauses(100)
-    quote = flavor_service.quote_character
-    table_ref = flavor_service.get_table_ref(schema_name, table_name)
-    query = f"""
-    SELECT DISTINCT
-        {prefix}
-        {f"{quote}{column_name}{quote}" if column_name else "*"}
-    FROM {table_ref}
-    {suffix}
-    """
+    result = fetch_table_sample(
+        connection,
+        table_group_id,
+        schema_name,
+        table_name,
+        limit=100,
+        mask_pii=not session.auth.user_has_permission("view_pii"),
+        column_name=column_name,
+    )
 
-    try:
-        results = fetch_from_target_db(connection, query)
-    except Exception:
+    if result.status == "ERR":
         return {"title": title, "status": "ERR", "message": "The preview data could not be loaded."}
-
-    if not results:
+    if result.status == "ND" or result.df is None:
         return {"title": title, "status": "ND", "message": "No data found."}
 
-    columns_list = list(results[0].keys())
-    rows = [list(row.values()) for row in results]
     return {
         "title": title,
-        "columns": columns_list,
-        "rows": make_json_safe(rows),
+        "columns": list(result.df.columns),
+        "rows": make_json_safe(result.df.values.tolist()),
     }
+
+
+TAG_FIELD_DEFAULTS: dict[str, list[str]] = {
+    "data_classification": ["Public", "Internal", "Confidential", "Restricted"],
+}
+
+
+def merge_tag_defaults(
+    values: dict[str, list[str]],
+    defaults: dict[str, list[str]],
+) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = defaultdict(list, {k: list(v) for k, v in values.items()})
+    for tag, tag_defaults in defaults.items():
+        existing_lower = {v.lower() for v in result[tag]}
+        for default in tag_defaults:
+            if default.lower() not in existing_lower:
+                result[tag].append(default)
+        result[tag] = sorted(result[tag], key=str.lower)
+    return result
 
 
 @st.cache_data(show_spinner=False)
@@ -960,8 +950,8 @@ def get_tag_values() -> dict[str, list[str]]:
     """
     results = fetch_all_from_db(query)
 
-    values = defaultdict(list)
+    values: dict[str, list[str]] = defaultdict(list)
     for row in results:
         if row.tag and row.value:
             values[row.tag].append(row.value)
-    return values
+    return merge_tag_defaults(values, TAG_FIELD_DEFAULTS)

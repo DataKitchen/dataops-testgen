@@ -1,11 +1,18 @@
-from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
-from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.mcp.exceptions import MCPResourceNotAccessible
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
-from testgen.mcp.tools.common import DocGroup, resolve_table_group, validate_limit, validate_page
+from testgen.mcp.tools.common import (
+    DocGroup,
+    format_flavor_label,
+    resolve_connection,
+    resolve_table_group,
+    resolve_test_suite,
+    validate_limit,
+    validate_page,
+)
 from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.DISCOVER
@@ -23,7 +30,6 @@ def get_data_inventory() -> str:
     from testgen.mcp.services.inventory_service import get_inventory
 
     perms = get_project_permissions()
-    MixpanelService().send_event("mcp-get-data-inventory", username=perms.username)
     return get_inventory(
         project_codes=perms.allowed_codes,
         view_project_codes=perms.codes_allowed_to("view"),
@@ -53,6 +59,53 @@ def list_projects() -> str:
 
 @with_database_session
 @mcp_permission("view")
+def get_project(project_code: str) -> str:
+    """Get a project's configuration and configuration counts.
+
+    Returns the project name, observability and data-retention settings, and counts
+    of connections, table groups, test suites, test definitions, profiling runs, and
+    test runs scoped to the project. Use this before configuration changes to confirm
+    a project's current shape.
+
+    Args:
+        project_code: The project code, e.g. from `list_projects`.
+    """
+    perms = get_project_permissions()
+    perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
+
+    project = Project.get(project_code)
+    summary = Project.get_summary(project_code)
+    if project is None or summary is None:
+        raise MCPResourceNotAccessible("Project", project_code)
+
+    doc = MdDoc()
+    doc.heading(1, f"Project `{project_code}`")
+    doc.field("Name", project.project_name)
+    doc.field("Connections", summary.connection_count)
+    doc.field("Table groups", summary.table_group_count)
+    doc.field("Test suites", summary.test_suite_count)
+    doc.field("Test definitions", summary.test_definition_count)
+    doc.field("Profiling runs", summary.profiling_run_count)
+    doc.field("Test runs", summary.test_run_count)
+
+    doc.heading(2, "Configuration")
+    doc.field("Weighted data quality scoring", project.use_dq_score_weights)
+
+    doc.heading(2, "Observability Integration")
+    doc.field("Configured", summary.can_export_to_observability)
+    if project.observability_api_url:
+        doc.field("API URL", project.observability_api_url, code=True)
+
+    doc.heading(2, "Data Retention")
+    doc.field("Automatically delete old profiling and test history", project.data_retention_enabled)
+    if project.data_retention_enabled and project.data_retention_days is not None:
+        doc.field("Delete history older than (days)", project.data_retention_days)
+
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
 def list_test_suites(project_code: str) -> str:
     """List all test suites for a project with their latest run statistics.
 
@@ -63,16 +116,12 @@ def list_test_suites(project_code: str) -> str:
         return "Missing required parameter `project_code`."
 
     perms = get_project_permissions()
-    perms.verify_access(project_code, not_found=f"No test suites found for project `{project_code}`.")
+    perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
 
     summaries = TestSuite.select_summary(project_code)
 
     if not summaries:
         return f"No test suites found for project `{project_code}`."
-
-    # Batch-lookup job_execution_ids for latest runs
-    run_ids = [s.latest_run_id for s in summaries if s.latest_run_id]
-    job_exec_map = TestRun.get_job_execution_ids(run_ids) if run_ids else {}
 
     doc = MdDoc()
     doc.heading(1, f"Test Suites for `{project_code}`")
@@ -85,8 +134,7 @@ def list_test_suites(project_code: str) -> str:
         doc.field("Test definitions", s.test_ct or 0)
 
         if s.latest_run_id:
-            run_id = job_exec_map.get(s.latest_run_id) or s.latest_run_id
-            doc.field("Latest run", f"`{run_id}` ({s.latest_run_start})")
+            doc.field("Latest run", f"`{s.latest_run_id}` ({s.latest_run_start})")
             results_summary = (
                 f"{s.last_run_test_ct or 0} tests: "
                 f"{s.last_run_passed_ct or 0} passed, "
@@ -99,6 +147,58 @@ def list_test_suites(project_code: str) -> str:
                 doc.field("Dismissed", s.last_run_dismissed_ct)
         else:
             doc.text("_No completed runs._")
+
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("view")
+def get_test_suite(test_suite_id: str) -> str:
+    """Get a test suite's configuration: connection, table group, default severity, and per-test-type counts.
+
+    Returns the test suite's identity and configuration along with a breakdown of how many test
+    definitions it contains by type and how many are locked (excluded from regeneration).
+    Use this before changing a suite's tests to understand what will be affected.
+
+    Args:
+        test_suite_id: The test suite UUID, e.g. from `list_test_suites`.
+    """
+    suite = resolve_test_suite(test_suite_id)
+    # Defense in depth: resolve via perm-filtered helpers rather than `Model.get(...)`.
+    # FK constraints guarantee same-project today; the resolvers are the established wrapper
+    # for project-scoped lookups and keep us aligned if those guarantees ever change.
+    connection = resolve_connection(suite.connection_id) if suite.connection_id else None
+    table_group = resolve_table_group(str(suite.table_groups_id)) if suite.table_groups_id else None
+    stats = TestSuite.test_definition_stats(suite.id)
+
+    doc = MdDoc()
+    doc.heading(1, f"Test Suite `{suite.test_suite}`")
+    doc.field("ID", str(suite.id), code=True)
+    doc.field("Project", suite.project_code, code=True)
+
+    if connection is not None:
+        doc.field(
+            "Connection",
+            f"{connection.connection_name} (`{connection.connection_id}`, {format_flavor_label(connection.sql_flavor_code)})",
+        )
+    if table_group is not None:
+        doc.field(
+            "Table group",
+            f"{table_group.table_groups_name} (`{table_group.id}`)",
+        )
+
+    if suite.test_suite_description:
+        doc.field("Description", suite.test_suite_description)
+    doc.field("Default severity", suite.severity or "Inherit from test type")
+    doc.field("Export to observability", suite.export_to_observability)
+
+    doc.field("Total tests", stats.total)
+    doc.field("Locked tests", stats.locked)
+
+    if stats.counts_by_type:
+        doc.heading(2, "Tests by type")
+        rows = [[type_label, count] for type_label, count in stats.counts_by_type.items()]
+        doc.table(["Test", "Count"], rows)
 
     return doc.render()
 

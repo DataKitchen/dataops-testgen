@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 @patch("testgen.mcp.tools.reference.TestType")
 def test_get_test_type_found(mock_tt_cls, db_session_mock):
@@ -263,3 +265,92 @@ def test_server_instructions_reference_column_profile_fields_resource():
     # Sanity check the existing references are still present.
     assert "testgen://test-types" in SERVER_INSTRUCTIONS
     assert "testgen://hygiene-issue-types" in SERVER_INSTRUCTIONS
+
+
+# ---------------------------------------------------------------------------
+# connection_parameters_resource
+# ---------------------------------------------------------------------------
+
+
+def test_connection_parameters_index_lists_flavors():
+    from testgen.mcp.tools.reference import connection_parameters_index_resource
+
+    out = connection_parameters_index_resource()
+    # Accepted sql_flavor labels.
+    assert "PostgreSQL" in out and "Azure SQL Database" in out and "Salesforce Data 360" in out
+    # Each links to its per-flavor resource (keyed by code).
+    assert "testgen://connection-parameters/postgresql" in out
+    assert "testgen://connection-parameters/salesforce_data360" in out
+
+
+def test_connection_parameters_resource_unknown_flavor():
+    from testgen.mcp.exceptions import MCPUserError
+    from testgen.mcp.tools.reference import connection_parameters_resource
+
+    with pytest.raises(MCPUserError) as exc:
+        connection_parameters_resource("not_a_flavor")
+    msg = str(exc.value)
+    assert "snowflake" in msg and "salesforce_data360" in msg
+
+
+def test_connection_parameters_resource_postgresql_single_mode():
+    from testgen.mcp.tools.reference import connection_parameters_resource
+
+    out = connection_parameters_resource("postgresql")
+    assert "PostgreSQL Connection Parameters" in out
+    assert "Host" in out and "Username" in out
+    assert "Required (host mode)" in out  # Host/Port/Database
+    # URL alternative is advertised.
+    assert "connect by URL" in out
+    # Single-mode flavor: no connection_mode instruction.
+    assert "Set `connection_mode`" not in out
+
+
+def test_connection_parameters_resource_snowflake_both_modes():
+    from testgen.mcp.tools.reference import connection_parameters_resource
+
+    out = connection_parameters_resource("snowflake")
+    assert "Mode: Key-Pair" in out
+    assert "Mode: Password" in out
+    assert "Private Key" in out
+    assert "Warehouse" in out
+    assert "Set `connection_mode`" in out
+    assert 'connection_mode="Key-Pair"' in out
+
+
+def test_connection_parameters_resource_databricks_pat_fields():
+    from testgen.mcp.tools.reference import connection_parameters_resource
+
+    out = connection_parameters_resource("databricks")
+    assert "Mode: Access Token" in out
+    assert "Mode: Service Principal (OAuth)" in out
+    assert "Catalog" in out
+    assert "HTTP Path" in out
+    assert "Client ID" in out
+
+
+def test_connection_parameters_resource_port_default_note():
+    """The Port row documents the flavor's conventional default port (doc-only —
+    the field stays required; the LLM supplies the default when the user doesn't)."""
+    from testgen.mcp.tools.reference import connection_parameters_resource
+
+    out = connection_parameters_resource("postgresql")
+    assert "Default for PostgreSQL is 5432" in out
+    assert "Required (host mode)" in out  # Port requirement unchanged
+
+
+def test_connection_parameters_resource_port_default_per_flavor():
+    from testgen.mcp.tools.reference import connection_parameters_resource
+
+    out = connection_parameters_resource("sap_hana")
+    assert "Default for SAP HANA is 39015" in out
+
+
+def test_connection_parameters_resource_marks_secrets():
+    from testgen.mcp.tools.reference import connection_parameters_resource
+
+    out = connection_parameters_resource("bigquery")
+    assert "Service Account Key" in out
+    assert "Secret" in out
+    # No URL alternative for BigQuery.
+    assert "connect by URL" not in out

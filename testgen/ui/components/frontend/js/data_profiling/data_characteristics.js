@@ -36,6 +36,9 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
             );
         }
     } else {
+        if (item.object_type) {
+            attributes.push({ key: 'object_type', label: 'Object Type' });
+        }
         attributes.push(
             { key: 'functional_table_type', label: `Semantic Table Type ${item.is_latest_profile ? '*' : ''}` },
         );
@@ -77,6 +80,10 @@ const DataCharacteristicsCard = (/** @type Properties */ props, /** @type Column
                                 );
                             } else if (key === 'datatype_suggestion') {
                                 value = (value || '').toLowerCase();
+                            } else if (key === 'object_type') {
+                                value = (value || '').split('_')
+                                    .map(word => word ? (word[0].toUpperCase() + word.substring(1).toLowerCase()) : '')
+                                    .join(' ');
                             } else if (key === 'functional_table_type') {
                                 value = (value || '').split('-')
                                     .map(word => word ? (word[0].toUpperCase() + word.substring(1)) : '')

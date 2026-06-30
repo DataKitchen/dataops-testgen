@@ -25,6 +25,7 @@ SELECT
             THEN 1
         ELSE 0
     END AS is_decimal,
+    'EXTERNAL' AS object_type,
     NULL AS approx_record_ct -- Table statistics unavailable
 FROM svv_external_columns c
 WHERE c.schemaname = '{DATA_SCHEMA}'

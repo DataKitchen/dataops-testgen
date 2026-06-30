@@ -22,7 +22,15 @@ SELECT
            WHEN c.numeric_scale > 0 THEN 1
            ELSE 0
        END AS is_decimal,
+       CASE t.table_type
+            WHEN 'MANAGED' THEN 'TABLE'
+            WHEN 'VIEW' THEN 'VIEW'
+            WHEN 'MATERIALIZED_VIEW' THEN 'MATERIALIZED_VIEW'
+            WHEN 'EXTERNAL' THEN 'EXTERNAL'
+            WHEN 'FOREIGN' THEN 'EXTERNAL'
+            ELSE 'OTHER' END AS object_type,
        NULL AS approx_record_ct -- table statistics unavailable
 FROM information_schema.columns c
+    LEFT JOIN information_schema.tables t ON c.table_schema = t.table_schema AND c.table_name = t.table_name
 WHERE c.table_schema = '{DATA_SCHEMA}' {TABLE_CRITERIA}
 ORDER BY c.table_schema, c.table_name, c.ordinal_position;

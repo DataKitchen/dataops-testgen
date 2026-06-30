@@ -11,7 +11,7 @@ from typing import Literal
 import pandas as pd
 from sqlalchemy import text
 
-from testgen.common.clean_sql import concat_columns
+from testgen.common.clean_sql import concat_columns, null_if_empty
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import get_current_session
@@ -207,12 +207,14 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
         else None,
         "CUSTOM_QUERY": test_definition.custom_query,
+        # BASELINE_VALUE varies (quoted literal / number / IN-list) by test type — templated as-is.
+        # The numeric baselines render empty as NULL to avoid invalid SQL like CAST( AS FLOAT).
         "BASELINE_VALUE": test_definition.baseline_value,
-        "BASELINE_CT": test_definition.baseline_ct,
-        "BASELINE_AVG": test_definition.baseline_avg,
-        "BASELINE_SD": test_definition.baseline_sd,
-        "LOWER_TOLERANCE": "NULL" if test_definition.lower_tolerance in (None, "") else test_definition.lower_tolerance,
-        "UPPER_TOLERANCE": "NULL" if test_definition.upper_tolerance in (None, "") else test_definition.upper_tolerance,
+        "BASELINE_CT": null_if_empty(test_definition.baseline_ct),
+        "BASELINE_AVG": null_if_empty(test_definition.baseline_avg),
+        "BASELINE_SD": null_if_empty(test_definition.baseline_sd),
+        "LOWER_TOLERANCE": null_if_empty(test_definition.lower_tolerance),
+        "UPPER_TOLERANCE": null_if_empty(test_definition.upper_tolerance),
         "THRESHOLD_VALUE": test_definition.threshold_value or 0,
         # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
         # since the latter may contain the former

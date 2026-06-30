@@ -29,6 +29,15 @@ class TestSuiteMinimal(EntityMinimal):
     export_to_observability: str
 
 
+@dataclass(frozen=True)
+class TestDefinitionStats:
+    """Aggregate test-definition counts for a test suite."""
+
+    total: int
+    locked: int
+    counts_by_type: dict[str, int]
+
+
 @dataclass
 class TestSuiteSummary(EntityMinimal):
     id: UUID
@@ -113,7 +122,6 @@ class TestSuite(Entity):
         WITH last_run AS (
             SELECT test_runs.test_suite_id,
                 test_runs.id,
-                test_runs.job_execution_id,
                 test_runs.test_starttime,
                 test_runs.test_ct,
                 SUM(
@@ -184,7 +192,7 @@ class TestSuite(Entity):
             test_defs.count AS test_ct,
             last_complete_profile_run_id,
             last_run.id AS latest_run_id,
-            last_run.job_execution_id AS latest_run_job_execution_id,
+            last_run.id AS latest_run_job_execution_id,
             last_run.test_starttime AS latest_run_start,
             last_run.test_ct AS last_run_test_ct,
             last_run.passed_ct AS last_run_passed_ct,
@@ -214,6 +222,36 @@ class TestSuite(Entity):
         return [TestSuiteSummary(**row) for row in results]
 
     @classmethod
+    def test_definition_stats(cls, test_suite_id: str | UUID) -> "TestDefinitionStats":
+        """Aggregate test-definition counts for a suite: total, locked, and per-test-type.
+
+        The per-type bucket uses the user-facing ``test_name_short`` label from
+        ``test_types``, falling back to the raw ``test_type`` code when the lookup
+        row is missing (defensive — every shipping test type has a short name).
+        """
+        query = """
+        SELECT
+            COALESCE(tt.test_name_short, td.test_type) AS type_label,
+            COUNT(*) AS total,
+            SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'Y' THEN 1 ELSE 0 END) AS locked
+        FROM test_definitions td
+            LEFT JOIN test_types tt ON tt.test_type = td.test_type
+        WHERE td.test_suite_id = :test_suite_id
+        GROUP BY type_label
+        ORDER BY type_label;
+        """
+        rows = (
+            get_current_session()
+            .execute(text(query), {"test_suite_id": str(test_suite_id)})
+            .mappings()
+            .all()
+        )
+        counts_by_type = {row["type_label"]: int(row["total"]) for row in rows}
+        total = sum(counts_by_type.values())
+        locked = sum(int(row["locked"]) for row in rows)
+        return TestDefinitionStats(total=total, locked=locked, counts_by_type=counts_by_type)
+
+    @classmethod
     def is_in_use(cls, ids: list[str]) -> bool:
         query = """
         SELECT DISTINCT test_suite_id FROM test_definitions WHERE test_suite_id IN :test_suite_ids
@@ -229,8 +267,8 @@ class TestSuite(Entity):
         query = """
         DELETE FROM job_executions
         WHERE id IN (
-            SELECT job_execution_id FROM test_runs
-            WHERE test_suite_id IN :test_suite_ids AND job_execution_id IS NOT NULL
+            SELECT id FROM test_runs
+            WHERE test_suite_id IN :test_suite_ids
         );
 
         DELETE FROM test_runs
@@ -248,4 +286,3 @@ class TestSuite(Entity):
         db_session = get_current_session()
         db_session.execute(text(query), {"test_suite_ids": tuple(ids)})
         cls.delete_where(cls.id.in_(ids))
-

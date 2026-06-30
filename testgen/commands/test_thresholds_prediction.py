@@ -89,7 +89,7 @@ class TestThresholdsPrediction:
 
             # Freshness update events are fetched as secondary data only when the suite
             # is a monitor — Volume_Trend / Metric_Trend in monitor suites couple to the
-            # Freshness_Trend signal to avoid stairstep false positives. 
+            # Freshness_Trend signal to avoid stairstep false positives.
             freshness_updates_by_table: dict[tuple[str, str], list[str]] = (
                 self._fetch_freshness_updates_by_table() if self.test_suite.is_monitor else {}
             )
@@ -268,9 +268,15 @@ def compute_freshness_threshold(
                     window_end=schedule.window_end if has_window else None,
                 )
                 lower, upper = result.lower, result.upper
-                staleness = result.staleness
             except NotEnoughData:
                 pass  # Keep first-pass thresholds
+
+        # An active schedule certifies the cadence is regular, so the tight staleness
+        # threshold (median * factor) applies. Full-week schedules skip the recompute
+        # above and use the first-pass result — with no excluded days, those gaps are
+        # already in business minutes. Non-active stages keep staleness = None so the
+        # prediction SQL falls back to upper_tolerance (avoids false weekend anomalies).
+        staleness = result.staleness
 
         # Override upper threshold with schedule-based deadline (daily/weekly only)
         if schedule.frequency != "sub_daily":
@@ -293,8 +299,11 @@ def compute_sarimax_threshold(
     exclude_weekends: bool = False,
     holiday_codes: list[str] | None = None,
     schedule_tz: str | None = None,
+    event_space: bool = False,
 ) -> tuple[float | None, float | None, str | None]:
     """Compute SARIMAX-based thresholds for the next forecast point.
+
+    `event_space=True` fits in event-space (one step per observation, no interpolation).
 
     Returns (lower, upper, forecast_json) or (None, None, None) if insufficient data.
     """
@@ -305,6 +314,7 @@ def compute_sarimax_threshold(
             exclude_weekends=exclude_weekends,
             holiday_codes=holiday_codes,
             tz=schedule_tz,
+            event_space=event_space,
         )
 
         num_points = len(history)
@@ -344,7 +354,7 @@ def compute_volume_or_metric_threshold(
     This avoids the "stairstep" false-positive shape where inter-change plateaus collapse the SE estimate.
     The returned prediction JSON is augmented with `freshness_gated` and `baseline_value` so
     that test execution can apply dual-branch evaluation.
-    
+
     If the filtered fit fails for any reason, falls back to fit SARIMAX on
     the raw value series and emits a prediction JSON without the freshness-gating markers.
 
@@ -353,6 +363,9 @@ def compute_volume_or_metric_threshold(
     Freshness_Trend detected a fingerprint change.
     """
     filtered_history = history.loc[history["test_run_id"].astype(str).isin(freshness_updates)]
+    # Event-space fit: the filtered series has one point per refresh and is irregularly spaced.
+    # Calendar resampling + interpolation would smooth the refresh jumps into small uniform
+    # increments and collapse the jump variance, biasing the forecast low and the band too tight.
     lower, upper, prediction = compute_sarimax_threshold(
         filtered_history,
         sensitivity=sensitivity,
@@ -360,6 +373,7 @@ def compute_volume_or_metric_threshold(
         exclude_weekends=exclude_weekends,
         holiday_codes=holiday_codes,
         schedule_tz=schedule_tz,
+        event_space=True,
     )
     if prediction is not None:
         # Pull the baseline value from the most-recent filtered row.
@@ -381,5 +395,5 @@ def compute_volume_or_metric_threshold(
         exclude_weekends=exclude_weekends,
         holiday_codes=holiday_codes,
         schedule_tz=schedule_tz,
-    )        
+    )
     return lower, upper, None, prediction

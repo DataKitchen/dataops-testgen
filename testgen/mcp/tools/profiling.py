@@ -3,6 +3,8 @@ from uuid import UUID
 
 from sqlalchemy import func, or_
 
+from testgen.common.data_catalog_service import build_create_table_script
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
     SUGGESTED_DATA_TYPE_TO_PREFIX,
@@ -12,6 +14,7 @@ from testgen.common.models.data_column import (
     DataColumnChars,
 )
 from testgen.common.models.data_table import DataTable
+from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
@@ -413,6 +416,7 @@ def _render_column_profile_row(c: ColumnProfileSummary) -> list:
 @mcp_permission("catalog")
 def list_profiling_runs(
     table_group_id: str,
+    schedule_id: str | None = None,
     status: str | None = None,
     limit: int = 10,
     page: int = 1,
@@ -422,6 +426,8 @@ def list_profiling_runs(
 
     Args:
         table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        schedule_id: Optional UUID of a schedule, e.g. from `list_schedules`. Returns only runs
+            triggered by that schedule.
         status: Optional run status filter. One of: Pending, Running, Completed, Canceled, Error.
         limit: Page size (default 10, max 100).
         page: Page number starting at 1 (default 1).
@@ -430,11 +436,14 @@ def list_profiling_runs(
     validate_page(page)
 
     statuses = parse_run_status_filter(status) if status else None
+    if schedule_id:
+        parse_uuid(schedule_id, "schedule_id")
     tg = resolve_table_group(table_group_id)
 
     summaries, total = ProfilingRun.select_summary(
         project_code=tg.project_code,
         table_group_id=tg.id,
+        schedule_id=schedule_id,
         statuses=statuses,
         page=page,
         page_size=limit,
@@ -444,7 +453,9 @@ def list_profiling_runs(
     # joined-run queries. Surface them as a separate "Pending" section on page 1.
     pending_jes: list[JobExecution] = []
     if page == 1:
+        clauses = [JobExecution.job_schedule_id == schedule_id] if schedule_id else []
         pending_jes = JobExecution.select_active_by_kwargs(
+            *clauses,
             project_code=tg.project_code,
             job_key=RUN_PROFILE_JOB_KEY,
             kwargs_match={"table_group_id": str(tg.id)},
@@ -452,7 +463,12 @@ def list_profiling_runs(
         )
 
     doc = MdDoc()
-    scope = f" — status `{status}`" if status else ""
+    scope_parts = []
+    if schedule_id:
+        scope_parts.append(f"schedule `{schedule_id}`")
+    if status:
+        scope_parts.append(f"status `{status}`")
+    scope = f" — {', '.join(scope_parts)}" if scope_parts else ""
     doc.heading(1, f"Profiling runs for `{tg.table_groups_name}`{scope}")
 
     next_run = next_scheduled_run(
@@ -509,7 +525,7 @@ def get_profiling_run(job_execution_id: str) -> str:
     doc = MdDoc()
     tg_label = summary.table_groups_name or "—"
     doc.heading(1, f"Profiling run: {tg_label}")
-    doc.field("Job ID", summary.job_execution_id, code=True)
+    doc.field("Profiling Run", summary.job_execution_id, code=True)
     if summary.table_groups_name:
         doc.field("Table group", summary.table_groups_name)
     if summary.table_group_schema:
@@ -528,13 +544,19 @@ def get_profiling_run(job_execution_id: str) -> str:
         doc.field("Columns profiled", summary.column_ct or 0)
         if summary.record_ct is not None:
             doc.field("Records", summary.record_ct)
-        doc.field(
-            "Hygiene issues (confirmed)",
-            f"{(summary.anomalies_definite_ct or 0) + (summary.anomalies_likely_ct or 0) + (summary.anomalies_possible_ct or 0)} total "
-            f"— {summary.anomalies_definite_ct or 0} definite, "
-            f"{summary.anomalies_likely_ct or 0} likely, "
-            f"{summary.anomalies_possible_ct or 0} possible",
-        )
+        if summary.profiling_run_id:
+            # Count from the canonical source so likelihood buckets and Potential PII
+            # stay separate (matches the REST profiling-run issue_counts).
+            counts = HygieneIssue.count_for_run(summary.profiling_run_id)
+            hygiene = counts.hygiene_issues
+            doc.field(
+                "Hygiene issues (confirmed)",
+                f"{hygiene.definite + hygiene.likely + hygiene.possible} total "
+                f"— {hygiene.definite} definite, {hygiene.likely} likely, {hygiene.possible} possible",
+            )
+            pii = counts.potential_pii
+            if pii.high or pii.moderate:
+                doc.field("Potential PII", f"{pii.high} high, {pii.moderate} moderate")
         if summary.dq_score_profiling is not None:
             doc.field("Profiling Score", friendly_score(summary.dq_score_profiling))
 
@@ -561,7 +583,7 @@ def get_profiling_run(job_execution_id: str) -> str:
 def _render_pending_profiling_je(doc: MdDoc, je: JobExecution, label: str) -> None:
     status_label = ProfilingRunSummary.STATUS_LABEL.get(je.status, je.status)
     doc.heading(3, f"{label} — {status_label}")
-    doc.field("Job ID", je.id, code=True)
+    doc.field("Profiling Run", je.id, code=True)
     if je.job_schedule_id is not None:
         doc.field("Schedule", je.job_schedule_id, code=True)
     doc.field("Submitted", je.created_at)
@@ -572,7 +594,7 @@ def _render_pending_profiling_je(doc: MdDoc, je: JobExecution, label: str) -> No
 def _render_profiling_run_section(doc: MdDoc, run: ProfilingRunSummary) -> None:
     title = run.table_groups_name or run.profiling_run_id or run.job_execution_id
     doc.heading(2, f"{title} — {run.status_label}")
-    doc.field("Job ID", run.job_execution_id, code=True)
+    doc.field("Profiling Run", run.job_execution_id, code=True)
     if run.job_schedule_id is not None:
         doc.field("Schedule", run.job_schedule_id, code=True)
     doc.field("Submitted", run.created_at)
@@ -743,7 +765,7 @@ def get_column_profile_detail(
             "Run profiling for the table group first."
         )
 
-    if detail.profile_run_status in ("Running", "Error", "Cancelled"):
+    if detail.profile_run_status in (JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCELED):
         _raise_run_not_ready(detail)
 
     payload = dataclasses.asdict(detail)
@@ -765,11 +787,12 @@ def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
     ended = detail.profile_run_ended_at
     started_label = started.strftime("%Y-%m-%d %H:%M UTC") if started else "—"
     ended_label = ended.strftime("%Y-%m-%d %H:%M UTC") if ended else "—"
+    status_label = JOB_STATUS_LABEL.get(status, status)
     lines = [
-        f"Profiling run `{je}` is in `{status}` state — no profile detail available.",
+        f"Profiling run `{je}` is in `{status_label}` state — no profile detail available.",
         f"Started: {started_label}. Ended: {ended_label}.",
     ]
-    if status == "Error" and detail.profile_run_log_message:
+    if status == JobStatus.ERROR and detail.profile_run_log_message:
         lines.append(f"Error: {detail.profile_run_log_message}")
     raise MCPUserError("\n".join(lines))
 
@@ -952,7 +975,7 @@ def get_column_frequent_values(
     doc = MdDoc()
     doc.heading(1, f"Frequent values: {table_name}.{column_name}")
     doc.field("Table group", tg.id, code=True)
-    doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
+    doc.field("Profiling Run", profiling_run.id, code=True)
     doc.field("Row Count", profile.record_ct)
     doc.field("Distinct values", profile.distinct_value_ct)
     if pii_flag:
@@ -1007,7 +1030,7 @@ def get_column_patterns(
     doc = MdDoc()
     doc.heading(1, f"Character patterns: {table_name}.{column_name}")
     doc.field("Table group", tg.id, code=True)
-    doc.field("Profiling Run", profiling_run.job_execution_id, code=True)
+    doc.field("Profiling Run", profiling_run.id, code=True)
     doc.field("Row Count", profile.record_ct)
     doc.field("Distinct values", profile.distinct_value_ct)
 
@@ -1136,3 +1159,21 @@ def search_columns(
     if footer:
         doc.text(footer)
     return doc.render()
+
+
+@with_database_session
+@mcp_permission("catalog")
+def generate_create_table_script(table_group_id: str, table_name: str) -> str:
+    """Generate a CREATE TABLE script for a profiled table from its columns and suggested data types.
+
+    Args:
+        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
+        table_name: Table name exactly as stored in TestGen (case-sensitive).
+    """
+    tg = resolve_table_group(table_group_id)
+
+    script = build_create_table_script(tg.id, table_name)
+    if script is None:
+        raise MCPResourceNotAccessible("Table", table_name)
+
+    return MdDoc().code_block(script, language="sql").render()

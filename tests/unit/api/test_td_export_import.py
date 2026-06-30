@@ -6,15 +6,22 @@ from uuid import uuid4
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
-from testgen.api.schemas import (
+from testgen.api.schemas import ImportRequest
+from testgen.common.test_definition_export_import_service import (
     ExportDocument,
+    ExportSource,
     ImportAction,
     ImportConfig,
+    ImportErrorCode,
     ImportMode,
     ImportPayload,
     ImportReason,
     ImportResponse,
+    ImportStrictViolation,
+    ImportSummary,
+    InvalidImportPayload,
     OnAbsence,
     OnMatch,
     OnNew,
@@ -24,7 +31,7 @@ from testgen.api.schemas import (
 
 pytestmark = pytest.mark.unit
 
-SERVICE_MODULE = "testgen.api.test_definition_service"
+SERVICE_MODULE = "testgen.common.test_definition_export_import_service"
 ENDPOINT_MODULE = "testgen.api.test_definitions"
 
 
@@ -162,7 +169,7 @@ class Test_export_definitions:
 
         session.scalars.return_value.all.return_value = [td_obj]
 
-        from testgen.api.test_definition_service import export_definitions
+        from testgen.common.test_definition_export_import_service import export_definitions
 
         result = export_definitions(ts, Origin.both, None, None)
 
@@ -186,7 +193,7 @@ class Test_export_definitions:
         ts = _make_test_suite()
         session.scalars.return_value.all.return_value = []
 
-        from testgen.api.test_definition_service import export_definitions
+        from testgen.common.test_definition_export_import_service import export_definitions
 
         export_definitions(ts, Origin.manual, None, None)
 
@@ -207,7 +214,7 @@ class Test_export_definitions:
         ts = _make_test_suite()
         session.scalars.return_value.all.return_value = []
 
-        from testgen.api.test_definition_service import export_definitions
+        from testgen.common.test_definition_export_import_service import export_definitions
 
         export_definitions(ts, Origin.auto, None, None)
 
@@ -237,7 +244,7 @@ class Test_import_matching:
         td = _make_import_td(test_type="Alpha", table_name="t1", column_name="c1")
         config = _make_config(on_match=OnMatch.overwrite_unlocked)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -265,7 +272,7 @@ class Test_import_matching:
         td = _make_import_td(last_auto_gen_date=None, external_id=ext_id, table_name="t1")
         config = _make_config(on_match=OnMatch.overwrite_unlocked)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -287,7 +294,7 @@ class Test_import_matching:
         td = _make_import_td(test_type="Alpha", table_name="t1")
         config = _make_config(on_new=OnNew.create)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -317,7 +324,7 @@ class Test_import_policies:
         td = _make_import_td()
         config = _make_config(on_match=OnMatch.skip)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -341,7 +348,7 @@ class Test_import_policies:
         td = _make_import_td()
         config = _make_config(on_match=OnMatch.overwrite_unlocked)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -365,7 +372,7 @@ class Test_import_policies:
         td = _make_import_td()
         config = _make_config(on_match=OnMatch.overwrite_all)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -386,7 +393,7 @@ class Test_import_policies:
         td = _make_import_td()
         config = _make_config(on_new=OnNew.skip)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -412,7 +419,7 @@ class Test_import_policies:
         td = _make_import_td(test_type="Alpha", table_name="t1", column_name="c1")
         config = _make_config(on_new=OnNew.create, on_absence=OnAbsence.delete_all)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -436,7 +443,7 @@ class Test_import_policies:
         td = _make_import_td(test_type="Alpha", table_name="t1")
         config = _make_config(on_new=OnNew.create, on_absence=OnAbsence.delete_unlocked)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -465,7 +472,7 @@ class Test_import_validation:
         td = _make_import_td(test_type="NonExistent", table_name="t1")
         config = _make_config()
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -487,7 +494,7 @@ class Test_import_validation:
         td = _make_import_td(test_type="Alpha", table_name="t1")
         config = _make_config()
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -510,7 +517,7 @@ class Test_import_validation:
         td = _make_import_td(last_auto_gen_date=None, external_id=None, table_name="t1")
         config = _make_config()
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -533,7 +540,7 @@ class Test_import_validation:
         td = _make_import_td(test_type="Alpha", table_name=None)
         config = _make_config()
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -555,13 +562,13 @@ class Test_import_validation:
         td2 = _make_import_td(test_type="Alpha", table_name="t1", column_name="c1")
         config = _make_config()
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with pytest.raises(HTTPException) as exc_info:
+            with pytest.raises(InvalidImportPayload) as exc_info:
                 import_definitions(ts, config, _make_payload(td1, td2))
-            assert exc_info.value.status_code == 400
-            assert "duplicate_natural_key" in str(exc_info.value.detail)
+            assert exc_info.value.code == "duplicate_natural_key"
+            assert "Duplicate auto-gen key" in str(exc_info.value)
 
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
@@ -579,12 +586,12 @@ class Test_import_validation:
         td2 = _make_import_td(last_auto_gen_date=None, external_id=ext_id, table_name="t1")
         config = _make_config()
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with pytest.raises(HTTPException) as exc_info:
+            with pytest.raises(InvalidImportPayload) as exc_info:
                 import_definitions(ts, config, _make_payload(td1, td2))
-            assert exc_info.value.status_code == 400
+            assert exc_info.value.code == "duplicate_natural_key"
 
 
 # --- Import: apply_strict mode ---
@@ -607,14 +614,17 @@ class Test_import_strict_mode:
         bad_td = _make_import_td(test_type="NonExistent", table_name="t1")
         config = _make_config(mode=ImportMode.apply_strict)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            result = import_definitions(ts, config, _make_payload(good_td, bad_td))
+            with pytest.raises(ImportStrictViolation) as exc_info:
+                import_definitions(ts, config, _make_payload(good_td, bad_td))
 
-        # Result reports what would happen, but nothing was applied
+        # The exception carries the projected result, but nothing was applied
+        result = exc_info.value.result
         assert result.summary.created == 1
         assert result.summary.skipped == 1
+        assert "1 test definitions would be skipped" in str(exc_info.value)
         # No session.add calls (create not applied)
         session.add.assert_not_called()
 
@@ -632,7 +642,7 @@ class Test_import_strict_mode:
         td = _make_import_td(test_type="Alpha", table_name="t1")
         config = _make_config(mode=ImportMode.apply_strict)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
@@ -663,7 +673,7 @@ class Test_import_create:
         td = _make_import_td(test_type="Alpha", table_name="t1", last_auto_gen_date=datetime(2024, 1, 1, tzinfo=UTC))
         config = _make_config(mode=ImportMode.apply, on_new=OnNew.create)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         before = datetime.now(UTC)
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
@@ -690,7 +700,7 @@ class Test_import_create:
         td = _make_import_td(last_auto_gen_date=None, external_id=ext_id, table_name="t1")
         config = _make_config(mode=ImportMode.apply, on_new=OnNew.create)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
@@ -714,7 +724,7 @@ class Test_import_create:
         td = _make_import_td(test_type="Alpha", table_name="t1", lock_refresh=False)
         config = _make_config(mode=ImportMode.apply, on_new=OnNew.create_and_lock)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
@@ -738,7 +748,7 @@ class Test_import_create:
         td = _make_import_td(test_type="Alpha", table_name="t1")
         config = _make_config(mode=ImportMode.apply, on_new=OnNew.create)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         before = datetime.now(UTC)
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
@@ -775,7 +785,7 @@ class Test_import_update:
         )
         config = _make_config(mode=ImportMode.apply, on_match=OnMatch.overwrite_unlocked)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             import_definitions(ts, config, _make_payload(td))
@@ -810,7 +820,7 @@ class Test_import_update:
         )
         config = _make_config(mode=ImportMode.apply, on_match=OnMatch.overwrite_unlocked)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             import_definitions(ts, config, _make_payload(td))
@@ -848,7 +858,7 @@ class Test_import_absence_with_validation_skips:
         td = _make_import_td(test_type="InvalidType", table_name="t1", column_name="c1")
         config = _make_config(on_absence=OnAbsence.delete_all)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -877,7 +887,7 @@ class Test_import_preview:
         td = _make_import_td(test_type="Alpha", table_name="t1")
         config = _make_config(mode=ImportMode.preview)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -900,7 +910,7 @@ class Test_import_preview:
         td = _make_import_td(test_type="Alpha", table_name="t1")
         config = _make_config(mode=ImportMode.preview)
 
-        from testgen.api.test_definition_service import import_definitions
+        from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
             result = import_definitions(ts, config, _make_payload(td))
@@ -915,7 +925,6 @@ class Test_import_preview:
 class Test_import_endpoint_strict:
 
     def test_strict_raises_400_on_skips(self):
-        from testgen.api.schemas import ImportRequest
         from testgen.api.test_definitions import import_test_definitions
 
         ts = _make_test_suite()
@@ -923,14 +932,14 @@ class Test_import_endpoint_strict:
         payload = _make_payload(_make_import_td(test_type="Alpha", table_name="t1"))
         request = ImportRequest(config=config, payload=payload)
 
-        # Mock the service to return a response with skips
+        # The service signals strict violations with an exception carrying the projected result
         mock_result = ImportResponse(
             summary=ImportSummary(created=1, skipped=1),
             items=[],
         )
 
-        with patch(f"{ENDPOINT_MODULE}.test_definition_service") as mock_service:
-            mock_service.import_definitions.return_value = mock_result
+        with patch(f"{ENDPOINT_MODULE}.import_definitions") as mock_import:
+            mock_import.side_effect = ImportStrictViolation(mock_result)
             with pytest.raises(HTTPException) as exc_info:
                 import_test_definitions(body=request, test_suite=ts)
 
@@ -939,7 +948,6 @@ class Test_import_endpoint_strict:
         assert "import_result" in exc_info.value.detail
 
     def test_strict_returns_200_when_no_skips(self):
-        from testgen.api.schemas import ImportRequest
         from testgen.api.test_definitions import import_test_definitions
 
         ts = _make_test_suite()
@@ -952,11 +960,97 @@ class Test_import_endpoint_strict:
             items=[],
         )
 
-        with patch(f"{ENDPOINT_MODULE}.test_definition_service") as mock_service:
-            mock_service.import_definitions.return_value = mock_result
+        with patch(f"{ENDPOINT_MODULE}.import_definitions") as mock_import:
+            mock_import.return_value = mock_result
             result = import_test_definitions(body=request, test_suite=ts)
 
         assert result.summary.created == 1
+
+
+def test_invalid_payload_adapted_to_400():
+    from testgen.api.test_definitions import import_test_definitions
+
+    ts = _make_test_suite()
+    request = ImportRequest(
+        config=_make_config(),
+        payload=_make_payload(_make_import_td(test_type="Alpha", table_name="t1")),
+    )
+
+    with patch(f"{ENDPOINT_MODULE}.import_definitions") as mock_import:
+        mock_import.side_effect = InvalidImportPayload(
+            ImportErrorCode.duplicate_natural_key, "Duplicate external_id at index 1"
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            import_test_definitions(body=request, test_suite=ts)
+
+    assert exc_info.value.status_code == 400
+    assert "duplicate_natural_key" in str(exc_info.value.detail)
+    assert "Duplicate external_id at index 1" in str(exc_info.value.detail)
+
+
+@patch(f"{SERVICE_MODULE}.DataTable")
+@patch(f"{SERVICE_MODULE}.TableGroup")
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_unsupported_payload_version_rejected(mock_session_fn, mock_tg_cls, mock_dt_cls):
+    mock_session_fn.return_value = MagicMock()
+    mock_tg_cls.get.return_value = _make_table_group()
+    mock_dt_cls.select_table_names.return_value = ["t1"]
+
+    ts = _make_test_suite()
+    payload = _make_payload(_make_import_td(test_type="Alpha", table_name="t1"))
+    payload.version = 2
+
+    from testgen.common.test_definition_export_import_service import import_definitions
+
+    with pytest.raises(InvalidImportPayload) as exc_info:
+        import_definitions(ts, _make_config(), payload)
+
+    assert exc_info.value.code == ImportErrorCode.unsupported_version
+    assert "version 2" in str(exc_info.value)
+
+
+@patch(f"{SERVICE_MODULE}.DataTable")
+@patch(f"{SERVICE_MODULE}.TableGroup")
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_apply_with_skips_still_applies_valid_actions(mock_session_fn, mock_tg_cls, mock_dt_cls):
+    session = MagicMock()
+    mock_session_fn.return_value = session
+    mock_tg_cls.get.return_value = _make_table_group()
+    mock_dt_cls.select_table_names.return_value = ["t1"]
+    session.execute.return_value.all.return_value = []
+
+    ts = _make_test_suite()
+    good_td = _make_import_td(test_type="Alpha", table_name="t1")
+    bad_td = _make_import_td(test_type="NonExistent", table_name="t1")
+    config = _make_config(mode=ImportMode.apply)
+
+    from testgen.common.test_definition_export_import_service import import_definitions
+
+    with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+            mock_td_cls.return_value = MagicMock(id=uuid4())
+            result = import_definitions(ts, config, _make_payload(good_td, bad_td))
+
+    # Plain apply tolerates skips: the valid create is applied, no strict violation raised
+    assert result.summary.created == 1
+    assert result.summary.skipped == 1
+    session.add.assert_called_once()
+
+
+def test_export_document_version_survives_default_omitting_serialization():
+    doc = ExportDocument(
+        version=1,
+        source=ExportSource(
+            project_code="DEFAULT",
+            test_suite="suite",
+            table_group="tg",
+            table_group_schema="public",
+            exported_at=datetime(2026, 6, 11, tzinfo=UTC),
+        ),
+        definitions=[],
+    )
+
+    assert '"version":1' in doc.model_dump_json(exclude_defaults=True)
 
 
 # --- Schema: TestDefinitionExport ---
@@ -988,6 +1082,96 @@ class Test_schema:
         assert td.window_days == 0
         assert td.history_lookback == 0
 
+    def test_click_through_fields_default_none(self):
+        td = TestDefinitionExport(test_type="Alpha")
+        assert td.external_url is None
+        assert td.custom_metadata is None
+        assert "external_url" not in td.model_fields_set
+        assert "custom_metadata" not in td.model_fields_set
 
-# Need to import this here for the endpoint test
-from testgen.api.schemas import ImportSummary
+    def test_custom_metadata_accepts_object(self):
+        td = TestDefinitionExport(test_type="Alpha", custom_metadata={"pipeline": "daily_load", "task": "t1"})
+        assert td.custom_metadata == {"pipeline": "daily_load", "task": "t1"}
+
+    @pytest.mark.parametrize("bad_value", ["not-json", ["a", "b"], 42])
+    def test_custom_metadata_rejects_non_object(self, bad_value):
+        with pytest.raises(ValidationError):
+            TestDefinitionExport(test_type="Alpha", custom_metadata=bad_value)
+
+    def test_custom_metadata_rejects_too_many_keys(self):
+        with pytest.raises(ValidationError):
+            TestDefinitionExport(test_type="Alpha", custom_metadata={f"k{i}": "v" for i in range(51)})
+
+    def test_custom_metadata_rejects_oversized(self):
+        with pytest.raises(ValidationError):
+            TestDefinitionExport(test_type="Alpha", custom_metadata={"blob": "x" * 10_241})
+
+
+# --- Click-through fields: export + import ---
+
+
+class Test_click_through_fields:
+
+    @patch(f"{SERVICE_MODULE}.settings")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_export_includes_external_url_and_custom_metadata(self, mock_session_fn, mock_tg_cls, mock_settings):
+        mock_settings.VERSION = "5.12.0"
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+
+        ts = _make_test_suite()
+
+        td_obj = MagicMock(spec=[])
+        for field in TestDefinitionExport.model_fields:
+            setattr(td_obj, field, None)
+        td_obj.test_type = "Alpha"
+        td_obj.test_active = True
+        td_obj.lock_refresh = False
+        td_obj.skip_errors = 0
+        td_obj.window_days = 0
+        td_obj.history_lookback = 0
+        td_obj.external_url = "https://example.com/notebook"
+        td_obj.custom_metadata = {"pipeline": "daily_load", "task": "transform_orders"}
+
+        session.scalars.return_value.all.return_value = [td_obj]
+
+        from testgen.common.test_definition_export_import_service import export_definitions
+
+        result = export_definitions(ts, Origin.both, None, None)
+
+        exported = result.definitions[0]
+        assert exported.external_url == "https://example.com/notebook"
+        assert exported.custom_metadata == {"pipeline": "daily_load", "task": "transform_orders"}
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_create_sets_click_through_fields(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        ts = _make_test_suite()
+        td = _make_import_td(
+            test_type="Alpha",
+            table_name="t1",
+            external_url="https://example.com/task",
+            custom_metadata={"node": "n1"},
+        )
+        config = _make_config(mode=ImportMode.apply, on_new=OnNew.create)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+                created_td = MagicMock(id=uuid4())
+                mock_td_cls.return_value = created_td
+                import_definitions(ts, config, _make_payload(td))
+
+        assert created_td.external_url == "https://example.com/task"
+        assert created_td.custom_metadata == {"node": "n1"}
+

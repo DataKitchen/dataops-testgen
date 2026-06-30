@@ -1,5 +1,4 @@
 import logging
-import os
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -19,7 +18,7 @@ from testgen.common import (
     write_to_app_db,
 )
 from testgen.common.database.column_chars import ColumnChars
-from testgen.common.database.database_service import ThreadedProgress
+from testgen.common.database.database_service import ThreadedProgress, get_flavor_service
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
@@ -52,14 +51,12 @@ def run_profiling(
 
     LOG.info("Creating profiling run record")
     profiling_run = ProfilingRun(
+        id=job_context.get().job_id,
         project_code=table_group.project_code,
         connection_id=connection.connection_id,
         table_groups_id=table_group.id,
         profiling_starttime=datetime.now(UTC) + time_delta,
-        process_id=os.getpid(),
     )
-    if job_id := job_context.get().job_id:
-        profiling_run.job_execution_id = job_id
 
     # This runs in a subprocess — commit after every save so progress is visible
     # to the UI (separate session) and to execute_db_queries (independent connection).
@@ -86,8 +83,9 @@ def run_profiling(
         if data_chars:
             sql_generator = ProfilingSQL(connection, table_group, profiling_run)
 
-            _run_column_profiling(sql_generator, data_chars)
-            _run_frequency_analysis(sql_generator)
+            sampling_params = _compute_sampling_params(sql_generator, data_chars)
+            _run_column_profiling(sql_generator, data_chars, sampling_params)
+            _run_frequency_analysis(sql_generator, sampling_params)
             _run_hygiene_issue_detection(sql_generator)
 
             # if table_group.profile_do_pair_rules == "Y":
@@ -95,19 +93,12 @@ def run_profiling(
             #     run_pairwise_contingency_check(profiling_run.id, table_group.profile_pair_rule_pct)
         else:
             LOG.info("No columns were selected to profile.")
-    except Exception as e:
+    except Exception:
         LOG.exception("Profiling encountered an error.")
-        LOG.info("Setting profiling run status to Error")
-        profiling_run.log_message = get_exception_message(e)
-        profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
-        profiling_run.status = "Error"
-        profiling_run.save()
-        session.commit()
+        end_time = datetime.now(UTC) + time_delta
         raise
     else:
-        LOG.info("Setting profiling run status to Completed")
-        profiling_run.profiling_endtime = datetime.now(UTC) + time_delta
-        profiling_run.status = "Complete"
+        end_time = datetime.now(UTC) + time_delta
         profiling_run.save()
         session.commit()
 
@@ -121,7 +112,7 @@ def run_profiling(
             sampling=table_group.profile_use_sampling,
             table_count=profiling_run.table_ct or 0,
             column_count=profiling_run.column_ct or 0,
-            run_duration=(profiling_run.profiling_endtime - profiling_run.profiling_starttime).total_seconds(),
+            run_duration=(end_time - profiling_run.profiling_starttime.replace(tzinfo=UTC)).total_seconds(),
         )
 
     return profiling_run.id
@@ -143,26 +134,40 @@ def _exclude_xde_columns(data_chars: list[ColumnChars], table_group_id: UUID) ->
     return filtered
 
 
-def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnChars]) -> None:
+def _compute_sampling_params(
+    sql_generator: ProfilingSQL, data_chars: list[ColumnChars]
+) -> dict[str, TableSampling]:
+    table_group = sql_generator.table_group
+    sampling_params: dict[str, TableSampling] = {}
+    if not table_group.profile_use_sampling:
+        return sampling_params
+
+    sampleable_types = get_flavor_service(sql_generator.flavor).sampleable_object_types
+    for column in data_chars:
+        if sampling_params.get(column.table_name):
+            continue
+        if sampleable_types is not None and column.object_type not in sampleable_types:
+            continue
+        result = calculate_sampling_params(
+            table_name=column.table_name,
+            record_count=column.record_ct,
+            sample_percent_raw=table_group.profile_sample_percent,
+            min_sample=table_group.profile_sample_min_count,
+        )
+        if result:
+            sampling_params[column.table_name] = result
+    return sampling_params
+
+
+def _run_column_profiling(
+    sql_generator: ProfilingSQL, data_chars: list[ColumnChars], sampling_params: dict[str, TableSampling]
+) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("col_profiling", "Running")
     profiling_run.save()
     get_current_session().commit()
 
     LOG.info(f"Running column profiling queries: {len(data_chars)}")
-    table_group = sql_generator.table_group
-    sampling_params: dict[str, TableSampling] = {}
-    if table_group.profile_use_sampling:
-        for column in data_chars:
-            if not sampling_params.get(column.table_name):
-                result = calculate_sampling_params(
-                    table_name=column.table_name,
-                    record_count=column.record_ct,
-                    sample_percent_raw=table_group.profile_sample_percent,
-                    min_sample=table_group.profile_sample_min_count,
-                )
-                if result:
-                    sampling_params[column.table_name] = result
 
     def update_column_progress(progress: ThreadedProgress) -> None:
         profiling_run.set_progress(
@@ -218,7 +223,7 @@ def _run_column_profiling(sql_generator: ProfilingSQL, data_chars: list[ColumnCh
     )
 
 
-def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
+def _run_frequency_analysis(sql_generator: ProfilingSQL, sampling_params: dict[str, TableSampling]) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("freq_analysis", "Running")
     profiling_run.save()
@@ -227,7 +232,7 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
     error_data = None
     try:
         LOG.info("Selecting columns for frequency analysis")
-        frequency_columns = fetch_dict_from_db(*sql_generator.get_frequency_analysis_columns())
+        frequency_columns = [ColumnChars(**column) for column in fetch_dict_from_db(*sql_generator.get_frequency_analysis_columns())]
 
         if frequency_columns:
             LOG.info(f"Running frequency analysis queries: {len(frequency_columns)}")
@@ -240,7 +245,10 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL) -> None:
                 get_current_session().commit()
 
             frequency_results, result_columns, error_data = fetch_from_db_threaded(
-                [sql_generator.run_frequency_analysis(ColumnChars(**column)) for column in frequency_columns],
+                [
+                    sql_generator.run_frequency_analysis(column, sampling_params.get(column.table_name))
+                    for column in frequency_columns
+                ],
                 use_target_db=True,
                 max_threads=sql_generator.connection.max_threads,
                 progress_callback=update_frequency_progress,

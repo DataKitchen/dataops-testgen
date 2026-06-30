@@ -36,6 +36,7 @@ test_types:
   result_visualization_params: null
   usage_notes: null
   active: Y
+  algorithm: Pattern / regex
   cat_test_conditions:
   - id: '7009'
     test_type: Email_Format

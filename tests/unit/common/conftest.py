@@ -294,6 +294,24 @@ def _gen_subdaily_gap_schedule_phase() -> list[tuple[pd.Timestamp, float]]:
     return _to_csv_rows(_make_observations(start, end, 2, updates))
 
 
+def _gen_twice_daily_outage() -> list[tuple[pd.Timestamp, float]]:
+    """Updates every 12h (00:00/12:00 UTC), 7 days a week, 5 weeks, then updates stop.
+
+    The 12h cadence classifies as "daily" frequency with a full-week active schedule,
+    so no excluded days or sub-daily window apply — staleness must come from the
+    first-pass gap thresholds.
+    """
+    start = datetime(2025, 10, 6, 0, 0)
+    end = datetime(2025, 11, 11, 12, 0)
+    outage_start = datetime(2025, 11, 10, 0, 0)
+    updates: set[datetime] = set()
+    d = start
+    while d < outage_start:
+        updates.add(d)
+        d += timedelta(hours=12)
+    return _to_csv_rows(_make_observations(start, end, 12, updates))
+
+
 def _gen_weekly_early() -> list[tuple[pd.Timestamp, float]]:
     start = datetime(2025, 8, 7, 10, 0)
     end = datetime(2025, 11, 6, 22, 0)

@@ -1,0 +1,5 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE test_definitions
+    ADD COLUMN IF NOT EXISTS external_url    VARCHAR,
+    ADD COLUMN IF NOT EXISTS custom_metadata JSONB;

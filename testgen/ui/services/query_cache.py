@@ -17,7 +17,7 @@ from testgen.common.models.entity import ENTITY_HASH_FUNCS
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunMinimal, ProfilingRunSummary
 from testgen.common.models.project import Project, ProjectSummary
 from testgen.common.models.project_membership import ProjectMembership
-from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
+from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import (
     TableGroup,
     TableGroupMinimal,
@@ -146,10 +146,7 @@ def get_profiling_run_summaries(
 
 @st.cache_data(show_spinner=False)
 def get_monitor_schedule(monitor_suite_id: str | UUID) -> JobSchedule | None:
-    return JobSchedule.get(
-        JobSchedule.key == RUN_MONITORS_JOB_KEY,
-        JobSchedule.kwargs["test_suite_id"].astext == str(monitor_suite_id),
-    )
+    return JobSchedule.get_for_monitor_suite(monitor_suite_id)
 
 
 # -- Connection ---------------------------------------------------------------

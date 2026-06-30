@@ -533,6 +533,17 @@ REFRESH_TOKEN_EXPIRES_IN: int = 2_592_000  # 30 days
 Lifetime of OAuth access and refresh tokens.
 """
 
+PAT_DEFAULT_LIFETIME_SECONDS: int = 31_536_000  # 365 days
+"""
+Default maximum lifetime a personal access token can be created with.
+"""
+
+PAT_MAX_LIFETIME_SECONDS: int = 63_072_000  # 2 years (730 days)
+"""
+Absolute ceiling on the admin-configurable personal access token maximum lifetime.
+The configured maximum cannot exceed this.
+"""
+
 JWT_HASHING_KEY_B64: str = getenv("TG_JWT_HASHING_KEY")
 """
 Random key used to sign/verify the authentication token
@@ -634,7 +645,8 @@ MCP_EXTRA_ALLOWED_HOSTS: list[str] = [
 Extra Host header values accepted by MCP DNS rebinding protection (comma-separated).
 BASE_URL's hostname and loopback are always allowed; this adds more for multi-domain
 deployments or reverse proxies that rewrite Host. Entries without a port (`tg.example.com`)
-get an automatic `:*` wildcard; entries with a port are matched literally
+are allowed both with an automatic `:*` port wildcard and bare, so gateways that send an
+Origin with no port are accepted; entries with a port are matched literally
 (`tg.example.com:8080`) or with explicit wildcard (`tg.example.com:*`).
 Only affects MCP routes — the parent FastAPI app does not validate Host headers.
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import inspect
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from typing import ClassVar, get_args
 
 from testgen.ui.assets import get_asset_path
@@ -60,6 +60,16 @@ class PluginSpec:
         Override this in plugins to defer Streamlit-dependent imports until Streamlit
         is actually running. Called by ``Plugin.load_streamlit()``, never by ``Plugin.load()``.
         """
+
+    @classmethod
+    def get_mcp_tools(cls) -> list[Callable]:
+        """Return MCP tool callables to register into the MCP server.
+
+        Override in plugins to register additional MCP tools. Implementations import their
+        tool modules inside the method (like ``configure_ui``) so plugin import stays light
+        for processes that never build the MCP server.
+        """
+        return []
 
 
 class PluginHook:

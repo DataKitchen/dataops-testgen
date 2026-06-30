@@ -23,6 +23,7 @@ from testgen.api.oauth.routes import init_routes
 from testgen.api.oauth.routes import router as oauth_router
 from testgen.api.oauth.server import create_authorization_server
 from testgen.common import version_service
+from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.server.middleware import BodySizeLimitMiddleware, SecurityHeadersMiddleware
 
@@ -44,6 +45,11 @@ def _patch_openapi_schema(app: FastAPI) -> None:
     - Top-level component schema titles (shown in Redoc sidebar)
     - Path/query parameter schemas
 
+    It also strips ``description`` from enum component schemas. A ``StrEnum`` used
+    as a field type surfaces its class docstring as the schema description; enums
+    are internal primitives free to carry technical docstrings, so the public
+    schema must not echo them. Per-field API text comes from ``Field(description=...)``.
+
     FastAPI caches the schema after the first call, so the patching runs once.
     """
     _original = app.openapi
@@ -56,6 +62,8 @@ def _patch_openapi_schema(app: FastAPI) -> None:
                 for branch in prop.get("anyOf", []):
                     branch.pop("title", None)
             model_schema.pop("title", None)
+            if "enum" in model_schema:
+                model_schema.pop("description", None)
         for methods in schema.get("paths", {}).values():
             for details in methods.values():
                 if isinstance(details, dict):
@@ -78,11 +86,14 @@ def create_app(version: str | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        if mcp_session_manager is not None:
-            async with mcp_session_manager.run():
+        try:
+            if mcp_session_manager is not None:
+                async with mcp_session_manager.run():
+                    yield
+            else:
                 yield
-        else:
-            yield
+        finally:
+            MixpanelService().drain()
 
     tags_metadata = [
         {"name": "Jobs", "description": "Submit, poll, cancel, and list job executions (profiling, tests, generation)."},
@@ -173,6 +184,17 @@ def run_server() -> None:
     if settings.API_TLS_ENABLED:
         ssl_kwargs["ssl_certfile"] = settings.SSL_CERT_FILE
         ssl_kwargs["ssl_keyfile"] = settings.SSL_KEY_FILE
+        # uvicorn defaults ssl_ciphers to "TLSv1", which restricts TLS 1.2 to legacy
+        # CBC/SHA-1 suites with no AEAD. Hardened TLS clients (e.g. the Databricks
+        # Unity Catalog HTTP-connection gateway) negotiate TLS 1.2 with an AEAD-only
+        # policy and find no shared cipher, so the handshake fails before any request
+        # is sent. Offer a modern AEAD cipher set (Mozilla intermediate).
+        ssl_kwargs["ssl_ciphers"] = (
+            "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:"
+            "ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:"
+            "ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:"
+            "DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384"
+        )
 
     LOG.info(
         "Starting server on %s:%s (TLS: %s, MCP: %s)",

@@ -1099,6 +1099,36 @@ def test_update_test_multi_field(mock_resolve_td, mock_tt_model, db_session_mock
     td.save.assert_called_once()
 
 
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_custom_metadata_json_string_coerced(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    td.editable_fields.return_value = td.editable_fields.return_value | {"custom_metadata"}
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    update_test(str(td.id), fields={"custom_metadata": '{"pipeline": "p1", "task": "t1"}'})
+    assert td.custom_metadata == {"pipeline": "p1", "task": "t1"}
+    td.save.assert_called_once()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_custom_metadata_invalid_json_rejected(mock_resolve_td, mock_tt_model, db_session_mock):
+    td = _make_td_orm()
+    td.editable_fields.return_value = td.editable_fields.return_value | {"custom_metadata"}
+    mock_resolve_td.return_value = td
+    mock_tt_model.get.return_value = _make_test_type()
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    with pytest.raises(MCPUserError, match="custom_metadata"):
+        update_test(str(td.id), fields={"custom_metadata": "{not valid json"})
+    td.save.assert_not_called()
+
+
 # -- validate_custom_test -----------------------------------------------------
 
 
@@ -1291,7 +1321,7 @@ def test_bulk_update_tests_invalid_action(mock_resolve_suite, mock_session, db_s
 
     from testgen.mcp.tools.test_definitions import bulk_update_tests
 
-    with pytest.raises(MCPUserError, match="`action`"):
+    with pytest.raises(MCPUserError, match="Invalid action `toggle`"):
         bulk_update_tests(test_suite_id=str(uuid4()), action="toggle")
 
     # Suite resolution happens before action validation in current code path?
@@ -1313,3 +1343,205 @@ def test_bulk_update_tests_no_match(mock_resolve_suite, mock_session, db_session
 
     assert "No tests matched" in result
     assert "nonexistent" in result
+
+
+# -- export_tests / import_tests ----------------------------------------------
+
+
+def _make_export_document(definitions=None):
+    from datetime import UTC, datetime
+
+    from testgen.common.test_definition_export_import_service import (
+        ExportDocument,
+        ExportSource,
+        TestDefinitionExport,
+    )
+
+    return ExportDocument(
+        version=1,
+        source=ExportSource(
+            project_code="demo",
+            test_suite="demo_suite",
+            table_group="tg",
+            table_group_schema="public",
+            exported_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ),
+        definitions=definitions
+        if definitions is not None
+        else [TestDefinitionExport(test_type="Row_Ct", table_name="orders")],
+    )
+
+
+def _make_import_response(*, created=0, updated=0, skipped=0, deleted=0, items=None):
+    from testgen.common.test_definition_export_import_service import ImportResponse, ImportSummary
+
+    return ImportResponse(
+        summary=ImportSummary(created=created, updated=updated, skipped=skipped, deleted=deleted),
+        items=items or [],
+    )
+
+
+@patch("testgen.mcp.tools.test_definitions.export_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_export_tests_basic(mock_resolve_suite, mock_export, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_export.return_value = _make_export_document()
+
+    from testgen.mcp.tools.test_definitions import export_tests
+
+    result = export_tests(test_suite_id=str(uuid4()))
+
+    assert "Test Definition Export from suite `demo_suite`" in result
+    assert "Tests Exported" in result
+    assert "```json" in result  # payload rendered as a fenced JSON block
+    assert "Row_Ct" in result
+    # default origin=both → no Filters line
+    assert "Filters" not in result
+
+
+@patch("testgen.mcp.tools.test_definitions.export_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_export_tests_with_filters(mock_resolve_suite, mock_resolve_tt, mock_export, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_resolve_tt.return_value = "Row_Ct"
+    mock_export.return_value = _make_export_document()
+
+    from testgen.mcp.tools.test_definitions import export_tests
+
+    result = export_tests(test_suite_id=str(uuid4()), origin="manual", table_name="orders", test_type="Row Count")
+
+    assert "Filters" in result
+    assert "manual tests only" in result
+    assert "table `orders`" in result
+    mock_resolve_tt.assert_called_once_with("Row Count")
+    # origin code, not label, is forwarded to the service
+    assert mock_export.call_args.args[1].value == "manual"
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_export_tests_invalid_origin(mock_resolve_suite, db_session_mock):
+    from testgen.mcp.tools.test_definitions import export_tests
+
+    with pytest.raises(MCPUserError, match="Invalid origin `sideways`"):
+        export_tests(test_suite_id=str(uuid4()), origin="sideways")
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_preview(mock_resolve_suite, mock_import, db_session_mock):
+    from testgen.common.test_definition_export_import_service import (
+        ImportAction,
+        ImportItem,
+        ImportItemTD,
+        ImportReason,
+    )
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.return_value = _make_import_response(
+        created=1,
+        updated=1,
+        items=[
+            ImportItem(action=ImportAction.create, reason=ImportReason.no_match, tds=[ImportItemTD(idx=0, target_id=uuid4())]),
+            ImportItem(action=ImportAction.update, reason=ImportReason.matched, tds=[ImportItemTD(idx=1, target_id=uuid4())]),
+        ],
+    )
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    result = import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}')
+
+    assert "Import Preview" in result
+    assert "no changes were persisted" in result
+    assert "Created (projected)" in result
+    assert "Create (1)" in result
+    assert "Update (1)" in result
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_apply(mock_resolve_suite, mock_import, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.return_value = _make_import_response(created=2)
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    result = import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', mode="apply")
+
+    assert "Import into suite `demo_suite`" in result
+    assert "no changes were persisted" not in result
+    assert "Created" in result
+    # applied mode → no "(projected)" suffix
+    assert "(projected)" not in result
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_invalid_mode(mock_resolve_suite, db_session_mock):
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    with pytest.raises(MCPUserError, match="Invalid mode `yolo`"):
+        import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', mode="yolo")
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_malformed_payload(mock_resolve_suite, mock_import, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    with pytest.raises(MCPUserError, match="not a valid export document"):
+        import_tests(test_suite_id=str(uuid4()), payload="{not json")
+    mock_import.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_domain_error_surfaced(mock_resolve_suite, mock_import, db_session_mock):
+    from testgen.common.test_definition_export_import_service import ImportErrorCode, InvalidImportPayload
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_import.side_effect = InvalidImportPayload(
+        ImportErrorCode.duplicate_natural_key, "Duplicate auto-gen key at index 1"
+    )
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    with pytest.raises(MCPUserError, match="Duplicate auto-gen key at index 1"):
+        import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', mode="apply")
+
+
+@patch("testgen.mcp.tools.test_definitions.import_definitions")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_import_tests_strict_violation_embeds_breakdown(mock_resolve_suite, mock_import, db_session_mock):
+    from testgen.common.test_definition_export_import_service import (
+        ImportAction,
+        ImportItem,
+        ImportItemTD,
+        ImportReason,
+        ImportStrictViolation,
+    )
+
+    mock_resolve_suite.return_value = _make_suite()
+    result = _make_import_response(
+        created=1,
+        skipped=1,
+        items=[
+            ImportItem(action=ImportAction.create, reason=ImportReason.no_match, tds=[ImportItemTD(idx=0)]),
+            ImportItem(action=ImportAction.skip, reason=ImportReason.invalid_test_type, tds=[ImportItemTD(idx=1)]),
+        ],
+    )
+    mock_import.side_effect = ImportStrictViolation(result)
+
+    from testgen.mcp.tools.test_definitions import import_tests
+
+    with pytest.raises(MCPUserError) as exc_info:
+        import_tests(test_suite_id=str(uuid4()), payload='{"definitions": []}', mode="apply_strict")
+
+    msg = str(exc_info.value)
+    assert "Strict import failed" in msg
+    assert "1 tests would be skipped" in msg
+    assert "Nothing was applied" in msg
+    # the projected breakdown is embedded
+    assert "Skip (1)" in msg
+    assert "invalid_test_type" in msg

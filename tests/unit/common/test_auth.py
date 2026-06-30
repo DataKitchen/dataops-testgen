@@ -7,6 +7,7 @@ import jwt
 import pytest
 
 from testgen.common.auth import (
+    AuthError,
     authorize_token,
     check_permission,
     create_jwt_token,
@@ -50,14 +51,14 @@ def test_decode_jwt_token_decodes_valid_token(mock_settings):
 def test_decode_jwt_token_raises_for_expired_token(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
     token = _make_token(exp_seconds=-3600)
-    with pytest.raises(ValueError, match="Invalid token"):
+    with pytest.raises(AuthError, match="Invalid token"):
         decode_jwt_token(token)
 
 
 @patch("testgen.common.auth.settings")
 def test_decode_jwt_token_raises_for_invalid_token(mock_settings):
     mock_settings.JWT_HASHING_KEY_B64 = JWT_KEY
-    with pytest.raises(ValueError, match="Invalid token"):
+    with pytest.raises(AuthError, match="Invalid token"):
         decode_jwt_token("not-a-valid-token")
 
 
@@ -99,7 +100,7 @@ def test_authorize_token_rejects_revoked():
     mock_token_record.access_token_revoked_at = 1700000000
     _set_scalars_results(mock_session, mock_user, mock_token_record)
 
-    with pytest.raises(ValueError, match="Token has been revoked"):
+    with pytest.raises(AuthError, match="Token has been revoked"):
         authorize_token("revoked_token", "testuser", mock_session)
 
 
@@ -118,7 +119,7 @@ def test_authorize_token_raises_when_user_not_found():
     # User lookup returns None — token check is never reached
     _set_scalars_results(mock_session, None)
 
-    with pytest.raises(ValueError, match="User not found"):
+    with pytest.raises(AuthError, match="User not found"):
         authorize_token("some_token", "ghost", mock_session)
 
 

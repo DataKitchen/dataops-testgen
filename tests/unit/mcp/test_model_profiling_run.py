@@ -53,13 +53,13 @@ def test_get_latest_complete_je_id_orders_desc_limit_1(session_mock):
     assert "LIMIT" in sql
 
 
-def test_get_latest_complete_je_id_selects_je_id_not_run_pk(session_mock):
+def test_get_latest_complete_je_id_selects_run_id(session_mock):
     """Pin the docstring contract — does NOT read ``table_groups.last_complete_profile_run_id``,
-    selects the JE id directly from ``profiling_runs``."""
+    selects the run id (which is the JE id) directly from ``profiling_runs``."""
     session_mock.scalar.return_value = None
 
     ProfilingRun.get_latest_complete_je_id_for_table_group(uuid4())
 
     sql = _compiled_sql(session_mock.scalar.call_args[0][0])
-    assert "SELECT profiling_runs.job_execution_id" in sql
+    assert "SELECT profiling_runs.id" in sql
     assert "table_groups.last_complete_profile_run_id" not in sql

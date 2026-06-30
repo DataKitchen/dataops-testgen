@@ -30,6 +30,7 @@ def list_test_runs(
     project_code: str | None = None,
     test_suite: str | None = None,
     table_group_id: str | None = None,
+    schedule_id: str | None = None,
     status: str | None = None,
     limit: int = 10,
     page: int = 1,
@@ -43,6 +44,8 @@ def list_test_runs(
         test_suite: Optional test suite name to filter by (case-sensitive).
         table_group_id: Optional UUID of a table group, e.g. from `get_data_inventory`. Returns
             runs for any suite in the group.
+        schedule_id: Optional UUID of a schedule, e.g. from `list_schedules`. Returns only runs
+            triggered by that schedule.
         status: Optional run status filter. One of: Pending, Running, Completed, Canceled, Error.
         limit: Page size (default 10, max 100).
         page: Page number starting at 1 (default 1).
@@ -51,6 +54,8 @@ def list_test_runs(
     validate_page(page)
 
     statuses = parse_run_status_filter(status) if status else None
+    if schedule_id:
+        parse_uuid(schedule_id, "schedule_id")
 
     if not project_code and not table_group_id:
         raise MCPUserError("Provide either `project_code` or `table_group_id`.")
@@ -86,6 +91,7 @@ def list_test_runs(
         project_code=project_code,
         table_group_id=str(table_group.id) if table_group else None,
         test_suite_id=test_suite_id,
+        schedule_id=schedule_id,
         statuses=statuses,
         page=page,
         page_size=limit,
@@ -99,10 +105,11 @@ def list_test_runs(
             project_code=project_code,
             test_suite_id=test_suite_id,
             table_group_id=str(table_group.id) if table_group else None,
+            schedule_id=schedule_id,
             statuses=statuses,
         )
 
-    scope_descriptor = _scope_descriptor(project_code, test_suite, table_group_id, status)
+    scope_descriptor = _scope_descriptor(project_code, test_suite, table_group_id, schedule_id, status)
     doc = MdDoc()
     doc.heading(1, f"Test runs{scope_descriptor}")
 
@@ -160,7 +167,7 @@ def get_test_run(job_execution_id: str) -> str:
     doc = MdDoc()
     suite_label = summary.test_suite or "—"
     doc.heading(1, f"Test run: {suite_label}")
-    doc.field("Job ID", summary.job_execution_id, code=True)
+    doc.field("Test Run", summary.job_execution_id, code=True)
     doc.field("Test suite", suite_label)
     if summary.table_groups_name:
         doc.field("Table group", summary.table_groups_name)
@@ -199,6 +206,7 @@ def _scope_descriptor(
     project_code: str | None,
     test_suite: str | None,
     table_group_id: str | None,
+    schedule_id: str | None,
     status: str | None,
 ) -> str:
     parts: list[str] = []
@@ -208,6 +216,8 @@ def _scope_descriptor(
         parts.append(f"suite `{test_suite}`")
     if table_group_id:
         parts.append(f"table group `{table_group_id}`")
+    if schedule_id:
+        parts.append(f"schedule `{schedule_id}`")
     if status:
         parts.append(f"status `{status}`")
     return f" — {', '.join(parts)}" if parts else ""
@@ -246,6 +256,7 @@ def _select_pending_test_jes(
     project_code: str,
     test_suite_id: str | None,
     table_group_id: str | None,
+    schedule_id: str | None,
     statuses,
 ) -> list[JobExecution]:
     """Find queued/in-flight test-run JEs for a given suite or table group scope. For a
@@ -267,7 +278,9 @@ def _select_pending_test_jes(
             return []
     else:
         return []
+    clauses = [JobExecution.job_schedule_id == schedule_id] if schedule_id else []
     return JobExecution.select_active_by_kwargs(
+        *clauses,
         project_code=project_code,
         job_key=RUN_TESTS_JOB_KEY,
         kwargs_match={"test_suite_id": suite_ids},
@@ -278,7 +291,7 @@ def _select_pending_test_jes(
 def _render_pending_je(doc: MdDoc, je: JobExecution, label: str) -> None:
     status_label = TestRunSummary.STATUS_LABEL.get(je.status, je.status)
     doc.heading(3, f"{label} — {status_label}")
-    doc.field("Job ID", je.id, code=True)
+    doc.field("Test Run", je.id, code=True)
     if je.job_schedule_id is not None:
         doc.field("Schedule", je.job_schedule_id, code=True)
     doc.field("Submitted", je.created_at)
@@ -289,7 +302,7 @@ def _render_pending_je(doc: MdDoc, je: JobExecution, label: str) -> None:
 def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     title = run.test_suite or run.project_code
     doc.heading(2, f"{title} — {run.status_label}")
-    doc.field("Job ID", run.job_execution_id, code=True)
+    doc.field("Test Run", run.job_execution_id, code=True)
     if run.job_schedule_id is not None:
         doc.field("Schedule", run.job_schedule_id, code=True)
     if run.test_suite:

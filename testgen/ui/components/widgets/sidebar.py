@@ -25,6 +25,7 @@ def sidebar(
     support_email: str | None = None,
     global_context: bool = False,
     is_global_admin: bool = False,
+    account_path: str | None = None,
 ) -> None:
     """
     Testgen custom component to display a styled menu over streamlit's
@@ -53,6 +54,7 @@ def sidebar(
             "support_email": support_email,
             "global_context": global_context,
             "is_global_admin": is_global_admin,
+            "account_path": account_path,
         },
         on_Navigate_change=_on_navigate,
     )

@@ -61,6 +61,7 @@
  * @property {TestDefinition} definition
  * @property {string?} class
  * @property {boolean} qualifiesTableRefsWithSchema
+ * @property {boolean?} hideHeader Hide the test-type name/description header (when the host already shows it).
  * @property {(changes: object, valid: boolean) => void} onChange
  */
 
@@ -72,6 +73,7 @@ import { Textarea } from './textarea.js';
 import { RadioGroup } from './radio_group.js';
 import { Caption } from './caption.js';
 import { numberBetween, required } from '../form_validators.js';
+import { capitalize } from '../display_utils.js';
 
 const { div, span } = van.tags;
 
@@ -107,7 +109,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
         .map((column, index) => ({
             ...(PARAMETER_CONFIG[column] || { type: 'text' }),
             column,
-            label: paramLabels[index] || column.replaceAll('_', ' '),
+            label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
             help: paramHelp[index] || null,
             validators: paramRequired[index] ? [required] : undefined,
         }))
@@ -143,13 +145,15 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
 
     return div(
         { class: props.class },
-        div(
-            { class: 'mb-2' },
-            div({ class: 'text-large' }, definition.test_name_short),
-            definition.test_description || definition.default_test_description
-                ? span({ class: 'text-caption mt-2' }, definition.test_description ?? definition.default_test_description)
-                : null,
-        ),
+        getValue(props.hideHeader)
+            ? null
+            : div(
+                { class: 'mb-2' },
+                div({ class: 'text-large' }, definition.test_name_short),
+                definition.test_description || definition.default_test_description
+                    ? span({ class: 'text-caption mt-2' }, definition.test_description ?? definition.default_test_description)
+                    : null,
+            ),
         () => div(
             { class: 'flex-row fx-flex-wrap fx-gap-3' },
             dynamicParamColumns.map(config => {

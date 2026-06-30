@@ -22,6 +22,7 @@ from sqlalchemy.dialects import postgresql
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.hygiene_issue import HygieneIssue
+from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 
@@ -236,6 +237,13 @@ class ColumnSearchHit(EntityMinimal):
     column_name: str
 
 
+@dataclass
+class CreateScriptColumn:
+    column_name: str
+    db_data_type: str | None
+    datatype_suggestion: str | None
+
+
 class DataColumnChars(Entity):
     __tablename__ = "data_column_chars"
 
@@ -253,6 +261,16 @@ class DataColumnChars(Entity):
     critical_data_element: bool | None = Column(Boolean)
     excluded_data_element: bool | None = Column(Boolean, nullable=True)
     pii_flag: str | None = Column(String(50), nullable=True)
+    description: str | None = Column(String(1000))
+    data_source: str | None = Column(String(40))
+    source_system: str | None = Column(String(40))
+    source_process: str | None = Column(String(40))
+    business_domain: str | None = Column(String(40))
+    stakeholder_group: str | None = Column(String(40))
+    transform_level: str | None = Column(String(40))
+    aggregation_level: str | None = Column(String(40))
+    data_product: str | None = Column(String(40))
+    data_classification: str | None = Column(String(40))
     drop_date: datetime | None = Column(postgresql.TIMESTAMP)
     last_complete_profile_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float | None = Column(Float)
@@ -260,13 +278,57 @@ class DataColumnChars(Entity):
 
     _default_order_by = (asc(ordinal_position), asc(column_name))
 
-    # Unmapped columns: description, data_source, source_system, source_process,
-    # business_domain, stakeholder_group, transform_level, aggregation_level,
-    # data_product, add_date, last_mod_date, test_ct, last_test_date,
+    # Unmapped columns: add_date, last_mod_date, test_ct, last_test_date,
     # tests_last_run, tests_7_days_prior, tests_30_days_prior, fails_last_run,
     # fails_7_days_prior, fails_30_days_prior, warnings_last_run,
     # warnings_7_days_prior, warnings_30_days_prior, valid_profile_issue_ct,
     # valid_test_issue_ct
+
+    @classmethod
+    def list_for_create_script(
+        cls, table_groups_id: UUID, table_name: str,
+    ) -> tuple[str | None, list[CreateScriptColumn]]:
+        """Return ``(schema_name, columns)`` for a table's CREATE TABLE script.
+
+        Columns are ordered by ordinal position and carry the profiling-derived type
+        suggestion from their latest complete profiling run. Returns ``(None, [])`` when
+        the table is not in the table group's profiled catalog.
+        """
+        query = (
+            select(
+                cls.schema_name,
+                cls.column_name,
+                cls.db_data_type,
+                ProfileResult.datatype_suggestion,
+            )
+            .outerjoin(
+                ProfileResult,
+                and_(
+                    ProfileResult.profile_run_id == cls.last_complete_profile_run_id,
+                    ProfileResult.schema_name == cls.schema_name,
+                    ProfileResult.table_name == cls.table_name,
+                    ProfileResult.column_name == cls.column_name,
+                ),
+            )
+            .where(
+                cls.table_groups_id == table_groups_id,
+                cls.table_name == table_name,
+                cls.drop_date.is_(None),
+            )
+            .order_by(asc(cls.ordinal_position), asc(cls.column_name))
+        )
+        rows = get_current_session().execute(query).mappings().all()
+        if not rows:
+            return None, []
+        columns = [
+            CreateScriptColumn(
+                column_name=row["column_name"],
+                db_data_type=row["db_data_type"],
+                datatype_suggestion=row["datatype_suggestion"],
+            )
+            for row in rows
+        ]
+        return rows[0]["schema_name"], columns
 
     @classmethod
     def list_for_table_group(
@@ -499,11 +561,11 @@ class DataColumnChars(Entity):
                 cls.dq_score_testing,
                 func.coalesce(hygiene_subq.c.hygiene_issue_count, 0).label("hygiene_issue_count"),
                 ProfilingRun.id.label("profile_run_id"),
-                ProfilingRun.job_execution_id.label("profile_run_je_id"),
-                ProfilingRun.status.label("profile_run_status"),
+                ProfilingRun.id.label("profile_run_je_id"),
+                JobExecution.status.label("profile_run_status"),
                 ProfilingRun.profiling_starttime.label("profile_run_started_at"),
-                ProfilingRun.profiling_endtime.label("profile_run_ended_at"),
-                ProfilingRun.log_message.label("profile_run_log_message"),
+                JobExecution.completed_at.label("profile_run_ended_at"),
+                JobExecution.error_message.label("profile_run_log_message"),
             )
             .outerjoin(DataTable, DataTable.id == cls.table_id)
             .outerjoin(
@@ -525,6 +587,7 @@ class DataColumnChars(Entity):
                 ),
             )
             .outerjoin(ProfilingRun, ProfilingRun.id == ProfileResult.profile_run_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .where(
                 cls.table_groups_id == table_groups_id,
                 cls.table_name == table_name,

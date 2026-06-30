@@ -20,6 +20,8 @@ const Tab = ({ label }, ...children) => ({
 /**
  * @typedef {Object} TabsProps
  * @property {string?} class
+ * @property {van.State<number>?} activeTab Optional external state for the active tab index. Pass one
+ *      to control or persist the selection across re-renders; omit to use internal state.
  *
  * @param {TabsProps} props
  * @param {...Tab} tabs
@@ -27,9 +29,9 @@ const Tab = ({ label }, ...children) => ({
 const Tabs = (props, ...tabs) => {
     loadStylesheet('tabs', stylesheet);
 
-    const { ...restProps } = props;
+    const { activeTab: activeTabProp, ...restProps } = props;
 
-    const activeTab = van.state(0);
+    const activeTab = activeTabProp ?? van.state(0);
 
     let labelsContainerEl;
     const highlightEl = span({ class: "tg-tabs--highlight" });

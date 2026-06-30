@@ -11,14 +11,21 @@ import { Attribute } from '/app/static/js/components/attribute.js';
 import { TestDefinitionForm } from '/app/static/js/components/test_definition_form.js';
 import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
 import { Textarea } from '/app/static/js/components/textarea.js';
+import { Tabs, Tab } from '/app/static/js/components/tabs.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
+import { AXES, FACET_AXES, GROUP_BY_AXES, EMPTY, appliesToSelectedColumn } from '/app/static/js/components/test_picker_taxonomy.js';
+import { enterPage, exitPage, getPageSignal } from '/app/static/js/page_lifecycle.js';
+import { jsonObject, maxLength } from '/app/static/js/form_validators.js';
+import { capitalize } from '/app/static/js/display_utils.js';
 
-const { button: btn, div, i: icon, span, strong, input, label } = van.tags;
+const { button: btn, div, i: icon, span, strong } = van.tags;
+
+const PAGE_KEY = 'testDefinitions';
 
 const TABLE_COLUMNS = [
     { name: 'table_name', label: 'Table', width: 180, sortable: true, overflow: 'hidden' },
@@ -39,8 +46,6 @@ const SEVERITY_OPTIONS = [
     { label: 'Warning', value: 'Warning' },
     { label: 'Fail', value: 'Fail' },
 ];
-
-const SCOPE_LABELS = { referential: 'Referential', table: 'Table', column: 'Column', custom: 'Custom' };
 
 // Blank test definition field defaults for add mode
 const BLANK_PARAM_FIELDS = {
@@ -816,6 +821,8 @@ const DetailPanel = (row) => {
     const paramCols = row.default_parm_columns
         ? row.default_parm_columns.split(',').map(c => c.trim()).filter(Boolean)
         : [];
+    const paramLabels = (row.default_parm_prompts || '').split(',').map(v => v.trim());
+    const paramHelp = (row.default_parm_help || '').split('|').map(v => v.trim());
 
     return div(
         { class: 'flex-column fx-gap-3 border border-radius-1 p-4 mt-2' },
@@ -826,13 +833,17 @@ const DetailPanel = (row) => {
                 Attribute({ label: 'Schema Name', value: row.schema_name }),
                 Attribute({ label: 'Table Name', value: row.table_name }),
                 Attribute({ label: 'Test Focus', value: row.column_name }),
-                Attribute({ label: 'Test Type', value: row.test_type }),
+                Attribute({ label: 'Test Type', value: row.test_name_short }),
                 Attribute({ label: 'Test Active', value: row.test_active_display }),
                 Attribute({ label: 'Validation Status', value: row.test_definition_status }),
                 Attribute({ label: 'Lock Refresh', value: row.lock_refresh_display }),
                 Attribute({ label: 'Urgency', value: row.urgency }),
                 Attribute({ label: 'Export to Observability', value: row.export_to_observability_display }),
-                ...paramCols.map(col => Attribute({ label: col, value: String(row[col] ?? '') })),
+                ...paramCols.map((col, index) => Attribute({
+                    label: paramLabels[index] || capitalize(col.replaceAll('_', ' ')),
+                    help: paramHelp[index] || null,
+                    value: String(row[col] ?? ''),
+                })),
             ),
             div(
                 { class: 'flex-column fx-flex fx-gap-3' },
@@ -847,32 +858,64 @@ const DetailPanel = (row) => {
     );
 };
 
-// Add dialog — mounted once, state persists across Python reruns
-const AddDialogComponent = ({ open, info, validateResult: validateResultProp, onClose }, emit) => {
+const TestPickerChip = (text, color) => {
+    const { span } = van.tags;
+    return span(
+        {
+            class: 'tg-test-chip',
+            style: `border:1px solid color-mix(in srgb, ${color} 25%, transparent);color:${color};`,
+        },
+        text,
+    );
+};
+
+// A keyboard-shortcut hint for the picker footer: a key chip followed by its action.
+const KeyHint = (key, action) => {
+    const { span } = van.tags;
+    return span(
+        { class: 'tg-key-hint' },
+        span({ class: 'tg-kbd' }, key),
+        action,
+    );
+};
+
+// Faceted add-test picker dialog (step 1) reusing the param form (step 2)
+const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
+    const { div, span, input, label, h4 } = van.tags;
+
     const testTypes = van.derive(() => getValue(info)?.test_types ?? []);
+    const tableColumns = van.derive(() => getValue(info)?.table_columns ?? []);
+    const testSuite = van.derive(() => getValue(info)?.test_suite ?? {});
     const tableGroupSchema = van.derive(() => getValue(info)?.table_group_schema ?? '');
     const tableGroupsId = van.derive(() => getValue(info)?.table_groups_id ?? '');
-    const testSuite = van.derive(() => getValue(info)?.test_suite ?? {});
-    const tableColumns = van.derive(() => getValue(info)?.table_columns ?? []);
     const qualifiesTableRefsWithSchema = van.derive(() => getValue(info)?.qualifies_table_refs_with_schema ?? true);
-    const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
+    const prefillColumn = van.derive(() => getValue(info)?.prefill_column ?? null);
 
-    const scopeFilter = {
-        referential: van.state(true),
-        table: van.state(true),
-        column: van.state(true),
-        custom: van.state(true),
-    };
+    // selectedColumn carries the general_type needed by the type-aware filter; resolve it from
+    // the tableColumns entry so a prefill and a manual pick produce the identical shape.
+    const columnFromEntry = (c) => ({
+        table_name: c.table_name,
+        column_name: c.column_name,
+        general_type: c.general_type ?? null,
+    });
 
-    const filteredTestTypeOptions = van.derive(() =>
-        testTypes.val
-            .filter(tt => tt.test_scope !== 'tablegroup' && (scopeFilter[tt.test_scope]?.val ?? true))
-            .map(tt => ({ label: tt.select_name ?? tt.test_name_short, value: tt.test_type }))
-    );
-
+    // ---- Step + selection state ----
+    const step = van.state(1);
     const selectedTestType = van.state(null);
-    const formValues = van.state(null);
+    const formValues = van.state({});
+    // Hoisted so the active form tab survives the form re-render on each field change.
+    const formActiveTab = van.state(0);
 
+    // ---- Picker state ----
+    const searchQuery = van.state('');
+    const groupBy = van.state('impact');
+    const focusIndex = van.state(-1); // -1 = no row highlighted until keyboard nav
+    const selectedColumn = van.state(null); // { table_name, column_name, general_type } | null
+
+    const facetSel = {};
+    Object.keys(AXES).forEach((ax) => { facetSel[ax] = van.state([]); });
+
+    // Build blank form values for the selected test type.
     const buildFormValues = (testType) => {
         if (!testType) return null;
         const tt = testTypes.rawVal.find(t => t.test_type === testType);
@@ -900,79 +943,379 @@ const AddDialogComponent = ({ open, info, validateResult: validateResultProp, on
         };
     };
 
-    const selectTestType = (testType) => {
-        selectedTestType.val = testType;
-        formValues.val = buildFormValues(testType);
+    const toggleFacet = (ax, value) => {
+        const cur = facetSel[ax].val;
+        facetSel[ax].val = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value];
+        focusIndex.val = -1;
+    };
+    const clearAll = () => {
+        Object.values(facetSel).forEach((s) => { s.val = []; });
+        searchQuery.val = '';
+        focusIndex.val = -1;
     };
 
-    // Reset form state when dialog opens (transitions from closed→open)
+    // Reset to a fresh step-1 picker on each closed->open transition. The dialog is mounted
+    // once and its state otherwise persists across reopens, which would show the stale step-2
+    // form. Also re-seeds the locked column per open.
     const wasOpen = van.state(false);
     van.derive(() => {
         const isOpen = open.val;
         if (isOpen && !wasOpen.val) {
-            selectTestType(null);
+            step.val = 1;
+            selectedTestType.val = null;
+            formValues.val = {};
+            searchQuery.val = '';
+            focusIndex.val = -1;
+            groupBy.val = 'impact';
+            Object.values(facetSel).forEach((s) => { s.val = []; });
+            const prefill = prefillColumn.rawVal;
+            const match = prefill
+                ? tableColumns.rawVal.find((c) => c.table_name === prefill.table_name && c.column_name === prefill.column_name)
+                : null;
+            selectedColumn.val = match ? columnFromEntry(match) : null;
             wasOpen.val = true;
         } else if (!isOpen) {
             wasOpen.val = false;
         }
     });
 
-    return Dialog(
-        { title: 'Add Test', open, onClose, width: '52rem' },
-        div(
-            { class: 'flex-column fx-gap-4 td-form-dialog' },
+    const matchesSearch = (t, q) => {
+        if (!q) return true;
+        const hay = `${t.test_name_short} ${t.test_name_long} ${t.test_description}`.toLowerCase();
+        return q.toLowerCase().split(/\s+/).filter(Boolean).every((tok) => hay.includes(tok));
+    };
 
-            // Test type picker — always visible
-            div(
-                { class: 'flex-column fx-gap-3' },
+    // Search + column relevance only -- drives facet counts (PRD F9). A selected column filters
+    // the list to tests applicable to its type; clearing the column shows all tests.
+    const baseVisible = van.derive(() => {
+        const q = searchQuery.val;
+        const col = selectedColumn.val;
+        return testTypes.val.filter((t) =>
+            matchesSearch(t, q) && (!col || appliesToSelectedColumn(t, col.general_type)));
+    });
+
+    const passesFacets = (t) => Object.entries(facetSel).every(([ax, s]) => {
+        const sel = s.val;
+        if (!sel.length) return true;
+        const v = AXES[ax].value(t);
+        return v != null && sel.includes(v);
+    });
+
+    const filtered = van.derive(() => baseVisible.val.filter(passesFacets));
+
+    // Group the result list by the chosen axis; null -> EMPTY bucket.
+    const grouped = van.derive(() => {
+        const axis = AXES[groupBy.val];
+        const buckets = new Map();
+        filtered.val.forEach((t) => {
+            const key = axis.value(t) || EMPTY;
+            if (!buckets.has(key)) buckets.set(key, []);
+            buckets.get(key).push(t);
+        });
+        const order = axis.order; // sparse axes have a canonical order
+        const entries = [...buckets.entries()];
+        entries.sort((a, b) => {
+            if (order) {
+                const ia = order.indexOf(a[0]); const ib = order.indexOf(b[0]);
+                return (ia < 0 ? Infinity : ia) - (ib < 0 ? Infinity : ib); // EMPTY bucket sorts last
+            }
+            return b[1].length - a[1].length;
+        });
+        return entries;
+    });
+
+    const flatList = van.derive(() => grouped.val.flatMap(([, tests]) => tests));
+
+    // Per-axis value -> count, over baseVisible (not other facet selections).
+    const counts = (ax) => {
+        const m = new Map();
+        baseVisible.val.forEach((t) => {
+            const v = AXES[ax].value(t);
+            if (v != null) m.set(v, (m.get(v) || 0) + 1);
+        });
+        return m;
+    };
+
+    const selectTest = (t) => {
+        if (!t) return;
+        selectedTestType.val = t;
+        const fv = buildFormValues(t.test_type);
+        const col = selectedColumn.rawVal;
+        if (col) {
+            const scope = fv.test_scope ?? 'column';
+            if (scope !== 'tablegroup') {
+                fv.table_name = col.table_name;
+            }
+            if (scope === 'column' || scope === 'referential' || scope === 'custom') {
+                fv.column_name = col.column_name;
+            }
+        }
+        formValues.val = fv;
+        formActiveTab.val = 0;
+        step.val = 2;
+    };
+
+    // ---- Keyboard: Cmd/Ctrl+K or "/" focus search, Up/Down move, Enter add, Esc close ----
+    let searchEl = null;
+    const onKeyDown = (e) => {
+        if (step.val !== 1) return;
+        if ((e.key === 'k' && (e.metaKey || e.ctrlKey)) || (e.key === '/' && document.activeElement !== searchEl)) {
+            e.preventDefault(); searchEl?.focus(); return;
+        }
+        if (e.key === 'Escape') { onClose(); return; }
+        const list = flatList.val;
+        if (e.key === 'ArrowDown') { e.preventDefault(); focusIndex.val = Math.min(focusIndex.val + 1, Math.max(list.length - 1, 0)); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); focusIndex.val = Math.max(focusIndex.val - 1, 0); }
+        // Enter adds the focused row, or the only match when nothing is explicitly focused.
+        else if (e.key === 'Enter') { e.preventDefault(); selectTest(list[focusIndex.val] ?? (list.length === 1 ? list[0] : null)); }
+    };
+
+    // Listen at the document level while step 1 is open so arrow keys work without first
+    // clicking the picker. Attach/detach reactively; guard prevents duplicate registration.
+    // The page's AbortSignal removes the listener on teardown — without it, a teardown
+    // while the dialog is open (e.g. browser Back) would orphan onKeyDown on the document,
+    // since nothing toggles open/step on unmount to run the detach branch below.
+    let keydownAttached = false;
+    van.derive(() => {
+        const active = open.val && step.val === 1;
+        if (active && !keydownAttached) {
+            document.addEventListener('keydown', onKeyDown, { signal: getPageSignal(PAGE_KEY) ?? undefined });
+            keydownAttached = true;
+        } else if (!active && keydownAttached) {
+            document.removeEventListener('keydown', onKeyDown);
+            keydownAttached = false;
+        }
+    });
+
+    // ---- Renderers ----
+    const FacetGroup = (ax) => {
+        const axis = AXES[ax];
+        // Whole group is reactive: its title is hidden when no option has a count (PRD facet review).
+        return () => {
+            const m = counts(ax);
+            let keys = [...m.keys()];
+            if (axis.order) keys = axis.order.filter((k) => m.has(k));
+            else keys.sort((a, b) => m.get(b) - m.get(a));
+            if (!keys.length) return '';
+            return div(
+                { class: 'tg-facet-group', 'data-testid': 'facet-group', 'data-axis': ax },
+                h4({ class: 'tg-facet-title' }, axis.label),
                 div(
-                    { class: 'flex-row fx-gap-4 fx-align-flex-center fx-flex-wrap' },
-                    span({ class: 'text-caption' }, 'Show Types:'),
-                    ...Object.entries(SCOPE_LABELS).map(([scope, scopeLabel]) =>
-                        Checkbox({
-                            label: scopeLabel,
-                            checked: scopeFilter[scope],
-                            onChange: (v) => { scopeFilter[scope].val = v; },
-                        })
-                    ),
+                    { class: 'flex-column fx-gap-1' },
+                    ...keys.map((value) => {
+                        const checked = van.derive(() => facetSel[ax].val.includes(value));
+                        // Display-only Checkbox (pointer-events disabled via .tg-facet-checkbox); the
+                        // row's onclick is the single toggle source, so the box can't double-fire.
+                        return div(
+                            {
+                                class: 'tg-facet-option',
+                                'data-testid': 'facet-option',
+                                'data-axis': ax,
+                                'data-value': value,
+                                onclick: () => toggleFacet(ax, value),
+                            },
+                            span({ class: 'tg-facet-checkbox' }, Checkbox({ label: '', checked })),
+                            span({ class: 'tg-facet-dot', style: `background:${axis.color(value)}` }),
+                            span({ class: 'tg-facet-label' }, value),
+                            span({ class: 'tg-facet-count' }, m.get(value)),
+                        );
+                    }),
                 ),
-                () => Select({
-                    label: 'Test Type',
-                    value: selectedTestType.val,
-                    options: filteredTestTypeOptions.val,
-                    allowNull: true,
-                    filterable: true,
-                    onChange: (value) => { selectTestType(value); },
-                }),
+            );
+        };
+    };
+
+    const ResultRow = (t, isFocused) => {
+        const row = div(
+            {
+                class: () => `tg-test-row${isFocused.val ? ' tg-test-row--focused' : ''}`,
+                'data-testid': 'test-picker-row',
+                'data-test-type': t.test_type,
+                onclick: () => selectTest(t),
+            },
+            div(
+                { class: 'flex-row fx-justify-space-between' },
+                div({ class: 'tg-test-row-title' }, t.test_name_short),
             ),
+            div({ class: 'tg-test-desc' }, t.test_description),
+            div(
+                { class: 'flex-row fx-flex-wrap fx-gap-1' },
+                t.impact_dimension ? TestPickerChip(t.impact_dimension, AXES.impact.color(t.impact_dimension)) : null,
+                t.algorithm ? TestPickerChip(t.algorithm, AXES.algorithm.color(t.algorithm)) : null,
+                t.statistical_technique ? TestPickerChip(t.statistical_technique, AXES.technique.color(t.statistical_technique)) : null,
+                t.health_dimension ? TestPickerChip(t.health_dimension, AXES.health.color(t.health_dimension)) : null,
+                t.criteria ? TestPickerChip(t.criteria, AXES.criteria.color(t.criteria)) : null,
+            ),
+        );
+        // Keep the keyboard-focused row visible within the scrolling list.
+        van.derive(() => { if (isFocused.val) row.scrollIntoView({ block: 'nearest' }); });
+        return row;
+    };
 
-            // Form (shown after test type selected) — imperative update
-            // because VanJS binding replacement doesn't work inside Dialog portals
+    // One filter row: column relevance + search on the left, group-by pushed to the right.
+    const ContextBar = (searchField) => div(
+        { class: 'tg-picker-context flex-row fx-gap-3 fx-align-flex-end' },
+        () => {
+            // Column relevance filter. Option VALUES are the array index (string) so that
+            // table/column names containing spaces or dots can never break parsing.
+            const cols = tableColumns.val;
+            const options = cols.map((c, i) => ({ label: `${c.table_name}.${c.column_name}`, value: String(i) }));
+            const sel = selectedColumn.val;
+            const currentIdx = sel ? cols.findIndex((c) => c.table_name === sel.table_name && c.column_name === sel.column_name) : -1;
+            return Select({
+                label: 'Show tests relevant to a column',
+                allowNull: true,
+                // Cap growth so a long table.column value ellipsizes instead of crowding search.
+                style: 'max-width: 320px;',
+                value: currentIdx >= 0 ? String(currentIdx) : null,
+                options,
+                onChange: (val) => {
+                    if (val == null || val === '') { selectedColumn.val = null; return; }
+                    selectedColumn.val = columnFromEntry(tableColumns.rawVal[Number(val)]);
+                },
+            });
+        },
+        div({ class: 'tg-picker-search fx-flex', 'data-testid': 'test-picker-search' }, searchField),
+        Select({
+            label: 'Group by',
+            value: groupBy.val,
+            options: GROUP_BY_AXES.map((ax) => ({ label: AXES[ax].label, value: ax })),
+            onChange: (val) => { groupBy.val = val; focusIndex.val = -1; },
+        }),
+    );
+
+    const ActiveFilters = () => div(
+        { class: 'flex-row fx-flex-wrap fx-gap-1', 'data-testid': 'test-picker-active-filters' },
+        () => {
+            const chips = [];
+            Object.entries(facetSel).forEach(([ax, s]) => s.val.forEach((value) => {
+                chips.push(span(
+                    { class: 'tg-active-chip flex-row', onclick: () => toggleFacet(ax, value) },
+                    span(`${AXES[ax].label}: ${value}`),
+                    Icon({ size: 14 }, 'close'),
+                ));
+            }));
+            if (!chips.length) return '';
+            chips.push(span(
+                { 'data-testid': 'test-picker-clear' },
+                Button({ type: 'basic', label: 'Clear all', onclick: clearAll }),
+            ));
+            return div({ class: 'flex-row fx-flex-wrap fx-gap-1' }, ...chips);
+        },
+    );
+
+    const ResultsPane = () => div(
+        { class: 'tg-picker-results' },
+        // Fixed header — count stays put while the list below scrolls.
+        div(
+            { class: 'tg-picker-results-header' },
+            span(
+                { 'data-testid': 'test-picker-count', class: 'tg-picker-count' },
+                () => `${filtered.val.length} matching test types${!!selectedColumn.val ? ' for selected column' : ''}`
+            ),
+        ),
+        div(
+            { class: 'tg-picker-list' },
+            // One-result hint (PRD F13): when exactly one test matches, prompt Enter-to-add.
+            () => filtered.val.length === 1
+                ? div({ class: 'tg-one-result-hint mb-2', 'data-testid': 'test-picker-one-hint' },
+                    `${filtered.val[0].test_name_short} — press Enter to add`)
+                : '',
             () => {
-                open.val;
-
-                selectedTestType.val;
-                const fv = formValues.val;
-                const vr = validateResult.val;
-
-                if (!fv) return '';
-
-                return TestDefFormContent({
-                    formValues: fv,
-                    tableColumns: tableColumns.rawVal,
-                    testSuite: testSuite.rawVal,
-                    qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
-                    validateResult: vr,
-                    mode: 'add',
-                    onFormChange: (changes) => {
-                        formValues.val = { ...formValues.rawVal, ...changes };
-                    },
-                    onValidate: () => emit('ValidateTest', { payload: formValues.rawVal }),
-                    onSave: () => emit('AddTestSaved', { payload: formValues.rawVal }),
-                    onCancel: onClose,
-                });
+                const groups = grouped.val;
+                if (!groups.length) {
+                    return div(
+                        { class: 'tg-picker-empty', 'data-testid': 'test-picker-empty' },
+                        span('No tests match this filter combination.'),
+                        Button({ type: 'stroked', label: 'Clear filters and search', onclick: clearAll }),
+                    );
+                }
+                let runningIndex = -1;
+                return div(
+                    { class: 'flex-column fx-gap-2' },
+                    ...groups.map(([groupName, tests]) => div(
+                        { class: 'tg-result-group' },
+                        div(
+                            { class: 'tg-group-band' },
+                            span({ class: 'tg-group-band-name' }, groupName),
+                            span({ class: 'tg-group-band-count' }, `${tests.length} test types`),
+                        ),
+                        ...tests.map((t) => {
+                            runningIndex += 1;
+                            const myIndex = runningIndex;
+                            const isFocused = van.derive(() => focusIndex.val === myIndex);
+                            return ResultRow(t, isFocused);
+                        }),
+                    )),
+                );
             },
         ),
+    );
+
+    const PickerView = () => {
+        // Reusable Input component for search. The keyboard handler focuses the inner <input>,
+        // resolved by id below (Input renders its label with this id).
+        const searchField = Input({
+            id: 'tg-picker-search',
+            icon: 'search',
+            clearable: true,
+            style: 'width: 100%;',
+            placeholder: 'Search name or description',
+            value: searchQuery,
+            onChange: (value) => { searchQuery.val = value; focusIndex.val = -1; },
+        });
+        // Load-bearing on every step-1 (re)render, not just first open: refocuses search when
+        // returning from the step-2 form. Do not hoist out of PickerView.
+        requestAnimationFrame(() => {
+            searchEl = document.getElementById('tg-picker-search')?.querySelector('input') ?? null;
+            searchEl?.focus();
+        });
+
+        return div(
+            { class: 'tg-test-picker', 'data-testid': 'test-picker' },
+            // Fixed header: column relevance + search + group-by in one row, then active filters.
+            div(
+                { class: 'tg-picker-header' },
+                ContextBar(searchField),
+                ActiveFilters(),
+            ),
+            div(
+                { class: 'tg-picker-body fx-gap-3' },
+                div(
+                    { class: 'tg-picker-rail' },
+                    ...FACET_AXES.map(FacetGroup),
+                ),
+                ResultsPane(),
+            ),
+            div(
+                { class: 'tg-picker-footer', 'data-testid': 'test-picker-footer' },
+                KeyHint('↑ ↓', 'navigate'),
+                KeyHint('Enter', 'select'),
+                KeyHint('/', 'focus search'),
+            ),
+        );
+    };
+
+    const FormView = () => TestDefFormContent({
+        formValues: formValues.val,
+        tableColumns: tableColumns.rawVal,
+        testSuite: testSuite.rawVal,
+        qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
+        validateResult: getValue(validateResult),
+        mode: 'add',
+        activeTab: formActiveTab,
+        onFormChange: (changes) => { formValues.val = { ...formValues.rawVal, ...changes }; },
+        onValidate: () => emit('ValidateTest', { payload: formValues.rawVal }),
+        onSave: () => emit('AddTestSaved', { payload: formValues.rawVal }),
+        onBack: () => { step.val = 1; selectedTestType.val = null; },
+        onCancel: onClose,
+    });
+
+    const dialogTitle = van.derive(() => `Add Test - ${step.val === 1 ? 'Pick a Test Type' : 'Configure Test'}`);
+
+    return Dialog(
+        { title: dialogTitle, open, onClose, width: '68rem' },
+        () => step.val === 1 ? PickerView() : FormView(),
     );
 };
 
@@ -985,6 +1328,8 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const formValues = van.state(null);
+    // Hoisted so the active form tab survives the form re-render on each field change.
+    const formActiveTab = van.state(0);
 
     const initFormFromInfo = () => {
         const di = dialogInfo.rawVal;
@@ -997,6 +1342,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
             column_name_prompt: ttRow.column_name_prompt ?? null,
             column_name_help: ttRow.column_name_help ?? null,
         };
+        formActiveTab.val = 0;
     };
 
     // Reset form when dialog opens (closed→open), clear when it closes
@@ -1028,6 +1374,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
                     qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
                     validateResult: vr,
                     mode: 'edit',
+                    activeTab: formActiveTab,
                     onFormChange: (changes) => {
                         formValues.val = { ...formValues.rawVal, ...changes };
                     },
@@ -1041,7 +1388,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
 };
 
 // Shared form content for add/edit dialogs
-const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, onFormChange, onValidate, onSave, onCancel }) => {
+const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, activeTab, onFormChange, onValidate, onSave, onCancel, onBack }) => {
     const testScope = formValues.test_scope ?? 'column';
     const runType = formValues.run_type ?? 'CAT';
     const testType = formValues.test_type ?? '';
@@ -1053,6 +1400,13 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         fv.val = updated;
         onFormChange({ [key]: value });
     };
+
+    // Custom Metadata is stored as a JSON object (JSONB). Keep the raw text the user edits in a
+    // local state, and only commit a parsed object to the form when the JSON is valid.
+    const metadataText = van.state(
+        formValues.custom_metadata ? JSON.stringify(formValues.custom_metadata, null, 2) : ''
+    );
+    const metadataValid = van.state(true);
 
     const inheritedSeverity = testSuite.severity ?? formValues.default_severity ?? 'Warning';
     const severityOptions = [
@@ -1095,8 +1449,8 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
     return div(
         { class: 'flex-column fx-gap-3' },
 
-        // Test type header (add mode) or read-only test type (edit mode)
-        mode === 'add' && formValues.test_name_short
+        // Header — test type identity, shown above the tabs in both add and edit modes
+        formValues.test_name_short
             ? div(
                 { class: 'mb-1' },
                 div({ class: 'text-large' }, formValues.test_name_short),
@@ -1106,169 +1460,202 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             )
             : null,
 
-        mode === 'edit'
-            ? Input({
-                name: 'test_type_display',
-                label: 'Test Type',
-                value: formValues.test_name_short ?? formValues.test_type ?? '',
-                disabled: true,
-            })
-            : null,
-
         formValues.usage_notes
             ? Alert({ type: 'info' }, strong({ class: 'mb-1' }, 'Usage Notes'), div({}, formValues.usage_notes))
             : null,
 
-        // Description override
-        Textarea({
-            name: 'test_description',
-            label: 'Test Description Override',
-            value: () => fv.val.test_description ?? '',
-            placeholder: `Inherited (${formValues.default_test_description ?? ''})`,
-            height: 72,
-            onChange: (value) => updateField('test_description', value || null),
-        }),
+        Tabs(
+            { activeTab },
+            Tab(
+                { label: 'Parameters' },
+                div(
+                    { class: 'flex-column fx-gap-3' },
 
-        // Checkboxes
-        div(
-            { class: 'flex-row fx-gap-4' },
-            Checkbox({
-                label: 'Test Active',
-                checked: () => fv.val.test_active ?? true,
-                onChange: (v) => updateField('test_active', v),
-            }),
-            Checkbox({
-                label: 'Lock Refresh',
-                checked: () => fv.val.lock_refresh ?? false,
-                onChange: (v) => updateField('lock_refresh', v),
-            }),
-        ),
+                // Schema (read-only)
+                qualifiesTableRefsWithSchema
+                    ? Input({
+                        name: 'schema_name',
+                        label: 'Schema',
+                        value: formValues.schema_name ?? '',
+                        disabled: true,
+                    })
+                    : null,
 
-        // Severity + Observability + Impact Dimension selects
-        div(
-            { class: 'flex-row fx-gap-3 fx-flex-wrap' },
-            div(
-                { style: 'flex: calc(50% - 8px) 0 0;' },
-                () => Select({
-                    label: 'Urgency Override',
-                    value: fv.val.severity ?? null,
-                    options: severityOptions,
-                    allowNull: false,
-                    onChange: (value) => updateField('severity', value),
-                }),
+                // Table name
+                testScope !== 'tablegroup'
+                    ? testScope === 'custom'
+                        ? Input({
+                            name: 'table_name',
+                            label: 'Table',
+                            value: () => fv.val.table_name ?? '',
+                            onChange: (value) => updateField('table_name', value || null),
+                        })
+                        : () => Select({
+                            label: 'Table',
+                            value: fv.val.table_name ?? null,
+                            options: tableNameOptions,
+                            allowNull: true,
+                            filterable: true,
+                            disabled: mode === 'edit',
+                            onChange: (value) => {
+                                updateField('table_name', value);
+                                updateField('column_name', null);
+                            },
+                        })
+                    : null,
+
+                // Column name (scope-dependent)
+                testScope === 'column'
+                    ? () => Select({
+                        label: 'Column',
+                        value: fv.val.column_name ?? null,
+                        options: columnNameOptions.val,
+                        allowNull: true,
+                        filterable: true,
+                        onChange: (value) => updateField('column_name', value),
+                    })
+                    : testScope === 'referential' || testScope === 'custom'
+                        ? Input({
+                            name: 'column_name',
+                            label: columnLabel,
+                            help: columnHelp,
+                            value: () => fv.val.column_name ?? '',
+                            onChange: (value) => updateField('column_name', value || null),
+                        })
+                        : null,
+
+                // Validation status (edit mode only)
+                mode === 'edit' && formValues.test_definition_status
+                    ? Input({
+                        name: 'test_definition_status',
+                        label: 'Validation Status',
+                        value: formValues.test_definition_status || 'OK',
+                        disabled: true,
+                    })
+                    : null,
+
+                // Dynamic parameter fields
+                div(
+                    { class: 'td-form-params-section' },
+                    TestDefinitionForm({
+                        definition: formValues,
+                        qualifiesTableRefsWithSchema,
+                        hideHeader: true,
+                        onChange: (changes) => {
+                            if (Object.keys(changes).length === 0) return;
+                            const updated = { ...fv.rawVal, ...changes };
+                            fv.val = updated;
+                            onFormChange(changes);
+                        },
+                    }),
+                ),
+
+                // Skip errors (QUERY run type only)
+                runType === 'QUERY'
+                    ? Input({
+                        name: 'skip_errors',
+                        label: 'Threshold Error Count',
+                        type: 'number',
+                        value: () => fv.val.skip_errors ?? 0,
+                        step: 1,
+                        onChange: (value) => updateField('skip_errors', value ?? 0),
+                    })
+                    : null,
+                ),
             ),
-            div(
-                { style: 'flex: calc(50% - 8px) 0 0;' },
-                () => Select({
-                    label: 'Send to Observability - Override',
-                    value: fv.val.export_to_observability ?? null,
-                    options: obsOptions,
-                    allowNull: false,
-                    onChange: (value) => updateField('export_to_observability', value),
-                }),
-            ),
-            showImpactDimensionOverride ? div(
-                { style: 'flex: calc(50% - 8px) 0 0;' },
-                () => Select({
-                    label: 'Impact Dimension Override',
-                    value: fv.val.impact_dimension ?? null,
-                    options: impactDimensionOptions,
-                    allowNull: false,
-                    helpText: 'Override the default impact classification for this test. Affects how the test result is categorized in score breakdowns.',
-                    onChange: (value) => updateField('impact_dimension', value),
-                }),
-            ) : null,
-        ),
+            Tab(
+                { label: 'Settings' },
+                div(
+                    { class: 'flex-column fx-gap-3' },
 
-        // Schema (read-only)
-        qualifiesTableRefsWithSchema
-            ? Input({
-                name: 'schema_name',
-                label: 'Schema',
-                value: formValues.schema_name ?? '',
-                disabled: true,
-            })
-            : null,
+                // Description override
+                Textarea({
+                    name: 'test_description',
+                    label: 'Test Description Override',
+                    value: () => fv.val.test_description ?? '',
+                    placeholder: `Inherited (${formValues.default_test_description ?? ''})`,
+                    height: 72,
+                    onChange: (value) => updateField('test_description', value || null),
+                }),
 
-        // Table name
-        testScope !== 'tablegroup'
-            ? testScope === 'custom'
-                ? Input({
-                    name: 'table_name',
-                    label: 'Table',
-                    value: () => fv.val.table_name ?? '',
-                    onChange: (value) => updateField('table_name', value || null),
-                })
-                : () => Select({
-                    label: 'Table',
-                    value: fv.val.table_name ?? null,
-                    options: tableNameOptions,
-                    allowNull: true,
-                    filterable: true,
-                    disabled: mode === 'edit',
-                    onChange: (value) => {
-                        updateField('table_name', value);
-                        updateField('column_name', null);
+                // External link + custom metadata
+                Input({
+                    name: 'external_url',
+                    label: 'External URL',
+                    help: 'Optional link to the code, pipeline step, or system that produces this data.',
+                    value: () => fv.val.external_url ?? '',
+                    onChange: (value) => updateField('external_url', value || null),
+                }),
+                Textarea({
+                    name: 'custom_metadata',
+                    label: 'Custom Metadata',
+                    help: 'Optional JSON object of key-value pairs, e.g. {"pipeline": "daily_load", "task": "transform_orders"}.',
+                    value: metadataText,
+                    placeholder: '{\n  "pipeline": "daily_load",\n  "task": "transform_orders"\n}',
+                    height: 120,
+                    validators: [jsonObject, maxLength(10240)],
+                    onChange: (value, state) => {
+                        metadataText.val = value;
+                        metadataValid.val = state.valid;
+                        if (state.valid) {
+                            updateField('custom_metadata', value && value.trim() ? JSON.parse(value) : null);
+                        }
                     },
-                })
-            : null,
+                }),
 
-        // Column name (scope-dependent)
-        testScope === 'column'
-            ? () => Select({
-                label: 'Column',
-                value: fv.val.column_name ?? null,
-                options: columnNameOptions.val,
-                allowNull: true,
-                filterable: true,
-                onChange: (value) => updateField('column_name', value),
-            })
-            : testScope === 'referential' || testScope === 'custom'
-                ? Input({
-                    name: 'column_name',
-                    label: columnLabel,
-                    help: columnHelp,
-                    value: () => fv.val.column_name ?? '',
-                    onChange: (value) => updateField('column_name', value || null),
-                })
-                : null,
+                // Checkboxes
+                div(
+                    { class: 'flex-row fx-gap-4' },
+                    Checkbox({
+                        label: 'Test Active',
+                        checked: () => fv.val.test_active ?? true,
+                        onChange: (v) => updateField('test_active', v),
+                    }),
+                    Checkbox({
+                        label: 'Lock Refresh',
+                        checked: () => fv.val.lock_refresh ?? false,
+                        onChange: (v) => updateField('lock_refresh', v),
+                    }),
+                ),
 
-        // Validation status (edit mode only)
-        mode === 'edit' && formValues.test_definition_status
-            ? Input({
-                name: 'test_definition_status',
-                label: 'Validation Status',
-                value: formValues.test_definition_status || 'OK',
-                disabled: true,
-            })
-            : null,
-
-        // Dynamic parameter fields
-        div(
-            { class: 'td-form-params-section' },
-            TestDefinitionForm({
-                definition: formValues,
-                qualifiesTableRefsWithSchema,
-                onChange: (changes) => {
-                    if (Object.keys(changes).length === 0) return;
-                    const updated = { ...fv.rawVal, ...changes };
-                    fv.val = updated;
-                    onFormChange(changes);
-                },
-            }),
+                // Severity + Observability + Impact Dimension selects
+                div(
+                    { class: 'flex-row fx-gap-3 fx-flex-wrap' },
+                    div(
+                        { style: 'flex: calc(50% - 8px) 0 0;' },
+                        () => Select({
+                            label: 'Urgency Override',
+                            value: fv.val.severity ?? null,
+                            options: severityOptions,
+                            allowNull: false,
+                            onChange: (value) => updateField('severity', value),
+                        }),
+                    ),
+                    div(
+                        { style: 'flex: calc(50% - 8px) 0 0;' },
+                        () => Select({
+                            label: 'Send to Observability - Override',
+                            value: fv.val.export_to_observability ?? null,
+                            options: obsOptions,
+                            allowNull: false,
+                            onChange: (value) => updateField('export_to_observability', value),
+                        }),
+                    ),
+                    showImpactDimensionOverride ? div(
+                        { style: 'flex: calc(50% - 8px) 0 0;' },
+                        () => Select({
+                            label: 'Impact Dimension Override',
+                            value: fv.val.impact_dimension ?? null,
+                            options: impactDimensionOptions,
+                            allowNull: false,
+                            helpText: 'Override the default impact classification for this test. Affects how the test result is categorized in score breakdowns.',
+                            onChange: (value) => updateField('impact_dimension', value),
+                        }),
+                    ) : null,
+                ),
+                ),
+            ),
         ),
-
-        // Skip errors (QUERY run type only)
-        runType === 'QUERY'
-            ? Input({
-                name: 'skip_errors',
-                label: 'Threshold Error Count',
-                type: 'number',
-                value: () => fv.val.skip_errors ?? 0,
-                step: 1,
-                onChange: (value) => updateField('skip_errors', value ?? 0),
-            })
-            : null,
 
         // Validate feedback
         validateResult
@@ -1278,15 +1665,28 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         // Buttons
         div(
             { class: 'flex-row fx-justify-space-between fx-gap-2' },
-            isValidatable
-                ? Button({
-                    type: 'stroked',
-                    color: 'basic',
-                    label: 'Validate',
-                    width: 'auto',
-                    onclick: onValidate,
-                })
-                : span(''),
+            div(
+                { class: 'flex-row fx-gap-2' },
+                onBack
+                    ? Button({
+                        type: 'stroked',
+                        color: 'basic',
+                        icon: 'arrow_back',
+                        label: 'Back',
+                        width: 'auto',
+                        onclick: onBack,
+                    })
+                    : null,
+                isValidatable
+                    ? Button({
+                        type: 'stroked',
+                        color: 'basic',
+                        label: 'Validate',
+                        width: 'auto',
+                        onclick: onValidate,
+                    })
+                    : null,
+            ),
             div(
                 { class: 'flex-row fx-gap-2' },
                 Button({
@@ -1301,6 +1701,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     color: 'primary',
                     label: mode === 'edit' ? 'Save' : 'Add',
                     width: 'auto',
+                    disabled: () => !metadataValid.val,
                     onclick: onSave,
                 }),
             ),
@@ -1313,6 +1714,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
     const dialogInfo = van.derive(() => getValue(info) ?? null);
     const collision = van.derive(() => dialogInfo.val?.collision ?? null);
 
+    const targetProjectCode = van.state(null);
     const targetTgId = van.state(null);
     const targetTsId = van.state(null);
     const targetTableName = van.state(null);
@@ -1324,6 +1726,7 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
         const isOpen = open.val;
         if (isOpen && !wasOpen.val) {
             const di = dialogInfo.val;
+            targetProjectCode.val = di?.current_project_code ?? null;
             targetTgId.val = di?.current_table_group_id ?? null;
             targetTsId.val = null;
             targetTableName.val = null;
@@ -1334,9 +1737,15 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
         }
     });
 
-    const tableGroupOptions = van.derive(() =>
-        (dialogInfo.val?.table_groups ?? []).map(tg => ({ label: tg.table_groups_name, value: tg.id }))
+    const projectOptions = van.derive(() =>
+        (dialogInfo.val?.projects ?? []).map(p => ({ label: p.project_name, value: p.project_code }))
     );
+
+    const tableGroupOptions = van.derive(() => {
+        const project = targetProjectCode.val;
+        const tgs = dialogInfo.val?.table_groups_by_project?.[project] ?? [];
+        return tgs.map(tg => ({ label: tg.table_groups_name, value: tg.id }));
+    });
 
     const testSuiteOptions = van.derive(() => {
         const tg = targetTgId.val;
@@ -1413,6 +1822,21 @@ const CopyMoveDialogComponent = ({ open, info, onClose }, emit) => {
         div(
             { class: 'flex-column fx-gap-4 td-form-dialog' },
             () => div({ class: 'text-caption' }, `Selected tests: ${(dialogInfo.val?.selected ?? []).length}`),
+
+            () => Select({
+                label: 'Target Project',
+                value: targetProjectCode.val,
+                options: projectOptions.val,
+                required: true,
+                filterable: true,
+                onChange: (value) => {
+                    targetProjectCode.val = value;
+                    targetTgId.val = null;
+                    targetTsId.val = null;
+                    targetTableName.val = null;
+                    targetColumnName.val = null;
+                },
+            }),
 
             () => Select({
                 label: 'Target Table Group',
@@ -1530,8 +1954,44 @@ stylesheet.replace(`
 .td-form-params-section {
     border-top: 1px solid var(--border-color);
     padding-top: 12px;
-    margin-top: 4px;
+    margin-top: 16px;
 }
+
+.tg-test-picker { display: flex; flex-direction: column; gap: 12px; height: 70vh; min-height: 0; }
+.tg-picker-header { flex: none; display: flex; flex-direction: column; gap: 12px; }
+.tg-picker-body { flex: 1; min-height: 0; display: flex; flex-direction: row; align-items: stretch; }
+.tg-picker-rail { flex: 0 0 260px; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 8px; border-right: 1px solid var(--border-color, #e0e0e0); }
+.tg-picker-results { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.tg-picker-results-header { flex: none; padding-bottom: 8px; margin-bottom: 8px; border-bottom: 1px solid var(--border-color, #e0e0e0); }
+.tg-picker-count { font-size: 13px; color: var(--secondary-text-color, #666); }
+.tg-picker-list { flex: 1; overflow-y: auto; }
+.tg-facet-group { margin-bottom: 14px; }
+.tg-facet-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color, #666); }
+.tg-facet-option { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--primary-text-color); }
+.tg-facet-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.tg-facet-label { color: var(--primary-text-color); }
+.tg-facet-count { margin-left: auto; color: var(--secondary-text-color, #888); font-variant-numeric: tabular-nums; }
+.tg-facet-checkbox { display: inline-flex; pointer-events: none; }
+/* --empty stays distinct from the --table-hover-color row hover so the band reads as a divider. */
+.tg-group-band { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 4px; border-radius: 6px; background: var(--empty, #e0e0e0); }
+.tg-group-band-name { font-weight: 600; }
+.tg-group-band-count { font-size: 12px; color: var(--secondary-text-color, #888); font-variant-numeric: tabular-nums; }
+.tg-result-group { display: flex; flex-direction: column; gap: 6px; }
+.tg-test-row { position: relative; padding: 10px; border: 2px solid transparent; border-radius: 8px; cursor: pointer; }
+/* Divider sits in the gap below the row, not on its border, so it never overlaps the focus outline. */
+.tg-result-group .tg-test-row:not(:last-child)::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -4px; border-bottom: 1px dashed var(--border-color, #dddfe2); }
+.tg-test-row:hover { background: var(--table-hover-color, #f3f4f6); }
+.tg-test-row--focused { border-color: var(--primary-color, #1976d2); background: var(--table-hover-color, #f3f4f6); }
+.tg-test-row-title { font-weight: 600; }
+.tg-test-desc { font-size: 13px; color: var(--secondary-text-color, #555); margin: 2px 0 6px; }
+.tg-test-chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.tg-active-chip { font-size: 12px; line-height: 1; gap: 3px; padding: 2px 6px 2px 8px; border-radius: 999px; background: var(--table-hover-color, #eee); cursor: pointer; }
+.tg-active-chip .material-symbols-rounded { cursor: pointer; }
+.tg-one-result-hint { padding: 8px 10px; border-radius: 6px; background: var(--table-hover-color, #eef2ff); font-size: 13px; }
+.tg-picker-empty { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; padding: 40px 8px; }
+.tg-picker-footer { flex: none; display: flex; gap: 16px; align-items: center; padding-top: 10px; border-top: 1px solid var(--border-color, #e0e0e0); font-size: 12px; color: var(--secondary-text-color, #666); }
+.tg-key-hint { display: inline-flex; align-items: center; gap: 6px; }
+.tg-kbd { display: inline-flex; align-items: center; min-width: 18px; justify-content: center; padding: 1px 6px; border: 1px solid var(--border-color, #d0d0d0); border-radius: 4px; background: var(--empty, #e0e0e0); font-family: monospace; font-size: 11px; color: var(--primary-text-color); }
 `);
 
 export { TestDefinitions, EditDialogComponent };
@@ -1547,6 +2007,7 @@ export default (component) => {
         }
         parentElement.state = componentState;
         componentState.emit = createEmitter(setTriggerValue);
+        componentState.signal = enterPage(PAGE_KEY);
         van.add(parentElement, TestDefinitions(componentState));
     } else {
         for (const [key, value] of Object.entries(data)) {
@@ -1556,5 +2017,8 @@ export default (component) => {
         }
     }
 
-    return () => { parentElement.state = null; };
+    return () => {
+        exitPage(PAGE_KEY);
+        parentElement.state = null;
+    };
 };

@@ -87,7 +87,7 @@ def get_quality_scores(
     ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
     ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
     ``"Stakeholder Group"``, ``"Transform Level"``, ``"Semantic Data Type"``,
-    ``"Data Product"``. To target specific tables or columns, chain a
+    ``"Data Product"``, ``"Data Classification"``. To target specific tables or columns, chain a
     ``"Table Group"`` filter via ``others`` into ``"Table"`` (optionally
     then ``"Column"``); sibling chains OR. ``"Impact Dimension"`` and
     ``"Quality Dimension"`` are valid as ``group_by`` only, not as filter
@@ -106,7 +106,7 @@ def get_quality_scores(
             ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
             ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
             ``"Stakeholder Group"``, ``"Transform Level"``,
-            ``"Data Product"``.
+            ``"Data Product"``, ``"Data Classification"``.
         score_type: Narrow returned scores. Omit to show all four (Total,
             CDE, Profiling, Testing); pass ``"Total"`` for Total + Profiling
             + Testing, or ``"CDE"`` for CDE alone.
@@ -551,7 +551,7 @@ def create_scorecard(
     ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
     ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
     ``"Stakeholder Group"``, ``"Transform Level"``, ``"Semantic Data Type"``,
-    ``"Data Product"``. To target specific tables or columns, chain a
+    ``"Data Product"``, ``"Data Classification"``. To target specific tables or columns, chain a
     ``"Table Group"`` filter via ``others`` into ``"Table"`` (optionally
     then ``"Column"``); sibling chains OR.
 
@@ -563,7 +563,8 @@ def create_scorecard(
             ``"Quality Dimension"``, ``"Impact Dimension"``,
             ``"Data Source"``, ``"Business Domain"``, ``"Stakeholder Group"``,
             ``"Table Group"``, ``"Transform Level"``, ``"Data Location"``,
-            ``"Source System"``, ``"Source Process"``, ``"Data Product"``.
+            ``"Source System"``, ``"Source Process"``, ``"Data Product"``,
+            ``"Data Classification"``.
         show_total_score: Whether the scorecard exposes the Total Score.
         show_cde_score: Whether the scorecard exposes the CDE Score.
     """
@@ -624,7 +625,7 @@ def update_scorecard(
     ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
     ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
     ``"Stakeholder Group"``, ``"Transform Level"``, ``"Semantic Data Type"``,
-    ``"Data Product"``. To target specific tables or columns, chain a
+    ``"Data Product"``, ``"Data Classification"``. To target specific tables or columns, chain a
     ``"Table Group"`` filter via ``others`` into ``"Table"`` (optionally
     then ``"Column"``); sibling chains OR.
 
@@ -638,7 +639,8 @@ def update_scorecard(
             ``"Quality Dimension"``, ``"Impact Dimension"``,
             ``"Data Source"``, ``"Business Domain"``, ``"Stakeholder Group"``,
             ``"Table Group"``, ``"Transform Level"``, ``"Data Location"``,
-            ``"Source System"``, ``"Source Process"``, ``"Data Product"``.
+            ``"Source System"``, ``"Source Process"``, ``"Data Product"``,
+            ``"Data Classification"``.
             Pass ``""`` to clear an existing category.
         filters: List of filter entries. See **Filters** above for shape.
     """

@@ -13,6 +13,10 @@ from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestDefinitionSummary
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
+from testgen.common.test_result_disposition_service import (
+    coerce_ui_disposition,
+    set_test_results_disposition,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -31,7 +35,7 @@ from testgen.ui.queries.source_data_queries import (
     get_test_issue_source_query,
     get_test_issue_source_query_custom,
 )
-from testgen.ui.services.database_service import execute_db_query, fetch_df_from_db, fetch_one_from_db
+from testgen.ui.services.database_service import fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.query_cache import (
     get_table_group_minimal,
     get_test_definition,
@@ -716,6 +720,8 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
         "locked": readable_boolean(test_definition.lock_refresh),
         "active": readable_boolean(test_definition.test_active),
         "usage_notes": test_definition.usage_notes,
+        "external_url": test_definition.external_url,
+        "custom_metadata": test_definition.custom_metadata,
         "last_manual_update": (
             test_definition.last_manual_update.isoformat() if test_definition.last_manual_update else None
         ),
@@ -911,43 +917,4 @@ def update_result_disposition(
     test_result_ids: list[str],
     disposition: str,
 ) -> None:
-    execute_db_query(
-        """
-        WITH selects
-            AS (SELECT UNNEST(ARRAY [:test_result_ids]) AS selected_id)
-        UPDATE test_results
-        SET disposition = NULLIF(:disposition, 'No Decision')
-        FROM test_results r
-        INNER JOIN selects s
-            ON (r.id = s.selected_id::UUID)
-        WHERE r.id = test_results.id
-            AND r.result_status != 'Passed';
-        """,
-        {
-            "test_result_ids": test_result_ids,
-            "disposition": disposition,
-        },
-    )
-
-    execute_db_query(
-        """
-        WITH selects
-            AS (SELECT UNNEST(ARRAY [:test_result_ids]) AS selected_id)
-        UPDATE test_definitions
-        SET test_active = :test_active,
-            last_manual_update = CURRENT_TIMESTAMP AT TIME ZONE 'UTC',
-            lock_refresh = :lock_refresh
-        FROM test_definitions d
-        INNER JOIN test_results r
-            ON (d.id = r.test_definition_id)
-        INNER JOIN selects s
-            ON (r.id = s.selected_id::UUID)
-        WHERE d.id = test_definitions.id
-            AND r.result_status != 'Passed';
-        """,
-        {
-            "test_result_ids": test_result_ids,
-            "test_active": "N" if disposition == "Inactive" else "Y",
-            "lock_refresh": "Y" if disposition == "Inactive" else "N",
-        },
-    )
+    set_test_results_disposition(test_result_ids, coerce_ui_disposition(disposition))

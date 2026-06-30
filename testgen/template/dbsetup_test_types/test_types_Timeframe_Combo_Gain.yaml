@@ -38,6 +38,7 @@ test_types:
   usage_notes: |-
     This test checks a single transactional table to verify that categorical values or combinations that are present in the most recent time window you define include at least all those found in the prior time window of the same duration. Missing values in the latest time window will trigger the test to fail. New values are permitted. Use this test to confirm that codes or categories are not lost across successive time periods in a transactional table.
   active: Y
+  algorithm: Aggregate reconciliation
   cat_test_conditions: []
   target_data_lookups:
   - id: '1406'

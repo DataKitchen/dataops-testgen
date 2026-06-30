@@ -40,6 +40,7 @@ test_types:
     \ of days identified without data. You can adjust the threshold to accept a number\
     \ of days that you know legitimately have no records. "
   active: Y
+  algorithm: Counting
   cat_test_conditions:
   - id: '7005'
     test_type: Daily_Record_Ct

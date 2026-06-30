@@ -80,7 +80,7 @@ def run_final_callbacks(job_exec: JobExecution) -> None:
 def _notify_profiling_run(job_exec: JobExecution) -> None:
     with database_session() as session:
         profiling_run = session.scalars(
-            select(ProfilingRun).where(ProfilingRun.job_execution_id == job_exec.id)
+            select(ProfilingRun).where(ProfilingRun.id == job_exec.id)
         ).first()
         if not profiling_run:
             LOG.warning("No profiling_run found for job %s; skipping notification", job_exec.id)
@@ -90,7 +90,7 @@ def _notify_profiling_run(job_exec: JobExecution) -> None:
 
 def _notify_test_run(job_exec: JobExecution) -> None:
     with database_session() as session:
-        test_run = session.scalars(select(TestRun).where(TestRun.job_execution_id == job_exec.id)).first()
+        test_run = session.scalars(select(TestRun).where(TestRun.id == job_exec.id)).first()
         if not test_run:
             LOG.warning("No test_run found for job %s; skipping notification", job_exec.id)
             return
@@ -99,7 +99,7 @@ def _notify_test_run(job_exec: JobExecution) -> None:
 
 def _notify_monitor_run(job_exec: JobExecution) -> None:
     with database_session() as session:
-        test_run = session.scalars(select(TestRun).where(TestRun.job_execution_id == job_exec.id)).first()
+        test_run = session.scalars(select(TestRun).where(TestRun.id == job_exec.id)).first()
         if not test_run:
             LOG.warning("No test_run found for job %s; skipping monitor notification", job_exec.id)
             return

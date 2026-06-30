@@ -20,6 +20,7 @@
  * @property {string?} table_groups_id
  * @property {string?} severity
  * @property {string} test_type
+ * @property {string?} external_url
  *
  * @typedef Properties
  * @type {object}
@@ -41,7 +42,7 @@
  * @property {object} filter_options
  */
 import van from '/app/static/js/van.min.js';
-import { createEmitter, getValue, isEqual, loadStylesheet, parseDate } from '/app/static/js/utils.js';
+import { createEmitter, getValue, isEqual, isHttpUrl, loadStylesheet, parseDate } from '/app/static/js/utils.js';
 import { Table } from '/app/static/js/components/table.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Tabs, Tab } from '/app/static/js/components/tabs.js';
@@ -49,6 +50,7 @@ import { Button } from '/app/static/js/components/button.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { Icon } from '/app/static/js/components/icon.js';
+import { Link } from '/app/static/js/components/link.js';
 import { SummaryBar } from '/app/static/js/components/summary_bar.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Toggle } from '/app/static/js/components/toggle.js';
@@ -106,6 +108,7 @@ const DATA_COLUMNS = [
     { name: 'flagged_display', label: 'Flagged', width: 80, align: 'center' },
     { name: 'notes_count', label: 'Notes', width: 70, align: 'center' },
     { name: 'result_message', label: 'Details', width: 200, overflow: 'hidden' },
+    { name: 'external_link', label: 'Link', width: 60, align: 'center' },
 ];
 
 const HISTORY_COLUMNS = [
@@ -149,6 +152,24 @@ const formatNumber = (v) => {
     return n.toLocaleString(undefined, { maximumFractionDigits: 5 });
 };
 
+const buildExternalLinkCell = (url) => {
+    if (!isHttpUrl(url)) {
+        return '';
+    }
+    // Stop the click from also selecting the row; the anchor still opens in a new tab.
+    return span(
+        { class: 'flex-row fx-justify-center', onclick: (event) => event.stopPropagation() },
+        Link({
+            href: url.trim(),
+            label: '',
+            open_new: true,
+            left_icon: 'open_in_new',
+            left_icon_size: 18,
+            tooltip: 'Open external link',
+        }),
+    );
+};
+
 const buildTableRow = (item) => ({
     id: item.test_result_id,
     table_name: item.table_name ?? '',
@@ -171,6 +192,7 @@ const buildTableRow = (item) => ({
         span(item.notes_count),
     ) : '',
     result_message: item.result_message ?? '',
+    external_link: buildExternalLinkCell(item.external_url),
 });
 
 const ExportMenu = (statusFilter, tableFilter, columnFilter, testTypeFilter, actionFilter, flaggedFilter, hasSelection, getSelectedIds, emit) => {

@@ -5,7 +5,7 @@ from datetime import datetime
 from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, replace_params
-from testgen.common.models.connection import Connection
+from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import chunk_queries, to_sql_timestamp
 
@@ -30,6 +30,7 @@ class RefreshDataCharsSQL:
         "general_type",
         "column_type",
         "db_data_type",
+        "object_type",
         "approx_record_ct",
         "record_ct",
     )
@@ -133,7 +134,8 @@ class RefreshDataCharsSQL:
             f"SELECT '{table}' AS table_name, COUNT(*) AS row_count FROM {self.flavor_service.get_table_ref(schema, table)}"
             for table in table_names
         ]
-        chunked_queries = chunk_queries(count_queries, " UNION ALL ", self.connection.max_query_chars)
+        max_query_chars = self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS
+        chunked_queries = chunk_queries(count_queries, " UNION ALL ", max_query_chars)
         return [ (query, None) for query in chunked_queries ]
 
     def verify_access(self, table_name: str) -> tuple[str, None]:
@@ -156,6 +158,7 @@ class RefreshDataCharsSQL:
                 column.general_type,
                 column.column_type,
                 column.db_data_type,
+                column.object_type,
                 column.approx_record_ct,
                 column.record_ct,
             ]

@@ -29,7 +29,8 @@ test_types:
   test_scope: column
   dq_dimension: Timeliness
   impact_dimension: Reliability
-  health_dimension: Recency
+  health_dimension: Freshness
+  statistical_technique: Predictive Model
   threshold_description: |-
     Expected maximum count of days preceding test date
   result_visualization: line_chart
@@ -37,6 +38,7 @@ test_types:
   usage_notes: |-
     This test evaluates recency based on the latest referenced dates in the column.  The test is appropriate for transactional dates and timestamps.  The test can be especially valuable because timely data deliveries themselves may not assure that the most recent data is present. You can adjust the expected threshold to the maximum number of days that you expect the data to age before the dataset is refreshed.
   active: Y
+  algorithm: Freshness / time
   cat_test_conditions:
   - id: '7022'
     test_type: Recency

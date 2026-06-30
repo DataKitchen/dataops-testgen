@@ -6,6 +6,7 @@ import streamlit as st
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from testgen.common import date_service
 from testgen.common.models import Session, with_database_session
 from testgen.common.models.scheduler import JobSchedule
 from testgen.ui.session import session
@@ -55,7 +56,7 @@ class ScheduleDialog:
                     "readableExpr": cron_descriptor.get_description(job.cron_expr),
                     "cronTz": job.cron_tz_str,
                     "sample": [
-                        sample.strftime("%a %b %-d, %-I:%M %p")
+                        date_service.format_friendly_datetime(sample, "%a %b %-d, %-I:%M %p")
                         for sample in job.get_sample_triggering_timestamps(CRON_SAMPLE_COUNT + 1)
                     ],
                     "active": job.active,

@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.database.column_chars import ObjectType
 from testgen.common.models import get_current_session
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.entity import Entity
@@ -42,6 +43,7 @@ class TableProfilingOverview:
     table_groups_id: UUID
     schema_name: str | None
     table_name: str
+    object_type: ObjectType | None
     record_ct: int | None
     column_ct: int | None
     dq_score_profiling: float | None
@@ -61,18 +63,31 @@ class DataTable(Entity):
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), ForeignKey("table_groups.id"))
     schema_name: str | None = Column(String)
     table_name: str = Column(String)
+    object_type: ObjectType | None = Column(String)
     column_ct: int | None = Column(BigInteger)
     record_ct: int | None = Column(BigInteger)
     approx_record_ct: int | None = Column(BigInteger)
     critical_data_element: bool | None = Column(Boolean)
+    description: str | None = Column(String(1000))
+    data_source: str | None = Column(String(40))
+    source_system: str | None = Column(String(40))
+    source_process: str | None = Column(String(40))
+    business_domain: str | None = Column(String(40))
+    stakeholder_group: str | None = Column(String(40))
+    transform_level: str | None = Column(String(40))
+    aggregation_level: str | None = Column(String(40))
+    data_product: str | None = Column(String(40))
+    data_classification: str | None = Column(String(40))
     drop_date: datetime | None = Column(postgresql.TIMESTAMP)
     last_complete_profile_run_id: UUID | None = Column(postgresql.UUID(as_uuid=True))
     dq_score_profiling: float | None = Column(Float)
     dq_score_testing: float | None = Column(Float)
 
-    # Unmapped columns: functional_table_type, description, data_source,
-    # source_system, source_process, business_domain, stakeholder_group,
-    # transform_level, aggregation_level, data_product, add_date,
+    # The inherited Entity default orders by the textual label "id", but this model's
+    # primary key column is "table_id" — order by a real column instead.
+    _default_order_by = (asc(table_name),)
+
+    # Unmapped columns: functional_table_type, add_date,
     # last_refresh_date, last_profile_record_ct
 
     @classmethod
@@ -110,6 +125,7 @@ class DataTable(Entity):
                 cls.table_groups_id,
                 cls.schema_name,
                 cls.table_name,
+                cls.object_type,
                 cls.record_ct,
                 cls.column_ct,
                 cls.dq_score_profiling,
@@ -119,7 +135,7 @@ class DataTable(Entity):
                 JobExecution.id.label("latest_profile_job_execution_id"),
             )
             .outerjoin(ProfilingRun, ProfilingRun.id == cls.last_complete_profile_run_id)
-            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .where(
                 cls.table_groups_id == table_groups_id,
                 cls.table_name == table_name,

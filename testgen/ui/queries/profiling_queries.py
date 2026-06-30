@@ -3,19 +3,10 @@ from typing import Literal
 import pandas as pd
 import streamlit as st
 
+from testgen.common.data_catalog_service import TAG_FIELDS
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_one_from_db
 from testgen.utils import is_uuid4
 
-TAG_FIELDS = [
-    "data_source",
-    "source_system",
-    "source_process",
-    "business_domain",
-    "stakeholder_group",
-    "transform_level",
-    "aggregation_level",
-    "data_product",
-]
 COLUMN_PROFILING_FIELDS = """
 -- Value Counts
 profile_results.record_ct,
@@ -255,6 +246,7 @@ def get_tables_by_condition(
         table_chars.schema_name,
         table_chars.table_groups_id::VARCHAR AS table_group_id,
         -- Characteristics
+        table_chars.object_type,
         functional_table_type,
         approx_record_ct,
         table_chars.record_ct,
@@ -621,7 +613,8 @@ def get_profiling_anomalies(
         COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
         COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
         COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
-        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification
     FROM profile_anomaly_results r
     INNER JOIN profile_anomaly_types t
         ON r.anomaly_id = t.id
@@ -677,7 +670,7 @@ def get_profiling_anomalies_by_ids(anomaly_ids: list[str]) -> pd.DataFrame:
         t.anomaly_description, r.detail, t.detail_redactable, t.suggested_action,
         t.dq_dimension, r.impact_dimension,
         r.anomaly_id, r.table_groups_id::VARCHAR, r.id::VARCHAR, p.profiling_starttime, r.profile_run_id::VARCHAR,
-        p.job_execution_id::VARCHAR as job_execution_id,
+        p.id::VARCHAR as job_execution_id,
         tg.table_groups_name, tg.project_code,
         dcc.functional_data_type,
         dcc.description as column_description,
@@ -690,7 +683,8 @@ def get_profiling_anomalies_by_ids(anomaly_ids: list[str]) -> pd.DataFrame:
         COALESCE(dcc.stakeholder_group, dtc.stakeholder_group, tg.stakeholder_group) as stakeholder_group,
         COALESCE(dcc.transform_level, dtc.transform_level, tg.transform_level) as transform_level,
         COALESCE(dcc.aggregation_level, dtc.aggregation_level) as aggregation_level,
-        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product
+        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
+        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification
     FROM profile_anomaly_results r
     INNER JOIN profile_anomaly_types t
         ON r.anomaly_id = t.id

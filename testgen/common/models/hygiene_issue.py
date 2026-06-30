@@ -11,7 +11,7 @@ from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import aliased, relationship
 from sqlalchemy.sql.functions import func
 
-from testgen.common.enums import Disposition
+from testgen.common.enums import Disposition, IssueLikelihood, PiiRisk
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.entity import Entity
 from testgen.common.models.job_execution import JobExecution
@@ -23,12 +23,28 @@ PII_RISK_RE = re.compile(r"Risk: (MODERATE|HIGH),")
 
 
 @dataclass
-class IssueLikelihoodCounts:
-    """Counts of hygiene issues by likelihood category, with dismissed/inactive separated."""
+class HygieneIssueCounts:
+    """Counts of active data-quality hygiene issues by likelihood category."""
 
     definite: int = 0
     likely: int = 0
     possible: int = 0
+
+
+@dataclass
+class PotentialPiiCounts:
+    """Counts of active Potential PII findings by risk level."""
+
+    high: int = 0
+    moderate: int = 0
+
+
+@dataclass
+class IssueCounts:
+    """Profiling-finding breakdown: active counts by kind, plus a single dismissed total."""
+
+    hygiene_issues: HygieneIssueCounts
+    potential_pii: PotentialPiiCounts
     dismissed: int = 0
 
 
@@ -202,19 +218,25 @@ class HygieneIssue(Entity):
         return result
 
     @classmethod
-    def count_by_likelihood(cls, profile_run_id: UUID) -> IssueLikelihoodCounts:
-        """Count hygiene issues by likelihood category for a single profiling run."""
-        dismissed = func.coalesce(cls.disposition, "Confirmed").in_(("Dismissed", "Inactive"))
+    def count_for_run(cls, profile_run_id: UUID) -> IssueCounts:
+        """Count profiling findings for a single run: active hygiene issues by likelihood,
+        active Potential PII findings by risk level, and a single dismissed total."""
+        dismissed = func.coalesce(cls.disposition, Disposition.CONFIRMED).in_(
+            (Disposition.DISMISSED, Disposition.INACTIVE)
+        )
+        is_pii = HygieneIssueType.likelihood == IssueLikelihood.POTENTIAL_PII
 
-        def _count_active(likelihood_values: tuple[str, ...]):
-            return func.sum(case((~dismissed & HygieneIssueType.likelihood.in_(likelihood_values), 1), else_=0))
+        def _count(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
 
         query = (
             select(
-                _count_active(("Definite",)).label("definite"),
-                _count_active(("Likely",)).label("likely"),
-                _count_active(("Possible", "Potential PII")).label("possible"),
-                func.sum(case((dismissed, 1), else_=0)).label("dismissed"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.DEFINITE)).label("definite"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.LIKELY)).label("likely"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.POSSIBLE)).label("possible"),
+                _count(~dismissed & is_pii & (cls.priority == PiiRisk.HIGH)).label("high"),
+                _count(~dismissed & is_pii & (cls.priority == PiiRisk.MODERATE)).label("moderate"),
+                _count(dismissed).label("dismissed"),
             )
             .select_from(cls)
             .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
@@ -222,7 +244,11 @@ class HygieneIssue(Entity):
         )
 
         row = get_current_session().execute(query).first()
-        return IssueLikelihoodCounts(**{k: v for k, v in row._mapping.items() if v is not None})
+        return IssueCounts(
+            hygiene_issues=HygieneIssueCounts(definite=row.definite, likely=row.likely, possible=row.possible),
+            potential_pii=PotentialPiiCounts(high=row.high, moderate=row.moderate),
+            dismissed=row.dismissed,
+        )
 
     @classmethod
     def _priority_order(cls):
@@ -275,7 +301,7 @@ class HygieneIssue(Entity):
                     ProfileResult.column_name == cls.column_name,
                 ),
             )
-            .where(ProfilingRun.job_execution_id == job_execution_id, *clauses)
+            .where(ProfilingRun.id == job_execution_id, *clauses)
             .order_by(cls._priority_order(), cls.table_name, cls.column_name, cls.id)
         )
         return cls._paginate(query, page=page, limit=limit, data_class=HygieneIssueListRow)
@@ -299,7 +325,7 @@ class HygieneIssue(Entity):
                 cls.project_code.label("project_code"),
                 HygieneIssueType.name.label("issue_type_name"),
                 TableGroup.table_groups_name.label("table_groups_name"),
-                ProfilingRun.job_execution_id.label("job_execution_id"),
+                ProfilingRun.id.label("job_execution_id"),
                 JobExecution.started_at.label("started_at"),
                 cls.schema_name.label("schema_name"),
                 cls.table_name.label("table_name"),
@@ -314,7 +340,7 @@ class HygieneIssue(Entity):
             )
             .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
             .join(ProfilingRun, ProfilingRun.id == cls.profile_run_id)
-            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .join(TableGroup, TableGroup.id == cls.table_groups_id)
             .outerjoin(
                 ProfileResult,
@@ -358,7 +384,7 @@ class HygieneIssue(Entity):
                 cls.detail.label("detail"),
                 HygieneIssueType.detail_redactable.label("detail_redactable"),
                 ProfileResult.pii_flag.label("pii_flag"),
-                ProfilingRun.job_execution_id.label("job_execution_id"),
+                ProfilingRun.id.label("job_execution_id"),
                 JobExecution.started_at.label("started_at"),
                 ProfileResult.general_type.label("column_general_type"),
                 ProfileResult.db_data_type.label("column_db_data_type"),
@@ -368,7 +394,7 @@ class HygieneIssue(Entity):
             )
             .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
             .join(ProfilingRun, ProfilingRun.id == cls.profile_run_id)
-            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.job_execution_id)
+            .outerjoin(JobExecution, JobExecution.id == ProfilingRun.id)
             .outerjoin(
                 ProfileResult,
                 and_(

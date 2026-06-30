@@ -1,6 +1,7 @@
 from sqlalchemy.engine import URL
 
 from testgen import settings
+from testgen.common.database.column_chars import ObjectType
 from testgen.common.database.flavor.flavor_service import FlavorService, ResolvedConnectionParams
 
 
@@ -10,6 +11,8 @@ class MssqlFlavorService(FlavorService):
     escaped_underscore = "[_]"
     row_limiting_clause = "top"
     url_scheme = "mssql+pyodbc"
+    # TABLESAMPLE is rejected on views; SQL Server has no materialized views, so only base tables.
+    sampleable_object_types = frozenset({ObjectType.TABLE})
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         connection_url = URL.create(

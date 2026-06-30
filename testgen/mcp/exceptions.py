@@ -20,6 +20,14 @@ class MCPUserError(Exception):
     """
 
 
+class MCPAuthenticationError(MCPUserError):
+    """Token authenticated at the transport but failed authorization at the tool boundary.
+
+    Raised when the token's user no longer exists or the token was revoked — distinct from
+    per-project permission denial. Carries a uniform, re-authenticate message for the client.
+    """
+
+
 class MCPPermissionDenied(MCPUserError):
     """Raised when access is denied due to insufficient project permissions."""
 

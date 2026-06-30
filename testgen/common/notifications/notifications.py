@@ -1,8 +1,7 @@
 import math
 from datetime import datetime
 
-from testgen.common.models.profiling_run import ProfilingRunStatus
-from testgen.common.models.test_definition import TestRunStatus
+from testgen.common import date_service
 from testgen.common.notifications.base import BaseEmailTemplate
 from testgen.utils import friendly_score
 
@@ -16,7 +15,7 @@ class BaseNotificationTemplate(BaseEmailTemplate):
         return "" if number is None else f"{number:,}"
 
     def format_dt_helper(self, dt: datetime) -> str:
-        return "" if dt is None else dt.strftime("%b %d, %-I:%M %p UTC")
+        return "" if dt is None else date_service.format_friendly_datetime(dt, "%b %d, %-I:%M %p UTC")
 
     def format_duration_helper(self, start_time: datetime, end_time: datetime) -> str:
         total_seconds = abs(end_time - start_time).total_seconds()
@@ -28,12 +27,6 @@ class BaseNotificationTemplate(BaseEmailTemplate):
         ]
         formatted = " ".join([ f"{unit[0]}{unit[1]}" for unit in units if unit[0] ])
         return formatted.strip() or "< 1s"
-
-    def format_status_helper(self, status: TestRunStatus | ProfilingRunStatus) -> str:
-        return {
-            "Complete": "Completed",
-            "Cancelled": "Canceled",
-        }.get(status, status)
 
     def format_score_helper(self, score: float) -> str:
         return friendly_score(score)

@@ -5,11 +5,12 @@ from datetime import date, datetime, timedelta
 from typing import Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, desc, func, or_, select
+from sqlalchemy import Boolean, Column, Enum, ForeignKey, Integer, String, desc, func, or_, select, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.expression import case
 
+from testgen.common.enums import MonitorType
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
 from testgen.common.models.test_definition import TestType
@@ -65,6 +66,23 @@ class TestResultSearchRow:
 
 
 @dataclass
+class TestRunResultRow:
+    """One individual result within a single test run for the API results endpoint."""
+
+    test_definition_id: UUID
+    test_type: str
+    schema_name: str
+    table_name: str | None
+    column_names: str | None
+    status: TestResultStatus | None
+    result_measure: str | None
+    threshold_value: str | None
+    message: str | None
+    test_time: datetime | None
+    disposition: str | None
+
+
+@dataclass
 class TrendBucket:
     """One time-bucket of failure aggregates for ``get_failure_trend``."""
 
@@ -101,11 +119,124 @@ class RunDiff:
 
     total_baseline: int
     total_target: int
+    stable_passes: int = 0
     regressions: list[DiffRow] = field(default_factory=list)
     improvements: list[DiffRow] = field(default_factory=list)
     persistent_failures: list[DiffRow] = field(default_factory=list)
     new_tests: list[DiffRow] = field(default_factory=list)
     removed_tests: list[DiffRow] = field(default_factory=list)
+
+
+@dataclass
+class MonitorEvent:
+    """One monitor result for a (table, monitor_type) pair within the lookback window.
+
+    Type-specific fields are populated by ``test_type``:
+
+    * ``Freshness_Trend``: ``signal`` carries minutes-since-last-update (string
+      like ``"120"`` / ``"Unknown"``); ``message`` carries the human-readable
+      detection text.
+    * ``Volume_Trend``: ``signal`` carries the row count (string of integer);
+      ``lower_bound`` / ``upper_bound`` carry the tolerance bounds the run was
+      evaluated against (sourced from ``input_parameters`` at run time).
+    * ``Schema_Drift``: ``schema_change_kind`` is the table-level code
+      (``A`` / ``D`` / ``M``); ``column_adds`` / ``column_drops`` /
+      ``column_mods`` carry per-event column-change counts.
+    * ``Metric_Trend``: same as Volume_Trend plus ``metric_name`` (the
+      user-defined name for the metric — the underlying SQL expression lives
+      on ``MonitorConfig``, not on the event).
+
+    Pending rows have no underlying ``test_results`` row — ``monitor_id``,
+    ``test_time``, and result flags are ``None``; ``is_pending`` is True.
+    Forecast points (future timestamps with predicted bounds) are NOT
+    events and surface separately via ``forecast_points_from_prediction``.
+    """
+    monitor_id: UUID | None
+    test_type: str
+    test_time: datetime | None
+    is_anomaly: bool | None
+    is_training: bool | None
+    is_pending: bool
+    is_error: bool
+    message: str | None
+    signal: str | None
+    lower_bound: str | None = None
+    upper_bound: str | None = None
+    schema_change_kind: str | None = None
+    column_adds: int | None = None
+    column_drops: int | None = None
+    column_mods: int | None = None
+    metric_name: str | None = None
+
+
+def _parse_kv_pairs(raw: str | None) -> dict[str, str]:
+    """Parse an ``input_parameters`` blob (``key=value; key=value; ...``) into a dict.
+
+    ``input_parameters`` is built with ``"; ".join(...)`` in ``execute_tests_query``
+    and read by the dashboard via ``dict_from_kv`` (default separator ``;``).
+    Tolerant of missing values, trailing/leading whitespace, empty strings.
+    Returns ``{}`` on empty input.
+    """
+    if not raw:
+        return {}
+    pairs: dict[str, str] = {}
+    for entry in raw.split(";"):
+        if "=" not in entry:
+            continue
+        key, _, value = entry.partition("=")
+        pairs[key.strip()] = value.strip()
+    return pairs
+
+
+def _build_monitor_event(row) -> MonitorEvent:
+    """Translate one CTE row into a ``MonitorEvent``, populating type-specific extras."""
+    is_pending = row["result_id"] is None
+    result_code = row["result_code"]
+    is_anomaly = (result_code == 0) if result_code is not None else None
+    is_training = (result_code == -1) if result_code is not None else None
+    is_error = (row["result_status"] == "Error")
+
+    event = MonitorEvent(
+        monitor_id=row["test_definition_id"],
+        test_type=row["test_type"],
+        test_time=row["test_time"] if not is_pending else None,
+        is_anomaly=is_anomaly,
+        is_training=is_training,
+        is_pending=is_pending,
+        is_error=is_error,
+        message=row["result_message"],
+        signal=row["result_signal"],
+    )
+
+    params = _parse_kv_pairs(row["input_parameters"])
+    if event.test_type in (MonitorType.VOLUME.value, MonitorType.METRIC.value):
+        event.lower_bound = params.get("lower_tolerance") or None
+        event.upper_bound = params.get("upper_tolerance") or None
+        if event.test_type == MonitorType.METRIC.value:
+            event.metric_name = row["column_names"] or None
+    elif event.test_type == MonitorType.SCHEMA.value:
+        signal = row["result_signal"]
+        if signal:
+            parts = signal.split("|")
+            event.schema_change_kind = parts[0] or None
+            event.column_adds = _int_or_none(parts, 1)
+            event.column_drops = _int_or_none(parts, 2)
+            event.column_mods = _int_or_none(parts, 3)
+
+    return event
+
+
+def _int_or_none(parts: list[str], index: int) -> int | None:
+    try:
+        value = parts[index]
+    except IndexError:
+        return None
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
 
 
 class TestResult(Entity):
@@ -173,6 +304,38 @@ class TestResult(Entity):
             query = query.where(TestSuite.project_code.in_(project_codes))
         query = query.order_by(cls.status, cls.table_name, cls.column_names).offset(offset).limit(limit)
         return get_current_session().scalars(query).all()
+
+    @classmethod
+    def list_for_run(
+        cls,
+        test_run_id: UUID,
+        *clauses,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[TestRunResultRow], int]:
+        """Paginated individual results for a single run, scoped by caller-supplied WHERE clauses.
+
+        Monitor suites are always filtered out.
+        """
+        query = (
+            select(
+                cls.test_definition_id.label("test_definition_id"),
+                cls.test_type.label("test_type"),
+                cls.schema_name.label("schema_name"),
+                cls.table_name.label("table_name"),
+                cls.column_names.label("column_names"),
+                cls.status.label("status"),
+                cls.result_measure.label("result_measure"),
+                cls.threshold_value.label("threshold_value"),
+                cls.message.label("message"),
+                cls.test_time.label("test_time"),
+                cls.disposition.label("disposition"),
+            )
+            .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .where(cls.test_run_id == test_run_id, TestSuite.is_monitor.isnot(True), *clauses)
+            .order_by(cls.status, cls.table_name, cls.column_names, cls.id)
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=TestRunResultRow)
 
     @classmethod
     def select_failures(
@@ -308,7 +471,7 @@ class TestResult(Entity):
             select(
                 cls.test_definition_id.label("test_definition_id"),
                 cls.test_run_id.label("test_run_id"),
-                TestRun.job_execution_id.label("job_execution_id"),
+                TestRun.id.label("job_execution_id"),
                 cls.test_time.label("test_time"),
                 TestSuite.id.label("test_suite_id"),
                 TestSuite.test_suite.label("test_suite_name"),
@@ -471,12 +634,16 @@ class TestResult(Entity):
 
         for tid in baseline_results.keys() & target_results.keys():
             baseline_info, target_info = baseline_results[tid], target_results[tid]
+            baseline_status, target_status = baseline_info["status"], target_info["status"]
+            if baseline_status == TestResultStatus.Passed and target_status == TestResultStatus.Passed:
+                diff.stable_passes += 1
+                continue
             row = _row(tid, baseline_info, target_info)
-            if baseline_info["status"] == TestResultStatus.Passed and target_info["status"] in failing:
+            if baseline_status == TestResultStatus.Passed and target_status in failing:
                 diff.regressions.append(row)
-            elif baseline_info["status"] in failing and target_info["status"] == TestResultStatus.Passed:
+            elif baseline_status in failing and target_status == TestResultStatus.Passed:
                 diff.improvements.append(row)
-            elif baseline_info["status"] in failing and target_info["status"] in failing:
+            elif baseline_status in failing and target_status in failing:
                 diff.persistent_failures.append(row)
 
         for tid in target_results.keys() - baseline_results.keys():
@@ -486,3 +653,153 @@ class TestResult(Entity):
             diff.removed_tests.append(_row(tid, baseline_results[tid], None))
 
         return diff
+
+    @classmethod
+    def list_monitor_events_for_table(
+        cls,
+        test_suite_id: str | UUID,
+        table_name: str,
+        *,
+        monitor_type: str | None = None,
+        lookback_multiplier: int = 1,
+        page: int = 1,
+        limit: int | None = None,
+    ) -> tuple[list[MonitorEvent], int]:
+        """Per-table monitor events within the suite's lookback window, newest first.
+
+        ``monitor_type`` is the internal ``test_type`` value; when ``None`` events
+        for all four monitor types are returned (used by the dashboard, which
+        groups by type on the JS side). ``lookback_multiplier`` extends the
+        active window for the "show more history" toggle. ``limit=None``
+        skips pagination entirely (the caller wants every event in the window).
+
+        Forecast points for Prediction-Model monitors are NOT included here —
+        events are only past, observed runs. Read forecasts separately via
+        ``forecast_points_from_prediction(prediction, sensitivity)``.
+        """
+        monitor_codes = (
+            [monitor_type] if monitor_type is not None
+            else [m.value for m in MonitorType]
+        )
+        type_filter_sql = "AND results.test_type = :monitor_type" if monitor_type else ""
+
+        query = f"""
+        WITH ranked_test_runs AS (
+            SELECT
+                test_runs.id,
+                test_runs.test_starttime,
+                COALESCE(test_suites.monitor_lookback, 1) * :lookback_multiplier AS lookback,
+                ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
+            FROM test_suites
+            INNER JOIN test_runs ON (test_suites.id = test_runs.test_suite_id)
+            WHERE test_suites.id = :test_suite_id
+        ),
+        active_runs AS (
+            SELECT id, test_starttime FROM ranked_test_runs WHERE position <= lookback
+        ),
+        target_types AS (
+            SELECT UNNEST(CAST(:monitor_codes AS TEXT[])) AS test_type
+        )
+        SELECT
+            COALESCE(results.test_time, active_runs.test_starttime) AS test_time,
+            tt.test_type,
+            results.id AS result_id,
+            results.test_definition_id,
+            results.result_code,
+            COALESCE(results.result_status, 'Log') AS result_status,
+            results.result_signal,
+            results.result_message,
+            COALESCE(results.input_parameters, '') AS input_parameters,
+            results.column_names
+        FROM active_runs
+        CROSS JOIN target_types tt
+        LEFT JOIN test_results AS results
+            ON results.test_run_id = active_runs.id
+            AND results.test_type = tt.test_type
+            AND results.table_name = :table_name
+            {type_filter_sql}
+        ORDER BY test_time DESC, tt.test_type, results.id NULLS LAST, active_runs.id
+        """
+
+        params: dict = {
+            "test_suite_id": str(test_suite_id),
+            "table_name": table_name,
+            "lookback_multiplier": lookback_multiplier,
+            "monitor_codes": monitor_codes,
+        }
+        if monitor_type is not None:
+            params["monitor_type"] = monitor_type
+
+        session = get_current_session()
+        rows = session.execute(text(query), params).mappings().all()
+        events = [_build_monitor_event(row) for row in rows]
+
+        # Paginate in Python — the CTE is bounded by lookback x |monitor_types|
+        # (typically <= ~120 rows for a single table). Revisit if either grows.
+        total = len(events)
+        if limit is not None:
+            start = (page - 1) * limit
+            events = events[start:start + limit]
+        return events, total
+
+    @classmethod
+    def list_metric_monitor_events(
+        cls,
+        test_suite_id: str | UUID,
+        test_definition_id: str | UUID,
+        *,
+        lookback_multiplier: int = 1,
+        page: int = 1,
+        limit: int | None = None,
+    ) -> tuple[list[MonitorEvent], int]:
+        """Per-metric event history within the suite's lookback window, newest
+        first. Scoped to one ``test_definition_id`` since Metric_Trend is the
+        only multi-instance monitor type — table + type alone would interleave
+        events across every metric on the table.
+
+        Distinct from ``list_monitor_events_for_table`` in two ways: (1) no
+        cross join with target_types — only one monitor type to query; (2) no
+        synthesized pending rows — a pending result for a specific
+        ``test_definition_id`` can't be distinguished from "no run yet"
+        without a results row to anchor on, so the model returns only rows
+        that actually ran. ``limit=None`` skips pagination.
+        """
+        query = """
+        WITH suite_window AS (
+            SELECT COALESCE(monitor_lookback, 1) * :lookback_multiplier AS lookback
+            FROM test_suites
+            WHERE id = :test_suite_id
+        )
+        SELECT
+            results.test_time,
+            results.test_type,
+            results.id AS result_id,
+            results.test_definition_id,
+            results.result_code,
+            COALESCE(results.result_status, 'Log') AS result_status,
+            results.result_signal,
+            results.result_message,
+            COALESCE(results.input_parameters, '') AS input_parameters,
+            results.column_names
+        FROM test_results AS results
+        WHERE results.test_suite_id = :test_suite_id
+          AND results.test_definition_id = :test_definition_id
+        ORDER BY results.test_time DESC, results.id
+        LIMIT (SELECT lookback FROM suite_window)
+        """
+
+        params: dict = {
+            "test_suite_id": str(test_suite_id),
+            "test_definition_id": str(test_definition_id),
+            "lookback_multiplier": lookback_multiplier,
+        }
+
+        session = get_current_session()
+        rows = session.execute(text(query), params).mappings().all()
+        events = [_build_monitor_event(row) for row in rows]
+
+        total = len(events)
+        if limit is not None:
+            start = (page - 1) * limit
+            events = events[start:start + limit]
+        return events, total

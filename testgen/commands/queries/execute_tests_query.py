@@ -7,7 +7,7 @@ from uuid import UUID
 import pandas as pd
 
 from testgen.common import read_template_sql_file
-from testgen.common.clean_sql import concat_columns
+from testgen.common.clean_sql import concat_columns, null_if_empty
 from testgen.common.database.database_service import (
     fetch_dict_from_db,
     get_flavor_service,
@@ -21,7 +21,7 @@ from testgen.common.freshness_service import (
     is_excluded_day,
     resolve_holiday_dates,
 )
-from testgen.common.models.connection import Connection
+from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestRunType, TestScope
@@ -348,16 +348,27 @@ class TestExecutionSQL:
                 "CONCAT_COLUMNS": concat_columns(test_def.column_name, self.null_value) if test_def.column_name else "",
                 "SKIP_ERRORS": test_def.skip_errors or 0,
                 "CUSTOM_QUERY": test_def.custom_query,
-                "BASELINE_CT": test_def.baseline_ct,
-                "BASELINE_UNIQUE_CT": test_def.baseline_unique_ct,
+                # Numeric baseline params feed division/arithmetic in CAT measures.
+                # Render empty values as NULL so the measure evaluates to NULL instead of producing
+                # invalid SQL like CAST( AS FLOAT). Cannot default to 0 — several are denominators.
+                "BASELINE_CT": null_if_empty(test_def.baseline_ct),
+                "BASELINE_UNIQUE_CT": null_if_empty(test_def.baseline_unique_ct),
+                # BASELINE_VALUE is a quoted literal, an unquoted number, or an IN-list depending on
+                # test type — no single empty-substitution is valid SQL, so it is templated as-is.
                 "BASELINE_VALUE": test_def.baseline_value,
-                "BASELINE_VALUE_CT": test_def.baseline_value_ct,
+                "BASELINE_VALUE_CT": null_if_empty(test_def.baseline_value_ct),
                 "THRESHOLD_VALUE": test_def.threshold_value or 0,
-                "BASELINE_SUM": test_def.baseline_sum,
-                "BASELINE_AVG": test_def.baseline_avg,
-                "BASELINE_SD": test_def.baseline_sd,
-                "LOWER_TOLERANCE": "NULL" if test_def.lower_tolerance in (None, "") else test_def.lower_tolerance,
-                "UPPER_TOLERANCE": "NULL" if test_def.upper_tolerance in (None, "") else test_def.upper_tolerance,
+                # Freshness_Trend uses BASELINE_SUM as a quoted timestamp (the template's
+                # NULLIF('{...}', '') handles empty); Other tests use it as a numeric sum.
+                "BASELINE_SUM": (
+                    test_def.baseline_sum
+                    if test_def.test_type == "Freshness_Trend"
+                    else null_if_empty(test_def.baseline_sum)
+                ),
+                "BASELINE_AVG": null_if_empty(test_def.baseline_avg),
+                "BASELINE_SD": null_if_empty(test_def.baseline_sd),
+                "LOWER_TOLERANCE": null_if_empty(test_def.lower_tolerance),
+                "UPPER_TOLERANCE": null_if_empty(test_def.upper_tolerance),
                 # SUBSET_CONDITION should be replaced after CUSTOM_QUERY
                 # since the latter may contain the former
                 "SUBSET_CONDITION": test_def.subset_condition or "1=1",
@@ -534,7 +545,7 @@ class TestExecutionSQL:
                     null_value=self.null_value,
                 )
 
-        max_query_chars = self.connection.max_query_chars - 400
+        max_query_chars = (self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS) - 400
         groups = group_cat_tests(test_defs, max_query_chars, concat_operator, single)
 
         aggregate_queries: list[tuple[str, None]] = []

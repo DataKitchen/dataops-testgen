@@ -41,6 +41,8 @@ test_types:
     \ process, better precision in measurement, the elimination of outliers, or a\
     \ more homogeneous cohort. "
   active: Y
+  algorithm: Statistical drift
+  statistical_technique: SD Shift
   cat_test_conditions:
   - id: '7032'
     test_type: Variability_Decrease

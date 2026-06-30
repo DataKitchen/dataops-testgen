@@ -1,12 +1,25 @@
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import StrEnum
+from typing import NoReturn, TypeVar
 from uuid import UUID
 
 from sqlalchemy import select
 
 from testgen.common.date_service import parse_since
-from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, JobStatus, PiiRisk, QualityDimension
+from testgen.common.enums import (
+    Disposition,
+    ImpactDimension,
+    IssueLikelihood,
+    JobStatus,
+    MonitorType,
+    PiiRisk,
+    QualityDimension,
+)
+from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorLabel
 from testgen.common.models import get_current_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import (
     GENERAL_TYPE_TO_CODE,
     ColumnOrderBy,
@@ -14,7 +27,7 @@ from testgen.common.models.data_column import (
     ProfileMetric,
     SuggestedDataType,
 )
-from testgen.common.models.hygiene_issue import HygieneIssueType
+from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
 from testgen.common.models.notification_settings import (
     MonitorNotificationTrigger,
     NotificationEvent,
@@ -23,14 +36,16 @@ from testgen.common.models.notification_settings import (
     TestRunNotificationTrigger,
 )
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.project import Project
 from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.scores import ScoreCategory, ScoreDefinition
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestType
-from testgen.common.models.test_result import TestResultStatus
+from testgen.common.models.test_definition import Severity, TestDefinition, TestDefinitionNote, TestType
+from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
+from testgen.mcp.tools.markdown import MdDoc
 
 # User-facing label for ``Disposition.INACTIVE`` is "Muted" — accept that label on input.
 _DISPOSITION_USER_TO_DB: dict[str, Disposition] = {
@@ -54,6 +69,7 @@ class DocGroup(StrEnum):
     DISCOVER = "Discover what TestGen knows about"
     INVESTIGATE = "Investigate quality issues"
     BROWSE_PROFILING = "Browse profiling results"
+    MONITORS = "Browse monitor health and events"
     TRIGGER = "Trigger profiling, tests, and test generation"
     SCORING = "Track data quality scores"
     MANAGE = "Manage TestGen configuration"
@@ -64,6 +80,17 @@ def parse_uuid(value: str, label: str = "ID") -> UUID:
         return UUID(value)
     except (ValueError, AttributeError) as err:
         raise MCPUserError(f"Invalid {label}: `{value}` is not a valid UUID.") from err
+
+
+_ParsedEnum = TypeVar("_ParsedEnum", bound=StrEnum)
+
+
+def parse_enum(value: str, enum_cls: type[_ParsedEnum], label: str) -> _ParsedEnum:
+    try:
+        return enum_cls(value)
+    except ValueError as err:
+        valid = ", ".join(member.value for member in enum_cls)
+        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}") from err
 
 
 def parse_result_status(value: str) -> TestResultStatus:
@@ -107,6 +134,15 @@ def parse_quality_dimension(value: str) -> QualityDimension:
         raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}") from err
 
 
+def parse_severity(value: str) -> Severity:
+    """Validate a test-suite default severity. Accepts ``Fail`` or ``Warning``."""
+    try:
+        return Severity(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in Severity)
+        raise MCPUserError(f"Invalid severity `{value}`. Valid values: {valid}") from err
+
+
 class ScoreGroupBy(StrEnum):
     """User-facing values accepted for the ``group_by`` argument on quality-score rollups."""
 
@@ -122,6 +158,7 @@ class ScoreGroupBy(StrEnum):
     STAKEHOLDER_GROUP = "Stakeholder Group"
     TRANSFORM_LEVEL = "Transform Level"
     DATA_PRODUCT = "Data Product"
+    DATA_CLASSIFICATION = "Data Classification"
 
 
 # Translates the user-facing label to the internal DB column name used by
@@ -139,6 +176,7 @@ SCORE_GROUP_BY_TO_COLUMN: dict[ScoreGroupBy, str] = {
     ScoreGroupBy.STAKEHOLDER_GROUP: "stakeholder_group",
     ScoreGroupBy.TRANSFORM_LEVEL: "transform_level",
     ScoreGroupBy.DATA_PRODUCT: "data_product",
+    ScoreGroupBy.DATA_CLASSIFICATION: "data_classification",
 }
 
 
@@ -161,6 +199,7 @@ class ScoreFilterField(StrEnum):
     STAKEHOLDER_GROUP = "Stakeholder Group"
     TRANSFORM_LEVEL = "Transform Level"
     DATA_PRODUCT = "Data Product"
+    DATA_CLASSIFICATION = "Data Classification"
 
 
 SCORE_FILTER_FIELD_TO_COLUMN: dict[ScoreFilterField, str] = {
@@ -174,6 +213,7 @@ SCORE_FILTER_FIELD_TO_COLUMN: dict[ScoreFilterField, str] = {
     ScoreFilterField.STAKEHOLDER_GROUP: "stakeholder_group",
     ScoreFilterField.TRANSFORM_LEVEL: "transform_level",
     ScoreFilterField.DATA_PRODUCT: "data_product",
+    ScoreFilterField.DATA_CLASSIFICATION: "data_classification",
 }
 
 
@@ -197,6 +237,7 @@ class ScoreCategoryArg(StrEnum):
     QUALITY_DIMENSION = "Quality Dimension"
     IMPACT_DIMENSION = "Impact Dimension"
     DATA_PRODUCT = "Data Product"
+    DATA_CLASSIFICATION = "Data Classification"
 
 
 SCORE_CATEGORY_ARG_TO_COLUMN: dict[ScoreCategoryArg, str] = {
@@ -211,6 +252,7 @@ SCORE_CATEGORY_ARG_TO_COLUMN: dict[ScoreCategoryArg, str] = {
     ScoreCategoryArg.QUALITY_DIMENSION: "dq_dimension",
     ScoreCategoryArg.IMPACT_DIMENSION: "impact_dimension",
     ScoreCategoryArg.DATA_PRODUCT: "data_product",
+    ScoreCategoryArg.DATA_CLASSIFICATION: "data_classification",
 }
 
 
@@ -297,6 +339,22 @@ def parse_run_status_filter(value: str) -> list[JobStatus]:
     return statuses
 
 
+class FailureGroupBy(StrEnum):
+    """User-facing values accepted for the ``group_by`` argument on ``get_failure_summary``."""
+
+    TEST_TYPE = "test_type"
+    TABLE = "table"
+    COLUMN = "column"
+
+
+def parse_failure_group_by(value: str) -> FailureGroupBy:
+    try:
+        return FailureGroupBy(value)
+    except ValueError as err:
+        valid = ", ".join(g.value for g in FailureGroupBy)
+        raise MCPUserError(f"Invalid group_by `{value}`. Valid values: {valid}") from err
+
+
 def format_run_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
     """Render an elapsed duration as ``Xs`` / ``Xm Ys`` / ``Xh Ym``. Returns ``None`` if either bound is missing."""
     if not started_at or not completed_at:
@@ -321,6 +379,53 @@ def next_scheduled_run(
     return min(s.get_sample_triggering_timestamps(1)[0] for s in schedules)
 
 
+# Monitor type — internal ``test_type`` value ↔ user-facing short label (the form
+# callers pass and the form rendered in output).
+_MONITOR_TYPE_USER_TO_DB: dict[str, MonitorType] = {
+    "freshness": MonitorType.FRESHNESS,
+    "volume": MonitorType.VOLUME,
+    "schema": MonitorType.SCHEMA,
+    "metric": MonitorType.METRIC,
+}
+
+
+def parse_monitor_type(value: str, label: str = "monitor_type") -> MonitorType:
+    """Validate a user-facing monitor type label and return the stored ``MonitorType``.
+
+    Accepts ``Freshness`` / ``Volume`` / ``Schema`` / ``Metric`` (Title Case
+    as rendered in tool output) or the equivalent lowercase forms. ``label``
+    names the caller's argument in the error message — pass
+    ``"anomaly_type"`` when the public arg is named differently from
+    ``monitor_type``.
+    """
+    db_value = _MONITOR_TYPE_USER_TO_DB.get(value.lower()) if isinstance(value, str) else None
+    if db_value is None:
+        valid = ", ".join(_MONITOR_TYPE_USER_TO_DB)
+        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
+    return db_value
+
+
+class MonitorTableSort(StrEnum):
+    """User-facing values accepted for the ``sort_by`` argument on ``list_monitored_tables``.
+
+    When an ``anomaly_type`` filter is set, ``anomaly_count_desc`` sorts by that type's
+    count; with no filter, it sorts by total anomalies across all types.
+    """
+
+    TABLE_NAME = "table_name"
+    ANOMALY_COUNT_DESC = "anomaly_count_desc"
+    LATEST_UPDATE_DESC = "latest_update_desc"
+    ROW_COUNT_CHANGE_DESC = "row_count_change_desc"
+
+
+def parse_monitor_table_sort(value: str) -> MonitorTableSort:
+    try:
+        return MonitorTableSort(value)
+    except ValueError as err:
+        valid = ", ".join(s.value for s in MonitorTableSort)
+        raise MCPUserError(f"Invalid sort_by `{value}`. Valid values: {valid}") from err
+
+
 def parse_disposition(value: str) -> Disposition:
     """Validate a user-facing disposition label and return the stored ``Disposition``.
 
@@ -330,6 +435,25 @@ def parse_disposition(value: str) -> Disposition:
     db_value = _DISPOSITION_USER_TO_DB.get(value)
     if db_value is None:
         valid = ", ".join(sorted(_DISPOSITION_USER_TO_DB))
+        raise MCPUserError(f"Invalid disposition `{value}`. Valid values: {valid}")
+    return db_value
+
+
+_NO_DECISION = "No Decision"
+
+
+def parse_test_result_disposition(value: str) -> Disposition | None:
+    """Validate a user-facing test-result disposition and return the stored value.
+
+    Accepts ``Confirmed``, ``Dismissed``, ``Muted``, and ``No Decision``. ``Muted``
+    maps to ``Disposition.INACTIVE``; ``No Decision`` clears the disposition (returns
+    ``None`` → NULL).
+    """
+    if value == _NO_DECISION:
+        return None
+    db_value = _DISPOSITION_USER_TO_DB.get(value)
+    if db_value is None:
+        valid = ", ".join([*_DISPOSITION_USER_TO_DB, _NO_DECISION])
         raise MCPUserError(f"Invalid disposition `{value}`. Valid values: {valid}")
     return db_value
 
@@ -491,10 +615,17 @@ def resolve_issue_type(name: str) -> str:
 
 
 def format_page_info(total: int, page: int, limit: int) -> str:
-    """Shared pagination summary line for MCP tool output."""
+    """Shared pagination summary line for MCP tool output.
+
+    Returns empty for a zero total *or* when ``page`` is past the last page \u2014
+    the caller's own "no rows on page N" message is more useful than a
+    ``Showing 6\u20135 of 5`` nonsense range.
+    """
     if total == 0:
         return ""
     start = (page - 1) * limit + 1
+    if start > total:
+        return ""
     end = min(start + limit - 1, total)
     return f"Showing {start}\u2013{end} of {total} (page {page})."
 
@@ -507,9 +638,100 @@ def format_page_footer(total: int, page: int, limit: int) -> str:
     return f"_Page {page} of {total_pages}. Use `page={page + 1}` for more._"
 
 
+def _default_render_diff_value(value: object) -> str | None:
+    """Default formatter for before/after cells in :func:`render_diff_table`.
+
+    * ``bool`` → ``"Yes"`` / ``"No"``
+    * ``None`` or ``""`` → ``None`` (rendered as em-dash by the table cell)
+    * else → ``str(value)``
+    """
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if value is None or value == "":
+        return None
+    return str(value)
+
+
+def render_diff_table(
+    doc: MdDoc,
+    before: Mapping[str, object],
+    after: Mapping[str, object],
+    *,
+    attrs: Sequence[str],
+    labels: Mapping[str, str],
+    secret_attrs: frozenset[str] = frozenset(),
+    value_renderer: Callable[[object], str | None] | None = None,
+) -> bool:
+    """Emit a ``Field / Before / After`` table for attrs whose values changed.
+
+    Update tools across the MCP surface share this shape: snapshot before, apply
+    field-by-field, snapshot after, render the delta. The shared helper keeps the
+    ordering, label lookup, and secret redaction consistent.
+
+    Args:
+        doc: ``MdDoc`` to append the table to.
+        before / after: same-shape dicts of the snapshot keyed by attr name.
+            Only entries in ``attrs`` are inspected.
+        attrs: ordered tuple of attrs to consider; controls row order.
+        labels: attr → user-facing label for the first column.
+        secret_attrs: attrs whose values must not be echoed (API keys, passwords).
+            Rendered as ``[secret]`` when present, em-dash when absent — distinct
+            from a "rotated" cue. Tools that need to communicate rotation
+            specifically (e.g. ``update_connection``) keep their own renderer.
+        value_renderer: override for the non-secret cells. Defaults to
+            :func:`_default_render_diff_value`.
+
+    Returns ``True`` if at least one row was rendered, ``False`` when nothing
+    changed (lets the caller emit a "No fields changed" message instead).
+    """
+    changed = {attr for attr in attrs if before.get(attr) != after.get(attr)}
+    if not changed:
+        return False
+    render = value_renderer or _default_render_diff_value
+    rows: list[list[object]] = []
+    for attr in attrs:
+        if attr not in changed:
+            continue
+        if attr in secret_attrs:
+            b = "[secret]" if before.get(attr) else None
+            a = "[secret]" if after.get(attr) else None
+        else:
+            b = render(before.get(attr))
+            a = render(after.get(attr))
+        rows.append([labels.get(attr, attr), b, a])
+    doc.table(["Field", "Before", "After"], rows, code=[0])
+    return True
+
+
 # Entity resolution helpers — see mcp-roadmap.md "Entity Resolution Helpers" guideline.
 # Extract a new resolve_<entity> here when a second caller needs the same parse-uuid +
 # perm-scoped lookup + collapsed-error pattern.
+
+
+def resolve_project(project_code: str) -> Project:
+    """Resolve a project code to a Project, scoped to the user's allowed projects.
+
+    Collapses missing-or-inaccessible into a single ``MCPResourceNotAccessible`` so
+    callers can't enumerate whether a project they can't see exists.
+    """
+    perms = get_project_permissions()
+    project = Project.get(project_code, Project.project_code.in_(perms.allowed_codes))
+    if project is None:
+        raise MCPResourceNotAccessible("Project", project_code)
+    return project
+
+
+def resolve_connection(connection_id: int) -> Connection:
+    """Resolve a connection ID, collapsing missing-or-inaccessible into one error path."""
+    perms = get_project_permissions()
+    conn = Connection.get(
+        connection_id,
+        Connection.project_code.in_(perms.allowed_codes),
+    )
+    if conn is None:
+        raise MCPResourceNotAccessible("Connection", str(connection_id))
+    return conn
+
 
 def resolve_table_group(table_group_id: str) -> TableGroup:
     """Resolve a TG ID, collapsing missing-or-inaccessible into one error path."""
@@ -519,6 +741,16 @@ def resolve_table_group(table_group_id: str) -> TableGroup:
     if tg is None:
         raise MCPResourceNotAccessible("Table group", table_group_id)
     return tg
+
+
+def resolve_hygiene_issue(issue_id: str) -> HygieneIssue:
+    """Resolve a hygiene issue ID, collapsing missing-or-inaccessible into one error path."""
+    issue_uuid = parse_uuid(issue_id, "issue_id")
+    perms = get_project_permissions()
+    issue = HygieneIssue.get(issue_uuid, HygieneIssue.project_code.in_(perms.allowed_codes))
+    if issue is None:
+        raise MCPResourceNotAccessible("Hygiene issue", issue_id)
+    return issue
 
 
 def resolve_test_suite(test_suite_id: str) -> TestSuite:
@@ -535,6 +767,23 @@ def resolve_test_suite(test_suite_id: str) -> TestSuite:
     return suite
 
 
+def resolve_monitored_table_group(table_group_id: str) -> tuple[TableGroup, TestSuite | None]:
+    """Resolve a table group ID and look up its linked monitor suite.
+
+    Returns ``(table_group, monitor_suite)``. ``monitor_suite`` is ``None`` when the
+    table group has no ``monitor_test_suite_id`` set, or that pointer doesn't resolve
+    to an ``is_monitor=True`` suite — callers render the "not monitored" output in
+    that case rather than raising an inaccessible error. Raises
+    ``MCPResourceNotAccessible`` when the table group itself is missing or out of
+    scope.
+    """
+    tg = resolve_table_group(table_group_id)
+    if tg.monitor_test_suite_id is None:
+        return tg, None
+    suite = TestSuite.get(tg.monitor_test_suite_id, TestSuite.is_monitor.is_(True))
+    return tg, suite
+
+
 def resolve_profiling_run(job_execution_id: str) -> ProfilingRun:
     """Resolve a profiling run by id-or-JE-id, scoped to allowed projects.
 
@@ -542,7 +791,7 @@ def resolve_profiling_run(job_execution_id: str) -> ProfilingRun:
     so callers don't leak existence of runs they shouldn't see.
     """
     run_uuid = parse_uuid(job_execution_id, "job_execution_id")
-    run = ProfilingRun.get_by_id_or_job(run_uuid)
+    run = ProfilingRun.get(run_uuid)
     perms = get_project_permissions()
     if run is None or not perms.has_access(run.project_code):
         raise MCPResourceNotAccessible("Profiling run", job_execution_id)
@@ -580,6 +829,28 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
     if td is None:
         raise MCPResourceNotAccessible("Test definition", test_definition_id)
     return td
+
+
+def resolve_test_result(test_result_id: str) -> TestResult:
+    """Resolve a test result ID to the live ORM model, collapsing missing-or-inaccessible.
+
+    Filters monitor suites and project access via the result's parent test suite.
+    """
+    result_uuid = parse_uuid(test_result_id, "test_result_id")
+    perms = get_project_permissions()
+    query = (
+        select(TestResult)
+        .join(TestSuite, TestResult.test_suite_id == TestSuite.id)
+        .where(
+            TestResult.id == result_uuid,
+            TestSuite.is_monitor.isnot(True),
+            TestSuite.project_code.in_(perms.allowed_codes),
+        )
+    )
+    result = get_current_session().scalars(query).first()
+    if result is None:
+        raise MCPResourceNotAccessible("Test result", test_result_id)
+    return result
 
 
 def resolve_test_note(test_note_id: str) -> TestDefinitionNote:
@@ -634,6 +905,52 @@ def resolve_notification(notification_id: str) -> NotificationSettings:
     if notif is None:
         raise MCPResourceNotAccessible("Notification", notification_id)
     return notif
+
+
+def resolve_aggregate_scope(
+    project_code: str | None,
+    test_suite_id: str | None = None,
+    table_group_id: str | None = None,
+) -> list[str]:
+    """Validate optional project / test-suite / table-group scope for a cross-run aggregation.
+
+    Resolves any supplied suite or table group (existence + access via the
+    ``resolve_*`` helpers), and — when ``project_code`` is also given — requires the
+    resolved entity to belong to it, raising a clear error on a cross-project mismatch
+    so the query never silently returns empty. Returns the project codes to scope the
+    aggregation to.
+    """
+    perms = get_project_permissions()
+    if project_code:
+        perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
+
+    scoped_projects: set[str] = set()
+    if test_suite_id:
+        suite = resolve_test_suite(test_suite_id)
+        if project_code and suite.project_code != project_code:
+            raise MCPUserError(
+                f"Test suite `{test_suite_id}` belongs to project `{suite.project_code}`, not `{project_code}`."
+            )
+        scoped_projects.add(suite.project_code)
+    if table_group_id:
+        table_group = resolve_table_group(table_group_id)
+        if project_code and table_group.project_code != project_code:
+            raise MCPUserError(
+                f"Table group `{table_group_id}` belongs to project `{table_group.project_code}`, not `{project_code}`."
+            )
+        scoped_projects.add(table_group.project_code)
+
+    if len(scoped_projects) > 1:
+        # Suite and table group resolve to different projects (only reachable when no
+        # project_code pins the scope). The two filters would AND to an empty result —
+        # reject rather than silently return nothing.
+        raise MCPUserError("The test suite and table group belong to different projects — narrow to one scope.")
+
+    if project_code:
+        return [project_code]
+    if scoped_projects:
+        return list(scoped_projects)
+    return perms.allowed_codes
 
 
 # Notification event-type labels.
@@ -724,3 +1041,498 @@ def format_notification_trigger(event: NotificationEvent | str, settings: dict |
     if event_enum is NotificationEvent.monitor_run:
         return _MONITOR_TRIGGER_INTERNAL_TO_LABEL[MonitorNotificationTrigger(raw)].value
     return None
+
+
+# Flavor display labels are the single source of truth in ``common/flavors.py``
+# (shared with the UI page). These maps just re-shape them for the MCP layer.
+SQL_FLAVOR_CODE_TO_LABEL: dict[str, SqlFlavorLabel] = dict(FLAVOR_CODE_TO_LABEL)
+SQL_FLAVOR_LABEL_TO_CODE: dict[SqlFlavorLabel, str] = {
+    label: code for code, label in FLAVOR_CODE_TO_LABEL.items()
+}
+SQL_FLAVOR_CODE_TO_FAMILY: dict[str, str] = dict(FLAVOR_CODE_TO_FAMILY)
+
+
+def parse_sql_flavor(value: str) -> tuple[SqlFlavorLabel, str, str]:
+    """Validate a user-facing ``sql_flavor`` value and return ``(label, code, family)``."""
+    try:
+        label = SqlFlavorLabel(value)
+    except ValueError as err:
+        valid = ", ".join(f.value for f in SqlFlavorLabel)
+        raise MCPUserError(f"Invalid sql_flavor `{value}`. Valid values: {valid}") from err
+    code = SQL_FLAVOR_LABEL_TO_CODE[label]
+    return label, code, SQL_FLAVOR_CODE_TO_FAMILY[code]
+
+
+def format_flavor_label(sql_flavor_code: str | None) -> str:
+    """Map a stored ``sql_flavor_code`` to its user-facing display label.
+
+    Returns the raw code as a fallback when the code is not in the registry — defensive
+    against a never-shipping-but-still-stored value rather than letting an LLM see ``None``.
+    """
+    if sql_flavor_code is None:
+        return ""
+    label = SQL_FLAVOR_CODE_TO_LABEL.get(sql_flavor_code)
+    return label.value if label else sql_flavor_code
+
+
+# ===========================================================================
+# Connection-parameter contract (MCP input vocabulary)
+#
+# The per-flavor connection shape: which auth modes exist and which fields each
+# needs, keyed by their UI labels (which double as ``connection_params`` keys).
+# This is MCP-only input vocabulary + parsing — it mirrors the per-flavor JS
+# forms in ``ui/static/js/components/connection_form.js`` (NOT sourced from
+# Python), and drives both the connection tools and the
+# ``testgen://connection-parameters/{flavor}`` resource. Field labels map to the
+# (often leaky) ``Connection`` columns here so the tool's arg surface speaks the
+# target-DB vocabulary.
+# ===========================================================================
+
+
+class ConnectionMode(StrEnum):
+    PASSWORD = "Password"  # noqa: S105 — auth-mode label, not a credential
+    KEY_PAIR = "Key-Pair"
+    MANAGED_IDENTITY = "Managed Identity"
+    ACCESS_TOKEN = "Access Token"  # noqa: S105 — auth-mode label, not a credential
+    SERVICE_PRINCIPAL = "Service Principal (OAuth)"
+    JWT_BEARER = "JWT Bearer Flow"
+    CLIENT_CREDENTIALS = "Client Credentials Flow"
+    SERVICE_ACCOUNT = "Service Account Key"
+
+
+class Req(StrEnum):
+    REQUIRED = "required"  # always required in this mode
+    REQUIRED_UNLESS_URL = "required_unless_url"  # required only in host mode
+    OPTIONAL = "optional"
+
+
+@dataclass(frozen=True)
+class ConnField:
+    label: str  # exact UI label == connection_params key
+    column: str  # Connection ORM attribute it maps to
+    requirement: Req
+    secret: bool = False
+
+
+@dataclass(frozen=True)
+class FlavorMode:
+    mode: ConnectionMode | None  # None for single-auth flavors
+    fields: tuple[ConnField, ...]  # excludes the URL field
+    supports_url: bool  # whether the URL alternative is offered
+    # Columns forced regardless of supplied params (auth flags, Databricks PAT user).
+    sets: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class FlavorSchema:
+    code: str
+    label: str
+    modes: tuple[FlavorMode, ...]
+    url_field: ConnField | None  # the shared URL field when any mode supports_url
+
+
+# -- reusable field definitions ---------------------------------------------
+
+_HOST = ConnField("Host", "project_host", Req.REQUIRED_UNLESS_URL)
+_PORT = ConnField("Port", "project_port", Req.REQUIRED_UNLESS_URL)
+_DATABASE = ConnField("Database", "project_db", Req.REQUIRED_UNLESS_URL)
+_SERVICE_NAME = ConnField("Service Name", "project_db", Req.REQUIRED_UNLESS_URL)
+_USERNAME = ConnField("Username", "project_user", Req.REQUIRED)
+_PASSWORD_OPT = ConnField("Password", "project_pw_encrypted", Req.OPTIONAL, secret=True)
+_PASSWORD_REQ = ConnField("Password", "project_pw_encrypted", Req.REQUIRED, secret=True)
+_WAREHOUSE = ConnField("Warehouse", "warehouse", Req.OPTIONAL)
+_PRIVATE_KEY = ConnField("Private Key", "private_key", Req.REQUIRED, secret=True)
+_PRIVATE_KEY_PASSPHRASE = ConnField("Private Key Passphrase", "private_key_passphrase", Req.OPTIONAL, secret=True)
+_URL = ConnField("URL", "url", Req.REQUIRED)
+
+# Databricks
+_HTTP_PATH_RU = ConnField("HTTP Path", "http_path", Req.REQUIRED_UNLESS_URL)
+_HTTP_PATH_REQ = ConnField("HTTP Path", "http_path", Req.REQUIRED)
+_HOST_REQ = ConnField("Host", "project_host", Req.REQUIRED)
+_PORT_REQ = ConnField("Port", "project_port", Req.REQUIRED)
+_CATALOG = ConnField("Catalog", "project_db", Req.REQUIRED_UNLESS_URL)
+_CATALOG_REQ = ConnField("Catalog", "project_db", Req.REQUIRED)
+_ACCESS_TOKEN = ConnField("Access Token", "project_pw_encrypted", Req.REQUIRED, secret=True)
+_CLIENT_ID = ConnField("Client ID", "project_user", Req.REQUIRED)
+_CLIENT_SECRET = ConnField("Client Secret", "project_pw_encrypted", Req.REQUIRED, secret=True)
+
+# BigQuery / Salesforce
+_SERVICE_ACCOUNT_KEY = ConnField("Service Account Key", "service_account_key", Req.REQUIRED, secret=True)
+_LOGIN_URL = ConnField("Login URL", "project_host", Req.REQUIRED)
+_CONSUMER_KEY = ConnField("Consumer Key", "project_user", Req.REQUIRED)
+_SF_USERNAME = ConnField("Username", "project_db", Req.REQUIRED)
+_CONSUMER_SECRET = ConnField("Consumer Secret", "project_pw_encrypted", Req.REQUIRED, secret=True)
+
+
+def _host_auth_schema(code: str, *, db_field: ConnField = _DATABASE) -> FlavorSchema:
+    """Single-mode host/URL flavors (PostgreSQL, Redshift, MSSQL, Oracle, SAP HANA)."""
+    return FlavorSchema(
+        code=code,
+        label=FLAVOR_CODE_TO_LABEL[code],
+        modes=(
+            FlavorMode(mode=None, fields=(_HOST, _PORT, db_field, _USERNAME, _PASSWORD_OPT), supports_url=True),
+        ),
+        url_field=_URL,
+    )
+
+
+def _azure_schema(code: str) -> FlavorSchema:
+    return FlavorSchema(
+        code=code,
+        label=FLAVOR_CODE_TO_LABEL[code],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.PASSWORD,
+                fields=(_HOST, _PORT, _DATABASE, _USERNAME, _PASSWORD_OPT),
+                supports_url=True,
+                sets={"connect_with_identity": False},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.MANAGED_IDENTITY,
+                fields=(_HOST, _PORT, _DATABASE),
+                supports_url=True,
+                sets={"connect_with_identity": True},
+            ),
+        ),
+        url_field=_URL,
+    )
+
+
+FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
+    "postgresql": _host_auth_schema("postgresql"),
+    "redshift": _host_auth_schema("redshift"),
+    "redshift_spectrum": _host_auth_schema("redshift_spectrum"),
+    "mssql": _host_auth_schema("mssql"),
+    "oracle": _host_auth_schema("oracle", db_field=_SERVICE_NAME),
+    "sap_hana": _host_auth_schema("sap_hana"),
+    "azure_mssql": _azure_schema("azure_mssql"),
+    "synapse_mssql": _azure_schema("synapse_mssql"),
+    "snowflake": FlavorSchema(
+        code="snowflake",
+        label=FLAVOR_CODE_TO_LABEL["snowflake"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.KEY_PAIR,
+                fields=(_HOST, _PORT, _DATABASE, _USERNAME, _WAREHOUSE, _PRIVATE_KEY, _PRIVATE_KEY_PASSPHRASE),
+                supports_url=True,
+                sets={"connect_by_key": True},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.PASSWORD,
+                fields=(_HOST, _PORT, _DATABASE, _USERNAME, _WAREHOUSE, _PASSWORD_REQ),
+                supports_url=True,
+                sets={"connect_by_key": False},
+            ),
+        ),
+        url_field=_URL,
+    ),
+    "databricks": FlavorSchema(
+        code="databricks",
+        label=FLAVOR_CODE_TO_LABEL["databricks"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.ACCESS_TOKEN,
+                fields=(_HOST, _PORT, _HTTP_PATH_RU, _CATALOG, _ACCESS_TOKEN),
+                supports_url=True,
+                # PAT auth: the username is always the literal 'token'.
+                sets={"connect_by_key": False, "project_user": "token"},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.SERVICE_PRINCIPAL,
+                fields=(_HOST_REQ, _PORT_REQ, _HTTP_PATH_REQ, _CATALOG_REQ, _CLIENT_ID, _CLIENT_SECRET),
+                supports_url=False,
+                sets={"connect_by_key": True},
+            ),
+        ),
+        url_field=_URL,
+    ),
+    "bigquery": FlavorSchema(
+        code="bigquery",
+        label=FLAVOR_CODE_TO_LABEL["bigquery"],
+        modes=(FlavorMode(mode=None, fields=(_SERVICE_ACCOUNT_KEY,), supports_url=False),),
+        url_field=None,
+    ),
+    "salesforce_data360": FlavorSchema(
+        code="salesforce_data360",
+        label=FLAVOR_CODE_TO_LABEL["salesforce_data360"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.JWT_BEARER,
+                fields=(_LOGIN_URL, _CONSUMER_KEY, _SF_USERNAME, _PRIVATE_KEY),
+                supports_url=False,
+                sets={"connect_by_key": True},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.CLIENT_CREDENTIALS,
+                fields=(_LOGIN_URL, _CONSUMER_KEY, _CONSUMER_SECRET),
+                supports_url=False,
+                sets={"connect_by_key": False},
+            ),
+        ),
+        url_field=None,
+    ),
+}
+
+
+def schema_for(code: str) -> FlavorSchema:
+    """Return the connection schema for a flavor code. Raises ``KeyError`` if unknown."""
+    return FLAVOR_CONNECTION_SCHEMA[code]
+
+
+def resolve_mode(code: str, mode_label: str | None) -> FlavorMode:
+    """Resolve the ``FlavorMode`` for a flavor + supplied ``connection_mode`` label.
+
+    Single-mode flavors take no ``connection_mode`` (passing one is an error).
+    Multi-mode flavors require a valid one.
+    """
+    schema = schema_for(code)
+    if len(schema.modes) == 1 and schema.modes[0].mode is None:
+        if mode_label is not None:
+            raise MCPUserError(f"{schema.label} does not take a connection_mode.")
+        return schema.modes[0]
+
+    valid = [str(m.mode) for m in schema.modes if m.mode is not None]
+    if mode_label is None:
+        raise MCPUserError(f"{schema.label} requires a connection_mode. Valid values: {', '.join(valid)}.")
+    for fmode in schema.modes:
+        if fmode.mode is not None and str(fmode.mode) == mode_label:
+            return fmode
+    raise MCPUserError(
+        f"Invalid connection_mode `{mode_label}` for {schema.label}. Valid values: {', '.join(valid)}."
+    )
+
+
+def infer_mode(connection: Connection) -> ConnectionMode | None:
+    """Reverse of a mode's ``sets`` flags — derive the active mode from a stored
+    connection so update/validation can pick the right field set without the
+    caller re-supplying ``connection_mode``.
+    """
+    code = connection.sql_flavor_code
+    schema = FLAVOR_CONNECTION_SCHEMA.get(code)
+    if schema is None or (len(schema.modes) == 1 and schema.modes[0].mode is None):
+        return None
+
+    if code in {"azure_mssql", "synapse_mssql"}:
+        return ConnectionMode.MANAGED_IDENTITY if connection.connect_with_identity else ConnectionMode.PASSWORD
+    if code == "snowflake":
+        return ConnectionMode.KEY_PAIR if connection.connect_by_key else ConnectionMode.PASSWORD
+    if code == "databricks":
+        return ConnectionMode.SERVICE_PRINCIPAL if connection.connect_by_key else ConnectionMode.ACCESS_TOKEN
+    if code == "salesforce_data360":
+        return ConnectionMode.JWT_BEARER if connection.connect_by_key else ConnectionMode.CLIENT_CREDENTIALS
+    return None
+
+
+def _mode_for_connection(connection: Connection) -> FlavorMode:
+    """Pick the FlavorMode matching a connection's current flags (for validation)."""
+    schema = schema_for(connection.sql_flavor_code)
+    if len(schema.modes) == 1:
+        return schema.modes[0]
+    active = infer_mode(connection)
+    for fmode in schema.modes:
+        if fmode.mode == active:
+            return fmode
+    return schema.modes[0]
+
+
+def connection_display_fields(connection: Connection) -> list[ConnField]:
+    """Active-mode fields (plus the URL field when in URL mode), in schema order.
+
+    For rendering a connection back to the user with the flavor-specific UI label
+    for each populated column (e.g. ``Catalog`` for Databricks, ``Login URL`` for
+    Salesforce). Callers skip secrets and empty values.
+    """
+    schema = schema_for(connection.sql_flavor_code)
+    fields = list(_mode_for_connection(connection).fields)
+    if schema.url_field is not None and getattr(connection, "connect_by_url", False):
+        fields.append(schema.url_field)
+    return fields
+
+
+def connection_field_labels(connection: Connection) -> dict[str, str]:
+    """Map each ``Connection`` column to its flavor/mode-specific UI label.
+
+    Used to label diff output. Columns outside the active mode fall back to the
+    caller's generic labels.
+    """
+    schema = schema_for(connection.sql_flavor_code)
+    labels = {fld.column: fld.label for fld in _mode_for_connection(connection).fields}
+    if schema.url_field is not None:
+        labels[schema.url_field.column] = schema.url_field.label
+    return labels
+
+
+def apply_connection_params(
+    connection: Connection,
+    code: str,
+    mode_label: str | None,
+    params: dict[str, object],
+) -> None:
+    """Map a label-keyed ``connection_params`` dict onto a ``Connection``.
+
+    * Resolves the mode and applies its forced ``sets`` columns (auth flags,
+      Databricks PAT ``project_user='token'``).
+    * Maps each supplied label to its ``Connection`` column (casting ``Port``).
+    * Toggles ``connect_by_url`` from the presence of ``URL`` vs the host-group
+      fields, rejecting an ambiguous mix.
+
+    Raises ``MCPUserError`` on unknown keys, an unsupported / conflicting ``URL``,
+    or an invalid / missing mode.
+    """
+    fmode = resolve_mode(code, mode_label)
+    fields_by_label = {f.label: f for f in fmode.fields}
+    url_fields = {f.label for f in fmode.fields if f.requirement is Req.REQUIRED_UNLESS_URL}
+
+    valid_keys = set(fields_by_label)
+    if fmode.supports_url:
+        valid_keys.add(_URL.label)
+    unknown = [key for key in params if key not in valid_keys]
+    if unknown:
+        raise MCPUserError(
+            f"Unknown connection_params for {schema_for(code).label}: {', '.join(sorted(unknown))}. "
+            f"Allowed: {', '.join(sorted(valid_keys))}."
+        )
+
+    has_url = _URL.label in params
+    provided_url_fields = [key for key in params if key in url_fields]
+    if has_url and not fmode.supports_url:
+        raise MCPUserError(f"{schema_for(code).label} does not support URL connections in this mode.")
+    if has_url and provided_url_fields:
+        raise MCPUserError(
+            f"Provide either a `URL` or host fields ({', '.join(sorted(url_fields))}), not both."
+        )
+
+    # Forced columns first so explicit params can't be clobbered by sets.
+    for attr, value in fmode.sets.items():
+        setattr(connection, attr, value)
+
+    for label, value in params.items():
+        if label == _URL.label:
+            continue
+        column = fields_by_label[label].column
+        setattr(connection, column, str(value) if column == "project_port" and value is not None else value)
+
+    if has_url:
+        connection.connect_by_url = True
+        connection.url = str(params[_URL.label])
+    elif provided_url_fields:
+        connection.connect_by_url = False
+
+
+# -- field-requirement validation -------------------------------------------
+
+_CONNECTION_NAME_MIN = 3
+_CONNECTION_NAME_MAX = 40
+_MAX_THREADS_MIN = 1
+_MAX_THREADS_MAX = 8
+_MAX_QUERY_CHARS_MIN = 500
+_MAX_QUERY_CHARS_MAX = 50000
+
+
+def _missing(value: object) -> bool:
+    return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _required_fields_for(connection: Connection) -> list[ConnField]:
+    """Schema fields that must be non-empty for this connection's flavor + active
+    mode, accounting for the URL alternative.
+    """
+    fmode = _mode_for_connection(connection)
+    using_url = fmode.supports_url and bool(connection.connect_by_url)
+
+    required: list[ConnField] = []
+    for fld in fmode.fields:
+        if fld.requirement is Req.REQUIRED:
+            required.append(fld)
+        elif fld.requirement is Req.REQUIRED_UNLESS_URL and not using_url:
+            required.append(fld)
+
+    schema = schema_for(connection.sql_flavor_code)
+    if using_url and schema.url_field is not None:
+        required.append(schema.url_field)
+    return required
+
+
+def validate_connection_fields(connection: Connection) -> list[str]:
+    """Return every validation error (empty list = valid).
+
+    Mirrors the per-flavor JS form validators in
+    ``ui/static/js/components/connection_form.js``. The connection tools call this
+    and raise their user-facing error containing the bullets. Field errors use the
+    UI label (e.g. ``Host``) so the LLM sees the same wording as a UI user.
+    """
+    errors: list[str] = []
+    flavor_label = FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code, connection.sql_flavor_code)
+
+    name = connection.connection_name
+    if _missing(name):
+        errors.append("`connection_name` is required.")
+    elif not (_CONNECTION_NAME_MIN <= len(name.strip()) <= _CONNECTION_NAME_MAX):
+        errors.append(
+            f"`connection_name` must be between {_CONNECTION_NAME_MIN} and {_CONNECTION_NAME_MAX} characters."
+        )
+
+    for fld in _required_fields_for(connection):
+        if _missing(getattr(connection, fld.column, None)):
+            errors.append(f"`{fld.label}` is required for {flavor_label}.")
+
+    threads = connection.max_threads
+    if threads is not None and not (_MAX_THREADS_MIN <= threads <= _MAX_THREADS_MAX):
+        errors.append(f"`max_threads` must be between {_MAX_THREADS_MIN} and {_MAX_THREADS_MAX}.")
+
+    query_chars = connection.max_query_chars
+    if query_chars is not None and not (_MAX_QUERY_CHARS_MIN <= query_chars <= _MAX_QUERY_CHARS_MAX):
+        errors.append(f"`max_query_chars` must be between {_MAX_QUERY_CHARS_MIN} and {_MAX_QUERY_CHARS_MAX}.")
+
+    return errors
+
+
+def effective_mode(connection: Connection, connection_mode: str | None) -> str | None:
+    """Mode label to apply: the explicit override, else the connection's current mode."""
+    if connection_mode is not None:
+        return connection_mode
+    inferred = infer_mode(connection)
+    return str(inferred) if inferred is not None else None
+
+
+def raise_validation_error(errors: list[str], header: str) -> NoReturn:
+    bullets = "\n".join(f"- {err}" for err in errors)
+    raise MCPUserError(f"{header}\n\n{bullets}")
+
+
+def render_connection_body(doc: MdDoc, connection: Connection) -> None:
+    """Render every non-secret connection field below the heading.
+
+    Encrypted columns are filtered out via ``ConnField.secret``.
+    """
+    doc.field("ID", connection.connection_id, code=True)
+    doc.field("Project", connection.project_code, code=True)
+    doc.field("Type", format_flavor_label(connection.sql_flavor_code))
+
+    # Each populated, non-secret field under its flavor-specific label
+    # (e.g. "Catalog" for Databricks, "Login URL" for Salesforce).
+    for fld in connection_display_fields(connection):
+        if fld.secret:
+            continue
+        value = getattr(connection, fld.column, None)
+        if value in (None, ""):
+            continue
+        doc.field(fld.label, value, code=fld.column != "project_port")
+
+    doc.field("Authentication", authentication_label(connection))
+    if connection.max_threads is not None:
+        doc.field("Max Threads", connection.max_threads)
+    if connection.max_query_chars is not None:
+        doc.field("Max Expression Length", connection.max_query_chars)
+
+
+def authentication_label(connection: Connection) -> str:
+    """The connection's auth method: the active connection mode for multi-mode
+    flavors, else the implicit method (service account key, else password).
+    """
+    mode = infer_mode(connection)
+    if mode is not None:
+        return str(mode)
+    if connection.service_account_key:
+        return "Service Account Key"
+    return "Password"

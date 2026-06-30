@@ -189,6 +189,12 @@ function isDataURL(/** @type string */ url) {
     return url.startsWith('data:');
 }
 
+// Guards a user-supplied value before it is rendered as a link href, blocking
+// javascript:/data:/vbscript: URIs. Only http(s) URLs may become clickable links.
+function isHttpUrl(/** @type any */ value) {
+    return typeof value === 'string' && /^https?:\/\//i.test(value.trim());
+}
+
 function checkIsRequired(validators) {
     let isRequired = validators.some(v => v.name === 'required');
     if (!isRequired) {
@@ -228,4 +234,4 @@ function createEmitter(setTriggerValue) {
     };
 }
 
-export { afterMount, createEmitter, debounce, fillViewportHeight, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, friendlyPercent, slugify, isDataURL, checkIsRequired, onFrameResized, parseDate };
+export { afterMount, createEmitter, debounce, fillViewportHeight, getRandomId, getValue, getParents, isEqual, isState, loadStylesheet, friendlyPercent, slugify, isDataURL, isHttpUrl, checkIsRequired, onFrameResized, parseDate };

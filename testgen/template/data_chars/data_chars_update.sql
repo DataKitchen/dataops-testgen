@@ -8,6 +8,7 @@ WITH new_chars AS (
       schema_name,
       table_name,
       run_date,
+      MAX(object_type) AS object_type,
       MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
       COUNT(*) AS column_ct
@@ -20,7 +21,8 @@ WITH new_chars AS (
 ),
 updated_records AS (
    UPDATE data_table_chars
-   SET approx_record_ct = n.approx_record_ct,
+   SET object_type = n.object_type,
+      approx_record_ct = n.approx_record_ct,
       record_ct = n.record_ct,
       column_ct = n.column_ct,
       last_refresh_date = n.run_date,
@@ -55,6 +57,7 @@ WITH new_chars AS (
       schema_name,
       table_name,
       run_date,
+      MAX(object_type) AS object_type,
       MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
       COUNT(*) AS column_ct
@@ -72,6 +75,7 @@ inserted_records AS (
          table_name,
          add_date,
          last_refresh_date,
+         object_type,
          approx_record_ct,
          record_ct,
          column_ct
@@ -81,6 +85,7 @@ inserted_records AS (
       n.table_name,
       n.run_date,
       n.run_date,
+      n.object_type,
       n.approx_record_ct,
       n.record_ct,
       n.column_ct

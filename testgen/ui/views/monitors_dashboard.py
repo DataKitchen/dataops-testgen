@@ -1,30 +1,34 @@
+import dataclasses
 import logging
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from math import ceil
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, cast
 
-import pandas as pd
 import streamlit as st
 
-from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.cron_service import get_cron_sample
-from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
-from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models import with_database_session
+from testgen.common.models.data_structure_log import DataStructureLog
 from testgen.common.models.notification_settings import (
     MonitorNotificationSettings,
     MonitorNotificationTrigger,
     NotificationEvent,
 )
-from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
+from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionSummary
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
+from testgen.common.monitor_forecast import (
+    gated_forecast_prediction,
+    next_update_window,
+)
+from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
-from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
+from testgen.ui.services.database_service import fetch_all_from_db
 from testgen.ui.services.query_cache import (
     get_monitor_schedule,
     get_project_summary,
@@ -40,6 +44,15 @@ from testgen.ui.session import session, temp_value
 from testgen.ui.utils import dict_from_kv, get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
+
+# Maps the user-facing ``anomaly_type_filter`` values supplied by the dashboard
+# frontend to the internal ``test_type`` codes the model method expects.
+_DASHBOARD_ANOMALY_TYPE_TO_DB: dict[str, str] = {
+    "freshness": "Freshness_Trend",
+    "volume": "Volume_Trend",
+    "schema": "Schema_Drift",
+    "metrics": "Metric_Trend",
+}
 
 PAGE_ICON = "apps_outage"
 PAGE_TITLE = "Monitors"
@@ -106,7 +119,7 @@ class MonitorsDashboardPage(Page):
         all_monitored_tables_count = 0
         monitor_changes_summary = None
         auto_open_table = None
-        
+
         current_page = int(current_page)
         items_per_page = int(items_per_page)
         page_start = current_page * items_per_page
@@ -123,7 +136,7 @@ class MonitorsDashboardPage(Page):
                     if sort_field and sort_field not in ALLOWED_SORT_FIELDS:
                         sort_field = None
 
-                    monitored_tables_page = get_monitor_changes_by_tables(
+                    monitored_tables_page, all_monitored_tables_count = get_monitor_changes_by_tables(
                         table_group_id,
                         table_name_filter=table_name_filter,
                         anomaly_type_filter=anomaly_type_filter,
@@ -131,11 +144,6 @@ class MonitorsDashboardPage(Page):
                         sort_order=sort_order,
                         limit=int(items_per_page),
                         offset=page_start,
-                    )
-                    all_monitored_tables_count = count_monitor_changes_by_tables(
-                        table_group_id,
-                        table_name_filter=table_name_filter,
-                        anomaly_type_filter=anomaly_type_filter,
                     )
                     monitor_changes_summary = summarize_monitor_changes(table_group_id)
 
@@ -348,249 +356,54 @@ def get_monitor_changes_by_tables(
     sort_order: Literal["asc"] | Literal["desc"] | None = None,
     limit: int | None = None,
     offset: int | None = None,
-) -> list[dict]:
-    query, params = _monitor_changes_by_tables_query(
+) -> tuple[list[dict], int]:
+    """Per-monitored-table summaries shaped for the dashboard's JSON payload.
+
+    Returns ``(rows, total)`` so the dashboard can fill its pager without an extra
+    round-trip to the model (which would re-run the heavy CTE twice — once for the
+    rows, once for the count — just to throw the rows away). Rows are dicts (rather
+    than ``MonitorTableSummary`` dataclasses) because the monitor-dashboard widget
+    consumes the payload via ``make_json_safe``. Each row is augmented with
+    ``table_group_id`` to match the historical payload shape.
+    """
+    page = 1 + (offset // limit) if limit and offset else 1
+    summaries, total = TableGroup.list_monitor_table_summaries(
         table_group_id,
+        anomaly_types=_dashboard_anomaly_types(anomaly_type_filter),
+        sort_by=_dashboard_sort_to_model(sort_field, sort_order),
         table_name_filter=table_name_filter,
-        anomaly_type_filter=anomaly_type_filter,
-        sort_field=sort_field,
-        sort_order=sort_order,
-        limit=limit,
-        offset=offset,
+        page=page,
+        limit=limit or 1000,
     )
-
-    results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
-
-
-@st.cache_data(show_spinner=False)
-def count_monitor_changes_by_tables(
-    table_group_id: str,
-    table_name_filter: str | None = None,
-    anomaly_type_filter: list[str] | None = None,
-) -> int:
-    query, params = _monitor_changes_by_tables_query(
-        table_group_id,
-        table_name_filter=table_name_filter,
-        anomaly_type_filter=anomaly_type_filter,
-    )
-    count_query = f"SELECT COUNT(*) AS count FROM ({query}) AS subquery"
-    result = execute_db_query(count_query, params)
-    return result or 0
+    rows = [{**dataclasses.asdict(s), "table_group_id": table_group_id} for s in summaries]
+    return rows, total
 
 
 @st.cache_data(show_spinner=False)
 def summarize_monitor_changes(table_group_id: str) -> dict:
-    query, params = _monitor_changes_by_tables_query(table_group_id)
-    count_query = f"""
-    SELECT
-        lookback,
-        MIN(lookback_start) AS lookback_start,
-        MAX(lookback_end) AS lookback_end,
-        SUM(freshness_anomalies)::INTEGER AS freshness_anomalies,
-        SUM(volume_anomalies)::INTEGER AS volume_anomalies,
-        SUM(schema_anomalies)::INTEGER AS schema_anomalies,
-        SUM(metric_anomalies)::INTEGER AS metric_anomalies,
-        BOOL_OR(freshness_error_message IS NOT NULL) AS freshness_has_errors,
-        BOOL_OR(volume_error_message IS NOT NULL) AS volume_has_errors,
-        BOOL_OR(schema_error_message IS NOT NULL) AS schema_has_errors,
-        BOOL_OR(metric_error_message IS NOT NULL) AS metric_has_errors,
-        BOOL_OR(freshness_is_training) AND BOOL_AND(freshness_is_training OR freshness_is_pending) AS freshness_is_training,
-        BOOL_OR(volume_is_training) AND BOOL_AND(volume_is_training OR volume_is_pending) AS volume_is_training,
-        BOOL_OR(metric_is_training) AND BOOL_AND(metric_is_training OR metric_is_pending) AS metric_is_training,
-        BOOL_AND(freshness_is_pending) AS freshness_is_pending,
-        BOOL_AND(volume_is_pending) AS volume_is_pending,
-        BOOL_AND(schema_is_pending) AS schema_is_pending,
-        BOOL_AND(metric_is_pending) AS metric_is_pending
-    FROM ({query}) AS subquery
-    GROUP BY lookback
-    """
-
-    result = fetch_one_from_db(count_query, params)
-    return {**result} if result else {
-        "lookback": 0,
-        "freshness_anomalies": 0,
-        "volume_anomalies": 0,
-        "schema_anomalies": 0,
-        "metric_anomalies": 0,
-        "freshness_is_training": False,
-        "volume_is_training": False,
-        "metric_is_training": False,
-        "freshness_is_pending": False,
-        "volume_is_pending": False,
-        "schema_is_pending": False,
-        "metric_is_pending": False,
-        "freshness_has_errors": False,
-        "volume_has_errors": False,
-        "schema_has_errors": False,
-        "metric_has_errors": False,
-    }
+    return dataclasses.asdict(TableGroup.get_monitor_group_summary(table_group_id))
 
 
-def _monitor_changes_by_tables_query(
-    table_group_id: str,
-    table_name_filter: str | None = None,
-    anomaly_type_filter: list[str] | None = None,
-    sort_field: str | None = None,
-    sort_order: Literal["asc"] | Literal["desc"] | None = None,
-    limit: int | None = None,
-    offset: int | None = None,
-) -> tuple[str, dict]:
-    query = f"""
-    WITH ranked_test_runs AS (
-        SELECT
-            test_runs.id,
-            test_runs.test_starttime,
-            COALESCE(test_suites.monitor_lookback, 1) AS lookback,
-            ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
-        FROM table_groups
-        INNER JOIN test_runs
-            ON (test_runs.test_suite_id = table_groups.monitor_test_suite_id)
-        INNER JOIN test_suites
-            ON (table_groups.monitor_test_suite_id = test_suites.id)
-        WHERE table_groups.id = :table_group_id
-    ),
-    lookback_window AS (
-        SELECT MIN(test_starttime) AS lookback_start
-        FROM ranked_test_runs
-        WHERE position <= lookback
-    ),
-    latest_tables AS (
-        SELECT DISTINCT
-            table_chars.schema_name,
-            table_chars.table_name
-        FROM data_table_chars table_chars
-        CROSS JOIN lookback_window
-        WHERE table_chars.table_groups_id = :table_group_id
-            -- Include current tables and tables dropped within lookback window
-            AND (table_chars.drop_date IS NULL OR table_chars.drop_date >= lookback_window.lookback_start)
-            {"AND table_chars.table_name ILIKE :table_name_filter" if table_name_filter else ''}
-    ),
-    monitor_results AS (
-        SELECT
-            latest_tables.table_name,
-            results.test_time,
-            results.test_type,
-            results.result_code,
-            ranked_test_runs.lookback,
-            ranked_test_runs.position,
-            ranked_test_runs.test_starttime,
-            -- result_code = -1 indicates training mode
-            CASE WHEN results.result_code = -1 THEN 1 ELSE 0 END AS is_training,
-            CASE WHEN results.test_type = 'Freshness_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS freshness_anomaly,
-            CASE WHEN results.test_type = 'Volume_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS volume_anomaly,
-            CASE WHEN results.test_type = 'Schema_Drift' AND results.result_code = 0 THEN 1 ELSE 0 END AS schema_anomaly,
-            CASE WHEN results.test_type = 'Metric_Trend' AND results.result_code = 0 THEN 1 ELSE 0 END AS metric_anomaly,
-            CASE WHEN results.test_type = 'Freshness_Trend' THEN results.result_signal ELSE NULL END AS freshness_interval,
-            CASE WHEN results.test_type = 'Volume_Trend' THEN results.result_signal::BIGINT ELSE NULL END AS row_count,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN SPLIT_PART(results.result_signal, '|', 1) ELSE NULL END AS table_change,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 2), '')::INT ELSE 0 END AS col_adds,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 3), '')::INT ELSE 0 END AS col_drops,
-            CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 4), '')::INT ELSE 0 END AS col_mods,
-            CASE WHEN results.result_status = 'Error' THEN results.result_message ELSE NULL END AS error_message
-        FROM latest_tables
-        LEFT JOIN ranked_test_runs ON TRUE
-        LEFT JOIN test_results AS results
-            ON results.test_run_id = ranked_test_runs.id
-            AND results.table_name = latest_tables.table_name
-        WHERE ranked_test_runs.position IS NULL
-            -- Also capture 1 run before the lookback to get baseline results
-            OR ranked_test_runs.position <= ranked_test_runs.lookback + 1
-    ),
-    monitor_tables AS (
-        SELECT
-            :table_group_id AS table_group_id,
-            table_name,
-            MAX(lookback) AS lookback,
-            SUM(freshness_anomaly) AS freshness_anomalies,
-            SUM(volume_anomaly) AS volume_anomalies,
-            SUM(schema_anomaly) AS schema_anomalies,
-            SUM(metric_anomaly) AS metric_anomalies,
-            MAX(test_time - (COALESCE(NULLIF(freshness_interval, 'Unknown')::INTEGER, 0) * INTERVAL '1 minute'))
-                FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS latest_update,
-            MAX(row_count) FILTER (WHERE position = 1) AS row_count,
-            SUM(col_adds) AS column_adds,
-            SUM(col_drops) AS column_drops,
-            SUM(col_mods) AS column_mods,
-            MAX(error_message) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_error_message,
-            MAX(error_message) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_error_message,
-            MAX(error_message) FILTER (WHERE test_type = 'Schema_Drift' AND position = 1) AS schema_error_message,
-            MAX(error_message) FILTER (WHERE test_type = 'Metric_Trend' AND position = 1) AS metric_error_message,
-            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_is_training,
-            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_is_training,
-            BOOL_OR(is_training = 1) FILTER (WHERE test_type = 'Metric_Trend' AND position = 1) AS metric_is_training,
-            BOOL_OR(test_type = 'Freshness_Trend') IS NOT TRUE AS freshness_is_pending,
-            BOOL_OR(test_type = 'Volume_Trend') IS NOT TRUE AS volume_is_pending,
-            -- Schema monitor only creates results on schema changes (Failed)
-            -- Mark it as pending only if there are no results of any test type
-            BOOL_OR(test_time IS NOT NULL) IS NOT TRUE AS schema_is_pending,
-            BOOL_OR(test_type = 'Metric_Trend') IS NOT TRUE AS metric_is_pending,
-            CASE
-                -- Mark as Dropped if latest Schema Drift result for the table indicates it was dropped
-                WHEN (ARRAY_AGG(table_change ORDER BY test_time DESC) FILTER (WHERE table_change IS NOT NULL))[1] = 'D'
-                    THEN 'dropped'
-                -- Only mark as Added if latest change does not indicate a drop
-                WHEN MAX(CASE WHEN table_change = 'A' THEN 1 ELSE 0 END) = 1
-                    THEN 'added'
-                WHEN SUM(schema_anomaly) > 0
-                    THEN 'modified'
-                ELSE NULL
-            END AS table_state
-        FROM monitor_results
-        -- Only aggregate within lookback runs
-        WHERE position IS NULL OR position <= COALESCE(lookback, 1)
-        GROUP BY table_name
-    ),
-    table_bounds AS (
-        SELECT
-            table_name,
-            MIN(position) AS min_position,
-            MAX(position) AS max_position
-        FROM monitor_results
-        WHERE position IS NOT NULL
-        GROUP BY table_name
-    ),
-    baseline_tables AS (
-        SELECT
-            monitor_results.table_name,
-            MIN(monitor_results.test_starttime) FILTER (
-                WHERE monitor_results.position = LEAST(monitor_results.lookback + 1, table_bounds.max_position)
-            ) AS lookback_start,
-            MAX(monitor_results.test_starttime) FILTER (
-                WHERE monitor_results.position = GREATEST(1, table_bounds.min_position)
-            ) AS lookback_end,
-            MAX(monitor_results.row_count) FILTER (
-                WHERE monitor_results.test_type = 'Volume_Trend'
-                AND monitor_results.position = LEAST(monitor_results.lookback + 1, table_bounds.max_position)
-            ) AS previous_row_count
-        FROM monitor_results
-        JOIN table_bounds ON monitor_results.table_name = table_bounds.table_name
-        GROUP BY monitor_results.table_name
-    )
-    SELECT
-        monitor_tables.*,
-        baseline_tables.lookback_start,
-        baseline_tables.lookback_end,
-        baseline_tables.previous_row_count
-    FROM monitor_tables
-    LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
-    {f"WHERE ({' OR '.join(f'{ANOMALY_TYPE_FILTERS[t]} > 0' for t in anomaly_type_filter)})" if anomaly_type_filter else ""}
-    ORDER BY {"LOWER(monitor_tables.table_name)" if not sort_field or sort_field == "table_name" else f"monitor_tables.{sort_field}"}
-    {"DESC" if sort_order == "desc" else "ASC"} NULLS LAST
-    {"LIMIT :limit" if limit else ""}
-    {"OFFSET :offset" if offset else ""}
-    """
+def _dashboard_anomaly_types(anomaly_type_filter: list[str] | None) -> list[str] | None:
+    """Map dashboard-form anomaly type labels to internal ``test_type`` codes."""
+    if not anomaly_type_filter:
+        return None
+    return [
+        _DASHBOARD_ANOMALY_TYPE_TO_DB[t]
+        for t in anomaly_type_filter
+        if t in _DASHBOARD_ANOMALY_TYPE_TO_DB
+    ] or None
 
-    escaped_table_name_filter = table_name_filter.replace("_", "\\_") if table_name_filter else None
-    params = {
-        "table_group_id": table_group_id,
-        "table_name_filter": f"%{escaped_table_name_filter}%" if escaped_table_name_filter else None,
-        "sort_field": sort_field,
-        "limit": limit,
-        "offset": offset,
-    }
 
-    return query, params
+def _dashboard_sort_to_model(
+    sort_field: str | None,
+    sort_order: Literal["asc"] | Literal["desc"] | None,
+) -> str | None:
+    """Translate the dashboard's (sort_field, sort_order) pair into the model's
+    ``sort_by`` form (the field name, optionally suffixed with ``_desc``)."""
+    if not sort_field:
+        return None
+    return f"{sort_field}_desc" if sort_order == "desc" else sort_field
 
 
 def set_param_values(payload: dict) -> None:
@@ -627,39 +440,25 @@ def build_edit_monitor_settings_data(
     get_monitor_suite, set_monitor_suite = temp_value(f"monitors:updated_suite:{monitor_suite_id}", default={})
 
     if should_save():
-        for key, value in get_monitor_suite().items():
-            setattr(monitor_suite, key, value)
-
-        is_new = not monitor_suite.id
-        monitor_suite.save()
-
-        new_schedule_config = get_schedule()
-        if ( # Check if schedule has to be created/recreated
-            not schedule
-            or schedule.cron_tz != new_schedule_config["cron_tz"]
-            or schedule.cron_expr != new_schedule_config["cron_expr"]
-        ):
-            if schedule:
-                JobSchedule.delete(schedule.id)
-
-            new_schedule = JobSchedule(
-                project_code=table_group.project_code,
-                key=RUN_MONITORS_JOB_KEY,
-                kwargs={"test_suite_id": str(monitor_suite.id)},
-                **new_schedule_config,
+        schedule_config = get_schedule()
+        if monitor_suite_id:
+            # An existing monitor suite always has a run-monitors schedule.
+            update_monitoring(
+                monitor_suite,
+                cast(JobSchedule, schedule),
+                suite_attrs=get_monitor_suite(),
+                cron_expr=schedule_config["cron_expr"],
+                cron_tz=schedule_config["cron_tz"],
+                active=schedule_config["active"],
             )
-            new_schedule.save()
-
-        elif schedule.active != new_schedule_config["active"]: # Only active status changed
-            JobSchedule.update_active(schedule.id, new_schedule_config["active"])
-
-        if is_new:
-            updated_table_group = get_table_group(table_group.id)
-            updated_table_group.monitor_test_suite_id = monitor_suite.id
-            updated_table_group.save()
-            # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
-            get_current_session().commit()
-            run_monitor_generation(monitor_suite.id, ["Volume_Trend", "Schema_Drift"])
+        else:
+            enable_monitoring(
+                get_table_group(table_group.id),
+                schedule_config["cron_expr"],
+                schedule_config["cron_tz"],
+                suite_attrs=get_monitor_suite(),
+                active=schedule_config["active"],
+            )
 
         st.session_state.pop(EDIT_MONITOR_SETTINGS_DIALOG_KEY, None)
         safe_rerun()
@@ -687,7 +486,7 @@ def build_edit_monitor_settings_data(
 def delete_monitor_suite(table_group: TableGroupMinimal) -> None:
     try:
         monitor_suite = get_test_suite(table_group.monitor_test_suite_id)
-        TestSuite.cascade_delete([monitor_suite.id])
+        disable_monitoring(monitor_suite)
         st.cache_data.clear()
     except Exception:
         LOG.exception("Failed to delete monitor suite")
@@ -712,12 +511,27 @@ def build_schema_changes_data(table_group: TableGroupMinimal, payload: dict) -> 
     return data, handlers
 
 
-def _resolve_holiday_dates(test_suite: TestSuite) -> set[date] | None:
-    if not test_suite.holiday_codes_list:
-        return None
-    now = pd.Timestamp.now("UTC")
-    idx = pd.DatetimeIndex([now - pd.Timedelta(days=7), now + pd.Timedelta(days=30)])
-    return resolve_holiday_dates(test_suite.holiday_codes_list, idx)
+def _freshness_next_update_window(
+    freshness_definition: TestDefinition | None,
+    events: dict,
+    test_suite: TestSuite,
+    monitor_schedule,
+) -> dict | None:
+    """Predicted next freshness-update window for the table — drives the
+    Freshness_Trend display window and couples the Volume/Metric forecast to the
+    expected next refresh. Extracts the last detected update from the chart's
+    event payload and delegates the business-time math to the shared service."""
+    last_update_events = [
+        e for e in events["freshness_events"]
+        if e["changed"] and not e["is_training"] and not e["is_pending"]
+    ]
+    last_detection_time = max((e["time"] for e in last_update_events), default=None)
+    return next_update_window(
+        freshness_definition,
+        last_detection_time,
+        test_suite=test_suite,
+        cron_tz=monitor_schedule.cron_tz if monitor_schedule else None,
+    )
 
 
 @with_database_session
@@ -775,9 +589,20 @@ def build_table_trends_data(
             metric_definition_id = metric_group["test_definition_id"]
             last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
 
+        # Predicted next freshness-update window for the table — shared by the Freshness_Trend
+        # display window and the freshness-gated Volume/Metric forecast (which expects no change
+        # until a refresh lands in this window).
+        freshness_definition = next((d for d in definitions if d.test_type == "Freshness_Trend"), None)
+        freshness_window = _freshness_next_update_window(freshness_definition, events, test_suite, monitor_schedule)
+
         for definition in definitions:
             test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
-            if definition.history_calculation == "PREDICT" and definition.prediction and (base_mean_predictions := definition.prediction.get("mean")):
+            if (
+                definition.history_calculation == "PREDICT"
+                and definition.prediction
+                and not definition.prediction.get("freshness_gated")
+                and (base_mean_predictions := definition.prediction.get("mean"))
+            ):
                 predicted_times = sorted([datetime.fromtimestamp(int(timestamp) / 1000.0, UTC) for timestamp in base_mean_predictions.keys()])
                 # Limit predictions to 1/3 of the lookback, with minimum 3 points
                 predicted_times = [str(int(t.timestamp() * 1000)) for idx, t in enumerate(predicted_times) if idx < 3 or idx < monitor_lookback / 3]
@@ -796,6 +621,43 @@ def build_table_trends_data(
                     "lower_tolerance": lower_tolerance_predictions,
                     "upper_tolerance": upper_tolerance_predictions,
                 }
+            elif (
+                definition.history_calculation == "PREDICT"
+                and definition.prediction
+                and definition.prediction.get("freshness_gated")
+                and (definition.lower_tolerance is not None or definition.upper_tolerance is not None)
+            ):
+                # A freshness-gated monitor holds at its baseline between refreshes (the stale-period
+                # check is value == baseline), so it must never render the rising forecast cone.
+                gated_prediction = gated_forecast_prediction(
+                    definition, freshness_window, last_run_time_per_test_key.get(test_key),
+                )
+                if gated_prediction is not None:
+                    predictions[test_key] = gated_prediction
+                else:
+                    # No freshness window available — fall back to a flat band at the next-refresh
+                    # tolerance sampled across upcoming scheduled runs.
+                    cron_sample = get_cron_sample(
+                        monitor_schedule.cron_expr,
+                        monitor_schedule.cron_tz,
+                        sample_count=ceil(min(max(3, monitor_lookback / 3), 10)),
+                        reference_time=last_run_time_per_test_key.get(test_key),
+                    )
+                    mean_predictions: dict = {}
+                    lower_tolerance_predictions: dict = {}
+                    upper_tolerance_predictions: dict = {}
+                    sample_next_runs = [timestamp * 1000 for timestamp in (cron_sample.get("samples") or [])]
+                    for timestamp in sample_next_runs:
+                        mean_predictions[timestamp] = None
+                        lower_tolerance_predictions[timestamp] = definition.lower_tolerance
+                        upper_tolerance_predictions[timestamp] = definition.upper_tolerance
+
+                    predictions[test_key] = {
+                        "method": "static",
+                        "mean": mean_predictions,
+                        "lower_tolerance": lower_tolerance_predictions,
+                        "upper_tolerance": upper_tolerance_predictions,
+                    }
             elif definition.history_calculation is None and (definition.lower_tolerance is not None or definition.upper_tolerance is not None):
                 cron_sample = get_cron_sample(
                     monitor_schedule.cron_expr,
@@ -818,46 +680,11 @@ def build_table_trends_data(
                     "lower_tolerance": lower_tolerance_predictions,
                     "upper_tolerance": upper_tolerance_predictions,
                 }
-            elif (
-                definition.test_type == "Freshness_Trend"
-                and definition.history_calculation == "PREDICT"
-                and (not definition.prediction or definition.prediction.get("schedule_stage"))
-                and definition.upper_tolerance is not None
-            ):
-                last_update_events = [
-                    e for e in events["freshness_events"]
-                    if e["changed"] and not e["is_training"] and not e["is_pending"]
-                ]
-                if last_update_events:
-                    last_detection_time = max(e["time"] for e in last_update_events)
-                    holiday_dates = _resolve_holiday_dates(test_suite)
-                    tz = monitor_schedule.cron_tz or "UTC" if monitor_schedule else None
-                    sched = get_schedule_params(definition.prediction)
-
-                    window_end = add_business_minutes(
-                        pd.Timestamp(last_detection_time),
-                        float(definition.upper_tolerance),
-                        test_suite.predict_exclude_weekends,
-                        holiday_dates, tz,
-                        excluded_days=sched.excluded_days,
-                    )
-                    window_start = None
-                    if lower_minutes := float(definition.lower_tolerance) if definition.lower_tolerance else None:
-                        window_start = add_business_minutes(
-                            pd.Timestamp(last_detection_time),
-                            lower_minutes,
-                            test_suite.predict_exclude_weekends,
-                            holiday_dates, tz,
-                            excluded_days=sched.excluded_days,
-                        )
-
-                    predictions["freshness_trend"] = {
-                        "method": "freshness_window",
-                        "window": {
-                            "start": int(window_start.timestamp() * 1000) if window_start else None,
-                            "end": int(window_end.timestamp() * 1000),
-                        },
-                    }
+            elif definition.test_type == "Freshness_Trend" and freshness_window is not None:
+                predictions["freshness_trend"] = {
+                    "method": "freshness_window",
+                    "window": freshness_window,
+                }
 
     data = {
         **make_json_safe(events),
@@ -913,7 +740,7 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_m
     CROSS JOIN target_tests tt
     LEFT JOIN test_results AS results
         ON (
-            results.test_run_id = active_runs.id 
+            results.test_run_id = active_runs.id
             AND results.test_type = tt.test_type
             AND results.table_name = :table_name
         )
@@ -995,29 +822,35 @@ def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_m
 
 
 @st.cache_data(show_spinner=False)
-def get_data_structure_logs(table_group_id: str, table_name: str, start_time: str, end_time: str):
-    query = """
-    SELECT
-        change_date,
-        change,
-        old_data_type,
-        new_data_type,
-        column_name
-    FROM data_structure_log
-    WHERE table_groups_id = :table_group_id
-        AND table_name = :table_name
-        AND change_date > :start_time ::TIMESTAMP
-        AND change_date <= :end_time ::TIMESTAMP;
-    """
-    params = {
-        "table_group_id": str(table_group_id),
-        "table_name": table_name,
-        "start_time": datetime.fromtimestamp(start_time, UTC),
-        "end_time": datetime.fromtimestamp(end_time, UTC),
-    }
+def get_data_structure_logs(table_group_id: str, table_name: str, start_time: float, end_time: float):
+    """Schema-change rows for a (table-group, table) inside an epoch-seconds window.
 
-    results = fetch_all_from_db(query, params)
-    return [ dict(row) for row in results ]
+    The dashboard's chart layer sends timestamps as epoch seconds (the JS-side
+    convention); we convert to UTC datetimes for the model method, which expects
+    real date/datetime bounds.
+    """
+    since = datetime.fromtimestamp(start_time, UTC)
+    until = datetime.fromtimestamp(end_time, UTC)
+    # Half-open window (exclusive lower, inclusive upper) so a change at the
+    # window-start boundary (the previous run's timestamp) is attributed to the
+    # earlier interval, matching the chart's data-point selection.
+    entries, _total = DataStructureLog.list_for_table_group(
+        table_group_id,
+        DataStructureLog.table_name == table_name,
+        DataStructureLog.change_date > since,
+        DataStructureLog.change_date <= until,
+        limit=None,
+    )
+    return [
+        {
+            "change_date": entry.change_date,
+            "change": entry.change,
+            "old_data_type": entry.old_data_type,
+            "new_data_type": entry.new_data_type,
+            "column_name": entry.column_name,
+        }
+        for entry in entries
+    ]
 
 
 @with_database_session

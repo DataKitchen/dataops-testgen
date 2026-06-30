@@ -1,16 +1,16 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlalchemy import BigInteger, Column, Float, Integer, String, desc, func, select, text, update
+from sqlalchemy import BigInteger, Column, Float, ForeignKey, String, delete, desc, func, select, text
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.orm import InstrumentedAttribute
+from sqlalchemy.orm import InstrumentedAttribute, foreign, relationship
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
-from testgen.common.enums import Disposition, JobStatus
+from testgen.common.enums import JOB_STATUS_LABEL, Disposition, JobStatus
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -20,7 +20,6 @@ from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
-ProfilingRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
 ProgressKey = Literal["data_chars", "col_profiling", "freq_analysis", "hygiene_issues"]
 ProgressStatus = Literal["Pending", "Running", "Completed", "Warning"]
 
@@ -57,8 +56,6 @@ class ProfilingRunSummary(EntityMinimal):
     progress: list[ProgressStep]
     table_groups_name: str | None
     table_group_schema: str | None
-    process_id: int | None
-    log_message: str | None
     table_ct: int | None
     column_ct: int | None
     record_ct: int | None
@@ -71,15 +68,7 @@ class ProfilingRunSummary(EntityMinimal):
     dq_score_profiling: float | None
     total_count: int
 
-    STATUS_LABEL: ClassVar[dict[str, str]] = {
-        JobStatus.COMPLETED: "Completed",
-        JobStatus.CANCELED: "Canceled",
-        JobStatus.CANCEL_REQUESTED: "Canceling",
-        JobStatus.PENDING: "Pending",
-        JobStatus.CLAIMED: "Starting",
-        JobStatus.RUNNING: "Running",
-        JobStatus.ERROR: "Error",
-    }
+    STATUS_LABEL: ClassVar[dict[str, str]] = JOB_STATUS_LABEL
 
     @property
     def status_label(self) -> str:
@@ -103,15 +92,16 @@ class LatestProfilingRun(NamedTuple):
 class ProfilingRun(Entity):
     __tablename__ = "profiling_runs"
 
-    id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True, default=uuid4)
+    id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("job_executions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
     project_code: str = Column(String, nullable=False)
     connection_id: str = Column(BigInteger, nullable=False)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), nullable=False)
     profiling_starttime: datetime = Column(postgresql.TIMESTAMP)
-    profiling_endtime: datetime = Column(postgresql.TIMESTAMP)
-    status: ProfilingRunStatus = Column(String, default="Running")
     progress: list[ProgressStep] = Column(postgresql.JSONB, default=[])
-    log_message: str = Column(String)
     table_ct: int = Column(BigInteger)
     column_ct: int = Column(BigInteger)
     record_ct: int = Column(BigInteger)
@@ -122,8 +112,13 @@ class ProfilingRun(Entity):
     dq_affected_data_points: int = Column(BigInteger)
     dq_total_data_points: int = Column(BigInteger)
     dq_score_profiling: float = Column(Float)
-    process_id: int = Column(Integer)
-    job_execution_id: UUID | None = Column(postgresql.UUID(as_uuid=True), nullable=True)
+
+    job_execution = relationship(
+        JobExecution,
+        primaryjoin=foreign(id) == JobExecution.id,
+        uselist=False,
+        viewonly=True,
+    )
 
     _default_order_by = (desc(profiling_starttime),)
     _minimal_columns = (
@@ -141,12 +136,6 @@ class ProfilingRun(Entity):
     )
 
     @classmethod
-    def get_by_id_or_job(cls, identifier: UUID) -> Self | None:
-        """Look up a profiling run by its own ID or by job_execution_id."""
-        query = select(cls).where((cls.id == identifier) | (cls.job_execution_id == identifier))
-        return get_current_session().scalars(query).first()
-
-    @classmethod
     def get_minimal(cls, run_id: str | UUID) -> ProfilingRunMinimal | None:
         if not is_uuid4(run_id):
             return None
@@ -154,7 +143,7 @@ class ProfilingRun(Entity):
         query = (
             select(*cls._minimal_columns)
             .join(TableGroup, cls.table_groups_id == TableGroup.id)
-            .where((cls.id == run_id) | (cls.job_execution_id == run_id))
+            .where(cls.id == run_id)
         )
         result = get_current_session().execute(query).mappings().first()
         return ProfilingRunMinimal(**result) if result else None
@@ -163,7 +152,7 @@ class ProfilingRun(Entity):
     def get_latest_run(cls, project_code: str) -> LatestProfilingRun | None:
         query = (
             select(ProfilingRun.id, JobExecution.started_at.label("run_time"))
-            .join(JobExecution, ProfilingRun.job_execution_id == JobExecution.id)
+            .join(JobExecution, ProfilingRun.id == JobExecution.id)
             .where(ProfilingRun.project_code == project_code, JobExecution.status == JobStatus.COMPLETED)
             .order_by(desc(JobExecution.started_at))
             .limit(1)
@@ -175,15 +164,14 @@ class ProfilingRun(Entity):
 
     @classmethod
     def get_latest_complete_je_id_for_table_group(cls, table_groups_id: UUID) -> UUID | None:
-        """Return the ``job_execution_id`` of the latest completed profiling run for a table group.
+        """Return the id of the latest completed profiling run for a table group.
 
-        Computed live from ``profiling_runs`` joined to ``job_executions`` — does not read the
-        legacy ``table_groups.last_complete_profile_run_id`` cache, which points at the internal
-        run PK rather than the JE id.
+        Computed live from ``profiling_runs`` joined to ``job_executions`` rather than
+        reading the ``table_groups.last_complete_profile_run_id`` cache.
         """
         query = (
-            select(cls.job_execution_id)
-            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            select(cls.id)
+            .join(JobExecution, cls.id == JobExecution.id)
             .where(cls.table_groups_id == table_groups_id, JobExecution.status == JobStatus.COMPLETED)
             .order_by(desc(JobExecution.started_at))
             .limit(1)
@@ -209,6 +197,7 @@ class ProfilingRun(Entity):
         project_code: str | None = None,
         table_group_id: str | UUID | None = None,
         job_execution_id: str | UUID | None = None,
+        schedule_id: str | None = None,
         statuses: list[JobStatus] | None = None,
         page: int = 1,
         page_size: int = 20,
@@ -216,6 +205,7 @@ class ProfilingRun(Entity):
         if (
             (table_group_id and not is_uuid4(table_group_id))
             or (job_execution_id and not is_uuid4(job_execution_id))
+            or (schedule_id and not is_uuid4(schedule_id))
         ):
             return [], 0
 
@@ -251,8 +241,6 @@ class ProfilingRun(Entity):
             COALESCE(pr.progress, '[]'::jsonb) AS progress,
             tg.table_groups_name,
             tg.table_group_schema,
-            pr.process_id,
-            pr.log_message,
             pr.table_ct,
             pr.column_ct,
             pr.record_ct,
@@ -265,13 +253,14 @@ class ProfilingRun(Entity):
             pr.dq_score_profiling,
             COUNT(*) OVER() AS total_count
         FROM job_executions je
-            LEFT JOIN profiling_runs pr ON pr.job_execution_id = je.id
+            LEFT JOIN profiling_runs pr ON pr.id = je.id
             LEFT JOIN table_groups tg ON tg.id = pr.table_groups_id
             LEFT JOIN profile_anomalies pa ON pa.profile_run_id = pr.id
         WHERE je.job_key = 'run-profile'
             {" AND je.project_code = :project_code" if project_code else ""}
             {" AND tg.id = :table_group_id" if table_group_id else ""}
             {" AND je.id = :job_execution_id" if job_execution_id else ""}
+            {" AND je.job_schedule_id = :schedule_id" if schedule_id else ""}
             {" AND je.status IN :statuses" if statuses else ""}
         ORDER BY je.created_at DESC
         LIMIT :limit OFFSET :offset;
@@ -280,6 +269,7 @@ class ProfilingRun(Entity):
             "project_code": project_code,
             "table_group_id": str(table_group_id) if table_group_id else None,
             "job_execution_id": str(job_execution_id) if job_execution_id else None,
+            "schedule_id": schedule_id,
             "statuses": tuple(statuses) if statuses else (),
             "limit": page_size,
             "offset": (page - 1) * page_size,
@@ -346,7 +336,7 @@ class ProfilingRun(Entity):
         """Check whether any active profiling job exists for the given entity or entities."""
         query = (
             select(func.count(cls.id))
-            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .join(JobExecution, cls.id == JobExecution.id)
             .where(JobExecution.status.in_(cls._ACTIVE_JOB_STATUSES))
         )
         if entity_cls is cls:
@@ -362,32 +352,14 @@ class ProfilingRun(Entity):
         return get_current_session().execute(query).scalar() > 0
 
     @classmethod
-    def cancel_run(cls, run_id: str | UUID) -> None:
-        query = update(cls).where(cls.id == run_id).values(status="Cancelled", profiling_endtime=datetime.now(UTC))
-        db_session = get_current_session()
-        db_session.execute(query)
-
-    @classmethod
     def cascade_delete(cls, ids: list[str]) -> None:
-        query = """
-        DELETE FROM profile_pair_rules
-        WHERE profile_run_id IN :profiling_run_ids;
+        """Delete runs and their results by removing the parent job executions.
 
-        DELETE FROM profile_anomaly_results
-        WHERE profile_run_id IN :profiling_run_ids;
-
-        DELETE FROM profile_results
-        WHERE profile_run_id IN :profiling_run_ids;
-
-        DELETE FROM job_executions
-        WHERE id IN (
-            SELECT job_execution_id FROM profiling_runs
-            WHERE id IN :profiling_run_ids AND job_execution_id IS NOT NULL
-        );
+        The run id is the job execution id, and the foreign-key chain
+        (profile_results / profile_anomaly_results -> profiling_runs ->
+        job_executions) cascades on delete.
         """
-        db_session = get_current_session()
-        db_session.execute(text(query), {"profiling_run_ids": tuple(ids)})
-        cls.delete_where(cls.id.in_(ids))
+        get_current_session().execute(delete(JobExecution).where(JobExecution.id.in_(ids)))
 
     @classmethod
     def find_latest_per_table_group(cls, project_code: str) -> set[UUID]:
@@ -404,7 +376,7 @@ class ProfilingRun(Entity):
         """
         rows = get_current_session().scalars(
             select(cls.id)
-            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .join(JobExecution, cls.id == JobExecution.id)
             .where(
                 cls.project_code == project_code,
                 JobExecution.status == JobStatus.COMPLETED,
@@ -443,7 +415,7 @@ class ProfilingRun(Entity):
         if protected_ids:
             where_clauses.append(cls.id.notin_(protected_ids))
 
-        base_select = select(cls.id).join(JobExecution, cls.job_execution_id == JobExecution.id)
+        base_select = select(cls.id).join(JobExecution, cls.id == JobExecution.id)
 
         if dry_run:
             return get_current_session().scalar(
@@ -459,18 +431,6 @@ class ProfilingRun(Entity):
                 cls.cascade_delete([str(i) for i in ids])
                 total += len(ids)
         return total
-
-    @classmethod
-    def get_job_execution_ids(cls, profiling_run_ids: list[UUID]) -> dict[UUID, UUID | None]:
-        """Map profiling_run PKs to their job_execution_ids (batch lookup).
-
-        Mirrors TestRun.get_job_execution_ids.
-        """
-        if not profiling_run_ids:
-            return {}
-        query = select(cls.id, cls.job_execution_id).where(cls.id.in_(profiling_run_ids))
-        rows = get_current_session().execute(query).all()
-        return {row.id: row.job_execution_id for row in rows}
 
     def init_progress(self) -> None:
         self._progress = {
@@ -495,7 +455,7 @@ class ProfilingRun(Entity):
     def get_previous(self) -> Self | None:
         query = (
             select(ProfilingRun)
-            .join(JobExecution, ProfilingRun.job_execution_id == JobExecution.id)
+            .join(JobExecution, ProfilingRun.id == JobExecution.id)
             .where(
                 ProfilingRun.table_groups_id == self.table_groups_id,
                 JobExecution.status == JobStatus.COMPLETED,
@@ -511,7 +471,7 @@ class ProfilingRun(Entity):
         """Return the most recent completed profiling runs for a table group, newest first."""
         query = (
             select(cls)
-            .join(JobExecution, cls.job_execution_id == JobExecution.id)
+            .join(JobExecution, cls.id == JobExecution.id)
             .where(
                 cls.table_groups_id == table_groups_id,
                 JobExecution.status == JobStatus.COMPLETED,

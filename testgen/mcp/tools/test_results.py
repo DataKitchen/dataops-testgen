@@ -1,22 +1,34 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
+from sqlalchemy import select
+
 from testgen.common.enums import JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.test_definition import TestType
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.models.test_result import BucketInterval, TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.test_result_disposition_service import (
+    DispositionUpdate,
+    set_test_results_disposition,
+)
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     DocGroup,
+    FailureGroupBy,
     format_page_footer,
     format_page_info,
+    parse_failure_group_by,
     parse_result_status,
     parse_since_arg,
+    parse_test_result_disposition,
     parse_uuid,
+    resolve_aggregate_scope,
+    resolve_test_result,
+    resolve_test_suite,
     resolve_test_type,
     validate_limit,
     validate_page,
@@ -26,6 +38,12 @@ from testgen.mcp.tools.markdown import MdDoc
 _DOC_GROUP = DocGroup.INVESTIGATE
 
 _DEFAULT_SEARCH_STATUSES = [TestResultStatus.Failed, TestResultStatus.Warning]
+
+_MODEL_GROUP_COLUMN = {
+    FailureGroupBy.TEST_TYPE: "test_type",
+    FailureGroupBy.TABLE: "table_name",
+    FailureGroupBy.COLUMN: "column_names",
+}
 
 
 @with_database_session
@@ -72,14 +90,14 @@ def list_test_results(
             raise MCPResourceNotAccessible("Test suite", test_suite_id)
         if suite.last_complete_test_run_id is None:
             raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
-        test_run = TestRun.get_by_id_or_job(suite.last_complete_test_run_id)
+        test_run = TestRun.get(suite.last_complete_test_run_id)
         if test_run is None:
             raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
         resolved_via_suite = True
-        run_id_label = str(test_run.job_execution_id)
+        run_id_label = str(test_run.id)
     else:
         job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-        test_run = TestRun.get_by_id_or_job(job_uuid)
+        test_run = TestRun.get(job_uuid)
         suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
         if test_run is None or suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test run", job_execution_id)
@@ -112,6 +130,12 @@ def list_test_results(
 
     type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
+    td_ids = {r.test_definition_id for r in results if r.test_definition_id}
+    source_by_td = {
+        td.id: (td.external_url, td.custom_metadata)
+        for td in (TestDefinition.select_where(TestDefinition.id.in_(td_ids)) if td_ids else [])
+    }
+
     doc = MdDoc()
     doc.heading(1, f"Test Results for run `{run_id_label}`")
     if resolved_via_suite:
@@ -125,6 +149,7 @@ def list_test_results(
             doc.heading(2, f"[{status_str}] {test_name} on `{r.column_names}` in `{r.table_name}`")
         else:
             doc.heading(2, f"[{status_str}] {test_name} on `{r.table_name}`")
+        doc.field("Test result", r.id, code=True)
         doc.field("Test definition", r.test_definition_id, code=True)
         if r.column_names:
             doc.field("Column", r.column_names, code=True)
@@ -134,6 +159,13 @@ def list_test_results(
             doc.field("Threshold", r.threshold_value)
         if r.message:
             doc.field("Message", r.message)
+        external_url, custom_metadata = source_by_td.get(r.test_definition_id, (None, None))
+        if external_url:
+            doc.field("External URL", external_url)
+        if custom_metadata:
+            doc.heading(3, "Custom Metadata")
+            for key, value in custom_metadata.items():
+                doc.field(MdDoc.escape(key), value)
 
     return doc.render()
 
@@ -167,20 +199,20 @@ def get_failure_summary(
         group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
     """
     perms = get_project_permissions()
+    group = parse_failure_group_by(group_by)
 
     if not any((job_execution_id, test_suite_id, since)):
         raise MCPUserError(
             "Provide 'job_execution_id' for a single run, or 'test_suite_id' or 'project_code' "
             "to aggregate across runs. 'since' is required when 'test_suite_id' is not provided."
         )
-    if group_by in ("table", "column") and not (job_execution_id or test_suite_id):
+    if group in (FailureGroupBy.TABLE, FailureGroupBy.COLUMN) and not (job_execution_id or test_suite_id):
         raise MCPUserError(
-            f"'{group_by}' grouping requires a single-suite scope. "
+            f"'{group}' grouping requires a single-suite scope. "
             "Provide 'job_execution_id' or 'test_suite_id'."
         )
 
-    model_group_map = {"table": "table_name", "column": "column_names"}
-    model_group_by = model_group_map.get(group_by, group_by)
+    model_group_by = _MODEL_GROUP_COLUMN[group]
 
     scope_label: str
     test_run_id = None
@@ -189,7 +221,7 @@ def get_failure_summary(
 
     if job_execution_id:
         job_uuid = parse_uuid(job_execution_id, "job_execution_id")
-        test_run = TestRun.get_by_id_or_job(job_uuid)
+        test_run = TestRun.get(job_uuid)
         suite = TestSuite.get_regular(test_run.test_suite_id) if test_run else None
         if test_run is None or suite is None or not perms.has_access(suite.project_code):
             raise MCPResourceNotAccessible("Test run", job_execution_id)
@@ -197,15 +229,7 @@ def get_failure_summary(
         scope_label = f"run `{job_execution_id}`"
         project_codes = perms.allowed_codes
     else:
-        if project_code:
-            perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
-            project_codes = [project_code]
-        else:
-            project_codes = perms.allowed_codes
-        if test_suite_uuid is not None:
-            suite = TestSuite.get_regular(test_suite_uuid)
-            if suite is None or not perms.has_access(suite.project_code):
-                raise MCPResourceNotAccessible("Test suite", test_suite_id)
+        project_codes = resolve_aggregate_scope(project_code, test_suite_id=test_suite_id)
         scope_parts = []
         if project_code:
             scope_parts.append(f"project `{project_code}`")
@@ -227,14 +251,14 @@ def get_failure_summary(
         return f"No confirmed failures found for {scope_label}."
 
     total = sum(row[-1] for row in failures)
-    if group_by == "test_type":
+    if group is FailureGroupBy.TEST_TYPE:
         type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
 
     doc = MdDoc()
     doc.heading(1, f"Failure Summary — {scope_label}")
     doc.text(f"**Total confirmed failures (Failed + Warning):** {total}")
 
-    if group_by == "test_type":
+    if group is FailureGroupBy.TEST_TYPE:
         headers = ["Test Type", "Severity", "Count"]
         rows = []
         for row in failures:
@@ -242,7 +266,7 @@ def get_failure_summary(
             name = type_names.get(code, code)
             severity = status.value if status else "Unknown"
             rows.append([name, severity, count])
-    elif group_by == "column":
+    elif group is FailureGroupBy.COLUMN:
         headers = ["Column", "Count"]
         rows = []
         for row in failures:
@@ -253,9 +277,9 @@ def get_failure_summary(
         headers = ["Table Name", "Count"]
         rows = [[row[0], row[-1]] for row in failures]
 
-    doc.table(headers, rows, code=[0] if group_by == "table" else None)
+    doc.table(headers, rows, code=[0] if group is FailureGroupBy.TABLE else None)
 
-    if group_by == "test_type":
+    if group is FailureGroupBy.TEST_TYPE:
         doc.text(
             "Check `testgen://test-types` to understand what each test type checks "
             "and `get_test_type(test_type='...')` to fetch more details."
@@ -450,12 +474,9 @@ def get_failure_trend(
         valid = ", ".join(v.value for v in BucketInterval)
         raise MCPUserError(f"Invalid `bucket`: `{bucket}`. Valid values: {valid}") from err
 
-    perms = get_project_permissions()
-    if project_code:
-        perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
-        project_codes = [project_code]
-    else:
-        project_codes = perms.allowed_codes
+    project_codes = resolve_aggregate_scope(
+        project_code, test_suite_id=test_suite_id, table_group_id=table_group_id
+    )
 
     anchor_today = datetime.now(UTC).date()
     if exclude_today:
@@ -540,7 +561,7 @@ def compare_test_runs(
     perms = get_project_permissions()
 
     def _resolve_accessible(je_id_str: str, je_uuid: UUID) -> TestRun:
-        run = TestRun.get_by_id_or_job(je_uuid)
+        run = TestRun.get(je_uuid)
         if run is None:
             raise MCPResourceNotAccessible("Test run", je_id_str)
         suite = TestSuite.get_regular(run.test_suite_id)
@@ -549,7 +570,7 @@ def compare_test_runs(
         return run
 
     def _require_completed(run: TestRun, label: str) -> None:
-        je = get_current_session().get(JobExecution, run.job_execution_id)
+        je = get_current_session().get(JobExecution, run.id)
         if je.status != JobStatus.COMPLETED:
             status_label = TestRunSummary.STATUS_LABEL.get(je.status, je.status)
             raise MCPUserError(
@@ -587,14 +608,15 @@ def compare_test_runs(
         ["", "Target", "Baseline"],
         [
             ["Test Run",
-             MdDoc.code(str(target_run.job_execution_id)),
-             MdDoc.code(str(baseline_run.job_execution_id))],
+             MdDoc.code(str(target_run.id)),
+             MdDoc.code(str(baseline_run.id))],
             ["Started", target_run.test_starttime, baseline_run.test_starttime],
         ],
     )
     doc.table(
         headers=["Category", "Count"],
         rows=[
+            ["Stable passes (Baseline passed → Target passed)", diff.stable_passes],
             ["Regressions (Baseline passed → Target failed/warning)", len(diff.regressions)],
             ["Improvements (Baseline failed/warning → Target passed)", len(diff.improvements)],
             ["Persistent failures", len(diff.persistent_failures)],
@@ -636,4 +658,117 @@ def compare_test_runs(
     _section("New Tests", diff.new_tests)
     _section("Removed Tests", diff.removed_tests)
 
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("disposition")
+def update_test_result(test_result_id: str, disposition: str) -> str:
+    """Set the disposition on a single test result (confirm, dismiss, mute, or clear).
+
+    Args:
+        test_result_id: UUID of the test result, e.g. from ``list_test_results``.
+        disposition: New disposition. One of 'Confirmed', 'Dismissed', 'Muted',
+            'No Decision' (clears it). 'Muted' deactivates the parent test and locks
+            it against auto-regeneration; any other value reactivates and unlocks it.
+    """
+    result = resolve_test_result(test_result_id)
+    db_disposition = parse_test_result_disposition(disposition)
+
+    update: DispositionUpdate = set_test_results_disposition([result.id], db_disposition)
+
+    doc = MdDoc()
+    if update.matched == 0:
+        doc.text(
+            f"Test result {MdDoc.code(test_result_id)} was not dispositioned — disposition does "
+            f"not apply to passed results. No change made."
+        )
+        return doc.render()
+
+    doc.text(f"Updated test result {MdDoc.code(test_result_id)} disposition to **{disposition}**.")
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("disposition")
+def bulk_update_test_results(
+    test_suite_id: str,
+    disposition: str,
+    job_execution_id: str | None = None,
+    table_name: str | None = None,
+    test_type: str | None = None,
+    status: str | None = None,
+    test_definition_id: str | None = None,
+) -> str:
+    """Set the disposition on every matching test result in a suite (confirm, dismiss, mute, clear).
+
+    Args:
+        test_suite_id: UUID of the test suite, e.g. from ``list_test_suites``.
+        disposition: New disposition. One of 'Confirmed', 'Dismissed', 'Muted',
+            'No Decision' (clears it). 'Muted' deactivates the parent tests and locks
+            them against auto-regeneration; any other value reactivates and unlocks.
+        job_execution_id: UUID of a test run within the suite. Defaults to the suite's
+            latest completed run when omitted.
+        table_name: Optional table-name filter. Case-sensitive.
+        test_type: Optional test type name (e.g. 'Alpha Truncation').
+        status: Optional result-status filter (Passed, Failed, Warning, Error, Log).
+        test_definition_id: Optional single test-definition filter.
+    """
+    suite = resolve_test_suite(test_suite_id)
+    db_disposition = parse_test_result_disposition(disposition)
+
+    if job_execution_id:
+        run = TestRun.get(parse_uuid(job_execution_id, "job_execution_id"))
+        if run is None or run.test_suite_id != suite.id:
+            raise MCPResourceNotAccessible("Test run", job_execution_id)
+    else:
+        run = (
+            TestRun.get(suite.last_complete_test_run_id)
+            if suite.last_complete_test_run_id
+            else None
+        )
+        if run is None:
+            raise MCPUserError(f"No completed test runs found for test suite `{test_suite_id}`.")
+
+    clauses = [TestResult.test_suite_id == suite.id, TestResult.test_run_id == run.id]
+    if status:
+        clauses.append(TestResult.status == parse_result_status(status))
+    if table_name:
+        clauses.append(TestResult.table_name == table_name)
+    if test_type:
+        clauses.append(TestResult.test_type == resolve_test_type(test_type))
+    if test_definition_id:
+        clauses.append(TestResult.test_definition_id == parse_uuid(test_definition_id, "test_definition_id"))
+
+    result_ids = list(get_current_session().scalars(select(TestResult.id).where(*clauses)).all())
+    update = set_test_results_disposition(result_ids, db_disposition)
+
+    filters = []
+    if table_name:
+        filters.append(f"table_name=`{table_name}`")
+    if test_type:
+        filters.append(f"test_type=`{test_type}`")
+    if status:
+        filters.append(f"status=`{status}`")
+    if test_definition_id:
+        filters.append(f"test_definition_id=`{test_definition_id}`")
+    filter_str = ", ".join(filters) if filters else "no filter"
+
+    doc = MdDoc()
+    if update.matched == 0 and update.passed_skipped == 0:
+        doc.heading(1, "No test results matched")
+        doc.text(
+            f"No test results in suite `{suite.test_suite}` matched the filter ({filter_str}). Nothing changed."
+        )
+        return doc.render()
+
+    doc.heading(1, f"Updated {update.matched} test results in suite `{suite.test_suite}`")
+    doc.field("Disposition", disposition)
+    doc.field("Run", run.id, code=True)
+    doc.field("Filter", filter_str)
+    if update.passed_skipped:
+        doc.text(
+            f"Left {update.passed_skipped} passed results unchanged — disposition is not "
+            f"applied to passed results."
+        )
     return doc.render()

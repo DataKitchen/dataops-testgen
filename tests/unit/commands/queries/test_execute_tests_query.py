@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -11,6 +11,8 @@ from testgen.commands.queries.execute_tests_query import (
     group_cat_tests,
     parse_cat_results,
 )
+from testgen.common.database.database_service import get_flavor_service
+from testgen.common.models.connection import Connection
 
 pytestmark = pytest.mark.unit
 
@@ -476,5 +478,102 @@ def test_resolve_cat_no_freshness_result_uses_band_check(_mock_changed):
     )
     operator, condition = instance._resolve_cat_operator_and_condition(td)
     assert operator == "NOT BETWEEN"
+
+
+def test_aggregate_cat_tests_handles_null_max_query_chars():
+    """A connection with NULL max_query_chars must not crash CAT batching — the
+    `- 400` headroom subtraction falls back to DEFAULT_MAX_QUERY_CHARS."""
+    instance = _make_execution_sql()
+    instance.connection = Connection(sql_flavor="postgresql", max_query_chars=None)
+    instance.flavor = "postgresql"
+    instance.flavor_service = get_flavor_service("postgresql")
+
+    td = _make_td(measure_expression="m_expr", condition_expression="c_expr")
+    queries, grouped_defs = instance.aggregate_cat_tests([td], single=True)
+
+    assert len(queries) == 1
+    assert grouped_defs == [[td]]
+
+
+# --- TestExecutionSQL._get_params baseline guards ---
+
+
+def _make_params_execution_sql() -> TestExecutionSQL:
+    """Build a minimal TestExecutionSQL for exercising _get_params without a database."""
+    instance = TestExecutionSQL.__new__(TestExecutionSQL)
+    flavor_service = MagicMock()
+    flavor_service.quote_character = '"'
+    flavor_service.varchar_type = "VARCHAR"
+    instance.flavor_service = flavor_service
+    instance.flavor = "postgresql"
+    instance.table_group = MagicMock(id=uuid4())
+    instance.test_run = MagicMock(test_suite_id=uuid4(), id=uuid4())
+    instance.run_date = datetime(2026, 1, 1, tzinfo=UTC)
+    return instance
+
+
+def test_get_params_empty_baseline_counts_become_null():
+    """Empty baseline counts must render as NULL, not "", to avoid CAST( AS FLOAT) syntax errors."""
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="Missing_Pct", baseline_ct="", baseline_value_ct=""))
+    assert params["BASELINE_CT"] == "NULL"
+    assert params["BASELINE_VALUE_CT"] == "NULL"
+
+
+def test_get_params_none_baseline_counts_become_null():
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="Missing_Pct", baseline_ct=None, baseline_value_ct=None))
+    assert params["BASELINE_CT"] == "NULL"
+    assert params["BASELINE_VALUE_CT"] == "NULL"
+
+
+def test_get_params_populated_baseline_counts_pass_through():
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="Missing_Pct", baseline_ct="1000", baseline_value_ct="950"))
+    assert params["BASELINE_CT"] == "1000"
+    assert params["BASELINE_VALUE_CT"] == "950"
+
+
+def test_get_params_zero_baseline_count_is_not_nulled():
+    """A real 0 is a meaningful value and must not be coerced to NULL."""
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="Row_Ct_Pct", baseline_ct=0))
+    assert params["BASELINE_CT"] == 0
+
+
+def test_get_params_empty_numeric_baselines_become_null():
+    """All numeric baseline params render NULL when empty."""
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(
+        test_type="Avg_Shift",
+        baseline_unique_ct="", baseline_avg="", baseline_sd="", baseline_sum="",
+    ))
+    assert params["BASELINE_UNIQUE_CT"] == "NULL"
+    assert params["BASELINE_AVG"] == "NULL"
+    assert params["BASELINE_SD"] == "NULL"
+    # Non-Freshness test types null-guard BASELINE_SUM (numeric use in Incr_Avg_Shift)
+    assert params["BASELINE_SUM"] == "NULL"
+
+
+def test_get_params_freshness_baseline_sum_kept_raw_when_empty():
+    """Freshness_Trend quotes BASELINE_SUM (NULLIF('', '') in template) — must stay empty, not 'NULL'."""
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="Freshness_Trend", baseline_sum=""))
+    assert params["BASELINE_SUM"] == ""
+
+
+def test_get_params_baseline_value_left_unguarded():
+    """BASELINE_VALUE has non-uniform usage (quoted/number/IN-list) — not coerced to NULL."""
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="Constant", baseline_value=""))
+    assert params["BASELINE_VALUE"] == ""
+
+
+def test_get_params_empty_tolerances_become_null():
+    """Tolerances use the same NULL guard."""
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="Volume_Trend", lower_tolerance="", upper_tolerance=""))
+    assert params["LOWER_TOLERANCE"] == "NULL"
+    assert params["UPPER_TOLERANCE"] == "NULL"
 
 

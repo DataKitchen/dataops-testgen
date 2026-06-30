@@ -33,6 +33,9 @@ SELECT
         WHEN c.data_type = 'NUMBER' AND c.data_scale > 0 THEN 1
         ELSE 0
     END AS is_decimal,
+    CASE WHEN t.table_name IS NOT NULL THEN 'TABLE'
+         WHEN EXISTS (SELECT 1 FROM all_views v WHERE v.owner = c.owner AND v.view_name = c.table_name) THEN 'VIEW'
+         ELSE 'OTHER' END AS object_type,
     t.num_rows AS approx_record_ct
 FROM all_tab_columns c
 LEFT JOIN all_tables t ON c.owner = t.owner AND c.table_name = t.table_name
