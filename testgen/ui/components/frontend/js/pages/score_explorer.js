@@ -228,7 +228,22 @@ const Toolbar = (
         filters.val[position].value.val = value
         filters.val = [ ...filters.val ];
     };
-    const refresh = debounce((payload) => emit('ScoreUpdated', { payload }), 300);
+    // The backend echoes each emitted ScoreUpdated back through props.definition. Because
+    // refresh is debounced and the echo is async, a stale intermediate echo can arrive after
+    // newer local edits. Record what we emit so the reconciliation derive can recognize and
+    // ignore echoes instead of clobbering newer local state.
+    const emittedFilterStates = [];
+    const MAX_EMITTED_FILTER_HISTORY = 10;
+    const refresh = debounce((payload) => {
+        emittedFilterStates.push({
+            filters: (payload.filters ?? []).map((f) => ({ field: f.field, value: f.value, others: f.others ?? [] })),
+            filter_by_columns: payload.filter_by_columns,
+        });
+        if (emittedFilterStates.length > MAX_EMITTED_FILTER_HISTORY) {
+            emittedFilterStates.shift();
+        }
+        emit('ScoreUpdated', { payload });
+    }, 300);
 
     van.derive(() => {
         const previous = {
@@ -277,7 +292,11 @@ const Toolbar = (
         const updatesValue = getValue(updates);
         if (updatesValue != null) {
             const simplifiedFilters = (filters.rawVal ?? []).map(f => ({ field: f.field, value: f.value.rawVal, others: f.others ?? []}))
-            if (!isEqual(updatesValue.filters, simplifiedFilters)) {
+            const isEcho = emittedFilterStates.some((state) =>
+                state.filter_by_columns === updatesValue.filter_by_columns
+                && isEqual(state.filters, updatesValue.filters)
+            );
+            if (!isEcho && !isEqual(updatesValue.filters, simplifiedFilters)) {
                 filters.val = updatesValue.filters.map((f, idx) => ({key: `${f.field}-${idx}-${getRandomId()}`, field: f.field, value: van.state(f.value), others: f.others ?? [] }));
             }
 
