@@ -62,7 +62,17 @@ const Tabs = (props, ...tabs) => {
 
     const tabsContainerEl = div({ ...restProps, 'data-testid': 'tabs', class: () => `${getValue(restProps.class) ?? ''} tg-tabs--container` },
         labelsContainerEl,
-        div({ class: "tg-tabs--content", 'data-testid': 'tab-panel' }, () => div({class: "tg-tabs--content-inner"}, tabs[activeTab.val].children)),
+        // Render every panel and toggle visibility with display:none rather than mounting only the
+        // active tab. A panel that starts off-screen (any non-default tab) would otherwise have its
+        // VanJS bindings cleaned up while disconnected, so fields like the description textarea would
+        // render with a dead `data-value` binding once shown — typed input never commits. Keeping all
+        // panels connected keeps their bindings live. See .claude/docs/vanjs-patterns.md section 1.
+        div({ class: "tg-tabs--content", 'data-testid': 'tab-panel' },
+            ...tabs.map((tab, i) => div(
+                { class: "tg-tabs--content-inner", style: () => i === activeTab.val ? '' : 'display: none;' },
+                tab.children,
+            )),
+        ),
     );
 
     van.derive(() => {
