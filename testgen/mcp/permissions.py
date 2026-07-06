@@ -27,6 +27,7 @@ class ProjectPermissions:
     memberships: dict[str, str]  # {project_code: role}
     permission: str
     username: str
+    is_global_admin: bool = False
 
     def codes_allowed_to(self, permission: str) -> list[str]:
         """Project codes where the user's role includes the given permission."""
@@ -116,6 +117,7 @@ def _compute_project_permissions(user: User, permission: str) -> ProjectPermissi
         memberships={m.project_code: m.role for m in memberships_list},
         permission=permission,
         username=user.username,
+        is_global_admin=user.is_global_admin,
     )
 
 
@@ -159,7 +161,12 @@ def mcp_permission(permission: str) -> Callable:
                     raise MCPPermissionDenied(
                         "Your role does not include the necessary permission for this operation."
                     )
-                perms = ProjectPermissions(memberships={}, permission=permission, username=user.username)
+                perms = ProjectPermissions(
+                    memberships={},
+                    permission=permission,
+                    username=user.username,
+                    is_global_admin=user.is_global_admin,
+                )
             else:
                 perms = _compute_project_permissions(user, permission)
                 if not perms.allowed_codes:

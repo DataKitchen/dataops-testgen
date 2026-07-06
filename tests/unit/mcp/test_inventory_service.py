@@ -4,6 +4,16 @@ from uuid import uuid4
 import pytest
 
 
+def _get_inventory(**kwargs):
+    """Call get_inventory with identity defaults; override per-test as needed."""
+    from testgen.mcp.services.inventory_service import get_inventory
+
+    kwargs.setdefault("username", "test_user")
+    kwargs.setdefault("is_global_admin", False)
+    kwargs.setdefault("roles_by_code", {})
+    return get_inventory(**kwargs)
+
+
 @pytest.fixture
 def session_mock():
     with patch("testgen.mcp.services.inventory_service.get_current_session") as mock:
@@ -48,9 +58,7 @@ def test_get_inventory_basic(mock_select, session_mock):
     row = _make_row(table_group_id=tg_id)
     session_mock.execute.return_value.all.return_value = [row]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "Data Inventory" in result
     assert "Demo" in result
@@ -63,9 +71,7 @@ def test_get_inventory_basic(mock_select, session_mock):
 def test_get_inventory_empty(mock_select, session_mock):
     session_mock.execute.return_value.all.return_value = []
 
-    from testgen.mcp.services.inventory_service import get_inventory
-
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "Data Inventory" in result
 
@@ -75,9 +81,7 @@ def test_get_inventory_project_no_connections(mock_select, session_mock):
     row = _make_row(connection_id=None)
     session_mock.execute.return_value.all.return_value = [row]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "Demo" in result
     assert "No connections" in result
@@ -87,9 +91,7 @@ def test_get_inventory_project_no_connections(mock_select, session_mock):
 def test_get_inventory_includes_list_tables_hint(mock_select, session_mock):
     session_mock.execute.return_value.all.return_value = [_make_row()]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "list_tables" in result
 
@@ -108,9 +110,7 @@ def test_get_inventory_compact_groups(mock_select, session_mock):
     ]
     session_mock.execute.return_value.all.return_value = rows
 
-    from testgen.mcp.services.inventory_service import get_inventory
-
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     # Compact groups: single line with "test suites: N", no "#### Table Group:" headers
     assert "test suites:" in result
@@ -125,9 +125,7 @@ def test_get_inventory_without_view_hides_connections_and_suites(mock_select, se
     row = _make_row(table_group_id=tg_id, test_suite_id=suite_id, test_suite="Secret Suite")
     session_mock.execute.return_value.all.return_value = [row]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-
-    result = get_inventory(project_codes=["demo"], view_project_codes=[])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=[])
 
     assert "Demo" in result
     assert "main" not in result  # connection name hidden
@@ -146,9 +144,7 @@ def test_get_inventory_with_view_shows_all_details(mock_select, session_mock):
     row = _make_row(table_group_id=tg_id, test_suite_id=suite_id, test_suite="Visible Suite")
     session_mock.execute.return_value.all.return_value = [row]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "main" in result  # connection name shown
     assert "**Test Suites:**" in result
@@ -188,8 +184,7 @@ def test_get_inventory_includes_profiling_fragment_when_view(
     table_group_select_summary_mock.return_value = ([summary], 1)
     session_mock.execute.return_value.all.return_value = [_make_row(table_group_id=tg_id)]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "Score" in result
     assert "hygiene issues 15" in result  # 2+2+11
@@ -205,8 +200,7 @@ def test_get_inventory_omits_profiling_fragment_without_view(
     tg_id = uuid4()
     session_mock.execute.return_value.all.return_value = [_make_row(table_group_id=tg_id)]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=[])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=[])
 
     assert "hygiene issues" not in result
     assert "last profiled" not in result
@@ -226,8 +220,7 @@ def test_get_inventory_never_profiled_fragment(
     )
     session_mock.execute.return_value.all.return_value = [_make_row(table_group_id=tg_id)]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "not profiled yet" in result
     assert "hygiene issues" not in result
@@ -251,8 +244,7 @@ def test_get_inventory_lists_single_tg_scorecard_under_tg(
     ]
     scorecards_by_project_mock.return_value = [(sc_id, "Core Scorecard", ["core"])]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "**Scorecards:**" in result
     assert f"- **Core Scorecard** (id: `{sc_id}`)" in result
@@ -273,8 +265,7 @@ def test_get_inventory_multi_tg_scorecard_appears_under_each_named_tg_and_spanni
     ]
     scorecards_by_project_mock.return_value = [(sc_id, "Cross", ["orders", "customers"])]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert result.count(f"- **Cross** (id: `{sc_id}`)") == 3
     assert "### Scorecards spanning multiple table groups" in result
@@ -290,8 +281,7 @@ def test_get_inventory_no_name_filter_scorecard_in_spanning_section_only(
     session_mock.execute.return_value.all.return_value = [_make_row(table_group_id=tg_id)]
     scorecards_by_project_mock.return_value = [(sc_id, "Metadata Only", [])]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "### Scorecards spanning multiple table groups" in result
     assert f"- **Metadata Only** (id: `{sc_id}`)" in result
@@ -317,8 +307,7 @@ def test_get_inventory_compact_mode_emits_scorecards_count_no_ids(
     sc_id = uuid4()
     scorecards_by_project_mock.return_value = [(sc_id, "G0 Scorecard", ["Group_0"])]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "scorecards: 1" in result
     assert str(sc_id) not in result  # no IDs in compact mode
@@ -333,8 +322,7 @@ def test_get_inventory_catalog_only_project_hides_scorecards(
     session_mock.execute.return_value.all.return_value = [_make_row(table_group_id=tg_id)]
     scorecards_by_project_mock.return_value = [(uuid4(), "Hidden", ["core"])]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=[])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=[])
 
     scorecards_by_project_mock.assert_not_called()
     assert "Scorecards" not in result
@@ -348,8 +336,7 @@ def test_get_inventory_footer_includes_get_scorecard_hint(
     """Footer mentions get_scorecard for discoverability."""
     session_mock.execute.return_value.all.return_value = [_make_row()]
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "get_scorecard(scorecard_id=" in result
 
@@ -363,8 +350,81 @@ def test_get_inventory_no_scorecards_omits_scorecards_line(
     session_mock.execute.return_value.all.return_value = [_make_row(table_group_id=tg_id)]
     scorecards_by_project_mock.return_value = []
 
-    from testgen.mcp.services.inventory_service import get_inventory
-    result = get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
 
     assert "**Scorecards:**" not in result
     assert "spanning multiple table groups" not in result
+
+
+# ----------------------------------------------------------------------
+# Caller identity header + per-project role suffix
+# ----------------------------------------------------------------------
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_renders_identity_header(mock_select, session_mock):
+    session_mock.execute.return_value.all.return_value = [_make_row()]
+
+    result = _get_inventory(
+        project_codes=["demo"], view_project_codes=["demo"],
+        username="alice", roles_by_code={"demo": "admin"},
+    )
+
+    assert "Authenticated as alice" in result
+    assert "system admin" not in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_identity_header_marks_global_admin(mock_select, session_mock):
+    session_mock.execute.return_value.all.return_value = [_make_row()]
+
+    result = _get_inventory(
+        project_codes=["demo"], view_project_codes=["demo"],
+        username="alice", is_global_admin=True, roles_by_code={"demo": "admin"},
+    )
+
+    assert "Authenticated as alice · system admin" in result
+
+
+@patch("testgen.mcp.services.inventory_service.PluginHook")
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_role_suffix_uses_rbac_label(mock_select, mock_hook, session_mock):
+    # The label comes from the RBAC plugin hook, not a core map — role vocabulary is
+    # enterprise-only. Core just renders whatever the hook returns.
+    mock_hook.instance.return_value.rbac.get_role_label.return_value = "Sentinel Role"
+    session_mock.execute.return_value.all.return_value = [_make_row()]
+
+    result = _get_inventory(
+        project_codes=["demo"], view_project_codes=["demo"],
+        username="alice", roles_by_code={"demo": "data_quality"},
+    )
+
+    assert "## Project: Demo (`demo`) — Sentinel Role access" in result
+    mock_hook.instance.return_value.rbac.get_role_label.assert_called_once_with("data_quality")
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_no_role_no_suffix(mock_select, session_mock):
+    session_mock.execute.return_value.all.return_value = [_make_row()]
+
+    result = _get_inventory(
+        project_codes=["demo"], view_project_codes=["demo"],
+        username="alice", roles_by_code={},
+    )
+
+    assert "## Project: Demo (`demo`)\n" in result
+    assert " access" not in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_no_projects_renders_fallback(mock_select, session_mock):
+    """With no accessible projects, a neutral fallback renders below the identity header."""
+    session_mock.execute.return_value.all.return_value = []
+
+    result = _get_inventory(
+        project_codes=[], view_project_codes=[], username="alice",
+    )
+
+    assert "Authenticated as alice" in result
+    assert "No projects accessible." in result
+    assert "## Project:" not in result

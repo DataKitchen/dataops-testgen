@@ -443,3 +443,47 @@ def test_get_test_suite_no_severity_renders_inherit(
     assert "Tests by type" not in out
     mock_resolve_conn.assert_not_called()
     mock_resolve_tg.assert_not_called()
+
+
+@patch("testgen.mcp.services.inventory_service.get_inventory")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_data_inventory_forwards_identity_and_roles(
+    mock_compute, mock_get_inventory, db_session_mock,
+):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_c"},
+        permission="catalog",
+        username="alice",
+        is_global_admin=False,
+    )
+    mock_get_inventory.return_value = "# Data Inventory"
+
+    from testgen.mcp.tools.discovery import get_data_inventory
+
+    get_data_inventory()
+
+    kwargs = mock_get_inventory.call_args.kwargs
+    assert kwargs["username"] == "alice"
+    assert kwargs["is_global_admin"] is False
+    assert kwargs["roles_by_code"] == {"proj_a": "role_c"}
+
+
+@patch("testgen.mcp.services.inventory_service.get_inventory")
+@patch("testgen.mcp.permissions._compute_project_permissions")
+def test_get_data_inventory_forwards_global_admin_flag(
+    mock_compute, mock_get_inventory, db_session_mock,
+):
+    mock_compute.return_value = ProjectPermissions(
+        memberships={"proj_a": "role_a"},
+        permission="catalog",
+        username="root",
+        is_global_admin=True,
+    )
+    mock_get_inventory.return_value = "# Data Inventory"
+
+    from testgen.mcp.tools.discovery import get_data_inventory
+
+    get_data_inventory()
+
+    kwargs = mock_get_inventory.call_args.kwargs
+    assert kwargs["is_global_admin"] is True
