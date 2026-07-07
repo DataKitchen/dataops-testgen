@@ -10,19 +10,28 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from testgen.api.deps import db_session, get_authorized_user
-from testgen.api.enums import Disposition, ResultStatus
+from testgen.api.enums import Disposition, HygieneDisposition, ImpactDimension, IssueLikelihood, PiiRisk, ResultStatus
 from testgen.api.runs import (
     get_profiling_run,
     get_test_run,
+    list_profiling_run_hygiene_issues,
+    list_profiling_run_potential_pii,
     list_profiling_runs,
     list_test_run_results,
     router,
 )
 from testgen.common.enums import JobStatus
-from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueCounts, IssueCounts, PotentialPiiCounts
+from testgen.common.models.hygiene_issue import (
+    HygieneIssue,
+    HygieneIssueCounts,
+    HygieneIssueListRow,
+    IssueCounts,
+    PotentialPiiCounts,
+)
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import ResultStatusCounts, TestResult, TestResultStatus, TestRunResultRow
+from testgen.common.pii_masking import PII_REDACTED
 
 pytestmark = pytest.mark.unit
 
@@ -531,3 +540,472 @@ def test_count_for_runs_backfills_missing_run_ids(mock_session):
         assert counts.hygiene_issues.definite == 0
         assert counts.potential_pii.high == 0
         assert counts.dismissed == 0
+
+
+# --- Hygiene + PII endpoints: shared helpers ---
+
+
+def _mock_hygiene_row(**overrides) -> HygieneIssueListRow:
+    defaults = {
+        "id": uuid4(),
+        "project_code": "test_project",
+        "issue_type_code": "suggested_column_pk",
+        "issue_type_name": "Suggested Primary Key",
+        "schema_name": "demo",
+        "table_name": "orders",
+        "column_name": "order_id",
+        "impact_dimension": "Reliability",
+        "dq_dimension": "Uniqueness",
+        "disposition": "Confirmed",
+        "priority": "Definite",
+        "detail": "Column looks like a primary key",
+        "detail_redactable": False,
+        "pii_flag": None,
+    }
+    defaults.update(overrides)
+    return HygieneIssueListRow(**defaults)
+
+
+def _mock_pii_row(**overrides) -> HygieneIssueListRow:
+    defaults = {
+        "issue_type_code": "potential_pii",
+        "issue_type_name": "Potential PII",
+        "column_name": "email",
+        "impact_dimension": None,
+        "dq_dimension": "Validity",
+        "priority": "High",
+        "detail": "Risk: HIGH, Type: EMAIL — column looks like PII",
+        "detail_redactable": True,
+        "pii_flag": "A",
+    }
+    return _mock_hygiene_row(**{**defaults, **overrides})
+
+
+def _hygiene_clauses_sql(mock_list) -> str:
+    clauses = mock_list.call_args.args[1:]
+    return " ".join(
+        str(c.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})) for c in clauses
+    )
+
+
+def _no_hygiene_filters(**overrides):
+    kwargs = {
+        "user": MagicMock(id=uuid4()),
+        "issue_type": None,
+        "likelihood": None,
+        "disposition": None,
+        "page": 1,
+        "limit": 20,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+def _no_pii_filters(**overrides):
+    kwargs = {
+        "user": MagicMock(id=uuid4()),
+        "pii_risk": None,
+        "disposition": None,
+        "page": 1,
+        "limit": 20,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+# --- list_profiling_run_hygiene_issues: envelope + field/enum mapping ---
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_list_hygiene_issues_envelope_and_mapping(mock_list, _mock_perm):
+    row = _mock_hygiene_row()
+    mock_list.return_value = ([row], 7)
+
+    job = _mock_job()
+    result = list_profiling_run_hygiene_issues(job, **_no_hygiene_filters(page=2, limit=5))
+
+    assert result.total == 7
+    assert result.page == 2
+    assert result.limit == 5
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.id == row.id
+    assert item.issue_type == "suggested_column_pk"  # code, not display name
+    assert item.schema_name == "demo"
+    assert item.likelihood == IssueLikelihood.definite
+    assert item.impact_dimension == ImpactDimension.reliability
+    assert item.disposition == HygieneDisposition.confirmed
+    assert item.detail == "Column looks like a primary key"
+    # job.id is the scope; page/limit forwarded as kwargs.
+    assert mock_list.call_args.args[0] == job.id
+    assert mock_list.call_args.kwargs == {"page": 2, "limit": 5}
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_list_hygiene_issues_empty_envelope(_mock_list, _mock_perm):
+    result = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters())
+    assert result.items == []
+    assert result.total == 0
+    assert result.page == 1
+
+
+# --- list_profiling_run_potential_pii: envelope + field/enum mapping ---
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_list_potential_pii_envelope_and_mapping(mock_list, _mock_perm):
+    row = _mock_pii_row()
+    mock_list.return_value = ([row], 3)
+
+    result = list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters(page=1, limit=10))
+
+    assert result.total == 3
+    assert result.limit == 10
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.id == row.id
+    assert item.issue_type == "potential_pii"
+    assert item.pii_risk == PiiRisk.high
+    assert item.disposition == HygieneDisposition.confirmed
+    assert not hasattr(item, "likelihood")  # PII item has no likelihood field
+    assert not hasattr(item, "impact_dimension")  # PII item has no impact_dimension field
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_list_potential_pii_empty_envelope(_mock_list, _mock_perm):
+    result = list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters())
+    assert result.items == []
+    assert result.total == 0
+
+
+# --- Hygiene endpoint: filter clause building ---
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_partition_clause_always_excludes_pii(mock_list, _mock_perm):
+    list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters())
+    sql = _hygiene_clauses_sql(mock_list)
+    assert "profile_anomaly_types.issue_likelihood != 'Potential PII'" in sql
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_issue_type_filter_uses_code(mock_list, _mock_perm):
+    list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters(issue_type="suggested_column_pk"))
+    sql = _hygiene_clauses_sql(mock_list)
+    assert "profile_anomaly_results.anomaly_id = 'suggested_column_pk'" in sql
+
+
+@pytest.mark.parametrize(
+    "api_value,db_value",
+    [
+        (IssueLikelihood.definite, "'Definite'"),
+        (IssueLikelihood.likely, "'Likely'"),
+        (IssueLikelihood.possible, "'Possible'"),
+    ],
+)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_likelihood_filter_maps_to_db(mock_list, _mock_perm, api_value, db_value):
+    list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters(likelihood=api_value))
+    sql = _hygiene_clauses_sql(mock_list)
+    assert db_value in sql
+
+
+# --- PII endpoint: filter clause building ---
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_pii_partition_clause_always_includes_only_pii(mock_list, _mock_perm):
+    list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters())
+    sql = _hygiene_clauses_sql(mock_list)
+    assert "profile_anomaly_types.issue_likelihood = 'Potential PII'" in sql
+
+
+@pytest.mark.parametrize(
+    "api_value,db_value",
+    [(PiiRisk.high, "'High'"), (PiiRisk.moderate, "'Moderate'")],
+)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_pii_risk_filter_maps_to_db(mock_list, _mock_perm, api_value, db_value):
+    list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters(pii_risk=api_value))
+    sql = _hygiene_clauses_sql(mock_list)
+    assert db_value in sql
+
+
+# --- Disposition semantics (shared by hygiene + PII) ---
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_disposition_omitted_returns_active(mock_list, _mock_perm):
+    """Omitted disposition includes NULLs (COALESCED to Confirmed) and stored Confirmed rows."""
+    list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters(disposition=None))
+    sql = _hygiene_clauses_sql(mock_list)
+    assert "IS NULL" in sql
+    assert "'Confirmed'" in sql
+    assert "'Dismissed'" not in sql
+    assert "'Inactive'" not in sql
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_disposition_confirmed_matches_omitted(mock_list, _mock_perm):
+    """Explicit confirmed still sweeps in NULLs — hygiene has no no_decision state."""
+    list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters(disposition=HygieneDisposition.confirmed))
+    sql = _hygiene_clauses_sql(mock_list)
+    assert "IS NULL" in sql
+    assert "'Confirmed'" in sql
+
+
+@pytest.mark.parametrize(
+    "api_value,db_value",
+    [(HygieneDisposition.dismissed, "'Dismissed'"), (HygieneDisposition.muted, "'Inactive'")],
+)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_disposition_dismissed_muted_map_to_db(mock_list, _mock_perm, api_value, db_value):
+    list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters(disposition=api_value))
+    sql = _hygiene_clauses_sql(mock_list)
+    assert db_value in sql
+    assert "IS NULL" not in sql  # dismissed/muted rows are never NULL in storage
+
+
+@pytest.mark.parametrize(
+    "db_value,expected",
+    [
+        (None, HygieneDisposition.confirmed),
+        ("", HygieneDisposition.confirmed),
+        ("Confirmed", HygieneDisposition.confirmed),
+        ("Dismissed", HygieneDisposition.dismissed),
+        ("Inactive", HygieneDisposition.muted),
+        ("Bogus", HygieneDisposition.confirmed),
+    ],
+)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_disposition_render(mock_list, _mock_perm, db_value, expected):
+    mock_list.return_value = ([_mock_hygiene_row(disposition=db_value)], 1)
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+    assert item.disposition == expected
+
+
+# --- Priority render mapping ---
+
+
+@pytest.mark.parametrize(
+    "db_priority,expected",
+    [
+        ("Definite", IssueLikelihood.definite),
+        ("Likely", IssueLikelihood.likely),
+        ("Possible", IssueLikelihood.possible),
+        (None, None),
+        ("Garbage", None),
+    ],
+)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_likelihood_render(mock_list, _mock_perm, db_priority, expected):
+    mock_list.return_value = ([_mock_hygiene_row(priority=db_priority)], 1)
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+    assert item.likelihood == expected
+
+
+@pytest.mark.parametrize(
+    "db_priority,expected",
+    [("High", PiiRisk.high), ("Moderate", PiiRisk.moderate), (None, None), ("Weak", None)],
+)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_pii_risk_render(mock_list, _mock_perm, db_priority, expected):
+    mock_list.return_value = ([_mock_pii_row(priority=db_priority)], 1)
+    item = list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters()).items[0]
+    assert item.pii_risk == expected
+
+
+# --- Impact dimension render (hygiene endpoint only) ---
+
+
+@pytest.mark.parametrize(
+    "db_value,expected",
+    [
+        ("Reliability", ImpactDimension.reliability),
+        ("Conformance", ImpactDimension.conformance),
+        ("Regularity", ImpactDimension.regularity),
+        ("Usability", ImpactDimension.usability),
+        (None, None),
+        ("Garbage", None),
+    ],
+)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_impact_dimension_render(mock_list, _mock_perm, db_value, expected):
+    mock_list.return_value = ([_mock_hygiene_row(impact_dimension=db_value)], 1)
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+    assert item.impact_dimension == expected
+
+
+# --- PII redaction ---
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=False)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_detail_redacted_when_no_view_pii(mock_list, _mock_perm):
+    row = _mock_hygiene_row(detail_redactable=True, pii_flag="A/PHONE/...", detail="+15555551234")
+    mock_list.return_value = ([row], 1)
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+    assert item.detail == PII_REDACTED
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_detail_visible_with_view_pii(mock_list, _mock_perm):
+    row = _mock_hygiene_row(detail_redactable=True, pii_flag="A/PHONE/...", detail="+15555551234")
+    mock_list.return_value = ([row], 1)
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+    assert item.detail == "+15555551234"
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=False)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_detail_not_redacted_without_pii_flag(mock_list, _mock_perm):
+    """No pii_flag from ProfileResult means no PII in this column — detail stays visible."""
+    row = _mock_hygiene_row(detail_redactable=True, pii_flag=None, detail="something")
+    mock_list.return_value = ([row], 1)
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+    assert item.detail == "something"
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=False)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_detail_not_redacted_when_not_redactable(mock_list, _mock_perm):
+    """detail_redactable=False means the issue type doesn't leak PII in detail — never redact."""
+    row = _mock_hygiene_row(detail_redactable=False, pii_flag="A/PHONE/...", detail="something")
+    mock_list.return_value = ([row], 1)
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+    assert item.detail == "something"
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=False)
+@patch.object(HygieneIssue, "list_for_run")
+def test_pii_detail_redacted_when_no_view_pii(mock_list, _mock_perm):
+    row = _mock_pii_row(detail="Risk: HIGH, Type: EMAIL — user@example.com")
+    mock_list.return_value = ([row], 1)
+    item = list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters()).items[0]
+    assert item.detail == PII_REDACTED
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_pii_detail_visible_with_view_pii(mock_list, _mock_perm):
+    row = _mock_pii_row(detail="Risk: HIGH, Type: EMAIL — user@example.com")
+    mock_list.return_value = ([row], 1)
+    item = list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters()).items[0]
+    assert item.detail == "Risk: HIGH, Type: EMAIL — user@example.com"
+
+
+@patch(f"{MODULE}.has_project_permission")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_view_pii_check_scoped_to_job_project(_mock_list, mock_perm):
+    job = _mock_job(project_code="my-project")
+    list_profiling_run_hygiene_issues(job, **_no_hygiene_filters())
+    # view_pii permission is queried against the job's project_code, not the user's default.
+    (called_user, called_project, called_perm) = mock_perm.call_args.args
+    assert called_project == "my-project"
+    assert called_perm == "view_pii"
+
+
+# --- HTTP-level query validation ---
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_hygiene_rejects_unknown_likelihood(_ml, mock_sess, _mp1, _mp2):
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/hygiene-issues?likelihood=BOGUS")
+    assert resp.status_code == 422
+    assert resp.json()["detail"][0]["loc"] == ["query", "likelihood"]
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_hygiene_rejects_unknown_disposition(_ml, mock_sess, _mp1, _mp2):
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/hygiene-issues?disposition=BOGUS")
+    assert resp.status_code == 422
+    assert resp.json()["detail"][0]["loc"] == ["query", "disposition"]
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_hygiene_rejects_no_decision_disposition(_ml, mock_sess, _mp1, _mp2):
+    """Hygiene's disposition enum has no ``no_decision`` — passing it must 422."""
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/hygiene-issues?disposition=no_decision")
+    assert resp.status_code == 422
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_pii_rejects_unknown_pii_risk(_ml, mock_sess, _mp1, _mp2):
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/potential-pii?pii_risk=BOGUS")
+    assert resp.status_code == 422
+    assert resp.json()["detail"][0]["loc"] == ["query", "pii_risk"]
+
+
+@pytest.mark.parametrize("query", ["page=0", "limit=0", "limit=101"])
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_hygiene_rejects_bad_pagination(_ml, mock_sess, _mp1, _mp2, query):
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/hygiene-issues?{query}")
+    assert resp.status_code == 422
+
+
+@pytest.mark.parametrize("query", ["page=0", "limit=0", "limit=101"])
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_pii_rejects_bad_pagination(_ml, mock_sess, _mp1, _mp2, query):
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/potential-pii?{query}")
+    assert resp.status_code == 422
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_hygiene_404_for_missing_job(_ml, mock_sess, _mp1, _mp2):
+    mock_sess.return_value.scalars.return_value.first.return_value = None
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/hygiene-issues")
+    assert resp.status_code == 404
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_http_pii_404_for_missing_job(_ml, mock_sess, _mp1, _mp2):
+    mock_sess.return_value.scalars.return_value.first.return_value = None
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/potential-pii")
+    assert resp.status_code == 404

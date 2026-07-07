@@ -5,7 +5,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from testgen.api.enums import Disposition, MonitorThresholdMode, MonitorType, ResultStatus, TableState
+from testgen.api.enums import (
+    Disposition,
+    HygieneDisposition,
+    ImpactDimension,
+    IssueLikelihood,
+    MonitorThresholdMode,
+    MonitorType,
+    PiiRisk,
+    ResultStatus,
+    TableState,
+)
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
@@ -172,6 +182,51 @@ class ProfilingRunHistoryResponse(BaseModel):
     """Paginated profiling-run history for a table group, newest first."""
 
     items: list[ProfilingRunHistoryItem]
+    page: int
+    limit: int
+    total: int
+
+
+class HygieneIssueItem(BaseModel):
+    """One data-quality hygiene issue in a profiling run."""
+
+    id: UUID
+    issue_type: str
+    schema_name: str
+    table_name: str
+    column_name: str
+    likelihood: IssueLikelihood | None = None
+    impact_dimension: ImpactDimension | None = None
+    detail: str
+    disposition: HygieneDisposition
+
+
+class HygieneIssueListResponse(BaseModel):
+    """Paginated hygiene issues for a profiling run."""
+
+    items: list[HygieneIssueItem]
+    page: int
+    limit: int
+    total: int
+
+
+class PotentialPiiItem(BaseModel):
+    """One Potential PII finding in a profiling run."""
+
+    id: UUID
+    issue_type: str
+    schema_name: str
+    table_name: str
+    column_name: str
+    pii_risk: PiiRisk | None = None
+    detail: str
+    disposition: HygieneDisposition
+
+
+class PotentialPiiListResponse(BaseModel):
+    """Paginated Potential PII findings for a profiling run."""
+
+    items: list[PotentialPiiItem]
     page: int
     limit: int
     total: int

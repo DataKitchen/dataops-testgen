@@ -9,7 +9,10 @@ single seam that normalizes them to the API surface — the DB is never changed.
 from enum import StrEnum
 
 from testgen.common.enums import Disposition as DbDisposition
+from testgen.common.enums import ImpactDimension as DbImpactDimension
+from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
 from testgen.common.enums import MonitorType as DbMonitorType
+from testgen.common.enums import PiiRisk as DbPiiRisk
 from testgen.common.models.test_definition import ThresholdMode
 from testgen.common.models.test_result import TestResultStatus
 
@@ -33,6 +36,44 @@ class Disposition(StrEnum):
     dismissed = "dismissed"
     muted = "muted"
     no_decision = "no_decision"
+
+
+class HygieneDisposition(StrEnum):
+    """Triage state of a hygiene issue.
+
+    Hygiene issues COALESCE NULL disposition to ``Confirmed`` in every read path,
+    so there is no ``no_decision`` state to surface. Omitting the filter or passing
+    ``confirmed`` both return rows whose stored disposition is ``Confirmed`` or NULL."""
+
+    confirmed = "confirmed"
+    dismissed = "dismissed"
+    muted = "muted"
+
+
+class IssueLikelihood(StrEnum):
+    """Likelihood category of a data-quality hygiene issue. The ``Potential PII``
+    likelihood is not exposed here — PII findings live behind a dedicated endpoint
+    with its own ``PiiRisk`` filter."""
+
+    definite = "definite"
+    likely = "likely"
+    possible = "possible"
+
+
+class PiiRisk(StrEnum):
+    """Risk level of a Potential PII finding, extracted from the issue ``detail``."""
+
+    high = "high"
+    moderate = "moderate"
+
+
+class ImpactDimension(StrEnum):
+    """Impact-dimension classification shared by hygiene issues and test types."""
+
+    reliability = "reliability"
+    conformance = "conformance"
+    regularity = "regularity"
+    usability = "usability"
 
 
 RESULT_STATUS_TO_DB: dict[ResultStatus, TestResultStatus] = {
@@ -125,3 +166,36 @@ def threshold_mode_from_db(mode: ThresholdMode) -> MonitorThresholdMode:
 def monitor_sort_to_model(sort: MonitorSortField, order: SortOrder) -> str:
     """Translate ``(sort, order)`` to the model's ``sort_by`` form (``field`` / ``field_desc``)."""
     return f"{sort.value}_desc" if order == SortOrder.desc else sort.value
+
+
+HYGIENE_DISPOSITION_TO_DB: dict[HygieneDisposition, DbDisposition] = {
+    HygieneDisposition.confirmed: DbDisposition.CONFIRMED,
+    HygieneDisposition.dismissed: DbDisposition.DISMISSED,
+    HygieneDisposition.muted: DbDisposition.INACTIVE,
+}
+HYGIENE_DISPOSITION_FROM_DB: dict[DbDisposition, HygieneDisposition] = {
+    v: k for k, v in HYGIENE_DISPOSITION_TO_DB.items()
+}
+
+LIKELIHOOD_TO_DB: dict[IssueLikelihood, DbIssueLikelihood] = {
+    IssueLikelihood.definite: DbIssueLikelihood.DEFINITE,
+    IssueLikelihood.likely: DbIssueLikelihood.LIKELY,
+    IssueLikelihood.possible: DbIssueLikelihood.POSSIBLE,
+}
+LIKELIHOOD_FROM_DB: dict[DbIssueLikelihood, IssueLikelihood] = {v: k for k, v in LIKELIHOOD_TO_DB.items()}
+
+PII_RISK_TO_DB: dict[PiiRisk, DbPiiRisk] = {
+    PiiRisk.high: DbPiiRisk.HIGH,
+    PiiRisk.moderate: DbPiiRisk.MODERATE,
+}
+PII_RISK_FROM_DB: dict[DbPiiRisk, PiiRisk] = {v: k for k, v in PII_RISK_TO_DB.items()}
+
+IMPACT_DIMENSION_TO_DB: dict[ImpactDimension, DbImpactDimension] = {
+    ImpactDimension.reliability: DbImpactDimension.RELIABILITY,
+    ImpactDimension.conformance: DbImpactDimension.CONFORMANCE,
+    ImpactDimension.regularity: DbImpactDimension.REGULARITY,
+    ImpactDimension.usability: DbImpactDimension.USABILITY,
+}
+IMPACT_DIMENSION_FROM_DB: dict[DbImpactDimension, ImpactDimension] = {
+    v: k for k, v in IMPACT_DIMENSION_TO_DB.items()
+}
