@@ -251,6 +251,60 @@ class HygieneIssue(Entity):
         )
 
     @classmethod
+    def count_for_runs(cls, profile_run_ids: Iterable[UUID]) -> dict[UUID, IssueCounts]:
+        """Bulk variant of ``count_for_run``: one query, keyed by run id.
+
+        Missing run ids default to a zeroed IssueCounts so callers can index without a KeyError.
+        """
+        run_ids = list(profile_run_ids)
+        if not run_ids:
+            return {}
+
+        dismissed = func.coalesce(cls.disposition, Disposition.CONFIRMED).in_(
+            (Disposition.DISMISSED, Disposition.INACTIVE)
+        )
+        is_pii = HygieneIssueType.likelihood == IssueLikelihood.POTENTIAL_PII
+
+        def _count(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        query = (
+            select(
+                cls.profile_run_id.label("run_id"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.DEFINITE)).label("definite"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.LIKELY)).label("likely"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.POSSIBLE)).label("possible"),
+                _count(~dismissed & is_pii & (cls.priority == PiiRisk.HIGH)).label("high"),
+                _count(~dismissed & is_pii & (cls.priority == PiiRisk.MODERATE)).label("moderate"),
+                _count(dismissed).label("dismissed"),
+            )
+            .select_from(cls)
+            .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
+            .where(cls.profile_run_id.in_(run_ids))
+            .group_by(cls.profile_run_id)
+        )
+
+        result: dict[UUID, IssueCounts] = {
+            run_id: IssueCounts(
+                hygiene_issues=HygieneIssueCounts(definite=definite, likely=likely, possible=possible),
+                potential_pii=PotentialPiiCounts(high=high, moderate=moderate),
+                dismissed=dismissed_ct,
+            )
+            for run_id, definite, likely, possible, high, moderate, dismissed_ct
+            in get_current_session().execute(query)
+        }
+        for run_id in run_ids:
+            result.setdefault(
+                run_id,
+                IssueCounts(
+                    hygiene_issues=HygieneIssueCounts(),
+                    potential_pii=PotentialPiiCounts(),
+                    dismissed=0,
+                ),
+            )
+        return result
+
+    @classmethod
     def _priority_order(cls):
         return case(
             (cls.priority == "Definite", 1),

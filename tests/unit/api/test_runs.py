@@ -11,8 +11,17 @@ from sqlalchemy.dialects import postgresql
 
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.enums import Disposition, ResultStatus
-from testgen.api.runs import get_profiling_run, get_test_run, list_test_run_results, router
-from testgen.common.models.hygiene_issue import HygieneIssueCounts, IssueCounts, PotentialPiiCounts
+from testgen.api.runs import (
+    get_profiling_run,
+    get_test_run,
+    list_profiling_runs,
+    list_test_run_results,
+    router,
+)
+from testgen.common.enums import JobStatus
+from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueCounts, IssueCounts, PotentialPiiCounts
+from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import ResultStatusCounts, TestResult, TestResultStatus, TestRunResultRow
 
 pytestmark = pytest.mark.unit
@@ -362,3 +371,163 @@ def test_http_rejects_out_of_range_pagination(_mock_list, mock_sess, _mock_perm,
     mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
     resp = _client().get(f"/api/v1/test-runs/{uuid4()}/results?{query}")
     assert resp.status_code == 422
+
+
+# --- list_profiling_runs ---
+
+
+def _mock_history_row(**overrides):
+    defaults = {
+        "job_execution_id": uuid4(),
+        "table_group_id": TABLE_GROUP_ID,
+        "status": JobStatus.COMPLETED,
+        "started_at": datetime.now(UTC),
+        "completed_at": datetime.now(UTC),
+        "error_message": None,
+        "profiling_score": 0.88,
+        "table_ct": 10,
+        "column_ct": 50,
+        "record_ct": 1000,
+        "data_point_ct": 500,
+    }
+    defaults.update(overrides)
+    return ProfilingRunHistoryRow(**defaults)
+
+
+def _mock_table_group(**overrides):
+    defaults = {"id": TABLE_GROUP_ID, "project_code": "test_project"}
+    defaults.update(overrides)
+    tg = MagicMock()
+    for key, value in defaults.items():
+        setattr(tg, key, value)
+    return tg
+
+
+def _zero_issue_counts() -> IssueCounts:
+    return IssueCounts(
+        hygiene_issues=HygieneIssueCounts(),
+        potential_pii=PotentialPiiCounts(),
+        dismissed=0,
+    )
+
+
+@patch.object(HygieneIssue, "count_for_runs")
+@patch.object(ProfilingRun, "list_for_table_group")
+def test_list_profiling_runs_envelope_and_counts_merge(mock_list, mock_counts):
+    row = _mock_history_row()
+    mock_list.return_value = ([row], 3)
+    mock_counts.return_value = {
+        row.job_execution_id: IssueCounts(
+            hygiene_issues=HygieneIssueCounts(definite=1, likely=2, possible=3),
+            potential_pii=PotentialPiiCounts(high=4, moderate=5),
+            dismissed=6,
+        ),
+    }
+
+    result = list_profiling_runs(_mock_table_group(), status=None, page=2, limit=5)
+
+    assert result.total == 3
+    assert result.page == 2
+    assert result.limit == 5
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.job_execution_id == row.job_execution_id
+    assert item.table_group_id == TABLE_GROUP_ID
+    assert item.profiling_score == 0.88
+    assert item.data_point_ct == 500
+    assert item.issue_counts.hygiene_issues.definite == 1
+    assert item.issue_counts.potential_pii.high == 4
+    assert item.issue_counts.dismissed == 6
+    # table_group.id is the scope; no filter clauses when status is None.
+    assert mock_list.call_args.args == (TABLE_GROUP_ID,)
+    assert mock_list.call_args.kwargs == {"page": 2, "limit": 5}
+    mock_counts.assert_called_once_with([row.job_execution_id])
+
+
+@patch.object(HygieneIssue, "count_for_runs", return_value={})
+@patch.object(ProfilingRun, "list_for_table_group", return_value=([], 0))
+def test_list_profiling_runs_empty_envelope(_mock_list, mock_counts):
+    result = list_profiling_runs(_mock_table_group(), status=None, page=1, limit=20)
+    assert result.items == []
+    assert result.total == 0
+    mock_counts.assert_called_once_with([])
+
+
+@patch.object(HygieneIssue, "count_for_runs", return_value={})
+@patch.object(ProfilingRun, "list_for_table_group", return_value=([], 0))
+def test_list_profiling_runs_status_filter_propagates(mock_list, _mock_counts):
+    list_profiling_runs(_mock_table_group(), status=JobStatus.COMPLETED, page=1, limit=20)
+    clauses = mock_list.call_args.args[1:]
+    assert len(clauses) == 1
+    sql = str(clauses[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "'completed'" in sql
+    assert "job_executions.status" in sql
+
+
+@patch.object(HygieneIssue, "count_for_runs")
+@patch.object(ProfilingRun, "list_for_table_group")
+def test_list_profiling_runs_missing_run_id_zeroes(mock_list, mock_counts):
+    """If count_for_runs omits a run id (shouldn't happen — helper backfills — but be strict)."""
+    row = _mock_history_row()
+    mock_list.return_value = ([row], 1)
+    mock_counts.return_value = {row.job_execution_id: _zero_issue_counts()}
+
+    item = list_profiling_runs(_mock_table_group(), status=None, page=1, limit=20).items[0]
+    assert item.issue_counts.hygiene_issues.definite == 0
+    assert item.issue_counts.dismissed == 0
+
+
+# HTTP-level query validation
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch.object(TableGroup, "get")
+@patch.object(HygieneIssue, "count_for_runs", return_value={})
+@patch.object(ProfilingRun, "list_for_table_group", return_value=([], 0))
+def test_http_profiling_runs_rejects_unknown_status(_ml, _mc, mock_get, _mp):
+    mock_get.return_value = _mock_table_group()
+    resp = _client().get(f"/api/v1/table-groups/{uuid4()}/profiling-runs?status=BOGUS")
+    assert resp.status_code == 422
+    assert resp.json()["detail"][0]["loc"] == ["query", "status"]
+
+
+@pytest.mark.parametrize("query", ["page=0", "limit=0", "limit=101"])
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch.object(TableGroup, "get")
+@patch.object(HygieneIssue, "count_for_runs", return_value={})
+@patch.object(ProfilingRun, "list_for_table_group", return_value=([], 0))
+def test_http_profiling_runs_rejects_bad_pagination(_ml, _mc, mock_get, _mp, query):
+    mock_get.return_value = _mock_table_group()
+    resp = _client().get(f"/api/v1/table-groups/{uuid4()}/profiling-runs?{query}")
+    assert resp.status_code == 422
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch.object(TableGroup, "get", return_value=None)
+@patch.object(HygieneIssue, "count_for_runs", return_value={})
+@patch.object(ProfilingRun, "list_for_table_group", return_value=([], 0))
+def test_http_profiling_runs_returns_404_for_missing_table_group(_ml, _mc, _mock_get, _mp):
+    resp = _client().get(f"/api/v1/table-groups/{uuid4()}/profiling-runs")
+    assert resp.status_code == 404
+
+
+# --- HygieneIssue.count_for_runs ---
+
+
+def test_count_for_runs_empty_input_returns_empty():
+    assert HygieneIssue.count_for_runs([]) == {}
+
+
+@patch("testgen.common.models.hygiene_issue.get_current_session")
+def test_count_for_runs_backfills_missing_run_ids(mock_session):
+    """Runs with zero findings never appear in the GROUP BY output — the helper backfills zeros."""
+    mock_session.return_value.execute.return_value = iter([])  # DB returns nothing
+    run_ids = [uuid4(), uuid4()]
+
+    result = HygieneIssue.count_for_runs(run_ids)
+
+    assert set(result.keys()) == set(run_ids)
+    for counts in result.values():
+        assert counts.hygiene_issues.definite == 0
+        assert counts.potential_pii.high == 0
+        assert counts.dismissed == 0

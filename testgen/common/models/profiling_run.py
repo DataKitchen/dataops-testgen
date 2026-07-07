@@ -84,6 +84,28 @@ class ProfilingRunTableBreakdown(EntityMinimal):
     anomaly_ct: int
 
 
+@dataclass
+class ProfilingRunHistoryRow(EntityMinimal):
+    """Row shape returned by ``ProfilingRun.list_for_table_group``.
+
+    Hygiene / potential-PII counts are looked up separately by the caller
+    (via ``HygieneIssue.count_for_runs``) to avoid a join fan-out per page row
+    and to keep this model independent of the hygiene module.
+    """
+
+    job_execution_id: UUID
+    table_group_id: UUID
+    status: JobStatus
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_message: str | None
+    profiling_score: float | None
+    table_ct: int | None
+    column_ct: int | None
+    record_ct: int | None
+    data_point_ct: int | None
+
+
 class LatestProfilingRun(NamedTuple):
     id: str
     run_time: datetime
@@ -465,6 +487,40 @@ class ProfilingRun(Entity):
             .limit(1)
         )
         return get_current_session().scalar(query)
+
+    @classmethod
+    def list_for_table_group(
+        cls,
+        table_group_id: UUID,
+        *clauses,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[ProfilingRunHistoryRow], int]:
+        """Paginated profiling-run history for a table group, newest first.
+
+        Caller-supplied ``clauses`` are AND'd against the JobExecution/ProfilingRun join.
+        Hygiene issue counts are not included — resolve them via
+        ``HygieneIssue.count_for_runs`` keyed by ``job_execution_id``.
+        """
+        query = (
+            select(
+                JobExecution.id.label("job_execution_id"),
+                cls.table_groups_id.label("table_group_id"),
+                JobExecution.status.label("status"),
+                JobExecution.started_at.label("started_at"),
+                JobExecution.completed_at.label("completed_at"),
+                JobExecution.error_message.label("error_message"),
+                cls.dq_score_profiling.label("profiling_score"),
+                cls.table_ct.label("table_ct"),
+                cls.column_ct.label("column_ct"),
+                cls.record_ct.label("record_ct"),
+                cls.data_point_ct.label("data_point_ct"),
+            )
+            .join(JobExecution, cls.id == JobExecution.id)
+            .where(cls.table_groups_id == table_group_id, *clauses)
+            .order_by(desc(JobExecution.created_at), desc(JobExecution.id))
+        )
+        return cls._paginate(query, page=page, limit=limit, data_class=ProfilingRunHistoryRow)
 
     @classmethod
     def list_recent_complete(cls, table_groups_id: UUID, limit: int) -> list[Self]:
