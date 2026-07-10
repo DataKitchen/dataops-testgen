@@ -913,6 +913,46 @@ def test_parse_monitor_type_label_override():
 
 
 @pytest.mark.parametrize(
+    "user_value,expected",
+    [
+        ("Value", "Value"),
+        ("value", "Value"),
+        ("Minimum", "Minimum"),
+        ("minimum", "Minimum"),
+        ("Maximum", "Maximum"),
+        ("Sum", "Sum"),
+        ("Average", "Average"),
+        ("AVERAGE", "Average"),
+        ("Expression", "Expression"),
+        ("expression", "Expression"),
+    ],
+)
+def test_parse_monitor_calculation_accepts_case_insensitive(user_value, expected):
+    from testgen.mcp.tools.common import parse_monitor_calculation
+
+    assert parse_monitor_calculation(user_value, "lower_bound_calculation").value == expected
+
+
+def test_parse_monitor_calculation_rejects_unknown():
+    from testgen.mcp.tools.common import parse_monitor_calculation
+
+    with pytest.raises(MCPUserError, match="Invalid upper_bound_calculation") as exc:
+        parse_monitor_calculation("Median", "upper_bound_calculation")
+    msg = str(exc.value)
+    for valid in ("Value", "Minimum", "Maximum", "Sum", "Average", "Expression"):
+        assert valid in msg
+
+
+def test_parse_monitor_calculation_label_appears_in_error():
+    """Each ``set_monitor_historical`` arg has its own field name; the error must name
+    exactly the one that was invalid so the LLM can correct it."""
+    from testgen.mcp.tools.common import parse_monitor_calculation
+
+    with pytest.raises(MCPUserError, match=r"Invalid lower_bound_calculation `bogus`"):
+        parse_monitor_calculation("bogus", "lower_bound_calculation")
+
+
+@pytest.mark.parametrize(
     "value",
     ["table_name", "anomaly_count_desc", "latest_update_desc", "row_count_change_desc"],
 )
