@@ -13,17 +13,20 @@ from testgen.commands.test_generation import run_monitor_generation, run_test_ge
 from testgen.common import (
     execute_db_queries,
     fetch_dict_from_db,
-    fetch_from_db_threaded,
     set_target_db_params,
-    write_to_app_db,
 )
 from testgen.common.database.column_chars import ColumnChars
-from testgen.common.database.database_service import ThreadedProgress, get_flavor_service
+from testgen.common.database.database_service import (
+    ThreadedProgress,
+    get_flavor_service,
+    run_keyed_worker_pool,
+)
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
+from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -83,9 +86,13 @@ def run_profiling(
         if data_chars:
             sql_generator = ProfilingSQL(connection, table_group, profiling_run)
 
+            # Table record counts drive the deterministic largest-work-first key ordering
+            # of both threaded passes.
+            table_record_counts = {column.table_name: column.record_ct for column in data_chars}
+
             sampling_params = _compute_sampling_params(sql_generator, data_chars)
-            _run_column_profiling(sql_generator, data_chars, sampling_params)
-            _run_frequency_analysis(sql_generator, sampling_params)
+            _run_column_profiling(sql_generator, data_chars, sampling_params, table_record_counts)
+            _run_frequency_analysis(sql_generator, sampling_params, table_record_counts)
             _run_hygiene_issue_detection(sql_generator)
 
             # if table_group.profile_do_pair_rules == "Y":
@@ -159,15 +166,36 @@ def _compute_sampling_params(
     return sampling_params
 
 
+def _order_largest_work_first(
+    columns: list[ColumnChars], table_record_counts: dict[str, int]
+) -> list[ColumnChars]:
+    """Order work keys deterministically, largest table first.
+
+    A stable sort keeps the processing reproducible. Ordering does not affect
+    results; Largest tables first helps the threads to finish about the same
+    time.
+    """
+    return sorted(columns, key=lambda column: table_record_counts.get(column.table_name, 0), reverse=True)
+
+
+def _write_column_error(sql_generator: ProfilingSQL, column: ColumnChars, error: str) -> None:
+    error_row = sql_generator.get_profiling_errors([(column, error)])[0]
+    ProfileResult.upsert(dict(zip(sql_generator.error_columns, error_row, strict=True)))
+
+
 def _run_column_profiling(
-    sql_generator: ProfilingSQL, data_chars: list[ColumnChars], sampling_params: dict[str, TableSampling]
+    sql_generator: ProfilingSQL,
+    data_chars: list[ColumnChars],
+    sampling_params: dict[str, TableSampling],
+    table_record_counts: dict[str, int],
 ) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("col_profiling", "Running")
     profiling_run.save()
     get_current_session().commit()
 
-    LOG.info(f"Running column profiling queries: {len(data_chars)}")
+    columns = _order_largest_work_first(data_chars, table_record_counts)
+    LOG.info(f"Running column profiling queries: {len(columns)}")
 
     def update_column_progress(progress: ThreadedProgress) -> None:
         profiling_run.set_progress(
@@ -181,26 +209,28 @@ def _run_column_profiling(
         profiling_run.save()
         get_current_session().commit()
 
-    profiling_results, result_columns, error_data = fetch_from_db_threaded(
-        [sql_generator.run_column_profiling(column, sampling_params.get(column.table_name)) for column in data_chars],
-        use_target_db=True,
+    def profile_column(column: ColumnChars) -> None:
+        table_sampling = sampling_params.get(column.table_name)
+        try:
+            results = fetch_dict_from_db(*sql_generator.run_column_profiling(column, table_sampling), use_target_db=True)
+            if results:
+                ProfileResult.upsert(results[0])
+        except Exception as e:
+            _write_column_error(sql_generator, column, get_exception_message(e))
+            raise
+
+    error_data = run_keyed_worker_pool(
+        columns,
+        profile_column,
         max_threads=sql_generator.connection.max_threads,
         progress_callback=update_column_progress,
     )
 
     if error_count := len(error_data):
         LOG.warning(f"Errors running column profiling queries: {error_count}")
-        LOG.info("Writing column profiling errors")
-        error_results = sql_generator.get_profiling_errors(
-            [(data_chars[index], error) for index, error in error_data.items()]
-        )
-        write_to_app_db(error_results, sql_generator.error_columns, sql_generator.profiling_results_table)
 
-    if not profiling_results:  # All queries failed, so stop the process
+    if error_count == len(columns):  # All queries failed, so stop the process
         raise RuntimeError(f"{error_count} errors during column profiling. See details in results.")
-
-    LOG.info("Writing column profiling results")
-    write_to_app_db(profiling_results, result_columns, sql_generator.profiling_results_table)
 
     if sampling_params:
         try:
@@ -223,18 +253,38 @@ def _run_column_profiling(
     )
 
 
-def _run_frequency_analysis(sql_generator: ProfilingSQL, sampling_params: dict[str, TableSampling]) -> None:
+def _write_frequency_result(sql_generator: ProfilingSQL, column: ColumnChars, result: dict) -> None:
+    # Identity comes from the column read out of profile_results (so it matches the stored
+    # row exactly); only the two frequency measures are overwritten on conflict.
+    ProfileResult.upsert(
+        {
+            "table_groups_id": sql_generator.table_group.id,
+            "table_name": column.table_name,
+            "column_name": column.column_name,
+            "profile_run_id": sql_generator.profiling_run.id,
+            "top_freq_values": result["top_freq_values"],
+            "distinct_value_hash": result["distinct_value_hash"],
+        }
+    )
+
+
+def _run_frequency_analysis(
+    sql_generator: ProfilingSQL,
+    sampling_params: dict[str, TableSampling],
+    table_record_counts: dict[str, int],
+) -> None:
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("freq_analysis", "Running")
     profiling_run.save()
     get_current_session().commit()
 
-    error_data = None
+    error_data: dict[int, str] = {}
     try:
         LOG.info("Selecting columns for frequency analysis")
         frequency_columns = [ColumnChars(**column) for column in fetch_dict_from_db(*sql_generator.get_frequency_analysis_columns())]
 
         if frequency_columns:
+            frequency_columns = _order_largest_work_first(frequency_columns, table_record_counts)
             LOG.info(f"Running frequency analysis queries: {len(frequency_columns)}")
 
             def update_frequency_progress(progress: ThreadedProgress) -> None:
@@ -244,24 +294,22 @@ def _run_frequency_analysis(sql_generator: ProfilingSQL, sampling_params: dict[s
                 profiling_run.save()
                 get_current_session().commit()
 
-            frequency_results, result_columns, error_data = fetch_from_db_threaded(
-                [
-                    sql_generator.run_frequency_analysis(column, sampling_params.get(column.table_name))
-                    for column in frequency_columns
-                ],
-                use_target_db=True,
+            def analyze_column(column: ColumnChars) -> None:
+                table_sampling = sampling_params.get(column.table_name)
+                results = fetch_dict_from_db(
+                    *sql_generator.run_frequency_analysis(column, table_sampling), use_target_db=True
+                )
+                if results:
+                    _write_frequency_result(sql_generator, column, results[0])
+
+            error_data = run_keyed_worker_pool(
+                frequency_columns,
+                analyze_column,
                 max_threads=sql_generator.connection.max_threads,
                 progress_callback=update_frequency_progress,
             )
             if error_data:
                 LOG.warning(f"Errors running frequency analysis queries: {len(error_data)}")
-
-            if frequency_results:
-                LOG.info("Writing frequency results to staging")
-                write_to_app_db(frequency_results, result_columns, sql_generator.frequency_staging_table)
-
-                LOG.info("Updating profiling results with frequency analysis and deleting staging")
-                execute_db_queries(sql_generator.update_frequency_analysis_results())
     except Exception as e:
         LOG.exception("Error running frequency analysis")
         profiling_run.set_progress("freq_analysis", "Warning", error=f"Error encountered. {get_exception_message(e)}")

@@ -1,11 +1,26 @@
-from collections.abc import Iterable
+import math
+from collections.abc import Iterable, Mapping
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, Numeric, String, asc, desc
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.models import database_session
 from testgen.common.models.entity import Entity
+
+
+def _sanitize_write_value(value: Any) -> Any:
+    # Databricks (via Arrow) returns float('nan') for NULL numerics, which PostgreSQL
+    # rejects; PostgreSQL rejects NUL bytes in text; empty strings are stored as NULL.
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, str):
+        value = value.replace("\x00", "")
+        if value == "":
+            return None
+    return value
 
 
 class ProfileResult(Entity):
@@ -18,6 +33,9 @@ class ProfileResult(Entity):
     table_name: str = Column(String)
     column_name: str = Column(String)
     position: int = Column(Integer)
+    project_code: str | None = Column(String(30))
+    connection_id: int | None = Column(BigInteger)
+    run_date: datetime | None = Column(postgresql.TIMESTAMP)
 
     general_type: str | None = Column(String)
     column_type: str | None = Column(String)
@@ -42,6 +60,7 @@ class ProfileResult(Entity):
     max_text: str | None = Column(String)
     top_freq_values: str | None = Column(String)
     top_patterns: str | None = Column(String)
+    distinct_value_hash: str | None = Column(String(40))
     distinct_std_value_ct: int | None = Column(BigInteger)
     distinct_pattern_ct: int | None = Column(BigInteger)
     std_pattern_match: str | None = Column(String)
@@ -49,6 +68,7 @@ class ProfileResult(Entity):
     lower_case_ct: int | None = Column(BigInteger)
     upper_case_ct: int | None = Column(BigInteger)
     non_alpha_ct: int | None = Column(BigInteger)
+    non_printing_ct: int | None = Column(BigInteger)
     includes_digit_ct: int | None = Column(BigInteger)
     numeric_ct: int | None = Column(BigInteger)
     date_ct: int | None = Column(BigInteger)
@@ -75,17 +95,46 @@ class ProfileResult(Entity):
     before_1yr_date_ct: int | None = Column(BigInteger)
     before_5yr_date_ct: int | None = Column(BigInteger)
     before_20yr_date_ct: int | None = Column(BigInteger)
+    before_100yr_date_ct: int | None = Column(BigInteger)
     within_1yr_date_ct: int | None = Column(BigInteger)
     within_1mo_date_ct: int | None = Column(BigInteger)
     future_date_ct: int | None = Column(BigInteger)
+    distant_future_date_ct: int | None = Column(BigInteger)
+    date_days_present: int | None = Column(BigInteger)
+    date_weeks_present: int | None = Column(BigInteger)
+    date_months_present: int | None = Column(BigInteger)
 
     # Boolean-specific
     boolean_true_ct: int | None = Column(BigInteger)
+
+    sample_ratio: float | None = Column(Float)
 
     # Per-column profiling failure (independent of run-level status)
     query_error: str | None = Column(String)
 
     _default_order_by = (asc(position), asc(column_name))
+
+    # Natural key backing the uix_pr_tg_t_c_prun unique index.
+    _upsert_key = ("table_groups_id", "table_name", "column_name", "profile_run_id")
+
+    @classmethod
+    def upsert(cls, row: Mapping[str, Any]) -> None:
+        """Insert one profile-results row, overwriting on natural-key conflict.
+
+        The row is mapped by column name, so callers supply only the columns they
+        populate; the rest fall to their defaults on insert. Re-running the same key
+        overwrites its prior values rather than duplicating the row. Opens its own
+        session, so it is safe to call concurrently from worker threads.
+        """
+        values = {column: _sanitize_write_value(value) for column, value in row.items()}
+        statement = postgresql.insert(cls).values(values)
+        overwrite = {column: statement.excluded[column] for column in values if column not in cls._upsert_key}
+        if overwrite:
+            statement = statement.on_conflict_do_update(index_elements=list(cls._upsert_key), set_=overwrite)
+        else:
+            statement = statement.on_conflict_do_nothing(index_elements=list(cls._upsert_key))
+        with database_session() as session:
+            session.execute(statement)
 
     @classmethod
     def get_for_column(

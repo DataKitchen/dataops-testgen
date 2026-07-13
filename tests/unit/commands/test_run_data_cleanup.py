@@ -31,7 +31,7 @@ def _patch_orchestrator(
     deleted_job_executions: int = 0,
     deleted_score_history: int = 0,
     deleted_score_latest: int = 0,
-    deleted_stg: tuple[int, int, int, int] = (0, 0, 0, 0),
+    deleted_stg: tuple[int, int, int] = (0, 0, 0),
 ):
     """One-stop helper: patches every collaborator the orchestrator touches.
 
@@ -44,7 +44,6 @@ def _patch_orchestrator(
         "JobExecution": patch(f"{MODULE}.JobExecution"),
         "ScoreHistoryLatestRun": patch(f"{MODULE}.ScoreHistoryLatestRun"),
         "ScoreDefinitionResultHistoryEntry": patch(f"{MODULE}.ScoreDefinitionResultHistoryEntry"),
-        "StgSecondaryProfileUpdate": patch(f"{MODULE}.StgSecondaryProfileUpdate"),
         "StgFunctionalTableUpdate": patch(f"{MODULE}.StgFunctionalTableUpdate"),
         "StgDataCharsUpdate": patch(f"{MODULE}.StgDataCharsUpdate"),
         "StgTestDefinitionUpdate": patch(f"{MODULE}.StgTestDefinitionUpdate"),
@@ -69,10 +68,9 @@ def _patch_orchestrator(
     started["ScoreHistoryLatestRun"].delete_older_than.return_value = deleted_score_latest
     started["ScoreDefinitionResultHistoryEntry"].delete_older_than.return_value = deleted_score_history
 
-    started["StgSecondaryProfileUpdate"].delete_older_than.return_value = deleted_stg[0]
-    started["StgFunctionalTableUpdate"].delete_older_than.return_value = deleted_stg[1]
-    started["StgDataCharsUpdate"].delete_older_than.return_value = deleted_stg[2]
-    started["StgTestDefinitionUpdate"].delete_older_than.return_value = deleted_stg[3]
+    started["StgFunctionalTableUpdate"].delete_older_than.return_value = deleted_stg[0]
+    started["StgDataCharsUpdate"].delete_older_than.return_value = deleted_stg[1]
+    started["StgTestDefinitionUpdate"].delete_older_than.return_value = deleted_stg[2]
 
     return started, patches
 
@@ -170,7 +168,7 @@ def test_score_history_uses_protected_keys_from_latest_runs():
 
 
 def test_staging_sweeps_get_no_carve_out():
-    """All 4 staging models receive only cutoff + project_code — no protected_ids
+    """All staging models receive only cutoff + project_code — no protected_ids
     arg (these tables have no per-run linkage)."""
     started, patches = _patch_orchestrator()
     try:
@@ -179,7 +177,6 @@ def test_staging_sweeps_get_no_carve_out():
         _stop(patches)
 
     for stg_name in [
-        "StgSecondaryProfileUpdate",
         "StgFunctionalTableUpdate",
         "StgDataCharsUpdate",
         "StgTestDefinitionUpdate",
@@ -223,7 +220,7 @@ def test_summary_log_has_all_counts(caplog):
         deleted_job_executions=30,
         deleted_score_history=40,
         deleted_score_latest=50,
-        deleted_stg=(1, 2, 3, 4),  # sums to 10
+        deleted_stg=(2, 3, 4),  # sums to 9
     )
     try:
         run_data_cleanup(project_code="proj", retention_days=180)
@@ -238,7 +235,7 @@ def test_summary_log_has_all_counts(caplog):
     assert "deleted_job_executions=30" in msg
     assert "deleted_score_history=40" in msg
     assert "deleted_score_latest=50" in msg
-    assert "deleted_staging=10" in msg  # sum of staging counts
+    assert "deleted_staging=9" in msg  # sum of staging counts
 
 
 def test_no_data_to_delete_runs_clean():
@@ -256,7 +253,6 @@ def test_no_data_to_delete_runs_clean():
     started["ScoreDefinitionResultHistoryEntry"].delete_older_than.assert_called_once()
     started["ScoreHistoryLatestRun"].delete_older_than.assert_called_once()
     for stg in [
-        "StgSecondaryProfileUpdate",
         "StgFunctionalTableUpdate",
         "StgDataCharsUpdate",
         "StgTestDefinitionUpdate",

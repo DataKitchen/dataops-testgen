@@ -6,16 +6,6 @@ SET SEARCH_PATH TO {SCHEMA_NAME};
 -- |      This script should only be run for new schema -- no drops
 -- ==============================================================================
 
-CREATE TABLE stg_secondary_profile_updates (
-   project_code    VARCHAR(30),
-   schema_name     VARCHAR(50),
-   run_date        TIMESTAMP,
-   table_name      VARCHAR(120),
-   column_name     VARCHAR(120),
-   top_freq_values VARCHAR(1500),
-   distinct_value_hash VARCHAR(40)
-);
-
 CREATE TABLE stg_functional_table_updates (
    project_code  VARCHAR(30),
    schema_name   VARCHAR(50),

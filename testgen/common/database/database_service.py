@@ -3,11 +3,13 @@ import csv
 import importlib
 import logging
 import math
+import queue
 import re
-from collections.abc import Callable, Iterable
+import threading
+from collections.abc import Callable, Iterable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypedDict
+from typing import Any, Literal, NotRequired, TypedDict, TypeVar
 from urllib.parse import quote_plus
 
 import psycopg2.sql
@@ -181,7 +183,7 @@ class ThreadedProgress(TypedDict):
     processed: int
     errors: int
     total: int
-    indexes: list[int]
+    indexes: NotRequired[list[int]]
 
 def fetch_from_db_threaded(
     queries: list[tuple[str, dict | None]],
@@ -245,6 +247,66 @@ def fetch_from_db_threaded(
     # Flatten nested lists
     result_data = [element for sublist in result_data for element in sublist]
     return result_data, result_columns, error_data
+
+
+K = TypeVar("K")
+
+
+def run_keyed_worker_pool(
+    keys: Sequence[K],
+    process: Callable[[K], object],
+    max_threads: int = 4,
+    progress_callback: Callable[[ThreadedProgress], None] | None = None,
+) -> dict[int, str]:
+    """Run ``process`` over ``keys`` with a fixed pool of pull-based workers.
+
+    Each of ``max_threads`` workers repeatedly pulls the next key from a shared ordered
+    iterator and runs ``process(key)``, which does its own database work (read + write) and
+    raises to signal failure of that key. ``progress_callback`` is invoked from the calling
+    thread, never a worker, so it may safely touch thread-affine state such as a thread-local
+    database session. Returns ``{key_index: error_message}`` for every key whose ``process``
+    raised.
+    """
+    max_threads = max(1, min(10, max_threads))
+    total = len(keys)
+    work = enumerate(keys)
+    pull_lock = threading.Lock()
+    outcomes: queue.Queue[tuple[int, str | None]] = queue.Queue()
+
+    def pull() -> tuple[int, K] | None:
+        with pull_lock:
+            return next(work, None)
+
+    def worker() -> None:
+        while (item := pull()) is not None:
+            index, key = item
+            try:
+                process(key)
+                error = None
+            except Exception as e:
+                error = get_exception_message(e)
+                LOG.exception("Error processing work key")
+            outcomes.put((index, error))
+
+    error_data: dict[int, str] = {}
+    processed = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        workers = [executor.submit(worker) for _ in range(max_threads)]
+        for _ in range(total):
+            index, error = outcomes.get()
+            if error is not None:
+                error_data[index] = error
+            processed += 1
+            if progress_callback:
+                progress_callback({
+                    "processed": processed,
+                    "errors": len(error_data),
+                    "total": total,
+                })
+        for future in workers:
+            future.result()
+
+    return error_data
 
 
 def fetch_list_from_db(
