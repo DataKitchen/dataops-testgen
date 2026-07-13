@@ -227,6 +227,12 @@ def build_mcp_server(
         search_hygiene_issues,
         update_hygiene_issue,
     )
+    from testgen.mcp.tools.monitor_metrics import (
+        create_metric_monitor,
+        delete_metric_monitor,
+        update_metric_monitor,
+        validate_metric_expression,
+    )
     from testgen.mcp.tools.monitors import (
         disable_monitors,
         enable_monitors,
@@ -395,6 +401,10 @@ def build_mcp_server(
     tool_wrapper(get_monitor_settings)
     tool_wrapper(update_monitor_settings)
     tool_wrapper(disable_monitors)
+    tool_wrapper(create_metric_monitor)
+    tool_wrapper(update_metric_monitor)
+    tool_wrapper(delete_metric_monitor)
+    tool_wrapper(validate_metric_expression)
     tool_wrapper(run_tests)
     tool_wrapper(run_profiling)
     tool_wrapper(cancel_test_run)
