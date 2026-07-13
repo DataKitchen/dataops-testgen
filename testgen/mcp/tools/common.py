@@ -831,6 +831,31 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
     return td
 
 
+def resolve_monitor(monitor_id: str) -> TestDefinition:
+    """Resolve a monitor ID to the live ORM model, collapsing missing-or-inaccessible.
+
+    A monitor is a ``TestDefinition`` row whose parent ``TestSuite`` has
+    ``is_monitor=True`` — the inverse filter from ``resolve_test_definition``.
+    Scoped to allowed projects via the parent suite. Returns the ORM model so
+    callers can mutate and save / delete.
+    """
+    monitor_uuid = parse_uuid(monitor_id, "monitor_id")
+    perms = get_project_permissions()
+    query = (
+        select(TestDefinition)
+        .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
+        .where(
+            TestDefinition.id == monitor_uuid,
+            TestSuite.is_monitor.is_(True),
+            TestSuite.project_code.in_(perms.allowed_codes),
+        )
+    )
+    monitor = get_current_session().scalars(query).first()
+    if monitor is None:
+        raise MCPResourceNotAccessible("Monitor", monitor_id)
+    return monitor
+
+
 def resolve_test_result(test_result_id: str) -> TestResult:
     """Resolve a test result ID to the live ORM model, collapsing missing-or-inaccessible.
 
