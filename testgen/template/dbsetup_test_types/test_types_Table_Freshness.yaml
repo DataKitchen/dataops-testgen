@@ -24,6 +24,7 @@ test_types:
     Record Subset Condition,Fingerprint Expression
   default_parm_help: |-
     Condition defining a subset of records in main table|String expression combining key column measures into a distinct representation of table state
+  default_parm_required: N,N
   default_severity: Log
   run_type: QUERY
   test_scope: table

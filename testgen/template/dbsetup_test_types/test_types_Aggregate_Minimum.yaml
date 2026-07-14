@@ -24,6 +24,7 @@ test_types:
     Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition
   default_parm_help: |-
     Condition defining a subset of records in main table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause) - OPTIONAL|Schema location of reference table|Reference table name|Aggregate column expression in reference table (e.g. `SUM(sales)`)|Condition defining a subset of records in reference table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in reference table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in reference table (e.g. HAVING clause) - OPTIONAL
+  default_parm_required: N,N,N,Y,Y,Y,N,N,N
   default_severity: Fail
   run_type: QUERY
   test_scope: referential

@@ -24,6 +24,7 @@ test_types:
   default_parm_prompts: "Value Ct at Baseline,Mean at Baseline,Std Deviation at Baseline,Threshold\
     \ Difference Measure "
   default_parm_help: null
+  default_parm_required: N,N,N,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
