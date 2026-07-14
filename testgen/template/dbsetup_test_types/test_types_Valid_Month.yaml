@@ -24,6 +24,7 @@ test_types:
     Threshold Invalid Months,Valid Month List
   default_parm_help: |-
     The acceptable number of records with invalid months present.|List of valid month values for this field, in quotes if field is numeric, separated by commas.
+  default_parm_required: N,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
