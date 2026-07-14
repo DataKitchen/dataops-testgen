@@ -25,6 +25,7 @@ test_types:
     Record Subset Condition,Reference Schema Name,Reference Table Name,Matching Columns to Compare,Matching Record Subset Condition
   default_parm_help: |-
     Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL|Schema location of matching table|Matching table name|Column Names in reference table used to compare counts with source table values (separated by commas)|Condition defining a subset of records in reference table to match against, written like a condition within a SQL WHERE clause - OPTIONAL
+  default_parm_required: N,Y,Y,N,N
   default_severity: Warning
   run_type: QUERY
   test_scope: referential

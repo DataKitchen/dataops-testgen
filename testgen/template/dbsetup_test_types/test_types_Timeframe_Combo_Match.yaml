@@ -23,6 +23,7 @@ test_types:
   default_parm_prompts: |-
     Date Column for Time Windows,Time Window in Days,Record Subset Condition
   default_parm_help: null
+  default_parm_required: Y,Y,N
   default_severity: Fail
   run_type: QUERY
   test_scope: referential

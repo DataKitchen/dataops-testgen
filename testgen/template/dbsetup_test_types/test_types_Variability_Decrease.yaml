@@ -24,6 +24,7 @@ test_types:
   default_parm_prompts: |-
     Std Deviation at Baseline,Expected Minimum Percent
   default_parm_help: null
+  default_parm_required: N,N
   default_severity: Warning
   run_type: CAT
   test_scope: column

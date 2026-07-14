@@ -24,6 +24,7 @@ test_types:
   default_parm_prompts: |-
     Baseline Record Count,Baseline Value Count,Standardized Difference Measure
   default_parm_help: null
+  default_parm_required: N,N,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
