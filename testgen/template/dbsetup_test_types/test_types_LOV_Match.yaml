@@ -142,6 +142,8 @@ test_types:
     This tests that all values in the column match the hard-coded list provided. This is relevant when the list of allowable values is small and not expected to change often. Even if new values might occasionally be added, this test is useful for downstream data products to provide warning that assumptions and logic may need to change.
   active: Y
   algorithm: Set / lookup
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7014'
     test_type: LOV_Match

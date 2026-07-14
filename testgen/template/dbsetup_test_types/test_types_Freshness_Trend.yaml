@@ -39,6 +39,8 @@ test_types:
     This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated within the expectd time window. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
   active: Y
   algorithm: Freshness / time
+  generation_sets:
+    - Monitor
   cat_test_conditions: []
   target_data_lookups: []
   test_templates:

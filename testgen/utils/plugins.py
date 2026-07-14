@@ -76,6 +76,16 @@ class PluginSpec:
         """
         return []
 
+    @classmethod
+    def get_test_type_template_paths(cls) -> list[str]:
+        """Return importable package paths to scan for test-type metadata YAMLs. Default: none.
+
+        Named specifically because the loader applies the ``test_types`` config to every YAML found
+        under these paths; it cannot distinguish anomaly-type YAMLs. Plugins contributing anomaly
+        types would need a separate, kind-aware hook.
+        """
+        return []
+
 
 class PluginHook:
     """Singleton holding resolved plugin values, pre-loaded with defaults."""

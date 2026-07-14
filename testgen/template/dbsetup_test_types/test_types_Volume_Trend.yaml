@@ -36,6 +36,8 @@ test_types:
     This test compares the row count of all or a subset of records in a table against a derived tolerance range.
   active: Y
   algorithm: Custom SQL
+  generation_sets:
+    - Monitor
   cat_test_conditions:
   - id: '2515'
     test_type: Volume_Trend
