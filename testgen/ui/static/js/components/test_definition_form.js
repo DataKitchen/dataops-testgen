@@ -111,11 +111,24 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
             column,
             label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
             help: paramHelp[index] || null,
-            validators: paramRequired[index] ? [required] : undefined,
+            // custom_query is implicitly required for any test type that exposes it, matching the
+            // server-side validator, regardless of its default_parm_required flag.
+            validators: (paramRequired[index] || column === 'custom_query') ? [required] : undefined,
         }))
         .filter(config => !hasThresholds || !thresholdColumns.includes(config.column))
         // Drop the field for flavors whose SQL doesn't qualify table refs with a schema
         .filter(config => qualifiesTableRefsWithSchema || config.column !== 'match_schema_name')
+
+    // Label lookup for the missing-fields message, covering both the dynamic parameters above
+    // and the threshold fields rendered separately by ThresholdForm. Freshness_Trend relabels
+    // (and hides) these fields, so its labels must match what ThresholdForm actually renders.
+    const isFreshnessTrend = definition.test_type === 'Freshness_Trend';
+    const fieldLabels = {
+        ...(isFreshnessTrend ? {} : { lower_tolerance: 'Lower Bound' }),
+        upper_tolerance: isFreshnessTrend ? 'Maximum interval since last update (minutes)' : 'Upper Bound',
+        history_lookback: 'History Lookback',
+        ...Object.fromEntries(dynamicParamColumns.map(config => [config.column, config.label])),
+    };
 
     const updatedDefinition = van.state({ ...definition });
     const validityPerField = van.state({});
@@ -125,6 +138,9 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
         const fieldsValidity = validityPerField.val;
         const isValid = Object.keys(fieldsValidity).length > 0 &&
             Object.values(fieldsValidity).every(v => v);
+        const missingLabels = Object.entries(fieldsValidity)
+            .filter(([, valid]) => !valid)
+            .map(([column]) => fieldLabels[column] || column);
 
         const changes = {};
         for (const key in newDefinition) {
@@ -132,7 +148,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                 changes[key] = newDefinition[key];
             }
         }
-        props.onChange?.(changes, { dirty: !!Object.keys(changes).length, valid: isValid });
+        props.onChange?.(changes, { dirty: !!Object.keys(changes).length, valid: isValid, missingLabels });
     });
 
     const setFieldValues = (updatedValues) => {
@@ -287,6 +303,28 @@ const ThresholdForm = (options, definition) => {
     const lowerParsed = van.derive(() => parseExpressionValue(historyCalc.val));
     const upperParsed = van.derive(() => parseExpressionValue(historyCalcUpper.val));
 
+    // Seeds validityPerField for this mode's fields. Threshold fields not rendered in the current
+    // mode (e.g. lower/upper bound in 'prediction' mode) never mount an Input to self-report
+    // validity, so this must run once up front as well as on every mode change.
+    const applyModeValidity = (newMode) => {
+        if (newMode === 'static') {
+            if (!isFreshnessTrend) {
+                setFieldValidity('lower_tolerance', !!lowerTolerance.val);
+            }
+            setFieldValidity('upper_tolerance', !!upperTolerance.val);
+            setFieldValidity('history_lookback', true);
+        } else if (newMode === 'historical') {
+            setFieldValidity('lower_tolerance', true);
+            setFieldValidity('upper_tolerance', true);
+            setFieldValidity('history_lookback', !!historyLookback.val);
+        } else {
+            setFieldValidity('lower_tolerance', true);
+            setFieldValidity('upper_tolerance', true);
+            setFieldValidity('history_lookback', true);
+        }
+    };
+    applyModeValidity(initialMode);
+
     return div(
         { class: 'flex-column fx-gap-4 border border-radius-1 p-3 mt-5', style: 'position: relative;' },
         Caption({ content: 'Thresholds', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
@@ -306,21 +344,7 @@ const ThresholdForm = (options, definition) => {
                     'lower_tolerance': newMode === 'static' ? lowerTolerance.val : newMode === 'prediction' ? definition.lower_tolerance : null,
                     'upper_tolerance': newMode === 'static' ? upperTolerance.val : newMode === 'prediction' ? definition.upper_tolerance : null,
                 });
-                if (newMode === 'static') {
-                    if (!isFreshnessTrend) {
-                        setFieldValidity('lower_tolerance', !!lowerTolerance.val);
-                    }
-                    setFieldValidity('upper_tolerance', !!upperTolerance.val);
-                    setFieldValidity('history_lookback', true);
-                } else if (newMode === 'historical') {
-                    setFieldValidity('lower_tolerance', true);
-                    setFieldValidity('upper_tolerance', true);
-                    setFieldValidity('history_lookback', !!historyLookback.val);
-                } else {
-                    setFieldValidity('lower_tolerance', true);
-                    setFieldValidity('upper_tolerance', true);
-                    setFieldValidity('history_lookback', true);
-                }
+                applyModeValidity(newMode);
             },
         }),
         () => {

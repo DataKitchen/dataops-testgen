@@ -17,6 +17,7 @@ import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { Icon } from '/app/static/js/components/icon.js';
+import { dot } from '/app/static/js/components/dot.js';
 import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 import { AXES, FACET_AXES, GROUP_BY_AXES, EMPTY, appliesToSelectedColumn } from '/app/static/js/components/test_picker_taxonomy.js';
 import { enterPage, exitPage, getPageSignal } from '/app/static/js/page_lifecycle.js';
@@ -1387,6 +1388,13 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
     );
 };
 
+// Tab label with a small indicator dot when the tab has a blocking validation issue
+const TabLabel = (text, invalid) => span(
+    { class: 'flex-row fx-align-center fx-gap-1' },
+    text,
+    invalid ? dot({}, 'var(--error-color)', 8) : null,
+);
+
 // Shared form content for add/edit dialogs
 const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, activeTab, onFormChange, onValidate, onSave, onCancel, onBack }) => {
     const testScope = formValues.test_scope ?? 'column';
@@ -1407,6 +1415,12 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         formValues.custom_metadata ? JSON.stringify(formValues.custom_metadata, null, 2) : ''
     );
     const metadataValid = van.state(true);
+    const paramsValid = van.state(true);
+    const missingParamLabels = van.state([]);
+    // column_name is implicitly required for column-scoped tests (mirrors the server validator);
+    // it lives outside TestDefinitionForm's own field set, so it's tracked separately here.
+    const isColumnRequired = testScope === 'column';
+    const columnValid = van.state(!isColumnRequired || !!fv.rawVal.column_name);
 
     const inheritedSeverity = testSuite.severity ?? formValues.default_severity ?? 'Warning';
     const severityOptions = [
@@ -1445,6 +1459,10 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
 
     const columnLabel = formValues.column_name_prompt || (testScope === 'column' ? 'Column' : 'Test Focus');
     const columnHelp = formValues.column_name_help ?? null;
+    const missingFieldLabels = van.derive(() => [
+        ...(!columnValid.val ? [columnLabel] : []),
+        ...missingParamLabels.val,
+    ]);
 
     return div(
         { class: 'flex-column fx-gap-3' },
@@ -1467,7 +1485,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         Tabs(
             { activeTab },
             Tab(
-                { label: 'Parameters' },
+                { label: () => TabLabel('Parameters', !paramsValid.val || !columnValid.val) },
                 div(
                     { class: 'flex-column fx-gap-3' },
 
@@ -1500,6 +1518,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                             onChange: (value) => {
                                 updateField('table_name', value);
                                 updateField('column_name', null);
+                                columnValid.val = !isColumnRequired;
                             },
                         })
                     : null,
@@ -1507,12 +1526,16 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                 // Column name (scope-dependent)
                 testScope === 'column'
                     ? () => Select({
-                        label: 'Column',
+                        label: columnLabel,
                         value: fv.val.column_name ?? null,
                         options: columnNameOptions.val,
                         allowNull: true,
                         filterable: true,
-                        onChange: (value) => updateField('column_name', value),
+                        required: isColumnRequired,
+                        onChange: (value, state) => {
+                            updateField('column_name', value);
+                            columnValid.val = state.valid;
+                        },
                     })
                     : testScope === 'referential' || testScope === 'custom'
                         ? Input({
@@ -1541,7 +1564,9 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                         definition: formValues,
                         qualifiesTableRefsWithSchema,
                         hideHeader: true,
-                        onChange: (changes) => {
+                        onChange: (changes, { valid, missingLabels }) => {
+                            paramsValid.val = valid;
+                            missingParamLabels.val = missingLabels ?? [];
                             if (Object.keys(changes).length === 0) return;
                             const updated = { ...fv.rawVal, ...changes };
                             fv.val = updated;
@@ -1564,7 +1589,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                 ),
             ),
             Tab(
-                { label: 'Settings' },
+                { label: () => TabLabel('Settings', !metadataValid.val) },
                 div(
                     { class: 'flex-column fx-gap-3' },
 
@@ -1662,6 +1687,14 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             ? Alert({ type: validateResult.success ? 'success' : 'error' }, validateResult.message)
             : null,
 
+        // Missing required parameters warning
+        () => missingFieldLabels.val.length > 0
+            ? Alert(
+                { type: 'warn', icon: 'warning' },
+                `Missing required fields: ${missingFieldLabels.val.join(', ')}. Please fill them in before saving.`,
+            )
+            : '',
+
         // Buttons
         div(
             { class: 'flex-row fx-justify-space-between fx-gap-2' },
@@ -1701,7 +1734,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     color: 'primary',
                     label: mode === 'edit' ? 'Save' : 'Add',
                     width: 'auto',
-                    disabled: () => !metadataValid.val,
+                    disabled: () => !metadataValid.val || !paramsValid.val || !columnValid.val,
                     onclick: onSave,
                 }),
             ),
