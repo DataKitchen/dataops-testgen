@@ -24,6 +24,7 @@ test_types:
   default_parm_prompts: |-
     Value Count at Baseline,Distinct Value Count at Baseline,Standardized Difference Measure (0 to 1)
   default_parm_help: null
+  default_parm_required: N,N,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
