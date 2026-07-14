@@ -24,6 +24,7 @@ test_types:
     Record Subset Condition,Grouping Columns,Group Subset Condition,Matching Schema Name,Matching Table Name,Matching Aggregate Expression,Matching Record Subset Condition,Matching Grouping Columns,Matching Group Subset Condition,Lower Tolerance Constant,Upper Tolerance Constant
   default_parm_help: |-
     Condition defining a subset of records in main table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in main table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in main table (e.g. HAVING clause) - OPTIONAL|Schema location of matching table|Matching table name|Agregate column expression in matching table: one of `SUM([column_name])` or `COUNT([column_name])`|Condition defining a subset of records in matching table, written like a condition within a SQL WHERE clause - OPTIONAL|Category columns in matching table separated by commas (e.g. GROUP BY columns)|Condition defining a subset of aggregate records in matching table (e.g. HAVING clause) - OPTIONAL|Allowable tolerance below the reference measure expressed as a constant value|Allowable tolerance above the reference measure expressed as a constant value
+  default_parm_required: N,N,N,Y,Y,Y,N,N,N,N,N
   default_severity: Fail
   run_type: QUERY
   test_scope: referential

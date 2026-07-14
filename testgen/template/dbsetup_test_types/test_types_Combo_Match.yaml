@@ -24,6 +24,7 @@ test_types:
     Record Subset Condition,Group Subset Condition,Reference Schema Name,Reference Table Name,Matching Columns,Matching Record Subset Condition,Matching Group Subset Condition
   default_parm_help: |-
     Condition defining a subset of records in main table to evaluate, written like a condition within a SQL WHERE clause - OPTIONAL|Condition based on aggregate expression used to exclude value combinations in source table, written like a condition within a SQL HAVING clause (e.g. `SUM(sales) < 100`) - OPTIONAL|Schema location of matching table|Matching table name|Column Names in reference table used to validate source table values (separated by commas)|Condition defining a subset of records in reference table to match against, written like a condition within a SQL WHERE clause - OPTIONAL|Condition based on aggregate expression used to exclude value combinations in reference table, written like a condition within a SQL HAVING clause (e.g. `SUM(sales) < 100`) - OPTIONAL
+  default_parm_required: N,N,Y,Y,N,N,N
   default_severity: Fail
   run_type: QUERY
   test_scope: referential

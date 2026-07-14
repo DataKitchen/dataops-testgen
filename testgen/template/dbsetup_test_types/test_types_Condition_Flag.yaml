@@ -24,6 +24,7 @@ test_types:
     Threshold Error Count,Custom SQL Expression (TRUE on error)
   default_parm_help: |-
     The number of errors that are acceptable before test fails.|Expression should evaluate to TRUE to register an error or FALSE if no error. An expression can reference only columns in the selected table.
+  default_parm_required: N,N
   default_severity: Fail
   run_type: CAT
   test_scope: custom

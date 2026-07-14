@@ -25,6 +25,7 @@ test_types:
     Threshold Invalid Value Count
   default_parm_help: |-
     The acceptable number of records with invalid character values present.
+  default_parm_required: N
   default_severity: Warning
   run_type: CAT
   test_scope: column

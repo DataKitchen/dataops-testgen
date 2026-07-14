@@ -20,6 +20,7 @@ test_types:
   default_parm_values: null
   default_parm_prompts: null
   default_parm_help: null
+  default_parm_required: ''
   default_severity: Fail
   run_type: METADATA
   test_scope: tablegroup
