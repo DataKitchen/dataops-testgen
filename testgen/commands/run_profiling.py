@@ -17,7 +17,6 @@ from testgen.common import (
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import (
-    ThreadedProgress,
     get_flavor_service,
     run_keyed_worker_pool,
 )
@@ -192,44 +191,53 @@ def _run_column_profiling(
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("col_profiling", "Running")
     profiling_run.save()
-    get_current_session().commit()
+    session = get_current_session()
+    session.commit()
 
     columns = _order_largest_work_first(data_chars, table_record_counts)
     LOG.info(f"Running column profiling queries: {len(columns)}")
 
-    def update_column_progress(progress: ThreadedProgress) -> None:
+    # Build queries here, not in the worker, so the ORM session is only touched on this thread.
+    work = [
+        (column, sql_generator.run_column_profiling(column, sampling_params.get(column.table_name)))
+        for column in columns
+    ]
+    total = len(work)
+    error_count = 0
+
+    for processed, outcome in enumerate(
+        run_keyed_worker_pool(
+            work,
+            lambda built: fetch_dict_from_db(*built, use_target_db=True),
+            max_threads=sql_generator.connection.max_threads,
+        ),
+        start=1,
+    ):
+        column = outcome.key
+        error = outcome.error
+        if error is None and outcome.result:
+            try:
+                ProfileResult.upsert(outcome.result[0])
+            except Exception as e:
+                error = get_exception_message(e)
+                LOG.exception("Error writing column profiling result")
+        if error is not None:
+            error_count += 1
+            _write_column_error(sql_generator, column, error)
+
         profiling_run.set_progress(
             "col_profiling",
             "Running",
-            detail=f"{progress['processed']} of {progress['total']}",
-            error=f"{progress['errors']} column{'s' if progress['errors'] > 1 else ''} had errors"
-            if progress["errors"]
-            else None,
+            detail=f"{processed} of {total}",
+            error=f"{error_count} column{'s' if error_count > 1 else ''} had errors" if error_count else None,
         )
         profiling_run.save()
-        get_current_session().commit()
+        session.commit()
 
-    def profile_column(column: ColumnChars) -> None:
-        table_sampling = sampling_params.get(column.table_name)
-        try:
-            results = fetch_dict_from_db(*sql_generator.run_column_profiling(column, table_sampling), use_target_db=True)
-            if results:
-                ProfileResult.upsert(results[0])
-        except Exception as e:
-            _write_column_error(sql_generator, column, get_exception_message(e))
-            raise
-
-    error_data = run_keyed_worker_pool(
-        columns,
-        profile_column,
-        max_threads=sql_generator.connection.max_threads,
-        progress_callback=update_column_progress,
-    )
-
-    if error_count := len(error_data):
+    if error_count:
         LOG.warning(f"Errors running column profiling queries: {error_count}")
 
-    if error_count == len(columns):  # All queries failed, so stop the process
+    if error_count == total:  # All queries failed, so stop the process
         raise RuntimeError(f"{error_count} errors during column profiling. See details in results.")
 
     if sampling_params:
@@ -276,9 +284,11 @@ def _run_frequency_analysis(
     profiling_run = sql_generator.profiling_run
     profiling_run.set_progress("freq_analysis", "Running")
     profiling_run.save()
-    get_current_session().commit()
+    session = get_current_session()
+    session.commit()
 
-    error_data: dict[int, str] = {}
+    error_count = 0
+    first_error: str | None = None
     try:
         LOG.info("Selecting columns for frequency analysis")
         frequency_columns = [ColumnChars(**column) for column in fetch_dict_from_db(*sql_generator.get_frequency_analysis_columns())]
@@ -287,37 +297,44 @@ def _run_frequency_analysis(
             frequency_columns = _order_largest_work_first(frequency_columns, table_record_counts)
             LOG.info(f"Running frequency analysis queries: {len(frequency_columns)}")
 
-            def update_frequency_progress(progress: ThreadedProgress) -> None:
-                profiling_run.set_progress(
-                    "freq_analysis", "Running", detail=f"{progress['processed']} of {progress['total']}"
-                )
+            work = [
+                (column, sql_generator.run_frequency_analysis(column, sampling_params.get(column.table_name)))
+                for column in frequency_columns
+            ]
+            total = len(work)
+
+            for processed, outcome in enumerate(
+                run_keyed_worker_pool(
+                    work,
+                    lambda built: fetch_dict_from_db(*built, use_target_db=True),
+                    max_threads=sql_generator.connection.max_threads,
+                ),
+                start=1,
+            ):
+                column = outcome.key
+                error = outcome.error
+                if error is None and outcome.result:
+                    try:
+                        _write_frequency_result(sql_generator, column, outcome.result[0])
+                    except Exception as e:
+                        error = get_exception_message(e)
+                        LOG.exception("Error writing frequency analysis result")
+                if error is not None:
+                    error_count += 1
+                    first_error = first_error or error
+
+                profiling_run.set_progress("freq_analysis", "Running", detail=f"{processed} of {total}")
                 profiling_run.save()
-                get_current_session().commit()
+                session.commit()
 
-            def analyze_column(column: ColumnChars) -> None:
-                table_sampling = sampling_params.get(column.table_name)
-                results = fetch_dict_from_db(
-                    *sql_generator.run_frequency_analysis(column, table_sampling), use_target_db=True
-                )
-                if results:
-                    _write_frequency_result(sql_generator, column, results[0])
-
-            error_data = run_keyed_worker_pool(
-                frequency_columns,
-                analyze_column,
-                max_threads=sql_generator.connection.max_threads,
-                progress_callback=update_frequency_progress,
-            )
-            if error_data:
-                LOG.warning(f"Errors running frequency analysis queries: {len(error_data)}")
+            if error_count:
+                LOG.warning(f"Errors running frequency analysis queries: {error_count}")
     except Exception as e:
         LOG.exception("Error running frequency analysis")
         profiling_run.set_progress("freq_analysis", "Warning", error=f"Error encountered. {get_exception_message(e)}")
     else:
-        if error_data:
-            profiling_run.set_progress(
-                "freq_analysis", "Warning", error=f"Error encountered. {next(iter(error_data.values()))}"
-            )
+        if error_count:
+            profiling_run.set_progress("freq_analysis", "Warning", error=f"Error encountered. {first_error}")
         else:
             profiling_run.set_progress("freq_analysis", "Completed")
 
