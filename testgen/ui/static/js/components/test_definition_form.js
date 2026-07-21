@@ -85,11 +85,14 @@ const thresholdColumns = [
     'upper_tolerance',
 ];
 
-// Columns using the default { type: 'text' } do not need to be specified here
+// Columns using the default { type: 'text' } do not need to be specified here.
+// placeholder surfaces the value execute_tests_query applies when the field is left empty.
 const PARAMETER_CONFIG = {
     custom_query: { type: 'textarea' },
     lower_tolerance: { type: 'number' },
     upper_tolerance: { type: 'number' },
+    threshold_value: { placeholder: 'Defaults to 0 (any error fails)' },
+    subset_condition: { placeholder: 'No filter — applies to all rows' },
 };
 
 
@@ -119,17 +122,6 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
         // Drop the field for flavors whose SQL doesn't qualify table refs with a schema
         .filter(config => qualifiesTableRefsWithSchema || config.column !== 'match_schema_name')
 
-    // Label lookup for the missing-fields message, covering both the dynamic parameters above
-    // and the threshold fields rendered separately by ThresholdForm. Freshness_Trend relabels
-    // (and hides) these fields, so its labels must match what ThresholdForm actually renders.
-    const isFreshnessTrend = definition.test_type === 'Freshness_Trend';
-    const fieldLabels = {
-        ...(isFreshnessTrend ? {} : { lower_tolerance: 'Lower Bound' }),
-        upper_tolerance: isFreshnessTrend ? 'Maximum interval since last update (minutes)' : 'Upper Bound',
-        history_lookback: 'History Lookback',
-        ...Object.fromEntries(dynamicParamColumns.map(config => [config.column, config.label])),
-    };
-
     const updatedDefinition = van.state({ ...definition });
     const validityPerField = van.state({});
 
@@ -138,9 +130,6 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
         const fieldsValidity = validityPerField.val;
         const isValid = Object.keys(fieldsValidity).length > 0 &&
             Object.values(fieldsValidity).every(v => v);
-        const missingLabels = Object.entries(fieldsValidity)
-            .filter(([, valid]) => !valid)
-            .map(([column]) => fieldLabels[column] || column);
 
         const changes = {};
         for (const key in newDefinition) {
@@ -148,7 +137,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                 changes[key] = newDefinition[key];
             }
         }
-        props.onChange?.(changes, { dirty: !!Object.keys(changes).length, valid: isValid, missingLabels });
+        props.onChange?.(changes, { dirty: !!Object.keys(changes).length, valid: isValid });
     });
 
     const setFieldValues = (updatedValues) => {
@@ -195,6 +184,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                             name: column,
                             label: config.label,
                             help: config.help,
+                            placeholder: config.placeholder,
                             type: 'number',
                             value: currentValue(),
                             step: config.step,
@@ -231,6 +221,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                         name: column,
                         label: config.label,
                         help: config.help,
+                        placeholder: config.placeholder,
                         value: currentValue(),
                         validators: config.validators,
                         onChange: (value, state) => {

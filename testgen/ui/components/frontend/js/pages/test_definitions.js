@@ -21,7 +21,7 @@ import { dot } from '/app/static/js/components/dot.js';
 import { ProfilingResultsDialog } from '../shared/profiling_results_dialog.js';
 import { AXES, FACET_AXES, GROUP_BY_AXES, EMPTY, appliesToSelectedColumn } from '/app/static/js/components/test_picker_taxonomy.js';
 import { enterPage, exitPage, getPageSignal } from '/app/static/js/page_lifecycle.js';
-import { jsonObject, maxLength } from '/app/static/js/form_validators.js';
+import { jsonObject, maxLength, required } from '/app/static/js/form_validators.js';
 import { capitalize } from '/app/static/js/display_utils.js';
 
 const { button: btn, div, i: icon, span, strong } = van.tags;
@@ -1416,11 +1416,15 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
     );
     const metadataValid = van.state(true);
     const paramsValid = van.state(true);
-    const missingParamLabels = van.state([]);
     // column_name is implicitly required for column-scoped tests (mirrors the server validator);
     // it lives outside TestDefinitionForm's own field set, so it's tracked separately here.
     const isColumnRequired = testScope === 'column';
     const columnValid = van.state(!isColumnRequired || !!fv.rawVal.column_name);
+    // table_name is required for every scope that reads a physical table. CUSTOM runs its own
+    // custom_query (the table is only an output label) and tablegroup scope (Schema_Drift) spans
+    // the whole group, so neither needs one.
+    const isTableRequired = testScope !== 'tablegroup' && testType !== 'CUSTOM';
+    const tableValid = van.state(!isTableRequired || !!fv.rawVal.table_name);
 
     const inheritedSeverity = testSuite.severity ?? formValues.default_severity ?? 'Warning';
     const severityOptions = [
@@ -1459,10 +1463,6 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
 
     const columnLabel = formValues.column_name_prompt || (testScope === 'column' ? 'Column' : 'Test Focus');
     const columnHelp = formValues.column_name_help ?? null;
-    const missingFieldLabels = van.derive(() => [
-        ...(!columnValid.val ? [columnLabel] : []),
-        ...missingParamLabels.val,
-    ]);
 
     return div(
         { class: 'flex-column fx-gap-3' },
@@ -1485,7 +1485,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         Tabs(
             { activeTab },
             Tab(
-                { label: () => TabLabel('Parameters', !paramsValid.val || !columnValid.val) },
+                { label: () => TabLabel('Parameters', !paramsValid.val || !columnValid.val || !tableValid.val) },
                 div(
                     { class: 'flex-column fx-gap-3' },
 
@@ -1506,7 +1506,11 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                             name: 'table_name',
                             label: 'Table',
                             value: () => fv.val.table_name ?? '',
-                            onChange: (value) => updateField('table_name', value || null),
+                            validators: isTableRequired ? [required] : undefined,
+                            onChange: (value, state) => {
+                                updateField('table_name', value || null);
+                                tableValid.val = state.valid;
+                            },
                         })
                         : () => Select({
                             label: 'Table',
@@ -1514,11 +1518,13 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                             options: tableNameOptions,
                             allowNull: true,
                             filterable: true,
+                            required: isTableRequired,
                             disabled: mode === 'edit',
-                            onChange: (value) => {
+                            onChange: (value, state) => {
                                 updateField('table_name', value);
                                 updateField('column_name', null);
                                 columnValid.val = !isColumnRequired;
+                                tableValid.val = state.valid;
                             },
                         })
                     : null,
@@ -1564,9 +1570,8 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                         definition: formValues,
                         qualifiesTableRefsWithSchema,
                         hideHeader: true,
-                        onChange: (changes, { valid, missingLabels }) => {
+                        onChange: (changes, { valid }) => {
                             paramsValid.val = valid;
-                            missingParamLabels.val = missingLabels ?? [];
                             if (Object.keys(changes).length === 0) return;
                             const updated = { ...fv.rawVal, ...changes };
                             fv.val = updated;
@@ -1687,14 +1692,6 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
             ? Alert({ type: validateResult.success ? 'success' : 'error' }, validateResult.message)
             : null,
 
-        // Missing required parameters warning
-        () => missingFieldLabels.val.length > 0
-            ? Alert(
-                { type: 'warn', icon: 'warning' },
-                `Missing required fields: ${missingFieldLabels.val.join(', ')}. Please fill them in before saving.`,
-            )
-            : '',
-
         // Buttons
         div(
             { class: 'flex-row fx-justify-space-between fx-gap-2' },
@@ -1734,7 +1731,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     color: 'primary',
                     label: mode === 'edit' ? 'Save' : 'Add',
                     width: 'auto',
-                    disabled: () => !metadataValid.val || !paramsValid.val || !columnValid.val,
+                    disabled: () => !metadataValid.val || !paramsValid.val || !columnValid.val || !tableValid.val,
                     onclick: onSave,
                 }),
             ),
