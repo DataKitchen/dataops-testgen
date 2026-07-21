@@ -122,6 +122,7 @@ class TestGeneration:
         execute_db_queries([
             *self._get_generation_queries(),
             self._get_query("delete_stale_autogen_tests.sql"),
+            self._get_query("delete_overridden_autogen_tests.sql"),
         ])
 
     def monitor_run(self, mode: MonitorGenerationMode, table_names: list[str] | None = None) -> None:
