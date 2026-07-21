@@ -587,7 +587,8 @@ CREATE TABLE test_types (
    result_visualization          VARCHAR(50) DEFAULT 'line_chart',
    result_visualization_params   TEXT DEFAULT NULL,
    usage_notes                   VARCHAR,
-   active                        VARCHAR
+   active                        VARCHAR,
+   overrides                     VARCHAR
 );
 
 CREATE TABLE test_templates (
