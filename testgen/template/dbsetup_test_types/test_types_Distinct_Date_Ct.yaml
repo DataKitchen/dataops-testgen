@@ -24,7 +24,7 @@ test_types:
   default_parm_prompts: |-
     Distinct Date Count at Baseline,Min Expected Date Count
   default_parm_help: null
-  default_parm_required: N,N
+  default_parm_required: N,Y
   default_severity: Fail
   run_type: CAT
   test_scope: column

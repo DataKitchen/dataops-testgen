@@ -114,9 +114,7 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
             column,
             label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
             help: paramHelp[index] || null,
-            // custom_query is implicitly required for any test type that exposes it, matching the
-            // server-side validator, regardless of its default_parm_required flag.
-            validators: (paramRequired[index] || column === 'custom_query') ? [required] : undefined,
+            validators: paramRequired[index] ? [required] : undefined,
         }))
         .filter(config => !hasThresholds || !thresholdColumns.includes(config.column))
         // Drop the field for flavors whose SQL doesn't qualify table refs with a schema

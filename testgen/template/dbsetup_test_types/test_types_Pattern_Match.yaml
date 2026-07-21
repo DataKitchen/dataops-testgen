@@ -23,7 +23,7 @@ test_types:
   default_parm_prompts: |-
     Pattern at Baseline,Threshold Error Count
   default_parm_help: null
-  default_parm_required: N,N
+  default_parm_required: Y,N
   default_severity: Fail
   run_type: CAT
   test_scope: column
