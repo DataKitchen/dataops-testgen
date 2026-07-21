@@ -818,7 +818,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         tt.run_type, tt.test_scope, tt.dq_dimension, tt.impact_dimension, tt.threshold_description,
         tt.health_dimension, tt.algorithm, tt.statistical_technique,
         tt.column_name_prompt, tt.column_name_help,
-        tt.default_parm_prompts, tt.default_parm_help, tt.usage_notes,
+        tt.default_parm_prompts, tt.default_parm_help, tt.default_parm_required, tt.usage_notes,
         CASE tt.test_scope
             WHEN 'referential' THEN '⧉ '
             WHEN 'custom' THEN '⛭ '
