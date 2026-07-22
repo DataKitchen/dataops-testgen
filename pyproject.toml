@@ -92,7 +92,10 @@ dependencies = [
 
 [project.optional-dependencies]
 standalone = [
-    "pixeltable-pgserver>=0.5.1",
+    # Upper bound guards against a future release dropping a bundled PostgreSQL
+    # major that existing data dirs were initialized with (see start_server in
+    # common/standalone_postgres.py). Revisit deliberately before relaxing.
+    "pixeltable-pgserver>=0.6.0,<0.7.0",
 ]
 
 dev = [
