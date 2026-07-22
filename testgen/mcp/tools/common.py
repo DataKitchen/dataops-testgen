@@ -13,6 +13,7 @@ from testgen.common.enums import (
     ImpactDimension,
     IssueLikelihood,
     JobStatus,
+    MonitorCalculation,
     MonitorType,
     PiiRisk,
     QualityDimension,
@@ -401,6 +402,30 @@ def parse_monitor_type(value: str, label: str = "monitor_type") -> MonitorType:
     db_value = _MONITOR_TYPE_USER_TO_DB.get(value.lower()) if isinstance(value, str) else None
     if db_value is None:
         valid = ", ".join(_MONITOR_TYPE_USER_TO_DB)
+        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
+    return db_value
+
+
+# Monitor calculation — enum values are the stored form (``Value`` / ``Average`` /
+# ...). Callers may pass any casing; the lowercase-keyed map normalises. Kept as
+# a mapping (not just ``.__members__``) to mirror the ``MonitorType`` precedent
+# and make case-insensitive lookup a straight dict hit.
+_MONITOR_CALCULATION_USER_TO_DB: dict[str, MonitorCalculation] = {
+    calc.value.lower(): calc for calc in MonitorCalculation
+}
+
+
+def parse_monitor_calculation(value: str, label: str) -> MonitorCalculation:
+    """Validate a user-facing calculation label and return the stored ``MonitorCalculation``.
+
+    Accepts ``Value`` / ``Minimum`` / ``Maximum`` / ``Sum`` / ``Average`` / ``Expression``
+    (Title Case as rendered in tool output) or the equivalent lowercase forms. ``label``
+    names the caller's argument in the error message — pass
+    ``"lower_bound_calculation"`` or ``"upper_bound_calculation"``.
+    """
+    db_value = _MONITOR_CALCULATION_USER_TO_DB.get(value.lower()) if isinstance(value, str) else None
+    if db_value is None:
+        valid = ", ".join(calc.value for calc in MonitorCalculation)
         raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
     return db_value
 

@@ -111,3 +111,19 @@ class MonitorType(StrEnum):
     VOLUME = "Volume_Trend"
     SCHEMA = "Schema_Drift"
     METRIC = "Metric_Trend"
+
+
+class MonitorCalculation(StrEnum):
+    """Historical-mode calculation options for monitor thresholds.
+
+    Values are stored verbatim in ``TestDefinition.history_calculation`` /
+    ``.history_calculation_upper``. When the choice is ``EXPRESSION``, the SQL
+    expression is wrapped as ``EXPR:[...]`` before storage — see
+    ``testgen/common/history_calculation_service.py``.
+    """
+    VALUE = "Value"
+    MINIMUM = "Minimum"
+    MAXIMUM = "Maximum"
+    SUM = "Sum"
+    AVERAGE = "Average"
+    EXPRESSION = "Expression"
