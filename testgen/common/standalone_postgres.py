@@ -22,6 +22,7 @@ _server = None
 STANDALONE_MODE_ENV_VAR = "TG_STANDALONE_MODE"
 HOME_DIR_ENV_VAR = "TG_TESTGEN_HOME"
 STANDALONE_URI_ENV_VAR = "_TG_STANDALONE_URI"
+NEW_INSTALL_POSTGRES_VERSION = 18
 
 # Stored as ``project_host`` in the demo-DB connection row so that the actual
 # host/port — which can change across sessions on Windows (pgserver picks a
@@ -84,8 +85,13 @@ def start_server(data_dir: Path | None = None) -> None:
         data_dir = get_home_dir() / "pgdata"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    LOG.info("Starting embedded PostgreSQL (data: %s) ...", data_dir)
-    _server = pgserver.get_server(data_dir)
+    # pgserver bundles multiple PostgreSQL majors and defaults to its newest.
+    # Honor the major that initialized an existing data dir so upgrades never fail with a version mismatch.
+    existing_version = pgserver.pgdata_version(data_dir)
+    postgres_version = existing_version if existing_version is not None else NEW_INSTALL_POSTGRES_VERSION
+
+    LOG.info("Starting embedded PostgreSQL (data: %s, pg%s) ...", data_dir, postgres_version)
+    _server = pgserver.get_server(data_dir, postgres_version=postgres_version)
     LOG.info("Embedded PostgreSQL ready: %s", _server.get_uri())
 
     _reinitialize_orm_engine()
