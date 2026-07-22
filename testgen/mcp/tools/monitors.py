@@ -7,7 +7,11 @@ from uuid import UUID
 from sqlalchemy import select
 
 from testgen.common.cron_service import describe_cron, get_cron_sample
-from testgen.common.enums import MonitorType
+from testgen.common.enums import MonitorCalculation, MonitorType
+from testgen.common.history_calculation_service import (
+    format_calculation_expression,
+    parse_calculation_expression,
+)
 from testgen.common.holiday_service import is_supported_holiday_code
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.data_structure_log import (
@@ -23,6 +27,7 @@ from testgen.common.models.test_definition import (
     MonitorForecastPoint,
     TestDefinition,
     TestDefinitionSummary,
+    ThresholdMode,
     forecast_points_from_prediction,
 )
 from testgen.common.models.test_result import MonitorEvent, TestResult
@@ -41,10 +46,12 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     next_scheduled_run,
+    parse_monitor_calculation,
     parse_monitor_table_sort,
     parse_monitor_type,
     parse_since_arg,
     parse_uuid,
+    resolve_monitor,
     resolve_monitored_table_group,
     validate_limit,
     validate_page,
@@ -1094,5 +1101,336 @@ def list_monitor_schema_changes(
 
     if footer := format_page_footer(total, page, limit):
         doc.text(footer)
+
+    return doc.render()
+
+
+# ---------------------------------------------------------------------------
+# set_monitor_predictive / set_monitor_static / set_monitor_historical
+# ---------------------------------------------------------------------------
+
+_SCHEMA_REJECT_MSG = "Schema monitors have no configurable threshold mode."
+_FRESHNESS_STATIC_LOWER_REJECT_MSG = "Freshness monitors have no lower bound — pass upper_bound only."
+_FRESHNESS_HISTORICAL_REJECT_MSG = (
+    "Freshness monitors cannot use Historical Calculation mode; use Prediction Model or Static Thresholds."
+)
+
+_HISTORY_LOOKBACK_RANGE: tuple[int, int] = (1, 1000)
+
+# The ``ThresholdMode`` enum stores ``STATIC = "Static"`` while the UI selector labels it
+# "Static Thresholds". User-facing output should match the UI label; the other two modes'
+# enum values already match ("Prediction Model", "Historical Calculation").
+_MODE_LABEL: dict[ThresholdMode, str] = {
+    ThresholdMode.PREDICTION: ThresholdMode.PREDICTION.value,
+    ThresholdMode.STATIC: "Static Thresholds",
+    ThresholdMode.HISTORICAL: ThresholdMode.HISTORICAL.value,
+}
+
+
+def _reject_schema_monitor(monitor: TestDefinition) -> None:
+    if monitor.test_type == MonitorType.SCHEMA.value:
+        raise MCPUserError(_SCHEMA_REJECT_MSG)
+
+
+def _monitor_display_name(monitor: TestDefinition) -> str:
+    """Confirmation-line label: type name for auto types (``Volume``), backticked
+    metric name for Metric monitors (``\\`Daily revenue\\```)."""
+    if monitor.test_type == MonitorType.METRIC.value:
+        name = monitor.column_name or "unnamed metric"
+        return f"`{name}`"
+    return _MONITOR_LABEL[MonitorType(monitor.test_type)]
+
+
+@with_database_session
+@mcp_permission("edit")
+def set_monitor_predictive(monitor_id: str) -> str:
+    """Switch a monitor to Prediction Model mode. Bounds are computed automatically from historical runs; no manual thresholds.
+
+    Applies to Freshness, Volume, and Metric monitors. Schema monitors have no threshold mode and are rejected.
+
+    Args:
+        monitor_id: UUID of a monitor, e.g. from ``list_monitors``.
+    """
+    monitor = resolve_monitor(monitor_id)
+    _reject_schema_monitor(monitor)
+
+    current_mode, _, _ = TestDefinition._derive_threshold_mode(monitor)
+    if current_mode == ThresholdMode.PREDICTION:
+        raise MCPUserError("Monitor is already in Prediction Model mode.")
+
+    # Bounds preserved — matches UI (test_definition_form.js:302-303) where prior override
+    # values roll over to Predictive as a sensitivity-override pinch. ``prediction`` is
+    # also preserved for parity with the UI save handler, which does not clear it on
+    # mode switches; the next scheduled run refits from the training window.
+    monitor.history_calculation = "PREDICT"
+    monitor.history_calculation_upper = None
+    monitor.history_lookback = 0
+    monitor.lock_refresh = True
+    monitor.last_manual_update = datetime.now(UTC)
+    monitor.save()
+
+    display_name = _monitor_display_name(monitor)
+    predictive_label = _MODE_LABEL[ThresholdMode.PREDICTION]
+    doc = MdDoc()
+    doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {predictive_label}.")
+    doc.field("Mode", predictive_label)
+
+    # Mode-switch resets training. N starts at 0 because any prior training progress
+    # belongs to the outgoing prediction and does not apply to this fresh window.
+    suite = TestSuite.get(monitor.test_suite_id)
+    if suite and suite.predict_min_lookback:
+        m = suite.predict_min_lookback
+        doc.text(
+            f"Monitor is in training mode (0 of {m} runs complete); predictions activate after run {m}."
+        )
+
+    return doc.render()
+
+
+@with_database_session
+@mcp_permission("edit")
+def set_monitor_static(
+    monitor_id: str,
+    lower_bound: float | None = None,
+    upper_bound: float | None = None,
+) -> str:
+    """Switch a monitor to Static Thresholds mode with fixed manual bounds.
+
+    Volume and Metric monitors accept both bounds; Freshness monitors only accept
+    ``upper_bound`` (the maximum interval since last update, in minutes). Passing
+    ``lower_bound`` on a Freshness monitor is rejected.
+
+    On a monitor already in Static mode, this is a partial update — only supplied fields
+    change. On a mode switch, all required fields for the new mode must be supplied.
+    Schema monitors have no threshold mode and are rejected.
+
+    Args:
+        monitor_id: UUID of a monitor, e.g. from ``list_monitors``.
+        lower_bound: Numeric lower bound (Volume / Metric only).
+        upper_bound: Numeric upper bound. For Freshness, in minutes since last update.
+    """
+    monitor = resolve_monitor(monitor_id)
+    _reject_schema_monitor(monitor)
+
+    is_freshness = monitor.test_type == MonitorType.FRESHNESS.value
+    if is_freshness and lower_bound is not None:
+        raise MCPUserError(_FRESHNESS_STATIC_LOWER_REJECT_MSG)
+
+    current_mode, _, _ = TestDefinition._derive_threshold_mode(monitor)
+    is_partial_update = current_mode == ThresholdMode.STATIC
+
+    if is_partial_update:
+        if lower_bound is None and upper_bound is None:
+            raise MCPUserError(
+                "No fields supplied to update. Pass lower_bound or upper_bound."
+            )
+    elif is_freshness:
+        if upper_bound is None:
+            raise MCPUserError("Static mode requires upper_bound for Freshness monitors.")
+    elif lower_bound is None or upper_bound is None:
+        raise MCPUserError("Static mode requires lower_bound and upper_bound.")
+
+    # Clear the fields that only Historical uses so a stale value never leaks into the
+    # Static-mode SQL evaluation. ``prediction`` is preserved because it is ignored
+    # outside Predictive mode — matches UI monitors_dashboard.py, which only clears it
+    # inside the Freshness branch below.
+    monitor.history_calculation = None
+    monitor.history_calculation_upper = None
+    monitor.history_lookback = 0
+
+    if is_freshness:
+        # UI hard-codes lower_tolerance=0, mirrors upper_tolerance to threshold_value,
+        # and clears prediction. See monitors_dashboard.py:871-874.
+        monitor.lower_tolerance = "0"
+        if upper_bound is not None:
+            monitor.upper_tolerance = str(upper_bound)
+            monitor.threshold_value = str(upper_bound)
+        monitor.prediction = None
+    else:
+        if lower_bound is not None:
+            monitor.lower_tolerance = str(lower_bound)
+        if upper_bound is not None:
+            monitor.upper_tolerance = str(upper_bound)
+
+    monitor.lock_refresh = True
+    monitor.last_manual_update = datetime.now(UTC)
+    monitor.save()
+
+    display_name = _monitor_display_name(monitor)
+    static_label = _MODE_LABEL[ThresholdMode.STATIC]
+    doc = MdDoc()
+    if is_partial_update:
+        supplied = [
+            name for name, value in (("lower_bound", lower_bound), ("upper_bound", upper_bound))
+            if value is not None
+        ]
+        doc.heading(1, f"Monitor already in {static_label}; updated {', '.join(supplied)}.")
+    else:
+        doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {static_label}.")
+
+    doc.field("Mode", static_label)
+    if is_freshness:
+        doc.field(
+            "Maximum interval since last update",
+            f"{monitor.upper_tolerance} minutes since last update",
+        )
+    else:
+        doc.field("Lower Bound", monitor.lower_tolerance)
+        doc.field("Upper Bound", monitor.upper_tolerance)
+
+    return doc.render()
+
+
+def _validate_expression_pair(
+    calc: MonitorCalculation | None,
+    expression: str | None,
+    calc_field: str,
+    expression_field: str,
+) -> None:
+    """Enforce the ``EXPRESSION`` calculation ↔ expression-body coupling on supplied args.
+
+    An expression body is meaningful only when its calculation is ``Expression``; supplying
+    one without the other is a shape error, not a silent default.
+    """
+    if expression is not None and calc != MonitorCalculation.EXPRESSION:
+        raise MCPUserError(
+            f"{expression_field} accepted only when {calc_field} is 'Expression'."
+        )
+    if calc == MonitorCalculation.EXPRESSION and expression is None:
+        raise MCPUserError(
+            f"{calc_field} is 'Expression' but no {expression_field} supplied."
+        )
+
+
+def _calculation_column_value(
+    calc: MonitorCalculation, expression: str | None,
+) -> str:
+    """Encode a resolved calculation as the string that goes into ``history_calculation``
+    / ``.history_calculation_upper`` — the raw label for standard calculations, the
+    ``EXPR:[...]`` wrapper for expressions."""
+    if calc == MonitorCalculation.EXPRESSION:
+        return format_calculation_expression(expression or "")
+    return calc.value
+
+
+def _render_calculation_summary(doc: MdDoc, label: str, stored: str | None) -> None:
+    """Render a `<label> Calculation` field, plus a `<label> Expression` field on the
+    line below when the stored value is an ``EXPR:[...]`` wrapper."""
+    if stored is None:
+        return
+    is_expression, payload = parse_calculation_expression(stored)
+    if is_expression:
+        doc.field(f"{label} Calculation", MonitorCalculation.EXPRESSION.value)
+        doc.field(f"{label} Expression", payload)
+    else:
+        doc.field(f"{label} Calculation", stored)
+
+
+@with_database_session
+@mcp_permission("edit")
+def set_monitor_historical(
+    monitor_id: str,
+    lower_bound_calculation: str | None = None,
+    upper_bound_calculation: str | None = None,
+    history_lookback: int | None = None,
+    lower_bound_expression: str | None = None,
+    upper_bound_expression: str | None = None,
+) -> str:
+    """Switch a monitor to Historical Calculation mode, deriving bounds from a rolling window of past runs.
+
+    Applies to Volume and Metric monitors. Freshness monitors are rejected.
+
+    On a monitor already in Historical mode, this is a partial update — only supplied
+    fields change. On a mode switch, ``lower_bound_calculation``, ``upper_bound_calculation``,
+    and ``history_lookback`` are all required.
+
+    Args:
+        monitor_id: UUID of a monitor, e.g. from ``list_monitors``.
+        lower_bound_calculation: How the lower bound is computed. One of ``Value``, ``Minimum``, ``Maximum``, ``Sum``, ``Average``, ``Expression`` (case-insensitive).
+        upper_bound_calculation: How the upper bound is computed. Same allowed values as ``lower_bound_calculation``.
+        history_lookback: Number of past runs to aggregate over (1-1000).
+        lower_bound_expression: SQL expression for the lower bound, referencing ``{VALUE}`` / ``{MINIMUM}`` / ``{MAXIMUM}`` / ``{SUM}`` / ``{AVERAGE}`` / ``{STANDARD_DEVIATION}`` placeholders (e.g. ``0.5 * {AVERAGE}``). Required when ``lower_bound_calculation`` is ``Expression``; rejected otherwise.
+        upper_bound_expression: SQL expression for the upper bound, same placeholders as ``lower_bound_expression``. Required when ``upper_bound_calculation`` is ``Expression``; rejected otherwise.
+    """
+    monitor = resolve_monitor(monitor_id)
+    _reject_schema_monitor(monitor)
+
+    if monitor.test_type == MonitorType.FRESHNESS.value:
+        raise MCPUserError(_FRESHNESS_HISTORICAL_REJECT_MSG)
+
+    lower_calc = (
+        parse_monitor_calculation(lower_bound_calculation, "lower_bound_calculation")
+        if lower_bound_calculation is not None else None
+    )
+    upper_calc = (
+        parse_monitor_calculation(upper_bound_calculation, "upper_bound_calculation")
+        if upper_bound_calculation is not None else None
+    )
+
+    _validate_expression_pair(
+        lower_calc, lower_bound_expression, "lower_bound_calculation", "lower_bound_expression",
+    )
+    _validate_expression_pair(
+        upper_calc, upper_bound_expression, "upper_bound_calculation", "upper_bound_expression",
+    )
+
+    if history_lookback is not None:
+        low, high = _HISTORY_LOOKBACK_RANGE
+        if not low <= history_lookback <= high:
+            raise MCPUserError(f"history_lookback must be between {low} and {high}.")
+
+    current_mode, _, _ = TestDefinition._derive_threshold_mode(monitor)
+    is_partial_update = current_mode == ThresholdMode.HISTORICAL
+
+    if is_partial_update:
+        if lower_calc is None and upper_calc is None and history_lookback is None:
+            raise MCPUserError(
+                "No fields supplied to update. Pass lower_bound_calculation, "
+                "upper_bound_calculation, or history_lookback."
+            )
+    elif lower_calc is None or upper_calc is None or history_lookback is None:
+        raise MCPUserError(
+            "Historical mode requires lower_bound_calculation, upper_bound_calculation, and history_lookback."
+        )
+
+    if lower_calc is not None:
+        monitor.history_calculation = _calculation_column_value(lower_calc, lower_bound_expression)
+    if upper_calc is not None:
+        monitor.history_calculation_upper = _calculation_column_value(upper_calc, upper_bound_expression)
+    if history_lookback is not None:
+        monitor.history_lookback = history_lookback
+
+    # Clear Static-mode bound fields so the Historical-mode SQL never reads a stale
+    # bound. The execution template writes fresh lower_tolerance / upper_tolerance on
+    # each run from history_calculation / history_calculation_upper. ``prediction`` is
+    # preserved — it is ignored outside Predictive mode, matching UI behaviour.
+    monitor.lower_tolerance = None
+    monitor.upper_tolerance = None
+    monitor.lock_refresh = True
+    monitor.last_manual_update = datetime.now(UTC)
+    monitor.save()
+
+    display_name = _monitor_display_name(monitor)
+    historical_label = _MODE_LABEL[ThresholdMode.HISTORICAL]
+    doc = MdDoc()
+    if is_partial_update:
+        supplied = [
+            name for name, value in (
+                ("lower_bound_calculation", lower_bound_calculation),
+                ("upper_bound_calculation", upper_bound_calculation),
+                ("history_lookback", history_lookback),
+                ("lower_bound_expression", lower_bound_expression),
+                ("upper_bound_expression", upper_bound_expression),
+            )
+            if value is not None
+        ]
+        doc.heading(1, f"Monitor already in {historical_label}; updated {', '.join(supplied)}.")
+    else:
+        doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {historical_label}.")
+
+    doc.field("Mode", historical_label)
+    _render_calculation_summary(doc, "Lower Bound", monitor.history_calculation)
+    _render_calculation_summary(doc, "Upper Bound", monitor.history_calculation_upper)
+    doc.field("History Lookback", f"{monitor.history_lookback} runs")
 
     return doc.render()

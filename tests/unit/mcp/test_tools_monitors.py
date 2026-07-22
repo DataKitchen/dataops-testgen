@@ -1541,3 +1541,679 @@ def test_list_monitor_schema_changes_limit_out_of_range(db_session_mock):
 
     with _patch_perms(), pytest.raises(MCPUserError):
         list_monitor_schema_changes(str(uuid4()), limit=500)
+
+
+# ---------------------------------------------------------------------------
+# set_monitor_predictive
+# ---------------------------------------------------------------------------
+
+
+def _mock_threshold_monitor(test_type="Volume_Trend", **overrides) -> MagicMock:
+    """A MagicMock ``TestDefinition`` set up for threshold-mutation tests.
+
+    Defaults compose a Static-mode Volume monitor; override ``history_calculation`` /
+    ``history_calculation_upper`` / ``history_lookback`` to construct Historical or
+    Predictive starting states.
+    """
+    monitor = MagicMock()
+    monitor.id = overrides.get("id", uuid4())
+    monitor.test_type = test_type
+    monitor.table_name = overrides.get("table_name", "orders")
+    monitor.column_name = overrides.get("column_name", None)
+    monitor.test_suite_id = overrides.get("test_suite_id", uuid4())
+    monitor.history_calculation = overrides.get("history_calculation", None)
+    monitor.history_calculation_upper = overrides.get("history_calculation_upper", None)
+    monitor.history_lookback = overrides.get("history_lookback", 0)
+    monitor.lower_tolerance = overrides.get("lower_tolerance", "100")
+    monitor.upper_tolerance = overrides.get("upper_tolerance", "500")
+    monitor.threshold_value = overrides.get("threshold_value", None)
+    monitor.prediction = overrides.get("prediction", None)
+    monitor.lock_refresh = overrides.get("lock_refresh", False)
+    monitor.last_manual_update = overrides.get("last_manual_update", None)
+    return monitor
+
+
+def _mock_predict_suite(predict_min_lookback: int | None = 30) -> MagicMock:
+    suite = MagicMock()
+    suite.predict_min_lookback = predict_min_lookback
+    return suite
+
+
+@patch(f"{MODULE}.TestSuite.get")
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_predictive_from_static_switches_mode(mock_resolve, mock_ts_get, db_session_mock):
+    monitor = _mock_threshold_monitor(  # Static: history_calculation=None
+        test_type="Volume_Trend", prediction={"stuff": 1},
+    )
+    mock_resolve.return_value = monitor
+    mock_ts_get.return_value = _mock_predict_suite(predict_min_lookback=30)
+
+    from testgen.mcp.tools.monitors import set_monitor_predictive
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_predictive(str(monitor.id))
+
+    assert monitor.history_calculation == "PREDICT"
+    assert monitor.history_calculation_upper is None
+    assert monitor.history_lookback == 0
+    # Bounds and prediction preserved on switch to Predictive — matches UI behaviour.
+    assert monitor.lower_tolerance == "100"
+    assert monitor.upper_tolerance == "500"
+    assert monitor.prediction == {"stuff": 1}
+    assert monitor.lock_refresh is True
+    assert isinstance(monitor.last_manual_update, datetime)
+    monitor.save.assert_called_once()
+    assert "Volume monitor on `orders`" in out
+    assert "Prediction Model" in out
+    assert "training mode (0 of 30 runs complete)" in out
+
+
+@patch(f"{MODULE}.TestSuite.get")
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_predictive_from_historical_clears_calculation_and_lookback(
+    mock_resolve, mock_ts_get, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(
+        test_type="Metric_Trend",
+        column_name="Daily revenue",
+        history_calculation="Average",
+        history_calculation_upper="Maximum",
+        history_lookback=30,
+        lower_tolerance=None,
+        upper_tolerance=None,
+    )
+    mock_resolve.return_value = monitor
+    mock_ts_get.return_value = _mock_predict_suite(predict_min_lookback=30)
+
+    from testgen.mcp.tools.monitors import set_monitor_predictive
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_predictive(str(monitor.id))
+
+    assert monitor.history_calculation == "PREDICT"
+    assert monitor.history_calculation_upper is None
+    assert monitor.history_lookback == 0
+    monitor.save.assert_called_once()
+    # Metric monitors surface as their column_name (backticked), not the type label.
+    assert "`Daily revenue` monitor on `orders`" in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_predictive_already_predictive_rejects_and_does_not_save(
+    mock_resolve, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(history_calculation="PREDICT")
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_predictive
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="already in Prediction Model mode",
+    ):
+        set_monitor_predictive(str(monitor.id))
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_predictive_rejects_schema_monitor(mock_resolve, db_session_mock):
+    monitor = _mock_threshold_monitor(test_type="Schema_Drift")
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_predictive
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="Schema monitors have no configurable threshold mode",
+    ):
+        set_monitor_predictive(str(monitor.id))
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_predictive_propagates_inaccessible(mock_resolve, db_session_mock):
+    """Resolver failure must surface as MCPResourceNotAccessible without touching state."""
+    mock_resolve.side_effect = MCPResourceNotAccessible("Monitor", "some-id")
+
+    from testgen.mcp.tools.monitors import set_monitor_predictive
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPResourceNotAccessible):
+        set_monitor_predictive(str(uuid4()))
+
+
+@patch(f"{MODULE}.TestSuite.get")
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_predictive_skips_training_note_when_min_lookback_absent(
+    mock_resolve, mock_ts_get, db_session_mock,
+):
+    """When the parent suite has no ``predict_min_lookback`` configured, the training
+    note is skipped rather than rendered with a bogus ``0 of None`` count."""
+    monitor = _mock_threshold_monitor(test_type="Freshness_Trend")
+    mock_resolve.return_value = monitor
+    mock_ts_get.return_value = _mock_predict_suite(predict_min_lookback=None)
+
+    from testgen.mcp.tools.monitors import set_monitor_predictive
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_predictive(str(monitor.id))
+
+    assert "training mode" not in out
+    monitor.save.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# set_monitor_static
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_volume_mode_switch_stores_both_bounds(mock_resolve, db_session_mock):
+    """From Predictive → Static (Volume): both bounds required, Historical fields
+    cleared so a stale value can't leak into the Static-mode SQL evaluation.
+    ``prediction`` is preserved — it is ignored outside Predictive mode, matching UI."""
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend",
+        history_calculation="PREDICT",
+        prediction={"stuff": 1},
+        lower_tolerance=None,
+        upper_tolerance=None,
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_static(str(monitor.id), lower_bound=100, upper_bound=500)
+
+    assert monitor.history_calculation is None
+    assert monitor.history_calculation_upper is None
+    assert monitor.history_lookback == 0
+    assert monitor.prediction == {"stuff": 1}  # preserved on Volume/Metric switch
+    assert monitor.lower_tolerance == "100"
+    assert monitor.upper_tolerance == "500"
+    assert monitor.lock_refresh is True
+    monitor.save.assert_called_once()
+    assert "Switched Volume monitor on `orders` to Static Thresholds." in out
+    assert "Lower Bound" in out and "100" in out
+    assert "Upper Bound" in out and "500" in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_volume_partial_update_preserves_untouched_bound(
+    mock_resolve, db_session_mock,
+):
+    """Already-Static → partial update: supplying only ``upper_bound`` must leave the
+    stored lower bound alone."""
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend",
+        history_calculation=None,
+        lower_tolerance="100",
+        upper_tolerance="500",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_static(str(monitor.id), upper_bound=700)
+
+    assert monitor.lower_tolerance == "100"  # unchanged
+    assert monitor.upper_tolerance == "700"  # updated
+    monitor.save.assert_called_once()
+    assert "Monitor already in Static Thresholds; updated upper_bound." in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_bare_call_on_static_rejects(mock_resolve, db_session_mock):
+    monitor = _mock_threshold_monitor(test_type="Volume_Trend", history_calculation=None)
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="No fields supplied to update",
+    ):
+        set_monitor_static(str(monitor.id))
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_mode_switch_without_bounds_rejects(mock_resolve, db_session_mock):
+    """From Predictive → Static requires *both* bounds for Volume/Metric — the error must
+    name both fields so the LLM can supply them in the next call."""
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="requires lower_bound and upper_bound",
+    ):
+        set_monitor_static(str(monitor.id))
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_mode_switch_with_only_one_bound_rejects(mock_resolve, db_session_mock):
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="requires lower_bound and upper_bound",
+    ):
+        set_monitor_static(str(monitor.id), upper_bound=500)
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_freshness_mode_switch_stores_upper_only(mock_resolve, db_session_mock):
+    """Freshness Static: hardcode ``lower_tolerance=0``, mirror upper to ``threshold_value``,
+    clear ``prediction``. Verbatim copy of the UI's monitors_dashboard.py:871-874 behaviour."""
+    monitor = _mock_threshold_monitor(
+        test_type="Freshness_Trend",
+        history_calculation="PREDICT",
+        prediction={"schedule_stage": {}},
+        lower_tolerance=None,
+        upper_tolerance=None,
+        threshold_value=None,
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_static(str(monitor.id), upper_bound=120)
+
+    assert monitor.lower_tolerance == "0"
+    assert monitor.upper_tolerance == "120"
+    assert monitor.threshold_value == "120"
+    assert monitor.prediction is None
+    monitor.save.assert_called_once()
+    assert "Switched Freshness monitor on `orders` to Static Thresholds." in out
+    assert "Maximum interval since last update" in out
+    assert "120 minutes since last update" in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_freshness_rejects_lower_bound(mock_resolve, db_session_mock):
+    """Freshness has no lower bound — the tool rejects rather than silently discarding."""
+    monitor = _mock_threshold_monitor(test_type="Freshness_Trend", history_calculation=None)
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="Freshness monitors have no lower bound",
+    ):
+        set_monitor_static(str(monitor.id), lower_bound=0, upper_bound=120)
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_freshness_mode_switch_without_upper_rejects(
+    mock_resolve, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(
+        test_type="Freshness_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="Static mode requires upper_bound for Freshness monitors",
+    ):
+        set_monitor_static(str(monitor.id))
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_metric_confirmation_backticks_metric_name(
+    mock_resolve, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(
+        test_type="Metric_Trend",
+        column_name="Daily revenue",
+        history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_static(str(monitor.id), lower_bound=0, upper_bound=1000)
+
+    assert "Switched `Daily revenue` monitor on `orders` to Static Thresholds." in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_rejects_schema_monitor(mock_resolve, db_session_mock):
+    monitor = _mock_threshold_monitor(test_type="Schema_Drift")
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="Schema monitors have no configurable threshold mode",
+    ):
+        set_monitor_static(str(monitor.id), lower_bound=0, upper_bound=100)
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_static_propagates_inaccessible(mock_resolve, db_session_mock):
+    mock_resolve.side_effect = MCPResourceNotAccessible("Monitor", "some-id")
+
+    from testgen.mcp.tools.monitors import set_monitor_static
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPResourceNotAccessible):
+        set_monitor_static(str(uuid4()), lower_bound=0, upper_bound=100)
+
+
+# ---------------------------------------------------------------------------
+# set_monitor_historical
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_volume_mode_switch_stores_plain_calculations(
+    mock_resolve, db_session_mock,
+):
+    """From Predictive → Historical: all three fields required, all three stored as-is,
+    Static-mode bounds cleared. ``prediction`` is preserved — it is ignored outside
+    Predictive mode, matching UI."""
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend",
+        history_calculation="PREDICT",
+        prediction={"stuff": 1},
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_historical(
+            str(monitor.id),
+            lower_bound_calculation="Average",
+            upper_bound_calculation="Maximum",
+            history_lookback=10,
+        )
+
+    assert monitor.history_calculation == "Average"
+    assert monitor.history_calculation_upper == "Maximum"
+    assert monitor.history_lookback == 10
+    assert monitor.lower_tolerance is None
+    assert monitor.upper_tolerance is None
+    assert monitor.prediction == {"stuff": 1}  # preserved on Volume/Metric switch
+    assert monitor.lock_refresh is True
+    monitor.save.assert_called_once()
+    assert "Switched Volume monitor on `orders` to Historical Calculation." in out
+    assert "Lower Bound Calculation" in out and "Average" in out
+    assert "Upper Bound Calculation" in out and "Maximum" in out
+    assert "History Lookback" in out and "10 runs" in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_expression_wraps_in_expr_brackets(mock_resolve, db_session_mock):
+    monitor = _mock_threshold_monitor(
+        test_type="Metric_Trend",
+        column_name="Daily revenue",
+        history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_historical(
+            str(monitor.id),
+            lower_bound_calculation="Expression",
+            lower_bound_expression="0.5 * {AVERAGE}",
+            upper_bound_calculation="Maximum",
+            history_lookback=20,
+        )
+
+    assert monitor.history_calculation == "EXPR:[0.5 * {AVERAGE}]"
+    assert monitor.history_calculation_upper == "Maximum"
+    assert monitor.history_lookback == 20
+    monitor.save.assert_called_once()
+    # Config summary unwraps the expression so the LLM sees the raw SQL, not the wire form.
+    assert "Lower Bound Expression" in out and "0.5 * {AVERAGE}" in out
+    assert "Lower Bound Calculation" in out and "Expression" in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_expression_without_expression_body_rejects(
+    mock_resolve, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="lower_bound_calculation is 'Expression' but no lower_bound_expression supplied",
+    ):
+        set_monitor_historical(
+            str(monitor.id),
+            lower_bound_calculation="Expression",
+            upper_bound_calculation="Maximum",
+            history_lookback=10,
+        )
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_expression_body_without_calculation_expression_rejects(
+    mock_resolve, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="lower_bound_expression accepted only when lower_bound_calculation is 'Expression'",
+    ):
+        set_monitor_historical(
+            str(monitor.id),
+            lower_bound_calculation="Average",
+            lower_bound_expression="0.5 * {AVERAGE}",
+            upper_bound_calculation="Maximum",
+            history_lookback=10,
+        )
+
+    monitor.save.assert_not_called()
+
+
+@pytest.mark.parametrize("lookback", [0, 1001, -5])
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_lookback_out_of_range_rejects(
+    mock_resolve, lookback, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="history_lookback must be between 1 and 1000",
+    ):
+        set_monitor_historical(
+            str(monitor.id),
+            lower_bound_calculation="Average",
+            upper_bound_calculation="Maximum",
+            history_lookback=lookback,
+        )
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_mode_switch_missing_required_fields_rejects(
+    mock_resolve, db_session_mock,
+):
+    """Mode-switch to Historical requires all three of lower calc, upper calc, and lookback.
+    The error names what's missing collectively so the LLM can supply them in one call."""
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError,
+        match="Historical mode requires lower_bound_calculation, upper_bound_calculation, and history_lookback",
+    ):
+        set_monitor_historical(str(monitor.id), lower_bound_calculation="Average")
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_partial_update_preserves_untouched_fields(
+    mock_resolve, db_session_mock,
+):
+    """Already in Historical → partial update. Supplying only ``history_lookback`` must
+    leave the two calculation columns unchanged."""
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend",
+        history_calculation="Average",
+        history_calculation_upper="Maximum",
+        history_lookback=10,
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"):
+        out = set_monitor_historical(str(monitor.id), history_lookback=30)
+
+    assert monitor.history_calculation == "Average"  # unchanged
+    assert monitor.history_calculation_upper == "Maximum"  # unchanged
+    assert monitor.history_lookback == 30  # updated
+    monitor.save.assert_called_once()
+    assert "Monitor already in Historical Calculation; updated history_lookback." in out
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_partial_update_bare_call_rejects(mock_resolve, db_session_mock):
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend",
+        history_calculation="Average",
+        history_calculation_upper="Maximum",
+        history_lookback=10,
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="No fields supplied to update",
+    ):
+        set_monitor_historical(str(monitor.id))
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_rejects_freshness_monitor(mock_resolve, db_session_mock):
+    """Freshness+Historical is rejected: the UI hides Historical for Freshness monitors
+    and the model classifier reads any such row back as Static regardless of storage."""
+    monitor = _mock_threshold_monitor(
+        test_type="Freshness_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="Freshness monitors cannot use Historical Calculation mode",
+    ):
+        set_monitor_historical(
+            str(monitor.id),
+            upper_bound_calculation="Maximum",
+            history_lookback=10,
+        )
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_rejects_schema_monitor(mock_resolve, db_session_mock):
+    monitor = _mock_threshold_monitor(test_type="Schema_Drift")
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(
+        MCPUserError, match="Schema monitors have no configurable threshold mode",
+    ):
+        set_monitor_historical(
+            str(monitor.id),
+            lower_bound_calculation="Average",
+            upper_bound_calculation="Maximum",
+            history_lookback=10,
+        )
+
+    monitor.save.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_calculation_parsing_is_case_insensitive(
+    mock_resolve, db_session_mock,
+):
+    monitor = _mock_threshold_monitor(
+        test_type="Volume_Trend", history_calculation="PREDICT",
+    )
+    mock_resolve.return_value = monitor
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"):
+        set_monitor_historical(
+            str(monitor.id),
+            lower_bound_calculation="average",
+            upper_bound_calculation="MAXIMUM",
+            history_lookback=10,
+        )
+
+    # Parser normalizes to canonical Title-Case (matches what the SQL execution template
+    # matches against — e.g. ``WHEN s.history_calculation = 'Average'``).
+    assert monitor.history_calculation == "Average"
+    assert monitor.history_calculation_upper == "Maximum"
+
+
+@patch(f"{MODULE}.resolve_monitor")
+def test_set_monitor_historical_propagates_inaccessible(mock_resolve, db_session_mock):
+    mock_resolve.side_effect = MCPResourceNotAccessible("Monitor", "some-id")
+
+    from testgen.mcp.tools.monitors import set_monitor_historical
+
+    with _patch_perms(permission="edit"), pytest.raises(MCPResourceNotAccessible):
+        set_monitor_historical(
+            str(uuid4()),
+            lower_bound_calculation="Average",
+            upper_bound_calculation="Maximum",
+            history_lookback=10,
+        )

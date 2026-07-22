@@ -242,6 +242,9 @@ def build_mcp_server(
         list_monitor_schema_changes,
         list_monitored_tables,
         list_monitors,
+        set_monitor_historical,
+        set_monitor_predictive,
+        set_monitor_static,
         update_monitor_settings,
     )
     from testgen.mcp.tools.notifications import (
@@ -405,6 +408,9 @@ def build_mcp_server(
     tool_wrapper(update_metric_monitor)
     tool_wrapper(delete_metric_monitor)
     tool_wrapper(validate_metric_expression)
+    tool_wrapper(set_monitor_predictive)
+    tool_wrapper(set_monitor_static)
+    tool_wrapper(set_monitor_historical)
     tool_wrapper(run_tests)
     tool_wrapper(run_profiling)
     tool_wrapper(cancel_test_run)
