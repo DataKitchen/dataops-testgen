@@ -46,6 +46,11 @@ class RBACProvider:
 
         return list(get_args(RoleType))
 
+    @staticmethod
+    def get_role_label(role: str) -> str:
+        """Human-readable label for a role code. OS default: the title-cased code."""
+        return role.replace("_", " ").title()
+
 
 class PluginSpec:
     rbac: ClassVar[type[RBACProvider]] = RBACProvider

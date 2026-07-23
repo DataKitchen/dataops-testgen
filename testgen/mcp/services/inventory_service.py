@@ -9,11 +9,16 @@ from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup, TableGroupSummary
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import friendly_score, score
+from testgen.utils.plugins import PluginHook
 
 
 def get_inventory(
     project_codes: list[str],
     view_project_codes: list[str],
+    *,
+    username: str,
+    is_global_admin: bool,
+    roles_by_code: dict[str, str],
 ) -> str:
     """Build a markdown inventory of all projects, connections, table groups, and test suites.
 
@@ -22,6 +27,10 @@ def get_inventory(
         view_project_codes: Projects where the user has 'view' permission.
             Connection names and test suites are only shown for these projects.
             Table groups are always shown so catalog users can browse tables.
+        username: The authenticated user, rendered in the identity header.
+        is_global_admin: When true, the identity header is annotated ` · system admin`.
+        roles_by_code: Maps project_code -> role code; renders each project's
+            ` — <Role> access` suffix. Projects absent from the map get no suffix.
     """
     session = get_current_session()
 
@@ -105,10 +114,20 @@ def get_inventory(
 
     # Format as Markdown
     lines = ["# Data Inventory\n"]
+    identity = f"Authenticated as {username}"
+    if is_global_admin:
+        identity += " · system admin"
+    lines.append(identity + "\n")
+
+    if not projects:
+        lines.append("_No projects accessible._\n")
+        return "\n".join(lines)
 
     for project_code, proj in projects.items():
         can_view = project_code in view_codes_set
-        lines.append(f"## Project: {proj['name']} (`{project_code}`)\n")
+        role = roles_by_code.get(project_code)
+        role_suffix = f" — {PluginHook.instance().rbac.get_role_label(role)} access" if role else ""
+        lines.append(f"## Project: {proj['name']} (`{project_code}`){role_suffix}\n")
 
         if not proj["connections"]:
             if can_view:
