@@ -28,7 +28,6 @@ from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
 from testgen.ui.navigation.router import Router
 from testgen.ui.queries.profiling_queries import get_tables_by_table_group
-from testgen.ui.services.database_service import fetch_all_from_db
 from testgen.ui.services.query_cache import (
     get_monitor_schedule,
     get_project_summary,
@@ -41,7 +40,7 @@ from testgen.ui.services.query_cache import (
 )
 from testgen.ui.services.rerun_service import safe_rerun
 from testgen.ui.session import session, temp_value
-from testgen.ui.utils import dict_from_kv, get_cron_sample_handler
+from testgen.ui.utils import get_cron_sample_handler
 from testgen.ui.views.dialogs.manage_notifications import NotificationSettingsDialogBase
 from testgen.utils import make_json_safe
 
@@ -703,122 +702,7 @@ def build_table_trends_data(
 
 @st.cache_data(show_spinner=False)
 def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_multiplier: int = 1) -> dict:
-    query = """
-    WITH ranked_test_runs AS (
-        SELECT
-            test_runs.id,
-            test_runs.test_starttime,
-            COALESCE(test_suites.monitor_lookback, 1) * :lookback_multiplier AS lookback,
-            ROW_NUMBER() OVER (PARTITION BY test_runs.test_suite_id ORDER BY test_runs.test_starttime DESC) AS position
-        FROM test_suites
-        INNER JOIN test_runs
-            ON (test_suites.id = test_runs.test_suite_id)
-        WHERE test_suites.id = :test_suite_id
-    ),
-    active_runs AS (
-        SELECT id, test_starttime FROM ranked_test_runs
-        WHERE position <= lookback
-    ),
-    target_tests AS (
-        SELECT 'Freshness_Trend' AS test_type
-        UNION ALL SELECT 'Volume_Trend'
-        UNION ALL SELECT 'Schema_Drift'
-        UNION ALL SELECT 'Metric_Trend'
-    )
-    SELECT
-        COALESCE(results.test_time, active_runs.test_starttime) AS test_time,
-        tt.test_type,
-        results.id AS result_id,
-        results.result_code,
-        COALESCE(results.result_status, 'Log') AS result_status,
-        results.result_signal,
-        results.result_message,
-        results.test_definition_id::TEXT,
-        COALESCE(results.input_parameters, '') AS input_parameters,
-        results.column_names
-    FROM active_runs
-    CROSS JOIN target_tests tt
-    LEFT JOIN test_results AS results
-        ON (
-            results.test_run_id = active_runs.id
-            AND results.test_type = tt.test_type
-            AND results.table_name = :table_name
-        )
-    LEFT JOIN test_definitions AS definition
-        ON (definition.id = results.test_definition_id)
-    ORDER BY active_runs.id, tt.test_type;
-    """
-
-    params = {
-        "table_name": table_name,
-        "test_suite_id": test_suite_id,
-        "lookback_multiplier": lookback_multiplier,
-    }
-
-    results = fetch_all_from_db(query, params)
-    results = [ dict(row) for row in results ]
-
-    metric_events: dict[str, dict] = {}
-    for event in results:
-        if event["test_type"] == "Metric_Trend" and event["result_status"] != "Error" and (definition_id := event["test_definition_id"]):
-            if definition_id not in metric_events:
-                metric_events[definition_id] = {
-                    "test_definition_id": definition_id,
-                    "column_name": event["column_names"],
-                    "events": [],
-                }
-            params = dict_from_kv(event.get("input_parameters") or "")
-            metric_events[definition_id]["events"].append({
-                "value": float(event["result_signal"]) if event["result_signal"] else None,
-                "time": event["test_time"],
-                "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
-                "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
-                "is_pending": not bool(event["result_id"]),
-                "lower_tolerance": params.get("lower_tolerance") if params.get("lower_tolerance") else None,
-                "upper_tolerance": params.get("upper_tolerance") if params.get("upper_tolerance") else None,
-                "threshold_value": params.get("threshold_value") if params.get("threshold_value") else None,
-            })
-
-    return {
-        "freshness_events": [
-            {
-                "changed": "detected: Yes" in (result_message := event["result_message"] or ""),
-                "message": parts[1].rstrip(".") if len(parts := result_message.split(". ", 1)) > 1 else None,
-                "status": event["result_status"],
-                "is_training": event["result_code"] == -1,
-                "is_pending": not bool(event["result_id"]),
-                "time": event["test_time"],
-            }
-            for event in results if event["test_type"] == "Freshness_Trend" and event["result_status"] != "Error"
-        ],
-        "volume_events": [
-            {
-                "record_count": int(event["result_signal"] or 0),
-                "time": event["test_time"],
-                "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
-                "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
-                "is_pending": not bool(event["result_id"]),
-                **params,
-            }
-            for event in results if event["test_type"] == "Volume_Trend" and event["result_status"] != "Error" and (
-                params := dict_from_kv(event.get("input_parameters"))
-                    or {"lower_tolerance": None, "upper_tolerance": None}
-            )
-        ],
-        "schema_events": [
-            {
-                "table_change": signals[0] or None,
-                "additions": signals[1],
-                "deletions": signals[2],
-                "modifications": signals[3],
-                "time": event["test_time"],
-                "window_start": datetime.fromisoformat(signals[4]) if signals[4] else None,
-            }
-            for event in results if event["test_type"] == "Schema_Drift" and event["result_status"] != "Error"
-            and (signals := (event["result_signal"] or "|0|0|0|").split("|") or True)
-        ],
-        "metric_events": list(metric_events.values()),
-    }
+    return TableGroup.get_table_monitor_series(test_suite_id, table_name, lookback_multiplier)
 
 
 @st.cache_data(show_spinner=False)
