@@ -10,6 +10,7 @@ from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.enums import PublicJobKey
 from testgen.common.models import Session, _current_session_wrapper, get_current_session
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.monitor import Monitor
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -135,4 +136,15 @@ def resolve_job(permission: str, *extra_filters):
             *extra_filters,
         )
         return _check_access(get_current_session().scalars(query).first(), user, permission)
+    return Depends(dependency)
+
+
+def resolve_monitor(permission: str):
+    """Resolve a Monitor by ``monitor_id`` path param and verify project permission.
+
+    ``Monitor.get`` returns None for unknown ids and for definitions that are not monitors,
+    so non-monitor resources are indistinguishable from missing ones (uniform 404).
+    """
+    def dependency(monitor_id: UUID, user: User = _require_user) -> Monitor:
+        return _check_access(Monitor.get(monitor_id), user, permission)
     return Depends(dependency)

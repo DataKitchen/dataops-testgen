@@ -273,11 +273,47 @@ class TestDefinitionMinimal(EntityMinimal):
 
 class ThresholdMode(StrEnum):
     """How a monitor's bounds are determined — derived from which fields on the
-    definition are populated. See ``TestDefinition._derive_threshold_mode``."""
+    definition are populated. See ``derive_threshold_mode``."""
     PREDICTION = "Prediction Model"
     HISTORICAL = "Historical Calculation"
     STATIC = "Static"
     NONE = "N/A"
+
+
+def derive_threshold_mode(
+    test_type: str,
+    history_calculation: str | None,
+    history_calculation_upper: str | None,
+    lower_tolerance: str | None,
+    upper_tolerance: str | None,
+) -> tuple[ThresholdMode, str | None, str | None]:
+    """Pick a monitor's threshold mode and the bounds tuple that applies under it.
+
+    Detection mirrors the UI form (``test_definition_form.js``): a
+    ``history_calculation`` of exactly ``"PREDICT"`` flags Prediction mode; any
+    other non-empty value flags Historical (not available for Freshness); empty
+    falls through to Static — the default for Freshness / Volume / Metric.
+    Schema never has thresholds.
+
+    Bounds returned per mode:
+
+    * Prediction: ``None, None``. Runtime bounds live in the per-run prediction
+      JSONB; they are not configuration and do not surface here.
+    * Historical: ``(history_calculation, history_calculation_upper)`` — stored
+      as expressions like ``"Minimum"`` / ``"Maximum"`` that the execution layer
+      evaluates against the lookback window.
+    * Static for Freshness: ``(None, upper_tolerance)``. Only an upper bound applies.
+    * Static (Volume / Metric): ``(lower_tolerance, upper_tolerance)``.
+    """
+    if test_type == MonitorType.SCHEMA.value:
+        return ThresholdMode.NONE, None, None
+    if history_calculation == "PREDICT":
+        return ThresholdMode.PREDICTION, None, None
+    if history_calculation and test_type != MonitorType.FRESHNESS.value:
+        return ThresholdMode.HISTORICAL, history_calculation, history_calculation_upper
+    if test_type == MonitorType.FRESHNESS.value:
+        return ThresholdMode.STATIC, None, upper_tolerance
+    return ThresholdMode.STATIC, lower_tolerance, upper_tolerance
 
 
 @dataclass
@@ -708,35 +744,11 @@ class TestDefinition(Entity):
     def _derive_threshold_mode(
         cls, td: "TestDefinition",
     ) -> tuple[ThresholdMode, str | None, str | None]:
-        """Pick a mode and the bounds tuple that applies under that mode.
-
-        Detection mirrors the UI form (``test_definition_form.js``): a
-        ``history_calculation`` of exactly ``"PREDICT"`` flags Prediction
-        mode; any other non-empty value flags Historical (not available for
-        Freshness); empty falls through to Static — the default for
-        Freshness / Volume / Metric. Schema never has thresholds.
-
-        Bounds returned per mode:
-
-        * Prediction: ``None, None``. Runtime bounds live in the per-run
-          prediction JSONB; they are not configuration and do not surface
-          here.
-        * Historical: ``(history_calculation, history_calculation_upper)`` —
-          stored as expressions like ``"Minimum"`` / ``"Maximum"`` that the
-          execution layer evaluates against the lookback window.
-        * Static for Freshness: ``(None, upper_tolerance)``. Only an upper
-          bound applies.
-        * Static (Volume / Metric): ``(lower_tolerance, upper_tolerance)``.
-        """
-        if td.test_type == MonitorType.SCHEMA.value:
-            return ThresholdMode.NONE, None, None
-        if td.history_calculation == "PREDICT":
-            return ThresholdMode.PREDICTION, None, None
-        if td.history_calculation and td.test_type != MonitorType.FRESHNESS.value:
-            return ThresholdMode.HISTORICAL, td.history_calculation, td.history_calculation_upper
-        if td.test_type == MonitorType.FRESHNESS.value:
-            return ThresholdMode.STATIC, None, td.upper_tolerance
-        return ThresholdMode.STATIC, td.lower_tolerance, td.upper_tolerance
+        """``derive_threshold_mode`` for a ``TestDefinition`` instance."""
+        return derive_threshold_mode(
+            td.test_type, td.history_calculation, td.history_calculation_upper,
+            td.lower_tolerance, td.upper_tolerance,
+        )
 
     @classmethod
     def select_page(
