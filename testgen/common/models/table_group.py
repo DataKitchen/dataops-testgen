@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -10,9 +10,10 @@ from sqlalchemy.orm import InstrumentedAttribute
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
+from testgen.common.models.monitor import build_series_sql, parse_schema_event, parse_value_event
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.test_suite import TestSuite
-from testgen.utils import is_uuid4
+from testgen.utils import dict_from_kv, is_uuid4
 
 
 @dataclass
@@ -143,6 +144,10 @@ class MonitorTableSummary:
     column_drops: int
     column_mods: int
     table_state: str | None
+    freshness_monitor_id: UUID | None = None
+    volume_monitor_id: UUID | None = None
+    schema_monitor_id: UUID | None = None
+    metric_monitors: list = field(default_factory=list)
 
 
 @dataclass
@@ -728,6 +733,82 @@ class TableGroup(Entity):
         return MonitorGroupSummary(**row)
 
     @classmethod
+    def get_table_monitor_series(
+        cls,
+        test_suite_id: str | UUID,
+        table_name: str,
+        lookback_multiplier: int = 1,
+    ) -> dict:
+        """Per-table monitor series for all four monitor types.
+
+        Returns a dict with keys ``freshness_events``, ``volume_events``,
+        ``schema_events``, and ``metric_events`` shaped identically to the monitors
+        dashboard's ``get_monitor_events_for_table``. A single batched query covers all
+        four types; no N-query regression.
+        """
+        query, params = build_series_sql(
+            test_suite_id=test_suite_id,
+            table_name=table_name,
+            lookback_multiplier=lookback_multiplier,
+        )
+        rows = [dict(row) for row in get_current_session().execute(text(query), params).mappings().all()]
+
+        metric_events: dict[str, dict] = {}
+        for event in rows:
+            if event["test_type"] == "Metric_Trend" and event["result_status"] != "Error" and (definition_id := event["test_definition_id"]):
+                if definition_id not in metric_events:
+                    metric_events[definition_id] = {
+                        "test_definition_id": definition_id,
+                        "column_name": event["column_names"],
+                        "events": [],
+                    }
+                point = parse_value_event(event)
+                metric_events[definition_id]["events"].append({
+                    "value": point["value"],
+                    "time": point["time"],
+                    "is_anomaly": point["is_anomaly"],
+                    "is_training": point["is_training"],
+                    "is_pending": point["is_pending"],
+                    # Frontend chart (table_monitoring_trends.js) reads lower_tolerance/upper_tolerance.
+                    "lower_tolerance": point["lower_bound"],
+                    "upper_tolerance": point["upper_bound"],
+                    "threshold_value": point["threshold_value"],
+                })
+
+        return {
+            "freshness_events": [
+                {
+                    "changed": "detected: Yes" in (result_message := event["result_message"] or ""),
+                    "message": parts[1].rstrip(".") if len(parts := result_message.split(". ", 1)) > 1 else None,
+                    "status": event["result_status"],
+                    "is_training": event["result_code"] == -1,
+                    "is_pending": not bool(event["result_id"]),
+                    "time": event["test_time"],
+                }
+                for event in rows if event["test_type"] == "Freshness_Trend" and event["result_status"] != "Error"
+            ],
+            "volume_events": [
+                {
+                    "record_count": int(event["result_signal"] or 0),
+                    "time": event["test_time"],
+                    "is_anomaly": int(event["result_code"]) == 0 if event["result_code"] is not None else None,
+                    "is_training": int(event["result_code"]) == -1 if event["result_code"] is not None else None,
+                    "is_pending": not bool(event["result_id"]),
+                    **params_kv,
+                }
+                for event in rows if event["test_type"] == "Volume_Trend" and event["result_status"] != "Error" and (
+                    params_kv := dict_from_kv(event.get("input_parameters"))
+                        or {"lower_tolerance": None, "upper_tolerance": None}
+                )
+            ],
+            "schema_events": [
+                parse_schema_event(event)
+                for event in rows if event["test_type"] == "Schema_Drift" and event["result_status"] != "Error"
+            ],
+            "metric_events": list(metric_events.values()),
+        }
+
+    @classmethod
     def _monitor_changes_by_tables_query(
         cls,
         table_group_id: str | UUID,
@@ -793,6 +874,37 @@ class TableGroup(Entity):
                 -- Include current tables and tables dropped within lookback window
                 AND (table_chars.drop_date IS NULL OR table_chars.drop_date >= lookback_window.lookback_start)
                 {"AND table_chars.table_name ILIKE :table_name_filter" if table_name_filter else ''}
+        ),
+        monitor_defs AS (
+            SELECT td.id AS monitor_id, td.table_name, td.test_type, td.column_name
+            FROM test_definitions td
+            INNER JOIN table_groups tg ON tg.monitor_test_suite_id = td.test_suite_id
+            WHERE tg.id = :table_group_id
+        ),
+        metric_defs AS (
+            SELECT
+                monitor_defs.table_name,
+                JSON_AGG(JSON_BUILD_OBJECT(
+                    'monitor_id', monitor_defs.monitor_id,
+                    'column_name', monitor_defs.column_name,
+                    'anomalies', COALESCE(metric_counts.anomalies, 0),
+                    'is_training', COALESCE(metric_counts.is_training, FALSE),
+                    'is_pending', metric_counts.result_ct IS NULL OR metric_counts.result_ct = 0
+                ) ORDER BY monitor_defs.column_name) AS metric_monitors
+            FROM monitor_defs
+            LEFT JOIN (
+                SELECT results.test_definition_id,
+                       SUM(CASE WHEN results.result_code = 0 THEN 1 ELSE 0 END)::INT AS anomalies,
+                       BOOL_OR(results.result_code = -1) FILTER (WHERE ranked_test_runs.position = 1) AS is_training,
+                       COUNT(results.id) AS result_ct
+                FROM test_results results
+                INNER JOIN ranked_test_runs ON ranked_test_runs.id = results.test_run_id
+                WHERE ranked_test_runs.position <= ranked_test_runs.lookback
+                  AND results.test_type = 'Metric_Trend'
+                GROUP BY results.test_definition_id
+            ) AS metric_counts ON metric_counts.test_definition_id = monitor_defs.monitor_id
+            WHERE monitor_defs.test_type = 'Metric_Trend'
+            GROUP BY monitor_defs.table_name
         ),
         monitor_results AS (
             SELECT
@@ -920,9 +1032,17 @@ class TableGroup(Entity):
             monitor_tables.column_adds,
             monitor_tables.column_drops,
             monitor_tables.column_mods,
-            monitor_tables.table_state
+            monitor_tables.table_state,
+            (SELECT monitor_id FROM monitor_defs md
+             WHERE md.table_name = monitor_tables.table_name AND md.test_type = 'Freshness_Trend' LIMIT 1) AS freshness_monitor_id,
+            (SELECT monitor_id FROM monitor_defs md
+             WHERE md.table_name = monitor_tables.table_name AND md.test_type = 'Volume_Trend' LIMIT 1) AS volume_monitor_id,
+            (SELECT monitor_id FROM monitor_defs md
+             WHERE md.table_name = monitor_tables.table_name AND md.test_type = 'Schema_Drift' LIMIT 1) AS schema_monitor_id,
+            COALESCE(metric_defs.metric_monitors, '[]'::json) AS metric_monitors
         FROM monitor_tables
         LEFT JOIN baseline_tables ON monitor_tables.table_name = baseline_tables.table_name
+        LEFT JOIN metric_defs ON metric_defs.table_name = monitor_tables.table_name
         {anomaly_filter_clause}
         {order_clause}
         {"LIMIT :limit" if limit is not None else ""}
