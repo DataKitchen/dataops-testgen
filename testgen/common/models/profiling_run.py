@@ -284,7 +284,7 @@ class ProfilingRun(Entity):
             {" AND je.id = :job_execution_id" if job_execution_id else ""}
             {" AND je.job_schedule_id = :schedule_id" if schedule_id else ""}
             {" AND je.status IN :statuses" if statuses else ""}
-        ORDER BY je.created_at DESC
+        ORDER BY je.created_at DESC, je.id DESC
         LIMIT :limit OFFSET :offset;
         """
         params = {
