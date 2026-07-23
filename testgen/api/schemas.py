@@ -151,6 +151,32 @@ class ProfilingRunResponse(BaseModel):
     result: ProfilingRunResult | None = None
 
 
+class ProfilingRunHistoryItem(BaseModel):
+    """One profiling run in a table group's history."""
+
+    job_execution_id: UUID
+    table_group_id: UUID
+    status: JobStatus
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    profiling_score: float | None = None
+    table_ct: int | None = None
+    column_ct: int | None = None
+    record_ct: int | None = None
+    data_point_ct: int | None = None
+    error_message: str | None = None
+    issue_counts: IssueCounts
+
+
+class ProfilingRunHistoryResponse(BaseModel):
+    """Paginated profiling-run history for a table group, newest first."""
+
+    items: list[ProfilingRunHistoryItem]
+    page: int
+    limit: int
+    total: int
+
+
 # --- Errors ---
 
 

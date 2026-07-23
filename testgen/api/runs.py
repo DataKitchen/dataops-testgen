@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 
-from testgen.api.deps import db_session, resolve_job
+from testgen.api.deps import db_session, resolve_job, resolve_table_group
 from testgen.api.enums import (
     DISPOSITION_FROM_DB,
     DISPOSITION_TO_DB,
@@ -15,6 +15,8 @@ from testgen.api.enums import (
 from testgen.api.schemas import (
     ErrorResponse,
     IssueCounts,
+    ProfilingRunHistoryItem,
+    ProfilingRunHistoryResponse,
     ProfilingRunResponse,
     ProfilingRunResult,
     ResultCounts,
@@ -24,11 +26,12 @@ from testgen.api.schemas import (
     TestRunResult,
 )
 from testgen.common.enums import Disposition as DbDisposition
-from testgen.common.enums import JobKey
+from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestRunResultRow
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
@@ -176,4 +179,51 @@ def get_profiling_run(job: JobExecution = resolve_job("view", JobExecution.job_k
         started_at=job.started_at,
         completed_at=job.completed_at,
         result=result,
+    )
+
+
+def _profiling_history_item(row: ProfilingRunHistoryRow, counts) -> ProfilingRunHistoryItem:
+    return ProfilingRunHistoryItem(
+        job_execution_id=row.job_execution_id,
+        table_group_id=row.table_group_id,
+        status=row.status,
+        started_at=row.started_at,
+        completed_at=row.completed_at,
+        profiling_score=row.profiling_score,
+        table_ct=row.table_ct,
+        column_ct=row.column_ct,
+        record_ct=row.record_ct,
+        data_point_ct=row.data_point_ct,
+        error_message=row.error_message,
+        issue_counts=IssueCounts.model_validate(counts, from_attributes=True),
+    )
+
+
+@router.get(
+    "/table-groups/{table_group_id}/profiling-runs",
+    response_model=ProfilingRunHistoryResponse,
+)
+def list_profiling_runs(
+    table_group: TableGroup = resolve_table_group("view"),  # noqa: B008
+    status: JobStatus | None = Query(default=None),  # noqa: B008
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """List profiling runs for a table group, newest first.
+
+    Combine ``?status=completed&limit=1`` to fetch the latest completed run.
+    """
+    clauses = []
+    if status is not None:
+        clauses.append(JobExecution.status == status)
+
+    rows, total = ProfilingRun.list_for_table_group(
+        table_group.id, *clauses, page=page, limit=limit,
+    )
+    counts_by_run = HygieneIssue.count_for_runs([row.job_execution_id for row in rows])
+    return ProfilingRunHistoryResponse(
+        items=[_profiling_history_item(row, counts_by_run[row.job_execution_id]) for row in rows],
+        page=page,
+        limit=limit,
+        total=total,
     )
