@@ -22,7 +22,6 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.scores import ScoreDefinitionResultHistoryEntry, ScoreHistoryLatestRun
 from testgen.common.models.stg_data_chars_update import StgDataCharsUpdate
 from testgen.common.models.stg_functional_table_update import StgFunctionalTableUpdate
-from testgen.common.models.stg_secondary_profile_update import StgSecondaryProfileUpdate
 from testgen.common.models.stg_test_definition_update import StgTestDefinitionUpdate
 from testgen.common.models.test_run import TestRun
 
@@ -101,8 +100,7 @@ def run_data_cleanup(project_code: str, retention_days: int) -> None:
     # No carve-out — these are transient operational rows with no run linkage.
     with database_session():
         deleted_stg = (
-            StgSecondaryProfileUpdate.delete_older_than(cutoff, project_code)
-            + StgFunctionalTableUpdate.delete_older_than(cutoff, project_code)
+            StgFunctionalTableUpdate.delete_older_than(cutoff, project_code)
             + StgDataCharsUpdate.delete_older_than(cutoff, project_code)
             + StgTestDefinitionUpdate.delete_older_than(cutoff, project_code)
         )

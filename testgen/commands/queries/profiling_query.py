@@ -66,8 +66,6 @@ class HygieneIssueType:
 
 class ProfilingSQL:
 
-    profiling_results_table = "profile_results"
-    frequency_staging_table = "stg_secondary_profile_updates"
     error_columns = (
         "project_code",
         "connection_id",
@@ -152,13 +150,6 @@ class ProfilingSQL:
     def get_frequency_analysis_columns(self) -> tuple[str, dict]:
         # Runs on App database
         return self._get_query("secondary_profiling_columns.sql")
-
-    def update_frequency_analysis_results(self) -> list[tuple[str, dict]]:
-        # Runs on App database
-        return [
-            self._get_query("secondary_profiling_update.sql"),
-            self._get_query("secondary_profiling_delete.sql"),
-        ]
 
     def update_profiling_results(self) -> list[tuple[str, dict]]:
         # Runs on App database
