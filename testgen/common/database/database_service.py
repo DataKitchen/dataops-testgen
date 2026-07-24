@@ -299,12 +299,13 @@ def run_keyed_worker_pool(
             key, arg = item
             try:
                 result: R | None = process(arg)
-                error = None
             except Exception as e:
-                result = None
-                error = get_exception_message(e)
+                # The consumer blocks for exactly one outcome per pulled item, so every
+                # item must enqueue one; get_exception_message never raises, so it always does.
                 LOG.exception("Error processing work key")
-            outcomes.put(WorkerOutcome(key, result, error))
+                outcomes.put(WorkerOutcome(key, None, get_exception_message(e)))
+            else:
+                outcomes.put(WorkerOutcome(key, result, None))
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         workers = [executor.submit(worker) for _ in range(max_threads)]

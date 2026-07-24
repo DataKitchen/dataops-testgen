@@ -123,8 +123,9 @@ class ProfileResult(Entity):
 
         The row is mapped by column name, so callers supply only the columns they
         populate; the rest fall to their defaults on insert. Re-running the same key
-        overwrites its prior values rather than duplicating the row. Opens its own
-        session, so it is safe to call concurrently from worker threads.
+        overwrites its prior values rather than duplicating the row. The write runs in
+        its own SAVEPOINT, so a failure on one row (e.g. an out-of-range value) rolls
+        back only that row and leaves the surrounding transaction usable.
         """
         values = {column: _sanitize_write_value(value) for column, value in row.items()}
         statement = postgresql.insert(cls).values(values)
@@ -133,7 +134,7 @@ class ProfileResult(Entity):
             statement = statement.on_conflict_do_update(index_elements=list(cls._upsert_key), set_=overwrite)
         else:
             statement = statement.on_conflict_do_nothing(index_elements=list(cls._upsert_key))
-        with database_session() as session:
+        with database_session() as session, session.begin_nested():
             session.execute(statement)
 
     @classmethod
