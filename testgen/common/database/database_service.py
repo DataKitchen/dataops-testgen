@@ -3,11 +3,13 @@ import csv
 import importlib
 import logging
 import math
+import queue
 import re
-from collections.abc import Callable, Iterable
+import threading
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any, Literal, TypedDict
+from typing import Any, Generic, Literal, NotRequired, TypedDict, TypeVar
 from urllib.parse import quote_plus
 
 import psycopg2.sql
@@ -181,7 +183,7 @@ class ThreadedProgress(TypedDict):
     processed: int
     errors: int
     total: int
-    indexes: list[int]
+    indexes: NotRequired[list[int]]
 
 def fetch_from_db_threaded(
     queries: list[tuple[str, dict | None]],
@@ -245,6 +247,72 @@ def fetch_from_db_threaded(
     # Flatten nested lists
     result_data = [element for sublist in result_data for element in sublist]
     return result_data, result_columns, error_data
+
+
+K = TypeVar("K")
+A = TypeVar("A")
+R = TypeVar("R")
+
+
+@dataclass(frozen=True)
+class WorkerOutcome(Generic[K, R]):
+    """One completed unit of work yielded by :func:`run_keyed_worker_pool`.
+
+    ``key`` is the caller's correlation key, returned untouched. ``result`` holds the value
+    returned by ``process`` on success; ``error`` holds the message when ``process`` raised.
+    Exactly one of ``result`` / ``error`` is set.
+    """
+    key: K
+    result: R | None
+    error: str | None
+
+
+def run_keyed_worker_pool(
+    items: Sequence[tuple[K, A]],
+    process: Callable[[A], R],
+    max_threads: int = 4,
+) -> Iterator[WorkerOutcome[K, R]]:
+    """Run ``process`` over ``items`` with a fixed pool of pull-based workers, yielding each
+    item's outcome as it completes.
+
+    Each item is a ``(key, arg)`` pair: a worker runs ``process(arg)`` and the ``key`` is
+    returned untouched on the matching :class:`WorkerOutcome`, so the caller correlates a
+    result back to its work without inspecting the payload. Each of ``max_threads`` workers
+    repeatedly pulls the next pair from a shared ordered iterator. Workers run ``process`` and
+    nothing else: the caller must hand them self-contained ``arg`` values and must not let
+    ``process`` touch caller-thread state such as a thread-local database session. The caller
+    consumes the yielded outcomes on its own thread, so all result handling (database writes,
+    progress) stays single-threaded. Outcomes arrive in completion order, not item order.
+    """
+    max_threads = max(1, min(10, max_threads))
+    total = len(items)
+    work = iter(items)
+    pull_lock = threading.Lock()
+    outcomes: queue.Queue[WorkerOutcome[K, R]] = queue.Queue()
+
+    def pull() -> tuple[K, A] | None:
+        with pull_lock:
+            return next(work, None)
+
+    def worker() -> None:
+        while (item := pull()) is not None:
+            key, arg = item
+            try:
+                result: R | None = process(arg)
+            except Exception as e:
+                # The consumer blocks for exactly one outcome per pulled item, so every
+                # item must enqueue one; get_exception_message never raises, so it always does.
+                LOG.exception("Error processing work key")
+                outcomes.put(WorkerOutcome(key, None, get_exception_message(e)))
+            else:
+                outcomes.put(WorkerOutcome(key, result, None))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+        workers = [executor.submit(worker) for _ in range(max_threads)]
+        for _ in range(total):
+            yield outcomes.get()
+        for future in workers:
+            future.result()
 
 
 def fetch_list_from_db(

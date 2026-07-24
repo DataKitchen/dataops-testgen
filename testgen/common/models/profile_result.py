@@ -1,11 +1,26 @@
-from collections.abc import Iterable
+import math
+from collections.abc import Iterable, Mapping
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, Numeric, String, asc, desc
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.models import database_session
 from testgen.common.models.entity import Entity
+
+
+def _sanitize_write_value(value: Any) -> Any:
+    # Databricks (via Arrow) returns float('nan') for NULL numerics, which PostgreSQL
+    # rejects; PostgreSQL rejects NUL bytes in text; empty strings are stored as NULL.
+    if isinstance(value, float) and math.isnan(value):
+        return None
+    if isinstance(value, str):
+        value = value.replace("\x00", "")
+        if value == "":
+            return None
+    return value
 
 
 class ProfileResult(Entity):
@@ -21,6 +36,9 @@ class ProfileResult(Entity):
     table_name: str = Column(String)
     column_name: str = Column(String)
     position: int = Column(Integer)
+    project_code: str | None = Column(String(30))
+    connection_id: int | None = Column(BigInteger)
+    run_date: datetime | None = Column(postgresql.TIMESTAMP)
 
     general_type: str | None = Column(String)
     column_type: str | None = Column(String)
@@ -98,6 +116,29 @@ class ProfileResult(Entity):
     query_error: str | None = Column(String)
 
     _default_order_by = (asc(position), asc(column_name))
+
+    # Natural key backing the uix_pr_tg_t_c_prun unique index.
+    _upsert_key = ("table_groups_id", "table_name", "column_name", "profile_run_id")
+
+    @classmethod
+    def upsert(cls, row: Mapping[str, Any]) -> None:
+        """Insert one profile-results row, overwriting on natural-key conflict.
+
+        The row is mapped by column name, so callers supply only the columns they
+        populate; the rest fall to their defaults on insert. Re-running the same key
+        overwrites its prior values rather than duplicating the row. The write runs in
+        its own SAVEPOINT, so a failure on one row (e.g. an out-of-range value) rolls
+        back only that row and leaves the surrounding transaction usable.
+        """
+        values = {column: _sanitize_write_value(value) for column, value in row.items()}
+        statement = postgresql.insert(cls).values(values)
+        overwrite = {column: statement.excluded[column] for column in values if column not in cls._upsert_key}
+        if overwrite:
+            statement = statement.on_conflict_do_update(index_elements=list(cls._upsert_key), set_=overwrite)
+        else:
+            statement = statement.on_conflict_do_nothing(index_elements=list(cls._upsert_key))
+        with database_session() as session, session.begin_nested():
+            session.execute(statement)
 
     @classmethod
     def get_for_column(
