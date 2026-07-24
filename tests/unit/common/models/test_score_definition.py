@@ -112,6 +112,60 @@ def test_categories_query_uses_column_template_for_column_category():
     # Column-grouped template aggregates by a placeholder substituted into the SELECT.
     assert "business_domain" in categories_sql
     assert CDE_FILTER_FRAGMENT in categories_sql
+
+
+def _make_project_wide_definition(*, category: ScoreCategory | None = None) -> ScoreDefinition:
+    definition = ScoreDefinition(
+        project_code="demo",
+        name="Project-wide card",
+        total_score=True,
+        cde_score=True,
+        category=category,
+    )
+    definition.criteria = ScoreDefinitionCriteria(operand="AND", group_by_field=True, filters=[])
+    return definition
+
+
+def test_as_score_card_runs_when_criteria_has_no_filters():
+    """With no attribute filters, `as_score_card` still runs the project-wide query."""
+    definition = _make_project_wide_definition()
+    sql_calls = _capture_executed_sql(definition)
+
+    assert len(sql_calls) == 1, "expected only the overall query when no category is set"
+    overall_sql = sql_calls[0]
+    assert "project_code = 'demo'" in overall_sql
+    assert CDE_FILTER_FRAGMENT not in overall_sql
+
+
+def test_as_score_card_no_filters_still_runs_category_query():
+    """Category breakdown query runs on project-wide criteria too."""
+    definition = _make_project_wide_definition(category=ScoreCategory.impact_dimension)
+    sql_calls = _capture_executed_sql(definition)
+
+    assert len(sql_calls) == 2
+    _, categories_sql = sql_calls
+    assert "project_code = 'demo'" in categories_sql
+
+
+def test_get_raw_query_filters_omits_criteria_when_no_filters():
+    """`_get_raw_query_filters` drops the criteria SQL when there are no filters."""
+    definition = _make_project_wide_definition()
+
+    parts = definition._get_raw_query_filters()
+    assert parts == ["project_code = 'demo'"]
+
+    parts_cde = definition._get_raw_query_filters(cde_only=True)
+    assert parts_cde == ["project_code = 'demo'", "critical_data_element = true"]
+
+
+def test_get_raw_query_filters_applies_prefix_uniformly():
+    """Prefix wraps every clause, including when criteria is empty."""
+    definition = _make_project_wide_definition()
+
+    parts = definition._get_raw_query_filters(prefix="tr.")
+    assert parts == ["tr.project_code = 'demo'"]
+
+
 # --- list_with_table_group_targets ---
 
 
@@ -288,8 +342,9 @@ def test_get_overall_issue_ct_handles_null_scalars(mock_session_fn):
     assert definition.get_overall_issue_ct() == 0
 
 
-def test_get_overall_issue_ct_no_filters_returns_zero():
-    """When the definition has no filters, return 0 without hitting the DB."""
+@patch("testgen.common.models.scores.get_current_session")
+def test_get_overall_issue_ct_no_filters_queries_project_wide(mock_session_fn):
+    """With no attribute filters, sum every issue in the project (WHERE project_code only)."""
     definition = ScoreDefinition()
     definition.project_code = "demo"
     definition.name = "test"
@@ -300,10 +355,15 @@ def test_get_overall_issue_ct_no_filters_returns_zero():
         group_by_field=True,
         filters=[],
     )
+    mock_session_fn.return_value.execute.return_value.scalar.side_effect = [4, 7]
 
-    with patch("testgen.common.models.scores.get_current_session") as mock_session_fn:
-        assert definition.get_overall_issue_ct() == 0
-        mock_session_fn.return_value.execute.assert_not_called()
+    assert definition.get_overall_issue_ct() == 11
+    # Two calls: one per scoring view.
+    assert mock_session_fn.return_value.execute.call_count == 2
+    compiled = mock_session_fn.return_value.execute.call_args_list[0].args[0].compile(
+        compile_kwargs={"literal_binds": True}
+    )
+    assert "project_code = 'demo'" in str(compiled)
 
 
 # --- list_for_project ---

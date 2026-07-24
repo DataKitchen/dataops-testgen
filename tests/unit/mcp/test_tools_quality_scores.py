@@ -667,18 +667,11 @@ def test_cross_project_renders_per_project_sections(mock_definition_cls, db_sess
     assert mock_definition.as_score_card.call_count == 2
 
 
-@patch("testgen.mcp.tools.quality_scores.TableGroup")
 @patch("testgen.mcp.tools.quality_scores.ScoreDefinition")
-def test_unfiltered_project_enumerates_table_groups(mock_definition_cls, mock_tg_cls, db_session_mock):
-    """Unfiltered project_code call enumerates table groups so as_score_card's
-    has_filters() gate passes (mirrors the score-explorer UI default)."""
+def test_unfiltered_project_uses_project_scoped_definition(mock_definition_cls, db_session_mock):
+    """Project-wide call builds a definition with no attribute filters and
+    lets the score engine's WHERE ``project_code = ...`` do the scoping."""
     from testgen.mcp.tools.quality_scores import get_quality_scores
-
-    tg1 = MagicMock()
-    tg1.table_groups_name = "orders"
-    tg2 = MagicMock()
-    tg2.table_groups_name = "customers"
-    mock_tg_cls.select_minimal_where.return_value = [tg1, tg2]
 
     mock_definition = MagicMock()
     mock_definition.as_score_card.return_value = _score_card(score=0.9)
@@ -687,8 +680,11 @@ def test_unfiltered_project_enumerates_table_groups(mock_definition_cls, mock_tg
     with _patch_perms():
         get_quality_scores(project_code="demo")
 
-    # Verify TableGroup.select_minimal_where was called for enumeration.
-    mock_tg_cls.select_minimal_where.assert_called_once()
+    mock_definition.as_score_card.assert_called_once()
+    # Project-wide criteria carries zero attribute filters; the score engine's
+    # WHERE ``project_code = ...`` narrows the query.
+    assigned_criteria = mock_definition.criteria
+    assert list(assigned_criteria.filters) == []
 
 
 # --- Row cap ---
@@ -744,17 +740,12 @@ def test_grouped_empty_breakdown_with_filters_renders_filter_matched(mock_defini
     assert "No category data" not in out
 
 
-@patch("testgen.mcp.tools.quality_scores.TableGroup")
 @patch("testgen.mcp.tools.quality_scores.ScoreDefinition")
 def test_grouped_empty_breakdown_without_filters_renders_no_category_data(
-    mock_definition_cls, mock_tg_cls, db_session_mock,
+    mock_definition_cls, db_session_mock,
 ):
     """Unfiltered project with no breakdown rows keeps the generic 'No category data.' message."""
     from testgen.mcp.tools.quality_scores import get_quality_scores
-
-    tg = MagicMock()
-    tg.table_groups_name = "orders"
-    mock_tg_cls.select_minimal_where.return_value = [tg]
 
     mock_definition = MagicMock()
     mock_definition.as_score_card.return_value = _score_card(score=0.9)
