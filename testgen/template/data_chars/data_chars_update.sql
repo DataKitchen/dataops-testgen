@@ -14,6 +14,7 @@ WITH new_chars AS (
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -63,6 +64,7 @@ WITH new_chars AS (
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -119,6 +121,7 @@ WITH new_chars AS (
       table_name
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id,
       schema_name,
       table_name
@@ -128,6 +131,7 @@ last_run AS (
       MAX(run_date) as last_run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id
 ),
 deleted_records AS (
@@ -175,6 +179,7 @@ WITH new_chars AS (
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
 ),
 update_chars AS (
    UPDATE data_column_chars
@@ -244,6 +249,7 @@ WITH new_chars AS (
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
 ),
 inserted_records AS (
    INSERT INTO data_column_chars (
@@ -313,12 +319,14 @@ WITH new_chars AS (
       column_name
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
 ),
 last_run AS (
    SELECT table_groups_id,
       MAX(run_date) as last_run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id
 ),
 deleted_records AS (

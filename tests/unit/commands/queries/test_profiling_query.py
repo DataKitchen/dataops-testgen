@@ -193,3 +193,32 @@ def test_error_rows_carry_the_same_run_date_as_profiled_rows():
     # successful columns must be the value error rows get too.
     assert error_run_date == sql._get_params()["RUN_DATE"]
     assert error_run_date == "2026-07-14 21:22:26"
+
+
+def test_datatype_suggestions_runs_before_and_after_functional_datatype():
+    """The two templates each read what the other writes: functional_datatype keys rules off
+    datatype_suggestion, and datatype_suggestions keys its 'State' / 'Boolean' /
+    'Measurement Pct' rules off functional_data_type. A single pass before functional_datatype
+    leaves functional_data_type NULL, so those three rules can never fire."""
+    sql = _make_profiling_sql()
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        templates = [q[0] for q in sql.update_profiling_results()]
+
+    suggestion_passes = [i for i, name in enumerate(templates) if name == "datatype_suggestions.sql"]
+    functional_datatype = templates.index("functional_datatype.sql")
+
+    assert len(suggestion_passes) == 2, "datatype_suggestions must run twice"
+    assert suggestion_passes[0] < functional_datatype < suggestion_passes[1]
+
+
+def test_tabletype_staging_runs_after_the_second_suggestion_pass():
+    """functional_tabletype_stage reads functional_data_type, so it must not be interleaved
+    between the two datatype_suggestions passes."""
+    sql = _make_profiling_sql()
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        templates = [q[0] for q in sql.update_profiling_results()]
+
+    last_suggestion = max(i for i, name in enumerate(templates) if name == "datatype_suggestions.sql")
+    assert templates.index("functional_tabletype_stage.sql") > last_suggestion

@@ -1,21 +1,26 @@
+-- Only this run's rows get the classification staged for this run.
 UPDATE profile_results
    SET functional_table_type = COALESCE(s.table_period)||'-'||COALESCE(s.table_type)
 FROM stg_functional_table_updates s
 WHERE s.project_code = profile_results.project_code
   AND s.schema_name = profile_results.schema_name
   AND s.table_name = profile_results.table_name
-  AND s.run_date = profile_results.run_date
-  AND s.run_date = :RUN_DATE;
+  AND s.run_date = :RUN_DATE
+  AND profile_results.profile_run_id = :PROFILE_RUN_ID;
 
 --- Update table characteristics ---
 
+-- Scoped to this run. Reading the table group's whole history instead produced one row per
+-- distinct functional_table_type a table had ever been assigned, and UPDATE ... FROM with
+-- several matching rows picks one arbitrarily -- so a table whose classification had ever
+-- changed got a nondeterministic value here.
 WITH new_chars AS (
    SELECT table_groups_id,
       schema_name,
       table_name,
       functional_table_type
    FROM profile_results
-   WHERE table_groups_id = :TABLE_GROUPS_ID
+   WHERE profile_run_id = :PROFILE_RUN_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,
