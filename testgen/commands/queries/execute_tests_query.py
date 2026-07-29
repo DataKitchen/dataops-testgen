@@ -192,7 +192,7 @@ def parse_cat_results(
     aggregate_test_defs: list[list[TestExecutionDef]],
     test_run_id: UUID,
     test_suite_id: UUID | str,
-    test_starttime: datetime,
+    test_time: str,
     input_parameters_fn,
     null_value: str = "<NULL>",
 ) -> list[list]:
@@ -203,7 +203,7 @@ def parse_cat_results(
         aggregate_test_defs: List of test def groups matching the queries.
         test_run_id: ID of the current test run.
         test_suite_id: ID of the test suite.
-        test_starttime: Start time of the test run.
+        test_time: The run's label for its result rows, as the query templates interpolate it.
         input_parameters_fn: Callable that takes a TestExecutionDef and returns input params string.
         null_value: Sentinel string for NULL values.
 
@@ -220,7 +220,7 @@ def parse_cat_results(
             test_results.append([
                 test_run_id,
                 test_suite_id,
-                test_starttime,
+                test_time,
                 td.id,
                 td.test_type,
                 td.schema_name,
@@ -480,7 +480,7 @@ class TestExecutionSQL:
             [
                 self.test_run.id,
                 self.test_run.test_suite_id,
-                self.test_run.test_starttime,
+                to_sql_timestamp(self.run_date),
                 td.id,
                 td.test_type,
                 td.schema_name,
@@ -582,7 +582,7 @@ class TestExecutionSQL:
             aggregate_test_defs=aggregate_test_defs,
             test_run_id=self.test_run.id,
             test_suite_id=self.test_run.test_suite_id,
-            test_starttime=self.test_run.test_starttime,
+            test_time=to_sql_timestamp(self.run_date),
             input_parameters_fn=self._get_input_parameters,
             null_value=self.null_value,
         )
