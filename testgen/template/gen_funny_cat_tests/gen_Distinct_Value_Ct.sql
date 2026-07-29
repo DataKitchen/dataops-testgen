@@ -2,17 +2,19 @@
 -- Second type:  constants with changing values (1 distinct value)
 
 WITH latest_run AS (
-  -- Latest complete profiling run before as-of-date
-  SELECT MAX(run_date) AS last_run_date
+  -- Latest profiling run before as-of-date, identified by run
+  SELECT profile_run_id
     FROM profile_results
   WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND run_date::DATE <= :AS_OF_DATE ::DATE
+  ORDER BY run_date DESC, profile_run_id DESC
+  LIMIT 1
 ),
 latest_results AS (
   -- Column results for latest run
   SELECT p.*
   FROM profile_results p
-  INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+  INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
   LEFT JOIN data_column_chars dcc ON (
     p.table_groups_id = dcc.table_groups_id
     AND p.schema_name = dcc.schema_name
@@ -23,14 +25,15 @@ latest_results AS (
     AND dcc.excluded_data_element IS NOT TRUE
 ),
 all_runs AS (
-  SELECT DISTINCT table_groups_id, run_date,
-    DENSE_RANK() OVER (PARTITION BY table_groups_id ORDER BY run_date DESC) AS run_rank
+  SELECT table_groups_id, profile_run_id,
+    DENSE_RANK() OVER (PARTITION BY table_groups_id ORDER BY MAX(run_date) DESC) AS run_rank
   FROM profile_results
   WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND run_date::DATE <= :AS_OF_DATE ::DATE
+  GROUP BY table_groups_id, profile_run_id
 ),
 recent_runs AS (
-  SELECT table_groups_id, run_date, run_rank
+  SELECT table_groups_id, profile_run_id, run_rank
   FROM all_runs
   WHERE run_rank <= 5
 ),
@@ -50,7 +53,7 @@ selected_columns AS (
   FROM recent_runs rr
   INNER JOIN profile_results p ON (
     rr.table_groups_id = p.table_groups_id
-    AND rr.run_date = p.run_date
+    AND rr.profile_run_id = p.profile_run_id
   )
   LEFT JOIN data_column_chars dcc ON (
     p.table_groups_id = dcc.table_groups_id

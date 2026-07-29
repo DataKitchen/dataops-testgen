@@ -1,15 +1,17 @@
 WITH latest_run AS (
-  -- Latest complete profiling run before as-of-date
-  SELECT MAX(run_date) AS last_run_date
+  -- Latest profiling run before as-of-date, identified by run
+  SELECT profile_run_id
   FROM profile_results
   WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND run_date::DATE <= :AS_OF_DATE ::DATE
+  ORDER BY run_date DESC, profile_run_id DESC
+  LIMIT 1
 ),
 selected_columns AS (
   -- Column results for latest run matching selection criteria
   SELECT p.*
   FROM profile_results p
-  INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+  INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
   WHERE p.table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND NOT EXISTS (
       SELECT 1 FROM data_column_chars dcc

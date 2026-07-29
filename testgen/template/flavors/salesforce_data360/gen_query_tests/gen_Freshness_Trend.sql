@@ -1,9 +1,11 @@
 WITH latest_run AS (
-  -- Latest complete profiling run before as-of-date
-  SELECT MAX(run_date) AS last_run_date
+  -- Latest profiling run before as-of-date, identified by run
+  SELECT profile_run_id
     FROM profile_results
   WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND run_date::DATE <= :AS_OF_DATE ::DATE
+  ORDER BY run_date DESC, profile_run_id DESC
+  LIMIT 1
 ),
 latest_results AS (
   -- Column results for latest run
@@ -12,7 +14,7 @@ latest_results AS (
     p.distinct_value_ct, p.record_ct, p.null_value_ct,
     p.max_value, p.min_value, p.avg_value, p.stdev_value
   FROM profile_results p
-    INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+    INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
     INNER JOIN data_table_chars dtc ON (
       dtc.table_groups_id = p.table_groups_id
       AND dtc.schema_name = p.schema_name

@@ -1,19 +1,21 @@
 WITH latest_run AS (
-  -- Latest complete profiling run before as-of-date
-  SELECT MAX(run_date) AS last_run_date
+  -- Latest profiling run before as-of-date, identified by run
+  SELECT profile_run_id
     FROM profile_results
   WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
     AND run_date::DATE <= :AS_OF_DATE ::DATE
+  ORDER BY run_date DESC, profile_run_id DESC
+  LIMIT 1
 ),
 selected_tables AS (
-  SELECT profile_run_id, schema_name, table_name,
+  SELECT p.profile_run_id, schema_name, table_name,
     STRING_AGG(:QUOTE || column_name || :QUOTE, ', ' ORDER BY position) AS groupby_names
   FROM profile_results p
-  INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+  INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
   WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
     -- Skip X types - Oracle does not allow grouping by types like BLOB, RAW, BFILE, CLOB, NCLOB, LONG
     AND general_type <> 'X'
-  GROUP BY profile_run_id, schema_name, table_name
+  GROUP BY p.profile_run_id, schema_name, table_name
 )
 INSERT INTO test_definitions (
   table_groups_id, test_suite_id, test_type,
