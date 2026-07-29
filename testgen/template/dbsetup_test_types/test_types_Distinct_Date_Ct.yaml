@@ -39,6 +39,8 @@ test_types:
     Date Count tests that the count of distinct dates present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained. A failure here would indicate missing records, which could be caused by a processing error or changed upstream data sources.
   active: Y
   algorithm: Counting
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7007'
     test_type: Distinct_Date_Ct

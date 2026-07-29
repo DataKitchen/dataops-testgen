@@ -37,6 +37,8 @@ test_types:
   usage_notes: null
   active: Y
   algorithm: Counting
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7023'
     test_type: Required

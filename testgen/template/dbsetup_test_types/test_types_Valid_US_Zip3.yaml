@@ -39,6 +39,8 @@ test_types:
     This test looks for the presence of values that fail to match the three-digit numeric code expected for US Zip Code regional prefixes. These prefixes are often used to roll up Zip Code data to a regional level, and may be critical to anonymize detailed data and protect PID. Depending on your needs and regulatory requirements, longer zip codes could place PID at risk.
   active: Y
   algorithm: Pattern / regex
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7035'
     test_type: Valid_US_Zip3

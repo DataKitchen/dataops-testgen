@@ -39,6 +39,8 @@ test_types:
     This test validates entries against a fixed list of two-character US state codes and related Armed Forces codes.
   active: Y
   algorithm: Set / lookup
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7027'
     test_type: US_State

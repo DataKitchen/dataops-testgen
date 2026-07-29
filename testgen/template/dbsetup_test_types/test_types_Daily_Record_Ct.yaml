@@ -42,6 +42,8 @@ test_types:
     \ of days that you know legitimately have no records. "
   active: Y
   algorithm: Counting
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7005'
     test_type: Daily_Record_Ct

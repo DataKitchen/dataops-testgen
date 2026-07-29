@@ -38,6 +38,8 @@ test_types:
     This test is appropriate for a cumulative dataset only, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable minimum value, or a heuristic that makes senes for valid data.
   active: Y
   algorithm: Boundary check
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7016'
     test_type: Min_Val
