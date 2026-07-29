@@ -40,6 +40,8 @@ test_types:
     This test evaluates recency based on the latest referenced dates in the column.  The test is appropriate for transactional dates and timestamps.  The test can be especially valuable because timely data deliveries themselves may not assure that the most recent data is present. You can adjust the expected threshold to the maximum number of days that you expect the data to age before the dataset is refreshed.
   active: Y
   algorithm: Freshness / time
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7022'
     test_type: Recency

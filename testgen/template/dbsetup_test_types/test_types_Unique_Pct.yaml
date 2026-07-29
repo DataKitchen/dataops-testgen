@@ -40,6 +40,8 @@ test_types:
   active: Y
   algorithm: Statistical drift
   statistical_technique: Cohen's H
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7029'
     test_type: Unique_Pct

@@ -147,6 +147,20 @@ def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, 
             """
             queries.append((sql, bound_values))
 
+    # Optional generation-set membership lives on the YAML (single source of truth for core + plugins).
+    # Pop it so it isn't treated as a test_types column; emit idempotent membership rows.
+    # No FK on generation_sets.test_type, so order relative to the parent insert is unconstrained.
+    generation_sets = parent.pop("generation_sets", None) or []
+    for generation_set in generation_sets:
+        queries.append((
+            f"""
+            INSERT INTO {params_mapping["SCHEMA_NAME"]}.generation_sets (generation_set, test_type)
+            VALUES (:generation_set, :test_type)
+            ON CONFLICT (generation_set, test_type) DO NOTHING;
+            """,
+            {"generation_set": generation_set, "test_type": parent[parent_key]},
+        ))
+
     columns = list(parent.keys())
 
     insert_cols = ", ".join(columns)
@@ -185,6 +199,32 @@ def import_metadata_records_from_yaml(params_mapping: dict) -> None:
                     TEST_TYPES_DEFAULT_PK,
                     TEST_TYPES_PARENT_CHILD_COLUMN_MAP,
                 )
+
+    from testgen.utils.plugins import discover
+
+    for plugin in discover():
+        try:
+            for pkg_path in plugin.load().get_test_type_template_paths():
+                plugin_files = sorted(
+                    get_template_files(mask="^.*ya?ml$", path=pkg_path), key=lambda key: str(key)
+                )
+                for yaml_file in plugin_files:
+                    with as_file(yaml_file) as f:
+                        with f.open("r") as file:
+                            data = safe_load(file)
+                            _process_yaml_for_import(
+                                params_mapping,
+                                data,
+                                TEST_TYPES_PARENT_TABLE,
+                                TEST_TYPES_PARENT_KEY,
+                                TEST_TYPES_CHILD_TABLES,
+                                TEST_TYPES_DEFAULT_PK,
+                                TEST_TYPES_PARENT_CHILD_COLUMN_MAP,
+                            )
+        except Exception:
+            LOG.warning("Plugin %s failed to import test-type metadata; skipping", plugin.package)
+            continue
+
     files = sorted(get_template_files(mask="^.*ya?ml$", sub_directory=ANOMALY_TYPES_TEMPLATE_FOLDER), key=lambda key: str(key))
     for yaml_file in files:
         with as_file(yaml_file) as f:
@@ -221,6 +261,18 @@ def _process_records_for_export(params_mapping: dict, export_path:str, parent_ta
     )
     for parent_record in parent_records:
         parent_record_dict = dict(zip(parent_columns, parent_record, strict=False))
+
+        if parent_table == "test_types":
+            gen_set_query = f"""
+            SELECT generation_set FROM {params_mapping["SCHEMA_NAME"]}.generation_sets
+            WHERE test_type = '{parent_record_dict[parent_key]}'
+            ORDER BY generation_set;
+            """
+            gen_set_rows, _, _ = fetch_from_db_threaded([(gen_set_query, None)])
+            generation_sets = [row[0] for row in gen_set_rows]
+            if generation_sets:
+                parent_record_dict["generation_sets"] = generation_sets
+
         for child_name in child_tables:
             child_key = next(key for key, value in parent_child_column_map[child_name].items() if value==parent_key)
             fetch_children_query = f"""
