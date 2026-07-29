@@ -38,6 +38,8 @@ test_types:
     Alpha Truncation tests that the longest text value in a column hasn't become shorter than the defined threshold, initially 95% of the longest value at baseline. This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset.
   active: Y
   algorithm: Boundary check
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7001'
     test_type: Alpha_Trunc

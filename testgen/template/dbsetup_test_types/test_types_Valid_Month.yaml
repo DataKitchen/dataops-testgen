@@ -38,6 +38,8 @@ test_types:
   usage_notes: null
   active: N
   algorithm: Pattern / regex
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7033'
     test_type: Valid_Month

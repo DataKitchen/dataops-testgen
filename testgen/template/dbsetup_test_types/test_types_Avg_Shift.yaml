@@ -40,6 +40,8 @@ test_types:
   active: Y
   algorithm: Statistical drift
   statistical_technique: Cohen's D
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7002'
     test_type: Avg_Shift

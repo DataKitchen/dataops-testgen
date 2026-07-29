@@ -39,6 +39,8 @@ test_types:
     The street address pattern used in this test should match the vast majority of USA addresses.  You can adjust the threshold percent of matches based on the results you are getting -- you may well want to tighten it to make the test more sensitive to invalid entries.
   active: Y
   algorithm: Pattern / regex
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7026'
     test_type: Street_Addr_Pattern
