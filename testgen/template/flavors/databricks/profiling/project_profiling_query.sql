@@ -230,7 +230,7 @@ SELECT
         WHEN `{COL_NAME}` > '{RUN_DATE}' THEN 1 ELSE 0
       END) AS future_date_ct,
   SUM(CASE
-        WHEN <%DATEDIFF_MONTH; `{COL_NAME}`; '{RUN_DATE}'::TIMESTAMP%> > 240 THEN 1
+        WHEN <%DATEDIFF_MONTH; '{RUN_DATE}'::TIMESTAMP; `{COL_NAME}`%> > 240 THEN 1
                                                                ELSE 0
       END) AS distant_future_date_ct,
   COUNT(DISTINCT <%DATEDIFF_DAY; `{COL_NAME}`; '{RUN_DATE}'::DATE%>) AS date_days_present,
