@@ -9,17 +9,26 @@ DROP VIEW IF EXISTS v_latest_profile_results CASCADE;
 
 CREATE VIEW v_latest_profile_results
 AS
-  WITH last_run AS ( SELECT table_groups_id,
-                            MAX(profiling_starttime) AS last_run_date
-                       FROM profiling_runs
-                      GROUP BY table_groups_id )
+  -- Results of each table group's latest completed profiling run.
+  --
+  -- Completed, not merely latest: profile_results rows are committed per column as a run
+  -- proceeds, so a run that is still running, was interrupted, or is paused holds a partial
+  -- set. Resolving on MAX(profiling_starttime) alone picked those, which left this view
+  -- returning nothing at all for a table group whose newest run had not finished -- and
+  -- consumers INNER JOIN it, so they silently lost every row.
+  --
+  -- DISTINCT ON returns one run per table group, tie-broken by id, rather than joining
+  -- profiling_runs back on a timestamp equality that two runs can share.
+  WITH last_run AS ( SELECT DISTINCT ON (p.table_groups_id) p.id
+                       FROM profiling_runs p
+                     INNER JOIN job_executions je
+                        ON je.id = p.id
+                      WHERE je.status = 'completed'
+                      ORDER BY p.table_groups_id, p.profiling_starttime DESC, p.id DESC )
 SELECT r.*
   FROM last_run lr
-INNER JOIN profiling_runs p
-   ON lr.table_groups_id = p.table_groups_id
-  AND lr.last_run_date = p.profiling_starttime
 INNER JOIN profile_results r
-   ON p.id = r.profile_run_id;
+   ON lr.id = r.profile_run_id;
 
 
 DROP VIEW IF EXISTS v_inactive_anomalies;
@@ -168,7 +177,6 @@ SELECT tg.project_code,
        t.dq_dimension,
        pr.table_name,
        pr.column_name,
-       pr.run_date,
        MAX(pr.record_ct) as record_ct,
        MAX(pr.record_ct
            * CASE WHEN proj.use_dq_score_weights
@@ -208,7 +216,7 @@ GROUP BY pr.profile_run_id, pr.table_groups_id,
          COALESCE(dcc.critical_data_element, dtc.critical_data_element),
          COALESCE(dcc.data_product, dtc.data_product, tg.data_product),
          COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification),
-         dcc.functional_data_type, t.dq_dimension, pr.run_date,
+         dcc.functional_data_type, t.dq_dimension,
          tg.project_code ;
 
 
@@ -237,7 +245,7 @@ SELECT
        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification,
        dcc.functional_data_type as semantic_data_type,
-       r.test_time, r.table_name, r.column_names as column_name,
+       r.table_name, r.column_names as column_name,
        COUNT(*) as test_ct,
        SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
        SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
@@ -276,7 +284,7 @@ GROUP BY r.table_groups_id, r.table_name, r.column_names,
          dcc.critical_data_element, dtc.critical_data_element,
          dcc.data_product, dtc.data_product, tg.data_product,
          dcc.data_classification, dtc.data_classification, tg.data_classification,
-         dcc.functional_data_type, r.test_time,
+         dcc.functional_data_type,
          tg.project_code;
 
 
@@ -285,7 +293,7 @@ DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_dimension;
 CREATE VIEW v_dq_test_scoring_latest_by_dimension
 AS
 WITH dimension_rollup
-   AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
+   AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id,
               r.table_name, r.column_names, tt.dq_dimension,
               COUNT(*) as test_ct,
               SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
@@ -300,7 +308,7 @@ WITH dimension_rollup
          WHERE r.dq_prevalence IS NOT NULL
            AND s.dq_score_exclude = FALSE
            AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
-         GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
+         GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id,
               r.table_name, r.column_names, tt.dq_dimension )
 SELECT
        tg.project_code,
@@ -320,7 +328,7 @@ SELECT
        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification,
        dcc.functional_data_type as semantic_data_type,
        r.dq_dimension,
-       r.test_time, r.table_name, dcc.column_name,
+       r.table_name, dcc.column_name,
        SUM(r.test_ct) as test_ct,
        SUM(r.passed_ct) as passed_ct,
        SUM(r.issue_ct) as issue_ct,
@@ -354,7 +362,7 @@ GROUP BY r.table_groups_id, r.test_run_id, r.test_suite_id,
          dcc.critical_data_element, dtc.critical_data_element,
          dcc.data_product, dtc.data_product, tg.data_product,
          dcc.data_classification, dtc.data_classification, tg.data_classification,
-         dcc.functional_data_type, r.dq_dimension, r.test_time, r.table_name, dcc.column_name,
+         dcc.functional_data_type, r.dq_dimension, r.table_name, dcc.column_name,
          tg.project_code;
 
 
@@ -380,7 +388,6 @@ SELECT tg.project_code,
        t.impact_dimension,
        pr.table_name,
        pr.column_name,
-       pr.run_date,
        MAX(pr.record_ct) as record_ct,
        MAX(pr.record_ct
            * CASE WHEN proj.use_dq_score_weights
@@ -420,7 +427,7 @@ GROUP BY pr.profile_run_id, pr.table_groups_id,
          COALESCE(dcc.critical_data_element, dtc.critical_data_element),
          COALESCE(dcc.data_product, dtc.data_product, tg.data_product),
          COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification),
-         dcc.functional_data_type, t.impact_dimension, pr.run_date,
+         dcc.functional_data_type, t.impact_dimension,
          tg.project_code;
 
 
@@ -429,7 +436,7 @@ DROP VIEW IF EXISTS v_dq_test_scoring_latest_by_impact_dimension;
 CREATE VIEW v_dq_test_scoring_latest_by_impact_dimension
 AS
 WITH impact_dimension_rollup
-   AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
+   AS (SELECT r.test_run_id, r.test_suite_id, r.table_groups_id,
               r.table_name, r.column_names, r.impact_dimension,
               COUNT(*) as test_ct,
               SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
@@ -442,7 +449,7 @@ WITH impact_dimension_rollup
          WHERE r.dq_prevalence IS NOT NULL
            AND s.dq_score_exclude = FALSE
            AND COALESCE(r.disposition, 'Confirmed') = 'Confirmed'
-         GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id, r.test_time,
+         GROUP BY r.test_run_id, r.test_suite_id, r.table_groups_id,
               r.table_name, r.column_names, r.impact_dimension)
 SELECT
        tg.project_code,
@@ -462,7 +469,7 @@ SELECT
        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification,
        dcc.functional_data_type as semantic_data_type,
        r.impact_dimension,
-       r.test_time, r.table_name, dcc.column_name,
+       r.table_name, dcc.column_name,
        SUM(r.test_ct) as test_ct,
        SUM(r.passed_ct) as passed_ct,
        SUM(r.issue_ct) as issue_ct,
@@ -496,7 +503,7 @@ GROUP BY r.table_groups_id, r.test_run_id, r.test_suite_id,
          dcc.critical_data_element, dtc.critical_data_element,
          dcc.data_product, dtc.data_product, tg.data_product,
          dcc.data_classification, dtc.data_classification, tg.data_classification,
-         dcc.functional_data_type, r.impact_dimension, r.test_time, r.table_name, dcc.column_name,
+         dcc.functional_data_type, r.impact_dimension, r.table_name, dcc.column_name,
          tg.project_code;
 
 
@@ -526,7 +533,6 @@ SELECT tg.project_code,
        dcc.functional_data_type as semantic_data_type,
        pr.table_name,
        pr.column_name,
-       pr.run_date,
        MAX(pr.record_ct) as record_ct,
        MAX(pr.record_ct
            * CASE WHEN proj.use_dq_score_weights
@@ -570,7 +576,7 @@ GROUP BY pr.profile_run_id,
          COALESCE(dcc.critical_data_element, dtc.critical_data_element),
          COALESCE(dcc.data_product, dtc.data_product, tg.data_product),
          COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification),
-         dcc.functional_data_type, pr.run_date,
+         dcc.functional_data_type,
          tg.project_code ;
 
 DROP VIEW IF EXISTS v_dq_test_scoring_history_by_column;
@@ -596,7 +602,7 @@ SELECT
        COALESCE(dcc.data_product, dtc.data_product, tg.data_product) as data_product,
        COALESCE(dcc.data_classification, dtc.data_classification, tg.data_classification) as data_classification,
        dcc.functional_data_type as semantic_data_type,
-       r.test_time, r.table_name, r.column_names as column_name,
+       r.table_name, r.column_names as column_name,
        COUNT(*) as test_ct,
        SUM(CASE WHEN r.result_code = 1 THEN 1 ELSE 0 END) as passed_ct,
        SUM(CASE WHEN r.result_code = 0 THEN 1 ELSE 0 END) as issue_ct,
@@ -638,5 +644,5 @@ GROUP BY sr.definition_id,
          dcc.critical_data_element, dtc.critical_data_element,
          dcc.data_product, dtc.data_product, tg.data_product,
          dcc.data_classification, dtc.data_classification, tg.data_classification,
-         dcc.functional_data_type, r.test_time,
+         dcc.functional_data_type,
          tg.project_code;
