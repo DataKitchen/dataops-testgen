@@ -1,21 +1,26 @@
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from testgen.commands.queries.profiling_query import ProfilingSQL, calculate_sampling_params
+from testgen.common.database.column_chars import ColumnChars
 
 pytestmark = pytest.mark.unit
+
+# Microseconds are deliberate: they are what the error path used to leak into run_date.
+RUN_STARTTIME = datetime(2026, 7, 14, 21, 22, 26, 227897, tzinfo=UTC)
 
 
 # --- ProfilingSQL.update_profiling_results ---
 
 
-def _make_profiling_sql(profile_flag_pii=False, profile_flag_cdes=False):
+def _make_profiling_sql(profile_flag_pii=False, profile_flag_cdes=False, profiling_starttime=RUN_STARTTIME):
     connection = MagicMock()
     table_group = MagicMock()
     table_group.profile_flag_pii = profile_flag_pii
     table_group.profile_flag_cdes = profile_flag_cdes
-    profiling_run = MagicMock()
+    profiling_run = MagicMock(profiling_starttime=profiling_starttime)
     return ProfilingSQL(connection, table_group, profiling_run)
 
 
@@ -163,3 +168,28 @@ def test_sampling_decimal_string_percent():
     result = calculate_sampling_params("orders", 10000, "15.5", min_sample=100)
     assert result is not None
     assert result.sample_count == 1550
+
+
+# --- ProfilingSQL.get_profiling_errors ---
+
+
+def test_error_rows_carry_the_same_run_date_as_profiled_rows():
+    sql = _make_profiling_sql()
+    column = ColumnChars(
+        schema_name="public",
+        table_name="studies",
+        column_name="nct_id",
+        ordinal_position=1,
+        general_type="A",
+        column_type="varchar",
+        db_data_type="character varying",
+        record_ct=513,
+    )
+
+    error_row = sql.get_profiling_errors([(column, "unsupported type")])[0]
+    error_run_date = dict(zip(sql.error_columns, error_row, strict=True))["run_date"]
+
+    # A run writes one run_date: the value inlined into the profiling query for
+    # successful columns must be the value error rows get too.
+    assert error_run_date == sql._get_params()["RUN_DATE"]
+    assert error_run_date == "2026-07-14 21:22:26"

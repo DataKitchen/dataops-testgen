@@ -249,7 +249,7 @@ class ProfilingSQL:
                 self.table_group.id,
                 self.table_group.table_group_schema,
                 self.profiling_run.id,
-                self.profiling_run.profiling_starttime,
+                to_sql_timestamp(self.run_date),
                 column_chars.table_name,
                 column_chars.column_name.replace("'", "''"),
                 column_chars.ordinal_position,
