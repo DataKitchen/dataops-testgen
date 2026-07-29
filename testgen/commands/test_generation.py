@@ -13,6 +13,7 @@ from testgen.common.database.database_service import (
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.connection import Connection
+from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import read_template_sql_file
@@ -39,6 +40,7 @@ def run_test_generation(
     test_suite_id: str | UUID,
     generation_set: GenerationSet = "Standard",
     test_types: list[str] | None = None,
+    profile_run_id: UUID | None = None,
 ) -> None:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
@@ -54,7 +56,9 @@ def run_test_generation(
 
     success = False
     try:
-        TestGeneration(connection, table_group, test_suite, generation_set, test_types).run()
+        TestGeneration(
+            connection, table_group, test_suite, generation_set, test_types, profile_run_id
+        ).run()
         success = True
     except Exception:
         LOG.exception("Test generation encountered an error.")
@@ -73,6 +77,7 @@ def run_monitor_generation(
     monitors: list[MonitorTestType],
     mode: MonitorGenerationMode = "upsert",
     table_names: list[str] | None = None,
+    profile_run_id: UUID | None = None,
 ) -> None:
     """
     Modes:
@@ -91,7 +96,9 @@ def run_monitor_generation(
     table_group = TableGroup.get(monitor_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
 
-    TestGeneration(connection, table_group, monitor_suite, "Monitor", monitors).monitor_run(mode, table_names=table_names)
+    TestGeneration(
+        connection, table_group, monitor_suite, "Monitor", monitors, profile_run_id
+    ).monitor_run(mode, table_names=table_names)
 
 
 class TestGeneration:
@@ -103,6 +110,7 @@ class TestGeneration:
         test_suite: TestSuite,
         generation_set: str,
         test_types_filter: list[MonitorTestType] | None = None,
+        profile_run_id: UUID | None = None,
     ):
         self.connection = connection
         self.table_group = table_group
@@ -116,6 +124,17 @@ class TestGeneration:
         self.as_of_date = self.run_date
         if (delay_days := int(self.table_group.profiling_delay_days)):
             self.as_of_date = self.run_date - timedelta(days=delay_days)
+
+        # Generation reads one profiling run's results: the newest whose results are all
+        # present, at or before the as-of date. A caller that just finished a run passes its
+        # id so it counts as complete -- its job execution is still 'running' at this point
+        # (the job is marked complete only after the handler returns) and
+        # table_groups.last_complete_profile_run_id is not updated until the score rollup job
+        # runs later still, so neither can identify it. It is still subject to the as-of
+        # date, so a table group with a profiling delay keeps generating from an older run.
+        self.profile_run_id = ProfilingRun.latest_readable_id(
+            table_group.id, self.as_of_date, finishing_run_id=profile_run_id
+        )
 
     def run(self) -> None:
         LOG.info("Running test generation queries")
@@ -188,6 +207,7 @@ class TestGeneration:
             "DATA_SCHEMA": self.table_group.table_group_schema,
             "GENERATION_SET": self.generation_set,
             "TEST_TYPES_FILTER": self.test_types_filter,
+            "PROFILE_RUN_ID": self.profile_run_id,
             "RUN_DATE": to_sql_timestamp(self.run_date),
             "AS_OF_DATE": to_sql_timestamp(self.as_of_date),
             "SQL_FLAVOR": self.flavor,

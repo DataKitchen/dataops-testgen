@@ -1,19 +1,19 @@
 -- Roll up latest scores to Table Group
-WITH last_profile_date
-   AS (SELECT table_groups_id, MAX(profiling_starttime) as last_profile_run_date
-         FROM profiling_runs
-         INNER JOIN job_executions ON job_executions.id = profiling_runs.id
-        WHERE job_executions.status = 'completed'
-       GROUP BY table_groups_id),
-score_calc
-  AS (SELECT run.table_groups_id, run.id as profile_run_id,
+-- DISTINCT ON picks one completed run per table group, tie-broken by id. Selecting
+-- MAX(profiling_starttime) and joining profiling_runs back on timestamp equality matched
+-- every run sharing that timestamp, so last_complete_profile_run_id was set from an
+-- arbitrary one of them and the score summed their data points together.
+WITH score_calc
+  AS (SELECT DISTINCT ON (run.table_groups_id)
+             run.table_groups_id, run.id as profile_run_id,
              run.dq_affected_data_points as sum_affected_data_points,
              run.dq_total_data_points as sum_data_points
         FROM profiling_runs run
-      INNER JOIN last_profile_date lp
-         ON (run.table_groups_id = lp.table_groups_id
-        AND  run.profiling_starttime = lp.last_profile_run_date)
-      WHERE run.table_groups_id = :TABLE_GROUPS_ID )
+      INNER JOIN job_executions je
+         ON je.id = run.id
+      WHERE run.table_groups_id = :TABLE_GROUPS_ID
+        AND je.status = 'completed'
+      ORDER BY run.table_groups_id, run.profiling_starttime DESC, run.id DESC)
 UPDATE table_groups
    SET dq_score_profiling = (1.0 - s.sum_affected_data_points::FLOAT / NULLIF(s.sum_data_points::FLOAT, 0)),
        last_complete_profile_run_id = s.profile_run_id

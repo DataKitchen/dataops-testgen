@@ -1,11 +1,10 @@
 WITH latest_run AS (
-  -- Latest profiling run before as-of-date, identified by run
-  SELECT profile_run_id
-    FROM profile_results
-  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
-    AND run_date::DATE <= :AS_OF_DATE ::DATE
-  ORDER BY run_date DESC, profile_run_id DESC
-  LIMIT 1
+  -- The profiling run this generation reads, resolved by the caller: the run that just
+  -- finished, or the newest completed run at or before the as-of date. Resolving it here
+  -- would have to read profile_results, which holds partial rows for a run that is still
+  -- running, was interrupted, or is paused -- those rows are committed per column as the
+  -- run proceeds, so date order alone cannot tell a partial run from a finished one.
+  SELECT :PROFILE_RUN_ID ::UUID AS profile_run_id
 ),
 latest_results AS (
   -- Column results for latest run

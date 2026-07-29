@@ -2,13 +2,12 @@
 -- Second type:  constants with changing values (1 distinct value)
 
 WITH latest_run AS (
-  -- Latest profiling run before as-of-date, identified by run
-  SELECT profile_run_id
-    FROM profile_results
-  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
-    AND run_date::DATE <= :AS_OF_DATE ::DATE
-  ORDER BY run_date DESC, profile_run_id DESC
-  LIMIT 1
+  -- The profiling run this generation reads, resolved by the caller: the run that just
+  -- finished, or the newest completed run at or before the as-of date. Resolving it here
+  -- would have to read profile_results, which holds partial rows for a run that is still
+  -- running, was interrupted, or is paused -- those rows are committed per column as the
+  -- run proceeds, so date order alone cannot tell a partial run from a finished one.
+  SELECT :PROFILE_RUN_ID ::UUID AS profile_run_id
 ),
 latest_results AS (
   -- Column results for latest run
@@ -25,12 +24,21 @@ latest_results AS (
     AND dcc.excluded_data_element IS NOT TRUE
 ),
 all_runs AS (
-  SELECT table_groups_id, profile_run_id,
-    DENSE_RANK() OVER (PARTITION BY table_groups_id ORDER BY MAX(run_date) DESC) AS run_rank
-  FROM profile_results
-  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
-    AND run_date::DATE <= :AS_OF_DATE ::DATE
-  GROUP BY table_groups_id, profile_run_id
+  -- Five-run history window, taken from the runs themselves rather than from their results.
+  -- ROW_NUMBER over one row per run makes the window exactly five runs, and the ordering
+  -- matches how latest_run was resolved (start time, then id), so rank 1 is that same run --
+  -- the guard below keys off run_rank while the INSERT sources from latest_run, and the two
+  -- must agree. Only runs with complete results count: the run latest_run resolved to is
+  -- eligible whatever its job status, since the caller may be finishing it right now.
+  SELECT pr.table_groups_id, pr.id AS profile_run_id,
+    ROW_NUMBER() OVER (
+      PARTITION BY pr.table_groups_id ORDER BY pr.profiling_starttime DESC, pr.id DESC
+    ) AS run_rank
+  FROM profiling_runs pr
+  INNER JOIN job_executions je ON je.id = pr.id
+  WHERE pr.table_groups_id = :TABLE_GROUPS_ID ::UUID
+    AND pr.profiling_starttime::DATE <= :AS_OF_DATE ::DATE
+    AND (je.status = 'completed' OR pr.id = :PROFILE_RUN_ID ::UUID)
 ),
 recent_runs AS (
   SELECT table_groups_id, profile_run_id, run_rank
