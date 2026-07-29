@@ -38,6 +38,8 @@ test_types:
     Value Count tests that the  count of unique values present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained, or for any dataset where you would expect a set number of distinct values should be present. A failure here would indicate missing records or a change in categories or value assignment.
   active: Y
   algorithm: Counting
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7008'
     test_type: Distinct_Value_Ct

@@ -44,6 +44,8 @@ test_types:
   active: Y
   algorithm: Statistical drift
   statistical_technique: SD Shift
+  generation_sets:
+    - Standard
   cat_test_conditions:
   - id: '7032'
     test_type: Variability_Decrease
