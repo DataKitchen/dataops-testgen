@@ -270,5 +270,5 @@ SELECT
   '{PROFILE_RUN_ID}' AS profile_run_id
   FROM target_table
 -- TG-IF is_type_A
-  CROSS JOIN pattern_slots
+  INNER JOIN pattern_slots ON 1 = 1
 -- TG-ENDIF
