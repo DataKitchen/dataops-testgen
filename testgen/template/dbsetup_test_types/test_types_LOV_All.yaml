@@ -20,7 +20,8 @@ test_types:
   default_parm_values: null
   default_parm_prompts: |-
     List of Expected Values
-  default_parm_help: null
+  default_parm_help: |-
+    Single-quoted, pipe-delimited, sorted list of every value expected in the column. Sort order must match the connection's default collation; a list from another database may not match.
   default_parm_required: N
   default_severity: Fail
   run_type: CAT
@@ -29,7 +30,7 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
-    List of values expected, in form ('Val1','Val2)
+    Single-quoted, pipe-delimited, sorted list of all distinct expected values
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
