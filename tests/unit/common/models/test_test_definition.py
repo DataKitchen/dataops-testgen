@@ -35,8 +35,10 @@ def make_test_type(
 
 
 def make_td(**fields) -> TestDefinition:
-    """Build a TestDefinition with the given fields set, nothing else."""
+    """Build a TestDefinition with the given fields set. table_name defaults to a non-empty value
+    (required for most scopes) unless the caller overrides it."""
     td = TestDefinition()
+    fields.setdefault("table_name", "orders")
     for key, value in fields.items():
         setattr(td, key, value)
     return td
@@ -55,14 +57,30 @@ def test_required_fields_table_scope_no_column_name():
     assert "column_name" not in _required_fields_for(tt)
 
 
-def test_required_fields_custom_query_when_in_param_columns():
+def test_required_fields_custom_query_required_via_flag():
+    # custom_query requiredness is driven by default_parm_required, not special-cased.
     tt = make_test_type(
         code="CUSTOM",
         scope="custom",
         param_columns={"custom_query", "match_column_names"},
         default_parm_columns="custom_query,match_column_names",
+        default_parm_required="Y,N",
     )
-    assert "custom_query" in _required_fields_for(tt)
+    required = _required_fields_for(tt)
+    assert "custom_query" in required
+    assert "match_column_names" not in required
+
+
+def test_required_fields_custom_query_optional_when_flag_off():
+    # A test type may expose custom_query without requiring it when the flag says N.
+    tt = make_test_type(
+        code="Some_Type",
+        scope="custom",
+        param_columns={"custom_query"},
+        default_parm_columns="custom_query",
+        default_parm_required="N",
+    )
+    assert "custom_query" not in _required_fields_for(tt)
 
 
 def test_required_fields_parses_default_parm_required():
@@ -79,9 +97,31 @@ def test_required_fields_parses_default_parm_required():
     assert "baseline_value" not in required
 
 
-def test_required_fields_null_required_means_no_extras():
+def test_required_fields_null_required_means_no_param_extras():
+    # No default_parm_required flags → only the scope-implied fields (column_name + table_name).
     tt = make_test_type(scope="column", default_parm_required=None)
-    assert _required_fields_for(tt) == {"column_name"}
+    assert _required_fields_for(tt) == {"column_name", "table_name"}
+
+
+def test_required_fields_table_name_required_for_physical_scope():
+    for scope in ("column", "table", "referential", "custom"):
+        tt = make_test_type(scope=scope)
+        assert "table_name" in _required_fields_for(tt), scope
+
+
+def test_required_fields_table_name_not_required_for_tablegroup():
+    tt = make_test_type(code="Schema_Drift", scope="tablegroup", param_columns=set(), default_parm_columns=None)
+    assert "table_name" not in _required_fields_for(tt)
+
+
+def test_required_fields_table_name_not_required_for_custom_type():
+    tt = make_test_type(
+        code="CUSTOM",
+        scope="custom",
+        param_columns={"custom_query"},
+        default_parm_columns="custom_query",
+    )
+    assert "table_name" not in _required_fields_for(tt)
 
 
 # -- TestDefinition.editable_fields -------------------------------------------
@@ -178,6 +218,47 @@ def test_validate_wrong_scope_column_name_rejected():
     with pytest.raises(InvalidTestDefinitionFields) as exc_info:
         td.validate(tt)
     assert "column_name" in exc_info.value.errors
+
+
+def test_validate_missing_table_name_rejected():
+    tt = make_test_type(scope="column")
+    td = make_td(column_name="email", threshold_value="10", table_name=None)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "table_name" in exc_info.value.errors
+
+
+def test_validate_custom_type_accepts_missing_table_name():
+    # CUSTOM supplies its own FROM via custom_query; the table is only an output label.
+    tt = make_test_type(code="CUSTOM", scope="custom", param_columns={"custom_query"}, default_parm_columns="custom_query")
+    td = make_td(custom_query="SELECT 1", table_name=None)
+    td.validate(tt)  # no raise
+
+
+def test_validate_custom_scope_non_custom_type_requires_table_name():
+    # Condition_Flag is custom-scoped but its query fragment runs against a physical table,
+    # so the exemption that applies to CUSTOM must not extend to it.
+    tt = make_test_type(
+        code="Condition_Flag",
+        scope="custom",
+        param_columns={"threshold_value", "custom_query"},
+        default_parm_columns="threshold_value,custom_query",
+        default_parm_required="N,Y",
+    )
+    td = make_td(
+        column_name="Quantity Consistency",
+        custom_query="quantity_ordered <> quantity_shipped",
+        table_name=None,
+    )
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "table_name" in exc_info.value.errors
+
+
+def test_validate_tablegroup_accepts_missing_table_name():
+    tt = make_test_type(code="Schema_Drift", scope="tablegroup", param_columns=set(), default_parm_columns=None)
+    td = make_td(table_name=None)
+    td.validate(tt)  # no raise — spans the whole table group
 
 
 def test_validate_referential_scope_accepts_column_name():

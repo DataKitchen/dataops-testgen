@@ -24,7 +24,7 @@ test_types:
   default_parm_prompts: |-
     Value Count at Baseline,Sum at Baseline,Mean Value at Baseline,Std Deviation at Baseline,Threshold Max Z-Score
   default_parm_help: null
-  default_parm_required: N,N,N,N,N
+  default_parm_required: Y,Y,Y,Y,N
   default_severity: Warning
   run_type: CAT
   test_scope: column
