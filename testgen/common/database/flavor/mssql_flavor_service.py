@@ -33,9 +33,6 @@ class MssqlFlavorService(FlavorService):
                 "authentication": "ActiveDirectoryMsi",
             })
 
-        if params.sql_flavor_code == "synapse_mssql":
-            connection_url = connection_url.update_query_dict({"autocommit": "True"})
-
         return connection_url.render_as_string(hide_password=False)
 
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:
@@ -57,7 +54,28 @@ class MssqlFlavorService(FlavorService):
         ]
 
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:
+        # Imported here rather than at module scope: pyodbc requires the unixODBC native
+        # library (libodbc), which is absent in some environments that import this module
+        # (e.g. the unit-test image) but always present where a SQL Server connection is
+        # actually made — which is the only path that reaches this method.
+        import pyodbc
+
+        # Let SQLAlchemy's pool be the sole owner of connection lifecycle. pyodbc enables
+        # ODBC-driver-manager pooling by default, so a connection SQLAlchemy discards can be
+        # retained by the ODBC pool and left sleeping on the server with its transaction
+        # state unreset until the next checkout. Setting this during engine creation is
+        # before the first connection, which is when it must be set.
+        pyodbc.pooling = False
+
+        # pyodbc defaults to autocommit=False, which opens an implicit transaction on the
+        # first statement (including the pre-connection SET queries) and holds it until
+        # commit/rollback/close. TestGen only reads from target databases, so there is no
+        # multi-statement transaction to preserve, and running in autocommit keeps a
+        # connection from sitting idle on the server holding an open transaction. This must
+        # be set at connect time: SQLAlchemy 2.x raises if the isolation level is changed
+        # after a statement has autobegun a transaction.
         connect_args = super().get_connect_args(params)
+        connect_args["autocommit"] = True
         if settings.SKIP_DATABASE_CERTIFICATE_VERIFICATION:
             connect_args["TrustServerCertificate"] = "yes"
         return connect_args
