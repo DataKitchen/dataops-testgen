@@ -18,14 +18,27 @@ def _make_columns(*table_names: str) -> list[ColumnChars]:
 @pytest.mark.parametrize(
     "flavor,expected_sql",
     [
-        ("postgresql", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        ("bigquery", "SELECT  1 FROM `test_schema`.`orders` LIMIT 1"),
+        ("databricks", "SELECT  1 FROM `test_schema`.`orders` LIMIT 1"),
         ("mssql", 'SELECT TOP 1 1 FROM "test_schema"."orders"'),
+        ("postgresql", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        ("redshift", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        ("redshift_spectrum", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        ("snowflake", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        ("trino", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
         ("oracle", 'SELECT  1 FROM "test_schema"."orders" FETCH FIRST 1 ROWS ONLY'),
+        ("sap_hana", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
+        # Data 360 exposes DLOs unqualified — no schema prefix.
+        ("salesforce_data360", 'SELECT  1 FROM "orders" LIMIT 1'),
     ],
 )
 def test_verify_access_uses_literal_1_projection(flavor, expected_sql):
     """Access check uses literal ``1`` (not ``*``) — projection doesn't matter for an
-    existence/permission probe, and ``1`` avoids materialising columns on wide tables."""
+    existence/permission probe, and ``1`` avoids materialising columns on wide tables.
+
+    Covers every flavor: the probe is the only thing standing behind the preview's
+    Read Access column, and a probe that is invalid SQL on some flavor reports every
+    table there as inaccessible."""
     connection = Connection(sql_flavor=flavor)
     table_group = TableGroup(table_group_schema="test_schema")
     sql_generator = RefreshDataCharsSQL(connection, table_group)

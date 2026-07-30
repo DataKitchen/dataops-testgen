@@ -254,6 +254,28 @@ def test_preview_verify_access_marks_all_accessible(mock_fetch, mock_sql_cls):
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
 @patch(f"{MODULE}.fetch_from_target_db")
+def test_preview_verify_access_empty_table_is_accessible(mock_fetch, mock_sql_cls):
+    """An empty table is accessible. The probe is ``SELECT 1 FROM <table> LIMIT 1``, which
+    returns zero rows on a zero-row table; a permission failure raises instead. Judging
+    access by row count reports every empty table as inaccessible."""
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+    sql_generator.verify_access.return_value = ("SELECT 1", None)
+    mock_fetch.side_effect = [
+        [_column_row("customer", "id", approx_record_ct=0)],  # initial DDF
+        [],  # verify customer — empty table, query succeeded
+    ]
+
+    preview, _data_chars, _sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=True)
+
+    assert preview["success"] is True
+    assert preview["tables"]["customer"]["can_access"] is True
+    assert preview["message"] is None
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.fetch_from_target_db")
 def test_preview_verify_access_partial_failure_sets_footer(mock_fetch, mock_sql_cls):
     """One inaccessible table → can_access=False AND the UI-verbatim footer message."""
     sql_generator = mock_sql_cls.return_value
