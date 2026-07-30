@@ -104,7 +104,7 @@ def test_required_fields_null_required_means_no_param_extras():
 
 
 def test_required_fields_table_name_required_for_physical_scope():
-    for scope in ("column", "table", "referential"):
+    for scope in ("column", "table", "referential", "custom"):
         tt = make_test_type(scope=scope)
         assert "table_name" in _required_fields_for(tt), scope
 
@@ -233,6 +233,26 @@ def test_validate_custom_type_accepts_missing_table_name():
     tt = make_test_type(code="CUSTOM", scope="custom", param_columns={"custom_query"}, default_parm_columns="custom_query")
     td = make_td(custom_query="SELECT 1", table_name=None)
     td.validate(tt)  # no raise
+
+
+def test_validate_custom_scope_non_custom_type_requires_table_name():
+    # Condition_Flag is custom-scoped but its query fragment runs against a physical table,
+    # so the exemption that applies to CUSTOM must not extend to it.
+    tt = make_test_type(
+        code="Condition_Flag",
+        scope="custom",
+        param_columns={"threshold_value", "custom_query"},
+        default_parm_columns="threshold_value,custom_query",
+        default_parm_required="N,Y",
+    )
+    td = make_td(
+        column_name="Quantity Consistency",
+        custom_query="quantity_ordered <> quantity_shipped",
+        table_name=None,
+    )
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(tt)
+    assert "table_name" in exc_info.value.errors
 
 
 def test_validate_tablegroup_accepts_missing_table_name():

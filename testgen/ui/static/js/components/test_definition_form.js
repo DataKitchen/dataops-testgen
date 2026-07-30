@@ -109,13 +109,18 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
 
     const hasThresholds = paramColumns.includes('history_calculation');
     const dynamicParamColumns = paramColumns
-        .map((column, index) => ({
-            ...(PARAMETER_CONFIG[column] || { type: 'text' }),
-            column,
-            label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
-            help: paramHelp[index] || null,
-            validators: paramRequired[index] ? [required] : undefined,
-        }))
+        .map((column, index) => {
+            const config = PARAMETER_CONFIG[column] || { type: 'text' };
+            const isRequired = paramRequired[index];
+            return {
+                ...config,
+                placeholder: isRequired ? undefined : config.placeholder,
+                column,
+                label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
+                help: paramHelp[index] || null,
+                validators: isRequired ? [required] : undefined,
+            };
+        })
         .filter(config => !hasThresholds || !thresholdColumns.includes(config.column))
         // Drop the field for flavors whose SQL doesn't qualify table refs with a schema
         .filter(config => qualifiesTableRefsWithSchema || config.column !== 'match_schema_name')
