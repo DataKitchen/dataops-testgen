@@ -477,15 +477,17 @@ def _required_fields_for(test_type: TestType) -> set[str]:
     """Fields that must be present and non-empty for the given test type.
 
     - Column-scoped tests implicitly require ``column_name``.
-    - Test types with ``custom_query`` in ``param_columns`` require ``custom_query``.
+    - Tests that read a physical table implicitly require ``table_name`` — every scope except
+      ``tablegroup`` (which spans the whole group) and the ``CUSTOM`` test type (whose
+      ``custom_query`` supplies its own FROM clause; the table is only an output label).
     - ``default_parm_required`` is a CSV of ``Y``/``N`` aligned with ``default_parm_columns``;
       positions marked ``Y`` are required.
     """
     required: set[str] = set()
     if test_type.test_scope == "column":
         required.add("column_name")
-    if "custom_query" in test_type.param_columns:
-        required.add("custom_query")
+    if test_type.test_scope != "tablegroup" and test_type.test_type != "CUSTOM":
+        required.add("table_name")
     if test_type.default_parm_required and test_type.default_parm_columns:
         flags = [v.strip().upper() for v in test_type.default_parm_required.split(",")]
         columns = [c.strip() for c in test_type.default_parm_columns.split(",")]
