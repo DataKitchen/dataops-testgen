@@ -33,7 +33,7 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
-    List of values expected, in form ('Val1','Val2)
+    List of values expected, in form ('Val1','Val2')
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-

@@ -303,7 +303,7 @@ def test_preview_verify_access_partial_failure_sets_footer(mock_fetch, mock_sql_
     assert preview["tables"]["customer"]["can_access"] is True
     assert preview["tables"]["rental"]["can_access"] is False
     assert preview["message"] == (
-        "Some tables were not accessible. Please the check the database permissions."
+        "Some tables were not accessible. Please check the database permissions."
     )
 
 

@@ -127,7 +127,7 @@ _NO_TABLES_MESSAGE = (
     "No tables found matching the criteria. Please check the Table Group configuration"
     " or the database permissions."
 )
-_INACCESSIBLE_MESSAGE = "Some tables were not accessible. Please the check the database permissions."
+_INACCESSIBLE_MESSAGE = "Some tables were not accessible. Please check the database permissions."
 
 
 def preview_table_group(
