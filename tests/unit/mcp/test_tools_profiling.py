@@ -772,8 +772,8 @@ def _column_detail(**overrides) -> ColumnProfileDetail:
         "avg_length": 12.4,
         "min_text": "Aaron",
         "max_text": "Zoey",
-        "top_freq_values": "| Mary | 12\n| John | 10",
-        "top_patterns": "10 | A(5) | 8 | A(6)",
+        "frequent_values": {"values": [{"value": "Mary", "ct": 12}, {"value": "John", "ct": 10}]},
+        "frequent_patterns": {"values": [{"value": "A(5)", "ct": 10}, {"value": "A(6)", "ct": 8}]},
         "distinct_std_value_ct": 250,
         "distinct_pattern_ct": 35,
         "std_pattern_match": None,
@@ -890,8 +890,8 @@ def test_get_column_profile_detail_numeric_renders_numeric_sections(mock_tg_cls,
         # Alpha fields cleared (numeric column wouldn't have these populated)
         min_text=None,
         max_text=None,
-        top_freq_values=None,
-        top_patterns=None,
+        frequent_values=None,
+        frequent_patterns=None,
         min_length=None,
         max_length=None,
         avg_length=None,
@@ -931,8 +931,8 @@ def test_get_column_profile_detail_date_renders_date_sections(mock_tg_cls, mock_
         # Alpha fields cleared
         min_text=None,
         max_text=None,
-        top_freq_values=None,
-        top_patterns=None,
+        frequent_values=None,
+        frequent_patterns=None,
         min_length=None,
         max_length=None,
         avg_length=None,
@@ -963,8 +963,8 @@ def test_get_column_profile_detail_boolean_renders_boolean_section(mock_tg_cls, 
         # Alpha fields cleared
         min_text=None,
         max_text=None,
-        top_freq_values=None,
-        top_patterns=None,
+        frequent_values=None,
+        frequent_patterns=None,
         min_length=None,
         max_length=None,
         avg_length=None,
@@ -994,8 +994,8 @@ def test_get_column_profile_detail_unknown_general_type_renders_counts_only(
         # All type-specific fields cleared
         min_text=None,
         max_text=None,
-        top_freq_values=None,
-        top_patterns=None,
+        frequent_values=None,
+        frequent_patterns=None,
         min_length=None,
         max_length=None,
         avg_length=None,
@@ -1024,8 +1024,8 @@ def test_get_column_profile_detail_general_type_t_treated_as_unknown(
         functional_data_type=None,
         min_text=None,
         max_text=None,
-        top_freq_values=None,
-        top_patterns=None,
+        frequent_values=None,
+        frequent_patterns=None,
         min_length=None,
         max_length=None,
         avg_length=None,
@@ -1274,7 +1274,7 @@ def test_get_column_profile_detail_pii_column_no_view_pii_redacts(
         std_pattern_match="EMAIL",
         min_text="aaron@example.com",
         max_text="zoey@example.com",
-        top_freq_values="| mary@x.com | 1\n| john@x.com | 1",
+        frequent_values={"values": [{"value": "mary@x.com", "ct": 1}, {"value": "john@x.com", "ct": 1}]},
     )
     # No project includes view_pii — only catalog allowed
     mock_compute.return_value = ProjectPermissions(
@@ -1617,8 +1617,8 @@ def _mock_profile_result(**overrides):
     pr.distinct_value_ct = 3
     pr.pii_flag = None
     pr.general_type = "A"
-    pr.top_freq_values = "| Mexico | 200\n| USA | 180\n| Canada | 120"
-    pr.top_patterns = "200 | Aaaaaa | 100 | AAA"
+    pr.frequent_values = {"values": [{"value": "Mexico", "ct": 200}, {"value": "USA", "ct": 180}, {"value": "Canada", "ct": 120}]}
+    pr.frequent_patterns = {"values": [{"value": "Aaaaaa", "ct": 200}, {"value": "AAA", "ct": 100}]}
     for k, v in overrides.items():
         setattr(pr, k, v)
     return pr
@@ -1665,6 +1665,32 @@ def test_get_column_frequent_values_happy_path(
 @patch("testgen.mcp.tools.profiling.ProfilingRun")
 @patch("testgen.mcp.tools.profiling.ProfileResult")
 @patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_frequent_values_reports_the_values_past_the_top_ten(
+    mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_tg_cls.get.return_value = tg
+    profile = _mock_profile_result()
+    profile.frequent_values = {
+        "values": [{"value": "Mexico", "ct": 200}],
+        "other": {"distinct_ct": 6, "ct": 50},
+    }
+    mock_pr_cls.get_for_column.return_value = profile
+    mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
+    mock_dcc_select.return_value = [_mock_data_column()]
+
+    from testgen.mcp.tools.profiling import get_column_frequent_values
+    result = get_column_frequent_values(str(uuid4()), "customers", "country")
+
+    # Without this row the percentages do not account for the whole column
+    assert "6 other values" in result
+    assert "10.00%" in result  # 50/500
+
+
+@patch.object(DataColumnChars, "select_where")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+@patch("testgen.mcp.tools.profiling.ProfileResult")
+@patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_frequent_values_surfaces_job_execution_id_not_profile_run_id(
     mock_tg_cls, mock_pr_cls, mock_run_cls, mock_dcc_select, db_session_mock,
 ):
@@ -1694,7 +1720,7 @@ def test_get_column_frequent_values_pii_value_redacted_when_caller_lacks_view_pi
     tg = _mock_table_group(project_code="demo")
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
-        top_freq_values="| alice@example.com | 5\n| bob@example.com | 3",
+        frequent_values={"values": [{"value": "alice@example.com", "ct": 5}, {"value": "bob@example.com", "ct": 3}]},
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
     # The pii_flag the tool reads comes from DataColumnChars, not ProfileResult.
@@ -1719,7 +1745,7 @@ def test_get_column_frequent_values_pii_value_visible_with_view_pii_grant(
     tg = _mock_table_group(project_code="demo")
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
-        top_freq_values="| alice@example.com | 5\n| bob@example.com | 3",
+        frequent_values={"values": [{"value": "alice@example.com", "ct": 5}, {"value": "bob@example.com", "ct": 3}]},
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
     mock_dcc_select.return_value = [_mock_data_column(pii_flag="B/CONTACT/Email")]
@@ -1748,7 +1774,7 @@ def test_get_column_frequent_values_high_cardinality_fallback(
     tg = _mock_table_group()
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
-        top_freq_values=None, distinct_value_ct=10000,
+        frequent_values=None, distinct_value_ct=10000,
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
     mock_dcc_select.return_value = [_mock_data_column()]
@@ -1786,7 +1812,7 @@ def test_get_column_frequent_values_pii_source_is_data_column_chars_not_profile_
     # ProfileResult carries a stale/wrong pii_flag; DataColumnChars says None.
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
         pii_flag="A/CONTACT/Email",  # stale value; should NOT drive redaction
-        top_freq_values="| alice@example.com | 5",
+        frequent_values={"values": [{"value": "alice@example.com", "ct": 5}]},
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
     mock_dcc_select.return_value = [_mock_data_column(pii_flag=None)]
@@ -1816,7 +1842,7 @@ def test_get_column_patterns_happy_path(
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
         general_type="A",
-        top_patterns="326 | Aaaaaa | 176 | AAA",
+        frequent_patterns={"values": [{"value": "Aaaaaa", "ct": 326}, {"value": "AAA", "ct": 176}]},
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
     mock_dcc_select.return_value = [_mock_data_column()]
@@ -1840,7 +1866,7 @@ def test_get_column_patterns_non_string_column_fallback(
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
         general_type="N",
-        top_patterns=None,
+        frequent_patterns=None,
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)
     mock_dcc_select.return_value = [_mock_data_column()]
@@ -1862,7 +1888,7 @@ def test_get_column_patterns_high_cardinality_fallback(
     mock_tg_cls.get.return_value = tg
     mock_pr_cls.get_for_column.return_value = _mock_profile_result(
         general_type="A",
-        top_patterns=None,
+        frequent_patterns=None,
         distinct_value_ct=9999,
     )
     mock_run_cls.get.return_value = _mock_profiling_run_for_tg(tg.id)

@@ -5,6 +5,21 @@ WITH target_table AS (
   SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WITH (NOLOCK)
 -- TG-ENDIF
 )
+-- TG-IF is_type_A
+, ranked_patterns AS (
+  SELECT pattern,
+         ct,
+         ROW_NUMBER() OVER (ORDER BY ct DESC, pattern) AS rn
+    FROM ( SELECT pattern, COUNT(*) AS ct
+             FROM ( SELECT TRANSLATE("{COL_NAME}"  COLLATE Latin1_General_BIN,
+                             'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN' ) AS pattern
+                      FROM target_table
+                     WHERE "{COL_NAME}" > ' ' AND (SELECT MAX(LEN("{COL_NAME}"))
+                                                     FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH} ) p
+            GROUP BY pattern
+           HAVING pattern > ' ' ) ranked
+)
+-- TG-ENDIF
 SELECT
   {CONNECTION_ID} AS connection_id,
   '{PROJECT_CODE}' AS project_code,
@@ -160,23 +175,16 @@ SELECT
   NULL AS std_pattern_match,
 -- TG-ENDIF
 -- TG-IF is_type_A
-  (SELECT LEFT(STRING_AGG(pattern, ' | ') WITHIN GROUP (ORDER BY ct DESC), 1000) AS concat_pats
-     FROM (
-           SELECT TOP 5 CAST(COUNT(*) AS VARCHAR(40)) + ' | ' + pattern AS pattern,
-                  COUNT(*) AS ct
-             FROM (SELECT TRANSLATE("{COL_NAME}"  COLLATE Latin1_General_BIN,
-                            'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
-                            'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN' )
-                   AS pattern
-                      FROM target_table
-                     WHERE "{COL_NAME}" > ' ' AND ((SELECT MAX(LEN("{COL_NAME}"))
-                                                    FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH})) p
-           GROUP BY pattern
-           HAVING pattern > ' '
-           ORDER BY COUNT(*) DESC
-          ) ps) AS top_patterns,
--- TG-ELSE
-  NULL AS top_patterns,
+  (SELECT pattern FROM ranked_patterns WHERE rn = 1) AS pattern_0,
+  (SELECT ct      FROM ranked_patterns WHERE rn = 1) AS pattern_ct_0,
+  (SELECT pattern FROM ranked_patterns WHERE rn = 2) AS pattern_1,
+  (SELECT ct      FROM ranked_patterns WHERE rn = 2) AS pattern_ct_1,
+  (SELECT pattern FROM ranked_patterns WHERE rn = 3) AS pattern_2,
+  (SELECT ct      FROM ranked_patterns WHERE rn = 3) AS pattern_ct_2,
+  (SELECT pattern FROM ranked_patterns WHERE rn = 4) AS pattern_3,
+  (SELECT ct      FROM ranked_patterns WHERE rn = 4) AS pattern_ct_3,
+  (SELECT pattern FROM ranked_patterns WHERE rn = 5) AS pattern_4,
+  (SELECT ct      FROM ranked_patterns WHERE rn = 5) AS pattern_ct_4,
 -- TG-ENDIF
 -- TG-IF is_type_N
   MIN("{COL_NAME}") AS min_value,

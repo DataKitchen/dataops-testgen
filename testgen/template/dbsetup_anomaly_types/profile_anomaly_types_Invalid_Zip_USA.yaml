@@ -6,9 +6,9 @@ profile_anomaly_types:
   anomaly_description: |-
     Some values present do not conform with the expected format of USA Zip Codes.
   anomaly_criteria: |-
-    p.functional_data_type = 'Zip' AND (p.general_type <> 'A' OR p.filled_value_ct > 0 OR EXISTS (SELECT 1 FROM UNNEST(STRING_TO_ARRAY(p.top_patterns, ' | ')) WITH ORDINALITY AS u(val, idx) WHERE idx % 2 = 0 AND val NOT IN ('NNNNN','NNNNN-NNNN','NNNNNNNNN')))
+    p.functional_data_type = 'Zip' AND (p.general_type <> 'A' OR p.filled_value_ct > 0 OR EXISTS (SELECT 1 FROM fn_frequent_values(p.frequent_patterns) AS v WHERE v NOT IN ('NNNNN','NNNNN-NNNN','NNNNNNNNN')))
   detail_expression: |-
-    CASE WHEN p.general_type = 'N' THEN 'Type: ' || p.column_type ELSE '' END || CASE WHEN p.general_type = 'A' THEN 'Patterns: ' || (SELECT string_agg(val, ',') FROM UNNEST(STRING_TO_ARRAY(top_patterns, ' | ')) WITH ORDINALITY AS u(val, idx) WHERE idx % 2 = 0)  || ', Dummy Values: ' || p.filled_value_ct::VARCHAR ELSE '' END
+    CASE WHEN p.general_type = 'N' THEN 'Type: ' || p.column_type ELSE '' END || CASE WHEN p.general_type = 'A' THEN 'Patterns: ' || fn_frequent_display(p.frequent_patterns)  || ', Dummy Values: ' || p.filled_value_ct::VARCHAR ELSE '' END
   issue_likelihood: Definite
   suggested_action: |-
     Consider correcting invalid column values or changing them to indicate a missing value if corrections cannot be made.

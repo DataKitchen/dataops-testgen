@@ -75,7 +75,7 @@ class Test_mask_profiling_pii:
     def _make_profiling_df(self):
         return pd.DataFrame({
             "column_name": ["ssn", "age", "email"],
-            "top_freq_values": ["123|456", "30|25", "a@b|c@d"],
+            "frequent_values": ["123|456", "30|25", "a@b|c@d"],
             "min_text": ["000", "20", "a@a"],
             "max_text": ["999", "40", "z@z"],
             "min_value": [0, 20, None],
@@ -87,61 +87,61 @@ class Test_mask_profiling_pii:
         mask_profiling_pii(df, {"ssn", "email"})
 
         ssn_row = df[df["column_name"] == "ssn"].iloc[0]
-        assert ssn_row["top_freq_values"] == PII_REDACTED
+        assert ssn_row["frequent_values"] == PII_REDACTED
         assert ssn_row["min_text"] == PII_REDACTED
         assert ssn_row["max_text"] == PII_REDACTED
         assert ssn_row["min_value"] == PII_REDACTED
         assert ssn_row["max_value"] == PII_REDACTED
 
         email_row = df[df["column_name"] == "email"].iloc[0]
-        assert email_row["top_freq_values"] == PII_REDACTED
+        assert email_row["frequent_values"] == PII_REDACTED
 
     def test_preserves_non_pii_rows(self):
         df = self._make_profiling_df()
         mask_profiling_pii(df, {"ssn"})
 
         age_row = df[df["column_name"] == "age"].iloc[0]
-        assert age_row["top_freq_values"] == "30|25"
+        assert age_row["frequent_values"] == "30|25"
         assert age_row["min_text"] == "20"
         assert age_row["max_text"] == "40"
 
     def test_handles_empty_dataframe(self):
-        df = pd.DataFrame(columns=["column_name", "top_freq_values"])
+        df = pd.DataFrame(columns=["column_name", "frequent_values"])
         mask_profiling_pii(df, {"ssn"})
         assert df.empty
 
     def test_handles_empty_pii_set(self):
         df = self._make_profiling_df()
-        original_values = df["top_freq_values"].tolist()
+        original_values = df["frequent_values"].tolist()
         mask_profiling_pii(df, set())
-        assert df["top_freq_values"].tolist() == original_values
+        assert df["frequent_values"].tolist() == original_values
 
     def test_handles_missing_fields(self):
         df = pd.DataFrame({
             "column_name": ["ssn", "age"],
-            "top_freq_values": ["123", "30"],
+            "frequent_values": ["123", "30"],
         })
         mask_profiling_pii(df, {"ssn"})
-        assert df.loc[0, "top_freq_values"] == PII_REDACTED
-        assert df.loc[1, "top_freq_values"] == "30"
+        assert df.loc[0, "frequent_values"] == PII_REDACTED
+        assert df.loc[1, "frequent_values"] == "30"
 
     def test_case_insensitive_column_name_matching(self):
         df = pd.DataFrame({
             "column_name": ["SSN", "age"],
-            "top_freq_values": ["123", "30"],
+            "frequent_values": ["123", "30"],
             "min_text": ["000", "20"],
         })
         mask_profiling_pii(df, {"ssn"})
-        assert df.loc[0, "top_freq_values"] == PII_REDACTED
+        assert df.loc[0, "frequent_values"] == PII_REDACTED
         assert df.loc[0, "min_text"] == PII_REDACTED
-        assert df.loc[1, "top_freq_values"] == "30"
+        assert df.loc[1, "frequent_values"] == "30"
 
 
 class Test_mask_profiling_pii_dict:
     def test_masks_fields_when_column_is_pii(self):
         data = {
             "column_name": "ssn",
-            "top_freq_values": "123|456",
+            "frequent_values": "123|456",
             "min_text": "000",
             "max_text": "999",
             "min_value": 0,
@@ -151,7 +151,7 @@ class Test_mask_profiling_pii_dict:
             "max_date": "2024-12-31",
         }
         mask_profiling_pii(data, {"ssn"})
-        assert data["top_freq_values"] == PII_REDACTED
+        assert data["frequent_values"] == PII_REDACTED
         assert data["min_text"] == PII_REDACTED
         assert data["max_text"] == PII_REDACTED
         assert data["min_value"] == PII_REDACTED
@@ -163,12 +163,12 @@ class Test_mask_profiling_pii_dict:
     def test_preserves_non_pii_column(self):
         data = {
             "column_name": "age",
-            "top_freq_values": "30|25",
+            "frequent_values": "30|25",
             "min_text": "20",
             "max_text": "40",
         }
         mask_profiling_pii(data, {"ssn"})
-        assert data["top_freq_values"] == "30|25"
+        assert data["frequent_values"] == "30|25"
         assert data["min_text"] == "20"
         assert data["max_text"] == "40"
 
@@ -186,23 +186,23 @@ class Test_mask_profiling_pii_dict:
         data = {"column_name": "ssn", "min_text": "000"}
         mask_profiling_pii(data, {"ssn"})
         assert data["min_text"] == PII_REDACTED
-        assert "top_freq_values" not in data
+        assert "frequent_values" not in data
 
     def test_no_column_name_masks_unconditionally(self):
-        data = {"top_freq_values": "123|456", "min_text": "000"}
+        data = {"frequent_values": "123|456", "min_text": "000"}
         mask_profiling_pii(data, {"ssn"})
-        assert data["top_freq_values"] == PII_REDACTED
+        assert data["frequent_values"] == PII_REDACTED
         assert data["min_text"] == PII_REDACTED
 
     def test_preserves_non_profiling_fields(self):
         data = {
             "column_name": "ssn",
-            "top_freq_values": "123",
+            "frequent_values": "123",
             "record_ct": 100,
             "distinct_value_ct": 50,
         }
         mask_profiling_pii(data, {"ssn"})
-        assert data["top_freq_values"] == PII_REDACTED
+        assert data["frequent_values"] == PII_REDACTED
         assert data["record_ct"] == 100
         assert data["distinct_value_ct"] == 50
 

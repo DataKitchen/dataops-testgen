@@ -21,7 +21,7 @@ from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummar
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
 from testgen.common.models.table_group import TableGroup, TableGroupSummary
 from testgen.common.pii_masking import PII_REDACTED, mask_profiling_pii
-from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
+from testgen.common.profile_frequency import format_frequent, frequent_entries
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -879,8 +879,8 @@ def _render_alpha_block(doc: MdDoc, p: dict) -> None:
     doc.heading(2, "Patterns")
     doc.field("Standard Pattern Match", _format_std_pattern(p.get("std_pattern_match")))
     doc.field("Distinct Patterns", p.get("distinct_pattern_ct"))
-    doc.field("Frequent Patterns", p.get("top_patterns"))
-    doc.field("Frequent Values", p.get("top_freq_values"))
+    doc.field("Frequent Patterns", format_frequent(p.get("frequent_patterns")) or None)
+    doc.field("Frequent Values", format_frequent(p.get("frequent_values")) or None)
     doc.field("Distinct Standard Values", p.get("distinct_std_value_ct"))
 
     doc.heading(2, "Case & Composition")
@@ -960,7 +960,7 @@ def get_column_frequent_values(
     """Get the top frequent values for one column from its profile run, with row counts and percentages.
 
     Profiling captures the top 10 values; when the column has more distinct values, a
-    trailing `Other Values (N)` row aggregates the remainder.
+    trailing `N other values` row aggregates the remainder.
 
     Args:
         table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
@@ -981,7 +981,7 @@ def get_column_frequent_values(
     if pii_flag:
         doc.field("PII", _format_pii(pii_flag))
 
-    rows = parse_top_freq_values(profile.top_freq_values)
+    rows = frequent_entries(profile.frequent_values)
     if not rows:
         doc.text(
             f"_Frequency data not available — high cardinality "
@@ -996,6 +996,15 @@ def get_column_frequent_values(
         pct = (count / record_ct * 100) if record_ct else None
         display_value = PII_REDACTED if redact else value
         display_rows.append([display_value, count, f"{pct:.2f}%" if pct is not None else None])
+
+    # The remainder carries no values of its own, so it is never redacted.
+    if other := (profile.frequent_values or {}).get("other"):
+        other_pct = (other["ct"] / record_ct * 100) if record_ct else None
+        display_rows.append([
+            f"{other['distinct_ct']} other values",
+            other["ct"],
+            f"{other_pct:.2f}%" if other_pct is not None else None,
+        ])
 
     doc.heading(2, "Top values")
     doc.table(["Value", "Count", "% of records"], display_rows)
@@ -1038,7 +1047,7 @@ def get_column_patterns(
         doc.text("_Pattern data not available — column is not a string type._")
         return doc.render()
 
-    rows = parse_top_patterns(profile.top_patterns)
+    rows = frequent_entries(profile.frequent_patterns)
     if not rows:
         doc.text(
             f"_Pattern data not available — high cardinality "

@@ -7,9 +7,9 @@ profile_anomaly_types:
     \ present. This pattern is uncommon and could indicate inadvertant duplication. "
   anomaly_criteria: |-
     p.distinct_value_ct > 1000
-       AND fn_parsefreq(p.top_freq_values, 1, 2)::BIGINT BETWEEN 2 AND 4
+       AND fn_frequent_ct(p.frequent_values, 1) BETWEEN 2 AND 4
   detail_expression: |-
-    'Top Freq: ' || p.top_freq_values
+    'Top Freq: ' || fn_frequent_display(p.frequent_values)
   issue_likelihood: Possible
   suggested_action: "Review your source data and follow-up with data owners to determine\
     \ whether this data needs to be corrected. "

@@ -10,7 +10,7 @@ test_types:
   measure_uom: Non-matching records
   measure_uom_description: null
   selection_criteria: |-
-    functional_data_type IN ('Boolean', 'Code', 'Category') AND top_freq_values > '' AND distinct_value_ct BETWEEN 2 and 10 AND value_ct > 5
+    functional_data_type IN ('Boolean', 'Code', 'Category') AND frequent_values IS NOT NULL AND distinct_value_ct BETWEEN 2 and 10 AND value_ct > 5
   generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
@@ -19,111 +19,9 @@ test_types:
   column_name_help: null
   default_parm_columns: baseline_value,threshold_value
   default_parm_values: |-
-    '(' || SUBSTRING(
-        CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 1) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 1), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 2) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 2), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 3) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 3), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 4) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 4), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 5) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 5), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 6) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 6), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 7) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 7), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 8) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 8), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 9) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 9), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END || CASE
-            WHEN SPLIT_PART(top_freq_values, E'\n', 10) > '' THEN ',''' || TRIM(
-                REPLACE (
-                    SPLIT_PART(SPLIT_PART(top_freq_values, E'\n', 10), ' | ', 1),
-                    '''',
-                    ''''''
-                ),
-                '| '
-            ) || ''''
-            ELSE ''
-        END,
-        2,
-        999
-    ) || ')',0
+    '(' || (SELECT STRING_AGG('''' || REPLACE(entry ->> 'value', '''', '''''') || '''', ',' ORDER BY rank)
+              FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent_values -> 'values', '[]'::JSONB))
+                   WITH ORDINALITY AS t(entry, rank)) || ')',0
   default_parm_prompts: |-
     List of Expected Values,Threshold Error Count
   default_parm_help: null

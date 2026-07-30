@@ -12,20 +12,20 @@ profile_anomaly_types:
        AND p.max_length > 3
        AND p.value_ct > (p.numeric_ct + p.filled_value_ct + p.zero_length_ct)
        AND p.distinct_pattern_ct BETWEEN 2 AND 4
-       AND STRPOS(p.top_patterns, 'N') > 0
+       AND fn_frequent_like(p.frequent_patterns, '%N%')
        AND (
-             ( (STRPOS(p.top_patterns, 'A') > 0 OR STRPOS(p.top_patterns, 'a') > 0)
-               AND NULLIF(SPLIT_PART(p.top_patterns, '|', 3), '')::NUMERIC / NULLIF(SPLIT_PART(p.top_patterns, '|', 1), '')::NUMERIC < 0.05)
+             ( (fn_frequent_like(p.frequent_patterns, '%A%') OR fn_frequent_like(p.frequent_patterns, '%a%'))
+               AND fn_frequent_ct(p.frequent_patterns, 2)::NUMERIC / NULLIF(fn_frequent_ct(p.frequent_patterns, 1), 0)::NUMERIC < 0.05)
             OR
-             NULLIF(SPLIT_PART(p.top_patterns, '|', 3), '')::NUMERIC / NULLIF(SPLIT_PART(p.top_patterns, '|', 1), '')::NUMERIC < 0.1
+             fn_frequent_ct(p.frequent_patterns, 2)::NUMERIC / NULLIF(fn_frequent_ct(p.frequent_patterns, 1), 0)::NUMERIC < 0.1
         )
   detail_expression: |-
-    'Patterns: ' || p.top_patterns
+    'Patterns: ' || fn_frequent_display(p.frequent_patterns)
   issue_likelihood: Likely
   suggested_action: |-
     Review the values for any data that doesn't conform to the most common pattern and correct any data errors.
   dq_score_prevalence_formula: |-
-    (p.record_ct - NULLIF(SPLIT_PART(p.top_patterns, '|', 1), '')::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+    (p.record_ct - fn_frequent_ct(p.frequent_patterns, 1))::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '0.66'
   dq_dimension: Validity
   impact_dimension: Usability

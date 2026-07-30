@@ -8,7 +8,7 @@ profile_anomaly_types:
   anomaly_criteria: |-
     p.std_pattern_match = 'DELIMITED_DATA'
   detail_expression: |-
-    CASE WHEN p.top_freq_values IS NULL THEN 'Min: ' || p.min_text || ', Max: ' || p.max_text ELSE 'Top Freq: ' || p.top_freq_values END
+    CASE WHEN p.frequent_values IS NULL THEN 'Min: ' || p.min_text || ', Max: ' || p.max_text ELSE 'Top Freq: ' || fn_frequent_display(p.frequent_values) END
   detail_redactable: true
   issue_likelihood: Likely
   suggested_action: |-

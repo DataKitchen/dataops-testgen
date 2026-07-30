@@ -34,9 +34,16 @@ SELECT
   main.date_ct,
   main.std_pattern_match,
 -- TG-IF is_type_A
-  patterns.top_patterns,
--- TG-ELSE
-  NULL AS top_patterns,
+  patterns.pattern_0,
+  patterns.pattern_ct_0,
+  patterns.pattern_1,
+  patterns.pattern_ct_1,
+  patterns.pattern_2,
+  patterns.pattern_ct_2,
+  patterns.pattern_3,
+  patterns.pattern_ct_3,
+  patterns.pattern_4,
+  patterns.pattern_ct_4,
 -- TG-ENDIF
   main.min_value,
   main.min_value_over_0,
@@ -310,23 +317,7 @@ FROM (
 ) main
 -- TG-IF is_A_sampling
 CROSS JOIN (
-  SELECT
-    (SELECT SUBSTR(LISTAGG(formatted_pattern, ' | ') WITHIN GROUP (ORDER BY ct DESC), 1, 1000)
-        FROM (
-              SELECT TO_CHAR(COUNT(*)) || ' | ' || pattern AS formatted_pattern,
-                     COUNT(*) AS ct
-                FROM (SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
-                          "{COL_NAME}", '[a-z]', 'a'),
-                                      '[A-Z]', 'A'),
-                                      '[0-9]', 'N') AS pattern
-                         FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
-                        WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                          FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})) BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
-              GROUP BY pattern
-              HAVING pattern > ' '
-              ORDER BY COUNT(*) DESC
-              FETCH FIRST 5 ROWS ONLY
-             ) ps) AS top_patterns,
+  SELECT slots.*,
     (SELECT COUNT(DISTINCT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
                             "{COL_NAME}", '[a-z]', 'a'),
                                         '[A-Z]', 'A'),
@@ -334,28 +325,37 @@ CROSS JOIN (
                   )
        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
       WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ') AS distinct_pattern_ct
-  FROM DUAL
+    FROM (
+      SELECT
+    MAX(CASE WHEN rn = 1 THEN pattern END) AS pattern_0,
+    MAX(CASE WHEN rn = 1 THEN ct END)      AS pattern_ct_0,
+    MAX(CASE WHEN rn = 2 THEN pattern END) AS pattern_1,
+    MAX(CASE WHEN rn = 2 THEN ct END)      AS pattern_ct_1,
+    MAX(CASE WHEN rn = 3 THEN pattern END) AS pattern_2,
+    MAX(CASE WHEN rn = 3 THEN ct END)      AS pattern_ct_2,
+    MAX(CASE WHEN rn = 4 THEN pattern END) AS pattern_3,
+    MAX(CASE WHEN rn = 4 THEN ct END)      AS pattern_ct_3,
+    MAX(CASE WHEN rn = 5 THEN pattern END) AS pattern_4,
+    MAX(CASE WHEN rn = 5 THEN ct END)      AS pattern_ct_4
+    FROM ( SELECT pattern,
+                  ct,
+                  ROW_NUMBER() OVER (ORDER BY ct DESC, pattern) AS rn
+             FROM ( SELECT pattern, COUNT(*) AS ct
+                      FROM (SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
+                            "{COL_NAME}", '[a-z]', 'a'),
+                                        '[A-Z]', 'A'),
+                                        '[0-9]', 'N') AS pattern
+                              FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
+                             WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
+                               FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})) BETWEEN 3 and {MAX_PATTERN_LENGTH} ) p
+                     GROUP BY pattern
+                    HAVING pattern > ' ' ) grouped ) ranked
+       WHERE rn <= 5 ) slots
 ) patterns
 -- TG-ENDIF
 -- TG-IF is_A_no_sampling
 CROSS JOIN (
-  SELECT
-    (SELECT SUBSTR(LISTAGG(formatted_pattern, ' | ') WITHIN GROUP (ORDER BY ct DESC), 1, 1000)
-        FROM (
-              SELECT TO_CHAR(COUNT(*)) || ' | ' || pattern AS formatted_pattern,
-                     COUNT(*) AS ct
-                FROM (SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
-                          "{COL_NAME}", '[a-z]', 'a'),
-                                      '[A-Z]', 'A'),
-                                      '[0-9]', 'N') AS pattern
-                         FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
-                        WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                         FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
-              GROUP BY pattern
-              HAVING pattern > ' '
-              ORDER BY COUNT(*) DESC
-              FETCH FIRST 5 ROWS ONLY
-             ) ps) AS top_patterns,
+  SELECT slots.*,
     (SELECT COUNT(DISTINCT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
                             "{COL_NAME}", '[a-z]', 'a'),
                                         '[A-Z]', 'A'),
@@ -363,6 +363,31 @@ CROSS JOIN (
                   )
        FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
       WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ') AS distinct_pattern_ct
-  FROM DUAL
+    FROM (
+      SELECT
+    MAX(CASE WHEN rn = 1 THEN pattern END) AS pattern_0,
+    MAX(CASE WHEN rn = 1 THEN ct END)      AS pattern_ct_0,
+    MAX(CASE WHEN rn = 2 THEN pattern END) AS pattern_1,
+    MAX(CASE WHEN rn = 2 THEN ct END)      AS pattern_ct_1,
+    MAX(CASE WHEN rn = 3 THEN pattern END) AS pattern_2,
+    MAX(CASE WHEN rn = 3 THEN ct END)      AS pattern_ct_2,
+    MAX(CASE WHEN rn = 4 THEN pattern END) AS pattern_3,
+    MAX(CASE WHEN rn = 4 THEN ct END)      AS pattern_ct_3,
+    MAX(CASE WHEN rn = 5 THEN pattern END) AS pattern_4,
+    MAX(CASE WHEN rn = 5 THEN ct END)      AS pattern_ct_4
+    FROM ( SELECT pattern,
+                  ct,
+                  ROW_NUMBER() OVER (ORDER BY ct DESC, pattern) AS rn
+             FROM ( SELECT pattern, COUNT(*) AS ct
+                      FROM (SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
+                            "{COL_NAME}", '[a-z]', 'a'),
+                                        '[A-Z]', 'A'),
+                                        '[0-9]', 'N') AS pattern
+                              FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+                             WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
+                               FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {MAX_PATTERN_LENGTH} ) p
+                     GROUP BY pattern
+                    HAVING pattern > ' ' ) grouped ) ranked
+       WHERE rn <= 5 ) slots
 ) patterns
 -- TG-ENDIF

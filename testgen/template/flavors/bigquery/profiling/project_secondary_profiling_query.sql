@@ -1,3 +1,6 @@
+-- Get Freqs for selected columns
+-- One row per top value, ordered by rank. A trailing row with a NULL value carries the
+-- combined count of the values past the top 10, and how many distinct values it covers.
 WITH counts AS (
   SELECT
     `{COL_NAME}` AS col_val,
@@ -16,40 +19,18 @@ ranked AS (
     ROW_NUMBER() OVER (ORDER BY ct DESC, col_val ASC) AS rn
   FROM counts
 ),
-top10 AS (
-  -- top 10 formatted rows
-  SELECT
-    rn,
-    CONCAT('| ', CAST(col_val AS STRING), ' | ', CAST(ct AS STRING)) AS val
+grouped_vals AS (
+  SELECT CASE WHEN rn <= 10 THEN col_val END AS top_val, ct, rn
   FROM ranked
-  WHERE rn <= 10
-  ORDER BY rn
-),
-others_agg AS (
-  SELECT
-    11 AS rn,
-    CONCAT(
-      '| Other Values (',
-      CAST(COUNT(DISTINCT col_val) AS STRING),
-      ') | ',
-      CAST(SUM(ct) AS STRING)
-    ) AS val,
-    COUNT(*) AS other_row_count
-  FROM ranked
-  WHERE rn > 10
-),
-all_vals AS (
-  SELECT * FROM top10
-  UNION ALL
-  SELECT rn, val FROM others_agg WHERE other_row_count > 0
 )
 SELECT
-  '{PROJECT_CODE}' AS project_code,
-  '{DATA_SCHEMA}'  AS schema_name,
-  '{RUN_DATE}'     AS run_date,
-  '{DATA_TABLE}'   AS table_name,
-  '{COL_NAME}'     AS column_name,
-  (SELECT STRING_AGG(val, '\n' ORDER BY rn) FROM all_vals) AS top_freq_values,
+  top_val AS value,
+  SUM(ct) AS value_ct,
+  MIN(rn) AS value_rank,
+  CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
   (SELECT TO_HEX(MD5(STRING_AGG(CAST(col_val AS STRING), '|' ORDER BY col_val)))
      FROM counts
-  ) AS distinct_value_hash;
+  ) AS distinct_value_hash
+FROM grouped_vals
+GROUP BY top_val
+ORDER BY 3;
