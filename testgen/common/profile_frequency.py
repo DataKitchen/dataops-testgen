@@ -14,8 +14,11 @@ Pattern analysis rides along on the wide per-column result under numbered slot f
 so it is assembled from that single row.
 """
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+LOG = logging.getLogger("testgen")
 
 PATTERN_SLOTS = 5
 """Number of pattern slots the wide per-column query carries."""
@@ -57,11 +60,25 @@ def build_frequent_patterns(row: Mapping[str, Any]) -> dict[str, Any] | None:
 
     Slots are numbered from 0 in rank order; empty slots carry no entry.
     """
-    values = [
-        {"value": _json_text(row[f"{PATTERN_SLOT_PREFIX}{slot}"]), "ct": int(row[f"{PATTERN_SLOT_PREFIX}ct_{slot}"])}
-        for slot in range(PATTERN_SLOTS)
-        if row.get(f"{PATTERN_SLOT_PREFIX}{slot}") is not None
-    ]
+    values = []
+    for slot in range(PATTERN_SLOTS):
+        pattern = row.get(f"{PATTERN_SLOT_PREFIX}{slot}")
+        count = row.get(f"{PATTERN_SLOT_PREFIX}ct_{slot}")
+        if pattern is None and count is None:
+            continue
+        # A slot carries a pattern and its count together. Half a slot means the two were
+        # read separately, so the pair cannot be trusted and neither half is kept.
+        if pattern is None or count is None:
+            LOG.warning(
+                "Discarding pattern slot %s for %s.%s: pattern=%r count=%r",
+                slot,
+                row.get("table_name"),
+                row.get("column_name"),
+                pattern,
+                count,
+            )
+            continue
+        values.append({"value": _json_text(pattern), "ct": int(count)})
     return {"values": values} if values else None
 
 

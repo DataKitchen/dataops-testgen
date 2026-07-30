@@ -21,6 +21,21 @@ WITH target_table AS (
             GROUP BY pattern
            HAVING pattern > ' ' ) ranked
 )
+, pattern_slots AS (
+  SELECT
+         MAX(CASE WHEN rn = 1 THEN pattern END) AS pattern_0,
+         MAX(CASE WHEN rn = 1 THEN ct END)      AS pattern_ct_0,
+         MAX(CASE WHEN rn = 2 THEN pattern END) AS pattern_1,
+         MAX(CASE WHEN rn = 2 THEN ct END)      AS pattern_ct_1,
+         MAX(CASE WHEN rn = 3 THEN pattern END) AS pattern_2,
+         MAX(CASE WHEN rn = 3 THEN ct END)      AS pattern_ct_2,
+         MAX(CASE WHEN rn = 4 THEN pattern END) AS pattern_3,
+         MAX(CASE WHEN rn = 4 THEN ct END)      AS pattern_ct_3,
+         MAX(CASE WHEN rn = 5 THEN pattern END) AS pattern_4,
+         MAX(CASE WHEN rn = 5 THEN ct END)      AS pattern_ct_4
+    FROM ranked_patterns
+   WHERE rn <= 5
+)
 -- TG-ENDIF
 SELECT
   {CONNECTION_ID} AS connection_id,
@@ -135,16 +150,16 @@ SELECT
   NULL AS std_pattern_match,
 -- TG-ENDIF
 -- TG-IF is_type_A
-  (SELECT pattern FROM ranked_patterns WHERE rn = 1) AS pattern_0,
-  (SELECT ct      FROM ranked_patterns WHERE rn = 1) AS pattern_ct_0,
-  (SELECT pattern FROM ranked_patterns WHERE rn = 2) AS pattern_1,
-  (SELECT ct      FROM ranked_patterns WHERE rn = 2) AS pattern_ct_1,
-  (SELECT pattern FROM ranked_patterns WHERE rn = 3) AS pattern_2,
-  (SELECT ct      FROM ranked_patterns WHERE rn = 3) AS pattern_ct_2,
-  (SELECT pattern FROM ranked_patterns WHERE rn = 4) AS pattern_3,
-  (SELECT ct      FROM ranked_patterns WHERE rn = 4) AS pattern_ct_3,
-  (SELECT pattern FROM ranked_patterns WHERE rn = 5) AS pattern_4,
-  (SELECT ct      FROM ranked_patterns WHERE rn = 5) AS pattern_ct_4,
+  MAX(pattern_slots.pattern_0) AS pattern_0,
+  MAX(pattern_slots.pattern_ct_0) AS pattern_ct_0,
+  MAX(pattern_slots.pattern_1) AS pattern_1,
+  MAX(pattern_slots.pattern_ct_1) AS pattern_ct_1,
+  MAX(pattern_slots.pattern_2) AS pattern_2,
+  MAX(pattern_slots.pattern_ct_2) AS pattern_ct_2,
+  MAX(pattern_slots.pattern_3) AS pattern_3,
+  MAX(pattern_slots.pattern_ct_3) AS pattern_ct_3,
+  MAX(pattern_slots.pattern_4) AS pattern_4,
+  MAX(pattern_slots.pattern_ct_4) AS pattern_ct_4,
 -- TG-ENDIF
 -- TG-IF is_type_N
   MIN("{COL_NAME}") AS min_value,
@@ -245,6 +260,9 @@ SELECT
 -- TG-ENDIF
   '{PROFILE_RUN_ID}' AS profile_run_id
   FROM target_table
+-- TG-IF is_type_A
+  CROSS JOIN pattern_slots
+-- TG-ENDIF
 -- TG-IF is_N_sampling
   , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
