@@ -10,10 +10,20 @@ from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
 from testgen.api.deps import db_session, get_authorized_user
-from testgen.api.enums import Disposition, HygieneDisposition, ImpactDimension, IssueLikelihood, PiiRisk, ResultStatus
+from testgen.api.enums import (
+    Disposition,
+    GeneralType,
+    HygieneDisposition,
+    ImpactDimension,
+    IssueLikelihood,
+    PiiFlag,
+    PiiRisk,
+    ResultStatus,
+)
 from testgen.api.runs import (
     get_profiling_run,
     get_test_run,
+    list_profiling_run_columns,
     list_profiling_run_hygiene_issues,
     list_profiling_run_potential_pii,
     list_profiling_runs,
@@ -28,6 +38,7 @@ from testgen.common.models.hygiene_issue import (
     IssueCounts,
     PotentialPiiCounts,
 )
+from testgen.common.models.profile_result import ColumnProfileRow, ColumnSort, ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import ResultStatusCounts, TestResult, TestResultStatus, TestRunResultRow
@@ -1008,4 +1019,227 @@ def test_http_hygiene_404_for_missing_job(_ml, mock_sess, _mp1, _mp2):
 def test_http_pii_404_for_missing_job(_ml, mock_sess, _mp1, _mp2):
     mock_sess.return_value.scalars.return_value.first.return_value = None
     resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/potential-pii")
+    assert resp.status_code == 404
+
+
+# --- list_profiling_run_columns ---
+
+
+def _mock_column_row(**overrides):
+    defaults = {
+        "schema_name": "demo",
+        "table_name": "orders",
+        "column_name": "amount",
+        "general_type": "N",
+        "functional_data_type": "Amount",
+        "db_data_type": "NUMERIC(18,2)",
+        "datatype_suggestion": "DECIMAL",
+        "pii_flag": None,
+        "critical_data_element": False,
+        "record_ct": 1000,
+        "null_value_ct": 3,
+        "distinct_value_ct": 950,
+        "filled_value_ct": 997,
+        "profiling_score": 0.92,
+        "testing_score": 0.87,
+        "definite": 0,
+        "likely": 0,
+        "possible": 0,
+        "high": 0,
+        "moderate": 0,
+        "dismissed": 0,
+    }
+    defaults.update(overrides)
+    return ColumnProfileRow(**defaults)
+
+
+def _column_defaults(**overrides):
+    kwargs = {
+        "table_name": None,
+        "sort": ColumnSort.hygiene_severity,
+        "page": 1,
+        "limit": 20,
+    }
+    kwargs.update(overrides)
+    return kwargs
+
+
+@patch.object(ProfileResult, "list_columns_for_run")
+def test_list_columns_envelope_and_item_shape(mock_list):
+    row = _mock_column_row(
+        pii_flag="A/NAME/full_name",
+        critical_data_element=True,
+        definite=2,
+        likely=1,
+        possible=0,
+        high=3,
+        moderate=4,
+        dismissed=5,
+    )
+    mock_list.return_value = ([row], 7)
+
+    job = _mock_job()
+    result = list_profiling_run_columns(job, **_column_defaults(page=2, limit=5))
+
+    assert result.total == 7
+    assert result.page == 2
+    assert result.limit == 5
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.schema_name == "demo"
+    assert item.table_name == "orders"
+    assert item.column_name == "amount"
+    assert item.general_type == GeneralType.numeric
+    assert item.functional_data_type == "Amount"
+    assert item.db_data_type == "NUMERIC(18,2)"
+    assert item.datatype_suggestion == "DECIMAL"
+    assert item.pii_flag == PiiFlag.high
+    assert item.critical_data_element is True
+    assert item.record_ct == 1000
+    assert item.null_value_ct == 3
+    assert item.distinct_value_ct == 950
+    assert item.filled_value_ct == 997
+    assert item.profiling_score == 0.92
+    assert item.testing_score == 0.87
+    assert item.issue_counts.hygiene_issues.definite == 2
+    assert item.issue_counts.hygiene_issues.likely == 1
+    assert item.issue_counts.hygiene_issues.possible == 0
+    assert item.issue_counts.potential_pii.high == 3
+    assert item.issue_counts.potential_pii.moderate == 4
+    assert item.issue_counts.dismissed == 5
+    # The resolved job's id — not a stray one — reaches the model method.
+    assert mock_list.call_args.args[0] == job.id
+    assert mock_list.call_args.kwargs == {"sort": ColumnSort.hygiene_severity, "page": 2, "limit": 5}
+
+
+@patch.object(ProfileResult, "list_columns_for_run", return_value=([], 0))
+def test_list_columns_empty_envelope(mock_list):
+    job = _mock_job()
+    result = list_profiling_run_columns(job, **_column_defaults())
+    assert result.items == []
+    assert result.total == 0
+    assert result.page == 1
+    assert result.limit == 20
+    assert mock_list.call_args.args[0] == job.id
+
+
+@pytest.mark.parametrize(
+    "db_code,expected",
+    [
+        ("A", GeneralType.alpha),
+        ("N", GeneralType.numeric),
+        ("D", GeneralType.datetime),
+        ("B", GeneralType.boolean),
+        ("T", GeneralType.time),
+        ("X", GeneralType.other),
+        (None, None),
+        ("", None),
+        ("bogus", None),
+    ],
+)
+@patch.object(ProfileResult, "list_columns_for_run")
+def test_list_columns_general_type_mapping(mock_list, db_code, expected):
+    mock_list.return_value = ([_mock_column_row(general_type=db_code)], 1)
+    item = list_profiling_run_columns(_mock_job(), **_column_defaults()).items[0]
+    assert item.general_type == expected
+
+
+@pytest.mark.parametrize(
+    "db_value,expected",
+    [
+        ("A/NAME/full_name", PiiFlag.high),
+        ("B/DEMO/age", PiiFlag.moderate),
+        ("C/CONTACT/city", PiiFlag.low),
+        ("MANUAL", PiiFlag.manual),
+        ("MANUAL/USER", PiiFlag.manual),
+        (None, None),
+        ("", None),
+        ("Z/UNKNOWN/whatever", None),
+    ],
+)
+@patch.object(ProfileResult, "list_columns_for_run")
+def test_list_columns_pii_flag_mapping(mock_list, db_value, expected):
+    mock_list.return_value = ([_mock_column_row(pii_flag=db_value)], 1)
+    item = list_profiling_run_columns(_mock_job(), **_column_defaults()).items[0]
+    assert item.pii_flag == expected
+
+
+@patch.object(ProfileResult, "list_columns_for_run")
+def test_list_columns_default_sort_is_hygiene_severity(mock_list):
+    mock_list.return_value = ([], 0)
+    job = _mock_job()
+    list_profiling_run_columns(job, **_column_defaults())
+    assert mock_list.call_args.args[0] == job.id
+    assert mock_list.call_args.kwargs["sort"] == ColumnSort.hygiene_severity
+
+
+@patch.object(ProfileResult, "list_columns_for_run")
+def test_list_columns_sort_table_propagates(mock_list):
+    mock_list.return_value = ([], 0)
+    job = _mock_job()
+    list_profiling_run_columns(job, **_column_defaults(sort=ColumnSort.table))
+    assert mock_list.call_args.args[0] == job.id
+    assert mock_list.call_args.kwargs["sort"] == ColumnSort.table
+
+
+@patch.object(ProfileResult, "list_columns_for_run", return_value=([], 0))
+def test_list_columns_no_table_filter_when_absent(mock_list):
+    job = _mock_job()
+    list_profiling_run_columns(job, **_column_defaults(table_name=None))
+    # Only the run id positional; no clause.
+    assert mock_list.call_args.args == (job.id,)
+
+
+@patch.object(ProfileResult, "list_columns_for_run", return_value=([], 0))
+def test_list_columns_table_filter_case_sensitive_equality(mock_list):
+    job = _mock_job()
+    list_profiling_run_columns(job, **_column_defaults(table_name="Orders"))
+    assert mock_list.call_args.args[0] == job.id
+    clauses = mock_list.call_args.args[1:]
+    assert len(clauses) == 1
+    sql = str(clauses[0].compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "profile_results.table_name = 'Orders'" in sql
+    # Must not lower-case the comparand.
+    assert "lower" not in sql.lower()
+
+
+# HTTP-level query validation
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(ProfileResult, "list_columns_for_run", return_value=([], 0))
+def test_http_columns_rejects_unknown_sort(_ml, mock_sess, _mock_perm):
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/columns?sort=BOGUS")
+    assert resp.status_code == 422
+    assert resp.json()["detail"][0]["loc"] == ["query", "sort"]
+
+
+@pytest.mark.parametrize("query", ["page=0", "limit=0", "limit=101"])
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(ProfileResult, "list_columns_for_run", return_value=([], 0))
+def test_http_columns_rejects_bad_pagination(_ml, mock_sess, _mock_perm, query):
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/columns?{query}")
+    assert resp.status_code == 422
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(ProfileResult, "list_columns_for_run", return_value=([], 0))
+def test_http_columns_404_when_job_not_found(_ml, mock_sess, _mock_perm):
+    mock_sess.return_value.scalars.return_value.first.return_value = None
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/columns")
+    assert resp.status_code == 404
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=False)
+@patch("testgen.api.deps.get_current_session")
+@patch.object(ProfileResult, "list_columns_for_run", return_value=([], 0))
+def test_http_columns_404_when_no_view_permission(_ml, mock_sess, _mock_perm):
+    """No-view collapses into the same 404 as a missing job — no leak."""
+    mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
+    resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/columns")
     assert resp.status_code == 404

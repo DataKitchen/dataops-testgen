@@ -7,6 +7,7 @@ from testgen.api.deps import db_session, get_authorized_user, has_project_permis
 from testgen.api.enums import (
     DISPOSITION_FROM_DB,
     DISPOSITION_TO_DB,
+    GENERAL_TYPE_FROM_DB,
     HYGIENE_DISPOSITION_FROM_DB,
     HYGIENE_DISPOSITION_TO_DB,
     IMPACT_DIMENSION_FROM_DB,
@@ -22,14 +23,19 @@ from testgen.api.enums import (
     IssueLikelihood,
     PiiRisk,
     ResultStatus,
+    pii_flag_from_db,
 )
 from testgen.api.schemas import (
     ErrorResponse,
+    HygieneIssueCounts,
     HygieneIssueItem,
     HygieneIssueListResponse,
     IssueCounts,
+    PotentialPiiCounts,
     PotentialPiiItem,
     PotentialPiiListResponse,
+    ProfilingColumnItem,
+    ProfilingColumnListResponse,
     ProfilingRunHistoryItem,
     ProfilingRunHistoryResponse,
     ProfilingRunResponse,
@@ -48,6 +54,7 @@ from testgen.common.enums import PiiRisk as DbPiiRisk
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueListRow, HygieneIssueType
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.profile_result import ColumnProfileRow, ColumnSort, ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestRunResultRow
@@ -404,6 +411,86 @@ def list_profiling_run_potential_pii(
     can_view_pii = has_project_permission(user, job.project_code, "view_pii")
     return PotentialPiiListResponse(
         items=[_to_pii_item(row, can_view_pii) for row in rows],
+        page=page,
+        limit=limit,
+        total=total,
+    )
+
+
+def _to_column_item(row: ColumnProfileRow) -> ProfilingColumnItem:
+    return ProfilingColumnItem(
+        schema_name=row.schema_name,
+        table_name=row.table_name,
+        column_name=row.column_name,
+        general_type=GENERAL_TYPE_FROM_DB.get(row.general_type) if row.general_type else None,
+        functional_data_type=row.functional_data_type,
+        db_data_type=row.db_data_type,
+        datatype_suggestion=row.datatype_suggestion,
+        pii_flag=pii_flag_from_db(row.pii_flag),
+        critical_data_element=row.critical_data_element,
+        record_ct=row.record_ct,
+        null_value_ct=row.null_value_ct,
+        distinct_value_ct=row.distinct_value_ct,
+        filled_value_ct=row.filled_value_ct,
+        profiling_score=row.profiling_score,
+        testing_score=row.testing_score,
+        issue_counts=IssueCounts(
+            hygiene_issues=HygieneIssueCounts(
+                definite=row.definite,
+                likely=row.likely,
+                possible=row.possible,
+            ),
+            potential_pii=PotentialPiiCounts(
+                high=row.high,
+                moderate=row.moderate,
+            ),
+            dismissed=row.dismissed,
+        ),
+    )
+
+
+# No PII masking on this endpoint: none of the returned fields are in ``PROFILING_PII_FIELDS``
+# (see ``testgen.common.pii_masking``). Deep per-column stats (``top_freq_values``,
+# ``min_text``/``max_text``, ``min_value``/``max_value``, ``min_date``/``max_date``,
+# distribution buckets) belong to a later column-detail endpoint that will import
+# ``mask_profiling_pii``.
+@router.get(
+    "/profiling-runs/{job_id}/columns",
+    response_model=ProfilingColumnListResponse,
+)
+def list_profiling_run_columns(
+    job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile),  # noqa: B008
+    table_name: str | None = Query(default=None),
+    sort: ColumnSort = Query(default=ColumnSort.hygiene_severity),  # noqa: B008
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """List per-column profiles for a profiling run.
+
+    The default ``hygiene_severity`` sort orders columns worst-first by the tuple
+    ``(definite, likely, possible, high, moderate)`` — a column with any Definite hygiene
+    issue outranks any column with none regardless of lower-severity counts. Use
+    ``sort=table`` for a stable per-table listing (schema, table, column position).
+
+    ``table_name`` is a case-sensitive exact match: source-system casing is preserved.
+
+    ``profiling_score``, ``testing_score``, and ``pii_flag`` on each returned item reflect
+    the column's current values from the catalog — a column that has been re-profiled
+    since the pinned run still reports the latest scores and classification.
+    """
+    clauses = []
+    if table_name is not None:
+        clauses.append(ProfileResult.table_name == table_name)
+
+    rows, total = ProfileResult.list_columns_for_run(
+        job.id,
+        *clauses,
+        sort=sort,
+        page=page,
+        limit=limit,
+    )
+    return ProfilingColumnListResponse(
+        items=[_to_column_item(row) for row in rows],
         page=page,
         limit=limit,
         total=total,
