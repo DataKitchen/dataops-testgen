@@ -34,9 +34,12 @@ def _json_text(value: object) -> str:
 def build_frequent_values(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] | None:
     """Assemble the frequency analysis result set into ``frequent_values``.
 
-    Expects the rows in rank order, each carrying ``value``, ``value_ct`` and
-    ``other_distinct_ct``. The row with a NULL ``value`` summarizes the values past
-    the ones returned individually and becomes the ``other`` key.
+    Each row carries ``value``, ``value_ct``, ``value_rank`` and ``other_distinct_ct``. The row
+    with a NULL ``value`` summarizes the values past the ones returned individually and becomes
+    the ``other`` key.
+
+    Ordering by ``value_rank`` here is what makes rank 1 the most frequent value for every
+    consumer, rather than relying on each flavor's query to return the rows already sorted.
     """
     if not rows:
         return None
@@ -44,8 +47,10 @@ def build_frequent_values(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any] |
     frequent: dict[str, Any] = {
         "values": [
             {"value": _json_text(row["value"]), "ct": int(row["value_ct"])}
-            for row in rows
-            if row["value"] is not None
+            for row in sorted(
+                (row for row in rows if row["value"] is not None),
+                key=lambda row: row["value_rank"],
+            )
         ]
     }
 
@@ -90,7 +95,10 @@ def frequent_entries(frequent: Mapping[str, Any] | None) -> list[tuple[str, int]
 
 
 def format_frequent(frequent: Mapping[str, Any] | str | None) -> str:
-    """Render a frequency analysis field as one ``count | value`` line per entry.
+    """Render a frequency analysis field as one ``value | count`` line per entry.
+
+    Values come first to match ``fn_frequent_display``, so the field reads the same way
+    wherever it is shown.
 
     A field carrying the PII redaction sentinel is passed through, since masking replaces
     the whole value with a string.
@@ -101,9 +109,11 @@ def format_frequent(frequent: Mapping[str, Any] | str | None) -> str:
     if not isinstance(frequent, Mapping):
         return ""
 
-    lines = [f"{count} | {value}" for value, count in frequent_entries(frequent)]
+    lines = [f"{value} | {count}" for value, count in frequent_entries(frequent)]
     if other := frequent.get("other"):
-        lines.append(f"{other['ct']} | {other['distinct_ct']} other values")
+        distinct_ct = other["distinct_ct"]
+        label = "other value" if distinct_ct == 1 else "other values"
+        lines.append(f"{distinct_ct} {label} | {other['ct']}")
     return "\n".join(lines)
 
 

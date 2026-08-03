@@ -20,7 +20,7 @@ profile_anomaly_types:
              fn_frequent_ct(p.frequent_patterns, 2)::NUMERIC / NULLIF(fn_frequent_ct(p.frequent_patterns, 1), 0)::NUMERIC < 0.1
         )
   detail_expression: |-
-    'Patterns: ' || fn_frequent_display(p.frequent_patterns)
+    'Patterns: ' || fn_frequent_ct_value_list(p.frequent_patterns)
   issue_likelihood: Likely
   suggested_action: |-
     Review the values for any data that doesn't conform to the most common pattern and correct any data errors.

@@ -24,13 +24,13 @@ WITH screen
                   WHEN std_pattern_match = 'SSN'
                      AND LOWER(column_name) SIMILAR TO '%(ss|soc|sec)%'                        THEN 'A/ID/SSN'
                   
-                  WHEN fn_frequent_value(frequent_patterns, 1)
+                  WHEN TRIM(fn_frequent_value(frequent_patterns, 1))
                           IN ('NNNNNNNNN', 'NNN-NN-NNNN', 'NNN NN NNNN')
                      AND LEFT(min_text, 1) = '9'
                      AND avg_length BETWEEN 8.8 AND 11.2
                      AND LOWER(column_name) SIMILAR TO '%(tax|tin|fed)%'                       THEN 'A/ID/Tax'
                   
-                  WHEN fn_frequent_value(frequent_patterns, 1)
+                  WHEN TRIM(fn_frequent_value(frequent_patterns, 1))
                           IN ('NNNNNNNNN', 'ANNNNNNNN')
                      AND avg_length BETWEEN 8.8 AND 9.2
                      AND LOWER(column_name) SIMILAR TO '%(passp|pp)%'                          THEN 'A/ID/Passport'
@@ -38,15 +38,15 @@ WITH screen
                   WHEN std_pattern_match = 'CREDIT_CARD'
                      AND LOWER(column_name) SIMILAR TO '%(credit|card|cc|acct|account)%'       THEN 'A/ID/Credit'
                   
-                  WHEN fn_frequent_value(frequent_patterns, 1)
+                  WHEN TRIM(fn_frequent_value(frequent_patterns, 1))
                           ILIKE '[Aa]{6}[A-Za-z0-9]{2}N{0,3}'
-                     AND fn_frequent_value(frequent_patterns, 2)
+                     AND TRIM(fn_frequent_value(frequent_patterns, 2))
                           ILIKE '[Aa]{6}[A-Za-z0-9]{2}N{0,3}'
                      AND avg_length BETWEEN 7.8 AND 11.2
                      AND LOWER(column_name) SIMILAR TO '%(swift|bic)%'                         THEN 'A/ID/Bank'
                   
                   WHEN max_length <= 34
-                     AND UPPER(LEFT(fn_frequent_value(frequent_patterns, 1), 2))
+                     AND UPPER(LEFT(TRIM(fn_frequent_value(frequent_patterns, 1)), 2))
                           = 'AA'
                      AND (column_name ILIKE 'iban%' OR column_name ILIKE '%iban')              THEN 'A/ID/Bank'
                   
@@ -95,7 +95,7 @@ UPDATE profile_results
                          WHEN LOWER(column_name) SIMILAR TO '%(vehicle|vin|auto|car)%'
                             AND avg_length BETWEEN 16 AND 18
                             AND max_length < 20
-                            AND fn_frequent_value(frequent_patterns, 1)
+                            AND TRIM(fn_frequent_value(frequent_patterns, 1))
                                    = 'AAANAAAAANNNNNNNN'                                               THEN 'B/ID/Auto'
                          
                          WHEN LOWER(column_name) SIMILAR TO
@@ -109,7 +109,7 @@ UPDATE profile_results
                          
                          WHEN column_name ILIKE '%rout%'
                             AND avg_length BETWEEN 8.8 AND 11.2
-                            AND fn_frequent_value(frequent_patterns, 1)
+                            AND TRIM(fn_frequent_value(frequent_patterns, 1))
                                    IN ('NNNNNNNNN', 'NNNN-NNNN-N')                                     THEN 'C/ID/Bank'
                          
                          WHEN LOWER(column_name) SIMILAR TO '%(salary|income|wage)%'

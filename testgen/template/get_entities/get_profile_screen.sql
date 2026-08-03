@@ -181,7 +181,7 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Mostly one value'                  AS qualification_test,
-                      'Freq | Value: ' || fn_frequent_display(frequent_values) AS detail
+                      'Value | Freq: ' || fn_frequent_display(frequent_values) AS detail
                  FROM profiling p
                 WHERE (100.0 * fn_frequent_ct(p.frequent_values, 1)::FLOAT /
                        p.value_ct::FLOAT) > 97::FLOAT

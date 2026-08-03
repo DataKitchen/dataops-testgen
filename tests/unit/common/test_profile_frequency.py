@@ -24,9 +24,17 @@ def freq_row(value, value_ct, value_rank, other_distinct_ct=None, distinct_value
 def test_build_frequent_values_keeps_rank_order():
     rows = [freq_row("b", 9, 1), freq_row("a", 4, 2)]
 
-    assert build_frequent_values(rows) == {
-        "values": [{"value": "b", "ct": 9}, {"value": "a", "ct": 4}]
-    }
+    assert build_frequent_values(rows) == {"values": [{"value": "b", "ct": 9}, {"value": "a", "ct": 4}]}
+
+
+def test_build_frequent_values_orders_by_rank_not_by_arrival():
+    rows = [freq_row("c", 1, 3), freq_row("a", 9, 1), freq_row("b", 4, 2)]
+
+    assert build_frequent_values(rows)["values"] == [
+        {"value": "a", "ct": 9},
+        {"value": "b", "ct": 4},
+        {"value": "c", "ct": 1},
+    ]
 
 
 @pytest.mark.parametrize(
@@ -75,17 +83,13 @@ def pattern_row(*pairs, **extra):
 def test_build_frequent_patterns_reads_the_numbered_slots():
     row = pattern_row(("AA-NN", 19), ("aaNNNN", 3))
 
-    assert build_frequent_patterns(row) == {
-        "values": [{"value": "AA-NN", "ct": 19}, {"value": "aaNNNN", "ct": 3}]
-    }
+    assert build_frequent_patterns(row) == {"values": [{"value": "AA-NN", "ct": 19}, {"value": "aaNNNN", "ct": 3}]}
 
 
 def test_build_frequent_patterns_ignores_the_unfilled_trailing_slots():
     row = pattern_row(("AA-NN", 19), ("aa", 2), (None, None), (None, None), (None, None))
 
-    assert build_frequent_patterns(row) == {
-        "values": [{"value": "AA-NN", "ct": 19}, {"value": "aa", "ct": 2}]
-    }
+    assert build_frequent_patterns(row) == {"values": [{"value": "AA-NN", "ct": 19}, {"value": "aa", "ct": 2}]}
 
 
 def test_build_frequent_patterns_without_slots_is_none():
@@ -114,16 +118,22 @@ def test_frequent_entries_of_nothing_is_empty():
     assert frequent_entries(None) == []
 
 
-def test_format_frequent_renders_count_then_value():
+def test_format_frequent_renders_value_then_count():
     frequent = {"values": [{"value": "a", "ct": 2}, {"value": "b", "ct": 1}]}
 
-    assert format_frequent(frequent) == "2 | a\n1 | b"
+    assert format_frequent(frequent) == "a | 2\nb | 1"
 
 
 def test_format_frequent_renders_the_other_bucket_as_a_trailing_line():
     frequent = {"values": [{"value": "a", "ct": 20}], "other": {"distinct_ct": 6, "ct": 9}}
 
-    assert format_frequent(frequent) == "20 | a\n9 | 6 other values"
+    assert format_frequent(frequent) == "a | 20\n6 other values | 9"
+
+
+def test_format_frequent_renders_a_single_other_value_in_the_singular():
+    frequent = {"values": [{"value": "a", "ct": 20}], "other": {"distinct_ct": 1, "ct": 3}}
+
+    assert format_frequent(frequent) == "a | 20\n1 other value | 3"
 
 
 def test_format_frequent_passes_through_the_pii_redaction_sentinel():

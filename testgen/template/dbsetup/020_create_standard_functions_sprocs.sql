@@ -107,7 +107,9 @@ as
 $$
     SELECT STRING_AGG(entry ->> 'value' || ' (' || (entry ->> 'ct') || ')', ', ' ORDER BY rank)
            || CASE WHEN frequent ? 'other'
-                   THEN ', ' || (frequent -> 'other' ->> 'distinct_ct') || ' other values ('
+                   THEN ', ' || (frequent -> 'other' ->> 'distinct_ct')
+                        || CASE WHEN (frequent -> 'other' ->> 'distinct_ct')::BIGINT = 1
+                                THEN ' other value (' ELSE ' other values (' END
                         || (frequent -> 'other' ->> 'ct') || ')'
                    ELSE '' END
       FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB))
@@ -210,6 +212,23 @@ IMMUTABLE
 as
 $$
     SELECT STRING_AGG(entry ->> 'value', '|' ORDER BY rank)
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB))
+           WITH ORDINALITY AS t(entry, rank)
+     -- The lists this feeds are split back apart on the separator. A value holding one
+     -- cannot equal any entry of a list that uses it as a separator, so leaving the value
+     -- out keeps it from splitting into parts that can match on their own.
+     WHERE POSITION('|' IN (entry ->> 'value')) = 0
+$$;
+
+-- Counts and values alternating, pipe-joined in rank order. Hygiene issue detail built with this
+-- is parsed back by field position: the source-data lookups for Column Pattern Mismatch read
+-- offsets 4, 6, 8 and 10 to recover the patterns that diverge from the most common one.
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_ct_value_list(frequent JSONB) returns VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT LEFT(STRING_AGG((entry ->> 'ct') || ' | ' || (entry ->> 'value'), ' | ' ORDER BY rank), 1000)
       FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB))
            WITH ORDINALITY AS t(entry, rank)
 $$;
