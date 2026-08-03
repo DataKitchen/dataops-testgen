@@ -3,18 +3,33 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 
-from testgen.api.deps import db_session, resolve_job, resolve_table_group
+from testgen.api.deps import db_session, get_authorized_user, has_project_permission, resolve_job, resolve_table_group
 from testgen.api.enums import (
     DISPOSITION_FROM_DB,
     DISPOSITION_TO_DB,
+    HYGIENE_DISPOSITION_FROM_DB,
+    HYGIENE_DISPOSITION_TO_DB,
+    IMPACT_DIMENSION_FROM_DB,
+    LIKELIHOOD_FROM_DB,
+    LIKELIHOOD_TO_DB,
+    PII_RISK_FROM_DB,
+    PII_RISK_TO_DB,
     RESULT_STATUS_FROM_DB,
     RESULT_STATUS_TO_DB,
     Disposition,
+    HygieneDisposition,
+    ImpactDimension,
+    IssueLikelihood,
+    PiiRisk,
     ResultStatus,
 )
 from testgen.api.schemas import (
     ErrorResponse,
+    HygieneIssueItem,
+    HygieneIssueListResponse,
     IssueCounts,
+    PotentialPiiItem,
+    PotentialPiiListResponse,
     ProfilingRunHistoryItem,
     ProfilingRunHistoryResponse,
     ProfilingRunResponse,
@@ -26,15 +41,20 @@ from testgen.api.schemas import (
     TestRunResult,
 )
 from testgen.common.enums import Disposition as DbDisposition
+from testgen.common.enums import ImpactDimension as DbImpactDimension
+from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
 from testgen.common.enums import JobKey, JobStatus
+from testgen.common.enums import PiiRisk as DbPiiRisk
 from testgen.common.models import get_current_session
-from testgen.common.models.hygiene_issue import HygieneIssue
+from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueListRow, HygieneIssueType
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_result import TestResult, TestRunResultRow
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.models.user import User
+from testgen.common.pii_masking import PII_REDACTED
 
 _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
@@ -223,6 +243,167 @@ def list_profiling_runs(
     counts_by_run = HygieneIssue.count_for_runs([row.job_execution_id for row in rows])
     return ProfilingRunHistoryResponse(
         items=[_profiling_history_item(row, counts_by_run[row.job_execution_id]) for row in rows],
+        page=page,
+        limit=limit,
+        total=total,
+    )
+
+
+def _hygiene_disposition_clauses(disposition: HygieneDisposition | None):
+    """WHERE clauses for the hygiene-issue disposition filter.
+
+    Hygiene issues COALESCE NULL disposition to Confirmed, so omitting the filter
+    or passing ``confirmed`` both return rows whose stored disposition is
+    Confirmed or NULL. Explicit ``dismissed`` / ``muted`` match the stored DB
+    value directly.
+    """
+    if disposition is None or disposition == HygieneDisposition.confirmed:
+        return [or_(HygieneIssue.disposition.is_(None), HygieneIssue.disposition == DbDisposition.CONFIRMED.value)]
+    return [HygieneIssue.disposition == HYGIENE_DISPOSITION_TO_DB[disposition].value]
+
+
+def _hygiene_disposition_from_db(value: str | None) -> HygieneDisposition:
+    """Render a stored disposition through the hygiene API enum.
+
+    NULL and unmapped values render as ``confirmed`` to mirror the COALESCE default
+    used by every hygiene read path — one odd row cannot fail serialization.
+    """
+    if not value:
+        return HygieneDisposition.confirmed
+    try:
+        return HYGIENE_DISPOSITION_FROM_DB[DbDisposition(value)]
+    except (ValueError, KeyError):
+        return HygieneDisposition.confirmed
+
+
+def _impact_dimension_from_db(value: str | None) -> ImpactDimension | None:
+    if not value:
+        return None
+    try:
+        return IMPACT_DIMENSION_FROM_DB[DbImpactDimension(value)]
+    except (ValueError, KeyError):
+        return None
+
+
+def _likelihood_from_db(value: str | None) -> IssueLikelihood | None:
+    if not value:
+        return None
+    try:
+        return LIKELIHOOD_FROM_DB[DbIssueLikelihood(value)]
+    except (ValueError, KeyError):
+        return None
+
+
+def _pii_risk_from_db(value: str | None) -> PiiRisk | None:
+    if not value:
+        return None
+    try:
+        return PII_RISK_FROM_DB[DbPiiRisk(value)]
+    except (ValueError, KeyError):
+        return None
+
+
+def _redact_detail(row: HygieneIssueListRow, can_view_pii: bool) -> str:
+    """Redact ``detail`` to ``PII_REDACTED`` when the caller lacks ``view_pii`` and
+    the row is PII-flagged. Matches the triad check used across MCP + UI."""
+    if not can_view_pii and row.detail_redactable and row.pii_flag:
+        return PII_REDACTED
+    return row.detail
+
+
+def _to_hygiene_item(row: HygieneIssueListRow, can_view_pii: bool) -> HygieneIssueItem:
+    return HygieneIssueItem(
+        id=row.id,
+        issue_type=row.issue_type_code,
+        schema_name=row.schema_name,
+        table_name=row.table_name,
+        column_name=row.column_name,
+        likelihood=_likelihood_from_db(row.priority),
+        impact_dimension=_impact_dimension_from_db(row.impact_dimension),
+        detail=_redact_detail(row, can_view_pii),
+        disposition=_hygiene_disposition_from_db(row.disposition),
+    )
+
+
+def _to_pii_item(row: HygieneIssueListRow, can_view_pii: bool) -> PotentialPiiItem:
+    return PotentialPiiItem(
+        id=row.id,
+        issue_type=row.issue_type_code,
+        schema_name=row.schema_name,
+        table_name=row.table_name,
+        column_name=row.column_name,
+        pii_risk=_pii_risk_from_db(row.priority),
+        detail=_redact_detail(row, can_view_pii),
+        disposition=_hygiene_disposition_from_db(row.disposition),
+    )
+
+
+@router.get(
+    "/profiling-runs/{job_id}/hygiene-issues",
+    response_model=HygieneIssueListResponse,
+)
+def list_profiling_run_hygiene_issues(
+    job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile),  # noqa: B008
+    user: User = Depends(get_authorized_user),  # noqa: B008
+    issue_type: str | None = Query(default=None),
+    likelihood: IssueLikelihood | None = Query(default=None),  # noqa: B008
+    disposition: HygieneDisposition | None = Query(default=None),  # noqa: B008
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """List data-quality hygiene issues for a profiling run.
+
+    Excludes Potential PII findings, which are listed by
+    ``/profiling-runs/{job_id}/potential-pii``. Omitting ``disposition``
+    returns confirmed issues; pass ``dismissed`` or ``muted`` to filter to
+    those states. Callers without ``view_pii`` on the run's project see
+    ``[PII Redacted]`` in ``detail`` for PII-flagged rows.
+    """
+    clauses = [HygieneIssueType.likelihood != DbIssueLikelihood.POTENTIAL_PII.value]
+    if issue_type:
+        clauses.append(HygieneIssue.type_id == issue_type)
+    if likelihood:
+        clauses.append(HygieneIssueType.likelihood == LIKELIHOOD_TO_DB[likelihood].value)
+    clauses.extend(_hygiene_disposition_clauses(disposition))
+
+    rows, total = HygieneIssue.list_for_run(job.id, *clauses, page=page, limit=limit)
+    can_view_pii = has_project_permission(user, job.project_code, "view_pii")
+    return HygieneIssueListResponse(
+        items=[_to_hygiene_item(row, can_view_pii) for row in rows],
+        page=page,
+        limit=limit,
+        total=total,
+    )
+
+
+@router.get(
+    "/profiling-runs/{job_id}/potential-pii",
+    response_model=PotentialPiiListResponse,
+)
+def list_profiling_run_potential_pii(
+    job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile),  # noqa: B008
+    user: User = Depends(get_authorized_user),  # noqa: B008
+    pii_risk: PiiRisk | None = Query(default=None),  # noqa: B008
+    disposition: HygieneDisposition | None = Query(default=None),  # noqa: B008
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    """List Potential PII findings for a profiling run.
+
+    Companion to ``/profiling-runs/{job_id}/hygiene-issues``. Omitting
+    ``disposition`` returns confirmed findings; pass ``dismissed`` or
+    ``muted`` to filter to those states. Callers without ``view_pii`` on
+    the run's project see ``[PII Redacted]`` in ``detail``.
+    """
+    clauses = [HygieneIssueType.likelihood == DbIssueLikelihood.POTENTIAL_PII.value]
+    if pii_risk:
+        clauses.append(HygieneIssue.priority == PII_RISK_TO_DB[pii_risk].value)
+    clauses.extend(_hygiene_disposition_clauses(disposition))
+
+    rows, total = HygieneIssue.list_for_run(job.id, *clauses, page=page, limit=limit)
+    can_view_pii = has_project_permission(user, job.project_code, "view_pii")
+    return PotentialPiiListResponse(
+        items=[_to_pii_item(row, can_view_pii) for row in rows],
         page=page,
         limit=limit,
         total=total,

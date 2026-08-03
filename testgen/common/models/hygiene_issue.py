@@ -64,6 +64,7 @@ class HygieneIssueListRow:
 
     id: UUID
     project_code: str
+    issue_type_code: str
     issue_type_name: str
     schema_name: str
     table_name: str
@@ -332,6 +333,7 @@ class HygieneIssue(Entity):
             select(
                 cls.id.label("id"),
                 cls.project_code.label("project_code"),
+                HygieneIssueType.id.label("issue_type_code"),
                 HygieneIssueType.name.label("issue_type_name"),
                 cls.schema_name.label("schema_name"),
                 cls.table_name.label("table_name"),
