@@ -9,6 +9,7 @@ profile_anomaly_types:
     p.pii_flag > ''
   detail_expression: |-
     'Risk: ' || CASE LEFT(p.pii_flag, 1) WHEN 'A' THEN 'HIGH' WHEN 'B' THEN 'MODERATE' WHEN 'C' THEN 'LOW' END || ', PII Type: ' || SUBSTRING(p.pii_flag, 3)
+  detail_redactable: true
   issue_likelihood: Potential PII
   suggested_action: |-
     PII may require steps to ensure data security and compliance with relevant privacy regulations and legal requirements. You may have to classify and inventory PII, implement appropriate access controls, encrypt data, and monitor for unauthorized access. Your organization might be required to update privacy policies and train staff on data protection practices. Note that PII that is lower-risk in isolation might be high-risk in conjunction with other data.

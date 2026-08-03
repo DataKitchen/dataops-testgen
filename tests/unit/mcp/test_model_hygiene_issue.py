@@ -41,6 +41,7 @@ def _list_row_mapping(**overrides):
     base = {
         "id": uuid4(),
         "project_code": "demo",
+        "issue_type_code": "non_standard_blank_values",
         "issue_type_name": "Non-Standard Blank Values",
         "schema_name": "demo",
         "table_name": "orders",
@@ -59,6 +60,7 @@ def _list_row_mapping(**overrides):
 
 def _search_row_mapping(**overrides):
     base = _list_row_mapping()
+    base.pop("issue_type_code", None)
     base.update({
         "table_groups_name": "default",
         "job_execution_id": uuid4(),
@@ -70,6 +72,7 @@ def _search_row_mapping(**overrides):
 
 def _detail_row_mapping(**overrides):
     base = _list_row_mapping()
+    base.pop("issue_type_code", None)
     base.update({
         "type_description": "type description",
         "suggested_action": "suggested action",
