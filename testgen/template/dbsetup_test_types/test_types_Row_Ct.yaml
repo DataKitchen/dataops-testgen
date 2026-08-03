@@ -93,14 +93,6 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5024'
-    test_type: Row_Ct
-    sql_flavor: trino
-    measure: |-
-      COUNT(*)
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8024'
     test_type: Row_Ct
     sql_flavor: oracle

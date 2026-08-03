@@ -97,14 +97,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5034'
-    test_type: Valid_US_Zip
-    sql_flavor: trino
-    measure: |-
-      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') NOT IN ('99999', '999999999', '99999-9999') THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8034'
     test_type: Valid_US_Zip
     sql_flavor: oracle

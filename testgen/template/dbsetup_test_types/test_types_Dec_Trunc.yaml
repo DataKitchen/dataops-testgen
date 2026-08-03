@@ -98,14 +98,6 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5006'
-    test_type: Dec_Trunc
-    sql_flavor: trino
-    measure: |-
-      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8006'
     test_type: Dec_Trunc
     sql_flavor: oracle

@@ -97,14 +97,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5016'
-    test_type: Min_Val
-    sql_flavor: trino
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < {BASELINE_VALUE} - 1e-6 THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8016'
     test_type: Min_Val
     sql_flavor: oracle

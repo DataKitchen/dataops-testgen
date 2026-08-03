@@ -99,14 +99,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5036'
-    test_type: Valid_Characters
-    sql_flavor: trino
-    measure: |-
-      SUM(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8203) || CHR(65279) || CHR(8239) || CHR(8201) || CHR(12288) || CHR(8204), 'XXXXXXX') <> {COLUMN_NAME} OR {COLUMN_NAME} LIKE ' %' OR {COLUMN_NAME} LIKE '''%''' OR {COLUMN_NAME} LIKE '"%"' THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8036'
     test_type: Valid_Characters
     sql_flavor: oracle

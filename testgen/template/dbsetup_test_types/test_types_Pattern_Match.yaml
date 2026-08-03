@@ -97,14 +97,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5021'
-    test_type: Pattern_Match
-    sql_flavor: trino
-    measure: |-
-      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CASE WHEN REGEXP_LIKE(NULLIF({COLUMN_NAME}, '') , '{BASELINE_VALUE}') = TRUE THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8021'
     test_type: Pattern_Match
     sql_flavor: oracle

@@ -99,14 +99,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5022'
-    test_type: Recency
-    sql_flavor: trino
-    measure: |-
-      DATE_DIFF('day', MAX({COLUMN_NAME}), CAST('{RUN_DATE}' AS DATE))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8022'
     test_type: Recency
     sql_flavor: oracle

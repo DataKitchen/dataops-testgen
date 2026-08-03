@@ -98,14 +98,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5035'
-    test_type: Valid_US_Zip3
-    sql_flavor: trino
-    measure: |-
-      SUM(CASE WHEN TRANSLATE({COLUMN_NAME},'012345678','999999999') <> '999' THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8035'
     test_type: Valid_US_Zip3
     sql_flavor: oracle

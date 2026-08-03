@@ -98,14 +98,6 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5026'
-    test_type: Street_Addr_Pattern
-    sql_flavor: trino
-    measure: |-
-      CAST(100.0*SUM(CASE WHEN REGEXP_LIKE({COLUMN_NAME} , '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$') = TRUE THEN 1 ELSE 0 END) AS REAL )/ CAST(COUNT({COLUMN_NAME}) AS REAL)
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8026'
     test_type: Street_Addr_Pattern
     sql_flavor: oracle

@@ -97,14 +97,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5015'
-    test_type: Min_Date
-    sql_flavor: trino
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} < CAST('{BASELINE_VALUE}' AS DATE) THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8015'
     test_type: Min_Date
     sql_flavor: oracle

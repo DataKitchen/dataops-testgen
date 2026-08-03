@@ -97,14 +97,6 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5001'
-    test_type: Alpha_Trunc
-    sql_flavor: trino
-    measure: |-
-      MAX(LENGTH({COLUMN_NAME}))
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8001'
     test_type: Alpha_Trunc
     sql_flavor: oracle

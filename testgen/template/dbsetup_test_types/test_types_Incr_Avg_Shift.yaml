@@ -99,14 +99,6 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5012'
-    test_type: Incr_Avg_Shift
-    sql_flavor: trino
-    measure: |-
-      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(CAST(COUNT({COLUMN_NAME}) AS REAL) - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8012'
     test_type: Incr_Avg_Shift
     sql_flavor: oracle
