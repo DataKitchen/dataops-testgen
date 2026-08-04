@@ -7,7 +7,7 @@ from testgen.common.models import get_current_session
 PII_REDACTED = "[PII Redacted]"
 
 PROFILING_PII_FIELDS = (
-    "top_freq_values", "min_text", "max_text",
+    "frequent_values", "min_text", "max_text",
     "min_value", "min_value_over_0", "max_value",
     "min_date", "max_date",
 )

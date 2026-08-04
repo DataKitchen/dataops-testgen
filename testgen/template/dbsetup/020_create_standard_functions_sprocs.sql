@@ -34,22 +34,86 @@ $$
 $$;
 
 
-CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_parsefreq(top_freq_values VARCHAR(1000), rowno INTEGER, colno INTEGER) returns VARCHAR(1000)
+-- Accessors for the frequency analysis fields on profile_results
+-- (frequent_values, frequent_patterns). Ranks are 1-based, most frequent first.
+
+DROP FUNCTION IF EXISTS {SCHEMA_NAME}.fn_parsefreq(VARCHAR, INTEGER, INTEGER);
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_value(frequent JSONB, rank INTEGER) returns VARCHAR
 LANGUAGE SQL
-STABLE
+IMMUTABLE
 as
 $$
-    WITH first AS
-    (
-        SELECT SPLIT_PART(top_freq_values, CHR(10), rowno) AS first_row
-    )
-    SELECT
-        CASE
-            WHEN colno = 1 THEN CAST(TRIM(LEADING '|' FROM SUBSTRING(first_row, POSITION('|' IN first_row), LENGTH(first_row) - POSITION('|' IN REVERSE(first_row)))) AS VARCHAR)
-            WHEN colno = 2 THEN CAST(TRIM(SUBSTRING(first_row, LENGTH(first_row) - POSITION('|' IN REVERSE(first_row)) + 2)) AS VARCHAR)
-            ELSE NULL
-            END
-    FROM first
+    SELECT frequent -> 'values' -> (rank - 1) ->> 'value'
+$$;
+
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_ct(frequent JSONB, rank INTEGER) returns BIGINT
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT (frequent -> 'values' -> (rank - 1) ->> 'ct')::BIGINT
+$$;
+
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_size(frequent JSONB) returns INTEGER
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT JSONB_ARRAY_LENGTH(COALESCE(frequent -> 'values', '[]'::JSONB))
+$$;
+
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_values(frequent JSONB) returns SETOF VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT entry ->> 'value'
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB)) AS t(entry)
+$$;
+
+
+-- Case-insensitive. Matches value as a LIKE pattern, so '%x%' tests for a value
+-- containing x. Use fn_frequent_like where case carries meaning, as it does in patterns.
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_has(frequent JSONB, value VARCHAR) returns BOOLEAN
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT EXISTS (SELECT 1
+                     FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB)) AS t(entry)
+                    WHERE entry ->> 'value' ILIKE value)
+$$;
+
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_like(frequent JSONB, pattern VARCHAR) returns BOOLEAN
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT EXISTS (SELECT 1
+                     FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB)) AS t(entry)
+                    WHERE entry ->> 'value' LIKE pattern)
+$$;
+
+
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_display(frequent JSONB) returns VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT STRING_AGG(entry ->> 'value' || ' (' || (entry ->> 'ct') || ')', ', ' ORDER BY rank)
+           || CASE WHEN frequent ? 'other'
+                   THEN ', ' || (frequent -> 'other' ->> 'distinct_ct')
+                        || CASE WHEN (frequent -> 'other' ->> 'distinct_ct')::BIGINT = 1
+                                THEN ' other value (' ELSE ' other values (' END
+                        || (frequent -> 'other' ->> 'ct') || ')'
+                   ELSE '' END
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB))
+           WITH ORDINALITY AS t(entry, rank)
 $$;
 
 
@@ -141,14 +205,33 @@ FROM (
 $$ LANGUAGE sql;
 
 
-CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_extract_top_values(input_string TEXT)
-RETURNS TEXT AS $$
-SELECT string_agg(trim(split_part(value, '|', 2)), '|') AS values_only
-FROM (
-  SELECT unnest(regexp_split_to_array(input_string, E'\n')) AS value
-) AS t
-WHERE trim(value) <> ''
-$$ LANGUAGE sql;
+-- Values only, pipe-joined in rank order, for the delimited-set helpers above.
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_value_list(frequent JSONB) returns VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT STRING_AGG(entry ->> 'value', '|' ORDER BY rank)
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB))
+           WITH ORDINALITY AS t(entry, rank)
+     -- The lists this feeds are split back apart on the separator. A value holding one
+     -- cannot equal any entry of a list that uses it as a separator, so leaving the value
+     -- out keeps it from splitting into parts that can match on their own.
+     WHERE POSITION('|' IN (entry ->> 'value')) = 0
+$$;
+
+-- Counts and values alternating, pipe-joined in rank order. Hygiene issue detail built with this
+-- is parsed back by field position: the source-data lookups for Column Pattern Mismatch read
+-- offsets 4, 6, 8 and 10 to recover the patterns that diverge from the most common one.
+CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_frequent_ct_value_list(frequent JSONB) returns VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+as
+$$
+    SELECT LEFT(STRING_AGG((entry ->> 'ct') || ' | ' || (entry ->> 'value'), ' | ' ORDER BY rank), 1000)
+      FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent -> 'values', '[]'::JSONB))
+           WITH ORDINALITY AS t(entry, rank)
+$$;
 
 -- ==============================================================================
 -- |   Scoring Prevalence calculation functions

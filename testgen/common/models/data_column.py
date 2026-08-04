@@ -175,8 +175,8 @@ class ColumnProfileDetail(EntityMinimal):
     avg_length: float | None
     min_text: str | None
     max_text: str | None
-    top_freq_values: str | None
-    top_patterns: str | None
+    frequent_values: dict | None
+    frequent_patterns: dict | None
     distinct_std_value_ct: int | None
     distinct_pattern_ct: int | None
     std_pattern_match: str | None
@@ -522,8 +522,8 @@ class DataColumnChars(Entity):
                 ProfileResult.avg_length,
                 ProfileResult.min_text,
                 ProfileResult.max_text,
-                ProfileResult.top_freq_values,
-                ProfileResult.top_patterns,
+                ProfileResult.frequent_values,
+                ProfileResult.frequent_patterns,
                 ProfileResult.distinct_std_value_ct,
                 ProfileResult.distinct_pattern_ct,
                 ProfileResult.std_pattern_match,

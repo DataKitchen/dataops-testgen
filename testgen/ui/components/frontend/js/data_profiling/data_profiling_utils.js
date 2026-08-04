@@ -115,8 +115,8 @@
  * @property {number} distinct_std_value_ct
  * @property {number} distinct_pattern_ct
  * @property {'STREET_ADDR' | 'STATE_USA' | 'PHONE_USA' | 'EMAIL' | 'ZIP_USA' | 'FILE_NAME' | 'CREDIT_CARD' | 'DELIMITED_DATA' | 'SSN'} std_pattern_match
- * @property {string} top_freq_values
- * @property {string} top_patterns
+ * @property {FrequencyAnalysis} frequent_values
+ * @property {FrequencyAnalysis} frequent_patterns
  * * Numeric
  * @property {number} min_value
  * @property {number} min_value_over_0
@@ -201,6 +201,25 @@ import van from '/app/static/js/van.min.js';
 import { Link } from '/app/static/js/components/link.js';
 import { formatTimestamp } from '/app/static/js/display_utils.js';
 
+/**
+ * @typedef FrequencyAnalysis
+ * @type {object}
+ * @property {{value: string, ct: number}[]} values
+ * @property {{distinct_ct: number, ct: number}?} other
+ */
+
+/**
+ * @param {FrequencyAnalysis} frequent
+ * @returns {{value: string, count: number}[]}
+ */
+const frequencyItems = (frequent) => {
+    const items = (frequent?.values ?? []).map((entry) => ({ value: entry.value, count: entry.ct }));
+    if (frequent?.other) {
+        items.push({ value: `Other values (${frequent.other.distinct_ct})`, count: frequent.other.ct });
+    }
+    return items;
+};
+
 const { span, b } = van.tags;
 
 const TABLE_ICON = { icon: 'table' };
@@ -264,4 +283,4 @@ const LatestProfilingTime = (/** @type Properties */ props, /** @type Table | Co
     );
 }
 
-export { TABLE_ICON, getColumnIcon, LatestProfilingTime };
+export { TABLE_ICON, getColumnIcon, LatestProfilingTime, frequencyItems };

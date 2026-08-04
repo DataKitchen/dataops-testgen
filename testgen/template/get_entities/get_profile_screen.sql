@@ -106,7 +106,7 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Pattern Inconsistency'       AS qualification_test,
-                      'Pattern: ' || p.top_patterns AS detail
+                      'Pattern: ' || fn_frequent_display(p.frequent_patterns) AS detail
                  FROM profiling p
                       LEFT JOIN mults m
                                 ON p.project_code = m.project_code
@@ -181,11 +181,11 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Mostly one value'                  AS qualification_test,
-                      'Freq | Value: ' || top_freq_values AS detail
+                      'Value | Freq: ' || fn_frequent_display(frequent_values) AS detail
                  FROM profiling p
-                WHERE (100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT /
+                WHERE (100.0 * fn_frequent_ct(p.frequent_values, 1)::FLOAT /
                        p.value_ct::FLOAT) > 97::FLOAT
-                  AND (100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT /
+                  AND (100.0 * fn_frequent_ct(p.frequent_values, 1)::FLOAT /
                        p.value_ct::FLOAT) < 100::FLOAT
                 UNION ALL
                SELECT p.schema_name,
@@ -193,24 +193,23 @@ WITH
                       p.column_name,
                       p.column_type,
                       'Too many boolean values'         AS qualification_test,
-                      'Top Freq: ' || p.top_freq_values AS detail
+                      'Top Freq: ' || fn_frequent_display(p.frequent_values) AS detail
                  FROM profiling p
                 WHERE p.general_type = 'A'
                   AND p.distinct_value_ct >= 3
                   AND p.distinct_value_ct <= 6
-                  AND (LOWER(p.top_freq_values) ILIKE '%| true |%' AND
-                       LOWER(p.top_freq_values) ILIKE '%| false |%' OR
-                       LOWER(p.top_freq_values) ILIKE '%| yes |&' AND LOWER(p.top_freq_values) ILIKE '%| no |&')
+                  AND (    fn_frequent_has(p.frequent_values, 'true') AND fn_frequent_has(p.frequent_values, 'false')
+                    OR fn_frequent_has(p.frequent_values, 'yes')  AND fn_frequent_has(p.frequent_values, 'no'))
                 UNION ALL
                SELECT p.schema_name,
                       p.table_name,
                       p.column_name,
                       p.column_type,
                       'Potential Duplicates'            AS qualification_test,
-                      'Top Freq: ' || p.top_freq_values AS detail
+                      'Top Freq: ' || fn_frequent_display(p.frequent_values) AS detail
                  FROM profiling p
                 WHERE p.distinct_value_ct > 1000
-                  AND fn_parsefreq(p.top_freq_values, 1, 2)::BIGINT BETWEEN 2 AND 4
+                  AND fn_frequent_ct(p.frequent_values, 1) BETWEEN 2 AND 4
                 UNION ALL
                SELECT p.schema_name,
                       p.table_name,

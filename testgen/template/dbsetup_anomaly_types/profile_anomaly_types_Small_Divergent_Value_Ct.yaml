@@ -6,19 +6,19 @@ profile_anomaly_types:
   anomaly_description: |-
     Under 3% of values in this column were found to be different from the most common value. This could indicate a data error.
   anomaly_criteria: |-
-    functional_data_type <> 'Boolean' AND (100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT /
+    functional_data_type <> 'Boolean' AND (100.0 * fn_frequent_ct(p.frequent_values, 1)::FLOAT /
             p.value_ct::FLOAT) > 97::FLOAT
-       AND (100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT /
+       AND (100.0 * fn_frequent_ct(p.frequent_values, 1)::FLOAT /
             NULLIF(p.value_ct, 0)::FLOAT) < 100::FLOAT
   detail_expression: |-
-    'Single Value Pct: ' || ROUND(100.0 * fn_parsefreq(p.top_freq_values, 1, 2)::FLOAT
+    'Single Value Pct: ' || ROUND(100.0 * fn_frequent_ct(p.frequent_values, 1)::FLOAT
                                        / NULLIF(p.value_ct, 0)::FLOAT)::VARCHAR(40)
-              || ', Value | Freq: ' || top_freq_values
+              || ', Value | Freq: ' || fn_frequent_display(p.frequent_values)
   issue_likelihood: Possible
   suggested_action: |-
     Review your source data and follow-up with data owners to determine whether this data needs to be corrected.
   dq_score_prevalence_formula: |-
-    (p.record_ct - fn_parsefreq(p.top_freq_values, 1, 2)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
+    (p.record_ct - fn_frequent_ct(p.frequent_values, 1)::BIGINT)::FLOAT/NULLIF(p.record_ct, 0)::FLOAT
   dq_score_risk_factor: '0.33'
   dq_dimension: Validity
   impact_dimension: Regularity

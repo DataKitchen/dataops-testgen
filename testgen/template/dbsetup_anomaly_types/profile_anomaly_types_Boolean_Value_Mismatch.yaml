@@ -7,15 +7,15 @@ profile_anomaly_types:
     \ but unexpected values were found. This could indicate inconsistent coding for\
     \ the same intended values, potentially leading to downstream errors or inconsistent\
     \ business logic.  "
-  anomaly_criteria: "(distinct_value_ct > 1 AND\n\t\t     ((lower(top_freq_values)\
-    \ ILIKE '| true |%' OR lower(top_freq_values) ILIKE '| false |%') AND NOT (lower(top_freq_values)\
-    \ ILIKE '%| true |%' AND lower(top_freq_values) ILIKE '%| false |%'))\n\t\t  OR\
-    \ ((lower(top_freq_values) ILIKE '| yes |%'  OR lower(top_freq_values) ILIKE '|\
-    \ no |%'   ) AND NOT (lower(top_freq_values) ILIKE '%| yes |%'  AND lower(top_freq_values)\
-    \ ILIKE '%| no |%')) )"
+  anomaly_criteria: |-
+    distinct_value_ct > 1
+       AND ( (    (fn_frequent_value(p.frequent_values, 1) ILIKE 'true' OR fn_frequent_value(p.frequent_values, 1) ILIKE 'false')
+              AND NOT (fn_frequent_has(p.frequent_values, 'true') AND fn_frequent_has(p.frequent_values, 'false')) )
+          OR (    (fn_frequent_value(p.frequent_values, 1) ILIKE 'yes' OR fn_frequent_value(p.frequent_values, 1) ILIKE 'no')
+              AND NOT (fn_frequent_has(p.frequent_values, 'yes') AND fn_frequent_has(p.frequent_values, 'no')) ) )
   detail_expression: |-
-    CASE WHEN p.top_freq_values IS NULL THEN 'Min: ' || p.min_text || ', Max: ' || p.max_text
-                ELSE 'Top Freq: ' || p.top_freq_values END
+    CASE WHEN p.frequent_values IS NULL THEN 'Min: ' || p.min_text || ', Max: ' || p.max_text
+                ELSE 'Top Freq: ' || fn_frequent_display(p.frequent_values) END
   detail_redactable: true
   issue_likelihood: Likely
   suggested_action: "Review your source data and follow-up with data owners to determine\

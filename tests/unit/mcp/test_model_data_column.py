@@ -60,8 +60,8 @@ def _detail_row(**overrides) -> dict:
         "avg_length": 12.4,
         "min_text": "Aaron",
         "max_text": "Zoey",
-        "top_freq_values": "| Mary | 12\n| John | 10",
-        "top_patterns": "10 | A(5) | 8 | A(6)",
+        "frequent_values": {"values": [{"value": "Mary", "ct": 12}, {"value": "John", "ct": 10}]},
+        "frequent_patterns": {"values": [{"value": "A(5)", "ct": 10}, {"value": "A(6)", "ct": 8}]},
         "distinct_std_value_ct": 250,
         "distinct_pattern_ct": 35,
         "std_pattern_match": None,
@@ -168,8 +168,8 @@ def test_get_column_detail_numeric_column_carries_numeric_fields(session_mock):
         # Alpha fields cleared for realism
         min_text=None,
         max_text=None,
-        top_freq_values=None,
-        top_patterns=None,
+        frequent_values=None,
+        frequent_patterns=None,
     )
     session_mock.return_value.execute.return_value.mappings.return_value.first.return_value = row
 

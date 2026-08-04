@@ -7,6 +7,36 @@ WITH target_table AS (
   SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 )
 -- TG-ENDIF
+-- TG-IF is_type_A
+, ranked_patterns AS (
+  SELECT pattern,
+         ct,
+         ROW_NUMBER() OVER (ORDER BY ct DESC, pattern) AS rn
+    FROM ( SELECT pattern, COUNT(*) AS ct
+             FROM ( SELECT REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN
+                             "{COL_NAME}" WITH 'a') WITH 'A') WITH 'N') AS pattern
+                      FROM target_table
+                     WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
+                                                     FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH} ) p
+            GROUP BY pattern
+           HAVING pattern > ' ' ) ranked
+)
+, pattern_slots AS (
+  SELECT
+         MAX(CASE WHEN rn = 1 THEN pattern END) AS pattern_0,
+         MAX(CASE WHEN rn = 1 THEN ct END)      AS pattern_ct_0,
+         MAX(CASE WHEN rn = 2 THEN pattern END) AS pattern_1,
+         MAX(CASE WHEN rn = 2 THEN ct END)      AS pattern_ct_1,
+         MAX(CASE WHEN rn = 3 THEN pattern END) AS pattern_2,
+         MAX(CASE WHEN rn = 3 THEN ct END)      AS pattern_ct_2,
+         MAX(CASE WHEN rn = 4 THEN pattern END) AS pattern_3,
+         MAX(CASE WHEN rn = 4 THEN ct END)      AS pattern_ct_3,
+         MAX(CASE WHEN rn = 5 THEN pattern END) AS pattern_4,
+         MAX(CASE WHEN rn = 5 THEN ct END)      AS pattern_ct_4
+    FROM ranked_patterns
+   WHERE rn <= 5
+)
+-- TG-ENDIF
 SELECT
   {CONNECTION_ID} AS connection_id,
   '{PROJECT_CODE}' AS project_code,
@@ -120,22 +150,16 @@ SELECT
   NULL AS std_pattern_match,
 -- TG-ENDIF
 -- TG-IF is_type_A
-  (SELECT SUBSTR(STRING_AGG(formatted_pattern, ' | ' ORDER BY ct DESC), 1, 1000)
-      FROM (
-            SELECT TO_VARCHAR(COUNT(*)) || ' | ' || pattern AS formatted_pattern,
-                   COUNT(*) AS ct
-              FROM (SELECT REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN
-                        "{COL_NAME}" WITH 'a') WITH 'A') WITH 'N') AS pattern
-                       FROM target_table
-                      WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                        FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH}) p
-            GROUP BY pattern
-            HAVING pattern > ' '
-            ORDER BY COUNT(*) DESC
-            LIMIT 5
-           ) ps) AS top_patterns,
--- TG-ELSE
-  NULL AS top_patterns,
+  MAX(pattern_slots.pattern_0) AS pattern_0,
+  MAX(pattern_slots.pattern_ct_0) AS pattern_ct_0,
+  MAX(pattern_slots.pattern_1) AS pattern_1,
+  MAX(pattern_slots.pattern_ct_1) AS pattern_ct_1,
+  MAX(pattern_slots.pattern_2) AS pattern_2,
+  MAX(pattern_slots.pattern_ct_2) AS pattern_ct_2,
+  MAX(pattern_slots.pattern_3) AS pattern_3,
+  MAX(pattern_slots.pattern_ct_3) AS pattern_ct_3,
+  MAX(pattern_slots.pattern_4) AS pattern_4,
+  MAX(pattern_slots.pattern_ct_4) AS pattern_ct_4,
 -- TG-ENDIF
 -- TG-IF is_type_N
   MIN("{COL_NAME}") AS min_value,
@@ -236,6 +260,9 @@ SELECT
 -- TG-ENDIF
   '{PROFILE_RUN_ID}' AS profile_run_id
   FROM target_table
+-- TG-IF is_type_A
+  CROSS JOIN pattern_slots
+-- TG-ENDIF
 -- TG-IF is_N_sampling
   , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,

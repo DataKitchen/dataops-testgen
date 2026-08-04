@@ -11,7 +11,10 @@ WITH mults AS (   SELECT p.project_code,
                          MAX(p.distinct_pattern_ct)     AS max_pattern_ct,
                          SUM(p.distinct_pattern_ct)     AS sum_pattern_ct,
                          STRING_AGG(table_name, ', ' order by table_name) as table_list,
-                         MAX(RIGHT(REPEAT('0', 20) || SPLIT_PART(p.top_patterns, '|', 1), 20) || '|' || SPLIT_PART(p.top_patterns, '|', 2) )as very_top_pattern
+                         (ARRAY_AGG(fn_frequent_value(p.frequent_patterns, 1)
+                                    ORDER BY fn_frequent_ct(p.frequent_patterns, 1) DESC NULLS LAST,
+                                             fn_frequent_value(p.frequent_patterns, 1) DESC))[1] AS very_top_pattern,
+                         MAX(fn_frequent_ct(p.frequent_patterns, 1)) AS very_top_pattern_ct
                     FROM profile_results p
                     WHERE p.profile_run_id = :PROFILE_RUN_ID
                    GROUP BY p.project_code, p.table_groups_id, schema_name, p.column_name
@@ -26,8 +29,9 @@ WITH mults AS (   SELECT p.project_code,
                    p.table_name,
                    p.column_name,
                    p.column_type,
-                   p.top_patterns,
-                   ltrim(m.very_top_pattern, '0') as very_top_pattern,
+                   p.frequent_patterns,
+                   m.very_top_pattern,
+                   m.very_top_pattern_ct,
                    m.table_list,
                    {DETAIL_EXPRESSION} AS detail
               FROM profile_results p

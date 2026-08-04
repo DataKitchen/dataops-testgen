@@ -1,6 +1,8 @@
 -- Get Freqs for selected columns
+-- One row per top value, ordered by rank. A trailing row with a NULL value carries the
+-- combined count of the values past the top 10, and how many distinct values it covers.
 WITH ranked_vals AS (
-  SELECT "{COL_NAME}",
+  SELECT "{COL_NAME}" AS val,
          COUNT(*) AS ct,
          ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, "{COL_NAME}") AS rn
     FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
@@ -10,15 +12,9 @@ WITH ranked_vals AS (
    WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' '
    GROUP BY "{COL_NAME}"
 ),
-consol_vals AS (
-  SELECT COALESCE(CASE WHEN rn <= 10 THEN '| ' || "{COL_NAME}" || ' | ' || TO_CHAR(ct)
-                       ELSE NULL
-                  END, '| Other Values (' || TO_CHAR(COUNT(DISTINCT "{COL_NAME}")) || ') | ' || TO_CHAR(SUM(ct))) AS val,
-         MIN(rn) as min_rn
+grouped_vals AS (
+  SELECT CASE WHEN rn <= 10 THEN val END AS top_val, ct, rn
     FROM ranked_vals
-   GROUP BY CASE WHEN rn <= 10 THEN '| ' || "{COL_NAME}" || ' | ' || TO_CHAR(ct)
-                 ELSE NULL
-            END
 ),
 hash_val AS (
   SELECT RAWTOHEX(STANDARD_HASH(LISTAGG("{COL_NAME}", '|') WITHIN GROUP (ORDER BY "{COL_NAME}"), 'MD5')) as hash_result
@@ -29,13 +25,11 @@ hash_val AS (
 -- TG-ENDIF
            WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ')
 )
-SELECT '{PROJECT_CODE}' as project_code,
-       '{DATA_SCHEMA}' as schema_name,
-       '{RUN_DATE}' as run_date,
-       '{DATA_TABLE}' as table_name,
-       '{COL_NAME}' as column_name,
-       REPLACE(LISTAGG(val, '^#^') WITHIN GROUP (ORDER BY min_rn), '^#^', CHR(10)) AS top_freq_values,
-       MAX(h.hash_result) as distinct_value_hash
-  FROM consol_vals
-  CROSS JOIN hash_val h
-  GROUP BY h.hash_result
+SELECT top_val AS value,
+       SUM(ct) AS value_ct,
+       MIN(rn) AS value_rank,
+       CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
+       (SELECT hash_result FROM hash_val) AS distinct_value_hash
+  FROM grouped_vals
+ GROUP BY top_val
+ ORDER BY 3

@@ -15,7 +15,7 @@ from testgen.common.pii_masking import (
     mask_profiling_pii,
     mask_source_data_pii,
 )
-from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
+from testgen.common.profile_frequency import format_frequent
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -322,18 +322,8 @@ def get_excel_report_data(
     type_map = {"A": "Alpha", "B": "Boolean", "D": "Datetime", "N": "Numeric"}
     data["general_type"] = data["general_type"].apply(lambda val: type_map.get(val))
 
-    def _format_top_freq_values(val):
-        if not val or val == PII_REDACTED:
-            return val
-        return "\n".join(f"{count} | {value}" for value, count in parse_top_freq_values(val))
-
-    def _format_top_patterns(val):
-        if not val or val == PII_REDACTED:
-            return val
-        return "\n".join(f"{count} | {pattern}" for pattern, count in parse_top_patterns(val))
-
-    data["top_freq_values"] = data["top_freq_values"].apply(_format_top_freq_values)
-    data["top_patterns"] = data["top_patterns"].apply(_format_top_patterns)
+    data["frequent_values"] = data["frequent_values"].apply(format_frequent)
+    data["frequent_patterns"] = data["frequent_patterns"].apply(format_frequent)
 
     columns = {
         "table_name": {"header": "Table"},
@@ -368,8 +358,8 @@ def get_excel_report_data(
         "distinct_std_value_ct": {"header": "Distinct standard values"},
         "distinct_pattern_ct": {"header": "Distinct patterns"},
         "std_pattern_match": {"header": "Standard pattern match"},
-        "top_freq_values": {"header": "Frequent values", "wrap": True},
-        "top_patterns": {"header": "Frequent patterns", "wrap": True},
+        "frequent_values": {"header": "Frequent values", "wrap": True},
+        "frequent_patterns": {"header": "Frequent patterns", "wrap": True},
         "min_value": {"header": "Minimum value"},
         "min_value_over_0": {"header": "Minimum value > 0"},
         "max_value": {"header": "Maximum value"},

@@ -29,6 +29,7 @@ from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.profile_frequency import build_frequent_values, with_frequent_patterns
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
@@ -217,7 +218,7 @@ def _run_column_profiling(
         error = outcome.error
         if error is None and outcome.result:
             try:
-                ProfileResult.upsert(outcome.result[0])
+                ProfileResult.upsert(with_frequent_patterns(outcome.result[0]))
             except Exception as e:
                 error = get_exception_message(e)
                 LOG.exception("Error writing column profiling result")
@@ -261,17 +262,17 @@ def _run_column_profiling(
     )
 
 
-def _write_frequency_result(sql_generator: ProfilingSQL, column: ColumnChars, result: dict) -> None:
+def _write_frequency_result(sql_generator: ProfilingSQL, column: ColumnChars, rows: list[dict]) -> None:
     # Identity comes from the column read out of profile_results (so it matches the stored
-    # row exactly); only the two frequency measures are overwritten on conflict.
+    # row exactly); only the frequency measures are overwritten on conflict.
     ProfileResult.upsert(
         {
             "table_groups_id": sql_generator.table_group.id,
             "table_name": column.table_name,
             "column_name": column.column_name,
             "profile_run_id": sql_generator.profiling_run.id,
-            "top_freq_values": result["top_freq_values"],
-            "distinct_value_hash": result["distinct_value_hash"],
+            "frequent_values": build_frequent_values(rows),
+            "distinct_value_hash": rows[0]["distinct_value_hash"],
         }
     )
 
@@ -315,7 +316,7 @@ def _run_frequency_analysis(
                 error = outcome.error
                 if error is None and outcome.result:
                     try:
-                        _write_frequency_result(sql_generator, column, outcome.result[0])
+                        _write_frequency_result(sql_generator, column, outcome.result)
                     except Exception as e:
                         error = get_exception_message(e)
                         LOG.exception("Error writing frequency analysis result")

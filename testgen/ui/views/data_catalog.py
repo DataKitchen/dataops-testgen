@@ -28,12 +28,11 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.pii_masking import (
-    PII_REDACTED,
     get_pii_columns,
     mask_hygiene_detail,
     mask_profiling_pii,
 )
-from testgen.common.profile_top_values import parse_top_freq_values, parse_top_patterns
+from testgen.common.profile_frequency import format_frequent
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -509,16 +508,8 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         lambda row: "Yes" if row["critical_data_element"] == True or row["table_critical_data_element"] == True else None,
         axis=1,
     )
-    data["top_freq_values"] = data["top_freq_values"].apply(
-        lambda val: "\n".join(f"{count} | {value}" for value, count in parse_top_freq_values(val))
-        if not pd.isna(val) and val != PII_REDACTED
-        else val
-    )
-    data["top_patterns"] = data["top_patterns"].apply(
-        lambda val: "\n".join(f"{count} | {pattern}" for pattern, count in parse_top_patterns(val))
-        if not pd.isna(val) and val != PII_REDACTED
-        else val
-    )
+    data["frequent_values"] = data["frequent_values"].apply(format_frequent)
+    data["frequent_patterns"] = data["frequent_patterns"].apply(format_frequent)
 
     file_columns = {
         "schema_name": {"header": "Schema"},
@@ -559,8 +550,8 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
         "distinct_std_value_ct": {"header": "Distinct standard values"},
         "distinct_pattern_ct": {"header": "Distinct patterns"},
         "std_pattern_match": {"header": "Standard pattern match"},
-        "top_freq_values": {"header": "Frequent values", "wrap": True},
-        "top_patterns": {"header": "Frequent patterns", "wrap": True},
+        "frequent_values": {"header": "Frequent values", "wrap": True},
+        "frequent_patterns": {"header": "Frequent patterns", "wrap": True},
         "min_value": {"header": "Minimum value"},
         "min_value_over_0": {"header": "Minimum value > 0"},
         "max_value": {"header": "Maximum value"},

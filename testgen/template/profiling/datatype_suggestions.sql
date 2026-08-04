@@ -26,25 +26,27 @@ SET datatype_suggestion =
             -- DECIMALs
             WHEN pr.numeric_ct > 0
                  AND pr.value_ct = pr.numeric_ct + pr.zero_length_ct
-                 AND POSITION('.' IN pr.top_freq_values) > 0
+                 AND fn_frequent_like(pr.frequent_values, '%.%')
             THEN 'DECIMAL(18,4)'
 
             -- small/big integers
             WHEN pr.numeric_ct > 0
                  AND pr.value_ct = pr.numeric_ct + pr.zero_length_ct
                  AND pr.max_length <= 6
-                 AND POSITION('.' IN pr.top_freq_values) = 0
+                 AND pr.frequent_values IS NOT NULL
+                 AND NOT fn_frequent_like(pr.frequent_values, '%.%')
             THEN 'INTEGER'
             WHEN pr.numeric_ct > 0
                  AND pr.value_ct = pr.numeric_ct + pr.zero_length_ct
                  AND pr.max_length  > 6
-                 AND POSITION('.' IN pr.top_freq_values) = 0
+                 AND pr.frequent_values IS NOT NULL
+                 AND NOT fn_frequent_like(pr.frequent_values, '%.%')
             THEN 'BIGINT'
 
             -- timestamps with zone
             WHEN pr.date_ct > 0
                  AND pr.value_ct = pr.date_ct + pr.zero_length_ct
-                 AND POSITION('+' IN pr.top_freq_values) > 0
+                 AND fn_frequent_like(pr.frequent_values, '%+%')
             THEN CASE
                    WHEN '{SQL_FLAVOR}' = 'redshift' THEN 'TIMESTAMPZ'
                    WHEN '{SQL_FLAVOR}' = 'redshift_spectrum' THEN 'TIMESTAMPZ'
@@ -59,7 +61,7 @@ SET datatype_suggestion =
             -- timestamps without zone
             WHEN pr.date_ct > 0
                  AND pr.value_ct = pr.date_ct + pr.zero_length_ct
-                 AND POSITION(':' IN pr.top_freq_values) > 0
+                 AND fn_frequent_like(pr.frequent_values, '%:%')
             THEN CASE
                    WHEN '{SQL_FLAVOR}' = 'redshift' THEN 'TIMESTAMP'
                    WHEN '{SQL_FLAVOR}' = 'redshift_spectrum' THEN 'TIMESTAMP'

@@ -398,7 +398,6 @@ def test_profiling_query_uses_data360_alternatives():
     content = path.read_text()
 
     assert "REGEXP_LIKE" in content
-    assert "ARRAY_JOIN(ARRAY_AGG" in content
     assert "SUBSTR(" in content
     assert "ORDER BY RANDOM()" in content
 

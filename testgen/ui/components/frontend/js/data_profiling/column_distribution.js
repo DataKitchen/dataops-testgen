@@ -18,6 +18,7 @@ import { FrequencyBars } from '/app/static/js/components/frequency_bars.js';
 import { BoxPlot } from '/app/static/js/components/box_plot.js';
 import { loadStylesheet, friendlyPercent, getValue } from '/app/static/js/utils.js';
 import { formatNumber, formatTimestamp, PII_REDACTED } from '/app/static/js/display_utils.js';
+import { frequencyItems } from './data_profiling_utils.js';
 
 const { div, span } = van.tags;
 const columnTypeFunctionMap = {
@@ -149,31 +150,21 @@ function AlphaColumn(/** @type Column */ item) {
                 ],
             }),
         ),
-        item.top_freq_values || item.top_patterns ? div(
+        item.frequent_values || item.frequent_patterns ? div(
             { class: 'flex-row fx-flex-wrap fx-align-flex-start fx-gap-5 tg-profile--plot-block' },
-            item.top_freq_values === PII_REDACTED
+            item.frequent_values === PII_REDACTED
                 ? Attribute({ label: 'Frequent Values', value: PII_REDACTED, width: attributeWidth })
-                : item.top_freq_values ? FrequencyBars({
+                : item.frequent_values ? FrequencyBars({
                     title: 'Frequent Values',
                     total: item.record_ct,
                     nullCount: item.null_value_ct,
-                    items: item.top_freq_values.substring(2).split('\n| ').map(parts => {
-                        const [value, count] = parts.split(' | ');
-                        return { value, count: Number(count) };
-                    }),
+                    items: frequencyItems(item.frequent_values),
                 }) : null,
-            item.top_patterns ? FrequencyBars({
+            item.frequent_patterns ? FrequencyBars({
                 title: 'Frequent Patterns',
                 total: item.record_ct,
                 nullCount: item.null_value_ct,
-                items: item.top_patterns.split(' | ').reduce((array, item, index) => {
-                    if (index % 2) {
-                        array[(index - 1) / 2].value = item;
-                    } else {
-                        array.push({ count: Number(item) });
-                    }
-                    return array;
-                }, []),
+                items: frequencyItems(item.frequent_patterns),
             }) : null,
         ) : null,
         div(

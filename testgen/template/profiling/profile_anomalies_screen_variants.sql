@@ -10,7 +10,7 @@ WITH all_matches
                p.column_name,
                p.column_type,
                p.db_data_type,
-               fn_extract_distinct_items(STRING_AGG(fn_extract_intersecting_items(LOWER(fn_extract_top_values(p.top_freq_values)),
+               fn_extract_distinct_items(STRING_AGG(fn_extract_intersecting_items(LOWER(fn_frequent_value_list(p.frequent_values)),
                                                                                   v.check_values, '|'),
                                                     '|'),
                                          '|') AS intersect_list
@@ -24,9 +24,9 @@ WITH all_matches
                             AND :ANOMALY_ID = i.anomaly_id)
          WHERE p.profile_run_id = :PROFILE_RUN_ID
            AND ({ANOMALY_CRITERIA})
-           AND p.top_freq_values > ''
+           AND p.frequent_values IS NOT NULL
            AND i.anomaly_id IS NULL
-           AND fn_count_intersecting_items(LOWER(fn_extract_top_values(p.top_freq_values)), v.check_values, '|') > 1
+           AND fn_count_intersecting_items(LOWER(fn_frequent_value_list(p.frequent_values)), v.check_values, '|') > 1
          GROUP BY p.project_code,
             p.table_groups_id,
             p.profile_run_id,

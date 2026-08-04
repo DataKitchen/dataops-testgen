@@ -118,7 +118,7 @@ WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND distinct_pattern_ct = 1
   AND min_text >= '1900' AND max_text <= '2200'
-  AND TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN';
+  AND TRIM(fn_frequent_value(frequent_patterns, 1)) = 'NNNN-NN-NN';
 
 -- Character Timestamp
 UPDATE profile_results
@@ -126,8 +126,8 @@ SET functional_data_type = 'DateTime Stamp'
 WHERE profile_run_id = :PROFILE_RUN_ID
   AND functional_data_type IS NULL
   AND distinct_pattern_ct = 1
-  AND (TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NN NN:NN:NN'
-   OR  TRIM(SPLIT_PART(top_patterns, '|', 2)) = 'NNNN-NN-NNANN:NN:NN+NN:NN');
+  AND (TRIM(fn_frequent_value(frequent_patterns, 1)) = 'NNNN-NN-NN NN:NN:NN'
+   OR  TRIM(fn_frequent_value(frequent_patterns, 1)) = 'NNNN-NN-NNANN:NN:NN+NN:NN');
 
 -- Process Timestamp
 UPDATE profile_results
@@ -164,7 +164,7 @@ WHERE profile_run_id = :PROFILE_RUN_ID
         OR
         (min_text >= '1900' AND max_text <= '2200'
   AND    avg_length BETWEEN 6 and 7
-  AND    SPLIT_PART(top_patterns, '|', 2) ~ '^\s*NNNN[-_]AN\s*$')
+  AND    fn_frequent_value(frequent_patterns, 1) ~ '^\s*NNNN[-_]AN\s*$')
       );
 
 UPDATE profile_results
@@ -175,9 +175,9 @@ WHERE profile_run_id = :PROFILE_RUN_ID
   AND min_text >= '1900' AND max_text <= '2200'
   AND (
        (avg_length BETWEEN 6.8 AND 7.2
-        AND SPLIT_PART(top_patterns, '|', 2) ~ '^\s*NNNN[-_]NN\s*$')
+        AND fn_frequent_value(frequent_patterns, 1) ~ '^\s*NNNN[-_]NN\s*$')
    OR  (avg_length BETWEEN 7.8 AND 8.2
-        AND UPPER(SPLIT_PART(top_patterns, '|', 2)) ~ '^\s*NNNN[-_]AAA\s*$')
+        AND UPPER(fn_frequent_value(frequent_patterns, 1)) ~ '^\s*NNNN[-_]AAA\s*$')
       );
 
 UPDATE profile_results
@@ -199,7 +199,7 @@ WHERE profile_run_id = :PROFILE_RUN_ID
    AND min_text ~ '(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\s-]?\d{1,2}$'
    AND max_text ~ '(?i)^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[\s-]?\d{1,2}$'
    AND avg_length BETWEEN 5.8 AND 6.2
-   AND TRIM(fn_parsefreq(top_patterns, 1, 2)) ~ '(?i)AAA[\s-]NN';
+   AND TRIM(fn_frequent_value(frequent_patterns, 1)) ~ '(?i)AAA[\s-]NN';
 
 UPDATE profile_results
 SET functional_data_type = 'Period Week'
@@ -260,7 +260,7 @@ WHERE profile_run_id = :PROFILE_RUN_ID
 -- 3. Assign ADDRESS RELATED FIELDS, PHONE AND EMAIL
 /*
  Zip - Length must be less than or equal to 11. We're also looking at the column name
- Email - Check column name and top patterns. top_patterns must have @ and .
+ Email - Check column name and top patterns. frequent_patterns must have @ and .
  Phone - Length must be less than or equal to 11. We're also looking at the column name
  Address - Column name check. If the field is populated then it should have at least 4 distinct pattern count
  State - Column name must have 'state' in it. A valid state must have max_length greater than or equal to 2.
@@ -428,7 +428,7 @@ SET functional_data_type =
                         END
              WHEN distinct_value_ct BETWEEN 2 AND 200
                    THEN CASE WHEN (avg_embedded_spaces < 1 AND max_length < 15)
-                                    OR (fn_charcount(top_patterns, 'A') > 0 AND fn_charcount(top_patterns, 'N') > 0)
+                                    OR (fn_frequent_like(frequent_patterns, '%A%') AND fn_frequent_like(frequent_patterns, '%N%'))
                              THEN 'Code'
                              ELSE 'Category'
                         END
@@ -452,7 +452,7 @@ SET functional_data_type =
                     AND (lower(column_type) NOT ILIKE '%numeric%' OR lower(datatype_suggestion) NOT ILIKE '%numeric%')-- should not be decimal
                     AND (min_length > 1 AND max_length <= 7)
                     AND functional_data_type IS NULL
-                    AND fn_charcount(top_patterns, 'A') > 0
+                    AND fn_frequent_like(frequent_patterns, '%A%')
                 THEN 'Flag'
         END
 WHERE profile_run_id = :PROFILE_RUN_ID
@@ -589,9 +589,9 @@ WHERE profile_run_id = :PROFILE_RUN_ID
    AND value_ct = includes_digit_ct
    AND min_text >= '0'
    AND max_text <= '99'
-   AND TRIM(SPLIT_PART(top_patterns, '|', 2)) ~ '^N{1,3}(\.N+)?%$'
-   AND (TRIM(SPLIT_PART(top_patterns, '|', 4)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 2)
-   AND (TRIM(SPLIT_PART(top_patterns, '|', 6)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 3);
+   AND TRIM(fn_frequent_value(frequent_patterns, 1)) ~ '^N{1,3}(\.N+)?%$'
+   AND (TRIM(fn_frequent_value(frequent_patterns, 2)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 2)
+   AND (TRIM(fn_frequent_value(frequent_patterns, 3)) ~ '^N{1,3}(\.N+)?%$' OR distinct_pattern_ct < 3);
 
 --- Update column characteristics ---
 
