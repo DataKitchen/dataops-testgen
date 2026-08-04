@@ -21,8 +21,8 @@ test_types:
   default_parm_prompts: |-
     List of Expected Values
   default_parm_help: |-
-    Single-quoted, pipe-delimited, sorted list of every value expected in the column. Sort order must match the connection's default collation; a list from another database may not match.
-  default_parm_required: N
+    Every value expected in the column, listed in ascending order and separated by the pipe character. The whole list goes inside one pair of single quotes. Sort order and case sensitivity follow the collation of the database or column, so a list built against another database may not match. Empty strings count as a value and sort first, so a column holding them needs a separator ahead of the first value.
+  default_parm_required: Y
   default_severity: Fail
   run_type: CAT
   test_scope: column
@@ -30,7 +30,7 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
-    Single-quoted, pipe-delimited, sorted list of all distinct expected values
+    Sorted list of all distinct expected values, pipe-delimited inside one pair of single quotes, e.g. 'Val1|Val2'
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-

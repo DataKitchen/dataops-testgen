@@ -34,7 +34,7 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
-    Expected count of values not in list
+    Expected count of records with values not in list
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
