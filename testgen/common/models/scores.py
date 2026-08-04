@@ -363,20 +363,6 @@ class ScoreDefinition(Base):
         score_cards/get_category_scores_by_column.sql
         score_cards/get_category_scores_by_dimension.sql
         """
-        if not self.criteria.has_filters():
-            return {
-                "id": self.id,
-                "project_code": self.project_code,
-                "name": self.name,
-                "score": None,
-                "cde_score": None,
-                "profiling_score": None,
-                "testing_score": None,
-                "categories": [],
-                "history": [],
-                "definition": self,
-            }
-
         overall_score_query_template_file = "get_overall_scores_by_column.sql"
         categories_query_template_file = "get_category_scores_by_column.sql"
         if self.category == ScoreCategory.dq_dimension:
@@ -615,9 +601,6 @@ class ScoreDefinition(Base):
         Reuses the same filter machinery as `as_score_card` so the rolled-up
         count matches the score that call returns.
         """
-        if not self.criteria.has_filters():
-            return 0
-
         where_clause = text(" AND ".join(self._get_raw_query_filters()))
         session = get_current_session()
 
@@ -633,16 +616,12 @@ class ScoreDefinition(Base):
         )
 
     def _get_raw_query_filters(self, cde_only: bool = False, prefix: str | None = None) -> list[str]:
-        extra_filters = [
-            f"{prefix or ''}project_code = '{self.project_code}'"
-        ]
+        parts = [f"{prefix or ''}project_code = '{self.project_code}'"]
         if cde_only:
-            extra_filters.append(f"{prefix or ''}critical_data_element = true")
-
-        return [
-            *extra_filters,
-            self.criteria.get_as_sql(prefix=prefix),
-        ]
+            parts.append(f"{prefix or ''}critical_data_element = true")
+        if (criteria_sql := self.criteria.get_as_sql(prefix=prefix)) is not None:
+            parts.append(criteria_sql)
+        return parts
 
     def to_dict(self) -> dict:
         return {

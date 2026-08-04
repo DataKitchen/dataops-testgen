@@ -232,6 +232,51 @@ class PotentialPiiListResponse(BaseModel):
     total: int
 
 
+# --- Scores ---
+
+
+class ScoreBreakdownRow(BaseModel):
+    """One row of the group_by breakdown returned by the ``scores`` endpoint.
+
+    Rows are ordered by ``impact`` descending — the actionable signal for which
+    group is dragging the score down the most."""
+
+    value: str | None = Field(
+        description="The group value (e.g. ``reliability`` for ``impact_dimension``, ``sales_db`` for ``data_source``). Null when the underlying data isn't classified into a group (e.g. an issue type with no ``impact_dimension`` assigned).",
+    )
+    score: float | None = Field(
+        description="Testing Score for this group (0-100). Null when the group has no scored data points.",
+    )
+    impact: float = Field(
+        description="Contribution to the overall score's affected data points, 0-100.",
+    )
+
+
+class ScoresResponse(BaseModel):
+    """Quality Score rollup for a project.
+
+    Overall scores are always populated. ``breakdown`` is present iff ``group_by``
+    was supplied on the request; rows are ordered by ``impact`` descending. Scores
+    can be null when the filtered slice has no scored data points."""
+
+    total: float | None = Field(
+        description="Overall Testing Score across all data in the filtered slice (0-100).",
+    )
+    cde: float | None = Field(
+        description="Testing Score restricted to critical data elements in the filtered slice (0-100).",
+    )
+    profiling: float | None = Field(
+        description="Profiling component of the total score (0-100).",
+    )
+    testing: float | None = Field(
+        description="Testing component of the total score (0-100).",
+    )
+    breakdown: list[ScoreBreakdownRow] | None = Field(
+        default=None,
+        description="Breakdown rows for the requested ``group_by``, ordered by ``impact`` descending. Absent when no ``group_by`` was provided.",
+    )
+
+
 # --- Errors ---
 
 

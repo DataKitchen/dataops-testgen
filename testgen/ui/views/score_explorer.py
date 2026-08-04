@@ -133,7 +133,10 @@ class ScoreExplorerPage(Page):
                         group_by_field=filter_by_columns != "true",
                     )
 
-            score_card = score_definition.as_score_card()
+            # Skip the query when there are no filters — a project-wide scan on a
+            # fresh scorecard is expensive and the UI renders "--" placeholders
+            # for a ``None`` card.
+            score_card = score_definition.as_score_card() if score_definition.criteria.has_filters() else None
 
             if not breakdown_category or breakdown_category not in typing.get_args(Categories):
                 breakdown_category = (

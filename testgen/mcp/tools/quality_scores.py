@@ -9,7 +9,6 @@ from testgen.common.models.scores import (
     ScoreDefinitionCriteria,
     ScoreDefinitionFilter,
 )
-from testgen.common.models.table_group import TableGroup
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -207,24 +206,6 @@ def _build_definition(
     filters: list[dict] = list(user_filters)
     if table_group_name is not None:
         filters.append({"field": "table_groups_name", "value": table_group_name})
-    elif not filters:
-        # `as_score_card` short-circuits when criteria has no filters
-        # (scores.py:292). Mirror the score-explorer UI's pattern: a
-        # scorecard always carries at least one filter, typically
-        # `table_groups_name`. For the unfiltered project-wide case,
-        # enumerate every table group in the project so the criteria
-        # still narrows by project_code (added by `_get_raw_query_filters`)
-        # and covers all table groups.
-        tg_names = [
-            tg.table_groups_name
-            for tg in TableGroup.select_minimal_where(
-                TableGroup.project_code == project_code,
-            )
-        ]
-        if tg_names:
-            filters.extend(
-                {"field": "table_groups_name", "value": name} for name in tg_names
-            )
 
     definition.criteria = ScoreDefinitionCriteria.from_filters(
         filters, group_by_field=group_by_field,
