@@ -13,6 +13,7 @@ from testgen.common.enums import ImpactDimension as DbImpactDimension
 from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
 from testgen.common.enums import MonitorType as DbMonitorType
 from testgen.common.enums import PiiRisk as DbPiiRisk
+from testgen.common.enums import QualityDimension as DbQualityDimension
 from testgen.common.models.test_definition import ThresholdMode
 from testgen.common.models.test_result import TestResultStatus
 
@@ -74,6 +75,50 @@ class ImpactDimension(StrEnum):
     conformance = "conformance"
     regularity = "regularity"
     usability = "usability"
+
+
+class QualityDimension(StrEnum):
+    """Data-quality dimension shared by hygiene issues and test types.
+
+    Emitted only as breakdown row values when the scores endpoint is called with
+    ``group_by=quality_dimension``. Not accepted as a request filter."""
+
+    accuracy = "accuracy"
+    completeness = "completeness"
+    consistency = "consistency"
+    recency = "recency"
+    timeliness = "timeliness"
+    uniqueness = "uniqueness"
+    validity = "validity"
+
+
+class ScoreType(StrEnum):
+    """Which score the ``scores`` endpoint breakdown is scored against."""
+
+    total = "total"
+    cde = "cde"
+
+
+class ScoresGroupBy(StrEnum):
+    """Attribute the ``scores`` endpoint breaks the score down by.
+
+    ``impact_dimension`` is the recommended primary breakdown. ``quality_dimension``,
+    ``impact_dimension`` and ``table_group`` are groupable only; every other value is
+    also accepted as a filter query param."""
+
+    quality_dimension = "quality_dimension"
+    impact_dimension = "impact_dimension"
+    table_group = "table_group"
+    data_source = "data_source"
+    business_domain = "business_domain"
+    source_system = "source_system"
+    source_process = "source_process"
+    stakeholder_group = "stakeholder_group"
+    transform_level = "transform_level"
+    data_location = "data_location"
+    data_product = "data_product"
+    semantic_data_type = "semantic_data_type"
+    data_classification = "data_classification"
 
 
 RESULT_STATUS_TO_DB: dict[ResultStatus, TestResultStatus] = {
@@ -198,4 +243,17 @@ IMPACT_DIMENSION_TO_DB: dict[ImpactDimension, DbImpactDimension] = {
 }
 IMPACT_DIMENSION_FROM_DB: dict[DbImpactDimension, ImpactDimension] = {
     v: k for k, v in IMPACT_DIMENSION_TO_DB.items()
+}
+
+QUALITY_DIMENSION_TO_DB: dict[QualityDimension, DbQualityDimension] = {
+    QualityDimension.accuracy: DbQualityDimension.ACCURACY,
+    QualityDimension.completeness: DbQualityDimension.COMPLETENESS,
+    QualityDimension.consistency: DbQualityDimension.CONSISTENCY,
+    QualityDimension.recency: DbQualityDimension.RECENCY,
+    QualityDimension.timeliness: DbQualityDimension.TIMELINESS,
+    QualityDimension.uniqueness: DbQualityDimension.UNIQUENESS,
+    QualityDimension.validity: DbQualityDimension.VALIDITY,
+}
+QUALITY_DIMENSION_FROM_DB: dict[DbQualityDimension, QualityDimension] = {
+    v: k for k, v in QUALITY_DIMENSION_TO_DB.items()
 }
