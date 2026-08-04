@@ -103,14 +103,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5019'
-    test_type: Outlier_Pct_Above
-    sql_flavor: trino
-    measure: |-
-      CAST(SUM(CASE WHEN CAST({COLUMN_NAME} AS REAL) > {BASELINE_AVG}+(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END) AS REAL) / CAST(COUNT({COLUMN_NAME}) AS REAL)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8019'
     test_type: Outlier_Pct_Above
     sql_flavor: oracle

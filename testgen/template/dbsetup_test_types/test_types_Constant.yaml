@@ -97,14 +97,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5004'
-    test_type: Constant
-    sql_flavor: trino
-    measure: |-
-      SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8004'
     test_type: Constant
     sql_flavor: oracle

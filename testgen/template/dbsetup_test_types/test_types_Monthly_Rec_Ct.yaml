@@ -98,14 +98,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5018'
-    test_type: Monthly_Rec_Ct
-    sql_flavor: trino
-    measure: |-
-      (MAX(DATE_DIFF('month', {COLUMN_NAME}, CAST('{RUN_DATE}' AS DATE))) - MIN(DATE_DIFF('month', {COLUMN_NAME}, CAST('{RUN_DATE}' AS DATE))) + 1) - COUNT(DISTINCT DATE_DIFF('month', {COLUMN_NAME}, CAST('{RUN_DATE}' AS DATE)))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8018'
     test_type: Monthly_Rec_Ct
     sql_flavor: oracle

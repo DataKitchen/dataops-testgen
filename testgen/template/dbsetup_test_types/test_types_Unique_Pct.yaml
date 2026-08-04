@@ -99,14 +99,6 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5029'
-    test_type: Unique_Pct
-    sql_flavor: trino
-    measure: |-
-      ABS( 2.0 * ASIN( SQRT(CAST({BASELINE_UNIQUE_CT} AS REAL) / CAST({BASELINE_VALUE_CT} AS REAL) ) ) - 2 * ASIN( SQRT( CAST(COUNT( DISTINCT {COLUMN_NAME} ) AS REAL) / CAST(NULLIF(COUNT( {COLUMN_NAME} ), 0) AS REAL) )))
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8029'
     test_type: Unique_Pct
     sql_flavor: oracle

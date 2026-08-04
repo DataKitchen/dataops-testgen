@@ -103,14 +103,6 @@ test_types:
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5032'
-    test_type: Variability_Decrease
-    sql_flavor: trino
-    measure: |-
-      100.0*STDDEV(CAST({COLUMN_NAME} AS REAL))/{BASELINE_SD}
-    test_operator: <
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8032'
     test_type: Variability_Decrease
     sql_flavor: oracle

@@ -93,14 +93,6 @@ test_types:
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5013'
-    test_type: LOV_All
-    sql_flavor: trino
-    measure: |-
-      LISTAGG(DISTINCT {COLUMN_NAME}, '|') WITHIN GROUP (ORDER BY {COLUMN_NAME})
-    test_operator: <>
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8013'
     test_type: LOV_All
     sql_flavor: oracle

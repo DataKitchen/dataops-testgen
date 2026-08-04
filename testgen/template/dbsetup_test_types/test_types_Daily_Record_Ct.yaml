@@ -101,14 +101,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5005'
-    test_type: Daily_Record_Ct
-    sql_flavor: trino
-    measure: |-
-      DATE_DIFF('DAY', MIN({COLUMN_NAME}), MAX({COLUMN_NAME}))+1-COUNT(DISTINCT CAST({COLUMN_NAME} AS DATE))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8005'
     test_type: Daily_Record_Ct
     sql_flavor: oracle

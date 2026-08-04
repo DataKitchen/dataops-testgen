@@ -97,14 +97,6 @@ test_types:
     test_operator: <>
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5008'
-    test_type: Distinct_Value_Ct
-    sql_flavor: trino
-    measure: |-
-      COUNT(DISTINCT {COLUMN_NAME})
-    test_operator: <>
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8008'
     test_type: Distinct_Value_Ct
     sql_flavor: oracle

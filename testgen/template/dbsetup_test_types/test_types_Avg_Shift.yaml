@@ -99,14 +99,6 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5002'
-    test_type: Avg_Shift
-    sql_flavor: trino
-    measure: |-
-      ABS( (CAST(AVG({COLUMN_NAME} AS REAL)) - {BASELINE_AVG}) / SQRT(((CAST(COUNT({COLUMN_NAME}) AS REAL)-1)*STDDEV({COLUMN_NAME})^2 + (CAST({BASELINE_VALUE_CT} AS REAL)-1) * CAST({BASELINE_SD} AS REAL)^2) /NULLIF(CAST(COUNT({COLUMN_NAME}) AS REAL) + CAST({BASELINE_VALUE_CT} AS REAL), 0) ))
-    test_operator: '>='
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8002'
     test_type: Avg_Shift
     sql_flavor: oracle

@@ -94,14 +94,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5025'
-    test_type: Row_Ct_Pct
-    sql_flavor: trino
-    measure: |-
-      ABS(ROUND(100.0 * CAST((COUNT(*) - {BASELINE_CT}) AS DECIMAL(18,4)) /CAST( {BASELINE_CT} AS DECIMAL(18,4) ), 2))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8025'
     test_type: Row_Ct_Pct
     sql_flavor: oracle

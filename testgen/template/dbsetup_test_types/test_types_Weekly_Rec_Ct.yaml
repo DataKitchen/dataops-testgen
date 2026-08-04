@@ -98,14 +98,6 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
-  - id: '5030'
-    test_type: Weekly_Rec_Ct
-    sql_flavor: trino
-    measure: |-
-      MAX(DATE_DIFF('week', CAST('1800-01-01' AS DATE), {COLUMN_NAME})) - MIN(DATE_DIFF('week', CAST('1800-01-01' AS DATE), {COLUMN_NAME})) +1 - COUNT(DISTINCT DATE_DIFF('week', CAST('1800-01-01' AS DATE), {COLUMN_NAME}))
-    test_operator: '>'
-    test_condition: |-
-      {THRESHOLD_VALUE}
   - id: '8030'
     test_type: Weekly_Rec_Ct
     sql_flavor: oracle
