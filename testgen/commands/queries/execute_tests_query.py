@@ -30,6 +30,11 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import replace_templated_functions
 from testgen.utils import to_sql_timestamp
 
+# Separates the measures of the CAT tests batched into one aggregate query. parse_cat_results splits
+# on it and indexes positionally, so it must be a sequence no measure can contain. That ruled out '|':
+# LOV_All's measure is itself a pipe-joined list of the column's distinct values.
+MEASURE_SEPARATOR = "~^~"
+
 
 @dataclasses.dataclass
 class InputParameters:
@@ -112,7 +117,10 @@ def build_cat_expressions(
     Returns:
         (measure_expression, condition_expression)
     """
-    measure_expression = f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '|', '{null_value}|')"
+    measure_expression = (
+        f"COALESCE(CAST({measure} AS {varchar_type}) {concat_operator} '{MEASURE_SEPARATOR}', "
+        f"'{null_value}{MEASURE_SEPARATOR}')"
+    )
 
     # For prediction mode, return -1 during training period
     if history_calculation == "PREDICT" and (lower_tolerance in (None, "") or upper_tolerance in (None, "")):
@@ -205,7 +213,7 @@ def parse_cat_results(
     test_results: list[list] = []
     for result in aggregate_results:
         test_defs = aggregate_test_defs[result["query_index"]]
-        result_measures = result["result_measures"].split("|")
+        result_measures = result["result_measures"].split(MEASURE_SEPARATOR)
         result_codes = result["result_codes"].split(",")
 
         for index, td in enumerate(test_defs):
