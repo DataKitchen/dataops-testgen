@@ -56,7 +56,7 @@ dependencies = [
     "beautifulsoup4==4.12.3",
     "xlsxwriter==3.2.0",
     "concurrent_log_handler==0.9.25",
-    "cryptography==48.0.1",
+    "cryptography==50.0.0",
     "reportlab==4.2.2",
     "cron-converter==1.2.1",
     "cron-descriptor==2.0.5",
