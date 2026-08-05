@@ -12,6 +12,7 @@ from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
+    NON_PUBLIC_TEST_TYPES,
     InvalidTestDefinitionFields,
     TestDefinition,
     TestDefinitionNote,
@@ -38,6 +39,7 @@ from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
     DocGroup,
+    format_flavor_label,
     format_page_footer,
     format_page_info,
     parse_enum,
@@ -56,12 +58,18 @@ from testgen.mcp.tools.markdown import MdDoc
 
 _DOC_GROUP = DocGroup.INVESTIGATE
 
+# ``tablegroup`` is absent because no publicly-offered type carries it.
 _VALID_SCOPES = {"column", "table", "referential", "custom"}
 
 
 class BulkAction(StrEnum):
     ENABLE = "enable"
     DISABLE = "disable"
+
+
+def _reject_non_public_test_type(tt: TestType) -> None:
+    if tt.test_type in NON_PUBLIC_TEST_TYPES:
+        raise MCPUserError(f"{tt.test_name_short} is not an available test type.")
 
 
 @with_database_session
@@ -458,7 +466,7 @@ def list_test_types(
         parse_quality_dimension(quality_dimension) if quality_dimension else None
     )
 
-    clauses = [TestType.active == "Y"]
+    clauses = [TestType.active == "Y", TestType.is_public()]
     if scope:
         clauses.append(TestType.test_scope == scope)
     if impact_dimension_enum is not None:
@@ -554,6 +562,7 @@ def create_test(
     tt = TestType.get(tt_code)
     if tt is None:  # resolve_test_type already raised if the short name is unknown
         raise MCPUserError(f"Unknown test type: `{test_type}`.")
+    _reject_non_public_test_type(tt)
 
     table_group = TableGroup.get(suite.table_groups_id)
     if table_group is None:
@@ -575,7 +584,7 @@ def create_test(
     accepted = td.editable_fields(tt)
     rejected = sorted(set(fields) - accepted)
     if rejected:
-        bullets = "\n".join(f"- `{key}`: not editable for test type `{tt_code}`" for key in rejected)
+        bullets = "\n".join(f"- `{key}`: not editable for test type {tt.test_name_short}" for key in rejected)
         raise MCPUserError(f"Test definition creation rejected. No changes saved.\n\n{bullets}")
     for key, value in fields.items():
         setattr(td, key, value)
@@ -614,7 +623,8 @@ def update_test(
     td = resolve_test_definition(test_definition_id)
     tt = TestType.get(td.test_type)
     if tt is None:
-        raise MCPUserError(f"Test type `{td.test_type}` not found for this test definition.")
+        raise MCPUserError("This test definition's test type is no longer defined, so it cannot be updated.")
+    _reject_non_public_test_type(tt)
 
     if not fields:
         raise MCPUserError("No fields supplied to update.")
@@ -624,7 +634,7 @@ def update_test(
     rejected = sorted(set(fields) - accepted)
     if rejected:
         bullets = "\n".join(
-            f"- `{key}`: not editable for test type `{tt.test_type}`" for key in rejected
+            f"- `{key}`: not editable for test type {tt.test_name_short}" for key in rejected
         )
         raise MCPUserError(f"Update rejected. No changes saved.\n\n{bullets}")
 
@@ -692,7 +702,7 @@ def validate_custom_test(
         doc.code_block(message)
         return doc.render()
 
-    flavor = connection.sql_flavor_code or connection.sql_flavor or "target database"
+    flavor = format_flavor_label(connection.sql_flavor_code) or "target database"
     doc.text(
         f"**SQL ran successfully** against `{connection.connection_name}` ({flavor})."
     )
@@ -700,7 +710,7 @@ def validate_custom_test(
     if result.row_count == 0:
         doc.text("**Would pass:** ✓ — query returned 0 rows matching the failure criteria.")
         doc.text(
-            "_If saved as a CUSTOM test, this would currently pass: the test fails when any "
+            "_If saved as a Custom Test, this would currently pass: the test fails when any "
             "rows match the failure criteria, and there are none._"
         )
         return doc.render()
@@ -718,7 +728,7 @@ def validate_custom_test(
             values = ["[redacted]"] * len(columns)
         doc.table(columns, [values])
     doc.text(
-        "_If saved as a CUSTOM test, this would currently fail because the SQL returned rows "
+        "_If saved as a Custom Test, this would currently fail because the SQL returned rows "
         "matching the test failure criteria. Refine the query if some of those rows are false positives._"
     )
     if not can_view_pii:

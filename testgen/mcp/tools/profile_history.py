@@ -20,7 +20,7 @@ from sqlalchemy import func
 
 from testgen.common.enums import Disposition, JobStatus
 from testgen.common.models import get_current_session, with_database_session
-from testgen.common.models.data_column import ProfileMetric
+from testgen.common.models.data_column import GENERAL_TYPE_CODE_TO_LABEL, ProfileMetric
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ProfileResult
@@ -52,14 +52,6 @@ _TYPE_NUMERIC = "N"
 _TYPE_DATE = "D"
 _TYPE_BOOLEAN = "B"
 
-_TYPE_LABELS: dict[str, str] = {
-    _TYPE_ALPHA: "Alpha",
-    _TYPE_NUMERIC: "Numeric",
-    _TYPE_DATE: "Date",
-    _TYPE_BOOLEAN: "Boolean",
-    "T": "Time",
-    "X": "Other",
-}
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +493,7 @@ def _render_run_comparison(
         headers, rows = _build_metric_rows_for_type(general_type, shared)
         if rows:
             rendered_any_metric_table = True
-            doc.heading(2, f"{_TYPE_LABELS[general_type]} columns")
+            doc.heading(2, f"{GENERAL_TYPE_CODE_TO_LABEL[general_type]} columns")
             doc.table(headers, rows, code=[0, 1])
 
     categorical_lines = _categorical_lines(shared)

@@ -237,7 +237,7 @@ def test_cancel_test_run_terminal_status(db_session_mock):
     from testgen.mcp.tools.execution import cancel_test_run
 
     with _patch_job_lookup(job):
-        with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is `completed`"):
+        with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is Completed"):
             cancel_test_run(str(uuid4()))
 
 
@@ -258,7 +258,8 @@ def test_cancel_test_run_success(db_session_mock):
 
     assert "Test run cancellation requested" in result
     assert str(job_id) in result
-    assert "cancel_requested" in result
+    assert "cancel_requested" not in result
+    assert "Canceling" in result
     assert "list_test_runs" in result
 
 
@@ -310,7 +311,7 @@ def test_cancel_profiling_run_terminal_status(db_session_mock):
     from testgen.mcp.tools.execution import cancel_profiling_run
 
     with _patch_job_lookup(job):
-        with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is `error`"):
+        with pytest.raises(MCPUserError, match=r"Cannot cancel.*current status is Error"):
             cancel_profiling_run(str(uuid4()))
 
 
@@ -331,7 +332,8 @@ def test_cancel_profiling_run_success(db_session_mock):
 
     assert "Profiling run cancellation requested" in result
     assert str(job_id) in result
-    assert "cancel_requested" in result
+    assert "cancel_requested" not in result
+    assert "Canceling" in result
     assert "list_profiling_summaries" in result
 
 

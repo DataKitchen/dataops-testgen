@@ -49,6 +49,10 @@ GENERAL_TYPE_TO_CODE: dict[GeneralType, str] = {
     GeneralType.OTHER: "X",
 }
 
+GENERAL_TYPE_CODE_TO_LABEL: dict[str, str] = {
+    code: general_type.value for general_type, code in GENERAL_TYPE_TO_CODE.items()
+}
+
 
 class SuggestedDataType(StrEnum):
     """Values accepted for the ``suggested_data_type`` argument."""

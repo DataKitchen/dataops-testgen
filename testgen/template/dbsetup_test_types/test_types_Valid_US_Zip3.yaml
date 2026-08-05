@@ -1,7 +1,7 @@
 test_types:
   id: '1045'
   test_type: Valid_US_Zip3
-  test_name_short: 'Valid US Zip-3  '
+  test_name_short: Valid US Zip-3
   test_name_long: Valid USA Zip-3 Prefix
   test_description: |-
     Tests that postal codes match the 3-digit format of a regional prefix.

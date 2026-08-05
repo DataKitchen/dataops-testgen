@@ -13,6 +13,7 @@ from testgen.mcp.permissions import ProjectPermissions
 def _make_context(**overrides):
     base = {
         "test_type": "Alpha_Trunc",
+        "test_name_short": "Alpha Truncation",
         "schema_name": "public",
         "table_name": "orders",
         "column_names": "customer_name",
@@ -53,7 +54,8 @@ def test_get_source_data_query_basic(mock_td, mock_build, db_session_mock):
     result = get_source_data_query(td_id)
 
     assert f"# Source Data Query for Test Definition `{td_id}`" in result
-    assert "Alpha_Trunc" in result
+    assert "Alpha Truncation" in result
+    assert "Alpha_Trunc`" not in result  # the stored code never surfaces
     assert "public.orders" in result
     assert "`customer_name`" in result
     assert "SELECT * FROM orders" in result
@@ -63,7 +65,7 @@ def test_get_source_data_query_basic(mock_td, mock_build, db_session_mock):
 @patch("testgen.mcp.tools.source_data.build_test_result_query")
 @patch("testgen.mcp.tools.source_data.TestDefinition")
 def test_get_source_data_query_no_query_available(mock_td, mock_build, db_session_mock):
-    context = _make_context(test_type="Freshness_Trend")
+    context = _make_context(test_type="Freshness_Trend", test_name_short="Freshness")
     mock_td.get_source_data_context.return_value = context
     mock_build.return_value = None
 
@@ -72,7 +74,8 @@ def test_get_source_data_query_no_query_available(mock_td, mock_build, db_sessio
     result = get_source_data_query(str(uuid4()))
 
     assert "not available" in result
-    assert "Freshness_Trend" in result
+    assert "Freshness" in result
+    assert "Freshness_Trend" not in result
 
 
 @patch("testgen.mcp.tools.source_data.build_test_result_query")

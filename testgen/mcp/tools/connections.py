@@ -22,7 +22,6 @@ from testgen.common.models.connection import Connection
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
-    SQL_FLAVOR_CODE_TO_LABEL,
     DocGroup,
     apply_connection_params,
     effective_mode,
@@ -180,8 +179,7 @@ def test_connection(
         doc.field("ID", connection.connection_id, code=True)
         if connection.connection_name:
             doc.field("Name", connection.connection_name, code=True)
-    label = SQL_FLAVOR_CODE_TO_LABEL.get(connection.sql_flavor_code)
-    doc.field("Type", label.value if label else connection.sql_flavor_code)
+    doc.field("Type", format_flavor_label(connection.sql_flavor_code))
     if connection.project_host:
         doc.field("Host", connection.project_host, code=True)
 

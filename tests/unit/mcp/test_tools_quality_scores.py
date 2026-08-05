@@ -92,15 +92,6 @@ def test_invalid_score_type_rejected(db_session_mock):
     assert "CDE" in msg
 
 
-@pytest.mark.parametrize("internal", ["total", "cde"])
-def test_internal_score_type_rejected(internal, db_session_mock):
-    """``total``/``cde`` were the old internal codes — inputs now use ``Total``/``CDE``."""
-    from testgen.mcp.tools.quality_scores import get_quality_scores
-
-    with _patch_perms(), pytest.raises(MCPUserError, match="Invalid score_type"):
-        get_quality_scores(project_code="demo", score_type=internal)
-
-
 def test_project_not_accessible_rejected(db_session_mock):
     """A project the user can't view raises MCPResourceNotAccessible-style error."""
     from testgen.mcp.tools.quality_scores import get_quality_scores

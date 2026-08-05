@@ -15,6 +15,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
+    NON_PUBLIC_TEST_TYPES,
     TestDefinition,
     TestDefinitionMinimal,
     TestDefinitionNote,
@@ -836,6 +837,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         END as select_name
     FROM test_types tt
     WHERE tt.active = 'Y'
+        AND tt.test_type != ALL(:non_public_test_types)
         {"AND tt.test_type = :test_type" if test_type else ""}
     ORDER BY
         CASE tt.test_scope
@@ -848,7 +850,9 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         END,
         tt.test_name_short;
     """
-    df = fetch_df_from_db(query, {"test_type": test_type})
+    df = fetch_df_from_db(
+        query, {"test_type": test_type, "non_public_test_types": sorted(NON_PUBLIC_TEST_TYPES)}
+    )
     if not df.empty:
         # Criteria facet is derived (not stored) via the shared classifier so UI and MCP agree.
         df["criteria"] = df.apply(

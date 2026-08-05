@@ -21,6 +21,7 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     format_run_duration,
+    parse_enum,
     resolve_schedule,
     resolve_table_group,
     resolve_test_suite,
@@ -67,11 +68,7 @@ def _validate_cron(cron_expression: str, cron_tz: str) -> str:
 
 
 def _parse_schedule_type(value: str) -> ScheduleType:
-    try:
-        return ScheduleType(value)
-    except ValueError as err:
-        valid = ", ".join(t.value for t in ScheduleType)
-        raise MCPUserError(f"Invalid schedule_type `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, ScheduleType, "schedule_type")
 
 
 def _linked_kind_label(key: str) -> str:

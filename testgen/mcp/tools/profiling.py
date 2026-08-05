@@ -9,6 +9,7 @@ from testgen.common.data_catalog_service import build_create_table_script
 from testgen.common.enums import JOB_STATUS_LABEL, PII_FLAG_PREFIX_TO_LABEL, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
+    GENERAL_TYPE_CODE_TO_LABEL,
     SUGGESTED_DATA_TYPE_TO_PREFIX,
     ColumnOrderBy,
     ColumnProfileDetail,
@@ -83,9 +84,15 @@ def get_table(
     if overview.columns:
         doc.heading(2, "Columns")
         doc.table(
-            ["Column", "Type", "Functional type", "DB type", "Has nulls"],
+            ["Column", "General Type", "Semantic Data Type", "DB type", "Has nulls"],
             [
-                [c.column_name, c.general_type, c.functional_data_type, c.db_data_type, c.has_nulls]
+                [
+                    c.column_name,
+                    _format_general_type(c.general_type),
+                    c.functional_data_type,
+                    c.db_data_type,
+                    c.has_nulls,
+                ]
                 for c in overview.columns
             ],
             code=[0],
@@ -338,7 +345,7 @@ def list_column_profiles(
         doc.text(page_info)
 
     headers = [
-        "Column", "Table", "Type", "Functional type", "Suggestion",
+        "Column", "Table", "General Type", "Semantic Data Type", "Suggestion",
         "PII", "CDE",
         "Records", "Nulls", "Distinct", "Filled",
         "Profiling Score", "Testing Score", "Hygiene issues",
@@ -442,7 +449,7 @@ def _render_column_profile_row(c: ColumnProfileSummary) -> list:
     return [
         c.column_name,
         c.table_name,
-        c.general_type,
+        _format_general_type(c.general_type),
         c.functional_data_type,
         c.datatype_suggestion,
         _format_pii(c.pii_flag),
@@ -886,18 +893,10 @@ def _render_column_profile_detail(p: dict) -> str:
     return doc.render()
 
 
-_FIELD_GENERAL_TYPE_LABELS = {
-    "A": "Alpha",
-    "B": "Boolean",
-    "D": "Date",
-    "N": "Numeric",
-    "T": "Time",
-    "X": "Other",
-}
 
 
 def _format_general_type(value: str) -> str:
-    return _FIELD_GENERAL_TYPE_LABELS.get(value or "X")
+    return GENERAL_TYPE_CODE_TO_LABEL.get(value or "X")
 
 
 def _render_counts(doc: MdDoc, p: dict) -> None:

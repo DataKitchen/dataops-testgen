@@ -47,6 +47,7 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     next_scheduled_run,
+    parse_enum,
     parse_monitor_calculation,
     parse_monitor_table_sort,
     parse_monitor_type,
@@ -592,11 +593,7 @@ def disable_monitors(
 
 
 def _parse_sensitivity(value: str) -> PredictSensitivity:
-    try:
-        return PredictSensitivity(value)
-    except ValueError as err:
-        valid = ", ".join(s.value for s in PredictSensitivity)
-        raise MCPUserError(f"Invalid sensitivity `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, PredictSensitivity, "sensitivity")
 
 
 def _validate_range(value: int, label: str, low: int, high: int) -> None:
@@ -1167,16 +1164,6 @@ _FRESHNESS_HISTORICAL_REJECT_MSG = (
 
 _HISTORY_LOOKBACK_RANGE: tuple[int, int] = (1, 1000)
 
-# The ``ThresholdMode`` enum stores ``STATIC = "Static"`` while the UI selector labels it
-# "Static Thresholds". User-facing output should match the UI label; the other two modes'
-# enum values already match ("Prediction Model", "Historical Calculation").
-_MODE_LABEL: dict[ThresholdMode, str] = {
-    ThresholdMode.PREDICTION: ThresholdMode.PREDICTION.value,
-    ThresholdMode.STATIC: "Static Thresholds",
-    ThresholdMode.HISTORICAL: ThresholdMode.HISTORICAL.value,
-}
-
-
 def _reject_schema_monitor(monitor: TestDefinition) -> None:
     if monitor.test_type == MonitorType.SCHEMA.value:
         raise MCPUserError(_SCHEMA_REJECT_MSG)
@@ -1220,10 +1207,9 @@ def set_monitor_predictive(
     monitor.save()
 
     display_name = _monitor_display_name(monitor)
-    predictive_label = _MODE_LABEL[ThresholdMode.PREDICTION]
     doc = MdDoc()
-    doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {predictive_label}.")
-    doc.field("Mode", predictive_label)
+    doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {ThresholdMode.PREDICTION}.")
+    doc.field("Mode", ThresholdMode.PREDICTION)
 
     # Mode-switch resets training. N starts at 0 because any prior training progress
     # belongs to the outgoing prediction and does not apply to this fresh window.
@@ -1305,18 +1291,17 @@ def set_monitor_static(
     monitor.save()
 
     display_name = _monitor_display_name(monitor)
-    static_label = _MODE_LABEL[ThresholdMode.STATIC]
     doc = MdDoc()
     if is_partial_update:
         supplied = [
             name for name, value in (("lower_bound", lower_bound), ("upper_bound", upper_bound))
             if value is not None
         ]
-        doc.heading(1, f"Monitor already in {static_label}; updated {', '.join(supplied)}.")
+        doc.heading(1, f"Monitor already in {ThresholdMode.STATIC}; updated {', '.join(supplied)}.")
     else:
-        doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {static_label}.")
+        doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {ThresholdMode.STATIC}.")
 
-    doc.field("Mode", static_label)
+    doc.field("Mode", ThresholdMode.STATIC)
     if is_freshness:
         doc.field(
             "Maximum interval since last update",
@@ -1477,7 +1462,6 @@ def set_monitor_historical(
     monitor.save()
 
     display_name = _monitor_display_name(monitor)
-    historical_label = _MODE_LABEL[ThresholdMode.HISTORICAL]
     doc = MdDoc()
     if is_partial_update:
         supplied = [
@@ -1490,11 +1474,11 @@ def set_monitor_historical(
             )
             if value is not None
         ]
-        doc.heading(1, f"Monitor already in {historical_label}; updated {', '.join(supplied)}.")
+        doc.heading(1, f"Monitor already in {ThresholdMode.HISTORICAL}; updated {', '.join(supplied)}.")
     else:
-        doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {historical_label}.")
+        doc.heading(1, f"Switched {display_name} monitor on `{monitor.table_name}` to {ThresholdMode.HISTORICAL}.")
 
-    doc.field("Mode", historical_label)
+    doc.field("Mode", ThresholdMode.HISTORICAL)
     _render_calculation_summary(doc, "Lower Bound", monitor.history_calculation)
     _render_calculation_summary(doc, "Upper Bound", monitor.history_calculation_upper)
     doc.field("History Lookback", f"{monitor.history_lookback} runs")

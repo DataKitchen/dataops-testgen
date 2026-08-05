@@ -23,6 +23,7 @@ from testgen.mcp.tools.common import (
     FailureGroupBy,
     format_page_footer,
     format_page_info,
+    parse_enum,
     parse_failure_group_by,
     parse_result_status,
     parse_since_arg,
@@ -479,11 +480,7 @@ def get_failure_trend(
     """Time-series of test result counts by time bucket.
     Use this to see whether failures are trending up or down.
     """
-    try:
-        bucket = BucketInterval(bucket)
-    except ValueError as err:
-        valid = ", ".join(v.value for v in BucketInterval)
-        raise MCPUserError(f"Invalid `bucket`: `{bucket}`. Valid values: {valid}") from err
+    bucket = parse_enum(bucket, BucketInterval, "`bucket`")
 
     project_codes = resolve_aggregate_scope(
         project_code, test_suite_id=test_suite_id, table_group_id=table_group_id

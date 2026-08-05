@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import NoReturn, TypeVar
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from testgen.common.date_service import parse_since
 from testgen.common.enums import (
@@ -85,22 +85,41 @@ def parse_uuid(value: str, label: str = "ID") -> UUID:
 
 
 _ParsedEnum = TypeVar("_ParsedEnum", bound=StrEnum)
+_MappedValue = TypeVar("_MappedValue")
+
+
+def match_enum(value: str, enum_cls: type[_ParsedEnum]) -> _ParsedEnum | None:
+    """Look up an enum member by its value, ignoring case and surrounding whitespace.
+
+    Returns ``None`` when nothing matches so callers can shape their own error message.
+    """
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return next((member for member in enum_cls if member.value.lower() == normalized), None)
+
+
+def match_mapping(value: str, mapping: Mapping[str, _MappedValue]) -> _MappedValue | None:
+    """Look up a string-keyed mapping, ignoring case and surrounding whitespace.
+
+    Returns ``None`` when nothing matches so callers can shape their own error message.
+    """
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    return next((mapped for key, mapped in mapping.items() if key.lower() == normalized), None)
 
 
 def parse_enum(value: str, enum_cls: type[_ParsedEnum], label: str) -> _ParsedEnum:
-    try:
-        return enum_cls(value)
-    except ValueError as err:
-        valid = ", ".join(member.value for member in enum_cls)
-        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}") from err
+    member = match_enum(value, enum_cls)
+    if member is None:
+        valid = ", ".join(m.value for m in enum_cls)
+        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
+    return member
 
 
 def parse_result_status(value: str) -> TestResultStatus:
-    try:
-        return TestResultStatus(value)
-    except ValueError as err:
-        valid = ", ".join(s.value for s in TestResultStatus)
-        raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, TestResultStatus, "status")
 
 
 def validate_page(value: int) -> None:
@@ -121,28 +140,16 @@ def parse_since_arg(value: str, label: str = "since", *, today: date | None = No
 
 
 def parse_impact_dimension(value: str) -> ImpactDimension:
-    try:
-        return ImpactDimension(value)
-    except ValueError as err:
-        valid = ", ".join(d.value for d in ImpactDimension)
-        raise MCPUserError(f"Invalid impact_dimension `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, ImpactDimension, "impact_dimension")
 
 
 def parse_quality_dimension(value: str) -> QualityDimension:
-    try:
-        return QualityDimension(value)
-    except ValueError as err:
-        valid = ", ".join(d.value for d in QualityDimension)
-        raise MCPUserError(f"Invalid quality_dimension `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, QualityDimension, "quality_dimension")
 
 
 def parse_severity(value: str) -> Severity:
     """Validate a test-suite default severity. Accepts ``Fail`` or ``Warning``."""
-    try:
-        return Severity(value)
-    except ValueError as err:
-        valid = ", ".join(s.value for s in Severity)
-        raise MCPUserError(f"Invalid severity `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, Severity, "severity")
 
 
 class ScoreGroupBy(StrEnum):
@@ -279,31 +286,24 @@ class ScoreType(StrEnum):
 
 
 def parse_score_group_by(value: str) -> ScoreGroupBy:
-    try:
-        return ScoreGroupBy(value)
-    except ValueError as err:
-        valid = ", ".join(g.value for g in ScoreGroupBy)
-        raise MCPUserError(f"Invalid group_by `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, ScoreGroupBy, "group_by")
 
 
 def parse_score_filter_field(value: str) -> ScoreFilterField:
-    try:
-        return ScoreFilterField(value)
-    except ValueError as err:
-        if value in {ScoreGroupBy.QUALITY_DIMENSION.value, ScoreGroupBy.IMPACT_DIMENSION.value}:
-            raise MCPUserError(
-                f"`{value}` is not a valid filter field — use group_by='{value}' instead"
-            ) from err
-        valid = ", ".join(f.value for f in ScoreFilterField)
-        raise MCPUserError(f"Invalid filter field `{value}`. Valid values: {valid}") from err
+    field_value = match_enum(value, ScoreFilterField)
+    if field_value is not None:
+        return field_value
+    group_by_only = match_enum(value, ScoreGroupBy)
+    if group_by_only in {ScoreGroupBy.QUALITY_DIMENSION, ScoreGroupBy.IMPACT_DIMENSION}:
+        raise MCPUserError(
+            f"`{value}` is not a valid filter field — use group_by='{group_by_only.value}' instead"
+        )
+    valid = ", ".join(f.value for f in ScoreFilterField)
+    raise MCPUserError(f"Invalid filter field `{value}`. Valid values: {valid}")
 
 
 def parse_score_type(value: str) -> ScoreType:
-    try:
-        return ScoreType(value)
-    except ValueError as err:
-        valid = ", ".join(s.value for s in ScoreType)
-        raise MCPUserError(f"Invalid score_type `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, ScoreType, "score_type")
 
 
 def parse_category(value: str) -> ScoreCategory:
@@ -312,11 +312,7 @@ def parse_category(value: str) -> ScoreCategory:
     Accepts the display-form values exposed by ``get_quality_scores``'s
     ``group_by`` argument (e.g. ``Quality Dimension``, ``Data Source``).
     """
-    try:
-        arg = ScoreCategoryArg(value)
-    except ValueError as err:
-        valid = ", ".join(c.value for c in ScoreCategoryArg)
-        raise MCPUserError(f"Invalid category `{value}`. Valid values: {valid}") from err
+    arg = parse_enum(value, ScoreCategoryArg, "category")
     return ScoreCategory(SCORE_CATEGORY_ARG_TO_COLUMN[arg])
 
 
@@ -334,7 +330,7 @@ _RUN_STATUS_FILTER: dict[str, list[JobStatus]] = {
 
 def parse_run_status_filter(value: str) -> list[JobStatus]:
     """Map a user-facing run status label (e.g. ``Pending``) to the underlying ``JobStatus`` values."""
-    statuses = _RUN_STATUS_FILTER.get(value)
+    statuses = match_mapping(value, _RUN_STATUS_FILTER)
     if statuses is None:
         valid = ", ".join(_RUN_STATUS_FILTER.keys())
         raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}")
@@ -350,11 +346,7 @@ class FailureGroupBy(StrEnum):
 
 
 def parse_failure_group_by(value: str) -> FailureGroupBy:
-    try:
-        return FailureGroupBy(value)
-    except ValueError as err:
-        valid = ", ".join(g.value for g in FailureGroupBy)
-        raise MCPUserError(f"Invalid group_by `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, FailureGroupBy, "group_by")
 
 
 def format_run_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
@@ -381,54 +373,38 @@ def next_scheduled_run(
     return min(s.get_sample_triggering_timestamps(1)[0] for s in schedules)
 
 
-# Monitor type — internal ``test_type`` value ↔ user-facing short label (the form
-# callers pass and the form rendered in output).
+# Monitor type — internal ``test_type`` value ↔ user-facing short label
 _MONITOR_TYPE_USER_TO_DB: dict[str, MonitorType] = {
-    "freshness": MonitorType.FRESHNESS,
-    "volume": MonitorType.VOLUME,
-    "schema": MonitorType.SCHEMA,
-    "metric": MonitorType.METRIC,
+    "Freshness": MonitorType.FRESHNESS,
+    "Volume": MonitorType.VOLUME,
+    "Schema": MonitorType.SCHEMA,
+    "Metric": MonitorType.METRIC,
 }
 
 
 def parse_monitor_type(value: str, label: str = "monitor_type") -> MonitorType:
     """Validate a user-facing monitor type label and return the stored ``MonitorType``.
 
-    Accepts ``Freshness`` / ``Volume`` / ``Schema`` / ``Metric`` (Title Case
-    as rendered in tool output) or the equivalent lowercase forms. ``label``
-    names the caller's argument in the error message — pass
-    ``"anomaly_type"`` when the public arg is named differently from
-    ``monitor_type``.
+    Accepts ``Freshness`` / ``Volume`` / ``Schema`` / ``Metric`` in any casing. ``label``
+    names the caller's argument in the error message — pass ``"anomaly_type"`` when the
+    public arg is named differently from ``monitor_type``.
     """
-    db_value = _MONITOR_TYPE_USER_TO_DB.get(value.lower()) if isinstance(value, str) else None
+    db_value = match_mapping(value, _MONITOR_TYPE_USER_TO_DB)
     if db_value is None:
         valid = ", ".join(_MONITOR_TYPE_USER_TO_DB)
         raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
     return db_value
 
 
-# Monitor calculation — enum values are the stored form (``Value`` / ``Average`` /
-# ...). Callers may pass any casing; the lowercase-keyed map normalises. Kept as
-# a mapping (not just ``.__members__``) to mirror the ``MonitorType`` precedent
-# and make case-insensitive lookup a straight dict hit.
-_MONITOR_CALCULATION_USER_TO_DB: dict[str, MonitorCalculation] = {
-    calc.value.lower(): calc for calc in MonitorCalculation
-}
-
-
 def parse_monitor_calculation(value: str, label: str) -> MonitorCalculation:
     """Validate a user-facing calculation label and return the stored ``MonitorCalculation``.
 
     Accepts ``Value`` / ``Minimum`` / ``Maximum`` / ``Sum`` / ``Average`` / ``Expression``
-    (Title Case as rendered in tool output) or the equivalent lowercase forms. ``label``
-    names the caller's argument in the error message — pass
-    ``"lower_bound_calculation"`` or ``"upper_bound_calculation"``.
+    (Title Case as rendered in tool output) or any other casing. ``label`` names the
+    caller's argument in the error message — pass ``"lower_bound_calculation"`` or
+    ``"upper_bound_calculation"``.
     """
-    db_value = _MONITOR_CALCULATION_USER_TO_DB.get(value.lower()) if isinstance(value, str) else None
-    if db_value is None:
-        valid = ", ".join(calc.value for calc in MonitorCalculation)
-        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
-    return db_value
+    return parse_enum(value, MonitorCalculation, label)
 
 
 class MonitorTableSort(StrEnum):
@@ -445,11 +421,7 @@ class MonitorTableSort(StrEnum):
 
 
 def parse_monitor_table_sort(value: str) -> MonitorTableSort:
-    try:
-        return MonitorTableSort(value)
-    except ValueError as err:
-        valid = ", ".join(s.value for s in MonitorTableSort)
-        raise MCPUserError(f"Invalid sort_by `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, MonitorTableSort, "sort_by")
 
 
 def parse_disposition(value: str) -> Disposition:
@@ -458,7 +430,7 @@ def parse_disposition(value: str) -> Disposition:
     Accepts ``Confirmed``, ``Dismissed``, ``Muted`` (user-facing labels). The DB encodes
     ``INACTIVE`` for "Muted" — see ``Disposition``.
     """
-    db_value = _DISPOSITION_USER_TO_DB.get(value)
+    db_value = match_mapping(value, _DISPOSITION_USER_TO_DB)
     if db_value is None:
         valid = ", ".join(sorted(_DISPOSITION_USER_TO_DB))
         raise MCPUserError(f"Invalid disposition `{value}`. Valid values: {valid}")
@@ -475,9 +447,9 @@ def parse_test_result_disposition(value: str) -> Disposition | None:
     maps to ``Disposition.INACTIVE``; ``No Decision`` clears the disposition (returns
     ``None`` → NULL).
     """
-    if value == _NO_DECISION:
+    if isinstance(value, str) and value.strip().lower() == _NO_DECISION.lower():
         return None
-    db_value = _DISPOSITION_USER_TO_DB.get(value)
+    db_value = match_mapping(value, _DISPOSITION_USER_TO_DB)
     if db_value is None:
         valid = ", ".join([*_DISPOSITION_USER_TO_DB, _NO_DECISION])
         raise MCPUserError(f"Invalid disposition `{value}`. Valid values: {valid}")
@@ -496,12 +468,8 @@ def parse_issue_likelihood_list(values: list[str]) -> list[IssueLikelihood]:
     parsed: list[IssueLikelihood] = []
     invalid: list[str] = []
     for value in values:
-        try:
-            likelihood = IssueLikelihood(value)
-        except ValueError:
-            invalid.append(value)
-            continue
-        if likelihood not in _FILTERABLE_LIKELIHOODS:
+        likelihood = match_enum(value, IssueLikelihood)
+        if likelihood is None or likelihood not in _FILTERABLE_LIKELIHOODS:
             invalid.append(value)
             continue
         parsed.append(likelihood)
@@ -537,7 +505,7 @@ def build_ilike_pattern(raw: str) -> str:
 
 def parse_pii_category(value: str) -> str:
     """Validate a pii_category value and return the stored ``pii_flag`` middle segment."""
-    code = _PII_CATEGORY_TO_CODE.get(value)
+    code = match_mapping(value, _PII_CATEGORY_TO_CODE)
     if code is None:
         valid = ", ".join(_PII_CATEGORY_TO_CODE)
         raise MCPUserError(f"Invalid pii_category `{value}`. Valid values: {valid}")
@@ -551,28 +519,15 @@ def parse_general_type(value: str) -> str:
     returns ``A`` / ``N`` / ``D`` / ``B`` / ``T`` / ``X`` respectively (the values stored
     on ``data_column_chars.general_type``).
     """
-    try:
-        member = GeneralType(value)
-    except ValueError as err:
-        valid = ", ".join(t.value for t in GeneralType)
-        raise MCPUserError(f"Invalid general_type `{value}`. Valid values: {valid}") from err
-    return GENERAL_TYPE_TO_CODE[member]
+    return GENERAL_TYPE_TO_CODE[parse_enum(value, GeneralType, "general_type")]
 
 
 def parse_suggested_data_type(value: str) -> SuggestedDataType:
-    try:
-        return SuggestedDataType(value)
-    except ValueError as err:
-        valid = ", ".join(t.value for t in SuggestedDataType)
-        raise MCPUserError(f"Invalid suggested_data_type `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, SuggestedDataType, "suggested_data_type")
 
 
 def parse_column_order_by(value: str) -> ColumnOrderBy:
-    try:
-        return ColumnOrderBy(value)
-    except ValueError as err:
-        valid = ", ".join(o.value for o in ColumnOrderBy)
-        raise MCPUserError(f"Invalid order_by `{value}`. Valid values: {valid}") from err
+    return parse_enum(value, ColumnOrderBy, "order_by")
 
 
 def parse_profile_metrics(values: list[str]) -> list[ProfileMetric]:
@@ -582,10 +537,11 @@ def parse_profile_metrics(values: list[str]) -> list[ProfileMetric]:
     parsed: list[ProfileMetric] = []
     invalid: list[str] = []
     for value in values:
-        try:
-            parsed.append(ProfileMetric(value))
-        except ValueError:
+        metric = match_enum(value, ProfileMetric)
+        if metric is None:
             invalid.append(value)
+        else:
+            parsed.append(metric)
     if invalid:
         valid = ", ".join(m.value for m in ProfileMetric)
         raise MCPUserError(f"Invalid metrics {invalid}. Valid values: {valid}")
@@ -599,7 +555,7 @@ _PII_RISK_LABEL_TO_PREFIX: dict[str, str] = {v: k for k, v in PII_FLAG_PREFIX_TO
 
 def parse_pii_risk_level(value: str) -> str:
     """Validate a column-profile pii_risk_level filter and return the stored prefix code."""
-    code = _PII_RISK_LABEL_TO_PREFIX.get(value)
+    code = match_mapping(value, _PII_RISK_LABEL_TO_PREFIX)
     if code is None:
         valid = ", ".join(_PII_RISK_LABEL_TO_PREFIX)
         raise MCPUserError(f"Invalid pii_risk_level `{value}`. Valid values: {valid}")
@@ -610,10 +566,11 @@ def parse_pii_risk_list(values: list[str]) -> list[PiiRisk]:
     parsed: list[PiiRisk] = []
     invalid: list[str] = []
     for value in values:
-        try:
-            parsed.append(PiiRisk(value))
-        except ValueError:
+        risk = match_enum(value, PiiRisk)
+        if risk is None:
             invalid.append(value)
+        else:
+            parsed.append(risk)
     if invalid:
         valid = ", ".join(r.value for r in PiiRisk)
         raise MCPUserError(f"Invalid pii_risk values {invalid}. Valid values: {valid}")
@@ -621,8 +578,14 @@ def parse_pii_risk_list(values: list[str]) -> list[PiiRisk]:
 
 
 def resolve_test_type(short_name: str) -> str:
-    """Resolve a test type short name to its internal code."""
-    matches = TestType.select_where(TestType.test_name_short == short_name)
+    """Resolve a test type short name to its internal code, ignoring case and surrounding whitespace.
+
+    The stored name is trimmed too, so a type whose reference data carries stray whitespace
+    stays matchable by the name the catalog advertises.
+    """
+    matches = TestType.select_where(
+        func.lower(func.trim(TestType.test_name_short)) == short_name.strip().lower()
+    )
     if not matches:
         raise MCPUserError(
             f"Unknown test type: `{short_name}`. Use the testgen://test-types resource to see available types."
@@ -631,8 +594,10 @@ def resolve_test_type(short_name: str) -> str:
 
 
 def resolve_issue_type(name: str) -> str:
-    """Resolve a hygiene issue type human label to its internal id (case-sensitive exact match)."""
-    matches = HygieneIssueType.select_where(HygieneIssueType.name == name)
+    """Resolve a hygiene issue type human label to its internal id, ignoring case and surrounding whitespace."""
+    matches = HygieneIssueType.select_where(
+        func.lower(func.trim(HygieneIssueType.name)) == name.strip().lower()
+    )
     if not matches:
         raise MCPUserError(
             f"Unknown hygiene issue type: `{name}`. "
@@ -1105,12 +1070,18 @@ SQL_FLAVOR_CODE_TO_FAMILY: dict[str, str] = dict(FLAVOR_CODE_TO_FAMILY)
 
 
 def parse_sql_flavor(value: str) -> tuple[SqlFlavorLabel, str, str]:
-    """Validate a user-facing ``sql_flavor`` value and return ``(label, code, family)``."""
-    try:
-        label = SqlFlavorLabel(value)
-    except ValueError as err:
+    """Validate a user-facing ``sql_flavor`` value and return ``(label, code, family)``.
+
+    Accepts either the display label (``Azure SQL Database``) or the flavor code
+    (``azure_mssql``), in any casing. The code is accepted because it is the slug in
+    ``testgen://connection-parameters/<code>`` resource URIs.
+    """
+    label = match_enum(value, SqlFlavorLabel)
+    if label is None:
+        label = match_mapping(value, SQL_FLAVOR_CODE_TO_LABEL)
+    if label is None:
         valid = ", ".join(f.value for f in SqlFlavorLabel)
-        raise MCPUserError(f"Invalid sql_flavor `{value}`. Valid values: {valid}") from err
+        raise MCPUserError(f"Invalid sql_flavor `{value}`. Valid values: {valid}")
     code = SQL_FLAVOR_LABEL_TO_CODE[label]
     return label, code, SQL_FLAVOR_CODE_TO_FAMILY[code]
 

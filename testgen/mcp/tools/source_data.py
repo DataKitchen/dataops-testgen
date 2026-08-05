@@ -87,8 +87,8 @@ def _resolve_hygiene_context(issue_id: str) -> dict:
 
 def _render_header_fields(doc: MdDoc, context: dict) -> None:
     """Render the entity-neutral location fields shared by both tools."""
-    if context.get("test_type"):
-        doc.field("Test type", context.get("test_type"), code=True)
+    if context.get("test_name_short"):
+        doc.field("Test type", context.get("test_name_short"))
     doc.field("Table", f"{context.get('schema_name')}.{context.get('table_name')}", code=True)
     column = context.get("column_names") or context.get("column_name")
     if column:
@@ -122,7 +122,6 @@ def get_source_data_query(
 
     Builds a lookup query using the current criteria of a test definition or a hygiene issue.
     The query targets the connected database.
-    Some test types (e.g. Freshness Trend, Schema Drift) do not have source data lookups.
 
     Provide exactly one of ``test_definition_id`` or ``issue_id``.
     """
@@ -141,7 +140,7 @@ def get_source_data_query(
     if not query:
         if test_definition_id:
             return (
-                f"Source data lookup is not available for test type `{context.get('test_type', 'unknown')}`.\n\n"
+                f"Source data lookup is not available for test type {context.get('test_name_short') or 'unknown'}.\n\n"
                 "This test type does not have a defined lookup query."
             )
         return (
@@ -186,7 +185,6 @@ def get_source_data(
 
     Executes the source data query against the connected database and returns matching rows.
     Shows CURRENT data — rows may have changed since the test or profiling run.
-    Some test types (e.g. Freshness Trend, Schema Drift) do not have source data lookups.
 
     Provide exactly one of ``test_definition_id`` or ``issue_id``.
     """
