@@ -8,7 +8,7 @@ import { Input } from '/app/static/js/components/input.js';
 import { Alert } from '/app/static/js/components/alert.js';
 import { Toggle } from '/app/static/js/components/toggle.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
-import { TestDefinitionForm } from '/app/static/js/components/test_definition_form.js';
+import { TestDefinitionForm, buildParamFieldConfigs, renderParamField } from '/app/static/js/components/test_definition_form.js';
 import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
 import { Textarea } from '/app/static/js/components/textarea.js';
 import { Tabs, Tab } from '/app/static/js/components/tabs.js';
@@ -1464,6 +1464,63 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
     const columnLabel = formValues.column_name_prompt || (testScope === 'column' ? 'Column' : 'Test Focus');
     const columnHelp = formValues.column_name_help ?? null;
 
+    const showSchemaRow = qualifiesTableRefsWithSchema;
+    const showTableRow = testScope !== 'tablegroup';
+    const showColumnRow = ['column', 'referential', 'custom'].includes(testScope);
+
+    // match_* fields mirror schema_name/table_name/column_name for referential test types.
+    // Pull them out of the parameter section so each renders beside its main-side counterpart.
+    const paramConfigs = buildParamFieldConfigs(formValues, qualifiesTableRefsWithSchema);
+    const paramColumnSet = new Set(paramConfigs.map(c => c.column));
+    const findParamConfig = (column) => paramConfigs.find(c => c.column === column);
+    // In CUSTOM, match_column_names is a plain column list rather than a mirror of column_name, so
+    // match_* fields only pair up when the test type also has match_schema_name/match_table_name.
+    const hasMatchAttributes = paramColumnSet.has('match_schema_name') || paramColumnSet.has('match_table_name');
+    const matchSchemaConfig = hasMatchAttributes && showSchemaRow ? findParamConfig('match_schema_name') : undefined;
+    const matchTableConfig = hasMatchAttributes && showTableRow ? findParamConfig('match_table_name') : undefined;
+    // The reference-side mirror of the tested column(s) is named match_column_names in some test
+    // types and match_groupby_names in others. Either only mirrors column_name when the test type
+    // has no main-side <x> of its own — when <x> is present, match_<x> pairs with it in the
+    // parameter grid instead (e.g. groupby_names/match_groupby_names on the Aggregate_* types).
+    const matchColumnConfig = hasMatchAttributes && showColumnRow
+        ? ['match_column_names', 'match_groupby_names']
+            .filter(column => !paramColumnSet.has(column.slice('match_'.length)))
+            .map(findParamConfig)
+            .find(Boolean)
+        : undefined;
+    const excludeParamColumns = [matchSchemaConfig, matchTableConfig, matchColumnConfig]
+        .filter(Boolean)
+        .map(config => config.column);
+
+    const matchFieldValid = (config) => van.state(!config?.validators?.length || !!fv.rawVal[config.column]);
+    const matchSchemaValid = matchFieldValid(matchSchemaConfig);
+    const matchTableValid = matchFieldValid(matchTableConfig);
+    const matchColumnValid = matchFieldValid(matchColumnConfig);
+
+    const renderMatchField = (config, validState) => config
+        ? renderParamField(
+            config,
+            () => fv.val[config.column] ?? config.default,
+            // Input fires onChange once at construction; skip the no-op write so mounting a match
+            // field doesn't dirty the form and rebuild every field in it.
+            (value) => {
+                if (isEqual(value, fv.rawVal[config.column] ?? null)) return;
+                updateField(config.column, value);
+            },
+            (valid) => { validState.val = valid; },
+        )
+        : null;
+
+    // Places a main identity field and its match_* counterpart (when the test type has one) side
+    // by side on the same row; falls back to the plain field when there's no counterpart to pair.
+    const pairWithMatch = (mainField, matchElement) => matchElement
+        ? div(
+            { class: 'flex-row fx-align-flex-start fx-gap-3 fx-flex-wrap' },
+            div({ class: 'td-form--field' }, mainField),
+            matchElement,
+        )
+        : mainField;
+
     return div(
         { class: 'flex-column fx-gap-3' },
 
@@ -1485,73 +1542,89 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
         Tabs(
             { activeTab },
             Tab(
-                { label: () => TabLabel('Parameters', !paramsValid.val || !columnValid.val || !tableValid.val) },
+                {
+                    label: () => TabLabel(
+                        'Parameters',
+                        !paramsValid.val || !columnValid.val || !tableValid.val
+                            || !matchSchemaValid.val || !matchTableValid.val || !matchColumnValid.val,
+                    ),
+                },
                 div(
                     { class: 'flex-column fx-gap-3' },
 
-                // Schema (read-only)
-                qualifiesTableRefsWithSchema
-                    ? Input({
-                        name: 'schema_name',
-                        label: 'Schema',
-                        value: formValues.schema_name ?? '',
-                        disabled: true,
-                    })
+                // Schema (read-only) — paired with match_schema_name when the test type has one
+                showSchemaRow
+                    ? pairWithMatch(
+                        Input({
+                            name: 'schema_name',
+                            label: 'Schema',
+                            value: formValues.schema_name ?? '',
+                            disabled: true,
+                        }),
+                        renderMatchField(matchSchemaConfig, matchSchemaValid),
+                    )
                     : null,
 
-                // Table name
-                testScope !== 'tablegroup'
-                    ? testScope === 'custom'
-                        ? Input({
-                            name: 'table_name',
-                            label: 'Table',
-                            value: () => fv.val.table_name ?? '',
-                            validators: isTableRequired ? [required] : undefined,
-                            onChange: (value, state) => {
-                                updateField('table_name', value || null);
-                                tableValid.val = state.valid;
-                            },
-                        })
-                        : () => Select({
-                            label: 'Table',
-                            value: fv.val.table_name ?? null,
-                            options: tableNameOptions,
-                            allowNull: true,
-                            filterable: true,
-                            required: isTableRequired,
-                            disabled: mode === 'edit',
-                            onChange: (value, state) => {
-                                updateField('table_name', value);
-                                updateField('column_name', null);
-                                columnValid.val = !isColumnRequired;
-                                tableValid.val = state.valid;
-                            },
-                        })
+                // Table name — paired with match_table_name when the test type has one
+                showTableRow
+                    ? pairWithMatch(
+                        testScope === 'custom'
+                            ? Input({
+                                name: 'table_name',
+                                label: 'Table',
+                                value: () => fv.val.table_name ?? '',
+                                validators: isTableRequired ? [required] : undefined,
+                                onChange: (value, state) => {
+                                    updateField('table_name', value || null);
+                                    tableValid.val = state.valid;
+                                },
+                            })
+                            : () => Select({
+                                label: 'Table',
+                                value: fv.val.table_name ?? null,
+                                options: tableNameOptions,
+                                allowNull: true,
+                                filterable: true,
+                                required: isTableRequired,
+                                disabled: mode === 'edit',
+                                onChange: (value, state) => {
+                                    updateField('table_name', value);
+                                    updateField('column_name', null);
+                                    columnValid.val = !isColumnRequired;
+                                    tableValid.val = state.valid;
+                                },
+                            }),
+                        renderMatchField(matchTableConfig, matchTableValid),
+                    )
                     : null,
 
-                // Column name (scope-dependent)
-                testScope === 'column'
-                    ? () => Select({
-                        label: columnLabel,
-                        value: fv.val.column_name ?? null,
-                        options: columnNameOptions.val,
-                        allowNull: true,
-                        filterable: true,
-                        required: isColumnRequired,
-                        onChange: (value, state) => {
-                            updateField('column_name', value);
-                            columnValid.val = state.valid;
-                        },
-                    })
-                    : testScope === 'referential' || testScope === 'custom'
-                        ? Input({
-                            name: 'column_name',
-                            label: columnLabel,
-                            help: columnHelp,
-                            value: () => fv.val.column_name ?? '',
-                            onChange: (value) => updateField('column_name', value || null),
-                        })
-                        : null,
+                // Column name (scope-dependent) — paired with its reference-side mirror when the
+                // test type mirrors it against a reference table (not CUSTOM's plain column list)
+                showColumnRow
+                    ? pairWithMatch(
+                        testScope === 'column'
+                            ? () => Select({
+                                label: columnLabel,
+                                value: fv.val.column_name ?? null,
+                                options: columnNameOptions.val,
+                                allowNull: true,
+                                filterable: true,
+                                required: isColumnRequired,
+                                onChange: (value, state) => {
+                                    updateField('column_name', value);
+                                    columnValid.val = state.valid;
+                                },
+                            })
+                            : Input({
+                                name: 'column_name',
+                                label: columnLabel,
+                                help: columnHelp,
+                                value: () => fv.val.column_name ?? '',
+                                onChange: (value) => updateField('column_name', value || null),
+                            }),
+                        renderMatchField(matchColumnConfig, matchColumnValid),
+                    )
+                    : null,
 
                 // Validation status (edit mode only)
                 mode === 'edit' && formValues.test_definition_status
@@ -1570,6 +1643,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                         definition: formValues,
                         qualifiesTableRefsWithSchema,
                         hideHeader: true,
+                        excludeColumns: excludeParamColumns,
                         onChange: (changes, { valid }) => {
                             paramsValid.val = valid;
                             if (Object.keys(changes).length === 0) return;
@@ -1731,7 +1805,8 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     color: 'primary',
                     label: mode === 'edit' ? 'Save' : 'Add',
                     width: 'auto',
-                    disabled: () => !metadataValid.val || !paramsValid.val || !columnValid.val || !tableValid.val,
+                    disabled: () => !metadataValid.val || !paramsValid.val || !columnValid.val || !tableValid.val
+                        || !matchSchemaValid.val || !matchTableValid.val || !matchColumnValid.val,
                     onclick: onSave,
                 }),
             ),

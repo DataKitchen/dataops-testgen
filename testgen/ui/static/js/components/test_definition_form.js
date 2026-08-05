@@ -62,6 +62,7 @@
  * @property {string?} class
  * @property {boolean} qualifiesTableRefsWithSchema
  * @property {boolean?} hideHeader Hide the test-type name/description header (when the host already shows it).
+ * @property {string[]?} excludeColumns Columns the host renders itself (e.g. paired next to their main-side counterpart) and that this form should skip.
  * @property {(changes: object, valid: boolean) => void} onChange
  */
 
@@ -95,20 +96,26 @@ const PARAMETER_CONFIG = {
     subset_condition: { placeholder: 'No filter — applies to all rows' },
 };
 
+/**
+ * @param {TestDefinition} definition
+ * @returns {string[]} the columns listed in default_parm_columns, in the test type's configured order
+ */
+const parseParamColumns = (definition) => (definition.default_parm_columns || '').split(',').map(v => v.trim());
 
-const TestDefinitionForm = (/** @type Properties */ props) => {
-    loadStylesheet('test-definition-form', stylesheet);
-
-    const definition = getValue(props.definition);
-    const qualifiesTableRefsWithSchema = getValue(props.qualifiesTableRefsWithSchema) ?? true;
-
-    const paramColumns = (definition.default_parm_columns || '').split(',').map(v => v.trim());
+/**
+ * Builds the render config for every column listed in default_parm_columns, in the test type's
+ * configured order.
+ * @param {TestDefinition} definition
+ * @param {boolean} qualifiesTableRefsWithSchema
+ */
+const buildParamFieldConfigs = (definition, qualifiesTableRefsWithSchema = true) => {
+    const paramColumns = parseParamColumns(definition);
     const paramLabels = (definition.default_parm_prompts || '').split(',').map(v => v.trim());
     const paramHelp = (definition.default_parm_help || '').split('|').map(v => v.trim());
     const paramRequired = (definition.default_parm_required || '').split(',').map(v => v.trim().toUpperCase() === 'Y');
 
     const hasThresholds = paramColumns.includes('history_calculation');
-    const dynamicParamColumns = paramColumns
+    return paramColumns
         .map((column, index) => {
             const config = PARAMETER_CONFIG[column] || { type: 'text' };
             const isRequired = paramRequired[index];
@@ -123,7 +130,121 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
         })
         .filter(config => !hasThresholds || !thresholdColumns.includes(config.column))
         // Drop the field for flavors whose SQL doesn't qualify table refs with a schema
-        .filter(config => qualifiesTableRefsWithSchema || config.column !== 'match_schema_name')
+        .filter(config => qualifiesTableRefsWithSchema || config.column !== 'match_schema_name');
+};
+
+/**
+ * Renders a single parameter field per its config's type.
+ * @param {object} config a config entry from buildParamFieldConfigs
+ * @param {() => *} getCurrentValue
+ * @param {(value: *) => void} onValueChange
+ * @param {(valid: boolean) => void} onValidityChange
+ */
+const renderParamField = (config, getCurrentValue, onValueChange, onValidityChange) => {
+    const column = config.column;
+
+    if (config.type === 'select') {
+        return div(
+            { class: 'td-form--field' },
+            () => Select({
+                label: config.label,
+                options: config.options,
+                value: getCurrentValue(),
+                onChange: (value) => onValueChange(value),
+            }),
+        );
+    }
+
+    if (config.type === 'number') {
+        return div(
+            { class: 'td-form--field' },
+            () => Input({
+                name: column,
+                label: config.label,
+                help: config.help,
+                placeholder: config.placeholder,
+                type: 'number',
+                value: getCurrentValue(),
+                step: config.step,
+                validators: config.validators,
+                onChange: (value, state) => {
+                    onValueChange(value || null);
+                    onValidityChange(state.valid);
+                },
+            }),
+        );
+    }
+
+    if (config.type === 'textarea') {
+        return div(
+            { class: 'td-form--field-wide' },
+            () => Textarea({
+                name: column,
+                label: config.label,
+                help: config.help,
+                value: getCurrentValue(),
+                height: 100,
+                validators: config.validators,
+                onChange: (value, state) => {
+                    onValueChange(value || null);
+                    onValidityChange(state.valid);
+                },
+            }),
+        );
+    }
+
+    return div(
+        { class: 'td-form--field' },
+        () => Input({
+            name: column,
+            label: config.label,
+            help: config.help,
+            placeholder: config.placeholder,
+            value: getCurrentValue(),
+            validators: config.validators,
+            onChange: (value, state) => {
+                onValueChange(value || null);
+                onValidityChange(state.valid);
+            },
+        }),
+    );
+};
+
+
+const TestDefinitionForm = (/** @type Properties */ props) => {
+    loadStylesheet('test-definition-form', stylesheet);
+
+    const definition = getValue(props.definition);
+    const qualifiesTableRefsWithSchema = getValue(props.qualifiesTableRefsWithSchema) ?? true;
+    const excludeColumns = new Set(getValue(props.excludeColumns) || []);
+
+    // Fields the host renders itself (e.g. match_schema_name paired next to schema_name) are
+    // excluded here so they aren't rendered — or validated — twice.
+    const dynamicParamColumns = buildParamFieldConfigs(definition, qualifiesTableRefsWithSchema)
+        .filter(config => !excludeColumns.has(config.column));
+    const hasThresholds = parseParamColumns(definition).includes('history_calculation');
+
+    // Pair each reference-side match_<column> field with its main-side counterpart so they
+    // render adjacent to each other, e.g. subset_condition next to match_subset_condition.
+    // Driven purely by column naming, so any test type's match_<x>/<x> pair is picked up
+    // without listing test types here.
+    const columnSet = new Set(dynamicParamColumns.map(config => config.column));
+    const configByColumn = new Map(dynamicParamColumns.map(config => [config.column, config]));
+    const consumedColumns = new Set();
+    const paramFieldGroups = [];
+    for (const config of dynamicParamColumns) {
+        if (consumedColumns.has(config.column)) continue;
+
+        const matchColumn = `match_${config.column}`;
+        if (!config.column.startsWith('match_') && columnSet.has(matchColumn)) {
+            paramFieldGroups.push([config, configByColumn.get(matchColumn)]);
+            consumedColumns.add(config.column);
+            consumedColumns.add(matchColumn);
+        } else {
+            paramFieldGroups.push([config]);
+            consumedColumns.add(config.column);
+        }
+    }
 
     const updatedDefinition = van.state({ ...definition });
     const validityPerField = van.state({});
@@ -164,75 +285,22 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
             ),
         () => div(
             { class: 'flex-row fx-flex-wrap fx-gap-3' },
-            dynamicParamColumns.map(config => {
-                const column = config.column;
-                const currentValue = () => updatedDefinition.val[column] ?? config.default;
-
-                if (config.type === 'select') {
-                    return div(
-                        { class: 'td-form--field' },
-                        () => Select({
-                            label: config.label,
-                            options: config.options,
-                            value: currentValue(),
-                            onChange: (value) => setFieldValues({ [column]: value }),
-                        }),
-                    );
-                }
-
-                if (config.type === 'number') {
-                    return div(
-                        { class: 'td-form--field' },
-                        () => Input({
-                            name: column,
-                            label: config.label,
-                            help: config.help,
-                            placeholder: config.placeholder,
-                            type: 'number',
-                            value: currentValue(),
-                            step: config.step,
-                            validators: config.validators,
-                            onChange: (value, state) => {
-                                setFieldValues({ [column]: value || null })
-                                setFieldValidity(column, state.valid);
-                            },
-                        }),
-                    );
-                }
-
-                if (config.type === 'textarea') {
-                    return div(
-                        { class: 'td-form--field-wide' },
-                        () => Textarea({
-                            name: column,
-                            label: config.label,
-                            help: config.help,
-                            value: currentValue(),
-                            height: 100,
-                            validators: config.validators,
-                            onChange: (value, state) => {
-                                setFieldValues({ [column]: value || null });
-                                setFieldValidity(column, state.valid);
-                            },
-                        }),
-                    );
-                }
-
-                return div(
-                    { class: 'td-form--field' },
-                    () => Input({
-                        name: column,
-                        label: config.label,
-                        help: config.help,
-                        placeholder: config.placeholder,
-                        value: currentValue(),
-                        validators: config.validators,
-                        onChange: (value, state) => {
-                            setFieldValues({ [column]: value || null })
-                            setFieldValidity(column, state.valid);
-                        },
-                    }),
+            paramFieldGroups.map(group => {
+                const renderField = (config) => renderParamField(
+                    config,
+                    () => updatedDefinition.val[config.column] ?? config.default,
+                    (value) => setFieldValues({ [config.column]: value }),
+                    (valid) => setFieldValidity(config.column, valid),
                 );
+
+                if (group.length === 2) {
+                    return div(
+                        { class: 'td-form--field-pair flex-row fx-align-flex-start fx-gap-3 fx-flex-wrap' },
+                        renderField(group[0]),
+                        renderField(group[1]),
+                    );
+                }
+                return renderField(group[0]);
             }),
         ),
         hasThresholds
@@ -496,6 +564,10 @@ stylesheet.replace(`
 .td-form--field-wide {
     flex: 100% 1 1;
 }
+
+.td-form--field-pair {
+    flex: 100% 0 0;
+}
 `);
 
-export { TestDefinitionForm };
+export { TestDefinitionForm, buildParamFieldConfigs, renderParamField };
