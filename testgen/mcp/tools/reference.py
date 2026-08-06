@@ -125,7 +125,7 @@ def column_profile_fields_resource() -> str:
 # TestGen Column Profile Fields Reference
 
 Column profiling stores ~70 statistics per column. The fields populated
-depend on the column's `General Type` (Alpha / Numeric / Date / Boolean / Other). The
+depend on the column's `General Type` (Alpha / Numeric / Datetime / Boolean / Time / Other). The
 `get_column_profile_detail` tool emits only the fields relevant to a column's type — use
 this reference to interpret what each field measures.
 

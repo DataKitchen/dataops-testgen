@@ -55,7 +55,7 @@ ALWAYS look them up using either the `testgen://test-types` resource or the `get
 Hygiene issue types similarly have specific meanings. ALWAYS look them up using the
 `testgen://hygiene-issue-types` resource.
 
-Column profile fields are type-specific (different stats per Alpha / Numeric / Date / Boolean / Other).
+Column profile fields are type-specific (different stats per Alpha / Numeric / Datetime / Boolean / Time / Other).
 ALWAYS look them up using the `testgen://column-profile-fields` resource.
 
 INVESTIGATING FAILURES

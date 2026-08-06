@@ -210,8 +210,24 @@ def test_column_profile_fields_resource_has_five_sections():
     assert "## All Column Types" in result
     assert "## Alpha" in result
     assert "## Numeric" in result
-    assert "## Date" in result
+    assert "## Datetime" in result
     assert "## Boolean" in result
+
+
+def test_general_type_prose_lists_match_the_enum():
+    """The server instructions and the resource intro both enumerate general types in prose.
+
+    A stale list advertises a value ``parse_general_type`` rejects, which is the exact
+    dead end the vocabulary is meant to prevent. Order follows the enum declaration.
+    """
+    from testgen.common.models.data_column import GeneralType
+    from testgen.mcp.server import SERVER_INSTRUCTIONS
+    from testgen.mcp.tools.reference import column_profile_fields_resource
+
+    expected = " / ".join(general_type.value for general_type in GeneralType)
+
+    assert expected in SERVER_INSTRUCTIONS
+    assert expected in column_profile_fields_resource()
 
 
 def test_column_profile_fields_resource_lists_all_pii_redacted_fields():

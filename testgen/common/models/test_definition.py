@@ -479,10 +479,7 @@ class TestType(ParamFieldsMixin, Entity):
 
     @classmethod
     def is_public(cls):
-        """WHERE clause restricting a test-type catalog to the types offered as regular tests.
-
-        Apply anywhere a caller chooses a test type to create or filter by.
-        """
+        """WHERE clause restricting a test-type catalog to the types offered as regular tests."""
         return cls.test_type.notin_(NON_PUBLIC_TEST_TYPES)
 
 

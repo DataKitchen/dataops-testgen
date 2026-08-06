@@ -74,8 +74,6 @@ EXPECTED_CRITERIA = {
     "Weekly_Rec_Ct": TestCriteria.DEFINED_THRESHOLD,
 }
 
-# Withheld from every catalog, so they carry no Criteria facet at all.
-
 
 def _test_type_docs():
     for path in sorted([*YAML_DIR.glob("*.yaml"), *YAML_DIR.glob("*.yml")]):
