@@ -18,3 +18,13 @@ UPDATE data_column_chars
  WHERE table_groups_id = '0ea85e17-acbe-47fe-8394-9970725ad37d'
    AND table_name = 'd_ebike_customers'
    AND column_name IN ('customer_id', 'credit_card');
+
+-- Demo: give one generated test definition an external URL so the link renders
+-- in the test definition and test result details.
+UPDATE test_definitions
+   SET external_url = 'https://dk-support-external.s3.us-east-1.amazonaws.com/testgen-observability/testgen-demo-external-url.png'
+ WHERE table_groups_id = '0ea85e17-acbe-47fe-8394-9970725ad37d'
+   AND test_suite_id = (SELECT id FROM test_suites WHERE test_suite = 'default-suite-1')
+   AND test_type = 'Valid_US_Zip'
+   AND table_name = 'd_ebike_customers'
+   AND column_name = 'postal_code';
