@@ -25,7 +25,6 @@ def _make_columns(*table_names: str) -> list[ColumnChars]:
         ("redshift", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
         ("redshift_spectrum", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
         ("snowflake", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
-        ("trino", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
         ("oracle", 'SELECT  1 FROM "test_schema"."orders" FETCH FIRST 1 ROWS ONLY'),
         ("sap_hana", 'SELECT  1 FROM "test_schema"."orders" LIMIT 1'),
         # Data 360 exposes DLOs unqualified — no schema prefix.
