@@ -197,8 +197,8 @@ def build_history_table(document, tr_data):
     history_df = pandas.DataFrame()
     history_df = history_df.assign(
         test_date=history_data["test_date"].map(get_formatted_datetime).copy(),
-        threshold_value=history_data["threshold_value"].astype(float).copy(),
-        result_measure=history_data["result_measure"].astype(float).copy(),
+        threshold_value=pandas.to_numeric(history_data["threshold_value_numeric"], errors="coerce").copy(),
+        result_measure=pandas.to_numeric(history_data["result_measure_numeric"], errors="coerce").copy(),
         result_status=history_data["result_status"].map(
             lambda status: Paragraph(status, style=style_per_status[status])
         ).copy(),
