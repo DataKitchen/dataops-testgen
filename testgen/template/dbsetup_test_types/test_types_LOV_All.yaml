@@ -42,7 +42,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: bigquery
     measure: |-
-      STRING_AGG(DISTINCT CAST({COLUMN_NAME} AS STRING), '|' ORDER BY {COLUMN_NAME})
+      STRING_AGG(DISTINCT CAST({COLUMN_NAME} AS STRING), '|' ORDER BY CAST({COLUMN_NAME} AS STRING))
     test_operator: '!='
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -114,7 +114,7 @@ test_types:
     test_type: LOV_All
     sql_flavor: salesforce_data360
     measure: |-
-      (SELECT ARRAY_JOIN(ARRAY_AGG(sub_val), '|') FROM (SELECT DISTINCT {COLUMN_NAME} AS sub_val FROM "{TABLE_NAME}" WHERE {SUBSET_CONDITION} ORDER BY 1 LIMIT 1000) sub_lov)
+      ARRAY_JOIN(ARRAY_SORT(ARRAY_AGG(DISTINCT {COLUMN_NAME})), '|')
     test_operator: '<>'
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -128,7 +128,7 @@ test_types:
     lookup_query: |-
       SELECT lov
       FROM (
-        SELECT STRING_AGG(DISTINCT CAST(`{COLUMN_NAME}` AS STRING), '|' ORDER BY `{COLUMN_NAME}`) AS lov
+        SELECT STRING_AGG(DISTINCT CAST(`{COLUMN_NAME}` AS STRING), '|' ORDER BY CAST(`{COLUMN_NAME}` AS STRING)) AS lov
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
       )
       WHERE lov <> {THRESHOLD_VALUE}
@@ -212,6 +212,6 @@ test_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT ARRAY_JOIN(ARRAY_AGG(sub_val), '|') AS lov FROM (SELECT DISTINCT "{COLUMN_NAME}" AS sub_val FROM "{TABLE_NAME}" ORDER BY 1 LIMIT 1000) sub_lov HAVING ARRAY_JOIN(ARRAY_AGG(sub_val), '|') <> {THRESHOLD_VALUE} LIMIT {LIMIT};
+      SELECT ARRAY_JOIN(ARRAY_SORT(ARRAY_AGG(DISTINCT "{COLUMN_NAME}")), '|') AS lov FROM "{TABLE_NAME}" HAVING ARRAY_JOIN(ARRAY_SORT(ARRAY_AGG(DISTINCT "{COLUMN_NAME}")), '|') <> {THRESHOLD_VALUE} LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []
