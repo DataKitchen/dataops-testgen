@@ -96,3 +96,35 @@ def test_generation_queries_are_scoped_to_the_resolved_run():
     tg = _make_generation(profile_run_id=run_id)
 
     assert tg._get_params()["PROFILE_RUN_ID"] == run_id
+
+
+@patch(f"{MODULE}.LOG")
+@patch(f"{MODULE}.ProfilingRun")
+def test_no_eligible_run_is_logged(mock_profiling_run, mock_log):
+    """A NULL run id joins to zero rows in every generation template, so generation ends
+    reporting success with nothing created. The warning is the only signal it happened."""
+    mock_profiling_run.latest_readable_id.return_value = None
+
+    TestGeneration(
+        MagicMock(sql_flavor="postgresql"),
+        MagicMock(id="tg-id", profiling_delay_days=0),
+        MagicMock(id="suite-id"),
+        "Standard",
+    )
+
+    assert mock_log.warning.called
+
+
+@patch(f"{MODULE}.LOG")
+@patch(f"{MODULE}.ProfilingRun")
+def test_eligible_run_is_not_logged_as_a_warning(mock_profiling_run, mock_log):
+    mock_profiling_run.latest_readable_id.return_value = uuid4()
+
+    TestGeneration(
+        MagicMock(sql_flavor="postgresql"),
+        MagicMock(id="tg-id", profiling_delay_days=0),
+        MagicMock(id="suite-id"),
+        "Standard",
+    )
+
+    assert not mock_log.warning.called

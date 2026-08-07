@@ -125,16 +125,20 @@ class TestGeneration:
         if (delay_days := int(self.table_group.profiling_delay_days)):
             self.as_of_date = self.run_date - timedelta(days=delay_days)
 
-        # Generation reads one profiling run's results: the newest whose results are all
-        # present, at or before the as-of date. A caller that just finished a run passes its
-        # id so it counts as complete -- its job execution is still 'running' at this point
-        # (the job is marked complete only after the handler returns) and
-        # table_groups.last_complete_profile_run_id is not updated until the score rollup job
-        # runs later still, so neither can identify it. It is still subject to the as-of
-        # date, so a table group with a profiling delay keeps generating from an older run.
+        # A run that has just finished cannot be identified any other way at this point: its
+        # job execution is still 'running' (marked complete only after the handler returns),
+        # and last_complete_profile_run_id is not set until the score rollup job runs later.
         self.profile_run_id = ProfilingRun.latest_readable_id(
             table_group.id, self.as_of_date, finishing_run_id=profile_run_id
         )
+        if self.profile_run_id is None:
+            # A NULL run id joins to zero rows in every template, so generation runs to
+            # completion and reports success without creating anything.
+            LOG.warning(
+                f"No profiling run with complete results on or before "
+                f"{self.as_of_date.date()} for table group {table_group.id}. "
+                "Test generation will not create any test definitions."
+            )
 
     def run(self) -> None:
         LOG.info("Running test generation queries")
