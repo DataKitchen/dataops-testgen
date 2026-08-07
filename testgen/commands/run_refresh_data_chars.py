@@ -61,6 +61,12 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
 
 
 def write_data_chars(data_chars: list[ColumnChars], sql_generator: RefreshDataCharsSQL, run_date: datetime) -> None:
+    # The refresh SQL marks as dropped every row of the table group that staging doesn't
+    # account for, so staging nothing reads as "every table and column disappeared".
+    if not data_chars:
+        LOG.warning("No columns to write for table group, skipping data characteristics refresh")
+        return
+
     staging_results = sql_generator.get_staging_data_chars(data_chars, run_date)
 
     LOG.info("Writing data characteristics to staging")

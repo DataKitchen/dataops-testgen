@@ -340,6 +340,26 @@ def test_preview_empty_result_uses_ui_verbatim_message(mock_fetch, mock_sql_cls)
     )
 
 
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.fetch_from_target_db", return_value=[])
+def test_preview_empty_result_still_returns_generator(mock_fetch, mock_sql_cls):
+    """Zero matching tables is signalled by ``success``, not by ``None`` elements.
+
+    Only the no-connection and exception branches blank the second and third
+    elements. A caller that reads them as the failure signal would build a save
+    callback here, so ``success`` is the check that matters.
+    """
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+
+    preview, data_chars, sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=False)
+
+    assert preview["success"] is False
+    assert data_chars == []
+    assert sql_gen is sql_generator
+
+
 def test_preview_no_connection_returns_failure_no_io():
     """No connection passed AND no ``table_group.connection_id`` → fail fast, no DB calls attempted."""
     tg = _tg(connection_id=None)
