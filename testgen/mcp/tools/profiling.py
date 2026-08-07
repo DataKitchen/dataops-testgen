@@ -819,7 +819,10 @@ def get_column_profile_detail(
             "Run profiling for the table group first."
         )
 
-    if detail.profile_run_status in (JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCELED):
+    # Only a run that finished has measured every column and classified what it measured.
+    # Stated as what is allowed rather than what is not, so a status added later is refused
+    # until someone decides otherwise.
+    if detail.profile_run_status != JobStatus.COMPLETED:
         _raise_run_not_ready(detail)
 
     payload = dataclasses.asdict(detail)
@@ -830,7 +833,7 @@ def get_column_profile_detail(
 
 
 def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
-    """Reject when the resolved profiling run is in `Running` or `Error` state.
+    """Reject when the resolved profiling run has not finished.
 
     Surface the run id, status, started/ended timestamps, and `log_message` (Error only)
     in the raised error so the LLM knows what to suggest next.

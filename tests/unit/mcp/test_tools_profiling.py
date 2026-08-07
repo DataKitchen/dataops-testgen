@@ -1233,6 +1233,26 @@ def test_get_column_profile_detail_running_run_rejects_with_status(
     assert str(je_id) in msg
 
 
+@pytest.mark.parametrize(
+    "status", [status for status in JobStatus if status != JobStatus.COMPLETED]
+)
+@patch("testgen.mcp.tools.profiling.DataColumnChars")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_column_profile_detail_serves_only_a_finished_run(
+    mock_tg_cls, mock_dcc_cls, db_session_mock, status
+):
+    """Only a finished run has measured every column and classified what it measured, so
+    every other state is refused -- including any added after this was written."""
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dcc_cls.get_column_detail.return_value = _column_detail(
+        profile_run_status=status, profile_run_je_id=uuid4()
+    )
+
+    from testgen.mcp.tools.profiling import get_column_profile_detail
+    with pytest.raises(MCPUserError):
+        get_column_profile_detail(str(uuid4()), "customers", "customer_name")
+
+
 @patch("testgen.mcp.tools.profiling.DataColumnChars")
 @patch("testgen.mcp.tools.common.TableGroup")
 def test_get_column_profile_detail_error_run_includes_log_message(
