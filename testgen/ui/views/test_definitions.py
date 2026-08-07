@@ -132,7 +132,7 @@ class TestDefinitionsPage(Page):
 
         if not session.auth.user_has_project_access(project_code):
             self.router.navigate_with_warning(
-                "You don't have access to view this resource. Redirecting ...",
+                "You do not have access to view this resource. Redirecting ...",
                 "test-suites",
             )
             return
@@ -448,7 +448,7 @@ class TestDefinitionsPage(Page):
             target_project = _resolve_target_project(target_tg_id)
             if not target_project or not session.auth.user_has_permission("edit", target_project):
                 LOG.warning("Refusing copy to table group %s — user lacks edit permission", target_tg_id)
-                st.toast("You don't have edit permission for the target project.", icon=":material/error:")
+                st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
@@ -470,7 +470,7 @@ class TestDefinitionsPage(Page):
             target_project = _resolve_target_project(target_tg_id)
             if not target_project or not session.auth.user_has_permission("edit", target_project):
                 LOG.warning("Refusing move to table group %s — user lacks edit permission", target_tg_id)
-                st.toast("You don't have edit permission for the target project.", icon=":material/error:")
+                st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
