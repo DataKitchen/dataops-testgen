@@ -511,26 +511,20 @@ class ProfilingRun(Entity):
     ) -> UUID | None:
         """Return the id of the newest profiling run for a table group whose results are complete.
 
-        Consumers that read a run's results need a run whose results are all present.
         ``profile_results`` rows are written and committed per column while a run is in
         flight, so a run that is still running, was interrupted, or is paused holds a
-        partial set — picking the newest run by date alone can resolve to one of those.
-        Only a completed run is a usable snapshot.
+        partial set. Only a run whose job execution completed is a usable snapshot.
 
-        ``finishing_run_id`` names a run that has finished its work but whose job execution
-        is not marked completed yet, because the caller is running inside it. It is eligible
-        alongside the completed runs. It does **not** bypass ``as_of_date``: a table group
-        with a profiling delay intentionally generates from an older run, including
-        immediately after a run finishes.
+        ``finishing_run_id`` names a run whose work is done but whose job execution is not
+        marked completed yet, because the caller is running inside it. It is eligible
+        alongside the completed runs, and remains subject to ``as_of_date``.
 
         ``as_of_date`` bounds the search to runs whose calendar date is on or before it,
         implementing a table group's ``profiling_delay_days``. It compares dates, not
-        instants: a run started at 23:59 on the as-of date is included. This reproduces the
-        generation templates' ``run_date::DATE <= :AS_OF_DATE ::DATE`` exactly, including
-        its date-level granularity. Comparing a DATE cast to a Python ``date`` also keeps
-        both sides free of time zones, as the templates were -- a bare ``<`` against the raw
-        column would compare a naive column to an aware value and let the server's session
-        TimeZone move the boundary.
+        instants: a run started at 23:59 on the as-of date is included. Comparing a DATE
+        cast to a Python ``date`` keeps both sides free of time zones -- a bare ``<``
+        against the raw column would compare a naive column to an aware value and let the
+        server's session TimeZone move the day boundary.
 
         The ``id`` tiebreaker keeps the pick deterministic when two runs share a
         ``profiling_starttime``.

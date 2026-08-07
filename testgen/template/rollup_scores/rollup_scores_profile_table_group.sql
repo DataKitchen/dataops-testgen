@@ -1,8 +1,7 @@
 -- Roll up latest scores to Table Group
--- DISTINCT ON picks one completed run per table group, tie-broken by id. Selecting
--- MAX(profiling_starttime) and joining profiling_runs back on timestamp equality matched
--- every run sharing that timestamp, so last_complete_profile_run_id was set from an
--- arbitrary one of them and the score summed their data points together.
+-- DISTINCT ON picks one completed run per table group, tie-broken by id. A timestamp equality
+-- join back to profiling_runs would match every run sharing that timestamp, leaving
+-- last_complete_profile_run_id arbitrary among them and summing their data points together.
 WITH score_calc
   AS (SELECT DISTINCT ON (run.table_groups_id)
              run.table_groups_id, run.id as profile_run_id,

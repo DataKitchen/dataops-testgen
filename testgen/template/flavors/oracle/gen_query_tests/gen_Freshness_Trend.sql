@@ -1,9 +1,6 @@
 WITH latest_run AS (
-  -- The profiling run this generation reads, resolved by the caller: the run that just
-  -- finished, or the newest completed run at or before the as-of date. Resolving it here
-  -- would have to read profile_results, which holds partial rows for a run that is still
-  -- running, was interrupted, or is paused -- those rows are committed per column as the
-  -- run proceeds, so date order alone cannot tell a partial run from a finished one.
+  -- The run the caller resolved. Resolving by date here would read profile_results, whose rows
+  -- are committed per column, so a partial run is indistinguishable from a finished one.
   SELECT :PROFILE_RUN_ID ::UUID AS profile_run_id
 ),
 latest_results AS (

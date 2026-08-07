@@ -156,10 +156,10 @@ class ProfilingSQL:
         # datatype_suggestions runs twice because it and functional_datatype each read what the
         # other writes: functional_datatype keys some of its rules off datatype_suggestion, while
         # datatype_suggestions has rules keyed off functional_data_type ('State', 'Boolean',
-        # 'Measurement Pct'). The first pass feeds functional_datatype; the second recomputes now
-        # that functional_data_type is populated, so those rules can actually fire. Without the
-        # second pass they never did -- the update is a pure function of other columns of the same
-        # row, so re-running it is idempotent.
+        # 'Measurement Pct'). The first pass feeds functional_datatype; the second is the only
+        # one in which those three rules can fire, since functional_data_type is NULL until
+        # functional_datatype has run. The update is a pure function of other columns of the
+        # same row, so re-running it is idempotent.
         queries = [
             self._get_query("datatype_suggestions.sql"),
             self._get_query("functional_datatype.sql"),

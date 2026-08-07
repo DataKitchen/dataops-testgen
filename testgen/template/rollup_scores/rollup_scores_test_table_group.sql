@@ -1,7 +1,7 @@
 -- Roll up scores from latest Test Runs per Test Suite to Table Group
--- One run per suite via DISTINCT ON, tie-broken by id, then summed across the suites.
--- Selecting MAX(test_starttime) and joining test_runs back on timestamp equality matched
--- every run of a suite sharing that timestamp, double-counting their data points.
+-- One run per suite via DISTINCT ON, tie-broken by id, then summed across the suites. A
+-- timestamp equality join back to test_runs would match every run of a suite sharing that
+-- timestamp and double-count their data points.
 WITH latest_run_per_suite
    AS (SELECT DISTINCT ON (run.test_suite_id)
               run.test_suite_id, run.dq_affected_data_points, run.dq_total_data_points

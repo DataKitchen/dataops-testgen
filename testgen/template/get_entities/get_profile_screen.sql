@@ -3,10 +3,8 @@ WITH
                     FROM profile_results
                    WHERE profile_run_id = :PROFILING_RUN_ID
                      AND table_name ILIKE :TABLE_NAME ),
-   -- Column names appearing in more than one table of the schema, within the same run as
-   -- `profiling`. Previously joined every row at or before the run's run_date with no table
-   -- group filter, so each column fanned out against every earlier run and the pattern checks
-   -- below read history rather than this run.
+   -- Column names appearing in more than one table of the schema, within one run. Scoped by
+   -- profile_run_id -- matching on run_date would fan each column out across every earlier run.
    mults AS ( SELECT p.project_code,
                       p.table_groups_id,
                       p.schema_name,

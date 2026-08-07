@@ -13,12 +13,10 @@ AS
   --
   -- Completed, not merely latest: profile_results rows are committed per column as a run
   -- proceeds, so a run that is still running, was interrupted, or is paused holds a partial
-  -- set. Resolving on MAX(profiling_starttime) alone picked those, which left this view
-  -- returning nothing at all for a table group whose newest run had not finished -- and
-  -- consumers INNER JOIN it, so they silently lost every row.
+  -- set. Consumers INNER JOIN this view, so resolving to such a run costs them every row.
   --
-  -- DISTINCT ON returns one run per table group, tie-broken by id, rather than joining
-  -- profiling_runs back on a timestamp equality that two runs can share.
+  -- DISTINCT ON returns one run per table group, tie-broken by id. A timestamp equality join
+  -- back to profiling_runs would match every run sharing the timestamp.
   WITH last_run AS ( SELECT DISTINCT ON (p.table_groups_id) p.id
                        FROM profiling_runs p
                      INNER JOIN job_executions je

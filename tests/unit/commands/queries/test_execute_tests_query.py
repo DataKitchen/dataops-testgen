@@ -572,8 +572,8 @@ def test_get_params_zero_baseline_count_is_not_nulled():
 
 # --- One run writes one test_time ---
 
-# Microseconds are deliberate: they are what the CAT and error paths used to leak into test_time,
-# while QUERY and METADATA results carry the whole-second {RUN_DATE} the templates interpolate.
+# Microseconds are deliberate: they must not reach test_time, which every result path writes at
+# the whole-second precision of the {RUN_DATE} the QUERY and METADATA templates interpolate.
 RUN_STARTTIME = datetime(2026, 7, 14, 21, 22, 26, 227897, tzinfo=UTC)
 
 TEST_TIME_INDEX = TestExecutionSQL.result_columns.index("test_time")
