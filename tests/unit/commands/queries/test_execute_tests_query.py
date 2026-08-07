@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.commands.queries.execute_tests_query import (
+    MEASURE_SEPARATOR,
     TestExecutionDef,
     TestExecutionSQL,
     build_cat_expressions,
@@ -82,8 +83,8 @@ def test_build_basic_measure_with_coalesce_cast():
     )
     assert "COALESCE(CAST(COUNT(*) AS VARCHAR)" in measure_expr
     assert "||" in measure_expr
-    assert "'|'" in measure_expr
-    assert "<NULL>|" in measure_expr
+    assert f"'{MEASURE_SEPARATOR}'" in measure_expr
+    assert f"<NULL>{MEASURE_SEPARATOR}" in measure_expr
 
 
 def test_build_normal_pass_fail_condition():
@@ -235,7 +236,14 @@ def test_build_custom_null_value():
         concat_operator="||",
         null_value="MISSING",
     )
-    assert "'MISSING|'" in measure_expr
+    assert f"'MISSING{MEASURE_SEPARATOR}'" in measure_expr
+
+
+def test_measure_separator_cannot_appear_in_a_measure():
+    """LOV_All aggregates column values with '|', so '|' cannot separate measures."""
+    assert "|" not in MEASURE_SEPARATOR
+    assert ":" not in MEASURE_SEPARATOR  # aggregate_cat_tests escapes ':' as a bind marker
+    assert "," not in MEASURE_SEPARATOR  # result_codes separator
 
 
 # --- group_cat_tests ---
@@ -296,7 +304,7 @@ def test_group_same_table_together():
 def test_parse_basic_single_result():
     td = _make_td(test_type="Alpha")
     test_defs = [[td]]
-    results = [{"query_index": 0, "result_measures": "42|", "result_codes": "1,"}]
+    results = [{"query_index": 0, "result_measures": f"42{MEASURE_SEPARATOR}", "result_codes": "1,"}]
     run_id = uuid4()
     suite_id = uuid4()
     start = datetime.now(UTC)
@@ -316,7 +324,7 @@ def test_parse_basic_single_result():
 def test_parse_null_value_handling():
     td = _make_td()
     test_defs = [[td]]
-    results = [{"query_index": 0, "result_measures": "<NULL>|", "result_codes": "0,"}]
+    results = [{"query_index": 0, "result_measures": f"<NULL>{MEASURE_SEPARATOR}", "result_codes": "0,"}]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
                               datetime.now(UTC), _make_input_params_fn())
@@ -327,7 +335,11 @@ def test_parse_multi_test_per_query():
     td1 = _make_td(test_type="Alpha")
     td2 = _make_td(test_type="Beta")
     test_defs = [[td1, td2]]
-    results = [{"query_index": 0, "result_measures": "10|20|", "result_codes": "1,0,"}]
+    results = [{
+        "query_index": 0,
+        "result_measures": f"10{MEASURE_SEPARATOR}20{MEASURE_SEPARATOR}",
+        "result_codes": "1,0,",
+    }]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
                               datetime.now(UTC), _make_input_params_fn())
@@ -338,13 +350,30 @@ def test_parse_multi_test_per_query():
     assert rows[1][10] == "0"
 
 
+def test_parse_measure_containing_pipes_does_not_shift_later_tests():
+    """LOV_All's measure is a pipe-joined list; it must not consume later tests' positions."""
+    lov = _make_td(test_type="LOV_All")
+    row_ct = _make_td(test_type="Row_Ct")
+    constant = _make_td(test_type="Constant")
+    test_defs = [[lov, row_ct, constant]]
+    results = [{
+        "query_index": 0,
+        "result_measures": MEASURE_SEPARATOR.join(["No|Yes", "47707", "23451", ""]),
+        "result_codes": "1,1,0,",
+    }]
+
+    rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
+                              datetime.now(UTC), _make_input_params_fn())
+    assert [row[13] for row in rows] == ["No|Yes", "47707", "23451"]
+
+
 def test_parse_multiple_queries():
     td1 = _make_td(test_type="Alpha")
     td2 = _make_td(test_type="Beta")
     test_defs = [[td1], [td2]]
     results = [
-        {"query_index": 0, "result_measures": "10|", "result_codes": "1,"},
-        {"query_index": 1, "result_measures": "20|", "result_codes": "0,"},
+        {"query_index": 0, "result_measures": f"10{MEASURE_SEPARATOR}", "result_codes": "1,"},
+        {"query_index": 1, "result_measures": f"20{MEASURE_SEPARATOR}", "result_codes": "0,"},
     ]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
@@ -358,7 +387,7 @@ def test_parse_result_code_negative_one():
     """Training mode result (-1) should pass through."""
     td = _make_td()
     test_defs = [[td]]
-    results = [{"query_index": 0, "result_measures": "42|", "result_codes": "-1,"}]
+    results = [{"query_index": 0, "result_measures": f"42{MEASURE_SEPARATOR}", "result_codes": "-1,"}]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
                               datetime.now(UTC), _make_input_params_fn())

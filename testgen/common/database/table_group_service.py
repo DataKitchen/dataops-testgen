@@ -127,7 +127,7 @@ _NO_TABLES_MESSAGE = (
     "No tables found matching the criteria. Please check the Table Group configuration"
     " or the database permissions."
 )
-_INACCESSIBLE_MESSAGE = "Some tables were not accessible. Please the check the database permissions."
+_INACCESSIBLE_MESSAGE = "Some tables were not accessible. Please check the database permissions."
 
 
 def preview_table_group(
@@ -170,12 +170,15 @@ def preview_table_group(
 
         if verify_access and preview["success"]:
             for table_name in list(preview["tables"]):
+                # The probe query completing is the access signal — an unreadable table
+                # raises. Its result set is empty for an empty table, so row count says
+                # nothing about access.
                 try:
-                    results = fetch_from_target_db(connection, *sql_generator.verify_access(table_name))
+                    fetch_from_target_db(connection, *sql_generator.verify_access(table_name))
                 except Exception:
                     preview["tables"][table_name]["can_access"] = False
                 else:
-                    preview["tables"][table_name]["can_access"] = bool(results) and len(results) > 0
+                    preview["tables"][table_name]["can_access"] = True
             if not all(t["can_access"] for t in preview["tables"].values()):
                 preview["message"] = _INACCESSIBLE_MESSAGE
     except Exception as error:

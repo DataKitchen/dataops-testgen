@@ -15,10 +15,8 @@ test_types:
   dq_score_prevalence_formula: |-
     (({RESULT_MEASURE}-{THRESHOLD_VALUE}))::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
   dq_score_risk_factor: '1.0'
-  column_name_prompt: |-
-    null
-  column_name_help: |-
-    null
+  column_name_prompt: null
+  column_name_help: null
   default_parm_columns: groupby_names
   default_parm_values: null
   default_parm_prompts: |-

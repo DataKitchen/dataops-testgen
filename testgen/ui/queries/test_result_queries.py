@@ -88,7 +88,7 @@ def get_test_results(
             tt.dq_dimension, r.impact_dimension, tt.test_scope,
             r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
             tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
-            c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure, r.result_status,
+            c.test_operator, r.threshold_value, r.result_measure, r.result_status,
             CASE
                 WHEN r.result_code = 0 THEN r.disposition
                 ELSE 'Passed'
@@ -178,7 +178,7 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
             tt.dq_dimension, r.impact_dimension, tt.test_scope,
             r.schema_name, r.column_names, r.test_time::DATE as test_date, r.test_type, tt.id as test_type_id,
             tt.test_name_short, tt.test_name_long, r.test_description, tt.measure_uom, tt.measure_uom_description,
-            c.test_operator, r.threshold_value::NUMERIC(16, 5), r.result_measure::NUMERIC(16, 5), r.result_status,
+            c.test_operator, r.threshold_value, r.result_measure, r.result_status,
             CASE
                 WHEN r.result_code = 0 THEN r.disposition
                 ELSE 'Passed'
@@ -421,8 +421,12 @@ def get_test_result_history(tr_data, limit: int | None = None):
         tt.test_name_long,
         tt.measure_uom,
         c.test_operator,
-        r.threshold_value::NUMERIC(16, 5),
-        r.result_measure::NUMERIC(16, 5),
+        r.threshold_value,
+        r.result_measure,
+        CASE WHEN r.threshold_value ~ '^-?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$'
+             THEN ROUND(r.threshold_value::NUMERIC, 5) END AS threshold_value_numeric,
+        CASE WHEN r.result_measure ~ '^-?[0-9]*\\.?[0-9]+([eE][-+]?[0-9]+)?$'
+             THEN ROUND(r.result_measure::NUMERIC, 5) END AS result_measure_numeric,
         r.result_status,
         tt.result_visualization,
         tt.result_visualization_params
@@ -444,7 +448,7 @@ def get_test_result_history(tr_data, limit: int | None = None):
 
     df = fetch_df_from_db(query, params)
     df["test_date"] = pd.to_datetime(df["test_date"])
-    df["threshold_value"] = pd.to_numeric(df["threshold_value"])
-    df["result_measure"] = pd.to_numeric(df["result_measure"])
+    df["threshold_value_numeric"] = pd.to_numeric(df["threshold_value_numeric"], errors="coerce")
+    df["result_measure_numeric"] = pd.to_numeric(df["result_measure_numeric"], errors="coerce")
 
     return df

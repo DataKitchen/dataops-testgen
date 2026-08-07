@@ -57,17 +57,26 @@ const TestResultsChart = (/** @type Properties */ props) => {
         let maxY = null;
         let minThreshold = null;
         let maxThreshold = null;
+        // *_numeric is NULL when the stored measure is not a number (LOV_All's pipe-joined
+        // value list). Skip those rather than feed them to Math.min/max, which would
+        // coerce null to 0 and drag the axis to the origin.
         for (const item of data) {
-            dataPoints.push({x: parseDate(item.test_date), y: item.result_measure});
+            const measure = item.result_measure_numeric;
+            const threshold = item.threshold_value_numeric;
+            dataPoints.push({x: parseDate(item.test_date), y: measure});
 
-            minY = minY == undefined ? item.result_measure : Math.min(minY, item.result_measure);
-            maxY = maxY == undefined ? item.result_measure : Math.max(maxY, item.result_measure);
-            minThreshold = minThreshold == undefined ? item.threshold_value : Math.min(minThreshold, item.threshold_value);
-            maxThreshold = maxThreshold == undefined ? item.threshold_value : Math.max(maxThreshold, item.threshold_value);
+            if (measure != undefined) {
+                minY = minY == undefined ? measure : Math.min(minY, measure);
+                maxY = maxY == undefined ? measure : Math.max(maxY, measure);
+            }
+            if (threshold != undefined) {
+                minThreshold = minThreshold == undefined ? threshold : Math.min(minThreshold, threshold);
+                maxThreshold = maxThreshold == undefined ? threshold : Math.max(maxThreshold, threshold);
+            }
         }
 
-        minY = Math.min(minY, minThreshold);
-        maxY = Math.max(maxY, maxThreshold);
+        minY = minThreshold == undefined ? minY : Math.min(minY, minThreshold);
+        maxY = maxThreshold == undefined ? maxY : Math.max(maxY, maxThreshold);
         if ((minY > 0 && maxY - minY < 0.1 * maxY) || minY === maxY) {
             axis.val = {
                 x: {
@@ -96,7 +105,7 @@ const TestResultsChart = (/** @type Properties */ props) => {
     const initilizeLineChart = (data) => {
         const thresholdDataPoints = [];
         for (const item of data) {
-            thresholdDataPoints.push({x: parseDate(item.test_date), y: item.threshold_value});
+            thresholdDataPoints.push({x: parseDate(item.test_date), y: item.threshold_value_numeric});
         }
 
         let thresholdLineColor = colorMap.redLight;
@@ -154,9 +163,9 @@ const TestResultsChart = (/** @type Properties */ props) => {
         const dataPoints = [];
 
         for (const item of data) {
-            dataPoints.push({x: parseDate(item.test_date), y: item.result_measure, ...item});
-            
-            if (item.result_measure >= 1) {
+            dataPoints.push({x: parseDate(item.test_date), y: item.result_measure_numeric, ...item});
+
+            if (item.result_measure_numeric >= 1) {
                 updateStatuses.add(item.result_status);
             } else {
                 staleStatuses.add(item.result_status);

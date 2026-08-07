@@ -24,7 +24,8 @@ test_types:
                    WITH ORDINALITY AS t(entry, rank)) || ')',0
   default_parm_prompts: |-
     List of Expected Values,Threshold Error Count
-  default_parm_help: null
+  default_parm_help: |-
+    List of values expected, in form ('Val1','Val2')|The number of errors that are acceptable before test fails.
   default_parm_required: Y,N
   default_severity: Fail
   run_type: CAT
@@ -33,7 +34,7 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
-    List of values expected, in form ('Val1','Val2)
+    Expected count of records with values not in list
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-

@@ -14,10 +14,8 @@ test_types:
   generation_template: gen_Freshness_Trend.sql
   dq_score_prevalence_formula: null
   dq_score_risk_factor: null
-  column_name_prompt: |-
-    null
-  column_name_help: |-
-    null
+  column_name_prompt: null
+  column_name_help: null
   default_parm_columns: subset_condition,history_calculation,history_calculation_upper,history_lookback
   default_parm_values: null
   default_parm_prompts: |-
