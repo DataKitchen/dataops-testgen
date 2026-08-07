@@ -2,10 +2,8 @@
 -- whether its record count is cumulative or windowed.
 --
 -- The current run's tables come from profile_run_id, not from run_date: run_date is a label a
--- run stamps on its rows, and matching on it silently missed rows a run wrote under a
--- different value. The history scan is scoped by table_groups_id rather than
--- (project_code, schema_name), which mixed two table groups of one project pointing at the
--- same schema.
+-- run stamps on its rows. The history scan is scoped by table_groups_id rather than
+-- (project_code, schema_name), which two table groups of one project can share.
 WITH tablesrank AS
          (SELECT DISTINCT p.project_code,
                           p.schema_name,
@@ -62,7 +60,7 @@ WITH tablesrank AS
           GROUP BY project_code, schema_name, table_name
           ORDER BY project_code, schema_name, table_name)
 INSERT INTO stg_functional_table_updates
-(project_code, schema_name, run_date, table_name, table_period, table_type)
+(project_code, schema_name, run_date, table_name, table_period, table_type, profile_run_id)
 SELECT project_code, schema_name, :RUN_DATE as run_date,
-       table_name, table_period, table_type
+       table_name, table_period, table_type, :PROFILE_RUN_ID ::UUID
 FROM tablestat;

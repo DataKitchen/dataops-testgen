@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
@@ -5,10 +6,11 @@ import pytest
 
 from testgen.commands.queries.profiling_query import ProfilingSQL, calculate_sampling_params
 from testgen.common.database.column_chars import ColumnChars
+from testgen.common.read_file import read_template_sql_file
 
 pytestmark = pytest.mark.unit
 
-# Microseconds are deliberate: they are what the error path used to leak into run_date.
+# Microseconds are deliberate: they must not reach run_date, which carries whole seconds.
 RUN_STARTTIME = datetime(2026, 7, 14, 21, 22, 26, 227897, tzinfo=UTC)
 
 
@@ -222,3 +224,24 @@ def test_tabletype_staging_runs_after_the_second_suggestion_pass():
 
     last_suggestion = max(i for i, name in enumerate(templates) if name == "datatype_suggestions.sql")
     assert templates.index("functional_tabletype_stage.sql") > last_suggestion
+
+
+# --- Table type staging is keyed on the run ---
+
+
+def test_tabletype_staging_rows_carry_the_run_id():
+    """stg_functional_table_updates has no table group and no per-run delete, so
+    (project_code, schema_name, table_name, run_date) cannot identify one run's rows."""
+    sql = read_template_sql_file("functional_tabletype_stage.sql", "profiling")
+
+    insert_columns = re.search(
+        r"INSERT INTO stg_functional_table_updates\s*\(([^)]*)\)", sql, re.IGNORECASE
+    ).group(1)
+    assert "profile_run_id" in insert_columns
+
+
+def test_tabletype_update_selects_its_staged_rows_by_run_id():
+    sql = read_template_sql_file("functional_tabletype_update.sql", "profiling")
+
+    assert "s.profile_run_id = :PROFILE_RUN_ID" in sql
+    assert "s.run_date" not in sql
