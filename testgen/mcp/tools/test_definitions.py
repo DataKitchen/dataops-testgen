@@ -1,9 +1,9 @@
 import json
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import NoReturn
+from typing import Annotated, NoReturn
 
-from pydantic import ValidationError
+from pydantic import Field, ValidationError
 from sqlalchemy import update
 
 from testgen.common.custom_test_validation import validate_custom_query
@@ -67,23 +67,20 @@ class BulkAction(StrEnum):
 @with_database_session
 @mcp_permission("view")
 def list_tests(
-    test_suite_id: str,
-    table_name: str | None = None,
-    test_type: str | None = None,
-    test_active: bool | None = None,
-    limit: int = 50,
-    page: int = 1,
+    test_suite_id: Annotated[str, Field(description="The UUID of the test suite.")],
+    table_name: Annotated[str | None, Field(description="Filter by table name (exact match).")] = None,
+    test_type: Annotated[
+        str | None,
+        Field(description="Filter by test type (e.g. 'Alpha Truncation', 'Row Count')."),
+    ] = None,
+    test_active: Annotated[
+        bool | None,
+        Field(description="Filter by active status (true/false). Omit to show all."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum number of tests per page (default 50, max 200).")] = 50,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
-    """List test definitions in a test suite.
-
-    Args:
-        test_suite_id: The UUID of the test suite.
-        table_name: Filter by table name (exact match).
-        test_type: Filter by test type (e.g. 'Alpha Truncation', 'Row Count').
-        test_active: Filter by active status (true/false). Omit to show all.
-        limit: Maximum number of tests per page (default 50, max 200).
-        page: Page number, starting from 1 (default 1).
-    """
+    """List test definitions in a test suite."""
     suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
     validate_page(page)
     validate_limit(limit, 200)
@@ -147,11 +144,11 @@ def list_tests(
 
 @with_database_session
 @mcp_permission("view")
-def get_test(test_definition_id: str) -> str:
-    """Get full details of a test definition, including configuration, parameters, and last result.
-
-    Args:
-        test_definition_id: The UUID of the test definition.
+def get_test(
+    test_definition_id: Annotated[str, Field(description="The UUID of the test definition.")],
+) -> str:
+    """Get full details of a test definition.
+    Includes configuration, parameters, and the last result.
     """
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     perms = get_project_permissions()
@@ -268,12 +265,10 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
 
 @with_database_session
 @mcp_permission("view")
-def list_test_notes(test_definition_id: str) -> str:
-    """List notes attached to a test definition, newest first.
-
-    Args:
-        test_definition_id: The UUID of the test definition.
-    """
+def list_test_notes(
+    test_definition_id: Annotated[str, Field(description="The UUID of the test definition.")],
+) -> str:
+    """List notes attached to a test definition, newest first."""
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     perms = get_project_permissions()
 
@@ -317,13 +312,11 @@ def _note_parent_label(summary: TestDefinitionSummary) -> str:
 
 @with_database_session
 @mcp_permission("edit")
-def create_test_note(test_definition_id: str, body: str) -> str:
-    """Attach a note to a test definition.
-
-    Args:
-        test_definition_id: UUID of the test definition, e.g. from ``list_tests``.
-        body: Note body (free-text). Empty or whitespace-only is rejected.
-    """
+def create_test_note(
+    test_definition_id: Annotated[str, Field(description="UUID of the test definition, e.g. from ``list_tests``.")],
+    body: Annotated[str, Field(description="Note body (free-text). Empty or whitespace-only is rejected.")],
+) -> str:
+    """Attach a note to a test definition."""
     _validate_note_body(body)
     td = resolve_test_definition(test_definition_id)
     username = get_authorized_mcp_user().username
@@ -344,13 +337,14 @@ def create_test_note(test_definition_id: str, body: str) -> str:
 
 @with_database_session
 @mcp_permission("edit")
-def update_test_note(test_note_id: str, body: str) -> str:
-    """Replace the body of a test note. Only the note's author can update it.
-
-    Args:
-        test_note_id: UUID of the test note, e.g. from ``list_test_notes`` or ``create_test_note``.
-        body: New note body (free-text). Empty or whitespace-only is rejected.
-    """
+def update_test_note(
+    test_note_id: Annotated[
+        str,
+        Field(description="UUID of the test note, e.g. from ``list_test_notes`` or ``create_test_note``."),
+    ],
+    body: Annotated[str, Field(description="New note body (free-text). Empty or whitespace-only is rejected.")],
+) -> str:
+    """Replace the body of a test note. Only the note's author can update it."""
     _validate_note_body(body)
     note = resolve_test_note(test_note_id)
     username = get_authorized_mcp_user().username
@@ -374,12 +368,10 @@ def update_test_note(test_note_id: str, body: str) -> str:
 
 @with_database_session
 @mcp_permission("edit")
-def delete_test_note(test_note_id: str) -> str:
-    """Delete a test note. Only the note's author can delete it.
-
-    Args:
-        test_note_id: UUID of the test note, e.g. from ``list_test_notes``.
-    """
+def delete_test_note(
+    test_note_id: Annotated[str, Field(description="UUID of the test note, e.g. from ``list_test_notes``.")],
+) -> str:
+    """Delete a test note. Only the note's author can delete it."""
     note = resolve_test_note(test_note_id)
     username = get_authorized_mcp_user().username
     if note.created_by != username:
@@ -439,17 +431,23 @@ def _append_match_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
 
 @with_database_session
 def list_test_types(
-    scope: str | None = None,
-    impact_dimension: str | None = None,
-    quality_dimension: str | None = None,
+    scope: Annotated[
+        str | None,
+        Field(description="Filter by test scope ('column', 'table', 'referential', 'custom')."),
+    ] = None,
+    impact_dimension: Annotated[
+        str | None,
+        Field(description="Filter by impact dimension ('Reliability', 'Conformance', 'Regularity', 'Usability')."),
+    ] = None,
+    quality_dimension: Annotated[
+        str | None,
+        Field(
+            description="Filter by quality dimension ('Accuracy', 'Completeness', 'Consistency', 'Recency', "
+            "'Timeliness', 'Uniqueness', 'Validity').",
+        ),
+    ] = None,
 ) -> str:
-    """List available test types with optional filtering.
-
-    Args:
-        scope: Filter by test scope ('column', 'table', 'referential', 'custom').
-        impact_dimension: Filter by impact dimension ('Reliability', 'Conformance', 'Regularity', 'Usability').
-        quality_dimension: Filter by quality dimension ('Accuracy', 'Completeness', 'Consistency', 'Recency', 'Timeliness', 'Uniqueness', 'Validity').
-    """
+    """List available test types with optional filtering."""
     if scope and scope not in _VALID_SCOPES:
         valid = ", ".join(sorted(_VALID_SCOPES))
         raise MCPUserError(f"Invalid scope `{scope}`. Valid values: {valid}")
@@ -537,22 +535,20 @@ def _coerce_custom_metadata(fields: dict) -> None:
 @with_database_session
 @mcp_permission("edit")
 def create_test(
-    test_suite_id: str,
-    test_type: str,
-    table_name: str,
-    fields: dict | None = None,
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite.")],
+    test_type: Annotated[str, Field(description="Test type name, e.g. ``Alpha Truncation`` or ``Custom Test``.")],
+    table_name: Annotated[str, Field(description="Target table name. Case-sensitive.")],
+    fields: Annotated[
+        dict | None,
+        Field(
+            description="Mapping of field name to value for the test's parameters and metadata (e.g. "
+            "``threshold_value``, ``custom_query``, ``severity``, ``column_name``, ``test_description``). Use "
+            "``list_test_types`` or ``get_test`` on a similar test to discover what's settable for the chosen test "
+            "type.",
+        ),
+    ] = None,
 ) -> str:
-    """Create a test in a test suite.
-
-    Args:
-        test_suite_id: UUID of the test suite.
-        test_type: Test type name, e.g. ``Alpha Truncation`` or ``Custom Test``.
-        table_name: Target table name. Case-sensitive.
-        fields: Mapping of field name to value for the test's parameters and metadata
-            (e.g. ``threshold_value``, ``custom_query``, ``severity``, ``column_name``,
-            ``test_description``). Use ``list_test_types`` or ``get_test`` on a similar
-            test to discover what's settable for the chosen test type.
-    """
+    """Create a test in a test suite."""
     suite = resolve_test_suite(test_suite_id)
     tt_code = resolve_test_type(test_type)
     tt = TestType.get(tt_code)
@@ -604,14 +600,17 @@ def create_test(
 
 @with_database_session
 @mcp_permission("edit")
-def update_test(test_definition_id: str, fields: dict) -> str:
-    """Update fields on an existing test. Atomic — no partial save.
-
-    Args:
-        test_definition_id: UUID of the test definition.
-        fields: Mapping of field name to new value. Use ``get_test`` to see the current
-            values and which fields are settable for the test's type.
-    """
+def update_test(
+    test_definition_id: Annotated[str, Field(description="UUID of the test definition.")],
+    fields: Annotated[
+        dict,
+        Field(
+            description="Mapping of field name to new value. Use ``get_test`` to see the current values and which "
+            "fields are settable for the test's type.",
+        ),
+    ],
+) -> str:
+    """Update fields on an existing test. Atomic — no partial save."""
     td = resolve_test_definition(test_definition_id)
     tt = TestType.get(td.test_type)
     if tt is None:
@@ -660,15 +659,14 @@ def _format_diff(value: object) -> str | None:
 
 @with_database_session
 @mcp_permission("edit")
-def validate_custom_test(test_suite_id: str, custom_sql: str) -> str:
+def validate_custom_test(
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite whose connection the SQL runs against.")],
+    custom_sql: Annotated[str, Field(description="SQL query returning failure-criteria rows.")],
+) -> str:
     """Dry-run a custom test SQL query against the test suite's parent connection.
 
     The query should return rows matching the test failure criteria — returning no rows
     means the test passes; returning any rows means it fails.
-
-    Args:
-        test_suite_id: UUID of the test suite whose connection the SQL runs against.
-        custom_sql: SQL query returning failure-criteria rows.
     """
     suite = resolve_test_suite(test_suite_id)
     connection = Connection.get_by_table_group(suite.table_groups_id)
@@ -733,19 +731,12 @@ def validate_custom_test(test_suite_id: str, custom_sql: str) -> str:
 @with_database_session
 @mcp_permission("edit")
 def bulk_update_tests(
-    test_suite_id: str,
-    action: str,
-    table_name: str | None = None,
-    test_type: str | None = None,
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite.")],
+    action: Annotated[str, Field(description="``enable`` or ``disable``.")],
+    table_name: Annotated[str | None, Field(description="Optional table-name filter. Case-sensitive.")] = None,
+    test_type: Annotated[str | None, Field(description="Optional test type name (e.g. ``Alpha Truncation``).")] = None,
 ) -> str:
-    """Enable or disable tests in a suite in bulk.
-
-    Args:
-        test_suite_id: UUID of the test suite.
-        action: ``enable`` or ``disable``.
-        table_name: Optional table-name filter. Case-sensitive.
-        test_type: Optional test type name (e.g. ``Alpha Truncation``).
-    """
+    """Enable or disable tests in a suite in bulk."""
     bulk_action = parse_enum(action, BulkAction, "action")
     suite = resolve_test_suite(test_suite_id)
     tt_code = resolve_test_type(test_type) if test_type else None
@@ -832,23 +823,25 @@ def _append_import_result(doc: MdDoc, result: ImportResponse, preview: bool) -> 
 @with_database_session
 @mcp_permission("view")
 def export_tests(
-    test_suite_id: str,
-    origin: str = "both",
-    table_name: str | None = None,
-    test_type: str | None = None,
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite to export from.")],
+    origin: Annotated[
+        str,
+        Field(
+            description="Which tests to include: ``both`` (default), ``manual`` (only manually created tests), or "
+            "``auto`` (only auto-generated tests).",
+        ),
+    ] = "both",
+    table_name: Annotated[str | None, Field(description="Optional table-name filter. Case-sensitive.")] = None,
+    test_type: Annotated[
+        str | None,
+        Field(description="Optional test type name filter, e.g. ``Alpha Truncation``."),
+    ] = None,
 ) -> str:
     """Export test definitions from a test suite as a portable JSON document.
 
     The returned JSON payload can be applied to another suite (or back to the same
     suite) with ``import_tests`` — as-is for promotion or copying, or after editing
     it for bulk changes such as threshold calibration.
-
-    Args:
-        test_suite_id: UUID of the test suite to export from.
-        origin: Which tests to include: ``both`` (default), ``manual`` (only manually
-            created tests), or ``auto`` (only auto-generated tests).
-        table_name: Optional table-name filter. Case-sensitive.
-        test_type: Optional test type name filter, e.g. ``Alpha Truncation``.
     """
     origin_enum = parse_enum(origin, Origin, "origin")
     suite = resolve_test_suite(test_suite_id)
@@ -881,29 +874,42 @@ def export_tests(
 @with_database_session
 @mcp_permission("edit")
 def import_tests(
-    test_suite_id: str,
-    payload: str,
-    mode: str = "preview",
-    on_match: str = "overwrite_unlocked",
-    on_new: str = "create",
-    on_absence: str = "do_nothing",
+    test_suite_id: Annotated[str, Field(description="UUID of the target test suite.")],
+    payload: Annotated[
+        str,
+        Field(description="The export document as a JSON string (the fenced JSON returned by ``export_tests``)."),
+    ],
+    mode: Annotated[
+        str,
+        Field(
+            description="``preview`` (default) reports the projected changes without persisting; ``apply`` persists, "
+            "skipping entries that can't be applied; ``apply_strict`` persists only if nothing would be skipped, "
+            "otherwise applies nothing.",
+        ),
+    ] = "preview",
+    on_match: Annotated[
+        str,
+        Field(
+            description="What to do when an incoming test matches an existing one: ``overwrite_unlocked`` (default), "
+            "``overwrite_all``, or ``skip``.",
+        ),
+    ] = "overwrite_unlocked",
+    on_new: Annotated[
+        str,
+        Field(
+            description="What to do when an incoming test has no match: ``create`` (default), ``create_and_lock``, or "
+            "``skip``.",
+        ),
+    ] = "create",
+    on_absence: Annotated[
+        str,
+        Field(
+            description="What to do with existing tests that are absent from the payload: ``do_nothing`` (default), "
+            "``delete_all``, or ``delete_unlocked``.",
+        ),
+    ] = "do_nothing",
 ) -> str:
-    """Apply an export document from ``export_tests`` to a test suite.
-
-    Args:
-        test_suite_id: UUID of the target test suite.
-        payload: The export document as a JSON string (the fenced JSON returned by
-            ``export_tests``).
-        mode: ``preview`` (default) reports the projected changes without persisting;
-            ``apply`` persists, skipping entries that can't be applied; ``apply_strict``
-            persists only if nothing would be skipped, otherwise applies nothing.
-        on_match: What to do when an incoming test matches an existing one:
-            ``overwrite_unlocked`` (default), ``overwrite_all``, or ``skip``.
-        on_new: What to do when an incoming test has no match: ``create`` (default),
-            ``create_and_lock``, or ``skip``.
-        on_absence: What to do with existing tests that are absent from the payload:
-            ``do_nothing`` (default), ``delete_all``, or ``delete_unlocked``.
-    """
+    """Apply an export document from ``export_tests`` to a test suite."""
     config = ImportConfig(
         mode=parse_enum(mode, ImportMode, "mode"),
         on_match=parse_enum(on_match, OnMatch, "on_match"),

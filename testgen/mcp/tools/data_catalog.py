@@ -1,4 +1,7 @@
 from collections.abc import Mapping
+from typing import Annotated
+
+from pydantic import Field
 
 from testgen.common.data_catalog_service import (
     TAG_FIELDS,
@@ -26,7 +29,23 @@ _COLUMN_TO_ARG = {v: k for k, v in _ARG_TO_COLUMN.items()}
 
 @with_database_session
 @mcp_permission("disposition")
-def update_catalog_metadata(updates: list[dict]) -> str:
+def update_catalog_metadata(
+    updates: Annotated[
+        list[dict],
+        Field(
+            description="List of per-row update specs. Each requires `table_group_id` (UUID of the table group, "
+            "e.g. from `get_data_inventory`) and `table_name`. Add `column_name` to target one column; omit it "
+            "for a table-level update. Fields it can set: `description` — free text, max 1000 characters. "
+            "`cde` — critical data element (true/false); set at table level to apply to every column unless a "
+            "column overrides it. `xde` — exclude the column from future profiling and test generation "
+            "(true/false). `pii` — column contains personally identifiable information (true/false); requires "
+            "permission to view PII on the row's project. `data_source`, `source_system`, `source_process`, "
+            "`business_domain`, `stakeholder_group`, `transform_level`, `aggregation_level`, `data_product`, "
+            "`data_classification` — catalog tags, max 40 characters each. `xde` and `pii` apply to columns "
+            "only: a table-level row carrying either one fails.",
+        ),
+    ],
+) -> str:
     """Apply metadata updates to tables and columns within table groups.
 
     Each update targets one table, or one column within a table, and sets one or
@@ -34,23 +53,6 @@ def update_catalog_metadata(updates: list[dict]) -> str:
     does not stop the others, and the response reports the outcome of every row.
 
     Omit a field to leave it unchanged, pass null to clear it, or pass a value to set it.
-
-    Args:
-        updates: List of per-row update specs. Each spec accepts:
-            table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-            table_name: Name of the target table.
-            column_name: Name of the target column. Omit for a table-level update.
-            description: Free-text description (max 1000 characters).
-            cde: Whether this is a critical data element (true/false). Set at the
-                table level to apply to all its columns unless a column overrides it.
-            xde: Whether to exclude the column from future profiling and test
-                generation (true/false). Columns only.
-            pii: Whether the column contains personally identifiable information
-                (true/false). Columns only.
-            data_source, source_system, source_process, business_domain,
-                stakeholder_group, transform_level, aggregation_level, data_product,
-                data_classification:
-                Catalog tags (max 40 characters each).
     """
     if not updates:
         raise MCPUserError("Provide at least one update.")

@@ -7,8 +7,9 @@ so the rules and SQL paths stay in one place.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
+from pydantic import Field
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
@@ -50,21 +51,15 @@ _SCHEMA_LOCKED_MESSAGE = (
 @with_database_session
 @mcp_permission("view")
 def list_table_groups(
-    project_code: str | None = None,
-    connection_id: int | None = None,
-    page: int = 1,
-    limit: int = 20,
+    project_code: Annotated[str | None, Field(description="List groups in a project.")] = None,
+    connection_id: Annotated[int | None, Field(description="List groups on a specific connection.")] = None,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
+    limit: Annotated[int, Field(description="Page size (default 20, max 100).")] = 20,
 ) -> str:
     """List table groups in a project or on a specific connection.
 
     Pass exactly one of `project_code` or `connection_id`. Returns each group's
     table count, last profile / test timestamps, and current quality score.
-
-    Args:
-        project_code: List groups in a project.
-        connection_id: List groups on a specific connection.
-        page: Page number starting at 1 (default 1).
-        limit: Page size (default 20, max 100).
     """
     if (project_code is None) == (connection_id is None):
         raise MCPUserError("Pass either `project_code` or `connection_id`, not both.")
@@ -117,13 +112,15 @@ def list_table_groups(
 
 @with_database_session
 @mcp_permission("view")
-def get_table_group(table_group_id: str) -> str:
-    """Get a table group's full configuration: filters, sampling, profiling flags, catalog tags, and recent activity.
-
+def get_table_group(
+    table_group_id: Annotated[
+        str,
+        Field(description="The table group UUID, e.g. from `list_table_groups` or `get_data_inventory`."),
+    ],
+) -> str:
+    """Get a table group's full configuration.
+    Returns filters, sampling, profiling flags, catalog tags, and recent activity.
     Use this before editing a table group or generating tests.
-
-    Args:
-        table_group_id: The table group UUID, e.g. from `list_table_groups` or `get_data_inventory`.
     """
     table_group = resolve_table_group(table_group_id)
     # Defense in depth: route through resolve_connection (perm-scoped) rather than Connection.get.
@@ -187,76 +184,117 @@ def get_table_group(table_group_id: str) -> str:
 @with_database_session
 @mcp_permission("edit")
 def create_table_group(
-    connection_id: int,
-    table_group_name: str,
-    schema: str,
+    connection_id: Annotated[int, Field(description="Bigint connection ID, e.g. from ``get_data_inventory``.")],
+    table_group_name: Annotated[
+        str,
+        Field(description="3-40 character display name. Must be unique within the project."),
+    ],
+    schema: Annotated[
+        str,
+        Field(
+            description="Schema name on the target database, e.g. ``public``. For Salesforce Data 360 connections, use "
+            "the data space name.",
+        ),
+    ],
     *,
-    description: str | None = None,
-    table_set: list[str] | None = None,
-    include_mask: str | None = None,
-    exclude_mask: str | None = None,
-    profile_id_column_mask: str | None = None,
-    profile_sk_column_mask: str | None = None,
-    profile_use_sampling: bool | None = None,
-    profile_sample_percent: int | None = None,
-    profile_sample_min_count: int | None = None,
-    profiling_delay_days: int | None = None,
-    profile_flag_cdes: bool | None = None,
-    profile_flag_pii: bool | None = None,
-    profile_exclude_xde: bool | None = None,
-    include_in_dashboard: bool | None = None,
-    add_scorecard: bool = True,
-    data_source: str | None = None,
-    source_system: str | None = None,
-    source_process: str | None = None,
-    data_location: str | None = None,
-    business_domain: str | None = None,
-    stakeholder_group: str | None = None,
-    transform_level: str | None = None,
-    data_product: str | None = None,
-    data_classification: str | None = None,
+    description: Annotated[str | None, Field(description="Optional free-text description.")] = None,
+    table_set: Annotated[
+        list[str] | None,
+        Field(description="Explicit list of table names. Combined with masks if also set."),
+    ] = None,
+    include_mask: Annotated[
+        str | None,
+        Field(description="Comma-separated SQL LIKE patterns to include (e.g. ``fact_%,dim_%``)."),
+    ] = None,
+    exclude_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to exclude.")] = None,
+    profile_id_column_mask: Annotated[
+        str | None,
+        Field(description="SQL LIKE pattern marking ID columns. Default ``%id``."),
+    ] = None,
+    profile_sk_column_mask: Annotated[
+        str | None,
+        Field(description="SQL LIKE pattern marking surrogate-key columns. Default ``%_sk``."),
+    ] = None,
+    profile_use_sampling: Annotated[
+        bool | None,
+        Field(description="Whether to sample large tables during profiling."),
+    ] = None,
+    profile_sample_percent: Annotated[int | None, Field(description="Sample size as a percent (1-100).")] = None,
+    profile_sample_min_count: Annotated[int | None, Field(description="Minimum row count when sampling.")] = None,
+    profiling_delay_days: Annotated[
+        int | None,
+        Field(description="Number of days to wait before new profiling will be available to generate tests."),
+    ] = None,
+    profile_flag_cdes: Annotated[
+        bool | None,
+        Field(description="Whether profiling flags Critical Data Elements."),
+    ] = None,
+    profile_flag_pii: Annotated[
+        bool | None,
+        Field(description="Whether profiling flags Personally Identifiable Information."),
+    ] = None,
+    profile_exclude_xde: Annotated[
+        bool | None,
+        Field(description="Whether profiling excludes columns flagged as excluded data elements."),
+    ] = None,
+    include_in_dashboard: Annotated[
+        bool | None,
+        Field(description="Whether the table group appears on the project dashboard."),
+    ] = None,
+    add_scorecard: Annotated[
+        bool,
+        Field(description="Whether to add a scorecard for the table group to the Quality Dashboard."),
+    ] = True,
+    data_source: Annotated[str | None, Field(description="Catalog tag — original source of the dataset.")] = None,
+    source_system: Annotated[
+        str | None,
+        Field(description="Catalog tag — enterprise system source for the dataset."),
+    ] = None,
+    source_process: Annotated[
+        str | None,
+        Field(description="Catalog tag — process, program, or data flow that produced the dataset."),
+    ] = None,
+    data_location: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — physical or virtual location of the dataset (e.g. ``Headquarters``, ``Cloud``).",
+        ),
+    ] = None,
+    business_domain: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — business division responsible for the dataset (e.g. ``Finance``, ``Sales``, "
+            "``Manufacturing``).",
+        ),
+    ] = None,
+    stakeholder_group: Annotated[
+        str | None,
+        Field(description="Catalog tag — data owners or stakeholders responsible for the dataset."),
+    ] = None,
+    transform_level: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — data warehouse processing stage (e.g. ``Raw``, ``Conformed``, ``Processed``, "
+            "``Reporting``) or Medallion level (``bronze``, ``silver``, ``gold``).",
+        ),
+    ] = None,
+    data_product: Annotated[
+        str | None,
+        Field(description="Catalog tag — data domain that comprises the dataset."),
+    ] = None,
+    data_classification: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — information classification level of the dataset (e.g. ``Public``, ``Internal``, "
+            "``Confidential``, ``Restricted``).",
+        ),
+    ] = None,
 ) -> str:
     """Create a table group on an existing connection.
 
     The table group inherits its project from the connection. ``include_mask``
     and ``exclude_mask`` are SQL ``LIKE`` patterns (e.g. ``fact_%,dim_%``);
     ``table_set`` is an explicit list. All filters compose with ``AND``.
-
-    Args:
-        connection_id: Bigint connection ID, e.g. from ``get_data_inventory``.
-        table_group_name: 3-40 character display name. Must be unique within the project.
-        schema: Schema name on the target database, e.g. ``public``. For Salesforce Data 360
-            connections, use the data space name.
-        description: Optional free-text description.
-        table_set: Explicit list of table names. Combined with masks if also set.
-        include_mask: Comma-separated SQL LIKE patterns to include (e.g. ``fact_%,dim_%``).
-        exclude_mask: Comma-separated SQL LIKE patterns to exclude.
-        profile_id_column_mask: SQL LIKE pattern marking ID columns. Default ``%id``.
-        profile_sk_column_mask: SQL LIKE pattern marking surrogate-key columns. Default ``%_sk``.
-        profile_use_sampling: Whether to sample large tables during profiling.
-        profile_sample_percent: Sample size as a percent (1-100).
-        profile_sample_min_count: Minimum row count when sampling.
-        profiling_delay_days: Number of days to wait before new profiling will be available
-            to generate tests.
-        profile_flag_cdes: Whether profiling flags Critical Data Elements.
-        profile_flag_pii: Whether profiling flags Personally Identifiable Information.
-        profile_exclude_xde: Whether profiling excludes columns flagged as excluded data elements.
-        include_in_dashboard: Whether the table group appears on the project dashboard.
-        add_scorecard: Whether to add a scorecard for the table group to the Quality Dashboard.
-        data_source: Catalog tag — original source of the dataset.
-        source_system: Catalog tag — enterprise system source for the dataset.
-        source_process: Catalog tag — process, program, or data flow that produced the dataset.
-        data_location: Catalog tag — physical or virtual location of the dataset
-            (e.g. ``Headquarters``, ``Cloud``).
-        business_domain: Catalog tag — business division responsible for the dataset
-            (e.g. ``Finance``, ``Sales``, ``Manufacturing``).
-        stakeholder_group: Catalog tag — data owners or stakeholders responsible for the dataset.
-        transform_level: Catalog tag — data warehouse processing stage (e.g. ``Raw``,
-            ``Conformed``, ``Processed``, ``Reporting``) or Medallion level
-            (``bronze``, ``silver``, ``gold``).
-        data_product: Catalog tag — data domain that comprises the dataset.
-        data_classification: Catalog tag — information classification level of the dataset
-            (e.g. ``Public``, ``Internal``, ``Confidential``, ``Restricted``).
     """
     connection = resolve_connection(connection_id)
 
@@ -310,33 +348,89 @@ def create_table_group(
 @with_database_session
 @mcp_permission("edit")
 def update_table_group(
-    table_group_id: str,
+    table_group_id: Annotated[str, Field(description="UUID of the table group to update.")],
     *,
-    table_group_name: str | None = None,
-    schema: str | None = None,
-    description: str | None = None,
-    table_set: list[str] | None = None,
-    include_mask: str | None = None,
-    exclude_mask: str | None = None,
-    profile_id_column_mask: str | None = None,
-    profile_sk_column_mask: str | None = None,
-    profile_use_sampling: bool | None = None,
-    profile_sample_percent: int | None = None,
-    profile_sample_min_count: int | None = None,
-    profiling_delay_days: int | None = None,
-    profile_flag_cdes: bool | None = None,
-    profile_flag_pii: bool | None = None,
-    profile_exclude_xde: bool | None = None,
-    include_in_dashboard: bool | None = None,
-    data_source: str | None = None,
-    source_system: str | None = None,
-    source_process: str | None = None,
-    data_location: str | None = None,
-    business_domain: str | None = None,
-    stakeholder_group: str | None = None,
-    transform_level: str | None = None,
-    data_product: str | None = None,
-    data_classification: str | None = None,
+    table_group_name: Annotated[
+        str | None,
+        Field(description="New display name (3-40 chars). Must be unique within the project."),
+    ] = None,
+    schema: Annotated[
+        str | None,
+        Field(description="New target-DB schema. Rejected if the table group has been used."),
+    ] = None,
+    description: Annotated[str | None, Field(description="Free-text description.")] = None,
+    table_set: Annotated[
+        list[str] | None,
+        Field(description="Replacement explicit table list (full replacement of the current list)."),
+    ] = None,
+    include_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to include.")] = None,
+    exclude_mask: Annotated[str | None, Field(description="Comma-separated SQL LIKE patterns to exclude.")] = None,
+    profile_id_column_mask: Annotated[str | None, Field(description="SQL LIKE pattern marking ID columns.")] = None,
+    profile_sk_column_mask: Annotated[
+        str | None,
+        Field(description="SQL LIKE pattern marking surrogate-key columns."),
+    ] = None,
+    profile_use_sampling: Annotated[
+        bool | None,
+        Field(description="Whether to sample large tables during profiling."),
+    ] = None,
+    profile_sample_percent: Annotated[int | None, Field(description="Sample size as a percent (1-100).")] = None,
+    profile_sample_min_count: Annotated[int | None, Field(description="Minimum row count when sampling.")] = None,
+    profiling_delay_days: Annotated[
+        int | None,
+        Field(description="Number of days to wait before new profiling will be available to generate tests."),
+    ] = None,
+    profile_flag_cdes: Annotated[bool | None, Field(description="Whether profiling flags CDEs.")] = None,
+    profile_flag_pii: Annotated[bool | None, Field(description="Whether profiling flags PII.")] = None,
+    profile_exclude_xde: Annotated[bool | None, Field(description="Whether profiling excludes XDE columns.")] = None,
+    include_in_dashboard: Annotated[
+        bool | None,
+        Field(description="Whether the table group appears on the project dashboard."),
+    ] = None,
+    data_source: Annotated[str | None, Field(description="Catalog tag — original source of the dataset.")] = None,
+    source_system: Annotated[
+        str | None,
+        Field(description="Catalog tag — enterprise system source for the dataset."),
+    ] = None,
+    source_process: Annotated[
+        str | None,
+        Field(description="Catalog tag — process, program, or data flow that produced the dataset."),
+    ] = None,
+    data_location: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — physical or virtual location of the dataset (e.g. ``Headquarters``, ``Cloud``).",
+        ),
+    ] = None,
+    business_domain: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — business division responsible for the dataset (e.g. ``Finance``, ``Sales``, "
+            "``Manufacturing``).",
+        ),
+    ] = None,
+    stakeholder_group: Annotated[
+        str | None,
+        Field(description="Catalog tag — data owners or stakeholders responsible for the dataset."),
+    ] = None,
+    transform_level: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — data warehouse processing stage (e.g. ``Raw``, ``Conformed``, ``Processed``, "
+            "``Reporting``) or Medallion level (``bronze``, ``silver``, ``gold``).",
+        ),
+    ] = None,
+    data_product: Annotated[
+        str | None,
+        Field(description="Catalog tag — data domain that comprises the dataset."),
+    ] = None,
+    data_classification: Annotated[
+        str | None,
+        Field(
+            description="Catalog tag — information classification level of the dataset (e.g. ``Public``, ``Internal``, "
+            "``Confidential``, ``Restricted``).",
+        ),
+    ] = None,
 ) -> str:
     """Update fields on an existing table group. Atomic — no partial save.
 
@@ -344,40 +438,6 @@ def update_table_group(
     to re-parent it. ``schema`` is also immutable once the table group has been
     used (profiled or has test suites); supply a different ``schema`` only on
     unused table groups.
-
-    Args:
-        table_group_id: UUID of the table group to update.
-        table_group_name: New display name (3-40 chars). Must be unique within the project.
-        schema: New target-DB schema. Rejected if the table group has been used.
-        description: Free-text description.
-        table_set: Replacement explicit table list (full replacement of the current list).
-        include_mask: Comma-separated SQL LIKE patterns to include.
-        exclude_mask: Comma-separated SQL LIKE patterns to exclude.
-        profile_id_column_mask: SQL LIKE pattern marking ID columns.
-        profile_sk_column_mask: SQL LIKE pattern marking surrogate-key columns.
-        profile_use_sampling: Whether to sample large tables during profiling.
-        profile_sample_percent: Sample size as a percent (1-100).
-        profile_sample_min_count: Minimum row count when sampling.
-        profiling_delay_days: Number of days to wait before new profiling will be available
-            to generate tests.
-        profile_flag_cdes: Whether profiling flags CDEs.
-        profile_flag_pii: Whether profiling flags PII.
-        profile_exclude_xde: Whether profiling excludes XDE columns.
-        include_in_dashboard: Whether the table group appears on the project dashboard.
-        data_source: Catalog tag — original source of the dataset.
-        source_system: Catalog tag — enterprise system source for the dataset.
-        source_process: Catalog tag — process, program, or data flow that produced the dataset.
-        data_location: Catalog tag — physical or virtual location of the dataset
-            (e.g. ``Headquarters``, ``Cloud``).
-        business_domain: Catalog tag — business division responsible for the dataset
-            (e.g. ``Finance``, ``Sales``, ``Manufacturing``).
-        stakeholder_group: Catalog tag — data owners or stakeholders responsible for the dataset.
-        transform_level: Catalog tag — data warehouse processing stage (e.g. ``Raw``,
-            ``Conformed``, ``Processed``, ``Reporting``) or Medallion level
-            (``bronze``, ``silver``, ``gold``).
-        data_product: Catalog tag — data domain that comprises the dataset.
-        data_classification: Catalog tag — information classification level of the dataset
-            (e.g. ``Public``, ``Internal``, ``Confidential``, ``Restricted``).
     """
     supplied = {
         "table_group_name": table_group_name,
@@ -455,17 +515,13 @@ def update_table_group(
 @with_database_session
 @mcp_permission("edit")
 def preview_table_group(
-    table_group_id: str,
-    verify_access: bool = False,
+    table_group_id: Annotated[str, Field(description="UUID of the table group.")],
+    verify_access: Annotated[bool, Field(description="When True, probe read access on every matched table.")] = False,
 ) -> str:
     """Probe the target database for tables matching a table group's filters.
 
     Returns counts plus a per-table breakdown. Does not save anything to the
     application database.
-
-    Args:
-        table_group_id: UUID of the table group.
-        verify_access: When True, probe read access on every matched table.
     """
     table_group = resolve_table_group(table_group_id)
     connection = Connection.get_by_table_group(table_group.id)

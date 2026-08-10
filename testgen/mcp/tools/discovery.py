@@ -1,3 +1,7 @@
+from typing import Annotated
+
+from pydantic import Field
+
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
@@ -21,11 +25,10 @@ _DOC_GROUP = DocGroup.DISCOVER
 @with_database_session
 @mcp_permission("catalog")
 def get_data_inventory() -> str:
-    """Get a structural inventory of all projects, connections, table groups, and test suites
-    accessible to the authenticated user.
-
-    This is the recommended starting point for understanding the data quality landscape.
-    Returns a structured markdown overview of the TestGen configuration.
+    """Get a structural inventory of the TestGen configuration.
+    Covers every project, connection, table group, and test suite accessible to the
+    authenticated user. This is the recommended starting point for understanding the
+    data quality landscape. Returns a structured markdown overview.
     """
     from testgen.mcp.services.inventory_service import get_inventory
 
@@ -62,16 +65,15 @@ def list_projects() -> str:
 
 @with_database_session
 @mcp_permission("view")
-def get_project(project_code: str) -> str:
+def get_project(
+    project_code: Annotated[str, Field(description="The project code, e.g. from `list_projects`.")],
+) -> str:
     """Get a project's configuration and configuration counts.
 
     Returns the project name, observability and data-retention settings, and counts
     of connections, table groups, test suites, test definitions, profiling runs, and
     test runs scoped to the project. Use this before configuration changes to confirm
     a project's current shape.
-
-    Args:
-        project_code: The project code, e.g. from `list_projects`.
     """
     perms = get_project_permissions()
     perms.verify_access(project_code, not_found=MCPResourceNotAccessible("Project", project_code))
@@ -109,12 +111,10 @@ def get_project(project_code: str) -> str:
 
 @with_database_session
 @mcp_permission("view")
-def list_test_suites(project_code: str) -> str:
-    """List all test suites for a project with their latest run statistics.
-
-    Args:
-        project_code: The project code to list test suites for.
-    """
+def list_test_suites(
+    project_code: Annotated[str, Field(description="The project code to list test suites for.")],
+) -> str:
+    """List all test suites for a project with their latest run statistics."""
     if not project_code:
         return "Missing required parameter `project_code`."
 
@@ -156,15 +156,14 @@ def list_test_suites(project_code: str) -> str:
 
 @with_database_session
 @mcp_permission("view")
-def get_test_suite(test_suite_id: str) -> str:
-    """Get a test suite's configuration: connection, table group, default severity, and per-test-type counts.
-
-    Returns the test suite's identity and configuration along with a breakdown of how many test
-    definitions it contains by type and how many are locked (excluded from regeneration).
-    Use this before changing a suite's tests to understand what will be affected.
-
-    Args:
-        test_suite_id: The test suite UUID, e.g. from `list_test_suites`.
+def get_test_suite(
+    test_suite_id: Annotated[str, Field(description="The test suite UUID, e.g. from `list_test_suites`.")],
+) -> str:
+    """Get a test suite's configuration and test-definition breakdown.
+    Returns the suite's connection, table group, and default severity, along with a
+    breakdown of how many test definitions it contains by type and how many are locked
+    (excluded from regeneration). Use this before changing a suite's tests to understand
+    what will be affected.
     """
     suite = resolve_test_suite(test_suite_id)
     # Defense in depth: resolve via perm-filtered helpers rather than `Model.get(...)`.
@@ -208,14 +207,12 @@ def get_test_suite(test_suite_id: str) -> str:
 
 @with_database_session
 @mcp_permission("catalog")
-def list_tables(table_group_id: str, limit: int = 200, page: int = 1) -> str:
-    """List tables in a table group.
-
-    Args:
-        table_group_id: The table group UUID.
-        limit: Maximum number of tables per page (default 200, max 500).
-        page: Page number, starting from 1 (default 1).
-    """
+def list_tables(
+    table_group_id: Annotated[str, Field(description="The table group UUID.")],
+    limit: Annotated[int, Field(description="Maximum number of tables per page (default 200, max 500).")] = 200,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
+) -> str:
+    """List tables in a table group."""
     validate_page(page)
     validate_limit(limit, 500)
 

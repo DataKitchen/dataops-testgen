@@ -1,5 +1,8 @@
 """MCP tools for triggering and canceling TestGen jobs."""
 
+from typing import Annotated
+
+from pydantic import Field
 from sqlalchemy import select
 
 from testgen.common.enums import JobKey, JobSource
@@ -15,12 +18,11 @@ from testgen.mcp.tools.markdown import MdDoc
 
 @with_database_session
 @mcp_permission("edit")
-def run_tests(test_suite_id: str) -> str:
+def run_tests(
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite to run, e.g. from ``list_test_suites``.")],
+) -> str:
     """Submit a test run for a test suite. Returns immediately with a job_execution_id;
     use ``list_test_runs`` to track status.
-
-    Args:
-        test_suite_id: UUID of the test suite to run, e.g. from ``list_test_suites``.
     """
     suite = resolve_test_suite(test_suite_id)
     job = JobExecution.submit(
@@ -34,12 +36,15 @@ def run_tests(test_suite_id: str) -> str:
 
 @with_database_session
 @mcp_permission("edit")
-def run_profiling(table_group_id: str) -> str:
-    """Submit a profiling run for a table group. Returns immediately with a job_execution_id;
-    use ``list_profiling_summaries`` to track status.
-
-    Args:
-        table_group_id: UUID of the table group to profile, e.g. from ``get_data_inventory``.
+def run_profiling(
+    table_group_id: Annotated[
+        str,
+        Field(description="UUID of the table group to profile, e.g. from ``get_data_inventory``."),
+    ],
+) -> str:
+    """Submit a profiling run for a table group.
+    Returns immediately with a job_execution_id; use ``list_profiling_summaries`` to
+    track status.
     """
     table_group = resolve_table_group(table_group_id)
     job = JobExecution.submit(
@@ -55,13 +60,16 @@ def run_profiling(table_group_id: str) -> str:
 
 @with_database_session
 @mcp_permission("edit")
-def generate_tests(test_suite_id: str) -> str:
-    """Submit a test-generation job for a test suite. Auto-creates test definitions from the latest
-    profiling results for the table group; locked and manually created test definitions are preserved.
-    Returns immediately with a job_execution_id.
-
-    Args:
-        test_suite_id: UUID of the test suite to generate tests for, e.g. from ``list_test_suites``.
+def generate_tests(
+    test_suite_id: Annotated[
+        str,
+        Field(description="UUID of the test suite to generate tests for, e.g. from ``list_test_suites``."),
+    ],
+) -> str:
+    """Submit a test-generation job for a test suite.
+    Auto-creates test definitions from the latest profiling results for the table group;
+    locked and manually created test definitions are preserved. Returns immediately with
+    a job_execution_id.
     """
     suite = resolve_test_suite(test_suite_id)
     job = JobExecution.submit(
@@ -82,24 +90,23 @@ def generate_tests(test_suite_id: str) -> str:
 
 @with_database_session
 @mcp_permission("edit")
-def cancel_test_run(job_execution_id: str) -> str:
-    """Request cancellation of a queued or running test run.
-
-    Args:
-        job_execution_id: UUID of a test run, e.g. from ``list_test_runs``.
-    """
+def cancel_test_run(
+    job_execution_id: Annotated[str, Field(description="UUID of a test run, e.g. from ``list_test_runs``.")],
+) -> str:
+    """Request cancellation of a queued or running test run."""
     job = _resolve_job_execution(job_execution_id, JobKey.run_tests, "Test run")
     return _render_cancel(job, "Test run", "list_test_runs")
 
 
 @with_database_session
 @mcp_permission("edit")
-def cancel_profiling_run(job_execution_id: str) -> str:
-    """Request cancellation of a queued or running profiling run.
-
-    Args:
-        job_execution_id: UUID of a profiling run, e.g. from ``list_profiling_summaries``.
-    """
+def cancel_profiling_run(
+    job_execution_id: Annotated[
+        str,
+        Field(description="UUID of a profiling run, e.g. from ``list_profiling_summaries``."),
+    ],
+) -> str:
+    """Request cancellation of a queued or running profiling run."""
     job = _resolve_job_execution(job_execution_id, JobKey.run_profile, "Profiling run")
     return _render_cancel(job, "Profiling run", "list_profiling_summaries")
 

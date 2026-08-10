@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy import select
 
 from testgen.common.enums import JobStatus
@@ -49,29 +51,33 @@ _MODEL_GROUP_COLUMN = {
 @with_database_session
 @mcp_permission("view")
 def list_test_results(
-    job_execution_id: str | None = None,
-    test_suite_id: str | None = None,
-    status: str | None = None,
-    table_name: str | None = None,
-    test_type: str | None = None,
-    limit: int = 50,
-    page: int = 1,
+    job_execution_id: Annotated[
+        str | None,
+        Field(description="UUID of a test run, e.g. from ``list_test_runs`` or ``list_test_suites``."),
+    ] = None,
+    test_suite_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a test suite. Resolves to the latest completed test run for the suite. Mutually "
+            "exclusive with ``job_execution_id``.",
+        ),
+    ] = None,
+    status: Annotated[
+        str | None,
+        Field(description="Filter by result status (Passed, Failed, Warning, Error, Log)."),
+    ] = None,
+    table_name: Annotated[str | None, Field(description="Filter by table name.")] = None,
+    test_type: Annotated[
+        str | None,
+        Field(description="Filter by test type (e.g. 'Alpha Truncation', 'Unique Percent')."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum number of test results per page (default 50, max 200).")] = 50,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
     """List individual test results for a test run, with optional filters.
 
     Provide either ``job_execution_id`` for a specific run, or ``test_suite_id`` to use
     the latest completed run of that suite.
-
-    Args:
-        job_execution_id: UUID of a test run, e.g. from ``list_test_runs`` or
-            ``list_test_suites``.
-        test_suite_id: UUID of a test suite. Resolves to the latest completed test run
-            for the suite. Mutually exclusive with ``job_execution_id``.
-        status: Filter by result status (Passed, Failed, Warning, Error, Log).
-        table_name: Filter by table name.
-        test_type: Filter by test type (e.g. 'Alpha Truncation', 'Unique Percent').
-        limit: Maximum number of test results per page (default 50, max 200).
-        page: Page number, starting from 1 (default 1).
     """
     if job_execution_id and test_suite_id:
         raise MCPUserError("Pass either `job_execution_id` or `test_suite_id`, not both.")
@@ -174,13 +180,26 @@ def list_test_results(
 @mcp_permission("view")
 def get_failure_summary(
     *,
-    project_code: str | None = None,
-    test_suite_id: str | None = None,
-    job_execution_id: str | None = None,
-    since: str | None = None,
-    group_by: str = "test_type",
+    project_code: Annotated[
+        str | None,
+        Field(description="Scope to a project the caller can view. Ignored if ``job_execution_id`` is set."),
+    ] = None,
+    test_suite_id: Annotated[str | None, Field(description="UUID of a test suite to scope the aggregation to.")] = None,
+    job_execution_id: Annotated[
+        str | None,
+        Field(description="UUID of a test run, e.g. from ``list_test_runs``, to scope the summary to a single run."),
+    ] = None,
+    since: Annotated[
+        str | None,
+        Field(description="Include runs since this point in time — e.g. '7 days', '2 weeks', '2026-04-01'."),
+    ] = None,
+    group_by: Annotated[
+        str,
+        Field(description="Group failures by 'test_type', 'table', or 'column' (default: 'test_type')."),
+    ] = "test_type",
 ) -> str:
-    """Summarize test failures (Failed and Warning) grouped by test type, table, or column.
+    """Summarize test failures grouped by test type, table, or column.
+    Covers results with status Failed and Warning.
 
     Supply a ``job_execution_id`` for a single-run summary. Alternatively, provide
     ``test_suite_id`` or ``project_code`` to aggregate across multiple runs. Use
@@ -189,14 +208,6 @@ def get_failure_summary(
 
     Table- and column-grouped summaries require a single-suite scope
     (``job_execution_id`` or ``test_suite_id``).
-
-    Args:
-        project_code: Scope to a project the caller can view. Ignored if ``job_execution_id`` is set.
-        test_suite_id: UUID of a test suite to scope the aggregation to.
-        job_execution_id: UUID of a test run, e.g. from ``list_test_runs``,
-            to scope the summary to a single run.
-        since: Include runs since this point in time — e.g. '7 days', '2 weeks', '2026-04-01'.
-        group_by: Group failures by 'test_type', 'table', or 'column' (default: 'test_type').
     """
     perms = get_project_permissions()
     group = parse_failure_group_by(group_by)
@@ -291,16 +302,18 @@ def get_failure_summary(
 @with_database_session
 @mcp_permission("view")
 def list_test_result_history(
-    test_definition_id: str,
-    limit: int = 20,
-    page: int = 1,
+    test_definition_id: Annotated[
+        str,
+        Field(description="UUID of a test definition, e.g. from ``list_test_results``."),
+    ],
+    limit: Annotated[
+        int,
+        Field(description="Maximum number of historical results per page (default 20, max 200)."),
+    ] = 20,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
-    """Get the historical results of a specific test definition across runs, showing how measure and status changed over time.
-
-    Args:
-        test_definition_id: UUID of a test definition, e.g. from ``list_test_results``.
-        limit: Maximum number of historical results per page (default 20, max 200).
-        page: Page number, starting from 1 (default 1).
+    """Get the historical results of one test definition across runs.
+    Shows how the measure and status changed over time.
     """
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     validate_page(page)
@@ -343,33 +356,27 @@ def list_test_result_history(
 @mcp_permission("view")
 def search_test_results(
     *,
-    project_code: str | None = None,
-    test_suite_id: str | None = None,
-    table_group_id: str | None = None,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    test_type: str | None = None,
-    status: list[str] | None = None,
-    since: str | None = None,
-    limit: int = 50,
-    page: int = 1,
+    project_code: Annotated[str | None, Field(description="Scope to a project the caller can view.")] = None,
+    test_suite_id: Annotated[str | None, Field(description="UUID of a test suite to scope to.")] = None,
+    table_group_id: Annotated[str | None, Field(description="UUID of a table group to scope to.")] = None,
+    table_name: Annotated[str | None, Field(description="Filter by table name.")] = None,
+    column_name: Annotated[str | None, Field(description="Filter by column name.")] = None,
+    test_type: Annotated[str | None, Field(description="Filter by test type (e.g. 'Pattern Match').")] = None,
+    status: Annotated[
+        list[str] | None,
+        Field(description="Filter by result statuses (defaults to ['Failed', 'Warning'])."),
+    ] = None,
+    since: Annotated[
+        str | None,
+        Field(description="Include results since this point — e.g. '7 days', '2 weeks', '2026-04-01'."),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum number of test results per page (default 50, max 200).")] = 50,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
     """Search test results across multiple runs with flexible filters.
 
     To drill into a single run, use ``list_test_results``. For a single test's history, use
     ``list_test_result_history``.
-
-    Args:
-        project_code: Scope to a project the caller can view.
-        test_suite_id: UUID of a test suite to scope to.
-        table_group_id: UUID of a table group to scope to.
-        table_name: Filter by table name.
-        column_name: Filter by column name.
-        test_type: Filter by test type (e.g. 'Pattern Match').
-        status: Filter by result statuses (defaults to ['Failed', 'Warning']).
-        since: Include results since this point — e.g. '7 days', '2 weeks', '2026-04-01'.
-        limit: Maximum number of test results per page (default 50, max 200).
-        page: Page number, starting from 1 (default 1).
     """
     validate_page(page)
     validate_limit(limit, 200)
@@ -447,26 +454,30 @@ def search_test_results(
 @mcp_permission("view")
 def get_failure_trend(
     *,
-    project_code: str | None = None,
-    test_suite_id: str | None = None,
-    table_group_id: str | None = None,
-    table_name: str | None = None,
-    test_type: str | None = None,
-    since: str = "30 days",
-    bucket: BucketInterval = BucketInterval.DAY,
-    exclude_today: bool = True,
+    project_code: Annotated[str | None, Field(description="Scope to a project the caller can view.")] = None,
+    test_suite_id: Annotated[str | None, Field(description="UUID of a test suite to scope to.")] = None,
+    table_group_id: Annotated[str | None, Field(description="UUID of a table group to scope to.")] = None,
+    table_name: Annotated[str | None, Field(description="Filter by table name.")] = None,
+    test_type: Annotated[str | None, Field(description="Filter by test type.")] = None,
+    since: Annotated[
+        str,
+        Field(
+            description="Include runs since this point — e.g. '30 days', '2 weeks', '2026-04-01' (default '30 days').",
+        ),
+    ] = "30 days",
+    bucket: Annotated[
+        BucketInterval,
+        Field(description="Time bucket size — 'day' or 'week' (default 'day')."),
+    ] = BucketInterval.DAY,
+    exclude_today: Annotated[
+        bool,
+        Field(
+            description="If True (default), buckets end yesterday; set False to also compute today's incomplete data.",
+        ),
+    ] = True,
 ) -> str:
-    """Time-series of test result counts by time bucket — use this to see whether failures are trending up or down.
-
-    Args:
-        project_code: Scope to a project the caller can view.
-        test_suite_id: UUID of a test suite to scope to.
-        table_group_id: UUID of a table group to scope to.
-        table_name: Filter by table name.
-        test_type: Filter by test type.
-        since: Include runs since this point — e.g. '30 days', '2 weeks', '2026-04-01' (default '30 days').
-        bucket: Time bucket size — 'day' or 'week' (default 'day').
-        exclude_today: If True (default), buckets end yesterday; set False to also compute today's incomplete data.
+    """Time-series of test result counts by time bucket.
+    Use this to see whether failures are trending up or down.
     """
     try:
         bucket = BucketInterval(bucket)
@@ -545,18 +556,23 @@ def get_failure_trend(
 @with_database_session
 @mcp_permission("view")
 def compare_test_runs(
-    target_job_execution_id: str,
-    baseline_job_execution_id: str | None = None,
+    target_job_execution_id: Annotated[
+        str,
+        Field(description="UUID of the newer test run, e.g. from ``list_test_runs``."),
+    ],
+    baseline_job_execution_id: Annotated[
+        str | None,
+        Field(
+            description="Optional UUID of the older test run. When omitted, defaults to the previous completed run on "
+            "the same test suite.",
+        ),
+    ] = None,
 ) -> str:
-    """Compare two test runs and report regressions, improvements, persistent failures, and added/removed tests.
+    """Compare two test runs and report what changed between them.
+    Reports regressions, improvements, persistent failures, and added or removed tests.
 
     When ``baseline_job_execution_id`` is omitted, the baseline defaults to the immediately
     previous completed test run on the same test suite as the target run.
-
-    Args:
-        target_job_execution_id: UUID of the newer test run, e.g. from ``list_test_runs``.
-        baseline_job_execution_id: Optional UUID of the older test run.
-            When omitted, defaults to the previous completed run on the same test suite.
     """
     perms = get_project_permissions()
 
@@ -663,15 +679,18 @@ def compare_test_runs(
 
 @with_database_session
 @mcp_permission("disposition")
-def update_test_result(test_result_id: str, disposition: str) -> str:
-    """Set the disposition on a single test result (confirm, dismiss, mute, or clear).
-
-    Args:
-        test_result_id: UUID of the test result, e.g. from ``list_test_results``.
-        disposition: New disposition. One of 'Confirmed', 'Dismissed', 'Muted',
-            'No Decision' (clears it). 'Muted' deactivates the parent test and locks
-            it against auto-regeneration; any other value reactivates and unlocks it.
-    """
+def update_test_result(
+    test_result_id: Annotated[str, Field(description="UUID of the test result, e.g. from ``list_test_results``.")],
+    disposition: Annotated[
+        str,
+        Field(
+            description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
+            "deactivates the parent test and locks it against auto-regeneration; any other value reactivates and "
+            "unlocks it.",
+        ),
+    ],
+) -> str:
+    """Set the disposition on a single test result (confirm, dismiss, mute, or clear)."""
     result = resolve_test_result(test_result_id)
     db_disposition = parse_test_result_disposition(disposition)
 
@@ -692,27 +711,32 @@ def update_test_result(test_result_id: str, disposition: str) -> str:
 @with_database_session
 @mcp_permission("disposition")
 def bulk_update_test_results(
-    test_suite_id: str,
-    disposition: str,
-    job_execution_id: str | None = None,
-    table_name: str | None = None,
-    test_type: str | None = None,
-    status: str | None = None,
-    test_definition_id: str | None = None,
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite, e.g. from ``list_test_suites``.")],
+    disposition: Annotated[
+        str,
+        Field(
+            description="New disposition. One of 'Confirmed', 'Dismissed', 'Muted', 'No Decision' (clears it). 'Muted' "
+            "deactivates the parent tests and locks them against auto-regeneration; any other value reactivates and "
+            "unlocks.",
+        ),
+    ],
+    job_execution_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a test run within the suite. Defaults to the suite's latest completed run when "
+            "omitted.",
+        ),
+    ] = None,
+    table_name: Annotated[str | None, Field(description="Optional table-name filter. Case-sensitive.")] = None,
+    test_type: Annotated[str | None, Field(description="Optional test type name (e.g. 'Alpha Truncation').")] = None,
+    status: Annotated[
+        str | None,
+        Field(description="Optional result-status filter (Passed, Failed, Warning, Error, Log)."),
+    ] = None,
+    test_definition_id: Annotated[str | None, Field(description="Optional single test-definition filter.")] = None,
 ) -> str:
-    """Set the disposition on every matching test result in a suite (confirm, dismiss, mute, clear).
-
-    Args:
-        test_suite_id: UUID of the test suite, e.g. from ``list_test_suites``.
-        disposition: New disposition. One of 'Confirmed', 'Dismissed', 'Muted',
-            'No Decision' (clears it). 'Muted' deactivates the parent tests and locks
-            them against auto-regeneration; any other value reactivates and unlocks.
-        job_execution_id: UUID of a test run within the suite. Defaults to the suite's
-            latest completed run when omitted.
-        table_name: Optional table-name filter. Case-sensitive.
-        test_type: Optional test type name (e.g. 'Alpha Truncation').
-        status: Optional result-status filter (Passed, Failed, Warning, Error, Log).
-        test_definition_id: Optional single test-definition filter.
+    """Set the disposition on every matching test result in a suite.
+    The available dispositions are confirm, dismiss, mute, and clear.
     """
     suite = resolve_test_suite(test_suite_id)
     db_disposition = parse_test_result_disposition(disposition)

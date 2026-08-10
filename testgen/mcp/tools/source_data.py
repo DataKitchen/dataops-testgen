@@ -1,4 +1,7 @@
 from datetime import datetime
+from typing import Annotated
+
+from pydantic import Field
 
 from testgen.common.data_catalog_service import fetch_table_sample
 from testgen.common.models import with_database_session
@@ -95,26 +98,33 @@ def _render_header_fields(doc: MdDoc, context: dict) -> None:
 @with_database_session
 @mcp_permission("view")
 def get_source_data_query(
-    test_definition_id: str | None = None,
-    issue_id: str | None = None,
-    reference_date: str | None = None,
-    limit: int = 100,
+    test_definition_id: Annotated[
+        str | None,
+        Field(description="UUID of a test definition, e.g. from ``list_test_results``."),
+    ] = None,
+    issue_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a hygiene issue, e.g. from ``list_hygiene_issues``. Mutually exclusive with "
+            "``test_definition_id``.",
+        ),
+    ] = None,
+    reference_date: Annotated[
+        str | None,
+        Field(
+            description="ISO 8601 date used as the test reference point (default: now). Applies only to "
+            "``test_definition_id``.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum rows the query would return (default 100, max 500).")] = 100,
 ) -> str:
-    """Get the SQL query that would be used to look up source data, without executing it.
+    """Get the SQL query that would look up source data, without executing it.
 
     Builds a lookup query using the current criteria of a test definition or a hygiene issue.
     The query targets the connected database.
     Some test types (e.g. Freshness Trend, Schema Drift) do not have source data lookups.
 
     Provide exactly one of ``test_definition_id`` or ``issue_id``.
-
-    Args:
-        test_definition_id: UUID of a test definition, e.g. from ``list_test_results``.
-        issue_id: UUID of a hygiene issue, e.g. from ``list_hygiene_issues``. Mutually exclusive
-            with ``test_definition_id``.
-        reference_date: ISO 8601 date used as the test reference point (default: now). Applies only
-            to ``test_definition_id``.
-        limit: Maximum rows the query would return (default 100, max 500).
     """
     _validate_source_args(test_definition_id, issue_id, reference_date)
     validate_limit(limit, 500)
@@ -151,26 +161,34 @@ def get_source_data_query(
 @with_database_session
 @mcp_permission("view")
 def get_source_data(
-    test_definition_id: str | None = None,
-    issue_id: str | None = None,
-    reference_date: str | None = None,
-    limit: int = 100,
+    test_definition_id: Annotated[
+        str | None,
+        Field(description="UUID of a test definition, e.g. from ``list_test_results``."),
+    ] = None,
+    issue_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a hygiene issue, e.g. from ``list_hygiene_issues``. Mutually exclusive with "
+            "``test_definition_id``.",
+        ),
+    ] = None,
+    reference_date: Annotated[
+        str | None,
+        Field(
+            description="ISO 8601 date used as the test reference point (default: now). Applies only to "
+            "``test_definition_id``.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum rows to return (default 100, max 500).")] = 100,
 ) -> str:
-    """Look up rows from the connected database that match or violate a test or hygiene issue's criteria.
+    """Look up rows that match or violate a test or hygiene issue's criteria.
+    Rows are read from the connected database.
 
     Executes the source data query against the connected database and returns matching rows.
     Shows CURRENT data — rows may have changed since the test or profiling run.
     Some test types (e.g. Freshness Trend, Schema Drift) do not have source data lookups.
 
     Provide exactly one of ``test_definition_id`` or ``issue_id``.
-
-    Args:
-        test_definition_id: UUID of a test definition, e.g. from ``list_test_results``.
-        issue_id: UUID of a hygiene issue, e.g. from ``list_hygiene_issues``. Mutually exclusive
-            with ``test_definition_id``.
-        reference_date: ISO 8601 date used as the test reference point (default: now). Applies only
-            to ``test_definition_id``.
-        limit: Maximum rows to return (default 100, max 500).
     """
     _validate_source_args(test_definition_id, issue_id, reference_date)
     validate_limit(limit, 500)
@@ -219,14 +237,12 @@ def get_source_data(
 
 @with_database_session
 @mcp_permission("catalog")
-def get_table_sample(table_group_id: str, table_name: str, limit: int = 100) -> str:
-    """Fetch sample rows from a source table for inspection.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
-        limit: Maximum rows to return (default 100, max 500).
-    """
+def get_table_sample(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+    limit: Annotated[int, Field(description="Maximum rows to return (default 100, max 500).")] = 100,
+) -> str:
+    """Fetch sample rows from a source table for inspection."""
     validate_limit(limit, 500)
     tg = resolve_table_group(table_group_id)
 

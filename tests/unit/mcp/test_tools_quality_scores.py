@@ -11,7 +11,8 @@ from testgen.common.models.scores import (
 )
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
-from testgen.mcp.tools.quality_scores import _format_criteria_summary
+from testgen.mcp.tools.common import ScoreChainLeafField, ScoreFilterField
+from testgen.mcp.tools.quality_scores import _FILTER_SHAPE_DOC, _format_criteria_summary
 
 pytestmark = pytest.mark.unit
 
@@ -2065,10 +2066,7 @@ def test_create_scorecard_returns_markdown_summary(db_session_mock):
 # where the contract requires going through the tool itself.
 # ============================================================
 
-from testgen.mcp.tools.common import (
-    SCORE_FILTER_FIELD_TO_COLUMN,
-    ScoreFilterField,
-)
+from testgen.mcp.tools.common import SCORE_FILTER_FIELD_TO_COLUMN
 from testgen.mcp.tools.quality_scores import _validate_filters
 
 # --- A. Shape / required-field rejections ---
@@ -2767,3 +2765,19 @@ def test_get_quality_scores_rejects_table_group_id_with_chained_filters(db_sessi
                 "others": [{"field": "Table", "value": "orders"}],
             }],
         )
+
+
+# --- Filter documentation ---
+
+
+def test_filter_shape_doc_lists_every_filter_field():
+    """The shared `filters` documentation names each field the validator accepts.
+
+    The field labels are written out in prose because they are published to clients as a
+    schema description, so nothing but this test ties them to the enum.
+    """
+    missing = [field.value for field in ScoreFilterField if f'"{field.value}"' not in _FILTER_SHAPE_DOC]
+    assert not missing, f"Filter fields accepted by _validate_filters but undocumented: {missing}"
+
+    chain_only = [field.value for field in ScoreChainLeafField if f'"{field.value}"' not in _FILTER_SHAPE_DOC]
+    assert not chain_only, f"Chain leaf fields undocumented: {chain_only}"
