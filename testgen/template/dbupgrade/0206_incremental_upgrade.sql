@@ -1,0 +1,3 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE test_suites ADD COLUMN generation_sets VARCHAR[];

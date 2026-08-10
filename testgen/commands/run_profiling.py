@@ -397,6 +397,6 @@ def _generate_tests(table_group: TableGroup, profile_run_id: UUID) -> None:
 
     if is_first_profile_run and bool(table_group.default_test_suite_id):
         try:
-            run_test_generation(table_group.default_test_suite_id, "Standard", profile_run_id=profile_run_id)
+            run_test_generation(table_group.default_test_suite_id, profile_run_id=profile_run_id)
         except Exception:
             LOG.exception(f"Error generating tests for test suite: {table_group.default_test_suite_id}")

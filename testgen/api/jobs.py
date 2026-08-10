@@ -10,8 +10,15 @@ from testgen.api.deps import (
     resolve_table_group,
     resolve_test_suite,
 )
-from testgen.api.schemas import ErrorResponse, JobListResponse, JobResponse, JobSubmittedResponse
+from testgen.api.schemas import (
+    ErrorResponse,
+    JobListResponse,
+    JobResponse,
+    JobSubmittedResponse,
+    TestGenerationRequest,
+)
 from testgen.common.enums import JobKey, JobSource, JobStatus, PublicJobKey
+from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -59,12 +66,25 @@ def submit_test_run(test_suite: TestSuite = resolve_test_suite("edit")):  # noqa
     "/test-suites/{test_suite_id}/test-generation",
     response_model=JobSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
+    responses={400: {"model": ErrorResponse, "description": "Invalid generation set"}},
 )
-def submit_test_generation(test_suite: TestSuite = resolve_test_suite("edit")):  # noqa: B008
-    """Submit a test generation job for a test suite."""
+def submit_test_generation(
+    test_suite: TestSuite = resolve_test_suite("edit"),  # noqa: B008
+    body: TestGenerationRequest | None = None,
+):
+    """Submit a test generation job for a test suite.
+
+    Generates from the test suite's stored generation sets when none are given,
+    falling back to Standard.
+    """
+    try:
+        generation_sets = resolve_generation_sets(test_suite, body.generation_sets if body else None)
+    except ValueError as error:
+        raise api_error(400, "invalid_generation_set", str(error)) from error
+
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,
-        kwargs={"test_suite_id": str(test_suite.id), "generation_set": "Standard"},
+        kwargs={"test_suite_id": str(test_suite.id), "generation_sets": generation_sets},
         source=JobSource.api,
         project_code=test_suite.project_code,
     )

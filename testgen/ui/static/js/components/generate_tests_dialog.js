@@ -4,6 +4,7 @@
  * @property {number} test_ct
  * @property {number} unlocked_test_ct
  * @property {number} unlocked_edits_ct
+ * @property {Object.<string, number>} unlocked_counts_by_type
  *
  * @typedef Result
  * @type {object}
@@ -15,7 +16,8 @@
  * @property {string} test_suite_id
  * @property {string} test_suite_name
  * @property {string[]} generation_sets
- * @property {string?} default_generation_set
+ * @property {string[]} selected_generation_sets
+ * @property {Object.<string, string[]>} generation_set_test_types
  * @property {RefreshWarning?} refresh_warning
  * @property {string?} lock_result
  * @property {Result?} result
@@ -51,36 +53,57 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const testSuiteId = getValue(props.test_suite_id);
     const testSuiteName = getValue(props.test_suite_name);
     const generationSets = getValue(props.generation_sets) ?? [];
-    const defaultSet = getValue(props.default_generation_set) ?? (generationSets[0] ?? '');
-    const selectedSet = van.state(defaultSet);
+    const storedSets = getValue(props.selected_generation_sets) ?? [];
+    const setMembers = getValue(props.generation_set_test_types) ?? {};
+    const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
+    const submitDisabled = van.derive(() => selectedSets.val.length === 0);
 
     const content = div(
         { class: 'flex-column fx-gap-3 generate-tests--wrapper' },
         generationSets.length > 0
             ? Select({
-                label: 'Generation Set',
-                value: selectedSet,
-                allowNull: false,
+                label: 'Generation Sets',
+                value: selectedSets,
+                multiSelect: true,
+                required: true,
                 options: generationSets.map(s => ({ value: s, label: s })),
-                onChange: (value) => { selectedSet.val = value; },
                 portalClass: 'generate-tests--select',
             })
             : '',
         () => {
             const warning = getValue(props.refresh_warning);
             if (!warning || !warning.test_ct) return '';
+
             let message = '';
             if (warning.unlocked_edits_ct > 0) {
                 message = 'Manual changes have been made to auto-generated tests in this test suite that have not been locked. ';
             } else if (warning.unlocked_test_ct > 0) {
                 message = 'Auto-generated tests are present in this test suite that have not been locked. ';
             }
+
+            const selected = selectedSets.val;
+            const counts = warning.unlocked_counts_by_type ?? {};
+            const keptTypes = new Set(selected.flatMap(s => setMembers[s] ?? []));
+            const doomedCount = Object.entries(counts)
+                .filter(([testType]) => !keptTypes.has(testType))
+                .reduce((total, [, count]) => total + count, 0);
+            const removedSets = storedSets.filter(s => !selected.includes(s));
+
+            let deselectionMessage = '';
+            if (doomedCount > 0) {
+                const testNoun = doomedCount === 1 ? 'test' : 'tests';
+                deselectionMessage = removedSets.length > 0
+                    ? `Deselecting ${removedSets.join(', ')} will delete ${doomedCount} unlocked auto-generated ${testNoun}.`
+                    : `${doomedCount} unlocked auto-generated ${testNoun} ${doomedCount === 1 ? 'is' : 'are'} not covered by the selected generation sets and will be deleted.`;
+            }
+
             return div(
                 { class: 'flex-column fx-gap-2' },
                 Alert(
                     { type: 'warn' },
                     div(message),
                     div({ class: 'mt-1' }, `Generating tests now will overwrite unlocked tests subject to auto-generation based on the latest profiling.`),
+                    deselectionMessage ? div({ class: 'mt-1' }, deselectionMessage) : '',
                     div({ class: 'mt-1 text-caption' }, `Auto-generated Tests: ${warning.test_ct}, Unlocked: ${warning.unlocked_test_ct}, Edited Unlocked: ${warning.unlocked_edits_ct}`),
                 ),
                 warning.unlocked_edits_ct > 0
@@ -120,10 +143,12 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
                     color: 'primary',
                     width: 'auto',
                     style: 'width: auto;',
+                    disabled: submitDisabled,
                     onclick: () => emit('GenerateTestsConfirmed', {
                         payload: {
                             test_suite_id: testSuiteId,
-                            generation_set: selectedSet.val,
+                            test_suite_name: testSuiteName,
+                            generation_sets: selectedSets.val,
                         },
                     }),
                 }),

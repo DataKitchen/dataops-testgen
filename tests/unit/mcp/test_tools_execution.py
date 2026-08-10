@@ -139,9 +139,10 @@ def test_run_profiling_table_group_not_found_or_inaccessible(mock_tg_cls, mock_j
 # --- generate_tests ---------------------------------------------------------
 
 
+@patch("testgen.mcp.tools.execution.resolve_generation_sets", return_value=["Standard"])
 @patch("testgen.mcp.tools.execution.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
-def test_generate_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mock):
+def test_generate_tests_defaults_to_stored_sets(mock_suite_cls, mock_job_exec, mock_resolve, db_session_mock):
     suite_id = uuid4()
     suite = _mock_test_suite(suite_id=suite_id)
     mock_suite_cls.get.return_value = suite
@@ -152,9 +153,10 @@ def test_generate_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mo
 
     result = generate_tests(str(suite_id))
 
+    mock_resolve.assert_called_once_with(suite, None)
     call_kwargs = mock_job_exec.submit.call_args.kwargs
     assert call_kwargs["job_key"] == "run-test-generation"
-    assert call_kwargs["kwargs"] == {"test_suite_id": str(suite_id), "generation_set": "Standard"}
+    assert call_kwargs["kwargs"] == {"test_suite_id": str(suite_id), "generation_sets": ["Standard"]}
     assert call_kwargs["source"] == "mcp"
 
     assert "Test generation submitted for `Quality Suite`" in result
@@ -162,6 +164,42 @@ def test_generate_tests_submits_job(mock_suite_cls, mock_job_exec, db_session_mo
     assert "Pending" in result
     assert "list_tests" in result
     assert "verify the new definitions appear" in result
+
+
+@patch("testgen.mcp.tools.execution.resolve_generation_sets", return_value=["Standard", "Plugin_Set"])
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_generate_tests_accepts_a_set_list(mock_suite_cls, mock_job_exec, mock_resolve, db_session_mock):
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+    mock_job_exec.submit.return_value = MagicMock(id=uuid4())
+
+    from testgen.mcp.tools.execution import generate_tests
+
+    generate_tests(str(suite_id), ["Standard", "Plugin_Set"])
+
+    assert mock_job_exec.submit.call_args.kwargs["kwargs"]["generation_sets"] == [
+        "Standard",
+        "Plugin_Set",
+    ]
+
+
+@patch(
+    "testgen.mcp.tools.execution.resolve_generation_sets",
+    side_effect=ValueError("Unknown generation sets: Nope."),
+)
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_generate_tests_rejects_unknown_set(mock_suite_cls, mock_job_exec, _mock_resolve, db_session_mock):
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+
+    from testgen.mcp.tools.execution import generate_tests
+
+    with pytest.raises(MCPUserError, match="Unknown generation sets: Nope."):
+        generate_tests(str(suite_id), ["Nope"])
+
+    mock_job_exec.submit.assert_not_called()
 
 
 def test_generate_tests_invalid_uuid(db_session_mock):

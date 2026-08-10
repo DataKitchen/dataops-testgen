@@ -184,8 +184,6 @@ SELECT
 FROM selected_tables s
   -- Only insert if test type is active
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Freshness_Trend' AND active = 'Y')
-  -- Only insert if test type is included in generation set
-  AND EXISTS (SELECT 1 FROM generation_sets WHERE test_type = 'Freshness_Trend' AND generation_set = :GENERATION_SET)
   {TABLE_FILTER}
 
 -- Match "uix_td_autogen_table" unique index exactly

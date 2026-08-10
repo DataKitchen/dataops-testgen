@@ -23,8 +23,6 @@ WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID
   AND c.drop_date IS NULL
   -- Only insert if test type is active
   AND EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Volume_Trend' AND active = 'Y')
-  -- Only insert if test type is included in generation set
-  AND EXISTS (SELECT 1 FROM generation_sets WHERE test_type = 'Volume_Trend' AND generation_set = :GENERATION_SET)
   {TABLE_FILTER}
 
 -- Match "uix_td_autogen_table" unique index exactly
