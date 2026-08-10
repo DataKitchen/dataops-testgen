@@ -33,9 +33,25 @@ from testgen.common.models.custom_types import NullIfEmptyString, YNString, Zero
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.utils import is_uuid4
 
-TestRunType = Literal["QUERY", "CAT", "METADATA"]
-TestScope = Literal["column", "referential", "table", "tablegroup", "custom"]
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
+
+
+class TestRunType(StrEnum):
+    """The engine that executes a test (stored on ``test_types.run_type``)."""
+
+    QUERY = "QUERY"
+    CAT = "CAT"
+    METADATA = "METADATA"
+
+
+class TestScope(StrEnum):
+    """The evaluation scope for a test type (stored on ``test_types.test_scope``)."""
+
+    COLUMN = "column"
+    REFERENTIAL = "referential"
+    TABLE = "table"
+    TABLEGROUP = "tablegroup"
+    CUSTOM = "custom"
 
 
 class Severity(StrEnum):
@@ -458,8 +474,9 @@ class TestType(ParamFieldsMixin, Entity):
     threshold_description: str = Column(String)
     usage_notes: str = Column(String)
     active: str = Column(String)
+    uploaded_version: str | None = Column(String(20))
 
-    # Unmapped columns: generation_template, result_visualization, result_visualization_params
+    # Unmapped columns: generation_template, result_visualization, result_visualization_params, overrides
 
     @property
     def criteria(self) -> TestCriteria:

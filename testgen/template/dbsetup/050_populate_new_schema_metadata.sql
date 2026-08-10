@@ -12,15 +12,19 @@ ALTER TABLE cat_test_conditions DROP CONSTRAINT IF EXISTS cat_test_conditions_ca
 
 TRUNCATE TABLE profile_anomaly_types;
 
-TRUNCATE TABLE test_types;
-
-TRUNCATE TABLE generation_sets;
-
-TRUNCATE TABLE test_templates;
-
-TRUNCATE TABLE cat_test_conditions;
-
-TRUNCATE TABLE target_data_lookups;
+-- Rows keyed on a test_type with a non-null uploaded_version are admin-uploaded
+-- and must survive the refresh: (a) they cannot be re-derived from packaged
+-- YAMLs, and (b) test_results referencing them would abort the FK recreation.
+DELETE FROM test_templates
+    WHERE test_type NOT IN (SELECT test_type FROM test_types WHERE uploaded_version IS NOT NULL);
+DELETE FROM cat_test_conditions
+    WHERE test_type NOT IN (SELECT test_type FROM test_types WHERE uploaded_version IS NOT NULL);
+DELETE FROM target_data_lookups
+    WHERE test_type NOT IN (SELECT test_type FROM test_types WHERE uploaded_version IS NOT NULL);
+DELETE FROM generation_sets
+    WHERE test_type NOT IN (SELECT test_type FROM test_types WHERE uploaded_version IS NOT NULL);
+DELETE FROM test_types
+    WHERE uploaded_version IS NULL;
 
 TRUNCATE TABLE variant_codings;
 

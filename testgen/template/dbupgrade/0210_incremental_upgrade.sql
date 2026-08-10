@@ -1,0 +1,4 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE test_types
+    ADD COLUMN IF NOT EXISTS uploaded_version VARCHAR(20);

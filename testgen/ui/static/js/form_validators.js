@@ -1,3 +1,5 @@
+import { humanReadableSize } from './display_utils.js';
+
 /**
  * @typedef Validator
  * @type {Function}
@@ -111,7 +113,7 @@ function sizeLimit(limit) {
      */
     const validator = (value) => {
         if (value != null && value.size > limit) {
-            return `Uploaded file must be smaller than ${limit}.`;
+            return `File size ${humanReadableSize(value.size)} exceeds the ${humanReadableSize(limit)} limit.`;
         }
         return null;
     };

@@ -32,5 +32,10 @@ def test_core_yaml_generation_sets_match_frozen_pairs():
 def test_050_no_longer_hardcodes_generation_sets_insert():
     from testgen.common.read_file import read_template_sql_file
     sql = read_template_sql_file("050_populate_new_schema_metadata.sql", "dbsetup")
-    assert "TRUNCATE TABLE generation_sets" in sql          # still cleared
+    # Still cleared: either a bare TRUNCATE or the narrowed DELETE that preserves
+    # rows keyed on admin-uploaded test types.
+    assert (
+        "TRUNCATE TABLE generation_sets" in sql
+        or re.search(r"DELETE\s+FROM\s+generation_sets", sql, re.IGNORECASE)
+    )
     assert not re.search(r"INSERT\s+INTO\s+generation_sets", sql, re.IGNORECASE)

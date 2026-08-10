@@ -8,6 +8,7 @@ from os.path import sep as path_seperator
 
 from yaml import SafeDumper, safe_dump, safe_load
 
+from testgen import settings
 from testgen.common.database.database_service import execute_db_queries, fetch_from_db_threaded
 from testgen.common.read_file import get_template_files
 
@@ -113,11 +114,59 @@ def _add_literal_representer():
     SafeDumper.add_representer(LiteralString, _literal_representer)
 
 
-def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, parent_key:str, child_tables:list[str], default_pk:dict[str, list[str]], parent_child_column_map:dict[str, dict[str,str]]):
+def _process_yaml_for_import(
+    params_mapping: dict,
+    data: dict,
+    parent_table: str,
+    parent_key: str,
+    child_tables: list[str],
+    default_pk: dict[str, list[str]],
+    parent_child_column_map: dict[str, dict[str, str]],
+    *,
+    provenance_managed: bool = False,
+    current_version: str | None = None,
+):
     queries = []
     parent = data.get(parent_table)
     if not isinstance(parent, dict):
         raise TypeError(f"YAML key '{parent_table}' must be a dict")
+
+    parent_id = parent[parent_key]
+    schema = params_mapping["SCHEMA_NAME"]
+
+    if provenance_managed:
+        if current_version is None:
+            raise ValueError("current_version is required when provenance_managed is True")
+        returns, _ = execute_db_queries(
+            [(
+                f"SELECT uploaded_version FROM {schema}.{parent_table} "
+                f"WHERE {parent_key} = :val",
+                {"val": parent_id},
+            )],
+            user_override=params_mapping["TESTGEN_ADMIN_USER"],
+            password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+            user_type="schema_admin",
+        )
+        local_uploaded_version = returns[0] if returns else None
+
+        if local_uploaded_version == current_version:
+            # The admin-uploaded override targets this exact release, so the packaged
+            # definition does not overtake it.
+            LOG.info(
+                "Retaining locally-uploaded %s '%s' (uploaded for %s).",
+                parent_table, parent_id, local_uploaded_version,
+            )
+            return
+
+        if local_uploaded_version is not None:
+            # The upload targets a different release; the packaged definition takes
+            # over. Clear child rows so flavor or generation-set memberships the
+            # upload had that the packaged file does not define do not linger.
+            for table in (*child_tables, "generation_sets"):
+                queries.append((
+                    f"DELETE FROM {schema}.{table} WHERE test_type = :val",
+                    {"val": parent_id},
+                ))
 
     for table_name in child_tables:
         records = parent.pop(table_name, [])
@@ -140,7 +189,7 @@ def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, 
             bound_values = {c: record[c] for c in columns}
 
             sql = f"""
-            INSERT INTO {params_mapping["SCHEMA_NAME"]}.{table_name} ({insert_cols})
+            INSERT INTO {schema}.{table_name} ({insert_cols})
             VALUES ({insert_vals})
             ON CONFLICT ({', '.join(pk_cols)}) DO UPDATE
             SET {update_stmt};
@@ -154,11 +203,11 @@ def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, 
     for generation_set in generation_sets:
         queries.append((
             f"""
-            INSERT INTO {params_mapping["SCHEMA_NAME"]}.generation_sets (generation_set, test_type)
+            INSERT INTO {schema}.generation_sets (generation_set, test_type)
             VALUES (:generation_set, :test_type)
             ON CONFLICT (generation_set, test_type) DO NOTHING;
             """,
-            {"generation_set": generation_set, "test_type": parent[parent_key]},
+            {"generation_set": generation_set, "test_type": parent_id},
         ))
 
     columns = list(parent.keys())
@@ -166,9 +215,12 @@ def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, 
     insert_cols = ", ".join(columns)
     insert_vals = ", ".join(f":{c}" for c in columns)
     update_stmt = ", ".join(f"{c}=EXCLUDED.{c}" for c in columns if c != parent_key)
+    if provenance_managed:
+        # The packaged YAML owns the row; clear any prior upload marker on takeover.
+        update_stmt += ", uploaded_version = NULL"
     bound_values = {c: parent[c] for c in columns}
     parent_insert_query = f"""
-    INSERT INTO {params_mapping["SCHEMA_NAME"]}.{parent_table} ({insert_cols})
+    INSERT INTO {schema}.{parent_table} ({insert_cols})
     VALUES ({insert_vals})
     ON CONFLICT ({parent_key}) DO UPDATE
     SET {update_stmt};
@@ -185,6 +237,13 @@ def _process_yaml_for_import(params_mapping: dict, data:dict, parent_table:str, 
     return
 
 def import_metadata_records_from_yaml(params_mapping: dict) -> None:
+    # ``settings.VERSION`` is None in setups that do not set ``TESTGEN_VERSION``
+    # (CI functional runs, ad-hoc scripts). Fall back to a sentinel that will
+    # never match an uploaded row's ``uploaded_version`` so the refresh stays
+    # correct — packaged rows re-apply, uploads (if any) go through rule-3
+    # handover on the next upgrade that sets the real version.
+    current_version = settings.VERSION or "unset"
+
     files = sorted(get_template_files(mask="^.*ya?ml$", sub_directory=TEST_TYPES_TEMPLATE_FOLDER), key=lambda key: str(key))
     for yaml_file in files:
         with as_file(yaml_file) as f:
@@ -198,6 +257,8 @@ def import_metadata_records_from_yaml(params_mapping: dict) -> None:
                     TEST_TYPES_CHILD_TABLES,
                     TEST_TYPES_DEFAULT_PK,
                     TEST_TYPES_PARENT_CHILD_COLUMN_MAP,
+                    provenance_managed=True,
+                    current_version=current_version,
                 )
 
     from testgen.utils.plugins import discover
@@ -220,6 +281,8 @@ def import_metadata_records_from_yaml(params_mapping: dict) -> None:
                                 TEST_TYPES_CHILD_TABLES,
                                 TEST_TYPES_DEFAULT_PK,
                                 TEST_TYPES_PARENT_CHILD_COLUMN_MAP,
+                                provenance_managed=True,
+                                current_version=current_version,
                             )
         except Exception:
             LOG.warning("Plugin %s failed to import test-type metadata; skipping", plugin.package)

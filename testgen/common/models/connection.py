@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Literal, Self
+from typing import Self
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
@@ -20,13 +20,12 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.database.flavor.flavor_service import SQLFlavor
+from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
-
-SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "onelake_mssql", "synapse_mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 
 # Fallback when a connection row has a NULL max_query_chars (no DB default; older
 # rows / non-UI insert paths may not seed it). Matches the UI's non-Salesforce
@@ -39,7 +38,7 @@ class ConnectionMinimal(EntityMinimal):
     project_code: str
     connection_id: int
     sql_flavor: SQLFlavor
-    sql_flavor_code: SQLFlavorCode
+    sql_flavor_code: SqlFlavorCode
     connection_name: str
 
 
@@ -48,7 +47,7 @@ class ConnectionListItem(EntityMinimal):
     connection_id: int
     connection_name: str
     project_code: str
-    sql_flavor_code: SQLFlavorCode
+    sql_flavor_code: SqlFlavorCode
     project_host: str | None
     project_db: str | None
     table_group_count: int
@@ -61,7 +60,7 @@ class Connection(Entity):
     project_code: str = Column(String, ForeignKey("projects.project_code"))
     connection_id: int = Column(BigInteger, Identity(always=True), primary_key=True)
     sql_flavor: SQLFlavor = Column(String)
-    sql_flavor_code: SQLFlavorCode = Column(String)
+    sql_flavor_code: SqlFlavorCode = Column(String)
     project_host: str = Column(String)
     project_port: str = Column(String)
     project_user: str = Column(String)
