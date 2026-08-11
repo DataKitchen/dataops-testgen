@@ -1,9 +1,10 @@
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Annotated, Any, cast
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy import select
 
 from testgen.common.cron_service import describe_cron, get_cron_sample
@@ -92,12 +93,19 @@ _SORT_TO_MODEL_FIELD: dict[MonitorTableSort, str] = {
 
 @with_database_session
 @mcp_permission("view")
-def get_monitor_summary(table_group_id: str, lookback: int | None = None) -> str:
-    """Get monitor health for a table group: per-type anomaly counts, error / training / pending status, and the active lookback window.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        lookback: Number of monitor runs to summarize. Omit to use the lookback runs configured for the table group.
+def get_monitor_summary(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    lookback: Annotated[
+        int | None,
+        Field(
+            description="Number of monitor runs to summarize. Omit to use the lookback runs configured for the table "
+            "group.",
+        ),
+    ] = None,
+) -> str:
+    """Get monitor health for a table group.
+    Returns per-type anomaly counts, error / training / pending status, and the active
+    lookback window.
     """
     if lookback is not None and not 1 <= lookback <= 365:
         raise MCPUserError(f"Invalid lookback `{lookback}`: must be between 1 and 365.")
@@ -180,20 +188,28 @@ def get_monitor_summary(table_group_id: str, lookback: int | None = None) -> str
 @with_database_session
 @mcp_permission("view")
 def list_monitored_tables(
-    table_group_id: str,
-    anomaly_type: str | None = None,
-    sort_by: str | None = None,
-    limit: int = 20,
-    page: int = 1,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    anomaly_type: Annotated[
+        str | None,
+        Field(
+            description="Filter to tables with at least one anomaly of this type. One of ``freshness`` / ``volume`` / "
+            "``schema`` / ``metric``.",
+        ),
+    ] = None,
+    sort_by: Annotated[
+        str | None,
+        Field(
+            description="Sort order. One of ``table_name`` (default, case-insensitive ascending), "
+            "``anomaly_count_desc`` (sorts by the filtered type when ``anomaly_type`` is set, total anomalies "
+            "otherwise), ``latest_update_desc``, ``row_count_change_desc``.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size (default 20, max 100).")] = 20,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List monitored tables in a table group with per-type anomaly counts, training / pending / error status, latest update timestamp, and row count change.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        anomaly_type: Filter to tables with at least one anomaly of this type. One of ``freshness`` / ``volume`` / ``schema`` / ``metric``.
-        sort_by: Sort order. One of ``table_name`` (default, case-insensitive ascending), ``anomaly_count_desc`` (sorts by the filtered type when ``anomaly_type`` is set, total anomalies otherwise), ``latest_update_desc``, ``row_count_change_desc``.
-        limit: Page size (default 20, max 100).
-        page: Page number starting at 1 (default 1).
+    """List monitored tables in a table group with per-type anomaly counts.
+    Each row also carries training / pending / error status, latest update timestamp,
+    and row count change.
     """
     validate_page(page)
     validate_limit(limit, 100)
@@ -375,17 +391,23 @@ _MIN_TRAINING_LOOKBACK_RANGE = (20, 1000)
 
 @with_database_session
 @mcp_permission("edit")
-def enable_monitors(table_group_id: str, cron_expression: str, cron_tz: str = "UTC") -> str:
-    """Turn on monitoring for a table group: create its monitors and schedule them to run.
+def enable_monitors(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    cron_expression: Annotated[
+        str,
+        Field(
+            description="Cron expression for the monitor schedule (required — monitors only run on a schedule), e.g. "
+            "``0 6 * * *`` for 6 AM daily.",
+        ),
+    ],
+    cron_tz: Annotated[str, Field(description="IANA timezone for the schedule. Defaults to ``UTC``.")] = "UTC",
+) -> str:
+    """Turn on monitoring for a table group.
+    Creates its monitors and schedules them to run.
 
     Sets up the initial Volume and Schema monitors with default settings; adjust them afterward
     with ``update_monitor_settings``. Freshness monitors are added automatically once the table
     group has profiling data. Fails if monitoring is already on for the group.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        cron_expression: Cron expression for the monitor schedule (required — monitors only run on a schedule), e.g. ``0 6 * * *`` for 6 AM daily.
-        cron_tz: IANA timezone for the schedule. Defaults to ``UTC``.
     """
     tg, monitor_suite = resolve_monitored_table_group(table_group_id)
     if monitor_suite is not None:
@@ -406,12 +428,10 @@ def enable_monitors(table_group_id: str, cron_expression: str, cron_tz: str = "U
 
 @with_database_session
 @mcp_permission("view")
-def get_monitor_settings(table_group_id: str) -> str:
-    """Get a table group's monitor configuration and schedule.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-    """
+def get_monitor_settings(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+) -> str:
+    """Get a table group's monitor configuration and schedule."""
     tg, monitor_suite = resolve_monitored_table_group(table_group_id)
     if monitor_suite is None:
         return _NOT_MONITORED_OUTPUT
@@ -429,30 +449,56 @@ def get_monitor_settings(table_group_id: str) -> str:
 @with_database_session
 @mcp_permission("edit")
 def update_monitor_settings(
-    table_group_id: str,
-    sensitivity: str | None = None,
-    lookback_runs: int | None = None,
-    min_training_lookback: int | None = None,
-    exclude_weekends: bool | None = None,
-    holiday_codes: list[str] | None = None,
-    regenerate_freshness: bool | None = None,
-    cron_expression: str | None = None,
-    cron_tz: str | None = None,
-    active: bool | None = None,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    sensitivity: Annotated[
+        str | None,
+        Field(
+            description="How readily monitors flag a deviation. ``high`` flags smaller deviations (more alerts), "
+            "``low`` only large ones (fewer alerts), ``medium`` is balanced.",
+        ),
+    ] = None,
+    lookback_runs: Annotated[
+        int | None,
+        Field(
+            description="Monitor runs aggregated for dashboard summaries. Display only — does not affect detection "
+            "(1-200).",
+        ),
+    ] = None,
+    min_training_lookback: Annotated[
+        int | None,
+        Field(description="Minimum monitor runs required to train the prediction model (20-1000)."),
+    ] = None,
+    exclude_weekends: Annotated[
+        bool | None,
+        Field(description="Whether to exclude weekends from the model's training data."),
+    ] = None,
+    holiday_codes: Annotated[
+        list[str] | None,
+        Field(
+            description="Holiday calendars to exclude from the model's training data — ISO country codes (e.g. ``US``, "
+            "``GB``) or financial-market codes (e.g. ``NYSE``, ``ECB``); see "
+            "https://holidays.readthedocs.io/en/latest/#available-countries. Pass an empty list to clear.",
+        ),
+    ] = None,
+    regenerate_freshness: Annotated[
+        bool | None,
+        Field(
+            description="Whether to automatically reconfigure Freshness monitors with new fingerprints after each "
+            "profiling run.",
+        ),
+    ] = None,
+    cron_expression: Annotated[
+        str | None,
+        Field(description="New cron expression for the schedule, e.g. ``0 6 * * *``."),
+    ] = None,
+    cron_tz: Annotated[
+        str | None,
+        Field(description="New IANA timezone for the schedule, e.g. ``America/New_York``."),
+    ] = None,
+    active: Annotated[bool | None, Field(description="``True`` to resume the schedule, ``False`` to pause it.")] = None,
 ) -> str:
-    """Update a table group's monitor configuration and/or schedule. Partial — omitted fields are left unchanged.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        sensitivity: How readily monitors flag a deviation. ``high`` flags smaller deviations (more alerts), ``low`` only large ones (fewer alerts), ``medium`` is balanced.
-        lookback_runs: Monitor runs aggregated for dashboard summaries. Display only — does not affect detection (1-200).
-        min_training_lookback: Minimum monitor runs required to train the prediction model (20-1000).
-        exclude_weekends: Whether to exclude weekends from the model's training data.
-        holiday_codes: Holiday calendars to exclude from the model's training data — ISO country codes (e.g. ``US``, ``GB``) or financial-market codes (e.g. ``NYSE``, ``ECB``); see https://holidays.readthedocs.io/en/latest/#available-countries. Pass an empty list to clear.
-        regenerate_freshness: Whether to automatically reconfigure Freshness monitors with new fingerprints after each profiling run.
-        cron_expression: New cron expression for the schedule, e.g. ``0 6 * * *``.
-        cron_tz: New IANA timezone for the schedule, e.g. ``America/New_York``.
-        active: ``True`` to resume the schedule, ``False`` to pause it.
+    """Update a table group's monitor configuration and/or schedule.
+    Partial — omitted fields are left unchanged.
     """
     tg, monitor_suite = resolve_monitored_table_group(table_group_id)
     if monitor_suite is None:
@@ -523,13 +569,12 @@ def update_monitor_settings(
 
 @with_database_session
 @mcp_permission("edit")
-def disable_monitors(table_group_id: str) -> str:
-    """Turn off monitoring for a table group, removing all its monitors, the schedule, and monitor history.
-
-    This is irreversible — the monitors and their accumulated history are deleted.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
+def disable_monitors(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+) -> str:
+    """Turn off monitoring for a table group.
+    Removes all its monitors, the schedule, and monitor history. This is irreversible —
+    the monitors and their accumulated history are deleted.
     """
     tg, monitor_suite = resolve_monitored_table_group(table_group_id)
     if monitor_suite is None:
@@ -619,24 +664,25 @@ def _render_monitor_settings(doc: MdDoc, monitor_suite: TestSuite, schedule: Job
 @with_database_session
 @mcp_permission("view")
 def list_monitor_events(
-    table_group_id: str,
-    table_name: str,
-    monitor_type: str,
-    monitor_id: str | None = None,
-    include_predictions: bool = False,
-    limit: int = 20,
-    page: int = 1,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+    monitor_type: Annotated[str, Field(description="One of ``freshness`` / ``volume`` / ``schema`` / ``metric``.")],
+    monitor_id: Annotated[
+        str | None,
+        Field(
+            description='Required for ``monitor_type="metric"``, rejected for other types. Get it from '
+            "``list_monitors``.",
+        ),
+    ] = None,
+    include_predictions: Annotated[
+        bool,
+        Field(description="When True, append the monitor's forecast, if available (shown on the first page only)."),
+    ] = False,
+    limit: Annotated[int, Field(description="Page size (default 20, max 100).")] = 20,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List per-table monitor events for one monitor type within the lookback window, newest first.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
-        monitor_type: One of ``freshness`` / ``volume`` / ``schema`` / ``metric``.
-        monitor_id: Required for ``monitor_type="metric"``, rejected for other types. Get it from ``list_monitors``.
-        include_predictions: When True, append the monitor's forecast, if available (shown on the first page only).
-        limit: Page size (default 20, max 100).
-        page: Page number starting at 1 (default 1).
+    """List per-table monitor events for one monitor type.
+    Covers the lookback window, newest first.
     """
     validate_page(page)
     validate_limit(limit, 100)
@@ -973,12 +1019,12 @@ def _format_schema_change_kind(code: str | None) -> str | None:
 
 @with_database_session
 @mcp_permission("view")
-def list_monitors(table_group_id: str, table_name: str) -> str:
-    """List configured monitors for a table: monitor IDs, types, threshold modes, and bounds.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
+def list_monitors(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+) -> str:
+    """List configured monitors for a table.
+    Returns monitor IDs, types, threshold modes, and bounds.
     """
     tg, suite = resolve_monitored_table_group(table_group_id)
     if suite is None:
@@ -1027,21 +1073,25 @@ def list_monitors(table_group_id: str, table_name: str) -> str:
 @with_database_session
 @mcp_permission("view")
 def list_monitor_schema_changes(
-    table_group_id: str,
-    table_name: str | None = None,
-    since: str | None = None,
-    limit: int = 20,
-    page: int = 1,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    table_name: Annotated[
+        str | None,
+        Field(
+            description="Filter to one table (exact, case-sensitive). Omit to list changes across every table in the "
+            "group.",
+        ),
+    ] = None,
+    since: Annotated[
+        str | None,
+        Field(
+            description="Lower-bound date (e.g. ``'7 days'``, ``'2 weeks'``, ``'2026-04-01'``). Omit to include the "
+            "entire stored history.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size (default 20, max 100).")] = 20,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List schema changes detected for a table group, newest first.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        table_name: Filter to one table (exact, case-sensitive). Omit to list changes across every table in the group.
-        since: Lower-bound date (e.g. ``'7 days'``, ``'2 weeks'``, ``'2026-04-01'``). Omit to include the entire stored history.
-        limit: Page size (default 20, max 100).
-        page: Page number starting at 1 (default 1).
-    """
+    """List schema changes detected for a table group, newest first."""
     validate_page(page)
     validate_limit(limit, 100)
     since_date = parse_since_arg(since) if since is not None else None
@@ -1143,13 +1193,13 @@ def _monitor_display_name(monitor: TestDefinition) -> str:
 
 @with_database_session
 @mcp_permission("edit")
-def set_monitor_predictive(monitor_id: str) -> str:
-    """Switch a monitor to Prediction Model mode. Bounds are computed automatically from historical runs; no manual thresholds.
+def set_monitor_predictive(
+    monitor_id: Annotated[str, Field(description="UUID of a monitor, e.g. from ``list_monitors``.")],
+) -> str:
+    """Switch a monitor to Prediction Model mode.
+    Bounds are computed automatically from historical runs; no manual thresholds.
 
     Applies to Freshness, Volume, and Metric monitors. Schema monitors have no threshold mode and are rejected.
-
-    Args:
-        monitor_id: UUID of a monitor, e.g. from ``list_monitors``.
     """
     monitor = resolve_monitor(monitor_id)
     _reject_schema_monitor(monitor)
@@ -1190,9 +1240,12 @@ def set_monitor_predictive(monitor_id: str) -> str:
 @with_database_session
 @mcp_permission("edit")
 def set_monitor_static(
-    monitor_id: str,
-    lower_bound: float | None = None,
-    upper_bound: float | None = None,
+    monitor_id: Annotated[str, Field(description="UUID of a monitor, e.g. from ``list_monitors``.")],
+    lower_bound: Annotated[float | None, Field(description="Numeric lower bound (Volume / Metric only).")] = None,
+    upper_bound: Annotated[
+        float | None,
+        Field(description="Numeric upper bound. For Freshness, in minutes since last update."),
+    ] = None,
 ) -> str:
     """Switch a monitor to Static Thresholds mode with fixed manual bounds.
 
@@ -1203,11 +1256,6 @@ def set_monitor_static(
     On a monitor already in Static mode, this is a partial update — only supplied fields
     change. On a mode switch, all required fields for the new mode must be supplied.
     Schema monitors have no threshold mode and are rejected.
-
-    Args:
-        monitor_id: UUID of a monitor, e.g. from ``list_monitors``.
-        lower_bound: Numeric lower bound (Volume / Metric only).
-        upper_bound: Numeric upper bound. For Freshness, in minutes since last update.
     """
     monitor = resolve_monitor(monitor_id)
     _reject_schema_monitor(monitor)
@@ -1329,28 +1377,46 @@ def _render_calculation_summary(doc: MdDoc, label: str, stored: str | None) -> N
 @with_database_session
 @mcp_permission("edit")
 def set_monitor_historical(
-    monitor_id: str,
-    lower_bound_calculation: str | None = None,
-    upper_bound_calculation: str | None = None,
-    history_lookback: int | None = None,
-    lower_bound_expression: str | None = None,
-    upper_bound_expression: str | None = None,
+    monitor_id: Annotated[str, Field(description="UUID of a monitor, e.g. from ``list_monitors``.")],
+    lower_bound_calculation: Annotated[
+        str | None,
+        Field(
+            description="How the lower bound is computed. One of ``Value``, ``Minimum``, ``Maximum``, ``Sum``, "
+            "``Average``, ``Expression`` (case-insensitive).",
+        ),
+    ] = None,
+    upper_bound_calculation: Annotated[
+        str | None,
+        Field(description="How the upper bound is computed. Same allowed values as ``lower_bound_calculation``."),
+    ] = None,
+    history_lookback: Annotated[
+        int | None,
+        Field(description="Number of past runs to aggregate over (1-1000)."),
+    ] = None,
+    lower_bound_expression: Annotated[
+        str | None,
+        Field(
+            description="SQL expression for the lower bound, referencing ``{VALUE}`` / ``{MINIMUM}`` / ``{MAXIMUM}`` / "
+            "``{SUM}`` / ``{AVERAGE}`` / ``{STANDARD_DEVIATION}`` placeholders (e.g. ``0.5 * {AVERAGE}``). Required "
+            "when ``lower_bound_calculation`` is ``Expression``; rejected otherwise.",
+        ),
+    ] = None,
+    upper_bound_expression: Annotated[
+        str | None,
+        Field(
+            description="SQL expression for the upper bound, same placeholders as ``lower_bound_expression``. Required "
+            "when ``upper_bound_calculation`` is ``Expression``; rejected otherwise.",
+        ),
+    ] = None,
 ) -> str:
-    """Switch a monitor to Historical Calculation mode, deriving bounds from a rolling window of past runs.
+    """Switch a monitor to Historical Calculation mode.
+    Bounds are derived from a rolling window of past runs.
 
     Applies to Volume and Metric monitors. Freshness monitors are rejected.
 
     On a monitor already in Historical mode, this is a partial update — only supplied
     fields change. On a mode switch, ``lower_bound_calculation``, ``upper_bound_calculation``,
     and ``history_lookback`` are all required.
-
-    Args:
-        monitor_id: UUID of a monitor, e.g. from ``list_monitors``.
-        lower_bound_calculation: How the lower bound is computed. One of ``Value``, ``Minimum``, ``Maximum``, ``Sum``, ``Average``, ``Expression`` (case-insensitive).
-        upper_bound_calculation: How the upper bound is computed. Same allowed values as ``lower_bound_calculation``.
-        history_lookback: Number of past runs to aggregate over (1-1000).
-        lower_bound_expression: SQL expression for the lower bound, referencing ``{VALUE}`` / ``{MINIMUM}`` / ``{MAXIMUM}`` / ``{SUM}`` / ``{AVERAGE}`` / ``{STANDARD_DEVIATION}`` placeholders (e.g. ``0.5 * {AVERAGE}``). Required when ``lower_bound_calculation`` is ``Expression``; rejected otherwise.
-        upper_bound_expression: SQL expression for the upper bound, same placeholders as ``lower_bound_expression``. Required when ``upper_bound_calculation`` is ``Expression``; rejected otherwise.
     """
     monitor = resolve_monitor(monitor_id)
     _reject_schema_monitor(monitor)

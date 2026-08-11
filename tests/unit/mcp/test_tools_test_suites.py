@@ -71,12 +71,12 @@ def test_create_test_suite_happy_path(mock_resolve, mock_suite_cls, db_session_m
     with _patch_perms():
         out = create_test_suite(table_group_id=str(tg.id), test_suite_name="Sales Tests")
 
-    # S2 review feedback: the tool no longer calls instance.save(); it relies on
-    # session.add + flush. The mock TestSuite constructor was invoked and the
-    # rendered response is returned — that's enough at the unit layer; the smoke
-    # test exercises the actual DB persistence.
+    # The tool does not call instance.save(); it relies on session.add + flush.
+    # This checks that wiring only — the smoke test exercises actual DB persistence.
     mock_suite_cls.assert_called_once()
     instance.save.assert_not_called()
+    db_session_mock.add.assert_called_once_with(instance)
+    db_session_mock.flush.assert_called_once()
     assert "Test Suite `Sales Tests` created" in out
     assert "**Project:** `demo`" in out
     assert "Sample TG" in out

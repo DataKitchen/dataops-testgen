@@ -1,6 +1,8 @@
 import dataclasses
+from typing import Annotated
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy import func, or_
 
 from testgen.common.data_catalog_service import build_create_table_script
@@ -51,12 +53,13 @@ _DOC_GROUP = DocGroup.BROWSE_PROFILING
 
 @with_database_session
 @mcp_permission("catalog")
-def get_table(table_group_id: str, table_name: str) -> str:
-    """Get an overview of a table with profiling highlights: structural metadata, column list, quality scores, and hygiene issue count from the latest profiling run.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
+def get_table(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+) -> str:
+    """Get an overview of a table with profiling highlights.
+    Returns structural metadata, the column list, quality scores, and the hygiene
+    issue count from the latest profiling run.
     """
     tg = resolve_table_group(table_group_id)
 
@@ -96,74 +99,114 @@ def get_table(table_group_id: str, table_name: str) -> str:
 @with_database_session
 @mcp_permission("catalog")
 def list_column_profiles(
-    table_group_id: str,
-    table_name: str | None = None,
-    columns: list[str] | None = None,
-    job_execution_id: str | None = None,
-    null_ratio_above: float | None = None,
-    null_ratio_below: float | None = None,
-    distinct_ratio_above: float | None = None,
-    distinct_ratio_below: float | None = None,
-    filled_ratio_above: float | None = None,
-    filled_ratio_below: float | None = None,
-    score_profiling_above: float | None = None,
-    score_profiling_below: float | None = None,
-    score_testing_above: float | None = None,
-    score_testing_below: float | None = None,
-    pii: bool | None = None,
-    cde: bool | None = None,
-    suggested_data_type: str | None = None,
-    general_type: str | None = None,
-    semantic_data_type: str | None = None,
-    pii_category: str | None = None,
-    pii_risk_level: str | None = None,
-    order_by: str | None = None,
-    limit: int = 100,
-    page: int = 1,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str | None, Field(description="Optional — scope to one table (case-sensitive).")] = None,
+    columns: Annotated[
+        list[str] | None,
+        Field(description="Optional — specific column names to include (case-sensitive)."),
+    ] = None,
+    job_execution_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a profiling run, e.g. from `get_table` or `list_profiling_summaries`. When omitted, "
+            "each column uses its own latest run.",
+        ),
+    ] = None,
+    null_ratio_above: Annotated[
+        float | None,
+        Field(description="Match columns whose null fraction exceeds this value (e.g. `0.2` for above 20% null)."),
+    ] = None,
+    null_ratio_below: Annotated[
+        float | None,
+        Field(description="Match columns whose null fraction is below this value."),
+    ] = None,
+    distinct_ratio_above: Annotated[
+        float | None,
+        Field(
+            description="Match columns whose distinct-value fraction exceeds this value (e.g. `0.95` for near-unique "
+            "columns).",
+        ),
+    ] = None,
+    distinct_ratio_below: Annotated[
+        float | None,
+        Field(
+            description="Match columns whose distinct-value fraction is below this value (e.g. `0.001` for low "
+            "cardinality).",
+        ),
+    ] = None,
+    filled_ratio_above: Annotated[
+        float | None,
+        Field(description="Match columns whose dummy/placeholder-value fraction exceeds this value."),
+    ] = None,
+    filled_ratio_below: Annotated[
+        float | None,
+        Field(description="Match columns whose dummy/placeholder-value fraction is below this value."),
+    ] = None,
+    score_profiling_above: Annotated[
+        float | None,
+        Field(description="Match columns whose Profiling Score is above this value (0-100 scale)."),
+    ] = None,
+    score_profiling_below: Annotated[
+        float | None,
+        Field(description="Match columns whose Profiling Score is below this value (0-100 scale)."),
+    ] = None,
+    score_testing_above: Annotated[
+        float | None,
+        Field(description="Match columns whose Testing Score is above this value (0-100 scale)."),
+    ] = None,
+    score_testing_below: Annotated[
+        float | None,
+        Field(description="Match columns whose Testing Score is below this value (0-100 scale)."),
+    ] = None,
+    pii: Annotated[
+        bool | None,
+        Field(description="When `true`, match columns flagged as PII; when `false`, exclude PII columns."),
+    ] = None,
+    cde: Annotated[
+        bool | None,
+        Field(
+            description="When `true`, match columns flagged as a Critical Data Element (directly or inherited from the "
+            "table); when `false`, exclude CDE columns.",
+        ),
+    ] = None,
+    suggested_data_type: Annotated[
+        str | None,
+        Field(
+            description="Match columns where profiling suggests a more suitable data type. Pass `Any` for any "
+            "mismatch, or a concrete type (`Smallint`, `Integer`, `Bigint`, `Decimal`, `Numeric`, `Varchar`, `Date`, "
+            "`Timestamp`, `Boolean`) to filter mismatches whose suggestion starts with that type. Columns where the "
+            "suggestion matches the column's stored type are always excluded.",
+        ),
+    ] = None,
+    general_type: Annotated[
+        str | None,
+        Field(description="Broad type classification — `Alpha`, `Numeric`, `Datetime`, `Boolean`, `Time`, or `Other`."),
+    ] = None,
+    semantic_data_type: Annotated[
+        str | None,
+        Field(
+            description="Substring match (case-insensitive) on Semantic Data Type. Bare tokens auto-wrap with `%`; an "
+            "explicit `%` is honored as a wildcard. See `testgen://column-profile-fields` for the canonical value "
+            "list.",
+        ),
+    ] = None,
+    pii_category: Annotated[
+        str | None,
+        Field(description="PII category — `ID`, `Name`, `Demographic`, or `Contact`."),
+    ] = None,
+    pii_risk_level: Annotated[str | None, Field(description="PII risk level — `High`, `Moderate`, or `Low`.")] = None,
+    order_by: Annotated[
+        str | None,
+        Field(
+            description="Sort key — `Null Ratio`, `Distinct Ratio`, `Filled Ratio`, `Profiling Score`, `Testing "
+            "Score`, or `Hygiene Count`. Defaults to table/column position.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size (default 100, max 500).")] = 100,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List per-column profile headers across a table group, with optional profile-predicate filters.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        table_name: Optional — scope to one table (case-sensitive).
-        columns: Optional — specific column names to include (case-sensitive).
-        job_execution_id: UUID of a profiling run, e.g. from `get_table` or
-            `list_profiling_summaries`. When omitted, each column uses its own latest run.
-        null_ratio_above: Match columns whose null fraction exceeds this value
-            (e.g. `0.2` for above 20% null).
-        null_ratio_below: Match columns whose null fraction is below this value.
-        distinct_ratio_above: Match columns whose distinct-value fraction exceeds this
-            value (e.g. `0.95` for near-unique columns).
-        distinct_ratio_below: Match columns whose distinct-value fraction is below this
-            value (e.g. `0.001` for low cardinality).
-        filled_ratio_above: Match columns whose dummy/placeholder-value fraction exceeds
-            this value.
-        filled_ratio_below: Match columns whose dummy/placeholder-value fraction is below
-            this value.
-        score_profiling_above: Match columns whose Profiling Score is above this value (0-100 scale).
-        score_profiling_below: Match columns whose Profiling Score is below this value (0-100 scale).
-        score_testing_above: Match columns whose Testing Score is above this value (0-100 scale).
-        score_testing_below: Match columns whose Testing Score is below this value (0-100 scale).
-        pii: When `true`, match columns flagged as PII; when `false`, exclude PII columns.
-        cde: When `true`, match columns flagged as a Critical Data Element (directly
-            or inherited from the table); when `false`, exclude CDE columns.
-        suggested_data_type: Match columns where profiling suggests a more suitable data
-            type. Pass `Any` for any mismatch, or a concrete type (`Smallint`, `Integer`,
-            `Bigint`, `Decimal`, `Numeric`, `Varchar`, `Date`, `Timestamp`, `Boolean`) to
-            filter mismatches whose suggestion starts with that type. Columns where the
-            suggestion matches the column's stored type are always excluded.
-        general_type: Broad type classification —
-            `Alpha`, `Numeric`, `Datetime`, `Boolean`, `Time`, or `Other`.
-        semantic_data_type: Substring match (case-insensitive) on Semantic Data Type.
-            Bare tokens auto-wrap with `%`; an explicit `%` is honored as a wildcard.
-            See `testgen://column-profile-fields` for the canonical value list.
-        pii_category: PII category — `ID`, `Name`, `Demographic`, or `Contact`.
-        pii_risk_level: PII risk level — `High`, `Moderate`, or `Low`.
-        order_by: Sort key — `Null Ratio`, `Distinct Ratio`, `Filled Ratio`,
-            `Profiling Score`, `Testing Score`, or `Hygiene Count`. Defaults to
-            table/column position.
-        limit: Page size (default 100, max 500).
-        page: Page number starting at 1 (default 1).
+    """List per-column profile headers across a table group.
+    Supports optional profile-predicate filters.
     """
     validate_page(page)
     validate_limit(limit, 500)
@@ -313,22 +356,25 @@ def list_column_profiles(
 @with_database_session
 @mcp_permission("catalog")
 def list_profiling_summaries(
-    table_group_id: str | None = None,
-    project_code: str | None = None,
-    limit: int = 20,
-    page: int = 1,
+    table_group_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a specific table group, e.g. from `get_data_inventory`. Returns just that group's "
+            "summary. Mutually exclusive with `project_code`.",
+        ),
+    ] = None,
+    project_code: Annotated[
+        str | None,
+        Field(
+            description="Project code to summarize all table groups within, e.g. from `list_projects`. Returns all "
+            "groups, paginated. Mutually exclusive with `table_group_id`.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size when iterating table groups in a project (default 20).")] = 20,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List aggregated profiling health summaries for a table group or across a project — quality scores, hygiene issue counts, record counts, last profiled date.
-
-    Args:
-        table_group_id: UUID of a specific table group, e.g. from
-            `get_data_inventory`. Returns just that group's summary. Mutually
-            exclusive with `project_code`.
-        project_code: Project code to summarize all table groups within, e.g.
-            from `list_projects`. Returns all groups, paginated. Mutually
-            exclusive with `table_group_id`.
-        limit: Page size when iterating table groups in a project (default 20).
-        page: Page number starting at 1 (default 1).
+    """List aggregated profiling health summaries for a table group or project.
+    Covers quality scores, hygiene issue counts, record counts, and last profiled date.
     """
     if table_group_id and project_code:
         raise MCPUserError("Pass either `table_group_id` or `project_code`, not both.")
@@ -414,22 +460,23 @@ def _render_column_profile_row(c: ColumnProfileSummary) -> list:
 @with_database_session
 @mcp_permission("catalog")
 def list_profiling_runs(
-    table_group_id: str,
-    schedule_id: str | None = None,
-    status: str | None = None,
-    limit: int = 10,
-    page: int = 1,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    schedule_id: Annotated[
+        str | None,
+        Field(
+            description="Optional UUID of a schedule, e.g. from `list_schedules`. Returns only runs triggered by that "
+            "schedule.",
+        ),
+    ] = None,
+    status: Annotated[
+        str | None,
+        Field(description="Optional run status filter. One of: Pending, Running, Completed, Canceled, Error."),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size (default 10, max 100).")] = 10,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List profiling run history for a table group, including queued, in-progress, and failed runs.
-    Ordered by submission time descending.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        schedule_id: Optional UUID of a schedule, e.g. from `list_schedules`. Returns only runs
-            triggered by that schedule.
-        status: Optional run status filter. One of: Pending, Running, Completed, Canceled, Error.
-        limit: Page size (default 10, max 100).
-        page: Page number starting at 1 (default 1).
+    """List profiling run history for a table group.
+    Includes queued, in-progress, and failed runs, ordered by submission time descending.
     """
     validate_limit(limit, 100)
     validate_page(page)
@@ -504,14 +551,15 @@ def list_profiling_runs(
 
 @with_database_session
 @mcp_permission("catalog")
-def get_profiling_run(job_execution_id: str) -> str:
-    """Get a single profiling run with status, timing, totals, and per-table breakdown. Returns the
-    run regardless of state — including queued and in-progress runs without complete results yet.
-    The per-table breakdown is only available after the run completes.
-
-    Args:
-        job_execution_id: UUID of a profiling run, e.g. from `list_profiling_runs` or
-            `list_profiling_summaries`.
+def get_profiling_run(
+    job_execution_id: Annotated[
+        str,
+        Field(description="UUID of a profiling run, e.g. from `list_profiling_runs` or `list_profiling_summaries`."),
+    ],
+) -> str:
+    """Get a single profiling run with status, timing, and totals.
+    Returns the run regardless of state — including queued and in-progress runs without
+    complete results yet. The per-table breakdown is only available after the run completes.
     """
     parse_uuid(job_execution_id, "job_execution_id")
     perms = get_project_permissions()
@@ -722,19 +770,19 @@ def _is_pii_redacted_for_caller(tg: TableGroup, pii_flag: str | None) -> bool:
 @with_database_session
 @mcp_permission("catalog")
 def get_column_profile_detail(
-    table_group_id: str,
-    table_name: str,
-    column_name: str,
-    job_execution_id: str | None = None,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+    column_name: Annotated[str, Field(description="Column name exactly as stored in TestGen (case-sensitive).")],
+    job_execution_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a profiling run, e.g. from `list_profiling_summaries`. When omitted, uses the "
+            "column's latest complete run.",
+        ),
+    ] = None,
 ) -> str:
-    """Get the type-specific value distribution and statistics for one column from its profiling run.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
-        column_name: Column name exactly as stored in TestGen (case-sensitive).
-        job_execution_id: UUID of a profiling run, e.g. from `list_profiling_summaries`.
-            When omitted, uses the column's latest complete run.
+    """Get the value distribution and statistics for one column.
+    Fields are type-specific, taken from the column's profiling run.
     """
     tg = resolve_table_group(table_group_id)
 
@@ -951,22 +999,19 @@ def _render_unknown_block(doc: MdDoc, p: dict) -> None:
 @with_database_session
 @mcp_permission("catalog")
 def get_column_frequent_values(
-    table_group_id: str,
-    table_name: str,
-    column_name: str,
-    job_execution_id: str | None = None,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+    column_name: Annotated[str, Field(description="Column name exactly as stored in TestGen (case-sensitive).")],
+    job_execution_id: Annotated[
+        str | None,
+        Field(description="UUID of a profiling run. When omitted, uses the column's latest profile run."),
+    ] = None,
 ) -> str:
-    """Get the top frequent values for one column from its profile run, with row counts and percentages.
+    """Get the top frequent values for one column from its profile run.
+    Each value carries its row count and percentage.
 
     Profiling captures the top 10 values; when the column has more distinct values, a
     trailing `N other values` row aggregates the remainder.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
-        column_name: Column name exactly as stored in TestGen (case-sensitive).
-        job_execution_id: UUID of a profiling run. When omitted, uses the column's
-            latest profile run.
     """
     tg = resolve_table_group(table_group_id)
     profile, profiling_run, pii_flag = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
@@ -1013,10 +1058,13 @@ def get_column_frequent_values(
 @with_database_session
 @mcp_permission("catalog")
 def get_column_patterns(
-    table_group_id: str,
-    table_name: str,
-    column_name: str,
-    job_execution_id: str | None = None,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+    column_name: Annotated[str, Field(description="Column name exactly as stored in TestGen (case-sensitive).")],
+    job_execution_id: Annotated[
+        str | None,
+        Field(description="UUID of a profiling run. When omitted, uses the column's latest profile run."),
+    ] = None,
 ) -> str:
     """Get the top character patterns for one string column from its profile run.
 
@@ -1024,13 +1072,6 @@ def get_column_patterns(
     every other character (whitespace, punctuation, symbols) appears literally. Examples:
     `Aaaaaaaa` (capitalized word), `NNNN-NN-NN` (ISO-like date), `aaa@aaa.aaa` (email-shaped).
     Profiling captures the top 5 patterns.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
-        column_name: Column name exactly as stored in TestGen (case-sensitive).
-        job_execution_id: UUID of a profiling run. When omitted, uses the column's
-            latest profile run.
     """
     tg = resolve_table_group(table_group_id)
     profile, profiling_run, _ = _load_profile_for_column(tg, table_name, column_name, job_execution_id)
@@ -1073,22 +1114,20 @@ def get_column_patterns(
 @with_database_session
 @mcp_permission("catalog")
 def search_columns(
-    pattern: str,
-    project_code: str | None = None,
-    table_group_id: str | None = None,
-    limit: int = 100,
-    page: int = 1,
+    pattern: Annotated[str, Field(description="Column-name search pattern. Case-insensitive.")],
+    project_code: Annotated[
+        str | None,
+        Field(description="Optional — scope to one project. Mutually exclusive with `table_group_id`."),
+    ] = None,
+    table_group_id: Annotated[
+        str | None,
+        Field(description="Optional — scope to one table group. Mutually exclusive with `project_code`."),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size (default 100, max 500).")] = 100,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """Search columns by name across one or many projects (bare tokens auto-wrap as `%token%`; explicit `%` honored as a wildcard).
-
-    Args:
-        pattern: Column-name search pattern. Case-insensitive.
-        project_code: Optional — scope to one project. Mutually exclusive with
-            `table_group_id`.
-        table_group_id: Optional — scope to one table group. Mutually exclusive
-            with `project_code`.
-        limit: Page size (default 100, max 500).
-        page: Page number starting at 1 (default 1).
+    """Search columns by name across one or many projects.
+    Bare tokens auto-wrap as `%token%`; an explicit `%` is honored as a wildcard.
     """
     validate_page(page)
     validate_limit(limit, 500)
@@ -1171,12 +1210,12 @@ def search_columns(
 
 @with_database_session
 @mcp_permission("catalog")
-def generate_create_table_script(table_group_id: str, table_name: str) -> str:
-    """Generate a CREATE TABLE script for a profiled table from its columns and suggested data types.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
+def generate_create_table_script(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+) -> str:
+    """Generate a CREATE TABLE script for a profiled table.
+    Built from the table's columns and suggested data types.
     """
     tg = resolve_table_group(table_group_id)
 

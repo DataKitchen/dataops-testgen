@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
+from typing import Annotated
 
+from pydantic import Field
 from sqlalchemy import exists, select
 
 from testgen.common.custom_test_validation import validate_custom_query
@@ -43,22 +45,16 @@ _DIFF_LABELS: dict[str, str] = {
 @with_database_session
 @mcp_permission("edit")
 def create_metric_monitor(
-    table_group_id: str,
-    table_name: str,
-    metric_name: str,
-    metric_expression: str,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    table_name: Annotated[str, Field(description="Table name exactly as stored in TestGen (case-sensitive).")],
+    metric_name: Annotated[str, Field(description="Display label for the monitor (e.g. ``Daily revenue``).")],
+    metric_expression: Annotated[str, Field(description="SQL expression the monitor evaluates each run.")],
 ) -> str:
     """Create a new Metric monitor on a table. Always created in Predictive mode.
 
     Metric monitors evaluate a user-supplied SQL aggregate each run and track its
     drift from a learned baseline. Use ``validate_metric_expression`` first to
     confirm the SQL parses and returns rows.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        table_name: Table name exactly as stored in TestGen (case-sensitive).
-        metric_name: Display label for the monitor (e.g. ``Daily revenue``).
-        metric_expression: SQL expression the monitor evaluates each run.
     """
     clean_name = (metric_name or "").strip()
     clean_expr = (metric_expression or "").strip()
@@ -103,17 +99,19 @@ def create_metric_monitor(
 @with_database_session
 @mcp_permission("edit")
 def update_metric_monitor(
-    monitor_id: str,
-    metric_name: str | None = None,
-    metric_expression: str | None = None,
+    monitor_id: Annotated[str, Field(description="UUID of the monitor, e.g. from ``list_monitors``.")],
+    metric_name: Annotated[
+        str | None,
+        Field(description="New display label for the monitor. Omit to leave unchanged."),
+    ] = None,
+    metric_expression: Annotated[
+        str | None,
+        Field(description="New SQL expression for the monitor. Omit to leave unchanged."),
+    ] = None,
 ) -> str:
-    """Update the name and / or expression of an existing Metric monitor. Partial update;
-    at least one field must be supplied. Does not change threshold mode or bounds.
-
-    Args:
-        monitor_id: UUID of the monitor, e.g. from ``list_monitors``.
-        metric_name: New display label for the monitor. Omit to leave unchanged.
-        metric_expression: New SQL expression for the monitor. Omit to leave unchanged.
+    """Update the name and / or expression of an existing Metric monitor.
+    Partial update; at least one field must be supplied. Does not change threshold mode
+    or bounds.
     """
     if metric_name is None and metric_expression is None:
         raise MCPUserError("At least one of `metric_name`, `metric_expression` must be supplied.")
@@ -156,15 +154,14 @@ def update_metric_monitor(
 
 @with_database_session
 @mcp_permission("edit")
-def delete_metric_monitor(monitor_id: str) -> str:
+def delete_metric_monitor(
+    monitor_id: Annotated[str, Field(description="UUID of the monitor, e.g. from ``list_monitors``.")],
+) -> str:
     """Remove a Metric monitor. Auto-managed types (Freshness, Volume, Schema) are
     rejected — use ``disable_monitors`` to remove monitoring entirely.
 
     Test results recorded against the deleted monitor are not deleted; they remain
     in the run history but no longer link to a live monitor definition.
-
-    Args:
-        monitor_id: UUID of the monitor, e.g. from ``list_monitors``.
     """
     monitor = resolve_monitor(monitor_id)
     if monitor.test_type != MonitorType.METRIC.value:
@@ -184,9 +181,18 @@ def delete_metric_monitor(monitor_id: str) -> str:
 @with_database_session
 @mcp_permission("edit")
 def validate_metric_expression(
-    table_group_id: str,
-    table_name: str,
-    metric_expression: str,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from ``list_table_groups``.")],
+    table_name: Annotated[
+        str,
+        Field(description="Table the expression evaluates against, exactly as stored in TestGen (case-sensitive)."),
+    ],
+    metric_expression: Annotated[
+        str,
+        Field(
+            description="SQL expression (typically an aggregate) that produces the monitored value — e.g. "
+            "``SUM(amount)`` or ``COUNT(DISTINCT customer_id)``.",
+        ),
+    ],
 ) -> str:
     """Dry-run a metric expression against the table group's connection without saving.
 
@@ -197,14 +203,6 @@ def validate_metric_expression(
     first returned row. On failure, surfaces the driver's error message verbatim so
     the expression can be corrected. Individual columns marked as PII in the
     catalog are redacted for callers lacking ``view_pii``.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from ``list_table_groups``.
-        table_name: Table the expression evaluates against, exactly as stored in
-            TestGen (case-sensitive).
-        metric_expression: SQL expression (typically an aggregate) that produces
-            the monitored value — e.g. ``SUM(amount)`` or
-            ``COUNT(DISTINCT customer_id)``.
     """
     clean_expr = (metric_expression or "").strip()
     if not clean_expr:

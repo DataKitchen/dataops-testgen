@@ -8,7 +8,9 @@ monitors surface. ``resolve_test_suite`` already filters them out, so an
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.test_definition import Severity
@@ -46,35 +48,38 @@ def _empty_to_none(value: str | None) -> str | None:
 @with_database_session
 @mcp_permission("edit")
 def create_test_suite(
-    table_group_id: str,
-    test_suite_name: str,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `list_table_groups`.")],
+    test_suite_name: Annotated[str, Field(description="Display name for the suite.")],
     *,
-    description: str | None = None,
-    severity_default: str | None = None,
-    dq_score_exclude: bool = False,
-    export_to_observability: bool = False,
-    component_key: str | None = None,
-    component_type: str | None = "dataset",
-    component_name: str | None = None,
+    description: Annotated[str | None, Field(description="Optional free-text description.")] = None,
+    severity_default: Annotated[
+        str | None,
+        Field(
+            description="Optional default severity applied to tests that do not set their own. Accepts `Fail` or "
+            "`Warning`.",
+        ),
+    ] = None,
+    dq_score_exclude: Annotated[
+        bool,
+        Field(description="Whether to exclude this suite's results from data quality scoring. Defaults to False."),
+    ] = False,
+    export_to_observability: Annotated[
+        bool,
+        Field(
+            description="Whether to export test results to the configured DataOps Observability API. Defaults to "
+            "False.",
+        ),
+    ] = False,
+    component_key: Annotated[str | None, Field(description="Component identifier in DataOps Observability.")] = None,
+    component_type: Annotated[
+        str | None,
+        Field(description="Component type in DataOps Observability (e.g. `dataset`). Defaults to `dataset`."),
+    ] = "dataset",
+    component_name: Annotated[str | None, Field(description="Component display name in DataOps Observability.")] = None,
 ) -> str:
     """Create a test suite under a table group.
 
     The new suite inherits the table group's project and connection.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `list_table_groups`.
-        test_suite_name: Display name for the suite.
-        description: Optional free-text description.
-        severity_default: Optional default severity applied to tests that do
-            not set their own. Accepts `Fail` or `Warning`.
-        dq_score_exclude: Whether to exclude this suite's results from data
-            quality scoring. Defaults to False.
-        export_to_observability: Whether to export test results to the
-            configured DataOps Observability API. Defaults to False.
-        component_key: Component identifier in DataOps Observability.
-        component_type: Component type in DataOps Observability
-            (e.g. `dataset`). Defaults to `dataset`.
-        component_name: Component display name in DataOps Observability.
     """
     name = test_suite_name.strip() if test_suite_name else ""
     errors: list[str] = []
@@ -111,35 +116,40 @@ def create_test_suite(
 @with_database_session
 @mcp_permission("edit")
 def update_test_suite(
-    test_suite_id: str,
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite, e.g. from `list_test_suites`.")],
     *,
-    test_suite_name: str | None = None,
-    description: str | None = None,
-    severity_default: str | None = None,
-    dq_score_exclude: bool | None = None,
-    export_to_observability: bool | None = None,
-    component_key: str | None = None,
-    component_type: str | None = None,
-    component_name: str | None = None,
+    test_suite_name: Annotated[str | None, Field(description="New display name.")] = None,
+    description: Annotated[
+        str | None,
+        Field(description="New free-text description. Pass an empty string to clear."),
+    ] = None,
+    severity_default: Annotated[
+        str | None,
+        Field(description="New default severity for tests that do not set their own. Accepts `Fail` or `Warning`."),
+    ] = None,
+    dq_score_exclude: Annotated[
+        bool | None,
+        Field(description="Whether this suite's results are excluded from data quality scoring."),
+    ] = None,
+    export_to_observability: Annotated[
+        bool | None,
+        Field(description="Whether test results are exported to the configured DataOps Observability API."),
+    ] = None,
+    component_key: Annotated[
+        str | None,
+        Field(description="Component identifier in DataOps Observability. Pass an empty string to clear."),
+    ] = None,
+    component_type: Annotated[
+        str | None,
+        Field(description="Component type in DataOps Observability (e.g. `dataset`). Pass an empty string to clear."),
+    ] = None,
+    component_name: Annotated[
+        str | None,
+        Field(description="Component display name in DataOps Observability. Pass an empty string to clear."),
+    ] = None,
 ) -> str:
-    """Update fields on a test suite. Atomic — nothing saved unless every supplied value is valid.
-
-    Args:
-        test_suite_id: UUID of the test suite, e.g. from `list_test_suites`.
-        test_suite_name: New display name.
-        description: New free-text description. Pass an empty string to clear.
-        severity_default: New default severity for tests that do not set their
-            own. Accepts `Fail` or `Warning`.
-        dq_score_exclude: Whether this suite's results are excluded from data
-            quality scoring.
-        export_to_observability: Whether test results are exported to the
-            configured DataOps Observability API.
-        component_key: Component identifier in DataOps Observability.
-            Pass an empty string to clear.
-        component_type: Component type in DataOps Observability
-            (e.g. `dataset`). Pass an empty string to clear.
-        component_name: Component display name in DataOps Observability.
-            Pass an empty string to clear.
+    """Update fields on a test suite.
+    Atomic — nothing is saved unless every supplied value is valid.
     """
     supplied = {
         "test_suite_name": test_suite_name,

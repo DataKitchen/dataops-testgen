@@ -1,7 +1,10 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
+from typing import Annotated
 from uuid import UUID
+
+from pydantic import Field
 
 from testgen.common.models import with_database_session
 from testgen.common.models.notification_settings import (
@@ -60,12 +63,30 @@ _CREATE_SUPPORTED_EVENTS: tuple[NotificationEvent, ...] = (
 @with_database_session
 @mcp_permission("view")
 def list_notifications(
-    project_code: str | None = None,
-    test_suite_id: str | None = None,
-    table_group_id: str | None = None,
-    scorecard_id: str | None = None,
-    limit: int = 50,
-    page: int = 1,
+    project_code: Annotated[str | None, Field(description="Scope to a specific project.")] = None,
+    test_suite_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a test suite, e.g. from ``list_test_suites``. Returns only notifications bound to "
+            "this suite.",
+        ),
+    ] = None,
+    table_group_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a table group, e.g. from ``get_data_inventory``. Returns only notifications bound to "
+            "this table group.",
+        ),
+    ] = None,
+    scorecard_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a scorecard, e.g. from ``list_scorecards``. Returns only notifications bound to this "
+            "scorecard.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum number of notifications per page (default 50, max 200).")] = 50,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
     """List notifications configured across projects, or scoped to a parent entity.
 
@@ -74,17 +95,6 @@ def list_notifications(
     to narrow the listing. Parent-entity scopes filter strictly on that entity — to also
     see project-wide notifications (those not bound to a specific suite, table group, or
     scorecard), use ``project_code``.
-
-    Args:
-        project_code: Scope to a specific project.
-        test_suite_id: UUID of a test suite, e.g. from ``list_test_suites``. Returns only
-            notifications bound to this suite.
-        table_group_id: UUID of a table group, e.g. from ``get_data_inventory``. Returns
-            only notifications bound to this table group.
-        scorecard_id: UUID of a scorecard, e.g. from ``list_scorecards``. Returns only
-            notifications bound to this scorecard.
-        limit: Maximum number of notifications per page (default 50, max 200).
-        page: Page number, starting from 1 (default 1).
     """
     validate_page(page)
     validate_limit(limit, 200)
@@ -128,15 +138,14 @@ def list_notifications(
 
 @with_database_session
 @mcp_permission("view")
-def get_notification(notification_id: str) -> str:
+def get_notification(
+    notification_id: Annotated[str, Field(description="UUID of the notification, e.g. from ``list_notifications``.")],
+) -> str:
     """Get full details of an email notification: event type, trigger or thresholds,
     scope (project, test suite, table group, or scorecard), and recipients.
 
     Works on any notification, including ``Monitor Alert`` notifications — those are
     created through monitor setup rather than this tool, but can be viewed here.
-
-    Args:
-        notification_id: UUID of the notification, e.g. from ``list_notifications``.
     """
     notif = resolve_notification(notification_id)
     return _render_one(notif)
@@ -145,44 +154,64 @@ def get_notification(notification_id: str) -> str:
 @with_database_session
 @mcp_permission("edit")
 def create_notification(
-    event_type: str,
-    recipients: list[str],
-    test_suite_id: str | None = None,
-    table_group_id: str | None = None,
-    scorecard_id: str | None = None,
-    trigger_on: str | None = None,
-    total_threshold: float | None = None,
-    cde_threshold: float | None = None,
+    event_type: Annotated[
+        str,
+        Field(
+            description="The event that triggers the notification. One of ``Test Run``, ``Profiling Run``, ``Score "
+            "Drop``. ``Monitor Alert`` notifications are configured in the TestGen UI and cannot be created here; "
+            "``update_notification`` can still modify them once they exist.",
+        ),
+    ],
+    recipients: Annotated[list[str], Field(description="One or more well-formed email addresses to notify.")],
+    test_suite_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of the test suite, e.g. from ``list_test_suites``. Required when ``event_type`` is "
+            "``Test Run``; rejected otherwise.",
+        ),
+    ] = None,
+    table_group_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of the table group, e.g. from ``get_data_inventory``. Required when ``event_type`` is "
+            "``Profiling Run``; rejected otherwise.",
+        ),
+    ] = None,
+    scorecard_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of the scorecard, e.g. from ``list_scorecards``. Required when ``event_type`` is ``Score "
+            "Drop``; rejected otherwise.",
+        ),
+    ] = None,
+    trigger_on: Annotated[
+        str | None,
+        Field(
+            description="When to fire the notification. Only used for ``Test Run`` and ``Profiling Run``; rejected for "
+            "``Score Drop``. For ``Test Run`` (default ``On test failures``): one of ``Always``, ``On test failures``, "
+            "``On test failures and warnings``, ``On new test failures and warnings``. For ``Profiling Run`` (default "
+            "``On new hygiene issues``): one of ``Always``, ``On new hygiene issues``.",
+        ),
+    ] = None,
+    total_threshold: Annotated[
+        float | None,
+        Field(
+            description="Score-drop trigger for the total score (over 0, up to 100). Only used for ``Score Drop``; at "
+            "least one of ``total_threshold`` or ``cde_threshold`` must be supplied.",
+        ),
+    ] = None,
+    cde_threshold: Annotated[
+        float | None,
+        Field(
+            description="Score-drop trigger for the critical-data-element score (over 0, up to 100). Only used for "
+            "``Score Drop``.",
+        ),
+    ] = None,
 ) -> str:
     """Create an email notification for a test-run, profiling-run, or score-drop event.
 
     Every invalid input is surfaced in a single error so the call can be corrected
     in one round-trip — no partial save occurs.
-
-    Args:
-        event_type: The event that triggers the notification. One of
-            ``Test Run``, ``Profiling Run``, ``Score Drop``. ``Monitor Alert``
-            notifications are configured in the TestGen UI and cannot be created
-            here; ``update_notification`` can still modify them once they exist.
-        recipients: One or more well-formed email addresses to notify.
-        test_suite_id: UUID of the test suite, e.g. from ``list_test_suites``.
-            Required when ``event_type`` is ``Test Run``; rejected otherwise.
-        table_group_id: UUID of the table group, e.g. from ``get_data_inventory``.
-            Required when ``event_type`` is ``Profiling Run``; rejected otherwise.
-        scorecard_id: UUID of the scorecard, e.g. from ``list_scorecards``.
-            Required when ``event_type`` is ``Score Drop``; rejected otherwise.
-        trigger_on: When to fire the notification. Only used for ``Test Run``
-            and ``Profiling Run``; rejected for ``Score Drop``.
-            For ``Test Run`` (default ``On test failures``): one of ``Always``,
-            ``On test failures``, ``On test failures and warnings``,
-            ``On new test failures and warnings``.
-            For ``Profiling Run`` (default ``On new hygiene issues``): one of
-            ``Always``, ``On new hygiene issues``.
-        total_threshold: Score-drop trigger for the total score (over 0, up to 100).
-            Only used for ``Score Drop``; at least one of ``total_threshold`` or
-            ``cde_threshold`` must be supplied.
-        cde_threshold: Score-drop trigger for the critical-data-element score
-            (over 0, up to 100). Only used for ``Score Drop``.
     """
     event = _parse_event_type(event_type)
 
@@ -392,17 +421,70 @@ def _parse_monitor_trigger(value: str | None) -> MonitorNotificationTrigger:
 @with_database_session
 @mcp_permission("edit")
 def update_notification(
-    notification_id: str,
+    notification_id: Annotated[str, Field(description="UUID of the notification, e.g. from ``list_notifications``.")],
     *,
-    enabled: bool | None = None,
-    recipients: list[str] | None = None,
-    trigger_on: str | None = None,
-    total_threshold: float | None = None,
-    cde_threshold: float | None = None,
-    clear_total_threshold: bool = False,
-    clear_cde_threshold: bool = False,
-    table_name: str | None = None,
-    clear_table_name: bool = False,
+    enabled: Annotated[
+        bool | None,
+        Field(description="``True`` to resume, ``False`` to pause. Omit to leave unchanged."),
+    ] = None,
+    recipients: Annotated[
+        list[str] | None,
+        Field(
+            description="Replace the recipient list with the supplied addresses (one or more well-formed emails). Omit "
+            "to leave unchanged.",
+        ),
+    ] = None,
+    trigger_on: Annotated[
+        str | None,
+        Field(
+            description="New trigger condition. Only valid for ``Test Run``, ``Profiling Run``, and ``Monitor Alert`` "
+            "notifications; rejected for ``Score Drop``. For ``Test Run``: one of ``Always``, ``On test failures``, "
+            "``On test failures and warnings``, ``On new test failures and warnings``. For ``Profiling Run``: one of "
+            "``Always``, ``On new hygiene issues``. For ``Monitor Alert``: ``On anomalies`` is the only supported "
+            "value, so this field cannot meaningfully be changed on Monitor Alert notifications.",
+        ),
+    ] = None,
+    total_threshold: Annotated[
+        float | None,
+        Field(
+            description="New total score threshold (over 0, up to 100). Only valid for ``Score Drop`` notifications.",
+        ),
+    ] = None,
+    cde_threshold: Annotated[
+        float | None,
+        Field(
+            description="New critical-data-element score threshold (over 0, up to 100). Only valid for ``Score Drop`` "
+            "notifications.",
+        ),
+    ] = None,
+    clear_total_threshold: Annotated[
+        bool,
+        Field(
+            description="``True`` to clear the overall-score threshold (set to NULL). At least one threshold must "
+            "remain set after the call.",
+        ),
+    ] = False,
+    clear_cde_threshold: Annotated[
+        bool,
+        Field(
+            description="``True`` to clear the CDE-score threshold. At least one threshold must remain set after the "
+            "call.",
+        ),
+    ] = False,
+    table_name: Annotated[
+        str | None,
+        Field(
+            description="Narrow a Monitor Alert notification's scope to a single table within its table group. Only "
+            "valid for ``Monitor Alert`` notifications.",
+        ),
+    ] = None,
+    clear_table_name: Annotated[
+        bool,
+        Field(
+            description="``True`` to drop an existing table from a Monitor Alert notification (notifications then fire "
+            "for any table in the table group).",
+        ),
+    ] = False,
 ) -> str:
     """Update fields on an existing email notification. Pass only the fields to change.
 
@@ -413,31 +495,6 @@ def update_notification(
     The notification's event type and scope entity are immutable through this tool;
     delete and recreate to change them. (A Monitor Alert's optional table — a finer
     scope within its table group — can still be set or cleared here.)
-
-    Args:
-        notification_id: UUID of the notification, e.g. from ``list_notifications``.
-        enabled: ``True`` to resume, ``False`` to pause. Omit to leave unchanged.
-        recipients: Replace the recipient list with the supplied addresses (one or more
-            well-formed emails). Omit to leave unchanged.
-        trigger_on: New trigger condition. Only valid for ``Test Run``, ``Profiling Run``,
-            and ``Monitor Alert`` notifications; rejected for ``Score Drop``.
-            For ``Test Run``: one of ``Always``, ``On test failures``,
-            ``On test failures and warnings``, ``On new test failures and warnings``.
-            For ``Profiling Run``: one of ``Always``, ``On new hygiene issues``.
-            For ``Monitor Alert``: ``On anomalies`` is the only supported value, so
-            this field cannot meaningfully be changed on Monitor Alert notifications.
-        total_threshold: New total score threshold (over 0, up to 100). Only valid for
-            ``Score Drop`` notifications.
-        cde_threshold: New critical-data-element score threshold (over 0, up to 100). Only valid
-            for ``Score Drop`` notifications.
-        clear_total_threshold: ``True`` to clear the overall-score threshold (set to
-            NULL). At least one threshold must remain set after the call.
-        clear_cde_threshold: ``True`` to clear the CDE-score threshold. At least one
-            threshold must remain set after the call.
-        table_name: Narrow a Monitor Alert notification's scope to a single table within
-            its table group. Only valid for ``Monitor Alert`` notifications.
-        clear_table_name: ``True`` to drop an existing table from a Monitor Alert
-            notification (notifications then fire for any table in the table group).
     """
     if (
         enabled is None
@@ -755,14 +812,13 @@ def _format_threshold(value: object) -> str | None:
 
 @with_database_session
 @mcp_permission("edit")
-def delete_notification(notification_id: str) -> str:
+def delete_notification(
+    notification_id: Annotated[str, Field(description="UUID of the notification, e.g. from ``list_notifications``.")],
+) -> str:
     """Delete an email notification.
 
     Works on any notification, including ``Monitor Alert`` notifications — those are
     created through monitor setup rather than this tool, but can be deleted here.
-
-    Args:
-        notification_id: UUID of the notification, e.g. from ``list_notifications``.
     """
     notif = resolve_notification(notification_id)
     event_label = format_notification_event(notif.event)

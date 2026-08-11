@@ -1,4 +1,7 @@
 from collections import defaultdict
+from typing import Annotated
+
+from pydantic import Field
 
 from testgen.commands.run_refresh_score_cards_results import save_and_refresh_score_definition
 from testgen.common.models import with_database_session
@@ -61,59 +64,76 @@ _COLUMN_TO_LABEL["column_name"] = "Column"
 _CHAIN_ROOT_FIELD = ScoreFilterField.TABLE_GROUP.value  # "Table Group"
 _CHAIN_LEAF_FIELDS = tuple(f.value for f in ScoreChainLeafField)  # ("Table", "Column")
 
+# Shared by every tool taking `filters`, all of which validate through `_validate_filters`.
+# It sits on the parameter rather than in the tool prose so a client that truncates the
+# description cannot strip the one piece a caller needs to build a valid filter.
+_FILTER_SHAPE_DOC = (
+    'Each entry is ``{"field": "...", "value": "...", "others"?: [...]}``. Same-field values OR together; '
+    'different fields AND together. Valid flat fields: ``"Table Group"``, ``"Data Location"``, '
+    '``"Data Source"``, ``"Source System"``, ``"Source Process"``, ``"Business Domain"``, '
+    '``"Stakeholder Group"``, ``"Transform Level"``, ``"Semantic Data Type"``, ``"Data Product"``, '
+    '``"Data Classification"``. To target specific tables or columns, chain a ``"Table Group"`` filter '
+    'via ``others`` into ``"Table"`` (optionally then ``"Column"``); sibling chains OR. Filter values '
+    "must not contain quotes, semicolons, or backslashes."
+)
+
 
 @with_database_session
 @mcp_permission("view")
 def get_quality_scores(
     *,
-    project_code: str | None = None,
-    table_group_id: str | None = None,
-    group_by: str | None = None,
-    score_type: str | None = None,
-    filters: list[dict] | None = None,
-    include_issue_ct: bool = False,
-    include_impact: bool = False,
+    project_code: Annotated[
+        str | None,
+        Field(
+            description="Scope to a project. Mutually exclusive with ``table_group_id``. Omit both to roll across "
+            "every visible project.",
+        ),
+    ] = None,
+    table_group_id: Annotated[
+        str | None,
+        Field(description="Scope to a table group, e.g. from ``get_data_inventory``."),
+    ] = None,
+    group_by: Annotated[
+        str | None,
+        Field(
+            description='Break overall scores out by one of: ``"Impact Dimension"``, ``"Quality Dimension"``, '
+            '``"Semantic Data Type"``, ``"Table Group"``, ``"Data Location"``, ``"Data Source"``, ``"Source System"``, '
+            '``"Source Process"``, ``"Business Domain"``, ``"Stakeholder Group"``, ``"Transform Level"``, ``"Data '
+            'Product"``, ``"Data Classification"``.',
+        ),
+    ] = None,
+    score_type: Annotated[
+        str | None,
+        Field(
+            description="Narrow returned scores. Omit to show all four (Total, CDE, Profiling, Testing); pass "
+            '``"Total"`` for Total + Profiling + Testing, or ``"CDE"`` for CDE alone.',
+        ),
+    ] = None,
+    filters: Annotated[
+        list[dict] | None,
+        Field(
+            description=f'List of filter entries. {_FILTER_SHAPE_DOC} ``"Impact Dimension"`` and '
+            '``"Quality Dimension"`` are valid as ``group_by`` only, not as filter fields. '
+            '``table_group_id`` cannot be combined with chained filters — put ``"Table Group"`` in the '
+            "chain root instead.",
+        ),
+    ] = None,
+    include_issue_ct: Annotated[
+        bool,
+        Field(description="Include the count of contributing issues (hygiene + test failures)."),
+    ] = False,
+    include_impact: Annotated[
+        bool,
+        Field(
+            description="Include the per-category percentage impact on the overall score. Only affects grouped output.",
+        ),
+    ] = False,
 ) -> str:
     """Quality-score rollup with optional grouping and filtering.
 
     Returns overall Total, CDE, Profiling, and Testing scores by default,
     plus an optional breakdown table when ``group_by`` is set. Scope is
     project-wide unless ``project_code`` or ``table_group_id`` narrows it.
-
-    **Filters.** Each filter is
-    ``{"field": "...", "value": "...", "others"?: [...]}``. Same-field values
-    OR together; different fields AND together. Valid flat fields:
-    ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
-    ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
-    ``"Stakeholder Group"``, ``"Transform Level"``, ``"Semantic Data Type"``,
-    ``"Data Product"``, ``"Data Classification"``. To target specific tables or columns, chain a
-    ``"Table Group"`` filter via ``others`` into ``"Table"`` (optionally
-    then ``"Column"``); sibling chains OR. ``"Impact Dimension"`` and
-    ``"Quality Dimension"`` are valid as ``group_by`` only, not as filter
-    fields. Filter values must not contain quotes, semicolons, or
-    backslashes. ``table_group_id`` cannot be combined with chained
-    filters — put ``"Table Group"`` in the chain root instead.
-
-    Args:
-        project_code: Scope to a project. Mutually exclusive with
-            ``table_group_id``. Omit both to roll across every visible
-            project.
-        table_group_id: Scope to a table group, e.g. from
-            ``get_data_inventory``.
-        group_by: Break overall scores out by one of: ``"Impact Dimension"``,
-            ``"Quality Dimension"``, ``"Semantic Data Type"``,
-            ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
-            ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
-            ``"Stakeholder Group"``, ``"Transform Level"``,
-            ``"Data Product"``, ``"Data Classification"``.
-        score_type: Narrow returned scores. Omit to show all four (Total,
-            CDE, Profiling, Testing); pass ``"Total"`` for Total + Profiling
-            + Testing, or ``"CDE"`` for CDE alone.
-        filters: List of filter entries. See **Filters** above for shape.
-        include_issue_ct: Include the count of contributing issues
-            (hygiene + test failures).
-        include_impact: Include the per-category percentage impact on the
-            overall score. Only affects grouped output.
     """
     perms = get_project_permissions()
 
@@ -338,17 +358,11 @@ def _render_one_scope(
 @with_database_session
 @mcp_permission("view")
 def list_scorecards(
-    project_code: str,
-    page: int = 1,
-    limit: int = _DEFAULT_LIMIT,
+    project_code: Annotated[str, Field(description="Project to list scorecards for.")],
+    page: Annotated[int, Field(description="Page number, starting at 1.")] = 1,
+    limit: Annotated[int, Field(description="Page size (max 100).")] = _DEFAULT_LIMIT,
 ) -> str:
-    """List the scorecards defined in a project.
-
-    Args:
-        project_code: Project to list scorecards for.
-        page: Page number, starting at 1.
-        limit: Page size (max 100).
-    """
+    """List the scorecards defined in a project."""
     validate_page(page)
     validate_limit(limit, _MAX_LIMIT)
 
@@ -399,12 +413,10 @@ def list_scorecards(
 
 @with_database_session
 @mcp_permission("view")
-def get_scorecard(scorecard_id: str) -> str:
-    """Get a scorecard with its current scores and per-category breakdown.
-
-    Args:
-        scorecard_id: UUID returned by ``list_scorecards`` or ``get_data_inventory``.
-    """
+def get_scorecard(
+    scorecard_id: Annotated[str, Field(description="UUID returned by ``list_scorecards`` or ``get_data_inventory``.")],
+) -> str:
+    """Get a scorecard with its current scores and per-category breakdown."""
     definition = resolve_scorecard(scorecard_id)
     card = definition.as_cached_score_card()
 
@@ -516,39 +528,26 @@ def _render_breakdown(doc: MdDoc, definition: ScoreDefinition) -> None:
 @with_database_session
 @mcp_permission("edit")
 def create_scorecard(
-    project_code: str,
-    name: str,
-    filters: list[dict],
+    project_code: Annotated[str, Field(description="Project that will own the scorecard.")],
+    name: Annotated[str, Field(description="Scorecard name. Must be non-empty.")],
+    filters: Annotated[
+        list[dict],
+        Field(description=f"List of filter entries. At least one is required. {_FILTER_SHAPE_DOC}"),
+    ],
     *,
-    category: str | None = None,
-    show_total_score: bool = True,
-    show_cde_score: bool = False,
+    category: Annotated[
+        str | None,
+        Field(
+            description='Category for per-bucket breakdown. One of ``"Quality Dimension"``, ``"Impact Dimension"``, '
+            '``"Data Source"``, ``"Business Domain"``, ``"Stakeholder Group"``, ``"Table Group"``, ``"Transform '
+            'Level"``, ``"Data Location"``, ``"Source System"``, ``"Source Process"``, ``"Data Product"``, ``"Data '
+            'Classification"``.',
+        ),
+    ] = None,
+    show_total_score: Annotated[bool, Field(description="Whether the scorecard exposes the Total Score.")] = True,
+    show_cde_score: Annotated[bool, Field(description="Whether the scorecard exposes the CDE Score.")] = False,
 ) -> str:
-    """Create a scorecard in a project.
-
-    **Filters.** At least one filter is required. Each entry is
-    ``{"field": "...", "value": "...", "others"?: [...]}``. Same-field values
-    OR together; different fields AND together. Valid flat fields:
-    ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
-    ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
-    ``"Stakeholder Group"``, ``"Transform Level"``, ``"Semantic Data Type"``,
-    ``"Data Product"``, ``"Data Classification"``. To target specific tables or columns, chain a
-    ``"Table Group"`` filter via ``others`` into ``"Table"`` (optionally
-    then ``"Column"``); sibling chains OR.
-
-    Args:
-        project_code: Project that will own the scorecard.
-        name: Scorecard name. Must be non-empty.
-        filters: List of filter entries. See **Filters** above for shape.
-        category: Category for per-bucket breakdown. One of
-            ``"Quality Dimension"``, ``"Impact Dimension"``,
-            ``"Data Source"``, ``"Business Domain"``, ``"Stakeholder Group"``,
-            ``"Table Group"``, ``"Transform Level"``, ``"Data Location"``,
-            ``"Source System"``, ``"Source Process"``, ``"Data Product"``,
-            ``"Data Classification"``.
-        show_total_score: Whether the scorecard exposes the Total Score.
-        show_cde_score: Whether the scorecard exposes the CDE Score.
-    """
+    """Create a scorecard in a project."""
     perms = get_project_permissions()
     perms.verify_access(
         project_code,
@@ -589,42 +588,32 @@ def create_scorecard(
 @with_database_session
 @mcp_permission("edit")
 def update_scorecard(
-    scorecard_id: str,
+    scorecard_id: Annotated[str, Field(description="UUID returned by ``list_scorecards`` or ``get_data_inventory``.")],
     *,
-    name: str | None = None,
-    show_total_score: bool | None = None,
-    show_cde_score: bool | None = None,
-    category: str | None = None,
-    filters: list[dict] | None = None,
+    name: Annotated[str | None, Field(description="New scorecard name. Must be non-empty when supplied.")] = None,
+    show_total_score: Annotated[
+        bool | None,
+        Field(description="Whether the scorecard exposes the Total Score."),
+    ] = None,
+    show_cde_score: Annotated[bool | None, Field(description="Whether the scorecard exposes the CDE Score.")] = None,
+    category: Annotated[
+        str | None,
+        Field(
+            description='Category for per-bucket breakdown. One of ``"Quality Dimension"``, ``"Impact Dimension"``, '
+            '``"Data Source"``, ``"Business Domain"``, ``"Stakeholder Group"``, ``"Table Group"``, ``"Transform '
+            'Level"``, ``"Data Location"``, ``"Source System"``, ``"Source Process"``, ``"Data Product"``, ``"Data '
+            'Classification"``. Pass ``""`` to clear an existing category.',
+        ),
+    ] = None,
+    filters: Annotated[
+        list[dict] | None,
+        Field(
+            description="List of filter entries. When supplied, replaces the scorecard's filters wholesale, and "
+            f"at least one entry is required. {_FILTER_SHAPE_DOC}",
+        ),
+    ] = None,
 ) -> str:
-    """Update fields on an existing scorecard. Pass only the fields to change.
-
-    **Filters.** When supplied, ``filters`` replaces the scorecard's filters
-    wholesale and at least one entry is required. Each entry is
-    ``{"field": "...", "value": "...", "others"?: [...]}``. Same-field values
-    OR together; different fields AND together. Valid flat fields:
-    ``"Table Group"``, ``"Data Location"``, ``"Data Source"``,
-    ``"Source System"``, ``"Source Process"``, ``"Business Domain"``,
-    ``"Stakeholder Group"``, ``"Transform Level"``, ``"Semantic Data Type"``,
-    ``"Data Product"``, ``"Data Classification"``. To target specific tables or columns, chain a
-    ``"Table Group"`` filter via ``others`` into ``"Table"`` (optionally
-    then ``"Column"``); sibling chains OR.
-
-    Args:
-        scorecard_id: UUID returned by ``list_scorecards`` or
-            ``get_data_inventory``.
-        name: New scorecard name. Must be non-empty when supplied.
-        show_total_score: Whether the scorecard exposes the Total Score.
-        show_cde_score: Whether the scorecard exposes the CDE Score.
-        category: Category for per-bucket breakdown. One of
-            ``"Quality Dimension"``, ``"Impact Dimension"``,
-            ``"Data Source"``, ``"Business Domain"``, ``"Stakeholder Group"``,
-            ``"Table Group"``, ``"Transform Level"``, ``"Data Location"``,
-            ``"Source System"``, ``"Source Process"``, ``"Data Product"``,
-            ``"Data Classification"``.
-            Pass ``""`` to clear an existing category.
-        filters: List of filter entries. See **Filters** above for shape.
-    """
+    """Update fields on an existing scorecard. Pass only the fields to change."""
     definition = resolve_scorecard(scorecard_id)
 
     new_category: ScoreCategory | None = None
@@ -705,12 +694,10 @@ def _snapshot_for_diff(definition: ScoreDefinition, attrs: dict) -> dict[str, st
 
 @with_database_session
 @mcp_permission("edit")
-def delete_scorecard(scorecard_id: str) -> str:
-    """Delete a scorecard.
-
-    Args:
-        scorecard_id: UUID returned by ``list_scorecards`` or ``get_data_inventory``.
-    """
+def delete_scorecard(
+    scorecard_id: Annotated[str, Field(description="UUID returned by ``list_scorecards`` or ``get_data_inventory``.")],
+) -> str:
+    """Delete a scorecard."""
     definition = resolve_scorecard(scorecard_id)
     name = definition.name
     project_code = definition.project_code

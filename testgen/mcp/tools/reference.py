@@ -1,3 +1,7 @@
+from typing import Annotated
+
+from pydantic import Field
+
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.test_definition import TestType
@@ -17,12 +21,10 @@ _DOC_GROUP = DocGroup.DISCOVER
 
 
 @with_database_session
-def get_test_type(test_type: str) -> str:
-    """Get detailed information about a specific test type.
-
-    Args:
-        test_type: The test type (e.g., 'Alpha Truncation', 'Unique Percent').
-    """
+def get_test_type(
+    test_type: Annotated[str, Field(description="The test type (e.g., 'Alpha Truncation', 'Unique Percent').")],
+) -> str:
+    """Get detailed information about a specific test type."""
     matches = TestType.select_where(TestType.test_name_short == test_type)
     tt = matches[0] if matches else None
 
@@ -411,6 +413,9 @@ def _append_mode(doc: MdDoc, mode: FlavorMode, schema: FlavorSchema, *, url_offe
 def connection_parameters_resource(flavor: str) -> str:
     """Per-flavor connection parameter shapes: the auth modes and the exact
     ``connection_params`` keys (with required/optional + secret notes) for the flavor.
+
+    The URI template variable is documented here rather than with ``Field``: resource
+    templates publish no input schema, so a ``Field`` description would go nowhere.
 
     Args:
         flavor: Flavor code, e.g. ``snowflake``, ``azure_mssql``, ``salesforce_data360``.

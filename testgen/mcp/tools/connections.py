@@ -8,6 +8,10 @@ auth-path normalization are delegated to that same module so the rules stay in o
 
 from __future__ import annotations
 
+from typing import Annotated
+
+from pydantic import Field
+
 from testgen.common.database.connection_service import (
     apply_connection_defaults,
     normalize_auth_fields,
@@ -40,16 +44,15 @@ _DOC_GROUP = DocGroup.MANAGE
 
 @with_database_session
 @mcp_permission("view")
-def list_connections(project_code: str, page: int = 1, limit: int = 20) -> str:
-    """List database connections in a project with their database type and table-group counts.
-
+def list_connections(
+    project_code: Annotated[str, Field(description="The project code to list connections for.")],
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
+    limit: Annotated[int, Field(description="Page size (default 20, max 100).")] = 20,
+) -> str:
+    """List database connections in a project.
+    Each connection carries its database type and table-group counts.
     Use this before changing or referencing a connection to confirm its ID, name, and host.
     Credentials are never returned.
-
-    Args:
-        project_code: The project code to list connections for.
-        page: Page number starting at 1 (default 1).
-        limit: Page size (default 20, max 100).
     """
     validate_page(page)
     validate_limit(limit, 100)
@@ -91,14 +94,13 @@ def list_connections(project_code: str, page: int = 1, limit: int = 20) -> str:
 
 @with_database_session
 @mcp_permission("view")
-def get_connection(connection_id: int) -> str:
-    """Get a connection's configuration, including database type, host, and authentication mode.
-
+def get_connection(
+    connection_id: Annotated[int, Field(description="Bigint connection ID returned by `list_connections`.")],
+) -> str:
+    """Get a connection's configuration.
+    Includes database type, host, and authentication mode.
     Credentials (password, private key, service-account key) are never returned.
     Use this before editing a connection or creating a table group on it.
-
-    Args:
-        connection_id: Bigint connection ID returned by `list_connections`.
     """
     connection = resolve_connection(connection_id)
     doc = MdDoc()
@@ -110,10 +112,21 @@ def get_connection(connection_id: int) -> str:
 @with_database_session
 @mcp_permission("administer")
 def test_connection(
-    connection_id: int | None = None,
-    sql_flavor: str | None = None,
-    connection_params: dict | None = None,
-    connection_mode: str | None = None,
+    connection_id: Annotated[
+        int | None,
+        Field(description="Stored connection ID, e.g. from ``get_data_inventory``. Omit for inline tests."),
+    ] = None,
+    sql_flavor: Annotated[
+        str | None,
+        Field(
+            description="SQL Database flavor. Required for inline tests; not accepted when ``connection_id`` is set.",
+        ),
+    ] = None,
+    connection_params: Annotated[
+        dict | None,
+        Field(description="Connection field values. For a stored connection, omitted fields keep their stored value."),
+    ] = None,
+    connection_mode: Annotated[str | None, Field(description="Authentication mode for multi-mode flavors.")] = None,
 ) -> str:
     """Test connectivity against a stored or inline-supplied connection.
 
@@ -124,15 +137,6 @@ def test_connection(
     test inline without persisting. See the
     ``testgen://connection-parameters/{flavor}`` resource for each flavor's
     ``connection_mode`` values and ``connection_params`` keys.
-
-    Args:
-        connection_id: Stored connection ID, e.g. from ``get_data_inventory``.
-            Omit for inline tests.
-        sql_flavor: SQL Database flavor. Required for inline tests; not accepted
-            when ``connection_id`` is set.
-        connection_params: Connection field values. For a stored connection,
-            omitted fields keep their stored value.
-        connection_mode: Authentication mode for multi-mode flavors.
     """
     if connection_id is None and sql_flavor is None:
         raise MCPUserError(
