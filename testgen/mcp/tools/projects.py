@@ -7,7 +7,9 @@ Project creation and deletion live in the enterprise project-management plugin
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
+
+from pydantic import Field
 
 from testgen.common.enums import JobKey, JobSource
 from testgen.common.models import with_database_session
@@ -40,35 +42,51 @@ def _empty_to_none(value: str | None) -> str | None:
 @with_database_session
 @mcp_permission("administer")
 def update_project(
-    project_code: str,
+    project_code: Annotated[str, Field(description="The project code, e.g. from `list_projects`.")],
     *,
-    project_name: str | None = None,
-    use_dq_score_weights: bool | None = None,
-    observability_api_url: str | None = None,
-    observability_api_key: str | None = None,
-    data_retention_enabled: bool | None = None,
-    data_retention_days: int | None = None,
-    retention_cron_expr: str | None = None,
-    retention_cron_tz: str | None = None,
+    project_name: Annotated[str | None, Field(description="New display name.")] = None,
+    use_dq_score_weights: Annotated[
+        bool | None,
+        Field(
+            description="Whether quality scoring uses the configured weights. Changing this re-runs project-wide score "
+            "recalculation in the background.",
+        ),
+    ] = None,
+    observability_api_url: Annotated[
+        str | None,
+        Field(description="DataOps Observability API URL. Pass an empty string to clear."),
+    ] = None,
+    observability_api_key: Annotated[
+        str | None,
+        Field(
+            description="DataOps Observability API key. Pass an empty string to clear. Never echoed back in tool "
+            "output.",
+        ),
+    ] = None,
+    data_retention_enabled: Annotated[
+        bool | None,
+        Field(description="Whether old profiling and test history is automatically deleted."),
+    ] = None,
+    data_retention_days: Annotated[
+        int | None,
+        Field(
+            description="How many days of history to keep (only when retention is enabled). Defaults to 180 when "
+            "retention is enabled without specifying days.",
+        ),
+    ] = None,
+    retention_cron_expr: Annotated[
+        str | None,
+        Field(
+            description="Cron expression for the retention cleanup job (only when retention is enabled). Defaults to "
+            "daily at 01:00.",
+        ),
+    ] = None,
+    retention_cron_tz: Annotated[
+        str | None,
+        Field(description="Timezone for the retention cleanup cron (only when retention is enabled). Defaults to UTC."),
+    ] = None,
 ) -> str:
-    """Update a project's settings.
-
-    Args:
-        project_code: The project code, e.g. from `list_projects`.
-        project_name: New display name.
-        use_dq_score_weights: Whether quality scoring uses the configured weights.
-            Changing this re-runs project-wide score recalculation in the background.
-        observability_api_url: DataOps Observability API URL. Pass an empty string to clear.
-        observability_api_key: DataOps Observability API key. Pass an empty string to clear.
-            Never echoed back in tool output.
-        data_retention_enabled: Whether old profiling and test history is automatically deleted.
-        data_retention_days: How many days of history to keep (only when retention is enabled).
-            Defaults to 180 when retention is enabled without specifying days.
-        retention_cron_expr: Cron expression for the retention cleanup job
-            (only when retention is enabled). Defaults to daily at 01:00.
-        retention_cron_tz: Timezone for the retention cleanup cron
-            (only when retention is enabled). Defaults to UTC.
-    """
+    """Update a project's settings."""
     supplied = {
         "project_name": project_name,
         "use_dq_score_weights": use_dq_score_weights,

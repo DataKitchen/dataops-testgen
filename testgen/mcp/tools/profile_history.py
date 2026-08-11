@@ -8,12 +8,14 @@
 Structural enumeration intentionally lives only in ``get_schema_history``; the comparison tool
 renders a one-line pointer to it rather than duplicating the per-table churn.
 """
+
 from collections import defaultdict
 from collections.abc import Iterable
 from datetime import datetime
-from typing import NamedTuple
+from typing import Annotated, NamedTuple
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy import func
 
 from testgen.common.enums import Disposition, JobStatus
@@ -276,12 +278,28 @@ def _pair_results(
 @with_database_session
 @mcp_permission("catalog")
 def compare_profiling_runs(
-    target_job_execution_id: str,
-    baseline_job_execution_id: str | None = None,
-    table_name: str | None = None,
-    column_name: str | None = None,
+    target_job_execution_id: Annotated[
+        str,
+        Field(description='UUID of the newer profiling run (the "after" snapshot), e.g. from `list_profiling_runs`.'),
+    ],
+    baseline_job_execution_id: Annotated[
+        str | None,
+        Field(
+            description='Optional UUID of the older profiling run (the "before" snapshot). When omitted, defaults to '
+            "the previous completed run on the same table group.",
+        ),
+    ] = None,
+    table_name: Annotated[
+        str | None,
+        Field(description="Optional — restrict the comparison to one table (case-sensitive)."),
+    ] = None,
+    column_name: Annotated[
+        str | None,
+        Field(description="Optional — restrict the comparison to one column (case-sensitive); requires `table_name`."),
+    ] = None,
 ) -> str:
-    """Compare two profiling runs on the same table group and report metric changes for shared columns plus hygiene issue churn.
+    """Compare two profiling runs on the same table group.
+    Reports metric changes for shared columns plus hygiene issue churn.
 
     When ``baseline_job_execution_id`` is omitted, the baseline defaults to the most recent
     completed profiling run on the same table group submitted before the target run. Both
@@ -289,16 +307,6 @@ def compare_profiling_runs(
 
     Reports only on columns present in both runs. When structural drift exists, the output
     notes that fact in one line; the per-table/column structural diff is not enumerated here.
-
-    Args:
-        target_job_execution_id: UUID of the newer profiling run (the "after" snapshot),
-            e.g. from `list_profiling_runs`.
-        baseline_job_execution_id: Optional UUID of the older profiling run (the "before"
-            snapshot). When omitted, defaults to the previous completed run on the same
-            table group.
-        table_name: Optional — restrict the comparison to one table (case-sensitive).
-        column_name: Optional — restrict the comparison to one column (case-sensitive); requires
-            `table_name`.
     """
     if column_name is not None and table_name is None:
         raise MCPUserError("`column_name` requires `table_name`.")
@@ -534,13 +542,28 @@ def _render_run_comparison(
 @with_database_session
 @mcp_permission("catalog")
 def get_profiling_trends(
-    table_group_id: str,
-    metrics: list[str],
-    table_name: str | None = None,
-    column_name: str | None = None,
-    limit: int = 10,
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    metrics: Annotated[
+        list[str],
+        Field(
+            description="One or more metric names. Accepted values: `Null Ratio`, `Distinct Ratio`, `Filled Ratio`, "
+            "`Row Count`, `Profiling Score`, `Hygiene Issues`, `Minimum Length`, `Maximum Length`, `Average Length`, "
+            "`Minimum Value`, `Maximum Value`, `Average Value`, `Standard Deviation`, `Minimum Date`, `Maximum Date`, "
+            "`True Count`.",
+        ),
+    ],
+    table_name: Annotated[str | None, Field(description="Optional — restrict to one table (case-sensitive).")] = None,
+    column_name: Annotated[
+        str | None,
+        Field(description="Optional — restrict to one column (case-sensitive); requires `table_name`."),
+    ] = None,
+    limit: Annotated[
+        int,
+        Field(description="Number of most-recent completed runs to include (default 10, max 50)."),
+    ] = 10,
 ) -> str:
-    """Show a time series of caller-named profiling metrics across recent completed runs of a table group.
+    """Show a time series of caller-named profiling metrics.
+    Covers recent completed runs of a table group.
 
     Metric scope rules:
     - Column-level metrics (e.g. `Null Ratio`, `Average Length`, `Minimum Value`) require both
@@ -549,18 +572,6 @@ def get_profiling_trends(
     - `Profiling Score` and `Hygiene Issues` are table-group-level and accept any scope.
     - Type-specific metrics return `—` for runs where the column's general type
       didn't match (e.g. `Minimum Value` on a column that was Alpha in an earlier run).
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        metrics: One or more metric names. Accepted values: `Null Ratio`, `Distinct Ratio`,
-            `Filled Ratio`, `Row Count`, `Profiling Score`, `Hygiene Issues`,
-            `Minimum Length`, `Maximum Length`, `Average Length`, `Minimum Value`,
-            `Maximum Value`, `Average Value`, `Standard Deviation`, `Minimum Date`,
-            `Maximum Date`, `True Count`.
-        table_name: Optional — restrict to one table (case-sensitive).
-        column_name: Optional — restrict to one column (case-sensitive); requires
-            `table_name`.
-        limit: Number of most-recent completed runs to include (default 10, max 50).
     """
     validate_limit(limit, 50)
     if column_name is not None and table_name is None:
@@ -745,14 +756,19 @@ def _build_run_snapshots(rows: Iterable[ProfileResult]) -> dict[UUID, dict[tuple
 
 @with_database_session
 @mcp_permission("catalog")
-def get_schema_history(table_group_id: str, limit: int = 10) -> str:
-    """Show a per-run timeline of structural changes across recent profiling runs — tables and columns added or dropped, type changes, and record-count deltas per table.
-
-    Args:
-        table_group_id: UUID of the table group, e.g. from `get_data_inventory`.
-        limit: Number of recent runs to render deltas for (default 10, max 20). One
-            additional anchor run is pulled when available so the oldest in-window
-            run has a baseline to diff against.
+def get_schema_history(
+    table_group_id: Annotated[str, Field(description="UUID of the table group, e.g. from `get_data_inventory`.")],
+    limit: Annotated[
+        int,
+        Field(
+            description="Number of recent runs to render deltas for (default 10, max 20). One additional anchor run is "
+            "pulled when available so the oldest in-window run has a baseline to diff against.",
+        ),
+    ] = 10,
+) -> str:
+    """Show a per-run timeline of structural changes across recent profiling runs.
+    Reports tables and columns added or dropped, type changes, and record-count
+    deltas per table.
     """
     validate_limit(limit, 20)
     tg = resolve_table_group(table_group_id)

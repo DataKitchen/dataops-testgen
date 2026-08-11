@@ -1,4 +1,7 @@
 from datetime import datetime
+from typing import Annotated
+
+from pydantic import Field
 
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -27,28 +30,40 @@ _DOC_GROUP = DocGroup.INVESTIGATE
 @with_database_session
 @mcp_permission("view")
 def list_test_runs(
-    project_code: str | None = None,
-    test_suite: str | None = None,
-    table_group_id: str | None = None,
-    schedule_id: str | None = None,
-    status: str | None = None,
-    limit: int = 10,
-    page: int = 1,
+    project_code: Annotated[
+        str | None,
+        Field(
+            description="Project code to query, e.g. from `list_projects`. Required unless `table_group_id` is "
+            "provided (which scopes to a single project).",
+        ),
+    ] = None,
+    test_suite: Annotated[
+        str | None,
+        Field(description="Optional test suite name to filter by (case-sensitive)."),
+    ] = None,
+    table_group_id: Annotated[
+        str | None,
+        Field(
+            description="Optional UUID of a table group, e.g. from `get_data_inventory`. Returns runs for any suite in "
+            "the group.",
+        ),
+    ] = None,
+    schedule_id: Annotated[
+        str | None,
+        Field(
+            description="Optional UUID of a schedule, e.g. from `list_schedules`. Returns only runs triggered by that "
+            "schedule.",
+        ),
+    ] = None,
+    status: Annotated[
+        str | None,
+        Field(description="Optional run status filter. One of: Pending, Running, Completed, Canceled, Error."),
+    ] = None,
+    limit: Annotated[int, Field(description="Page size (default 10, max 100).")] = 10,
+    page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
 ) -> str:
-    """List test runs across a project, including queued and in-progress runs. Ordered by submission
-    time descending. Excludes monitor suites.
-
-    Args:
-        project_code: Project code to query, e.g. from `list_projects`. Required unless
-            `table_group_id` is provided (which scopes to a single project).
-        test_suite: Optional test suite name to filter by (case-sensitive).
-        table_group_id: Optional UUID of a table group, e.g. from `get_data_inventory`. Returns
-            runs for any suite in the group.
-        schedule_id: Optional UUID of a schedule, e.g. from `list_schedules`. Returns only runs
-            triggered by that schedule.
-        status: Optional run status filter. One of: Pending, Running, Completed, Canceled, Error.
-        limit: Page size (default 10, max 100).
-        page: Page number starting at 1 (default 1).
+    """List test runs across a project, including queued and in-progress runs.
+    Ordered by submission time descending. Excludes monitor suites.
     """
     validate_limit(limit, 100)
     validate_page(page)
@@ -149,12 +164,12 @@ def list_test_runs(
 
 @with_database_session
 @mcp_permission("view")
-def get_test_run(job_execution_id: str) -> str:
-    """Get a single test run with status, timing, result counts, and testing score. Returns the
-    run regardless of state — including queued and in-progress runs without complete results yet.
-
-    Args:
-        job_execution_id: UUID of a test run, e.g. from `list_test_runs`.
+def get_test_run(
+    job_execution_id: Annotated[str, Field(description="UUID of a test run, e.g. from `list_test_runs`.")],
+) -> str:
+    """Get a single test run with status, timing, result counts, and testing score.
+    Returns the run regardless of state — including queued and in-progress runs without
+    complete results yet.
     """
     parse_uuid(job_execution_id, "job_execution_id")
     perms = get_project_permissions()

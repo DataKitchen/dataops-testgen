@@ -63,7 +63,15 @@ def mcp_user():
 
     with (
         patch("testgen.common.auth.authorize_token", return_value=user),
-        patch("testgen.common.models.get_current_session", return_value=MagicMock()),
+        # Patch the session factory, not ``get_current_session``. ``database_session()``
+        # calls ``get_current_session()`` to detect nesting, so a truthy return there makes
+        # it reuse that value and never install a session in the thread-local — leaving
+        # ``get_current_session()`` returning None everywhere except the one module the
+        # patch was applied to. Patching the factory lets the real machinery install the
+        # mock session, so every module resolves it no matter when it was imported.
+        # A test wanting to assert against the session requests ``db_session_mock``, whose
+        # patch is applied after this one and therefore wins.
+        patch("testgen.common.models.Session"),
         patch("testgen.mcp.permissions.ProjectMembership") as mock_membership,
         patch("testgen.mcp.permissions.PluginHook") as mock_hook,
     ):

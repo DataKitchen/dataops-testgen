@@ -2,7 +2,9 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Annotated
 
+from pydantic import Field
 from sqlalchemy import select
 
 from testgen.common.cron_service import describe_cron, get_cron_sample
@@ -181,19 +183,24 @@ def _linked_name(sched: JobSchedule, names: dict[tuple[str, str], str]) -> str |
 @with_database_session
 @mcp_permission("edit")
 def create_profiling_schedule(
-    table_group_id: str,
-    cron_expression: str,
-    cron_tz: str = "UTC",
-    active: bool = True,
+    table_group_id: Annotated[
+        str,
+        Field(description="UUID of the table group to profile, e.g. from ``get_data_inventory``."),
+    ],
+    cron_expression: Annotated[
+        str,
+        Field(description="Five-field cron expression, e.g. ``0 3 * * *`` for daily at 03:00."),
+    ],
+    cron_tz: Annotated[
+        str,
+        Field(description="IANA timezone name (e.g. ``America/New_York``). Defaults to ``UTC``."),
+    ] = "UTC",
+    active: Annotated[
+        bool,
+        Field(description="Whether the schedule should start active. Defaults to ``True``."),
+    ] = True,
 ) -> str:
-    """Create a recurring profiling schedule for a table group.
-
-    Args:
-        table_group_id: UUID of the table group to profile, e.g. from ``get_data_inventory``.
-        cron_expression: Five-field cron expression, e.g. ``0 3 * * *`` for daily at 03:00.
-        cron_tz: IANA timezone name (e.g. ``America/New_York``). Defaults to ``UTC``.
-        active: Whether the schedule should start active. Defaults to ``True``.
-    """
+    """Create a recurring profiling schedule for a table group."""
     table_group = resolve_table_group(table_group_id)
     _validate_cron(cron_expression, cron_tz)
     sched = JobSchedule(
@@ -216,19 +223,21 @@ def create_profiling_schedule(
 @with_database_session
 @mcp_permission("edit")
 def create_test_run_schedule(
-    test_suite_id: str,
-    cron_expression: str,
-    cron_tz: str = "UTC",
-    active: bool = True,
+    test_suite_id: Annotated[str, Field(description="UUID of the test suite to run, e.g. from ``list_test_suites``.")],
+    cron_expression: Annotated[
+        str,
+        Field(description="Five-field cron expression, e.g. ``0 6 * * 1`` for Mondays at 06:00."),
+    ],
+    cron_tz: Annotated[
+        str,
+        Field(description="IANA timezone name (e.g. ``America/New_York``). Defaults to ``UTC``."),
+    ] = "UTC",
+    active: Annotated[
+        bool,
+        Field(description="Whether the schedule should start active. Defaults to ``True``."),
+    ] = True,
 ) -> str:
-    """Create a recurring test-run schedule for a test suite.
-
-    Args:
-        test_suite_id: UUID of the test suite to run, e.g. from ``list_test_suites``.
-        cron_expression: Five-field cron expression, e.g. ``0 6 * * 1`` for Mondays at 06:00.
-        cron_tz: IANA timezone name (e.g. ``America/New_York``). Defaults to ``UTC``.
-        active: Whether the schedule should start active. Defaults to ``True``.
-    """
+    """Create a recurring test-run schedule for a test suite."""
     suite = resolve_test_suite(test_suite_id)
     _validate_cron(cron_expression, cron_tz)
     sched = JobSchedule(
@@ -251,20 +260,17 @@ def create_test_run_schedule(
 @with_database_session
 @mcp_permission("edit")
 def update_schedule(
-    schedule_id: str,
-    cron_expression: str | None = None,
-    cron_tz: str | None = None,
-    active: bool | None = None,
+    schedule_id: Annotated[str, Field(description="UUID of the schedule, e.g. from ``list_schedules``.")],
+    cron_expression: Annotated[str | None, Field(description="New cron expression. Omit to leave unchanged.")] = None,
+    cron_tz: Annotated[str | None, Field(description="New IANA timezone. Omit to leave unchanged.")] = None,
+    active: Annotated[
+        bool | None,
+        Field(description="``True`` to resume, ``False`` to pause. Omit to leave unchanged."),
+    ] = None,
 ) -> str:
     """Update a schedule's cron, timezone, or active state. Atomic — no partial save.
 
     The job type and linked configuration are immutable — delete and recreate to change them.
-
-    Args:
-        schedule_id: UUID of the schedule, e.g. from ``list_schedules``.
-        cron_expression: New cron expression. Omit to leave unchanged.
-        cron_tz: New IANA timezone. Omit to leave unchanged.
-        active: ``True`` to resume, ``False`` to pause. Omit to leave unchanged.
     """
     if cron_expression is None and cron_tz is None and active is None:
         raise MCPUserError("No fields supplied to update.")
@@ -303,11 +309,11 @@ def update_schedule(
 
 @with_database_session
 @mcp_permission("edit")
-def delete_schedule(schedule_id: str) -> str:
-    """Delete a schedule. Past executions remain accessible via ``list_test_runs`` / ``list_profiling_runs``.
-
-    Args:
-        schedule_id: UUID of the schedule, e.g. from ``list_schedules``.
+def delete_schedule(
+    schedule_id: Annotated[str, Field(description="UUID of the schedule, e.g. from ``list_schedules``.")],
+) -> str:
+    """Delete a schedule.
+    Past executions remain accessible via ``list_test_runs`` / ``list_profiling_runs``.
     """
     sched = resolve_schedule(schedule_id)
     JobSchedule.delete(sched.id)
@@ -326,19 +332,15 @@ def delete_schedule(schedule_id: str) -> str:
 @with_database_session
 @mcp_permission("view")
 def list_schedules(
-    project_code: str,
-    schedule_type: str | None = None,
-    limit: int = 20,
-    page: int = 1,
+    project_code: Annotated[str, Field(description="Project to scope to, e.g. from ``list_projects``.")],
+    schedule_type: Annotated[
+        str | None,
+        Field(description="Optional filter — ``profiling_run`` or ``test_run``."),
+    ] = None,
+    limit: Annotated[int, Field(description="Max rows per page. Defaults to 20.")] = 20,
+    page: Annotated[int, Field(description="1-indexed page number. Defaults to 1.")] = 1,
 ) -> str:
-    """List schedules for a project — profiling and test run schedules.
-
-    Args:
-        project_code: Project to scope to, e.g. from ``list_projects``.
-        schedule_type: Optional filter — ``profiling_run`` or ``test_run``.
-        limit: Max rows per page. Defaults to 20.
-        page: 1-indexed page number. Defaults to 1.
-    """
+    """List schedules for a project — profiling and test run schedules."""
     validate_page(page)
     validate_limit(limit, 100)
 
@@ -392,12 +394,10 @@ def list_schedules(
 
 @with_database_session
 @mcp_permission("view")
-def get_schedule(schedule_id: str) -> str:
-    """Get full details for a schedule, including the last five execution attempts.
-
-    Args:
-        schedule_id: UUID of the schedule, e.g. from ``list_schedules``.
-    """
+def get_schedule(
+    schedule_id: Annotated[str, Field(description="UUID of the schedule, e.g. from ``list_schedules``.")],
+) -> str:
+    """Get full details for a schedule, including the last five execution attempts."""
     sched = resolve_schedule(schedule_id)
     linked_names = _resolve_linked_names([sched])
     linked_name = _linked_name(sched, linked_names)

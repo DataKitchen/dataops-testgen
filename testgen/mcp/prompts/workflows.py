@@ -1,3 +1,8 @@
+from typing import Annotated
+
+from pydantic import Field
+
+
 def health_check() -> str:
     """Run a data quality health check across all projects and test suites.
 
@@ -17,12 +22,13 @@ Please perform a data quality health check:
 """
 
 
-def investigate_failures(test_suite: str | None = None) -> str:
-    """Investigate test failures to identify root causes and patterns.
-
-    Args:
-        test_suite: Optional test suite name to focus the investigation on.
-    """
+def investigate_failures(
+    test_suite: Annotated[
+        str | None,
+        Field(description="Optional test suite name to focus the investigation on."),
+    ] = None,
+) -> str:
+    """Investigate test failures to identify root causes and patterns."""
     suite_filter = f" Focus on the test suite named `{test_suite}`." if test_suite else ""
 
     return f"""\
@@ -43,12 +49,10 @@ Please investigate test failures and identify root causes:{suite_filter}
 """
 
 
-def table_health(table_name: str) -> str:
-    """Assess the data quality health of a specific table across all test suites.
-
-    Args:
-        table_name: The name of the table to investigate.
-    """
+def table_health(
+    table_name: Annotated[str, Field(description="The name of the table to investigate.")],
+) -> str:
+    """Assess the data quality health of a specific table across all test suites."""
     return f"""\
 Please assess the data quality health of table `{table_name}`:
 
@@ -64,7 +68,9 @@ Please assess the data quality health of table `{table_name}`:
 
 
 def profiling_overview() -> str:
-    """Explore the profiling results for a table group — understand data shapes, types, null rates, and hygiene issues."""
+    """Explore the profiling results for a table group.
+    Understand data shapes, types, null rates, and hygiene issues.
+    """
     return """\
 Please perform a profiling exploration:
 
@@ -77,11 +83,14 @@ Please perform a profiling exploration:
 """
 
 
-def hygiene_triage(table_group_id: str | None = None) -> str:
-    """Guided hygiene issue triage workflow — review hygiene issues and decide what to do.
-
-    Args:
-        table_group_id: Optional UUID of a table group to focus on.
+def hygiene_triage(
+    table_group_id: Annotated[
+        str | None,
+        Field(description="Optional UUID of a table group to focus on."),
+    ] = None,
+) -> str:
+    """Guided hygiene issue triage workflow.
+    Review hygiene issues and decide what to do.
     """
     intro = (
         f"Focus on table group `{table_group_id}`."
@@ -111,11 +120,14 @@ def hygiene_triage(table_group_id: str | None = None) -> str:
     return f"Please triage hygiene issues. {intro}\n\n{numbered}\n"
 
 
-def compare_runs(test_suite: str | None = None) -> str:
-    """Compare the most recent test run against the previous run to identify regressions and improvements.
-
-    Args:
-        test_suite: Optional test suite name to focus the comparison on.
+def compare_runs(
+    test_suite: Annotated[
+        str | None,
+        Field(description="Optional test suite name to focus the comparison on."),
+    ] = None,
+) -> str:
+    """Compare the most recent test run against the previous run.
+    Identifies regressions and improvements.
     """
     suite_filter = f" for suite `{test_suite}`" if test_suite else ""
 

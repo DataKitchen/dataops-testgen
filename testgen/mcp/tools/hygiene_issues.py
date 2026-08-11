@@ -1,5 +1,7 @@
+from typing import Annotated
 from uuid import UUID
 
+from pydantic import Field
 from sqlalchemy import and_, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import func
@@ -99,44 +101,65 @@ def _resolve_profile_run_je_id(
 @mcp_permission("view")
 def list_hygiene_issues(
     *,
-    job_execution_id: str | None = None,
-    table_group_id: str | None = None,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    impact_dimension: str | None = None,
-    quality_dimension: str | None = None,
-    disposition: str | None = "Confirmed",
-    issue_likelihood: list[str] | None = None,
-    pii_risk: list[str] | None = None,
-    issue_type: str | None = None,
-    limit: int = 50,
-    page: int = 1,
+    job_execution_id: Annotated[
+        str | None,
+        Field(description="UUID of a profiling run, e.g. from ``list_profiling_summaries``."),
+    ] = None,
+    table_group_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of a table group. Resolves to the latest completed profiling run. Mutually exclusive "
+            "with ``job_execution_id``.",
+        ),
+    ] = None,
+    table_name: Annotated[str | None, Field(description="Filter by table name (exact match).")] = None,
+    column_name: Annotated[str | None, Field(description="Filter by column name (exact match).")] = None,
+    impact_dimension: Annotated[
+        str | None,
+        Field(description="Filter by impact dimension ('Reliability', 'Conformance', 'Regularity', 'Usability')."),
+    ] = None,
+    quality_dimension: Annotated[
+        str | None,
+        Field(
+            description="Filter by data quality dimension ('Accuracy', 'Completeness', 'Consistency', 'Recency', "
+            "'Timeliness', 'Uniqueness', 'Validity').",
+        ),
+    ] = None,
+    disposition: Annotated[
+        str | None,
+        Field(
+            description="Filter by disposition. Defaults to 'Confirmed'. Valid values: 'Confirmed', 'Dismissed', "
+            "'Muted'.",
+        ),
+    ] = "Confirmed",
+    issue_likelihood: Annotated[
+        list[str] | None,
+        Field(
+            description="Filter by issue likelihood. Values: 'Definite', 'Likely', 'Possible'. Providing this filter "
+            "auto-excludes PII issues; combine with ``pii_risk`` to include both.",
+        ),
+    ] = None,
+    pii_risk: Annotated[
+        list[str] | None,
+        Field(
+            description="Filter by PII risk level. Values: 'High', 'Moderate'. Providing this filter auto-excludes "
+            "regular issues.",
+        ),
+    ] = None,
+    issue_type: Annotated[
+        str | None,
+        Field(
+            description="Filter by hygiene issue type (e.g. 'Similar Values Match When Standardized'). See "
+            "``testgen://hygiene-issue-types`` for the full list.",
+        ),
+    ] = None,
+    limit: Annotated[int, Field(description="Maximum number of issues per page (default 50, max 200).")] = 50,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
     """List hygiene issues for a profiling run.
 
     Provide either ``job_execution_id`` for a specific run, or ``table_group_id`` to list
     the issues from its latest profiling run.
-
-    Args:
-        job_execution_id: UUID of a profiling run, e.g. from ``list_profiling_summaries``.
-        table_group_id: UUID of a table group. Resolves to the latest completed profiling run.
-            Mutually exclusive with ``job_execution_id``.
-        table_name: Filter by table name (exact match).
-        column_name: Filter by column name (exact match).
-        impact_dimension: Filter by impact dimension ('Reliability', 'Conformance',
-            'Regularity', 'Usability').
-        quality_dimension: Filter by data quality dimension ('Accuracy', 'Completeness',
-            'Consistency', 'Recency', 'Timeliness', 'Uniqueness', 'Validity').
-        disposition: Filter by disposition. Defaults to 'Confirmed'.
-            Valid values: 'Confirmed', 'Dismissed', 'Muted'.
-        issue_likelihood: Filter by issue likelihood. Values: 'Definite', 'Likely', 'Possible'.
-            Providing this filter auto-excludes PII issues; combine with ``pii_risk`` to include both.
-        pii_risk: Filter by PII risk level. Values: 'High', 'Moderate'.
-            Providing this filter auto-excludes regular issues.
-        issue_type: Filter by hygiene issue type (e.g. 'Similar Values Match When Standardized').
-            See ``testgen://hygiene-issue-types`` for the full list.
-        limit: Maximum number of issues per page (default 50, max 200).
-        page: Page number, starting from 1 (default 1).
     """
     if job_execution_id and table_group_id:
         raise MCPUserError("Pass either `job_execution_id` or `table_group_id`, not both.")
@@ -205,13 +228,12 @@ def list_hygiene_issues(
 
 @with_database_session
 @mcp_permission("disposition")
-def update_hygiene_issue(*, issue_id: str, disposition: str) -> str:
-    """Update the disposition of a hygiene issue (confirm, dismiss, or mute).
-
-    Args:
-        issue_id: UUID of the hygiene issue.
-        disposition: New disposition. Valid values: 'Confirmed', 'Dismissed', 'Muted'.
-    """
+def update_hygiene_issue(
+    *,
+    issue_id: Annotated[str, Field(description="UUID of the hygiene issue.")],
+    disposition: Annotated[str, Field(description="New disposition. Valid values: 'Confirmed', 'Dismissed', 'Muted'.")],
+) -> str:
+    """Update the disposition of a hygiene issue (confirm, dismiss, or mute)."""
     db_disposition = parse_disposition(disposition)
     issue = resolve_hygiene_issue(issue_id)
     issue.disposition = db_disposition
@@ -223,15 +245,17 @@ def update_hygiene_issue(*, issue_id: str, disposition: str) -> str:
 
 @with_database_session
 @mcp_permission("view")
-def get_hygiene_issue(*, issue_id: str) -> str:
+def get_hygiene_issue(
+    *,
+    issue_id: Annotated[
+        str,
+        Field(description="UUID of the hygiene issue, e.g. from ``list_hygiene_issues`` or ``search_hygiene_issues``."),
+    ],
+) -> str:
     """Get full details of a specific hygiene issue.
 
     Includes the issue type definition (description, suggested action), profiling run
     metadata, and column-profile context (general type, null rate, distinct count).
-
-    Args:
-        issue_id: UUID of the hygiene issue, e.g. from ``list_hygiene_issues`` or
-            ``search_hygiene_issues``.
     """
     issue_uuid = parse_uuid(issue_id, "issue_id")
     perms = get_project_permissions()
@@ -301,45 +325,62 @@ def get_hygiene_issue(*, issue_id: str) -> str:
 @mcp_permission("view")
 def search_hygiene_issues(
     *,
-    project_code: str | None = None,
-    table_group_id: str | None = None,
-    issue_type: str | None = None,
-    impact_dimension: str | None = None,
-    quality_dimension: str | None = None,
-    disposition: str | None = "Confirmed",
-    issue_likelihood: list[str] | None = None,
-    pii_risk: list[str] | None = None,
-    since: str | None = None,
-    table_name: str | None = None,
-    column_name: str | None = None,
-    limit: int = 50,
-    page: int = 1,
+    project_code: Annotated[str | None, Field(description="Scope to a specific project.")] = None,
+    table_group_id: Annotated[str | None, Field(description="UUID of a table group to scope to.")] = None,
+    issue_type: Annotated[
+        str | None,
+        Field(
+            description="Filter by hygiene issue type (e.g. 'Similar Values Match When Standardized'). See "
+            "``testgen://hygiene-issue-types`` for the full list.",
+        ),
+    ] = None,
+    impact_dimension: Annotated[
+        str | None,
+        Field(description="Filter by impact dimension ('Reliability', 'Conformance', 'Regularity', 'Usability')."),
+    ] = None,
+    quality_dimension: Annotated[
+        str | None,
+        Field(
+            description="Filter by data quality dimension ('Accuracy', 'Completeness', 'Consistency', 'Recency', "
+            "'Timeliness', 'Uniqueness', 'Validity').",
+        ),
+    ] = None,
+    disposition: Annotated[
+        str | None,
+        Field(
+            description="Filter by disposition. Defaults to 'Confirmed'. Valid values: 'Confirmed', 'Dismissed', "
+            "'Muted'.",
+        ),
+    ] = "Confirmed",
+    issue_likelihood: Annotated[
+        list[str] | None,
+        Field(
+            description="Filter by issue likelihood. Values: 'Definite', 'Likely', 'Possible'. Providing this filter "
+            "auto-excludes PII issues; combine with ``pii_risk`` to include both.",
+        ),
+    ] = None,
+    pii_risk: Annotated[
+        list[str] | None,
+        Field(
+            description="Filter by PII risk level. Values: 'High', 'Moderate'. Providing this filter auto-excludes "
+            "regular issues.",
+        ),
+    ] = None,
+    since: Annotated[
+        str | None,
+        Field(
+            description="Include issues from runs that started since this point — e.g. '7 days', '2 weeks', "
+            "'2026-04-01'.",
+        ),
+    ] = None,
+    table_name: Annotated[str | None, Field(description="Filter by table name (exact match).")] = None,
+    column_name: Annotated[str | None, Field(description="Filter by column name (exact match).")] = None,
+    limit: Annotated[int, Field(description="Maximum number of issues per page (default 50, max 200).")] = 50,
+    page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
     """Search hygiene issues across profiling runs and table groups.
 
     To drill into a single run, use ``list_hygiene_issues``.
-
-    Args:
-        project_code: Scope to a specific project.
-        table_group_id: UUID of a table group to scope to.
-        issue_type: Filter by hygiene issue type (e.g. 'Similar Values Match When Standardized').
-            See ``testgen://hygiene-issue-types`` for the full list.
-        impact_dimension: Filter by impact dimension ('Reliability', 'Conformance',
-            'Regularity', 'Usability').
-        quality_dimension: Filter by data quality dimension ('Accuracy', 'Completeness',
-            'Consistency', 'Recency', 'Timeliness', 'Uniqueness', 'Validity').
-        disposition: Filter by disposition. Defaults to 'Confirmed'.
-            Valid values: 'Confirmed', 'Dismissed', 'Muted'.
-        issue_likelihood: Filter by issue likelihood. Values: 'Definite', 'Likely', 'Possible'.
-            Providing this filter auto-excludes PII issues; combine with ``pii_risk`` to include both.
-        pii_risk: Filter by PII risk level. Values: 'High', 'Moderate'.
-            Providing this filter auto-excludes regular issues.
-        since: Include issues from runs that started since this point — e.g. '7 days',
-            '2 weeks', '2026-04-01'.
-        table_name: Filter by table name (exact match).
-        column_name: Filter by column name (exact match).
-        limit: Maximum number of issues per page (default 50, max 200).
-        page: Page number, starting from 1 (default 1).
     """
     validate_page(page)
     validate_limit(limit, 200)
