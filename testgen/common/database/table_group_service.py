@@ -139,8 +139,9 @@ def preview_table_group(
     """Probe the connected target DB for tables matching ``table_group``'s filters.
 
     Returns ``(preview, data_chars, sql_generator)`` — three picklable values.
-    On the error path (no connection, DDF failure, or empty schema) the second
-    and third tuple elements are ``None``.
+    No connection and DDF failure blank the second and third tuple elements; an
+    empty schema still returns the empty list and the generator, and is signalled
+    only by ``preview["success"]``. Check ``success``, not the elements.
 
     Use ``make_save_data_chars(data_chars, sql_generator)`` in callers that
     need to record the introspected metadata in ``data_chars``.

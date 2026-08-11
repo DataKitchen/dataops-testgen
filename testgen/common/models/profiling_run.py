@@ -4,7 +4,21 @@ from datetime import datetime
 from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Column, Float, ForeignKey, String, delete, desc, func, select, text
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Date,
+    Float,
+    ForeignKey,
+    String,
+    cast,
+    delete,
+    desc,
+    func,
+    or_,
+    select,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute, foreign, relationship
 from sqlalchemy.orm.attributes import flag_modified
@@ -486,6 +500,48 @@ class ProfilingRun(Entity):
             .order_by(desc(ProfilingRun.profiling_starttime))
             .limit(1)
         )
+        return get_current_session().scalar(query)
+
+    @classmethod
+    def latest_readable_id(
+        cls,
+        table_groups_id: UUID | str,
+        as_of_date: datetime | None = None,
+        finishing_run_id: UUID | None = None,
+    ) -> UUID | None:
+        """Return the id of the newest profiling run for a table group whose results are complete.
+
+        ``profile_results`` rows are written and committed per column while a run is in
+        flight, so a run that is still running, was interrupted, or is paused holds a
+        partial set. Only a run whose job execution completed is a usable snapshot.
+
+        ``finishing_run_id`` names a run whose work is done but whose job execution is not
+        marked completed yet, because the caller is running inside it. It is eligible
+        alongside the completed runs, and remains subject to ``as_of_date``.
+
+        ``as_of_date`` bounds the search to runs whose calendar date is on or before it,
+        implementing a table group's ``profiling_delay_days``. It compares dates, not
+        instants: a run started at 23:59 on the as-of date is included. Comparing a DATE
+        cast to a Python ``date`` keeps both sides free of time zones -- a bare ``<``
+        against the raw column would compare a naive column to an aware value and let the
+        server's session TimeZone move the day boundary.
+
+        The ``id`` tiebreaker keeps the pick deterministic when two runs share a
+        ``profiling_starttime``.
+        """
+        eligible = JobExecution.status == JobStatus.COMPLETED
+        if finishing_run_id is not None:
+            eligible = or_(eligible, cls.id == finishing_run_id)
+
+        query = (
+            select(cls.id)
+            .join(JobExecution, cls.id == JobExecution.id)
+            .where(cls.table_groups_id == table_groups_id, eligible)
+            .order_by(desc(cls.profiling_starttime), desc(cls.id))
+            .limit(1)
+        )
+        if as_of_date is not None:
+            query = query.where(cast(cls.profiling_starttime, Date) <= as_of_date.date())
         return get_current_session().scalar(query)
 
     @classmethod

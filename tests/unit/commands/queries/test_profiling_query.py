@@ -1,21 +1,28 @@
+import re
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from testgen.commands.queries.profiling_query import ProfilingSQL, calculate_sampling_params
+from testgen.common.database.column_chars import ColumnChars
+from testgen.common.read_file import read_template_sql_file
 
 pytestmark = pytest.mark.unit
+
+# Microseconds are deliberate: they must not reach run_date, which carries whole seconds.
+RUN_STARTTIME = datetime(2026, 7, 14, 21, 22, 26, 227897, tzinfo=UTC)
 
 
 # --- ProfilingSQL.update_profiling_results ---
 
 
-def _make_profiling_sql(profile_flag_pii=False, profile_flag_cdes=False):
+def _make_profiling_sql(profile_flag_pii=False, profile_flag_cdes=False, profiling_starttime=RUN_STARTTIME):
     connection = MagicMock()
     table_group = MagicMock()
     table_group.profile_flag_pii = profile_flag_pii
     table_group.profile_flag_cdes = profile_flag_cdes
-    profiling_run = MagicMock()
+    profiling_run = MagicMock(profiling_starttime=profiling_starttime)
     return ProfilingSQL(connection, table_group, profiling_run)
 
 
@@ -163,3 +170,78 @@ def test_sampling_decimal_string_percent():
     result = calculate_sampling_params("orders", 10000, "15.5", min_sample=100)
     assert result is not None
     assert result.sample_count == 1550
+
+
+# --- ProfilingSQL.get_profiling_errors ---
+
+
+def test_error_rows_carry_the_same_run_date_as_profiled_rows():
+    sql = _make_profiling_sql()
+    column = ColumnChars(
+        schema_name="public",
+        table_name="studies",
+        column_name="nct_id",
+        ordinal_position=1,
+        general_type="A",
+        column_type="varchar",
+        db_data_type="character varying",
+        record_ct=513,
+    )
+
+    error_row = sql.get_profiling_errors([(column, "unsupported type")])[0]
+    error_run_date = dict(zip(sql.error_columns, error_row, strict=True))["run_date"]
+
+    # A run writes one run_date: the value inlined into the profiling query for
+    # successful columns must be the value error rows get too.
+    assert error_run_date == sql._get_params()["RUN_DATE"]
+    assert error_run_date == "2026-07-14 21:22:26"
+
+
+def test_datatype_suggestions_runs_before_and_after_functional_datatype():
+    """The two templates each read what the other writes: functional_datatype keys rules off
+    datatype_suggestion, and datatype_suggestions keys its 'State' / 'Boolean' /
+    'Measurement Pct' rules off functional_data_type. A single pass before functional_datatype
+    leaves functional_data_type NULL, so those three rules can never fire."""
+    sql = _make_profiling_sql()
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        templates = [q[0] for q in sql.update_profiling_results()]
+
+    suggestion_passes = [i for i, name in enumerate(templates) if name == "datatype_suggestions.sql"]
+    functional_datatype = templates.index("functional_datatype.sql")
+
+    assert len(suggestion_passes) == 2, "datatype_suggestions must run twice"
+    assert suggestion_passes[0] < functional_datatype < suggestion_passes[1]
+
+
+def test_tabletype_staging_runs_after_the_second_suggestion_pass():
+    """functional_tabletype_stage reads functional_data_type, so it must not be interleaved
+    between the two datatype_suggestions passes."""
+    sql = _make_profiling_sql()
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        templates = [q[0] for q in sql.update_profiling_results()]
+
+    last_suggestion = max(i for i, name in enumerate(templates) if name == "datatype_suggestions.sql")
+    assert templates.index("functional_tabletype_stage.sql") > last_suggestion
+
+
+# --- Table type staging is keyed on the run ---
+
+
+def test_tabletype_staging_rows_carry_the_run_id():
+    """stg_functional_table_updates has no table group and no per-run delete, so
+    (project_code, schema_name, table_name, run_date) cannot identify one run's rows."""
+    sql = read_template_sql_file("functional_tabletype_stage.sql", "profiling")
+
+    insert_columns = re.search(
+        r"INSERT INTO stg_functional_table_updates\s*\(([^)]*)\)", sql, re.IGNORECASE
+    ).group(1)
+    assert "profile_run_id" in insert_columns
+
+
+def test_tabletype_update_selects_its_staged_rows_by_run_id():
+    sql = read_template_sql_file("functional_tabletype_update.sql", "profiling")
+
+    assert "s.profile_run_id = :PROFILE_RUN_ID" in sql
+    assert "s.run_date" not in sql

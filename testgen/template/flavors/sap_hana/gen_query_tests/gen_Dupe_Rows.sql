@@ -1,19 +1,17 @@
 WITH latest_run AS (
-  -- Latest complete profiling run before as-of-date
-  SELECT MAX(run_date) AS last_run_date
-    FROM profile_results
-  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
-    AND run_date::DATE <= :AS_OF_DATE ::DATE
+  -- The run the caller resolved. Resolving by date here would read profile_results, whose rows
+  -- are committed per column, so a partial run is indistinguishable from a finished one.
+  SELECT :PROFILE_RUN_ID ::UUID AS profile_run_id
 ),
 selected_tables AS (
-  SELECT profile_run_id, schema_name, table_name,
+  SELECT p.profile_run_id, schema_name, table_name,
     STRING_AGG(:QUOTE || column_name || :QUOTE, ', ' ORDER BY position) AS groupby_names
   FROM profile_results p
-  INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+  INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
   WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
     -- Skip X types - SAP HANA does not allow grouping by LOB types like BLOB, CLOB, NCLOB, TEXT, BINTEXT
     AND general_type <> 'X'
-  GROUP BY profile_run_id, schema_name, table_name
+  GROUP BY p.profile_run_id, schema_name, table_name
 )
 INSERT INTO test_definitions (
   table_groups_id, test_suite_id, test_type,

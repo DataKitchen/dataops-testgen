@@ -1,20 +1,22 @@
 -- Roll up scores from latest Test Runs per Test Suite to Table Group
-WITH last_test_date
-   AS (SELECT r.test_suite_id, MAX(r.test_starttime) as last_test_run_date
-         FROM test_runs r
-         INNER JOIN job_executions je ON je.id = r.id
+-- One run per suite via DISTINCT ON, tie-broken by id, then summed across the suites. A
+-- timestamp equality join back to test_runs would match every run of a suite sharing that
+-- timestamp and double-count their data points.
+WITH latest_run_per_suite
+   AS (SELECT DISTINCT ON (run.test_suite_id)
+              run.test_suite_id, run.dq_affected_data_points, run.dq_total_data_points
+         FROM test_runs run
+       INNER JOIN job_executions je
+          ON je.id = run.id
         WHERE je.status = 'completed'
-       GROUP BY r.test_suite_id),
+        ORDER BY run.test_suite_id, run.test_starttime DESC, run.id DESC),
 score_calc
   AS (SELECT ts.table_groups_id,
              SUM(run.dq_affected_data_points) as sum_affected_data_points,
              SUM(run.dq_total_data_points) as sum_data_points
-        FROM test_runs run
+        FROM latest_run_per_suite run
       INNER JOIN test_suites ts
          ON (run.test_suite_id = ts.id)
-      INNER JOIN last_test_date lp
-         ON (run.test_suite_id = lp.test_suite_id
-        AND  run.test_starttime = lp.last_test_run_date)
       WHERE ts.table_groups_id = :TABLE_GROUPS_ID
         AND ts.dq_score_exclude = FALSE
       GROUP BY ts.table_groups_id)

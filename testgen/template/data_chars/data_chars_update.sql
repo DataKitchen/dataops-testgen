@@ -14,6 +14,7 @@ WITH new_chars AS (
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -63,6 +64,7 @@ WITH new_chars AS (
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -119,28 +121,22 @@ WITH new_chars AS (
       table_name
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
    GROUP BY table_groups_id,
       schema_name,
       table_name
 ),
-last_run AS (
-   SELECT table_groups_id,
-      MAX(run_date) as last_run_date
-   FROM stg_data_chars_updates
-   WHERE table_groups_id = :TABLE_GROUPS_ID
-   GROUP BY table_groups_id
-),
 deleted_records AS (
    UPDATE data_table_chars
-   SET drop_date = l.last_run_date
-   FROM last_run l
-      INNER JOIN data_table_chars d ON (l.table_groups_id = d.table_groups_id)
+   SET drop_date = :RUN_DATE
+   FROM data_table_chars d
       LEFT JOIN new_chars n ON (
          d.table_groups_id = n.table_groups_id
          AND d.schema_name = n.schema_name
          AND d.table_name = n.table_name
       )
    WHERE data_table_chars.table_id = d.table_id
+      AND d.table_groups_id = :TABLE_GROUPS_ID
       AND d.drop_date IS NULL
       AND n.table_name IS NULL
    RETURNING data_table_chars.*
@@ -175,6 +171,7 @@ WITH new_chars AS (
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
 ),
 update_chars AS (
    UPDATE data_column_chars
@@ -244,6 +241,7 @@ WITH new_chars AS (
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
+      AND run_date = :RUN_DATE
 ),
 inserted_records AS (
    INSERT INTO data_column_chars (
@@ -313,19 +311,12 @@ WITH new_chars AS (
       column_name
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
-),
-last_run AS (
-   SELECT table_groups_id,
-      MAX(run_date) as last_run_date
-   FROM stg_data_chars_updates
-   WHERE table_groups_id = :TABLE_GROUPS_ID
-   GROUP BY table_groups_id
+      AND run_date = :RUN_DATE
 ),
 deleted_records AS (
    UPDATE data_column_chars
-   SET drop_date = l.last_run_date
-   FROM last_run l
-      INNER JOIN data_column_chars d ON (l.table_groups_id = d.table_groups_id)
+   SET drop_date = :RUN_DATE
+   FROM data_column_chars d
       LEFT JOIN new_chars n ON (
          d.table_groups_id = n.table_groups_id
          AND d.schema_name = n.schema_name
@@ -334,6 +325,7 @@ deleted_records AS (
       )
    WHERE data_column_chars.table_id = d.table_id
       AND data_column_chars.column_name = d.column_name
+      AND d.table_groups_id = :TABLE_GROUPS_ID
       AND d.drop_date IS NULL
       AND n.column_name IS NULL
    RETURNING data_column_chars.*

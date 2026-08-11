@@ -1,9 +1,7 @@
 WITH latest_run AS (
-  -- Latest complete profiling run before as-of-date
-  SELECT MAX(run_date) AS last_run_date
-    FROM profile_results
-  WHERE table_groups_id = :TABLE_GROUPS_ID ::UUID
-    AND run_date::DATE <= :AS_OF_DATE ::DATE
+  -- The run the caller resolved. Resolving by date here would read profile_results, whose rows
+  -- are committed per column, so a partial run is indistinguishable from a finished one.
+  SELECT :PROFILE_RUN_ID ::UUID AS profile_run_id
 ),
 latest_results AS (
   -- Column results for latest run
@@ -12,7 +10,7 @@ latest_results AS (
     p.distinct_value_ct, p.record_ct, p.null_value_ct,
     p.max_value, p.min_value, p.avg_value, p.stdev_value
   FROM profile_results p
-    INNER JOIN latest_run lr ON p.run_date = lr.last_run_date
+    INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
     INNER JOIN data_table_chars dtc ON (
       dtc.table_groups_id = p.table_groups_id
       AND dtc.schema_name = p.schema_name

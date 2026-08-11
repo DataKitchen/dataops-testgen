@@ -6,6 +6,7 @@ cleanup. PK declared is cosmetic; only WHERE columns are needed for bulk DELETE.
 """
 
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import Column, String
 from sqlalchemy.dialects import postgresql
@@ -20,6 +21,7 @@ class StgFunctionalTableUpdate(Base):
     run_date: datetime = Column(postgresql.TIMESTAMP, primary_key=True, nullable=False)
     schema_name: str = Column(String(50), primary_key=True)
     table_name: str = Column(String(120), primary_key=True)
+    profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
 
     @classmethod
     def delete_older_than(cls, cutoff: datetime, project_code: str) -> int:

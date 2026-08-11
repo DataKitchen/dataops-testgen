@@ -7,12 +7,13 @@ SET SEARCH_PATH TO {SCHEMA_NAME};
 -- ==============================================================================
 
 CREATE TABLE stg_functional_table_updates (
-   project_code  VARCHAR(30),
-   schema_name   VARCHAR(50),
-   run_date      TIMESTAMP,
-   table_name    VARCHAR(120),
-   table_period  VARCHAR(10),
-   table_type    VARCHAR(11)
+   project_code    VARCHAR(30),
+   schema_name     VARCHAR(50),
+   run_date        TIMESTAMP,
+   table_name      VARCHAR(120),
+   table_period    VARCHAR(10),
+   table_type      VARCHAR(11),
+   profile_run_id  UUID
 );
 
 CREATE TABLE stg_data_chars_updates (
