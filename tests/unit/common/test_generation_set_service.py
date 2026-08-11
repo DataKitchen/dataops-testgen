@@ -6,6 +6,7 @@ from testgen.common.generation_set_service import (
     DEFAULT_GENERATION_SET,
     MONITOR_GENERATION_SET,
     get_generation_set_members,
+    get_overriding_test_types,
     list_generation_sets,
     resolve_generation_sets,
 )
@@ -62,6 +63,30 @@ def test_get_generation_set_members_groups_by_set(mock_session):
         "Plugin_Set": ["Plugin_Type_A", "Plugin_Type_B"],
         "Standard": ["Pattern_Match"],
     }
+
+
+# --- get_overriding_test_types ---
+
+
+@patch(f"{MODULE}.get_current_session")
+def test_get_overriding_test_types_groups_by_overridden_type(mock_session):
+    mock_session.return_value = _mock_session([
+        ("Pattern_Match", "Plugin_Type_A"),
+        ("Pattern_Match", "Plugin_Type_B"),
+        ("Constant", "Plugin_Type_C"),
+    ])
+
+    assert get_overriding_test_types() == {
+        "Pattern_Match": ["Plugin_Type_A", "Plugin_Type_B"],
+        "Constant": ["Plugin_Type_C"],
+    }
+
+
+@patch(f"{MODULE}.get_current_session")
+def test_get_overriding_test_types_empty_when_nothing_overrides(mock_session):
+    mock_session.return_value = _mock_session([])
+
+    assert get_overriding_test_types() == {}
 
 
 # --- resolve_generation_sets: defaulting (requested is None) ---

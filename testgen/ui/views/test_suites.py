@@ -7,6 +7,7 @@ from testgen.commands.test_generation import run_test_generation
 from testgen.common.enums import JobSource
 from testgen.common.generation_set_service import (
     get_generation_set_members,
+    get_overriding_test_types,
     list_generation_sets,
     resolve_generation_sets,
 )
@@ -149,6 +150,7 @@ class TestSuitesPage(Page):
                 "generation_sets": list_generation_sets(),
                 "selected_generation_sets": resolve_generation_sets(TestSuite.get(generate_ts.id), None),
                 "generation_set_test_types": get_generation_set_members(),
+                "overriding_test_types": get_overriding_test_types(),
                 "refresh_warning": get_test_suite_refresh_warning(str(generate_ts.id)),
                 "lock_result": st.session_state.get(GENERATE_TESTS_LOCK_RESULT_KEY),
                 "result": st.session_state.get(GENERATE_TESTS_RESULT_KEY),

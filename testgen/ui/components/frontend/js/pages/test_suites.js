@@ -575,6 +575,7 @@ const TestSuites = (/** @type Properties */ props) => {
                         generation_sets: info.generation_sets ?? [],
                         selected_generation_sets: info.selected_generation_sets ?? [],
                         generation_set_test_types: info.generation_set_test_types ?? {},
+                        overriding_test_types: info.overriding_test_types ?? {},
                         refresh_warning: _dialogProps.refresh_warning,
                         lock_result: _dialogProps.lock_result,
                         result: _dialogProps.result,

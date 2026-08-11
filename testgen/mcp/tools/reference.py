@@ -107,6 +107,11 @@ def generation_sets_resource() -> str:
     if not members:
         return "No generation sets found."
 
+    # Only active types generate, so an inactive or uninstalled type is not part of the set.
+    short_names = {
+        tt.test_type: tt.test_name_short or tt.test_type for tt in TestType.select_where(TestType.active == "Y")
+    }
+
     doc = MdDoc()
     doc.heading(1, "TestGen Generation Sets Reference")
     doc.text(
@@ -114,8 +119,11 @@ def generation_sets_resource() -> str:
         "A test suite can use more than one set, and test types can belong to more than one set."
     )
     for generation_set, test_types in members.items():
+        names = sorted(short_names[test_type] for test_type in test_types if test_type in short_names)
+        if not names:
+            continue
         doc.heading(2, generation_set)
-        doc.text(", ".join(f"`{test_type}`" for test_type in test_types))
+        doc.text(", ".join(names))
 
     return doc.render()
 

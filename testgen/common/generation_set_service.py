@@ -47,6 +47,27 @@ def get_generation_set_members() -> dict[str, list[str]]:
     return members
 
 
+def get_overriding_test_types() -> dict[str, list[str]]:
+    """Map each overridden test type to the active test types that override it.
+
+    Generation deletes an unlocked auto-generated test when an overriding test type
+    generates on the same column in the same run, so a test type can be dropped from a
+    suite even while its own generation set stays selected.
+    """
+    rows = get_current_session().execute(
+        text(
+            "SELECT overrides, test_type FROM test_types "
+            "WHERE overrides IS NOT NULL AND active = 'Y' "
+            "ORDER BY overrides, test_type"
+        )
+    ).all()
+
+    overriding: dict[str, list[str]] = {}
+    for overridden_type, overriding_type in rows:
+        overriding.setdefault(overridden_type, []).append(overriding_type)
+    return overriding
+
+
 def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) -> list[str]:
     """Resolve the generation sets a run should use.
 

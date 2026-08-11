@@ -18,6 +18,7 @@
  * @property {string[]} generation_sets
  * @property {string[]} selected_generation_sets
  * @property {Object.<string, string[]>} generation_set_test_types
+ * @property {Object.<string, string[]>} overriding_test_types
  * @property {RefreshWarning?} refresh_warning
  * @property {string?} lock_result
  * @property {Result?} result
@@ -55,6 +56,7 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
     const generationSets = getValue(props.generation_sets) ?? [];
     const storedSets = getValue(props.selected_generation_sets) ?? [];
     const setMembers = getValue(props.generation_set_test_types) ?? {};
+    const overridingTypes = getValue(props.overriding_test_types) ?? {};
     const selectedSets = van.state(storedSets.filter((s) => generationSets.includes(s)));
     const submitDisabled = van.derive(() => selectedSets.val.length === 0);
 
@@ -83,18 +85,37 @@ const GenerateTestsDialog = (/** @type Properties */ props) => {
 
             const selected = selectedSets.val;
             const counts = warning.unlocked_counts_by_type ?? {};
-            const keptTypes = new Set(selected.flatMap(s => setMembers[s] ?? []));
-            const doomedCount = Object.entries(counts)
-                .filter(([testType]) => !keptTypes.has(testType))
-                .reduce((total, [, count]) => total + count, 0);
+            const generatedTypes = new Set(selected.flatMap(s => setMembers[s] ?? []));
+            const addedTypes = new Set(
+                selected.filter(s => !storedSets.includes(s)).flatMap(s => setMembers[s] ?? []),
+            );
+
+            // A test is dropped when no selected set generates its type, and also when a
+            // newly selected set generates a type that overrides it. Whether an overriding
+            // type lands on the same column depends on the profiling data, so the second
+            // group is an upper bound and the total is reported as such.
+            let uncoveredCount = 0;
+            let overriddenCount = 0;
+            for (const [testType, count] of Object.entries(counts)) {
+                if (!generatedTypes.has(testType)) {
+                    uncoveredCount += count;
+                } else if ((overridingTypes[testType] ?? []).some(t => addedTypes.has(t))) {
+                    overriddenCount += count;
+                }
+            }
+            const doomedCount = uncoveredCount + overriddenCount;
             const removedSets = storedSets.filter(s => !selected.includes(s));
 
             let deselectionMessage = '';
             if (doomedCount > 0) {
                 const testNoun = doomedCount === 1 ? 'test' : 'tests';
-                deselectionMessage = removedSets.length > 0
-                    ? `Deselecting ${removedSets.join(', ')} will delete ${doomedCount} unlocked auto-generated ${testNoun}.`
-                    : `${doomedCount} unlocked auto-generated ${testNoun} ${doomedCount === 1 ? 'is' : 'are'} not covered by the selected generation sets and will be deleted.`;
+                if (overriddenCount > 0) {
+                    deselectionMessage = `Up to ${doomedCount} unlocked auto-generated ${testNoun} will be deleted.`;
+                } else {
+                    deselectionMessage = removedSets.length > 0
+                        ? `Deselecting ${removedSets.join(', ')} will delete ${doomedCount} unlocked auto-generated ${testNoun}.`
+                        : `${doomedCount} unlocked auto-generated ${testNoun} ${doomedCount === 1 ? 'is' : 'are'} not covered by the selected generation sets and will be deleted.`;
+                }
             }
 
             return div(
