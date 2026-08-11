@@ -306,6 +306,40 @@ class HygieneIssue(Entity):
         return result
 
     @classmethod
+    def counts_by_column_subquery(cls, profile_run_id: UUID):
+        """Return a subquery keyed on ``(schema_name, table_name, column_name)`` with the
+        six ``IssueCounts`` count columns for one profiling run. Same shape as
+        :meth:`count_for_run` — same bucket definitions and dismissed handling — but grouped
+        per column instead of aggregated to a single row. Compose into a paginated column
+        listing via ``LEFT JOIN`` on the natural key."""
+        dismissed = func.coalesce(cls.disposition, Disposition.CONFIRMED).in_(
+            (Disposition.DISMISSED, Disposition.INACTIVE)
+        )
+        is_pii = HygieneIssueType.likelihood == IssueLikelihood.POTENTIAL_PII
+
+        def _count(condition):
+            return func.coalesce(func.sum(case((condition, 1), else_=0)), 0)
+
+        return (
+            select(
+                cls.schema_name.label("schema_name"),
+                cls.table_name.label("table_name"),
+                cls.column_name.label("column_name"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.DEFINITE)).label("definite"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.LIKELY)).label("likely"),
+                _count(~dismissed & (HygieneIssueType.likelihood == IssueLikelihood.POSSIBLE)).label("possible"),
+                _count(~dismissed & is_pii & (cls.priority == PiiRisk.HIGH)).label("high"),
+                _count(~dismissed & is_pii & (cls.priority == PiiRisk.MODERATE)).label("moderate"),
+                _count(dismissed).label("dismissed"),
+            )
+            .select_from(cls)
+            .join(HygieneIssueType, HygieneIssueType.id == cls.type_id)
+            .where(cls.profile_run_id == profile_run_id)
+            .group_by(cls.schema_name, cls.table_name, cls.column_name)
+            .subquery()
+        )
+
+    @classmethod
     def _priority_order(cls):
         return case(
             (cls.priority == "Definite", 1),

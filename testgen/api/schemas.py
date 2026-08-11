@@ -7,11 +7,13 @@ from pydantic import BaseModel, Field
 
 from testgen.api.enums import (
     Disposition,
+    GeneralType,
     HygieneDisposition,
     ImpactDimension,
     IssueLikelihood,
     MonitorThresholdMode,
     MonitorType,
+    PiiFlag,
     PiiRisk,
     ResultStatus,
     TableState,
@@ -275,6 +277,41 @@ class ScoresResponse(BaseModel):
         default=None,
         description="Breakdown rows for the requested ``group_by``, ordered by ``impact`` descending. Absent when no ``group_by`` was provided.",
     )
+
+
+class ProfilingColumnItem(BaseModel):
+    """One column's profile within a profiling run.
+
+    ``profiling_score``, ``testing_score``, and ``pii_flag`` reflect the column's current
+    catalog values — a column that has been re-profiled since the pinned run still
+    reports the latest scores and classification.
+    """
+
+    schema_name: str
+    table_name: str
+    column_name: str
+    general_type: GeneralType | None = None
+    functional_data_type: str | None = None
+    db_data_type: str | None = None
+    datatype_suggestion: str | None = None
+    pii_flag: PiiFlag | None = None
+    critical_data_element: bool = False
+    record_ct: int | None = None
+    null_value_ct: int | None = None
+    distinct_value_ct: int | None = None
+    filled_value_ct: int | None = None
+    profiling_score: float | None = None
+    testing_score: float | None = None
+    issue_counts: IssueCounts
+
+
+class ProfilingColumnListResponse(BaseModel):
+    """Paginated per-column profiles for a profiling run."""
+
+    items: list[ProfilingColumnItem]
+    page: int
+    limit: int
+    total: int
 
 
 # --- Errors ---

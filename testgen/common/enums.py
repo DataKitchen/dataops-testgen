@@ -104,6 +104,18 @@ class PiiRisk(StrEnum):
     MODERATE = "Moderate"
 
 
+# ``data_column_chars.pii_flag`` and ``profile_results.pii_flag`` store strings shaped like
+# ``A/NAME/full_name`` — a single-character risk prefix, a category, and a detail. The prefix
+# maps to a human-readable label used across the MCP tools, REST API, and (as a source of
+# truth for) the frontend. The stored ``MANUAL`` sentinel means the classification was set
+# by hand and has no prefix.
+#
+# Hygiene *findings* (``HygieneIssue.priority``) never surface the ``Low`` level — the regex
+# in ``hygiene_issue.py`` parses only ``HIGH`` and ``MODERATE`` from ``detail`` strings. The
+# ``Low`` bucket applies only to column classifications.
+PII_FLAG_PREFIX_TO_LABEL: dict[str, str] = {"A": "High", "B": "Moderate", "C": "Low"}
+
+
 class MonitorType(StrEnum):
     """Stored ``test_type`` values for the four monitor test types. Surfaced to users
     as the lowercase short labels (freshness / volume / schema / metric)."""

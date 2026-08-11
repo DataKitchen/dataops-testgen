@@ -6,7 +6,7 @@ from pydantic import Field
 from sqlalchemy import func, or_
 
 from testgen.common.data_catalog_service import build_create_table_script
-from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
+from testgen.common.enums import JOB_STATUS_LABEL, PII_FLAG_PREFIX_TO_LABEL, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
     SUGGESTED_DATA_TYPE_TO_PREFIX,
@@ -417,7 +417,6 @@ def list_profiling_summaries(
     return doc.render()
 
 
-_PII_RISK_MAP = {"A": "High", "B": "Moderate", "C": "Low"}
 _PII_TYPE_MAP = {"ID": "ID", "NAME": "Name", "DEMO": "Demographic", "CONTACT": "Contact"}
 
 
@@ -429,7 +428,7 @@ def _format_pii(value: str | None) -> str | None:
         return "Yes"
     risk, _, rest = value.partition("/")
     type_code, _, detail = rest.partition("/")
-    risk_label = _PII_RISK_MAP.get(risk, "Moderate")
+    risk_label = PII_FLAG_PREFIX_TO_LABEL.get(risk, "Moderate")
     type_label = _PII_TYPE_MAP.get(type_code)
     caption = f"{risk_label} Risk"
     if type_label:

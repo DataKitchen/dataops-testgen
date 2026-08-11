@@ -8,6 +8,7 @@ single seam that normalizes them to the API surface — the DB is never changed.
 
 from enum import StrEnum
 
+from testgen.common.enums import PII_FLAG_PREFIX_TO_LABEL
 from testgen.common.enums import Disposition as DbDisposition
 from testgen.common.enums import ImpactDimension as DbImpactDimension
 from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
@@ -257,3 +258,59 @@ QUALITY_DIMENSION_TO_DB: dict[QualityDimension, DbQualityDimension] = {
 QUALITY_DIMENSION_FROM_DB: dict[DbQualityDimension, QualityDimension] = {
     v: k for k, v in QUALITY_DIMENSION_TO_DB.items()
 }
+
+
+# --- Column profiles ---
+
+
+class GeneralType(StrEnum):
+    """Coarse column type inferred by profiling."""
+
+    alpha = "alpha"
+    numeric = "numeric"
+    datetime = "datetime"
+    boolean = "boolean"
+    time = "time"
+    other = "other"
+
+
+# ``data_column_chars.general_type`` and ``profile_results.general_type`` store single-letter
+# codes (A/N/D/B/T/X). Mapping keyed on the code, not the ``common.models.data_column.GeneralType``
+# TitleCase enum, because rows are read directly and matched by the stored code.
+GENERAL_TYPE_FROM_DB: dict[str, GeneralType] = {
+    "A": GeneralType.alpha,
+    "N": GeneralType.numeric,
+    "D": GeneralType.datetime,
+    "B": GeneralType.boolean,
+    "T": GeneralType.time,
+    "X": GeneralType.other,
+}
+
+
+class PiiFlag(StrEnum):
+    """Risk level of a column's PII classification. Distinct from ``PiiRisk`` (findings-level):
+    columns can carry all four values, whereas hygiene findings only surface ``high`` and
+    ``moderate``."""
+
+    high = "high"
+    moderate = "moderate"
+    low = "low"
+    manual = "manual"
+
+
+# Derived from ``common.enums.PII_FLAG_PREFIX_TO_LABEL`` — the single source of truth for the
+# code→level mapping across MCP, REST, and (canonically) the frontend. The stored ``MANUAL``
+# sentinel has no prefix and is handled explicitly in ``pii_flag_from_db``.
+_PII_FLAG_PREFIX_MAP: dict[str, PiiFlag] = {
+    code: PiiFlag(label.lower()) for code, label in PII_FLAG_PREFIX_TO_LABEL.items()
+}
+
+
+def pii_flag_from_db(value: str | None) -> PiiFlag | None:
+    """Decode a stored ``pii_flag`` (``A/NAME/full_name``-style or ``MANUAL[/...]``) to the API
+    enum. Returns ``None`` for missing or unrecognized values."""
+    if not value:
+        return None
+    if value.startswith("MANUAL"):
+        return PiiFlag.manual
+    return _PII_FLAG_PREFIX_MAP.get(value[:1])

@@ -1,14 +1,37 @@
 import math
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Column, Float, ForeignKey, Integer, Numeric, String, asc, desc
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    and_,
+    asc,
+    case,
+    desc,
+    func,
+    select,
+)
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import database_session
 from testgen.common.models.entity import Entity
+
+
+class ColumnSort(StrEnum):
+    """Sort order for the per-run column-profiles listing."""
+
+    hygiene_severity = "hygiene_severity"
+    table = "table"
 
 
 def _sanitize_write_value(value: Any) -> Any:
@@ -197,3 +220,142 @@ class ProfileResult(Entity):
         if column_name is not None:
             clauses.append(cls.column_name == column_name)
         return list(cls.select_where(*clauses))
+
+    @classmethod
+    def list_columns_for_run(
+        cls,
+        profile_run_id: UUID,
+        *clauses,
+        sort: ColumnSort,
+        page: int,
+        limit: int,
+    ) -> "tuple[list[ColumnProfileRow], int]":
+        """Paginated per-column profile listing for one profiling run.
+
+        Each row combines per-run stats (``profile_results``) with the column's latest
+        catalog attributes (``pii_flag``, ``critical_data_element``, scores) from
+        ``data_column_chars``, and its containing table's CDE from ``data_table_chars``.
+        Hygiene-issue counts come from the six-bucket per-column subquery on
+        ``HygieneIssue``.
+
+        Scores and ``pii_flag`` are the column's current catalog values — a column that
+        has been re-profiled since ``profile_run_id`` still reports the latest scores.
+        Callers wanting the historical value should read ``profile_results.pii_flag``
+        for the run directly.
+
+        Extra ``*clauses`` are AND'd into the WHERE and refer to ``ProfileResult`` columns
+        (e.g. ``ProfileResult.table_name == "orders"``).
+        """
+        from testgen.common.models.data_column import DataColumnChars
+        from testgen.common.models.data_table import DataTable
+        from testgen.common.models.hygiene_issue import HygieneIssue
+
+        issue_subq = HygieneIssue.counts_by_column_subquery(profile_run_id)
+        cde_expr = case(
+            (DataColumnChars.critical_data_element.is_(True), True),
+            (DataTable.critical_data_element.is_(True), True),
+            else_=False,
+        ).label("critical_data_element")
+
+        natural_key = and_(
+            DataColumnChars.table_groups_id == cls.table_groups_id,
+            DataColumnChars.schema_name == cls.schema_name,
+            DataColumnChars.table_name == cls.table_name,
+            DataColumnChars.column_name == cls.column_name,
+        )
+        issue_join = and_(
+            issue_subq.c.schema_name == cls.schema_name,
+            issue_subq.c.table_name == cls.table_name,
+            issue_subq.c.column_name == cls.column_name,
+        )
+
+        definite = func.coalesce(issue_subq.c.definite, 0).label("definite")
+        likely = func.coalesce(issue_subq.c.likely, 0).label("likely")
+        possible = func.coalesce(issue_subq.c.possible, 0).label("possible")
+        high = func.coalesce(issue_subq.c.high, 0).label("high")
+        moderate = func.coalesce(issue_subq.c.moderate, 0).label("moderate")
+        dismissed = func.coalesce(issue_subq.c.dismissed, 0).label("dismissed")
+
+        query = (
+            select(
+                cls.schema_name,
+                cls.table_name,
+                cls.column_name,
+                cls.general_type,
+                cls.functional_data_type,
+                cls.db_data_type,
+                cls.datatype_suggestion,
+                DataColumnChars.pii_flag.label("pii_flag"),
+                cde_expr,
+                cls.record_ct,
+                cls.null_value_ct,
+                cls.distinct_value_ct,
+                cls.filled_value_ct,
+                DataColumnChars.dq_score_profiling.label("profiling_score"),
+                DataColumnChars.dq_score_testing.label("testing_score"),
+                definite,
+                likely,
+                possible,
+                high,
+                moderate,
+                dismissed,
+            )
+            .select_from(cls)
+            .outerjoin(DataColumnChars, natural_key)
+            .outerjoin(DataTable, DataTable.id == DataColumnChars.table_id)
+            .outerjoin(issue_subq, issue_join)
+            .where(cls.profile_run_id == profile_run_id, *clauses)
+        )
+
+        tiebreaker = (
+            asc(func.lower(cls.schema_name)),
+            asc(func.lower(cls.table_name)),
+            asc(cls.position),
+            asc(cls.column_name),
+        )
+        if sort == ColumnSort.hygiene_severity:
+            order_exprs = (
+                desc(definite),
+                desc(likely),
+                desc(possible),
+                desc(high),
+                desc(moderate),
+                *tiebreaker,
+            )
+        else:
+            order_exprs = tiebreaker
+        query = query.order_by(*order_exprs)
+
+        return cls._paginate(query, page=page, limit=limit, data_class=ColumnProfileRow)
+
+
+@dataclass
+class ColumnProfileRow:
+    """One paginated row from :meth:`ProfileResult.list_columns_for_run`.
+
+    Field names match the SELECT column labels exactly — ``Entity._paginate`` unpacks each
+    row by keyword, so renaming a field here or a ``.label(...)`` in the query without
+    matching the other breaks row construction.
+    """
+
+    schema_name: str
+    table_name: str
+    column_name: str
+    general_type: str | None
+    functional_data_type: str | None
+    db_data_type: str | None
+    datatype_suggestion: str | None
+    pii_flag: str | None
+    critical_data_element: bool
+    record_ct: int | None
+    null_value_ct: int | None
+    distinct_value_ct: int | None
+    filled_value_ct: int | None
+    profiling_score: float | None
+    testing_score: float | None
+    definite: int
+    likely: int
+    possible: int
+    high: int
+    moderate: int
+    dismissed: int

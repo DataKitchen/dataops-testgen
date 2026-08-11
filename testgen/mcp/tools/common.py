@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from testgen.common.date_service import parse_since
 from testgen.common.enums import (
+    PII_FLAG_PREFIX_TO_LABEL,
     Disposition,
     ImpactDimension,
     IssueLikelihood,
@@ -591,15 +592,16 @@ def parse_profile_metrics(values: list[str]) -> list[ProfileMetric]:
     return parsed
 
 
-# ``pii_flag`` encodes risk as a single-character prefix: ``A`` (High), ``B`` (Moderate), ``C`` (Low).
-_PII_RISK_LEVEL_TO_CODE: dict[str, str] = {"High": "A", "Moderate": "B", "Low": "C"}
+# Reverse of ``PII_FLAG_PREFIX_TO_LABEL`` — for validating a user-supplied label and returning
+# the stored prefix code.
+_PII_RISK_LABEL_TO_PREFIX: dict[str, str] = {v: k for k, v in PII_FLAG_PREFIX_TO_LABEL.items()}
 
 
 def parse_pii_risk_level(value: str) -> str:
     """Validate a column-profile pii_risk_level filter and return the stored prefix code."""
-    code = _PII_RISK_LEVEL_TO_CODE.get(value)
+    code = _PII_RISK_LABEL_TO_PREFIX.get(value)
     if code is None:
-        valid = ", ".join(_PII_RISK_LEVEL_TO_CODE)
+        valid = ", ".join(_PII_RISK_LABEL_TO_PREFIX)
         raise MCPUserError(f"Invalid pii_risk_level `{value}`. Valid values: {valid}")
     return code
 
