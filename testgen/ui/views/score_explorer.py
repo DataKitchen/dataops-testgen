@@ -82,7 +82,7 @@ class ScoreExplorerPage(Page):
 
             if not session.auth.user_has_project_access(project_code):
                 self.router.navigate_with_warning(
-                    "You don't have access to view this resource. Redirecting ...",
+                    "You do not have access to view this resource. Redirecting ...",
                     "quality-dashboard",
                 )
                 return

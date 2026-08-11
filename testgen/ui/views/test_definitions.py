@@ -15,6 +15,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.models.test_definition import (
+    NON_PUBLIC_TEST_TYPES,
     TestDefinition,
     TestDefinitionMinimal,
     TestDefinitionNote,
@@ -131,7 +132,7 @@ class TestDefinitionsPage(Page):
 
         if not session.auth.user_has_project_access(project_code):
             self.router.navigate_with_warning(
-                "You don't have access to view this resource. Redirecting ...",
+                "You do not have access to view this resource. Redirecting ...",
                 "test-suites",
             )
             return
@@ -447,7 +448,7 @@ class TestDefinitionsPage(Page):
             target_project = _resolve_target_project(target_tg_id)
             if not target_project or not session.auth.user_has_permission("edit", target_project):
                 LOG.warning("Refusing copy to table group %s — user lacks edit permission", target_tg_id)
-                st.toast("You don't have edit permission for the target project.", icon=":material/error:")
+                st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
@@ -469,7 +470,7 @@ class TestDefinitionsPage(Page):
             target_project = _resolve_target_project(target_tg_id)
             if not target_project or not session.auth.user_has_permission("edit", target_project):
                 LOG.warning("Refusing move to table group %s — user lacks edit permission", target_tg_id)
-                st.toast("You don't have edit permission for the target project.", icon=":material/error:")
+                st.toast("You do not have edit permission for the target project.", icon=":material/error:")
                 return
             overwrite_ids = st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, [])
             if overwrite_ids:
@@ -836,6 +837,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         END as select_name
     FROM test_types tt
     WHERE tt.active = 'Y'
+        AND tt.test_type != ALL(:non_public_test_types)
         {"AND tt.test_type = :test_type" if test_type else ""}
     ORDER BY
         CASE tt.test_scope
@@ -848,7 +850,9 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         END,
         tt.test_name_short;
     """
-    df = fetch_df_from_db(query, {"test_type": test_type})
+    df = fetch_df_from_db(
+        query, {"test_type": test_type, "non_public_test_types": sorted(NON_PUBLIC_TEST_TYPES)}
+    )
     if not df.empty:
         # Criteria facet is derived (not stored) via the shared classifier so UI and MCP agree.
         df["criteria"] = df.apply(

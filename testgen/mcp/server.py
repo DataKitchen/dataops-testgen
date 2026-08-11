@@ -49,13 +49,13 @@ NAVIGATION
 Tools return entity IDs that feed into other tools. Start with get_data_inventory for broad discovery, then drill
 into specific entities.
 
-Test types have specific, non-obvious meanings (e.g., Alpha_Trunc). Do not guess what a test checks.
+Test types have specific, non-obvious meanings (e.g., Alpha Truncation). Do not guess what a test checks.
 ALWAYS look them up using either the `testgen://test-types` resource or the `get_test_type()` tool.
 
 Hygiene issue types similarly have specific meanings. ALWAYS look them up using the
-`testgen://hygiene-issue-types` resource.q
+`testgen://hygiene-issue-types` resource.
 
-Column profile fields are type-specific (different stats per Alpha / Numeric / Date / Boolean / Other).
+Column profile fields are type-specific (different stats per Alpha / Numeric / Datetime / Boolean / Time / Other).
 ALWAYS look them up using the `testgen://column-profile-fields` resource.
 
 INVESTIGATING FAILURES

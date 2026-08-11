@@ -207,3 +207,34 @@ def test_forecast_points_handles_one_sided_bounds():
     assert points[0].test_time == t1
     assert points[0].lower_bound is None
     assert points[0].upper_bound == 130.0
+
+
+# --- NON_PUBLIC_TEST_TYPES / TestType.is_public ---
+
+
+def test_non_public_test_types_holds_only_the_schema_monitor():
+    """Schema_Drift spans a table group and takes no parameters, so it is the only type
+    withheld from the regular-test catalogs."""
+    from testgen.common.enums import MonitorType
+    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
+
+    assert NON_PUBLIC_TEST_TYPES == frozenset({MonitorType.SCHEMA.value})
+
+
+def test_is_public_clause_excludes_non_public_types():
+    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
+
+    sql = str(TestType.is_public().compile(compile_kwargs={"literal_binds": True}))
+
+    assert "test_types.test_type NOT IN" in sql
+    for code in NON_PUBLIC_TEST_TYPES:
+        assert f"'{code}'" in sql
+
+
+def test_other_monitor_types_stay_public():
+    """Freshness, Volume, and Metric Trend remain creatable as regular tests."""
+    from testgen.common.enums import MonitorType
+    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
+
+    for monitor in (MonitorType.FRESHNESS, MonitorType.VOLUME, MonitorType.METRIC):
+        assert monitor.value not in NON_PUBLIC_TEST_TYPES

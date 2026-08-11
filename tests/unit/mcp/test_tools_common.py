@@ -35,6 +35,7 @@ from testgen.mcp.tools.common import (
     resolve_issue_type,
     resolve_profiling_run,
     resolve_test_note,
+    resolve_test_type,
     validate_limit,
     validate_page,
 )
@@ -110,10 +111,10 @@ def test_parse_severity_invalid_lists_valid_values():
         assert severity.value in str(exc_info.value)
 
 
-def test_parse_severity_case_sensitive():
-    """Severity stores 'Fail' / 'Warning' verbatim; lowercase rejected by design."""
-    with pytest.raises(MCPUserError, match="Invalid severity `fail`"):
-        parse_severity("fail")
+@pytest.mark.parametrize("supplied", ["Fail", "fail", "FAIL", "  fail  "])
+def test_parse_severity_accepts_any_casing(supplied):
+    """Severity stores 'Fail' verbatim, but accepts it in whatever casing the caller used."""
+    assert parse_severity(supplied) is Severity.FAIL
 
 
 # --- validate_page ---
@@ -180,9 +181,9 @@ def test_parse_disposition_rejects_unknown_lists_valid_values():
     assert "Muted" in msg
 
 
-def test_parse_disposition_case_sensitive():
-    with pytest.raises(MCPUserError):
-        parse_disposition("confirmed")
+@pytest.mark.parametrize("supplied", ["Confirmed", "confirmed", "CONFIRMED", " confirmed "])
+def test_parse_disposition_accepts_any_casing(supplied):
+    assert parse_disposition(supplied) is Disposition.CONFIRMED
 
 
 @pytest.mark.parametrize(
@@ -302,6 +303,50 @@ def test_parse_pii_risk_list_collects_all_invalid():
     assert "Wrong" in msg
 
 
+# --- resolve_test_type / resolve_issue_type ---
+
+
+def _compiled_clause(select_where_mock) -> str:
+    """Render the single WHERE clause a resolver handed to ``select_where`` as literal SQL."""
+    assert select_where_mock.call_count == 1
+    (clause,), _ = select_where_mock.call_args
+    return str(clause.compile(compile_kwargs={"literal_binds": True}))
+
+
+def test_resolve_test_type_found_returns_code():
+    fake = MagicMock()
+    fake.test_type = "Alpha_Trunc"
+    with patch("testgen.mcp.tools.common.TestType.select_where", return_value=[fake]) as select_where:
+        assert resolve_test_type("Alpha Truncation") == "Alpha_Trunc"
+    assert select_where.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "supplied",
+    ["Alpha Truncation", "alpha truncation", "ALPHA TRUNCATION", "  Alpha Truncation  ", "\tAlpha Truncation\n"],
+)
+def test_resolve_test_type_normalizes_both_sides(supplied):
+    """Casing and surrounding whitespace are stripped from the input *and* the stored column.
+
+    Trimming the column is what makes a type reachable when its reference data carries
+    stray whitespace in ``test_name_short``.
+    """
+    fake = MagicMock()
+    fake.test_type = "Alpha_Trunc"
+    with patch("testgen.mcp.tools.common.TestType.select_where", return_value=[fake]) as select_where:
+        assert resolve_test_type(supplied) == "Alpha_Trunc"
+    sql = _compiled_clause(select_where)
+    assert "lower(trim(test_types.test_name_short))" in sql
+    assert "'alpha truncation'" in sql
+
+
+def test_resolve_test_type_not_found_raises_with_resource_hint():
+    with patch("testgen.mcp.tools.common.TestType.select_where", return_value=[]):
+        with pytest.raises(MCPUserError, match="Unknown test type") as exc_info:
+            resolve_test_type("Made-Up Test")
+    assert "testgen://test-types" in str(exc_info.value)
+
+
 # --- resolve_issue_type ---
 
 
@@ -314,6 +359,22 @@ def test_resolve_issue_type_found_returns_id():
         result = resolve_issue_type("Personally Identifiable Information")
     assert result == "1015"
     assert select_where.call_count == 1
+
+
+@pytest.mark.parametrize(
+    "supplied",
+    ["Personally Identifiable Information", "personally identifiable information", "  PERSONALLY IDENTIFIABLE INFORMATION  "],
+)
+def test_resolve_issue_type_normalizes_both_sides(supplied):
+    fake = MagicMock()
+    fake.id = "1015"
+    with patch(
+        "testgen.mcp.tools.common.HygieneIssueType.select_where", return_value=[fake]
+    ) as select_where:
+        assert resolve_issue_type(supplied) == "1015"
+    sql = _compiled_clause(select_where)
+    assert "lower(trim(profile_anomaly_types.anomaly_name))" in sql
+    assert "'personally identifiable information'" in sql
 
 
 def test_resolve_issue_type_not_found_raises_with_resource_hint():
@@ -449,9 +510,17 @@ def test_parse_pii_category_translates_display_label_to_stored_code():
 
 
 def test_parse_pii_category_rejects_stored_code_form():
+    """``DEMO`` is the stored code, not a label — it stays rejected even though lookups
+    ignore case, because it differs from ``Demographic`` by more than casing."""
     from testgen.mcp.tools.common import parse_pii_category
-    with pytest.raises(MCPUserError, match="Invalid pii_category `NAME`"):
-        parse_pii_category("NAME")
+    with pytest.raises(MCPUserError, match="Invalid pii_category `DEMO`"):
+        parse_pii_category("DEMO")
+
+
+@pytest.mark.parametrize("supplied", ["Name", "name", "NAME", "  name  "])
+def test_parse_pii_category_accepts_any_casing(supplied):
+    from testgen.mcp.tools.common import parse_pii_category
+    assert parse_pii_category(supplied) == "NAME"
 
 
 def test_parse_pii_category_lists_valid_values_in_error():
@@ -497,10 +566,17 @@ def test_parse_general_type_rejects_letter_code_input():
         parse_general_type("A")
 
 
-def test_parse_general_type_is_case_sensitive():
+@pytest.mark.parametrize("supplied", ["Alpha", "alpha", "ALPHA", "  alpha  "])
+def test_parse_general_type_accepts_any_casing(supplied):
     from testgen.mcp.tools.common import parse_general_type
-    with pytest.raises(MCPUserError):
-        parse_general_type("alpha")
+    assert parse_general_type(supplied) == "A"
+
+
+def test_parse_general_type_rejects_stored_code():
+    """The single-letter code is the stored form, never an accepted input."""
+    from testgen.mcp.tools.common import parse_general_type
+    with pytest.raises(MCPUserError, match="Invalid general_type `A`"):
+        parse_general_type("A")
 
 
 # --- parse_suggested_data_type ---
@@ -514,10 +590,10 @@ def test_parse_suggested_data_type_accepts_title_case():
     assert parse_suggested_data_type("Varchar") is SuggestedDataType.VARCHAR
 
 
-def test_parse_suggested_data_type_rejects_uppercase():
+def test_parse_suggested_data_type_accepts_uppercase():
+    from testgen.common.models.data_column import SuggestedDataType
     from testgen.mcp.tools.common import parse_suggested_data_type
-    with pytest.raises(MCPUserError, match="Invalid suggested_data_type `INTEGER`"):
-        parse_suggested_data_type("INTEGER")
+    assert parse_suggested_data_type("INTEGER") is SuggestedDataType.INTEGER
 
 
 def test_parse_suggested_data_type_lists_valid_values_in_error():
@@ -674,15 +750,14 @@ def test_parse_score_type_user_labels(label, expected_member):
     assert member is expected_member
 
 
-@pytest.mark.parametrize("internal", ["total", "cde"])
-def test_parse_score_type_rejects_internal_or_wrong_case(internal):
-    """The internal vocabulary (``total``/``cde`` lowercase) must not be
-    accepted on input; only the canonical user-facing values are."""
-    with pytest.raises(MCPUserError, match="Invalid score_type") as exc_info:
-        parse_score_type(internal)
-    msg = str(exc_info.value)
-    assert "Total" in msg
-    assert "CDE" in msg
+@pytest.mark.parametrize(
+    "supplied,expected_member",
+    [("total", ScoreType.TOTAL), ("cde", ScoreType.CDE), ("  Cde ", ScoreType.CDE)],
+)
+def test_parse_score_type_accepts_any_casing(supplied, expected_member):
+    """``Total``/``CDE`` differ from the stored ``total``/``cde`` only by casing, so
+    either form denotes the same score and both resolve."""
+    assert parse_score_type(supplied) is expected_member
 
 
 def test_parse_score_type_invalid_lists_valid_values():
@@ -794,6 +869,40 @@ def test_parse_sql_flavor_returns_label_code_family():
     assert family == "mssql"
 
 
+@pytest.mark.parametrize(
+    "supplied",
+    [
+        "Azure SQL Database",
+        "azure sql database",
+        "AZURE SQL DATABASE",
+        "  Azure SQL Database  ",
+        "azure_mssql",
+        "AZURE_MSSQL",
+        "  azure_mssql  ",
+    ],
+)
+def test_parse_sql_flavor_accepts_label_or_code_in_any_casing(supplied):
+    """The flavor code is accepted alongside the label because it is the slug in
+    ``testgen://connection-parameters/<code>`` URIs — a caller that just read one has
+    the code, not the label, in hand."""
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+
+    label, code, family = parse_sql_flavor(supplied)
+    assert label == SqlFlavorLabel.AZURE_MSSQL
+    assert code == "azure_mssql"
+    assert family == "mssql"
+
+
+def test_parse_sql_flavor_every_code_round_trips():
+    """Every documented resource-URI slug resolves back to its flavor."""
+    from testgen.mcp.tools.common import SQL_FLAVOR_CODE_TO_LABEL, parse_sql_flavor
+
+    for flavor_code, expected_label in SQL_FLAVOR_CODE_TO_LABEL.items():
+        label, code, _family = parse_sql_flavor(flavor_code)
+        assert label == expected_label
+        assert code == flavor_code
+
+
 def test_parse_sql_flavor_invalid_lists_display_values():
     from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
 
@@ -899,7 +1008,7 @@ def test_parse_monitor_type_lists_valid_values_on_error():
     with pytest.raises(MCPUserError, match="Valid values:") as exc:
         parse_monitor_type("metrics")
     msg = str(exc.value)
-    for label in ("freshness", "volume", "schema", "metric"):
+    for label in ("Freshness", "Volume", "Schema", "Metric"):
         assert label in msg
 
 

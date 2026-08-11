@@ -4,7 +4,7 @@ from pydantic import Field
 
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
-from testgen.common.models.test_definition import TestType
+from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.common import (
     FLAVOR_CONNECTION_SCHEMA,
@@ -13,6 +13,7 @@ from testgen.mcp.tools.common import (
     FlavorMode,
     FlavorSchema,
     Req,
+    resolve_test_type,
     schema_for,
 )
 from testgen.mcp.tools.markdown import MdDoc
@@ -25,10 +26,12 @@ def get_test_type(
     test_type: Annotated[str, Field(description="The test type (e.g., 'Alpha Truncation', 'Unique Percent').")],
 ) -> str:
     """Get detailed information about a specific test type."""
-    matches = TestType.select_where(TestType.test_name_short == test_type)
-    tt = matches[0] if matches else None
+    try:
+        tt = TestType.get(resolve_test_type(test_type))
+    except MCPUserError:
+        tt = None
 
-    if not tt:
+    if not tt or tt.test_type in NON_PUBLIC_TEST_TYPES:
         return f"Test type `{test_type}` not found. Use `testgen://test-types` to see available types."
 
     doc = MdDoc()
@@ -77,7 +80,7 @@ def _append_type_parameters(doc: MdDoc, tt: TestType) -> None:
 @with_database_session
 def test_types_resource() -> str:
     """Reference table of all test types with their descriptions and data quality dimensions."""
-    test_types = TestType.select_where(TestType.active == "Y")
+    test_types = TestType.select_where(TestType.active == "Y", TestType.is_public())
 
     if not test_types:
         return "No test types found."
@@ -122,7 +125,7 @@ def column_profile_fields_resource() -> str:
 # TestGen Column Profile Fields Reference
 
 Column profiling stores ~70 statistics per column. The fields populated
-depend on the column's `General Type` (Alpha / Numeric / Date / Boolean / Other). The
+depend on the column's `General Type` (Alpha / Numeric / Datetime / Boolean / Time / Other). The
 `get_column_profile_detail` tool emits only the fields relevant to a column's type — use
 this reference to interpret what each field measures.
 
@@ -133,7 +136,7 @@ These fields are populated for every successfully-profiled column.
 ### Header
 - **Profiling Run** — `job_execution_id` of the profiling run the rest of the fields come from.
 - **Profiled at** — Timestamp when the profiling run started (`YYYY-MM-DD HH:MM UTC`).
-- **General Type** — Broad category: `Alpha`, `Numeric`, `Date`, `Boolean`, `Time`, or `Other`.
+- **General Type** — Broad category: `Alpha`, `Numeric`, `Datetime`, `Boolean`, `Time`, or `Other`.
 - **Data Type** — Native DB type as reported by the source (e.g. `varchar(50)`, `numeric(18,4)`).
 - **Semantic Data Type** — TestGen's functional classification (e.g. `Person Given Name`, `Currency`, `Datetime-Created`).
 - **Suggested Data Type** — Suggested narrower DB type given observed values (e.g. `VARCHAR(20)`, `INTEGER`). Omitted when no suggestion applies.
@@ -199,9 +202,9 @@ Populated when `General Type == "Numeric"`.
 - **Median Value** — Median (Q2 / 50th percentile).
 - **75th Percentile** — 75th percentile (Q3).
 
-## Date Columns
+## Datetime Columns
 
-Populated when `General Type == "Date"`.
+Populated when `General Type == "Datetime"`.
 
 ### Date Range
 - **Minimum Date** — Minimum timestamp (**PII-redactable**).

@@ -273,10 +273,10 @@ class TestDefinitionMinimal(EntityMinimal):
 
 class ThresholdMode(StrEnum):
     """How a monitor's bounds are determined — derived from which fields on the
-    definition are populated. See ``derive_threshold_mode``."""
+    definition are populated. Values match the UI selector labels."""
     PREDICTION = "Prediction Model"
     HISTORICAL = "Historical Calculation"
-    STATIC = "Static"
+    STATIC = "Static Thresholds"
     NONE = "N/A"
 
 
@@ -419,6 +419,11 @@ def _enum_by_value(enum_cls: type[StrEnum]) -> Enum:
     return Enum(enum_cls, native_enum=False, values_callable=lambda cls: [member.value for member in cls])
 
 
+# Test types that are never offered as regular tests. Schema_Drift spans a whole table group,
+# takes no parameters, and runs as METADATA, so it cannot be configured against a single table.
+NON_PUBLIC_TEST_TYPES: frozenset[str] = frozenset({MonitorType.SCHEMA.value})
+
+
 class TestType(ParamFieldsMixin, Entity):
     __tablename__ = "test_types"
 
@@ -471,6 +476,11 @@ class TestType(ParamFieldsMixin, Entity):
     def select_summary_where(cls, *clauses) -> Iterable[TestTypeSummary]:
         results = cls._select_columns_where(cls._summary_columns, *clauses)
         return [TestTypeSummary(**row) for row in results]
+
+    @classmethod
+    def is_public(cls):
+        """WHERE clause restricting a test-type catalog to the types offered as regular tests."""
+        return cls.test_type.notin_(NON_PUBLIC_TEST_TYPES)
 
 
 def _required_fields_for(test_type: TestType) -> set[str]:
@@ -949,6 +959,7 @@ class TestDefinition(Entity):
                 tt.id AS test_type_id,
                 d.id AS test_definition_id,
                 d.test_type,
+                tt.test_name_short,
                 d.schema_name,
                 d.table_name,
                 d.column_name AS column_names,

@@ -102,7 +102,7 @@ class HygieneIssuesPage(Page):
 
         if not session.auth.user_has_project_access(run.project_code):
             self.router.navigate_with_warning(
-                "You don't have access to view this resource. Redirecting ...",
+                "You do not have access to view this resource. Redirecting ...",
                 "profiling-runs",
             )
             return

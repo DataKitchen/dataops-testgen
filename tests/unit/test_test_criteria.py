@@ -4,7 +4,11 @@ import pytest
 from yaml import safe_load
 
 import testgen
-from testgen.common.models.test_definition import TestCriteria, derive_test_criteria
+from testgen.common.models.test_definition import (
+    NON_PUBLIC_TEST_TYPES,
+    TestCriteria,
+    derive_test_criteria,
+)
 
 YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
 
@@ -69,9 +73,6 @@ EXPECTED_CRITERIA = {
     "Volume_Trend": TestCriteria.DEFINED_THRESHOLD,
     "Weekly_Rec_Ct": TestCriteria.DEFINED_THRESHOLD,
 }
-
-# Test types that never surface in the Add-Test picker, so they carry no Criteria facet at all.
-NON_PUBLIC_TEST_TYPES = frozenset({"Schema_Drift"})
 
 
 def _test_type_docs():

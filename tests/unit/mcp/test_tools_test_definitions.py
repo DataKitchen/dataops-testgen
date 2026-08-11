@@ -1545,3 +1545,66 @@ def test_import_tests_strict_violation_embeds_breakdown(mock_resolve_suite, mock
     # the projected breakdown is embedded
     assert "Skip (1)" in msg
     assert "invalid_test_type" in msg
+
+
+# --- Schema exclusion from the regular-test surfaces ---
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+def test_list_test_types_applies_public_filter(mock_tt, db_session_mock):
+    """The catalog a caller picks a test type from excludes the non-public types."""
+    mock_tt.select_where.return_value = []
+
+    from testgen.mcp.tools.test_definitions import list_test_types
+
+    list_test_types()
+
+    mock_tt.is_public.assert_called_once()
+    assert mock_tt.is_public.return_value in mock_tt.select_where.call_args.args
+
+
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_rejects_non_public_test_type(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, db_session_mock,
+):
+    from testgen.common.enums import MonitorType
+
+    mock_resolve_suite.return_value = _make_suite()
+    mock_resolve_tt.return_value = MonitorType.SCHEMA.value
+    schema_type = MagicMock()
+    schema_type.test_type = MonitorType.SCHEMA.value
+    schema_type.test_name_short = "Schema"
+    mock_tt_model.get.return_value = schema_type
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    with pytest.raises(MCPUserError, match="Schema is not an available test type") as exc_info:
+        create_test(test_suite_id=str(uuid4()), test_type="Schema", table_name="orders")
+
+    assert MonitorType.SCHEMA.value not in str(exc_info.value)
+    mock_tg.get.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_rejects_non_public_test_type(mock_resolve_td, mock_tt_model, db_session_mock):
+    """Guards a non-public definition that already sits in a regular suite."""
+    from testgen.common.enums import MonitorType
+
+    td = MagicMock()
+    td.test_type = MonitorType.SCHEMA.value
+    mock_resolve_td.return_value = td
+    schema_type = MagicMock()
+    schema_type.test_type = MonitorType.SCHEMA.value
+    schema_type.test_name_short = "Schema"
+    mock_tt_model.get.return_value = schema_type
+
+    from testgen.mcp.tools.test_definitions import update_test
+
+    with pytest.raises(MCPUserError, match="Schema is not an available test type"):
+        update_test(str(uuid4()), fields={"test_active": False})
+
+    td.save.assert_not_called()

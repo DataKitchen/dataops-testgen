@@ -5,7 +5,7 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import select
 
-from testgen.common.enums import JobKey, JobSource
+from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -149,12 +149,13 @@ def _render_submission(
 
 def _render_cancel(job: JobExecution, kind: str, poll_tool: str) -> str:
     if not job.request_cancel():
+        status_label = JOB_STATUS_LABEL.get(job.status, job.status)
         raise MCPUserError(
-            f"Cannot cancel — current status is `{job.status}`. Only queued or running jobs can be canceled."
+            f"Cannot cancel — current status is {status_label}. Only queued or running jobs can be canceled."
         )
     doc = MdDoc()
     doc.heading(1, f"{kind} cancellation requested")
     doc.field(kind.title(), job.id, code=True)
-    doc.field("Status", job.status)
+    doc.field("Status", JOB_STATUS_LABEL.get(job.status, job.status))
     doc.text(f"Use `{poll_tool}` to confirm cancellation.")
     return doc.render()

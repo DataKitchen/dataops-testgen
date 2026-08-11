@@ -38,6 +38,7 @@ from testgen.mcp.tools.common import (
     format_notification_trigger,
     format_page_footer,
     format_page_info,
+    match_enum,
     resolve_notification,
     resolve_scorecard,
     resolve_table_group,
@@ -282,11 +283,7 @@ def _parse_event_type(value: str) -> NotificationEvent:
     score_drop) — including the otherwise-valid ``Monitor Alert`` event. Raises
     ``MCPUserError`` listing every supported display label.
     """
-    label: NotificationEventLabel | None
-    try:
-        label = NotificationEventLabel(value)
-    except ValueError:
-        label = None
+    label = match_enum(value, NotificationEventLabel)
     event = NOTIFICATION_EVENT_LABEL_TO_INTERNAL.get(label) if label is not None else None
     if event not in _CREATE_SUPPORTED_EVENTS:
         valid = ", ".join(f"`{format_notification_event(e)}`" for e in _CREATE_SUPPORTED_EVENTS)
@@ -351,26 +348,24 @@ def _validate_recipients(recipients: list[str]) -> list[str]:
 def _parse_test_run_trigger(value: str | None) -> TestRunNotificationTrigger:
     if value is None:
         return TestRunNotificationTrigger.on_failures
-    try:
-        label = TestRunTriggerLabel(value)
-    except ValueError as err:
-        valid = ", ".join(f"`{label.value}`" for label in TestRunTriggerLabel)
+    label = match_enum(value, TestRunTriggerLabel)
+    if label is None:
+        valid = ", ".join(f"`{option.value}`" for option in TestRunTriggerLabel)
         raise MCPUserError(
             f"Invalid `trigger_on` `{value}` for event type `Test Run`. Valid values: {valid}."
-        ) from err
+        )
     return TEST_RUN_TRIGGER_LABEL_TO_INTERNAL[label]
 
 
 def _parse_profiling_run_trigger(value: str | None) -> ProfilingRunNotificationTrigger:
     if value is None:
         return ProfilingRunNotificationTrigger.on_changes
-    try:
-        label = ProfilingRunTriggerLabel(value)
-    except ValueError as err:
-        valid = ", ".join(f"`{label.value}`" for label in ProfilingRunTriggerLabel)
+    label = match_enum(value, ProfilingRunTriggerLabel)
+    if label is None:
+        valid = ", ".join(f"`{option.value}`" for option in ProfilingRunTriggerLabel)
         raise MCPUserError(
             f"Invalid `trigger_on` `{value}` for event type `Profiling Run`. Valid values: {valid}."
-        ) from err
+        )
     return PROFILING_RUN_TRIGGER_LABEL_TO_INTERNAL[label]
 
 
@@ -408,13 +403,12 @@ def _validate_threshold_range(
 def _parse_monitor_trigger(value: str | None) -> MonitorNotificationTrigger:
     if value is None:
         return MonitorNotificationTrigger.on_anomalies
-    try:
-        label = MonitorTriggerLabel(value)
-    except ValueError as err:
-        valid = ", ".join(f"`{label.value}`" for label in MonitorTriggerLabel)
+    label = match_enum(value, MonitorTriggerLabel)
+    if label is None:
+        valid = ", ".join(f"`{option.value}`" for option in MonitorTriggerLabel)
         raise MCPUserError(
             f"Invalid `trigger_on` `{value}` for event type `Monitor Alert`. Valid values: {valid}."
-        ) from err
+        )
     return MONITOR_TRIGGER_LABEL_TO_INTERNAL[label]
 
 

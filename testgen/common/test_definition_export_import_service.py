@@ -14,7 +14,12 @@ from testgen import settings
 from testgen.common.models import get_current_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestDefinition, TestType, validate_custom_metadata
+from testgen.common.models.test_definition import (
+    NON_PUBLIC_TEST_TYPES,
+    TestDefinition,
+    TestType,
+    validate_custom_metadata,
+)
 from testgen.common.models.test_suite import TestSuite
 
 EXPORT_FORMAT_VERSION = 1
@@ -63,6 +68,7 @@ class ImportReason(StrEnum):
     policy = "policy"
     locked = "locked"
     invalid_test_type = "invalid_test_type"
+    non_public_test_type = "non_public_test_type"
     invalid_table = "invalid_table"
     missing_external_id = "missing_external_id"
     absent = "absent"
@@ -349,6 +355,13 @@ def import_definitions(
 
         if td_import.test_type not in valid_test_types:
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_test_type, idx, td_import, target))
+            continue
+
+        # A non-public type is a real row in ``test_types``, so it clears the check above.
+        if td_import.test_type in NON_PUBLIC_TEST_TYPES:
+            actions.append(
+                _PlannedAction(ImportAction.skip, ImportReason.non_public_test_type, idx, td_import, target)
+            )
             continue
 
         if not _is_profiled(td_import, profiled_tables):

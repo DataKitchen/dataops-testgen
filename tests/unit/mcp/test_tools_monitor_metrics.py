@@ -134,7 +134,7 @@ def test_create_metric_monitor_happy_path(mock_resolve, mock_td_cls, mock_in_cat
     assert "Metric Monitor created" in out
     assert f"`{saved_id}`" in out
     assert "Daily revenue" in out
-    assert "Predictive" in out
+    assert "Prediction Model" in out
     # Internal codes never leak
     assert "Metric_Trend" not in out
     assert "PREDICT" not in out

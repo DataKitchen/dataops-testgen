@@ -59,11 +59,6 @@ const SCOPE_ORDER = ['Column', 'Table', 'Referential', 'Custom', 'Table Group'];
 const FALLBACK = 'var(--facet-grey)';
 const EMPTY = '—';
 
-// ── Column-aware pre-filter (PRD §9) ──────────────────────────────────────────
-// Not a facet: the separate "hide tests that don't apply to this column" toggle.
-// `generalType` is data_column_chars.general_type: 'N' Numeric, 'D' Datetime, 'T' Time,
-// 'A' Alpha, 'B' Boolean, 'X' Other. Lists enumerate type affinity by test code; gating on
-// scope first excludes table/referential-scoped codes regardless.
 const NUMERIC_ONLY = ['Min_Val', 'Avg_Shift', 'Incr_Avg_Shift', 'Variability_Increase', 'Variability_Decrease',
     'Outlier_Pct_Above', 'Outlier_Pct_Below', 'Dec_Trunc', 'Distribution_Shift', 'Aggregate_Minimum'];
 const DATE_ONLY = ['Min_Date', 'Future_Date', 'Future_Date_1Y', 'Recency', 'Distinct_Date_Ct',

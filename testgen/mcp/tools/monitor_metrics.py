@@ -10,7 +10,7 @@ from testgen.common.enums import MonitorType
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_table import DataTable
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import TestDefinition, ThresholdMode
 from testgen.common.pii_masking import get_pii_columns
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
@@ -50,7 +50,7 @@ def create_metric_monitor(
     metric_name: Annotated[str, Field(description="Display label for the monitor (e.g. ``Daily revenue``).")],
     metric_expression: Annotated[str, Field(description="SQL expression the monitor evaluates each run.")],
 ) -> str:
-    """Create a new Metric monitor on a table. Always created in Predictive mode.
+    """Create a new Metric monitor on a table. Always created in Prediction Model mode.
 
     Metric monitors evaluate a user-supplied SQL aggregate each run and track its
     drift from a learned baseline. Use ``validate_metric_expression`` first to
@@ -296,7 +296,7 @@ def _render_created(monitor: TestDefinition, table_group_name: str) -> str:
     doc.field("Table Group", table_group_name)
     doc.field("Table", monitor.table_name)
     doc.field("Metric name", monitor.column_name)
-    doc.field("Threshold mode", "Predictive")
+    doc.field("Threshold mode", ThresholdMode.PREDICTION)
     doc.heading(2, "Metric expression")
     doc.code_block(monitor.custom_query, language="sql")
     return doc.render()

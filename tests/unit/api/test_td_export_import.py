@@ -483,6 +483,65 @@ class Test_import_validation:
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
     @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_non_public_test_type_skipped(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        """A non-public type is a real row in ``test_types``, so it clears the
+        ``invalid_test_type`` check and needs its own skip \u2014 otherwise import is a side
+        door around the ``create_test`` / ``update_test`` guards."""
+        from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
+
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        non_public = next(iter(NON_PUBLIC_TEST_TYPES))
+        ts = _make_test_suite()
+        td = _make_import_td(test_type=non_public, table_name="t1")
+        config = _make_config()
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        # Present in test_types, so the invalid_test_type branch does not catch it.
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={non_public, "Alpha"}):
+            result = import_definitions(ts, config, _make_payload(td))
+
+        assert result.summary.created == 0
+        assert result.summary.skipped == 1
+        assert ImportReason.non_public_test_type in _reasons(result, ImportAction.skip)
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_non_public_test_type_aborts_strict_import(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        """apply_strict refuses the whole payload rather than silently dropping the row."""
+        from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
+        from testgen.common.test_definition_export_import_service import (
+            ImportMode,
+            ImportStrictViolation,
+            import_definitions,
+        )
+
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        non_public = next(iter(NON_PUBLIC_TEST_TYPES))
+        ts = _make_test_suite()
+        td = _make_import_td(test_type=non_public, table_name="t1")
+        config = _make_config(mode=ImportMode.apply_strict)
+
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={non_public, "Alpha"}):
+            with pytest.raises(ImportStrictViolation) as exc_info:
+                import_definitions(ts, config, _make_payload(td))
+
+        assert ImportReason.non_public_test_type in _reasons(exc_info.value.result, ImportAction.skip)
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
     def test_invalid_table_skipped(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
         session = MagicMock()
         mock_session_fn.return_value = session

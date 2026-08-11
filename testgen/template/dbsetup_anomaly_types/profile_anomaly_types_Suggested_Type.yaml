@@ -12,8 +12,7 @@ profile_anomaly_types:
     p.datatype_suggestion::VARCHAR(200)
   issue_likelihood: Likely
   suggested_action: |-
-    Consider changing the column data type to tighte
-    n controls over data ingested and to make values more efficient, consistent and suitable for downstream analysis.
+    Consider changing the column data type to tighten controls over data ingested and to make values more efficient, consistent and suitable for downstream analysis.
   dq_score_prevalence_formula: null
   dq_score_risk_factor: null
   dq_dimension: null

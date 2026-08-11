@@ -3,8 +3,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@patch("testgen.mcp.tools.reference.resolve_test_type", return_value="Alpha_Trunc")
 @patch("testgen.mcp.tools.reference.TestType")
-def test_get_test_type_found(mock_tt_cls, db_session_mock):
+def test_get_test_type_found(mock_tt_cls, _mock_resolve, db_session_mock):
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
     tt.test_name_short = "Alpha Truncation"
@@ -18,7 +19,7 @@ def test_get_test_type_found(mock_tt_cls, db_session_mock):
     tt.test_scope = "column"
     tt.except_message = "Alpha truncation detected"
     tt.usage_notes = "Best for VARCHAR columns"
-    mock_tt_cls.select_where.return_value = [tt]
+    mock_tt_cls.get.return_value = tt
 
     from testgen.mcp.tools.reference import get_test_type
 
@@ -34,13 +35,30 @@ def test_get_test_type_found(mock_tt_cls, db_session_mock):
 
 @patch("testgen.mcp.tools.reference.TestType")
 def test_get_test_type_not_found(mock_tt_cls, db_session_mock):
-    mock_tt_cls.select_where.return_value = []
+    """An unresolvable name returns the not-found string rather than raising —
+    ``resolve_test_type`` raises, and ``get_test_type`` absorbs it."""
+    from testgen.mcp.exceptions import MCPUserError
+    from testgen.mcp.tools.reference import get_test_type
+
+    with patch(
+        "testgen.mcp.tools.reference.resolve_test_type",
+        side_effect=MCPUserError("Unknown test type: `Nonexistent Type`."),
+    ):
+        result = get_test_type("Nonexistent Type")
+
+    assert "not found" in result
+    mock_tt_cls.get.assert_not_called()
+
+
+@patch("testgen.mcp.tools.reference.resolve_test_type", return_value="Alpha_Trunc")
+@patch("testgen.mcp.tools.reference.TestType")
+def test_get_test_type_resolved_but_row_missing(mock_tt_cls, _mock_resolve, db_session_mock):
+    """Defensive branch: the name resolved but the row is gone."""
+    mock_tt_cls.get.return_value = None
 
     from testgen.mcp.tools.reference import get_test_type
 
-    result = get_test_type("Nonexistent Type")
-
-    assert "not found" in result
+    assert "not found" in get_test_type("Alpha Truncation")
 
 
 @patch("testgen.mcp.tools.reference.TestType")
@@ -192,8 +210,24 @@ def test_column_profile_fields_resource_has_five_sections():
     assert "## All Column Types" in result
     assert "## Alpha" in result
     assert "## Numeric" in result
-    assert "## Date" in result
+    assert "## Datetime" in result
     assert "## Boolean" in result
+
+
+def test_general_type_prose_lists_match_the_enum():
+    """The server instructions and the resource intro both enumerate general types in prose.
+
+    A stale list advertises a value ``parse_general_type`` rejects, which is the exact
+    dead end the vocabulary is meant to prevent. Order follows the enum declaration.
+    """
+    from testgen.common.models.data_column import GeneralType
+    from testgen.mcp.server import SERVER_INSTRUCTIONS
+    from testgen.mcp.tools.reference import column_profile_fields_resource
+
+    expected = " / ".join(general_type.value for general_type in GeneralType)
+
+    assert expected in SERVER_INSTRUCTIONS
+    assert expected in column_profile_fields_resource()
 
 
 def test_column_profile_fields_resource_lists_all_pii_redacted_fields():
@@ -354,3 +388,40 @@ def test_connection_parameters_resource_marks_secrets():
     assert "Secret" in out
     # No URL alternative for BigQuery.
     assert "connect by URL" not in out
+
+
+# --- Schema exclusion from the test-type catalog ---
+
+
+@patch("testgen.mcp.tools.reference.TestType")
+def test_test_types_resource_applies_public_filter(mock_tt_cls, db_session_mock):
+    """The catalog is filtered to the publicly-offered types, not just the active ones."""
+    mock_tt_cls.select_where.return_value = []
+
+    from testgen.mcp.tools.reference import test_types_resource
+
+    test_types_resource()
+
+    mock_tt_cls.is_public.assert_called_once()
+    assert mock_tt_cls.is_public.return_value in mock_tt_cls.select_where.call_args.args
+
+
+@patch("testgen.mcp.tools.reference.TestType")
+def test_get_test_type_rejects_non_public_type(mock_tt_cls, db_session_mock):
+    """Non-public types are absent from every test-type surface, single-item lookup included."""
+    from testgen.common.enums import MonitorType
+    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
+
+    schema_type = MagicMock()
+    schema_type.test_type = MonitorType.SCHEMA.value
+    schema_type.test_name_short = "Schema"
+    mock_tt_cls.get.return_value = schema_type
+    assert MonitorType.SCHEMA.value in NON_PUBLIC_TEST_TYPES
+
+    from testgen.mcp.tools.reference import get_test_type
+
+    with patch("testgen.mcp.tools.reference.resolve_test_type", return_value=MonitorType.SCHEMA.value):
+        result = get_test_type("Schema")
+
+    assert "not found" in result
+    assert MonitorType.SCHEMA.value not in result
