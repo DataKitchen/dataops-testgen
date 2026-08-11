@@ -109,7 +109,7 @@ def run_profiling(
         profiling_run.save()
         session.commit()
 
-        _generate_tests(table_group)
+        _generate_tests(table_group, profiling_run.id)
     finally:
         MixpanelService().send_event(
             "run-profiling",
@@ -378,7 +378,7 @@ def _run_hygiene_issue_detection(sql_generator: ProfilingSQL) -> None:
 
 
 @with_database_session
-def _generate_tests(table_group: TableGroup) -> None:
+def _generate_tests(table_group: TableGroup, profile_run_id: UUID) -> None:
     is_first_profile_run = not table_group.last_complete_profile_run_id
 
     if bool(table_group.monitor_test_suite_id):
@@ -390,12 +390,13 @@ def _generate_tests(table_group: TableGroup) -> None:
                 ["Freshness_Trend"],
                 # Insert for new tables only, if user disabled regeneration
                 mode="upsert" if is_first_profile_run or monitor_suite.monitor_regenerate_freshness else "insert",
+                profile_run_id=profile_run_id,
             )
         except Exception:
             LOG.exception("Error generating Freshness monitors")
 
     if is_first_profile_run and bool(table_group.default_test_suite_id):
         try:
-            run_test_generation(table_group.default_test_suite_id, "Standard")
+            run_test_generation(table_group.default_test_suite_id, "Standard", profile_run_id=profile_run_id)
         except Exception:
             LOG.exception(f"Error generating tests for test suite: {table_group.default_test_suite_id}")

@@ -153,9 +153,17 @@ class ProfilingSQL:
 
     def update_profiling_results(self) -> list[tuple[str, dict]]:
         # Runs on App database
+        # datatype_suggestions runs twice because it and functional_datatype each read what the
+        # other writes: functional_datatype keys some of its rules off datatype_suggestion, while
+        # datatype_suggestions has rules keyed off functional_data_type ('State', 'Boolean',
+        # 'Measurement Pct'). The first pass feeds functional_datatype; the second is the only
+        # one in which those three rules can fire, since functional_data_type is NULL until
+        # functional_datatype has run. The update is a pure function of other columns of the
+        # same row, so re-running it is idempotent.
         queries = [
             self._get_query("datatype_suggestions.sql"),
             self._get_query("functional_datatype.sql"),
+            self._get_query("datatype_suggestions.sql"),
             self._get_query("functional_tabletype_stage.sql"),
             self._get_query("functional_tabletype_update.sql"),
         ]
@@ -249,7 +257,7 @@ class ProfilingSQL:
                 self.table_group.id,
                 self.table_group.table_group_schema,
                 self.profiling_run.id,
-                self.profiling_run.profiling_starttime,
+                to_sql_timestamp(self.run_date),
                 column_chars.table_name,
                 column_chars.column_name.replace("'", "''"),
                 column_chars.ordinal_position,

@@ -3,11 +3,10 @@ WITH
                     FROM profile_results
                    WHERE profile_run_id = :PROFILING_RUN_ID
                      AND table_name ILIKE :TABLE_NAME ),
-   profile_date as (SELECT MAX(run_date) as run_date
-                      FROM profiling),
+   -- Column names appearing in more than one table of the schema, within one run. Scoped by
+   -- profile_run_id -- matching on run_date would fan each column out across every earlier run.
    mults AS ( SELECT p.project_code,
                       p.table_groups_id,
-                      p.run_date,
                       p.schema_name,
                       p.column_name,
                       COUNT(*)                      AS column_ct,
@@ -19,9 +18,8 @@ WITH
                       MAX(p.distinct_pattern_ct)    AS max_pattern_ct,
                       SUM(p.distinct_pattern_ct)    AS sum_pattern_ct
                  FROM profile_results p
-               INNER JOIN profile_date d
-                  ON (p.run_date <= d.run_date)
-                GROUP BY p.project_code, p.table_groups_id, p.run_date, p.schema_name, p.column_name
+                WHERE p.profile_run_id = :PROFILING_RUN_ID
+                GROUP BY p.project_code, p.table_groups_id, p.schema_name, p.column_name
                HAVING COUNT(*) > 1 ),
    results as (SELECT p.schema_name,
                       p.table_name,
@@ -262,10 +260,9 @@ WITH
                       p.column_type,
                       'Unexpected column contains emails' AS qualification_test,
                       'Value Range: ' || p.min_text || ' thru ' || max_text AS detail
-                 FROM v_latest_profile_results p
-                WHERE p.table_groups_id = 'a6b876b5-750b-49d3-b4e2-a599eceefe84'::UUID
-                  AND p.std_pattern_match = 'EMAIL'
-                      AND NOT (column_name ILIKE '%email%' OR column_name ILIKE '%addr%')
+                 FROM profiling p
+                WHERE p.std_pattern_match = 'EMAIL'
+                      AND NOT (p.column_name ILIKE '%email%' OR p.column_name ILIKE '%addr%')
                 )
 SELECT table_name, column_name, column_type,
        qualification_test as screening_test, detail

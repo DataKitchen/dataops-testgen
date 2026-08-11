@@ -307,15 +307,15 @@ def test_parse_basic_single_result():
     results = [{"query_index": 0, "result_measures": f"42{MEASURE_SEPARATOR}", "result_codes": "1,"}]
     run_id = uuid4()
     suite_id = uuid4()
-    start = datetime.now(UTC)
+    run_date = "2026-01-01 00:00:00"
 
-    rows = parse_cat_results(results, test_defs, run_id, suite_id, start,
+    rows = parse_cat_results(results, test_defs, run_id, suite_id, run_date,
                               _make_input_params_fn())
     assert len(rows) == 1
     row = rows[0]
     assert row[0] == run_id
     assert row[1] == suite_id
-    assert row[2] == start
+    assert row[2] == run_date
     assert row[3] == td.id
     assert row[10] == "1"  # result_code
     assert row[13] == "42"  # result_measure
@@ -327,7 +327,7 @@ def test_parse_null_value_handling():
     results = [{"query_index": 0, "result_measures": f"<NULL>{MEASURE_SEPARATOR}", "result_codes": "0,"}]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
-                              datetime.now(UTC), _make_input_params_fn())
+                              "2026-01-01 00:00:00", _make_input_params_fn())
     assert rows[0][13] is None  # <NULL> should become None
 
 
@@ -342,7 +342,7 @@ def test_parse_multi_test_per_query():
     }]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
-                              datetime.now(UTC), _make_input_params_fn())
+                              "2026-01-01 00:00:00", _make_input_params_fn())
     assert len(rows) == 2
     assert rows[0][13] == "10"
     assert rows[1][13] == "20"
@@ -377,7 +377,7 @@ def test_parse_multiple_queries():
     ]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
-                              datetime.now(UTC), _make_input_params_fn())
+                              "2026-01-01 00:00:00", _make_input_params_fn())
     assert len(rows) == 2
     assert rows[0][4] == "Alpha"
     assert rows[1][4] == "Beta"
@@ -390,7 +390,7 @@ def test_parse_result_code_negative_one():
     results = [{"query_index": 0, "result_measures": f"42{MEASURE_SEPARATOR}", "result_codes": "-1,"}]
 
     rows = parse_cat_results(results, test_defs, uuid4(), uuid4(),
-                              datetime.now(UTC), _make_input_params_fn())
+                              "2026-01-01 00:00:00", _make_input_params_fn())
     assert rows[0][10] == "-1"
 
 
@@ -568,6 +568,48 @@ def test_get_params_zero_baseline_count_is_not_nulled():
     instance = _make_params_execution_sql()
     params = instance._get_params(_make_td(test_type="Row_Ct_Pct", baseline_ct=0))
     assert params["BASELINE_CT"] == 0
+
+
+# --- One run writes one test_time ---
+
+# Microseconds are deliberate: they must not reach test_time, which every result path writes at
+# the whole-second precision of the {RUN_DATE} the QUERY and METADATA templates interpolate.
+RUN_STARTTIME = datetime(2026, 7, 14, 21, 22, 26, 227897, tzinfo=UTC)
+
+TEST_TIME_INDEX = TestExecutionSQL.result_columns.index("test_time")
+
+
+def _make_result_execution_sql() -> TestExecutionSQL:
+    """Build a minimal TestExecutionSQL for exercising the result-row builders without a database."""
+    instance = _make_params_execution_sql()
+    instance.run_date = RUN_STARTTIME
+    return instance
+
+
+def test_cat_result_rows_carry_the_run_date_the_templates_interpolate():
+    instance = _make_result_execution_sql()
+    td = _make_td(test_type="Alpha")
+    results = [{"query_index": 0, "result_measures": "42|", "result_codes": "1,"}]
+
+    row = instance.get_cat_test_results(results, [[td]])[0]
+
+    assert row[TEST_TIME_INDEX] == instance._get_params()["RUN_DATE"]
+    assert row[TEST_TIME_INDEX] == "2026-07-14 21:22:26"
+
+
+def test_error_result_rows_carry_the_same_test_time_as_cat_rows():
+    instance = _make_result_execution_sql()
+    td = _make_td(test_type="Alpha", errors=["unsupported type"])
+    results = [{"query_index": 0, "result_measures": "42|", "result_codes": "1,"}]
+
+    cat_row = instance.get_cat_test_results(results, [[_make_td(test_type="Alpha")]])[0]
+    error_row = instance.get_test_errors([td])[0]
+
+    # A run writes one test_time: every result row of a run must carry the same value, whatever
+    # path produced it. The scoring views group on test_run_id plus test_time, so a run that
+    # writes two values splits one column's tests into two score rows.
+    assert error_row[TEST_TIME_INDEX] == cat_row[TEST_TIME_INDEX]
+    assert error_row[TEST_TIME_INDEX] == instance._get_params()["RUN_DATE"]
 
 
 def test_get_params_empty_numeric_baselines_become_null():

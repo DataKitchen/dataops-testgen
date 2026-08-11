@@ -1,21 +1,28 @@
+-- Source and target are both keyed on the run. stg_functional_table_updates has no table group
+-- and no per-run delete, so rows from every run within the retention window are live candidates
+-- and run_date cannot pick out one run's -- two table groups of one project over the same schema
+-- stage the same (project_code, schema_name, table_name).
 UPDATE profile_results
    SET functional_table_type = COALESCE(s.table_period)||'-'||COALESCE(s.table_type)
 FROM stg_functional_table_updates s
 WHERE s.project_code = profile_results.project_code
   AND s.schema_name = profile_results.schema_name
   AND s.table_name = profile_results.table_name
-  AND s.run_date = profile_results.run_date
-  AND s.run_date = :RUN_DATE;
+  AND s.profile_run_id = :PROFILE_RUN_ID
+  AND profile_results.profile_run_id = :PROFILE_RUN_ID;
 
 --- Update table characteristics ---
 
+-- Scoped to this run: over the table group's whole history a table has one row per
+-- functional_table_type it has ever been assigned, and UPDATE ... FROM picks arbitrarily among
+-- several matching source rows.
 WITH new_chars AS (
    SELECT table_groups_id,
       schema_name,
       table_name,
       functional_table_type
    FROM profile_results
-   WHERE table_groups_id = :TABLE_GROUPS_ID
+   WHERE profile_run_id = :PROFILE_RUN_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,

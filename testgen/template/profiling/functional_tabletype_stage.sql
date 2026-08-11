@@ -1,21 +1,23 @@
+-- Classifies each table profiled by this run, using the table's profiling history to decide
+-- whether its record count is cumulative or windowed.
+--
+-- The current run's tables come from profile_run_id, not from run_date: run_date is a label a
+-- run stamps on its rows. The history scan is scoped by table_groups_id rather than
+-- (project_code, schema_name), which two table groups of one project can share.
 WITH tablesrank AS
          (SELECT DISTINCT p.project_code,
                           p.schema_name,
                           p.table_name,
                           p.run_date,
                           p.record_ct,
-                          p.functional_data_type,
-                          DENSE_RANK() OVER (PARTITION BY p.schema_name, p.table_name ORDER BY p.run_date DESC) AS rnk
+                          p.functional_data_type
           FROM profile_results p
          INNER JOIN (SELECT DISTINCT schema_name, table_name
                        FROM profile_results
-                      WHERE project_code = :PROJECT_CODE
-                        AND schema_name = :DATA_SCHEMA
-                        AND run_date = :RUN_DATE) pt
+                      WHERE profile_run_id = :PROFILE_RUN_ID) pt
                  ON (p.schema_name = pt.schema_name
                 AND  p.table_name = pt.table_name)
-          WHERE p.project_code = :PROJECT_CODE
-            AND p.schema_name = :DATA_SCHEMA
+          WHERE p.table_groups_id = :TABLE_GROUPS_ID
           ORDER BY p.schema_name, p.table_name, p.run_date DESC),
      tablescount AS
          (SELECT *
@@ -58,7 +60,7 @@ WITH tablesrank AS
           GROUP BY project_code, schema_name, table_name
           ORDER BY project_code, schema_name, table_name)
 INSERT INTO stg_functional_table_updates
-(project_code, schema_name, run_date, table_name, table_period, table_type)
+(project_code, schema_name, run_date, table_name, table_period, table_type, profile_run_id)
 SELECT project_code, schema_name, :RUN_DATE as run_date,
-       table_name, table_period, table_type
+       table_name, table_period, table_type, :PROFILE_RUN_ID ::UUID
 FROM tablestat;
