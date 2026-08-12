@@ -90,6 +90,7 @@ from testgen.common import (
     get_tg_schema,
     version_service,
 )
+from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
@@ -275,12 +276,17 @@ def run_profile(table_group_id: str, no_wait: bool):
 @click.option(
     "-gs",
     "--generation-set",
-    help="A defined subset of tests to generate for your purpose. Use a generation_set defined for your project.",
+    "generation_sets",
+    help=(
+        "A defined subset of tests to generate for your purpose. Use a generation_set defined for "
+        "your project. Repeat the option to generate more than one set. Defaults to the generation "
+        "sets stored on the test suite."
+    ),
     required=False,
-    default="Standard",
+    multiple=True,
 )
 @click.option("--no-wait", is_flag=True, default=False, help="Print job ID and exit without waiting.")
-def run_generation(test_suite_id: str | None = None, table_group_id: str | None = None, test_suite_key: str | None = None, generation_set: str | None = None, no_wait: bool = False):
+def run_generation(test_suite_id: str | None = None, table_group_id: str | None = None, test_suite_key: str | None = None, generation_sets: tuple[str, ...] = (), no_wait: bool = False):
     with database_session():
         # For backward compatibility
         if not test_suite_id:
@@ -290,8 +296,15 @@ def run_generation(test_suite_id: str | None = None, table_group_id: str | None 
             )
             if test_suites:
                 test_suite_id = test_suites[0].id
-        project_code = TestSuite.get(test_suite_id).project_code
-    submit_and_wait("run-test-generation", {"test_suite_id": str(test_suite_id), "generation_set": generation_set}, project_code, no_wait)
+        test_suite = TestSuite.get(test_suite_id)
+        project_code = test_suite.project_code
+        try:
+            resolved_sets = resolve_generation_sets(test_suite, list(generation_sets) or None)
+        except ValueError as error:
+            # CliGroup.invoke() only re-raises click.exceptions.UsageError cleanly; a plain
+            # ClickException falls through to the generic handler and prints a traceback.
+            raise click.UsageError(str(error)) from error
+    submit_and_wait("run-test-generation", {"test_suite_id": str(test_suite_id), "generation_sets": resolved_sets}, project_code, no_wait)
 
 
 @cli.command("run-monitor-generation", help="Generates or refreshes the monitors for a table group.")
@@ -558,7 +571,7 @@ def quick_start(
     run_with_job_execution("run-profile", now_date + time_delta, table_group_id=table_group_id)
 
     LOG.info(f"run-test-generation with test_suite_id: {test_suite_id}")
-    with_database_session(run_test_generation)(test_suite_id, "Standard")
+    with_database_session(run_test_generation)(test_suite_id)
 
     run_with_job_execution("run-tests", now_date + time_delta, test_suite_id=test_suite_id)
 

@@ -5,6 +5,12 @@ import streamlit as st
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.commands.test_generation import run_test_generation
 from testgen.common.enums import JobSource
+from testgen.common.generation_set_service import (
+    get_generation_set_members,
+    get_overriding_test_types,
+    list_generation_sets,
+    resolve_generation_sets,
+)
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import TestRunNotificationSettings
@@ -24,11 +30,7 @@ from testgen.ui.services.query_cache import (
     select_table_groups_minimal_where,
 )
 from testgen.ui.session import session
-from testgen.ui.views.dialogs.generate_tests_dialog import (
-    get_generation_set_choices,
-    get_test_suite_refresh_warning,
-    lock_edited_tests,
-)
+from testgen.ui.views.dialogs.generate_tests_dialog import get_test_suite_refresh_warning, lock_edited_tests
 from testgen.ui.views.test_runs import TestRunNotificationSettingsDialog, TestRunScheduleDialog
 
 PAGE_ICON = "rule"
@@ -141,21 +143,15 @@ class TestSuitesPage(Page):
         generate_tests_data = None
         if generate_tests_ts_id := st.session_state.get(GENERATE_TESTS_DIALOG_KEY):
             generate_ts = get_test_suite_minimal(generate_tests_ts_id)
-            generation_sets = get_generation_set_choices()
-            default_set = "Standard" if "Standard" in generation_sets else (generation_sets[0] if generation_sets else "")
-            test_ct, unlocked_test_ct, unlocked_edits_ct = get_test_suite_refresh_warning(str(generate_ts.id))
-            refresh_warning = {
-                "test_ct": test_ct,
-                "unlocked_test_ct": unlocked_test_ct or 0,
-                "unlocked_edits_ct": unlocked_edits_ct or 0,
-            } if test_ct else None
             generate_tests_data = {
                 "title": "Generate Tests",
                 "test_suite_id": str(generate_ts.id),
                 "test_suite_name": generate_ts.test_suite,
-                "generation_sets": generation_sets,
-                "default_generation_set": default_set,
-                "refresh_warning": refresh_warning,
+                "generation_sets": list_generation_sets(),
+                "selected_generation_sets": resolve_generation_sets(TestSuite.get(generate_ts.id), None),
+                "generation_set_test_types": get_generation_set_members(),
+                "overriding_test_types": get_overriding_test_types(),
+                "refresh_warning": get_test_suite_refresh_warning(str(generate_ts.id)),
                 "lock_result": st.session_state.get(GENERATE_TESTS_LOCK_RESULT_KEY),
                 "result": st.session_state.get(GENERATE_TESTS_RESULT_KEY),
             }
@@ -212,10 +208,10 @@ class TestSuitesPage(Page):
         @with_database_session
         def on_generate_tests_confirmed(data: dict) -> None:
             selected_id = data.get("test_suite_id")
-            selected_set = data.get("generation_set", "")
+            selected_sets = data.get("generation_sets")
             ts_name = data.get("test_suite_name", "")
             try:
-                run_test_generation(selected_id, selected_set)
+                run_test_generation(selected_id, selected_sets)
                 st.session_state[GENERATE_TESTS_RESULT_KEY] = {"success": True, "message": f"Test generation completed for test suite '{ts_name}'."}
                 st.cache_data.clear()
                 st.session_state.pop(GENERATE_TESTS_DIALOG_KEY, None)

@@ -41,8 +41,6 @@ SELECT
 FROM selected_columns s
   -- Only insert if test type is active
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = :TEST_TYPE AND active = 'Y')
-  -- Only insert if test type is included in generation set
-  AND EXISTS (SELECT 1 FROM generation_sets WHERE test_type = :TEST_TYPE AND generation_set = :GENERATION_SET)
 
 -- Match "uix_td_autogen_column" unique index exactly
 ON CONFLICT (test_suite_id, test_type, schema_name, table_name, column_name)

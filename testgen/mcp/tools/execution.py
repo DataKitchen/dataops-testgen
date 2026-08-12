@@ -6,6 +6,7 @@ from pydantic import Field
 from sqlalchemy import select
 
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource
+from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -65,16 +66,29 @@ def generate_tests(
         str,
         Field(description="UUID of the test suite to generate tests for, e.g. from ``list_test_suites``."),
     ],
+    generation_sets: Annotated[
+        list[str] | None,
+        Field(description="Generation set names, e.g. from ``testgen://generation-sets``."),
+    ] = None,
 ) -> str:
     """Submit a test-generation job for a test suite.
     Auto-creates test definitions from the latest profiling results for the table group;
     locked and manually created test definitions are preserved. Returns immediately with
     a job_execution_id.
+
+    Generation sets scope which test types are created. Omit them to use the test suite's stored
+    generation sets. Read ``testgen://generation-sets`` for the available sets and the test types
+    each one covers. Test types outside the selected sets are deleted unless they are locked.
     """
     suite = resolve_test_suite(test_suite_id)
+    try:
+        resolved_sets = resolve_generation_sets(suite, generation_sets)
+    except ValueError as error:
+        raise MCPUserError(str(error)) from error
+
     job = JobExecution.submit(
         job_key=JobKey.run_test_generation,
-        kwargs={"test_suite_id": str(suite.id), "generation_set": "Standard"},
+        kwargs={"test_suite_id": str(suite.id), "generation_sets": resolved_sets},
         source=JobSource.mcp,
         project_code=suite.project_code,
     )

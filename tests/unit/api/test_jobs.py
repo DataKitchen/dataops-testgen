@@ -19,6 +19,7 @@ from testgen.api.jobs import (
     submit_test_generation,
     submit_test_run,
 )
+from testgen.api.schemas import TestGenerationRequest
 from testgen.common.enums import JobKey, PublicJobKey
 from testgen.common.models.job_execution import JobExecution
 
@@ -109,21 +110,49 @@ def test_submit_test_run_success(mock_je_cls):
 # --- submit_test_generation ---
 
 
+@patch(f"{MODULE}.resolve_generation_sets", return_value=["Standard"])
 @patch(f"{MODULE}.JobExecution")
-def test_submit_test_generation_success(mock_je_cls):
+def test_submit_test_generation_defaults_to_stored_sets(mock_je_cls, mock_resolve):
     test_suite = _mock_test_suite()
     job = _mock_job(job_key="run-test-generation")
     mock_je_cls.submit.return_value = job
 
     result = submit_test_generation(test_suite)
 
+    mock_resolve.assert_called_once_with(test_suite, None)
     mock_je_cls.submit.assert_called_once_with(
         job_key="run-test-generation",
-        kwargs={"test_suite_id": str(test_suite.id), "generation_set": "Standard"},
+        kwargs={"test_suite_id": str(test_suite.id), "generation_sets": ["Standard"]},
         source="api",
         project_code=test_suite.project_code,
     )
     assert result.id == job.id
+
+
+@patch(f"{MODULE}.resolve_generation_sets", return_value=["Standard", "Plugin_Set"])
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_generation_accepts_a_set_list(mock_je_cls, mock_resolve):
+    test_suite = _mock_test_suite()
+    mock_je_cls.submit.return_value = _mock_job(job_key="run-test-generation")
+
+    submit_test_generation(test_suite, TestGenerationRequest(generation_sets=["Standard", "Plugin_Set"]))
+
+    mock_resolve.assert_called_once_with(test_suite, ["Standard", "Plugin_Set"])
+    assert mock_je_cls.submit.call_args.kwargs["kwargs"]["generation_sets"] == ["Standard", "Plugin_Set"]
+
+
+@patch(f"{MODULE}.resolve_generation_sets", side_effect=ValueError("Unknown generation sets: Nope."))
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_generation_rejects_unknown_set(mock_je_cls, _mock_resolve):
+    test_suite = _mock_test_suite()
+
+    with pytest.raises(HTTPException) as excinfo:
+        submit_test_generation(test_suite, TestGenerationRequest(generation_sets=["Nope"]))
+
+    assert excinfo.value.status_code == 400
+    assert excinfo.value.detail["errors"][0]["code"] == "invalid_generation_set"
+    assert "Nope" in excinfo.value.detail["errors"][0]["detail"]
+    mock_je_cls.submit.assert_not_called()
 
 
 # --- get_job_status ---

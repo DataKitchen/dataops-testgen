@@ -13,8 +13,6 @@ SELECT
   :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date
   -- Only insert if test type is active
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Schema_Drift' AND active = 'Y')
-  -- Only insert if test type is included in generation set
-  AND EXISTS (SELECT 1 FROM generation_sets WHERE test_type = 'Schema_Drift' AND generation_set = :GENERATION_SET)
 
 -- Match "uix_td_autogen_schema" unique index exactly
 ON CONFLICT (test_suite_id, test_type, schema_name) 
