@@ -143,8 +143,6 @@ class ProfilingRun(Entity):
     record_ct: int = Column(BigInteger)
     data_point_ct: int = Column(BigInteger)
     anomaly_ct: int = Column(BigInteger)
-    anomaly_table_ct: int = Column(BigInteger)
-    anomaly_column_ct: int = Column(BigInteger)
     dq_affected_data_points: int = Column(BigInteger)
     dq_total_data_points: int = Column(BigInteger)
     dq_score_profiling: float = Column(Float)

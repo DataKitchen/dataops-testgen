@@ -546,7 +546,6 @@ class TestDefinition(Entity):
     history_calculation: str = Column(NullIfEmptyString)
     history_calculation_upper: str = Column(NullIfEmptyString)
     history_lookback: int = Column(ZeroIfEmptyInteger, default=0)
-    test_mode: str = Column(String)
     custom_query: str = Column(QueryString)
     test_active: bool = Column(YNString, default="Y")
     test_definition_status: str = Column(NullIfEmptyString)
@@ -585,7 +584,6 @@ class TestDefinition(Entity):
         test_type,
         test_suite_id,
         schema_name,
-        test_mode,
         watch_level,
         check_result,
         last_auto_gen_date,

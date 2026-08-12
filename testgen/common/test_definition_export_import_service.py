@@ -522,7 +522,6 @@ def _create_td(
     td.profiling_as_of_date = None
     td.prediction = None
     td.check_result = None
-    td.test_mode = None
     td.test_definition_status = None
     td.flagged = False
 

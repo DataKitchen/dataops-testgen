@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, text, update
+from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, String, asc, func, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -255,8 +255,6 @@ class TableGroup(Entity):
     profile_flag_cdes: bool = Column(Boolean, default=True)
     profile_flag_pii: bool = Column(Boolean, default=True)
     profile_exclude_xde: bool = Column(Boolean, default=True)
-    profile_do_pair_rules: bool = Column(YNString, default="N")
-    profile_pair_rule_pct: int = Column(Integer, default=95)
     include_in_dashboard: bool = Column(Boolean, default=True)
     description: str = Column(NullIfEmptyString)
     data_source: str = Column(NullIfEmptyString)
@@ -278,8 +276,6 @@ class TableGroup(Entity):
         id,
         project_code,
         connection_id,
-        profile_do_pair_rules,
-        profile_pair_rule_pct,
         last_complete_profile_run_id,
         dq_score_profiling,
         dq_score_testing,
@@ -1082,10 +1078,6 @@ class TableGroup(Entity):
             TestSuite.cascade_delete([item.id for item in test_suites])
 
         query = """
-        DELETE FROM profile_pair_rules ppr
-        USING profiling_runs pr, table_groups tg
-        WHERE pr.id = ppr.profile_run_id AND tg.id = pr.table_groups_id AND tg.id IN :table_group_ids;
-
         DELETE FROM profile_anomaly_results par
         USING table_groups tg
         WHERE tg.id = par.table_groups_id AND tg.id IN :table_group_ids;

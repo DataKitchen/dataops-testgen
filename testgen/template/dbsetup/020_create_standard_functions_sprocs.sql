@@ -117,15 +117,6 @@ $$
 $$;
 
 
-CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_pct(numerator NUMERIC, denominator NUMERIC, decs INTEGER DEFAULT 0) returns NUMERIC
-    language plpgsql
-as
-$$
-   BEGIN
-      RETURN ROUND((100.0 * numerator/denominator), decs);
-   END;
-$$;
-
 CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_quote_literal_escape(var_value varchar, sql_flavor varchar) RETURNS varchar
     LANGUAGE plpgsql
 AS
@@ -150,30 +141,6 @@ BEGIN
 
     RETURN escaped_value;
 END;
-$$;
-
-CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_format_csv_no_quotes(str_csv TEXT) returns TEXT
-LANGUAGE SQL
-IMMUTABLE
-as
-$$
-    SELECT
-        REGEXP_REPLACE(
-                       REGEXP_REPLACE(str_csv::VARCHAR, '''', '', 'g'),  -- Remove single quotes
-                       '\s*,\s*',  -- Match comma, with or without surrounding spaces
-                       ', ',       -- Replace with comma followed by a space
-                       'g'         -- Global replace
-                      ) AS formatted_value
-$$;
-
-CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_format_csv_quotes(str_csv TEXT) returns TEXT
-LANGUAGE SQL
-IMMUTABLE
-as
-$$
-    SELECT
-       '''' || REGEXP_REPLACE(str_csv::VARCHAR, '\s*,\s*', ''', ''', 'g') || ''''
-   AS formatted_value
 $$;
 
 CREATE OR REPLACE FUNCTION {SCHEMA_NAME}.fn_count_intersecting_items(list1 VARCHAR, list2 VARCHAR, separator VARCHAR)
