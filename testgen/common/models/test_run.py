@@ -112,8 +112,6 @@ class TestRun(Entity):
     log_ct: int = Column(Integer)
     table_ct: int = Column(Integer)
     column_ct: int = Column(Integer)
-    column_failed_ct: int = Column(Integer)
-    column_warning_ct: int = Column(Integer)
     dq_affected_data_points: int = Column(BigInteger)
     dq_total_data_points: int = Column(BigInteger)
     dq_score_test_run: float = Column(Float)

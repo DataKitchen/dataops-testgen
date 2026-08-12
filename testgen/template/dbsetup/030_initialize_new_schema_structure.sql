@@ -110,8 +110,6 @@ CREATE TABLE table_groups
     profile_flag_cdes        BOOLEAN DEFAULT TRUE,
     profile_flag_pii         BOOLEAN DEFAULT TRUE,
     profile_exclude_xde      BOOLEAN DEFAULT TRUE,
-    profile_do_pair_rules    VARCHAR(3) DEFAULT 'N',
-    profile_pair_rule_pct    INTEGER DEFAULT 95,
     include_in_dashboard     BOOLEAN DEFAULT TRUE,
     description              VARCHAR(1000),
     data_source              VARCHAR(40),
@@ -142,8 +140,6 @@ CREATE TABLE profiling_runs (
    record_ct               BIGINT,
    data_point_ct           BIGINT,
    anomaly_ct              BIGINT,
-   anomaly_table_ct        BIGINT,
-   anomaly_column_ct       BIGINT,
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
    dq_score_profiling      FLOAT
@@ -219,7 +215,6 @@ CREATE TABLE test_definitions (
    history_calculation_upper VARCHAR(1000),
    history_lookback       INTEGER,
    prediction             JSONB,
-   test_mode              VARCHAR(20),
    custom_query           VARCHAR,
    test_active            VARCHAR(10) DEFAULT 'Y':: CHARACTER VARYING,
    test_definition_status VARCHAR(200),
@@ -367,24 +362,6 @@ CREATE TABLE profile_anomaly_results (
    disposition     VARCHAR(20), -- Confirmed, Dismissed, Inactive
    dq_prevalence    FLOAT,
    impact_dimension VARCHAR(20)
-);
-
-
-CREATE TABLE profile_pair_rules (
-   id                  UUID DEFAULT gen_random_uuid() NOT NULL
-      CONSTRAINT pk_profile_pair_rules_id
-         PRIMARY KEY,
-   profile_run_id      UUID,
-   schema_name         VARCHAR(50),
-   table_name          VARCHAR(120),
-   cause_column_name   VARCHAR(500),
-   cause_column_value  VARCHAR,
-   effect_column_name  VARCHAR(500),
-   effect_column_value VARCHAR,
-   pair_count          BIGINT,
-   cause_column_total  BIGINT,
-   effect_column_total BIGINT,
-   rule_ratio          DECIMAL(6, 4)
 );
 
 
@@ -616,8 +593,6 @@ CREATE TABLE test_runs (
    log_ct                  INTEGER,
    table_ct                INTEGER,
    column_ct               INTEGER,
-   column_failed_ct        INTEGER,
-   column_warning_ct       INTEGER,
    dq_affected_data_points BIGINT,
    dq_total_data_points    BIGINT,
    dq_score_test_run       FLOAT,
@@ -688,12 +663,6 @@ CREATE TABLE target_data_lookups (
 CREATE TABLE variant_codings (
    value_type   VARCHAR,
    check_values VARCHAR
-);
-
-CREATE TABLE functional_test_results
-(
-   test_name VARCHAR(50),
-   error_ct  BIGINT
 );
 
 CREATE TABLE auth_users (
@@ -990,11 +959,6 @@ CREATE INDEX ix_pr_tg_rd
 
 CREATE UNIQUE INDEX uix_pr_tg_t_c_prun
    ON profile_results(table_groups_id, table_name, column_name, profile_run_id);
-
-
--- Index profile_pair_rules
-CREATE INDEX ix_pro_pair_prun
-   ON profile_pair_rules(profile_run_id);
 
 
 -- Index profile_anomaly_results
