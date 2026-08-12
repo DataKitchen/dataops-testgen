@@ -1,8 +1,9 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, Mock, patch
+from uuid import UUID
 
 import pytest
 
-from testgen.commands.run_profiling import _order_largest_work_first, _run_column_profiling
+from testgen.commands.run_profiling import _generate_tests, _order_largest_work_first, _run_column_profiling
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome
 
@@ -105,3 +106,68 @@ def test_equal_counts_preserve_input_order():
     columns = [_col("a", "c"), _col("b", "c"), _col("d", "c")]
     ordered = _order_largest_work_first(columns, {"a": 5, "b": 5, "d": 5})
     assert [c.table_name for c in ordered] == ["a", "b", "d"]
+
+
+# --- _generate_tests: post-profiling auto-generation --------------------------------------
+
+SUITE_ID = "8f8d1cb5-2f2c-4f0f-9f9c-6f1a2b3c4d5e"
+PROFILE_RUN_ID = UUID("1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f")
+
+
+def _run_generate_tests(
+    *,
+    default_test_suite_id: str | None = SUITE_ID,
+    last_complete_profile_run_id: str | None = None,
+    monitor_test_suite_id: str | None = None,
+    generation_error: Exception | None = None,
+):
+    table_group = MagicMock()
+    table_group.default_test_suite_id = default_test_suite_id
+    table_group.last_complete_profile_run_id = last_complete_profile_run_id
+    table_group.monitor_test_suite_id = monitor_test_suite_id
+
+    def db_ctx():
+        ctx = MagicMock()
+        ctx.__enter__ = Mock(return_value=MagicMock())
+        ctx.__exit__ = Mock(return_value=False)
+        return ctx
+
+    with (
+        patch("testgen.common.models.database_session", side_effect=lambda: db_ctx()),
+        patch(f"{MODULE}.TestSuite"),
+        patch(f"{MODULE}.run_monitor_generation"),
+        patch(f"{MODULE}.run_test_generation", side_effect=generation_error) as run_generation,
+    ):
+        _generate_tests(table_group, PROFILE_RUN_ID)
+
+    return run_generation
+
+
+def test_post_profiling_generation_leaves_the_generation_sets_to_the_test_suite():
+    """No generation set is passed, so run_test_generation resolves the suite's stored sets.
+
+    Passing a set here would pin every post-profiling run to it regardless of what the
+    suite was last generated with.
+    """
+    run_generation = _run_generate_tests()
+
+    run_generation.assert_called_once_with(SUITE_ID, profile_run_id=PROFILE_RUN_ID)
+    assert "generation_sets" not in run_generation.call_args.kwargs
+
+
+def test_post_profiling_generation_only_runs_on_the_first_profile_run():
+    run_generation = _run_generate_tests(last_complete_profile_run_id="a-previous-run")
+
+    run_generation.assert_not_called()
+
+
+def test_post_profiling_generation_skipped_without_a_default_test_suite():
+    run_generation = _run_generate_tests(default_test_suite_id=None)
+
+    run_generation.assert_not_called()
+
+
+def test_post_profiling_generation_failure_does_not_fail_profiling():
+    run_generation = _run_generate_tests(generation_error=RuntimeError("no generation sets"))
+
+    run_generation.assert_called_once_with(SUITE_ID, profile_run_id=PROFILE_RUN_ID)

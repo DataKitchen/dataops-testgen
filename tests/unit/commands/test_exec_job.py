@@ -79,7 +79,7 @@ def test_exec_job_dispatches_run_monitors(mock_session):
 
 def test_exec_job_dispatches_run_test_generation(mock_session):
     job = _make_job_exec(job_key=JobKey.run_test_generation)
-    job.kwargs = {"test_suite_id": "suite-123", "generation_set": "Standard"}
+    job.kwargs = {"test_suite_id": "suite-123", "generation_sets": ["Standard"]}
     job.mark_running.return_value = True
     dispatch_mock = Mock(return_value="ok")
 

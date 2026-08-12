@@ -2,6 +2,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.generation_set_service import get_generation_set_members
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
@@ -94,6 +95,35 @@ def test_types_resource() -> str:
             for tt in test_types
         ],
     )
+
+    return doc.render()
+
+
+@with_database_session
+def generation_sets_resource() -> str:
+    """Reference of generation sets and the test types each one generates."""
+    members = get_generation_set_members()
+
+    if not members:
+        return "No generation sets found."
+
+    # Only active types generate, so an inactive or uninstalled type is not part of the set.
+    short_names = {
+        tt.test_type: tt.test_name_short or tt.test_type for tt in TestType.select_where(TestType.active == "Y")
+    }
+
+    doc = MdDoc()
+    doc.heading(1, "TestGen Generation Sets Reference")
+    doc.text(
+        "Generation sets scope which test types `generate_tests` creates for a test suite. "
+        "A test suite can use more than one set, and test types can belong to more than one set."
+    )
+    for generation_set, test_types in members.items():
+        names = sorted(short_names[test_type] for test_type in test_types if test_type in short_names)
+        if not names:
+            continue
+        doc.heading(2, generation_set)
+        doc.text(", ".join(names))
 
     return doc.render()
 

@@ -60,6 +60,7 @@ class TestSuiteSummary(EntityMinimal):
     last_run_error_ct: int
     last_run_log_ct: int
     last_run_dismissed_ct: int
+    generation_sets: list[str] | None
 
 class TestSuite(Entity):
     __tablename__ = "test_suites"
@@ -84,6 +85,7 @@ class TestSuite(Entity):
     predict_min_lookback: int | None = Column(Integer)
     predict_exclude_weekends: bool = Column(Boolean, default=False)
     predict_holiday_codes: str | None = Column(String)
+    generation_sets: list[str] | None = Column(postgresql.ARRAY(String))
 
     @property
     def holiday_codes_list(self) -> list[str] | None:
@@ -188,6 +190,7 @@ class TestSuite(Entity):
             suites.table_groups_id,
             groups.table_groups_name,
             suites.test_suite_description,
+            suites.generation_sets,
             CASE WHEN suites.export_to_observability = 'Y' THEN TRUE ELSE FALSE END AS export_to_observability,
             test_defs.count AS test_ct,
             last_complete_profile_run_id,

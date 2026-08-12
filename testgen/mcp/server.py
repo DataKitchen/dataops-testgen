@@ -284,6 +284,7 @@ def build_mcp_server(
         column_profile_fields_resource,
         connection_parameters_index_resource,
         connection_parameters_resource,
+        generation_sets_resource,
         get_test_type,
         glossary_resource,
         hygiene_issue_types_resource,
@@ -461,6 +462,7 @@ def build_mcp_server(
 
     # Resources
     safe_resource("testgen://test-types", test_types_resource)
+    safe_resource("testgen://generation-sets", generation_sets_resource)
     safe_resource("testgen://hygiene-issue-types", hygiene_issue_types_resource)
     safe_resource("testgen://column-profile-fields", column_profile_fields_resource)
     safe_resource("testgen://glossary", glossary_resource)

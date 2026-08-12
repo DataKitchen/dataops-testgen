@@ -10,6 +10,7 @@ from testgen.common.database.database_service import (
     get_flavor_service,
     replace_params,
 )
+from testgen.common.generation_set_service import MONITOR_GENERATION_SET, resolve_generation_sets
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models.connection import Connection
@@ -21,7 +22,6 @@ from testgen.utils import to_sql_timestamp
 
 LOG = logging.getLogger("testgen")
 
-GenerationSet = Literal["Standard", "Monitor"]
 MonitorTestType = Literal["Freshness_Trend", "Volume_Trend", "Schema_Drift"]
 MonitorGenerationMode = Literal["upsert", "insert", "delete"]
 
@@ -38,7 +38,7 @@ class TestTypeParams:
 # Generate tests for a regular non-monitor test suite - don't use for monitors
 def run_test_generation(
     test_suite_id: str | UUID,
-    generation_set: GenerationSet = "Standard",
+    generation_sets: list[str] | None = None,
     test_types: list[str] | None = None,
     profile_run_id: UUID | None = None,
 ) -> None:
@@ -51,25 +51,31 @@ def run_test_generation(
     test_suite = TestSuite.get(test_suite_id)
     if test_suite.is_monitor:
         raise ValueError("Cannot run regular test generation for monitor suite")
+
+    resolved_sets = resolve_generation_sets(test_suite, generation_sets)
+    LOG.info(f"Generating tests for generation sets: {', '.join(resolved_sets)}")
+
     table_group = TableGroup.get(test_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
 
     success = False
     try:
         TestGeneration(
-            connection, table_group, test_suite, generation_set, test_types, profile_run_id
+            connection, table_group, test_suite, resolved_sets, test_types, profile_run_id
         ).run()
         success = True
     except Exception:
         LOG.exception("Test generation encountered an error.")
+        raise
     finally:
         MixpanelService().send_event(
             "generate-tests",
             source=job_context.get().source.upper(),
             sql_flavor=connection.sql_flavor,
-            generation_set=generation_set,
+            generation_sets=resolved_sets,
         )
-
+        if success:
+            test_suite.generation_sets = resolved_sets
 
 
 def run_monitor_generation(
@@ -97,7 +103,7 @@ def run_monitor_generation(
     connection = Connection.get(table_group.connection_id)
 
     TestGeneration(
-        connection, table_group, monitor_suite, "Monitor", monitors, profile_run_id
+        connection, table_group, monitor_suite, [MONITOR_GENERATION_SET], monitors, profile_run_id
     ).monitor_run(mode, table_names=table_names)
 
 
@@ -108,14 +114,14 @@ class TestGeneration:
         connection: Connection,
         table_group: TableGroup,
         test_suite: TestSuite,
-        generation_set: str,
+        generation_sets: list[str],
         test_types_filter: list[MonitorTestType] | None = None,
         profile_run_id: UUID | None = None,
     ):
         self.connection = connection
         self.table_group = table_group
         self.test_suite = test_suite
-        self.generation_set = generation_set
+        self.generation_sets = generation_sets
         self.test_types_filter = test_types_filter
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
@@ -209,7 +215,7 @@ class TestGeneration:
             "TABLE_GROUPS_ID": self.table_group.id,
             "TEST_SUITE_ID": self.test_suite.id,
             "DATA_SCHEMA": self.table_group.table_group_schema,
-            "GENERATION_SET": self.generation_set,
+            "GENERATION_SETS": self.generation_sets,
             "TEST_TYPES_FILTER": self.test_types_filter,
             "PROFILE_RUN_ID": self.profile_run_id,
             "RUN_DATE": to_sql_timestamp(self.run_date),

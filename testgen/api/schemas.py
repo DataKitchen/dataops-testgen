@@ -344,6 +344,13 @@ class ImportStrictError(ErrorResponse):
     import_result: ImportResponse
 
 
+# --- Test Generation ---
+
+
+class TestGenerationRequest(BaseModel):
+    generation_sets: list[str] | None = None
+
+
 # --- Monitors ---
 
 

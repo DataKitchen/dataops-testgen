@@ -172,6 +172,7 @@ CREATE TABLE test_suites (
    predict_min_lookback    INTEGER,
    predict_exclude_weekends BOOLEAN DEFAULT FALSE,
    predict_holiday_codes   VARCHAR(100),
+   generation_sets         VARCHAR[],
 
    CONSTRAINT test_suites_id_pk
       PRIMARY KEY (id)

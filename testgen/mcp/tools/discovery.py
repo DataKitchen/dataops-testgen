@@ -2,6 +2,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.generation_set_service import list_generation_sets
 from testgen.common.models import with_database_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.project import Project
@@ -135,6 +136,8 @@ def list_test_suites(
         if s.test_suite_description:
             doc.field("Description", s.test_suite_description)
         doc.field("Test definitions", s.test_ct or 0)
+        if s.generation_sets:
+            doc.field("Generation sets", ", ".join(s.generation_sets))
 
         if s.latest_run_id:
             doc.field("Latest run", f"`{s.latest_run_id}` ({s.latest_run_start})")
@@ -193,6 +196,8 @@ def get_test_suite(
         doc.field("Description", suite.test_suite_description)
     doc.field("Default severity", suite.severity or "Inherit from test type")
     doc.field("Export to observability", suite.export_to_observability)
+    doc.field("Generation sets", ", ".join(suite.generation_sets or []) or "Not set, defaults to Standard")
+    doc.field("Available generation sets", ", ".join(list_generation_sets()))
 
     doc.field("Total tests", stats.total)
     doc.field("Locked tests", stats.locked)

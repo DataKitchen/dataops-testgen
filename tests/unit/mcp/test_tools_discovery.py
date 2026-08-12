@@ -337,12 +337,13 @@ def _stats(total=47, locked=3, counts_by_type=None):
     )
 
 
+@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Standard"])
 @patch("testgen.mcp.tools.discovery.TestSuite")
 @patch("testgen.mcp.tools.discovery.resolve_table_group")
 @patch("testgen.mcp.tools.discovery.resolve_connection")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_test_suite_returns_full_config(
-    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, db_session_mock,
+    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, _mock_sets, db_session_mock,
 ):
     suite = _mock_test_suite()
     mock_common_suite.get.return_value = suite
@@ -422,12 +423,13 @@ def test_get_test_suite_rejects_invalid_uuid(mock_common_suite, db_session_mock)
         get_test_suite("not-a-uuid")
 
 
+@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Standard"])
 @patch("testgen.mcp.tools.discovery.TestSuite")
 @patch("testgen.mcp.tools.discovery.resolve_table_group")
 @patch("testgen.mcp.tools.discovery.resolve_connection")
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_test_suite_no_severity_renders_inherit(
-    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, db_session_mock,
+    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, _mock_sets, db_session_mock,
 ):
     suite = _mock_test_suite(severity=None, connection_id=None, table_groups_id=None)
     mock_common_suite.get.return_value = suite
@@ -466,6 +468,102 @@ def test_get_data_inventory_forwards_identity_and_roles(
     assert kwargs["username"] == "alice"
     assert kwargs["is_global_admin"] is False
     assert kwargs["roles_by_code"] == {"proj_a": "role_c"}
+
+
+# --- generation sets on the read surfaces ---
+
+
+@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Plugin_Set", "Standard"])
+@patch("testgen.mcp.tools.discovery.TestSuite")
+@patch("testgen.mcp.tools.discovery.resolve_table_group")
+@patch("testgen.mcp.tools.discovery.resolve_connection")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_get_test_suite_shows_stored_and_available_sets(
+    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, _mock_sets, db_session_mock,
+):
+    suite = _mock_test_suite()
+    suite.generation_sets = ["Standard", "Plugin_Set"]
+    mock_common_suite.get.return_value = suite
+    mock_resolve_conn.return_value = MagicMock(
+        connection_id=42, connection_name="warehouse_prod", sql_flavor_code="snowflake"
+    )
+    tg = MagicMock(table_groups_name="curated_payments")
+    tg.id = suite.table_groups_id
+    mock_resolve_tg.return_value = tg
+    mock_suite_cls.test_definition_stats.return_value = _stats()
+
+    from testgen.mcp.tools.discovery import get_test_suite
+
+    out = get_test_suite(str(suite.id))
+
+    assert "**Generation sets:** Standard, Plugin_Set" in out
+    assert "**Available generation sets:** Plugin_Set, Standard" in out
+
+
+@patch("testgen.mcp.tools.discovery.list_generation_sets", return_value=["Plugin_Set", "Standard"])
+@patch("testgen.mcp.tools.discovery.TestSuite")
+@patch("testgen.mcp.tools.discovery.resolve_table_group")
+@patch("testgen.mcp.tools.discovery.resolve_connection")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_get_test_suite_reports_unset_generation_sets(
+    mock_common_suite, mock_resolve_conn, mock_resolve_tg, mock_suite_cls, _mock_sets, db_session_mock,
+):
+    suite = _mock_test_suite()
+    suite.generation_sets = None
+    mock_common_suite.get.return_value = suite
+    mock_resolve_conn.return_value = MagicMock(
+        connection_id=42, connection_name="warehouse_prod", sql_flavor_code="snowflake"
+    )
+    tg = MagicMock(table_groups_name="curated_payments")
+    tg.id = suite.table_groups_id
+    mock_resolve_tg.return_value = tg
+    mock_suite_cls.test_definition_stats.return_value = _stats()
+
+    from testgen.mcp.tools.discovery import get_test_suite
+
+    out = get_test_suite(str(suite.id))
+
+    assert "**Generation sets:** Not set, defaults to Standard" in out
+
+
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_list_test_suites_shows_stored_sets(mock_suite, db_session_mock):
+    summary = MagicMock()
+    summary.id = uuid4()
+    summary.test_suite = "qa_checks"
+    summary.connection_name = "warehouse_prod"
+    summary.table_groups_name = "curated_payments"
+    summary.test_suite_description = None
+    summary.test_ct = 12
+    summary.latest_run_id = None
+    summary.generation_sets = ["Standard", "Plugin_Set"]
+    mock_suite.select_summary.return_value = [summary]
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    out = list_test_suites("demo")
+
+    assert "**Generation sets:** Standard, Plugin_Set" in out
+
+
+@patch("testgen.mcp.tools.discovery.TestSuite")
+def test_list_test_suites_omits_generation_sets_when_unset(mock_suite, db_session_mock):
+    summary = MagicMock()
+    summary.id = uuid4()
+    summary.test_suite = "qa_checks"
+    summary.connection_name = "warehouse_prod"
+    summary.table_groups_name = "curated_payments"
+    summary.test_suite_description = None
+    summary.test_ct = 12
+    summary.latest_run_id = None
+    summary.generation_sets = None
+    mock_suite.select_summary.return_value = [summary]
+
+    from testgen.mcp.tools.discovery import list_test_suites
+
+    out = list_test_suites("demo")
+
+    assert "Generation sets" not in out
 
 
 @patch("testgen.mcp.services.inventory_service.get_inventory")
