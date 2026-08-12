@@ -131,12 +131,14 @@ def dataframe_to_json_records(df: pd.DataFrame) -> list[dict]:
 def dict_from_kv(value: str | None, pairs_seprator: str = ";", kv_separator: str = "=") -> dict:
     if not value:
         return {}
-    pairs = [pair.split(kv_separator) for raw_pair in value.split(pairs_seprator) if (pair := raw_pair.strip())]
-    return {
-        pair_key: pair_value
-        for pair in pairs
-        if (pair_key := pair[0].strip()) and (pair_value := pair[1].strip())
-    }
+    parsed: dict[str, str] = {}
+    for raw_pair in value.split(pairs_seprator):
+        if not (pair := raw_pair.strip()) or kv_separator not in pair:
+            continue
+        raw_key, _, raw_value = pair.partition(kv_separator)
+        if pair_key := raw_key.strip():
+            parsed[pair_key] = raw_value.strip()
+    return parsed
 
 
 def chunk_queries(queries: list[str], join_string: str, max_query_length: int) -> list[str]:

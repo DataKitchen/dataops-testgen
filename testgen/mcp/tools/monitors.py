@@ -864,7 +864,7 @@ def _compute_forecast(
         )
     if monitor_def is None:
         return _Forecast(note="_No monitor configured for this table._")
-    if monitor_def.history_calculation != "PREDICT":
+    if monitor_def.history_calculation != MonitorCalculation.PREDICT:
         return _Forecast(
             note="_Predictions not available — this monitor's threshold mode is "
             "Static or Historical Calculation, not Prediction Model._"
@@ -898,7 +898,9 @@ def _compute_forecast(
             return _Forecast(note=_FORECAST_UNAVAILABLE_NOTE)
         return _Forecast(points=points)
 
-    sensitivity = suite.predict_sensitivity.value if suite.predict_sensitivity is not None else "medium"
+    sensitivity = (
+        suite.predict_sensitivity.value if suite.predict_sensitivity is not None else PredictSensitivity.medium.value
+    )
     points = forecast_points_from_prediction(monitor_def.prediction, sensitivity)
     if not points:
         return _Forecast(note=_FORECAST_PENDING_NOTE)
@@ -1034,7 +1036,7 @@ def list_monitors(
     sensitivity = (
         suite.predict_sensitivity.value
         if suite.predict_sensitivity is not None
-        else "medium"
+        else PredictSensitivity.medium.value
     )
     doc.field("Prediction model sensitivity", sensitivity)
 
@@ -1199,7 +1201,7 @@ def set_monitor_predictive(
     # values roll over to Predictive as a sensitivity-override pinch. ``prediction`` is
     # also preserved for parity with the UI save handler, which does not clear it on
     # mode switches; the next scheduled run refits from the training window.
-    monitor.history_calculation = "PREDICT"
+    monitor.history_calculation = MonitorCalculation.PREDICT
     monitor.history_calculation_upper = None
     monitor.history_lookback = 0
     monitor.lock_refresh = True

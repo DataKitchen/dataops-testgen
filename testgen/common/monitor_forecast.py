@@ -18,6 +18,7 @@ from datetime import UTC, date, datetime
 
 import pandas as pd
 
+from testgen.common.enums import MonitorCalculation
 from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
 from testgen.common.models.test_definition import MonitorForecastPoint, TestDefinition, TestDefinitionSummary
 from testgen.common.models.test_suite import TestSuite
@@ -54,7 +55,7 @@ def next_update_window(
     """
     if (
         freshness_definition is None
-        or freshness_definition.history_calculation != "PREDICT"
+        or freshness_definition.history_calculation != MonitorCalculation.PREDICT
         or (freshness_definition.prediction and not freshness_definition.prediction.get("schedule_stage"))
         or freshness_definition.upper_tolerance is None
         or last_detection_time is None

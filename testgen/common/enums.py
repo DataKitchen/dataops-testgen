@@ -126,13 +126,17 @@ class MonitorType(StrEnum):
 
 
 class MonitorCalculation(StrEnum):
-    """Historical-mode calculation options for monitor thresholds.
+    """Values stored in ``TestDefinition.history_calculation``, optionally mirrored in
+    ``.history_calculation_upper``.
 
-    Values are stored verbatim in ``TestDefinition.history_calculation`` /
-    ``.history_calculation_upper``. When the choice is ``EXPRESSION``, the SQL
+    ``PREDICT`` selects Prediction Model mode and is only ever stored in
+    ``history_calculation`` — ``history_calculation_upper`` is cleared to ``None``
+    alongside it. The remaining members are the Historical Calculation options and
+    may appear in either column; when the choice is ``EXPRESSION``, the SQL
     expression is wrapped as ``EXPR:[...]`` before storage — see
     ``testgen/common/history_calculation_service.py``.
     """
+    PREDICT = "PREDICT"
     VALUE = "Value"
     MINIMUM = "Minimum"
     MAXIMUM = "Maximum"

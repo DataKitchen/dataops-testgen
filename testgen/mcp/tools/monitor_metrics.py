@@ -6,7 +6,7 @@ from sqlalchemy import exists, select
 
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.database_service import get_flavor_service
-from testgen.common.enums import MonitorType
+from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_table import DataTable
@@ -84,7 +84,7 @@ def create_metric_monitor(
         table_name=table_name,
         column_name=clean_name,
         custom_query=clean_expr,
-        history_calculation="PREDICT",
+        history_calculation=MonitorCalculation.PREDICT,
         history_calculation_upper=None,
         history_lookback=None,
         test_active=True,
@@ -135,8 +135,6 @@ def update_metric_monitor(
         monitor.column_name = clean_name
     if clean_expr is not None:
         monitor.custom_query = clean_expr
-    monitor.lock_refresh = True
-    monitor.last_manual_update = datetime.now(UTC)
     after = {attr: getattr(monitor, attr) for attr in _DIFF_ORDER}
 
     doc = MdDoc()
@@ -148,6 +146,8 @@ def update_metric_monitor(
         doc.text("No fields changed — supplied values matched the current state.")
         return doc.render()
 
+    monitor.lock_refresh = True
+    monitor.last_manual_update = datetime.now(UTC)
     monitor.save()
     return doc.render()
 

@@ -341,6 +341,10 @@ def test_update_metric_monitor_rejects_empty_fields(mock_resolve, db_session_moc
 @patch(f"{MODULE}.resolve_monitor")
 def test_update_metric_monitor_no_op_when_same_values(mock_resolve, db_session_mock):
     monitor = _mock_monitor(column_name="Same", custom_query="SELECT 1")
+    # Sentinels: a no-op must leave the audit fields untouched. Without these the
+    # MagicMock absorbs the writes and the assertion below cannot fail.
+    monitor.lock_refresh = False
+    monitor.last_manual_update = None
     mock_resolve.return_value = monitor
 
     from testgen.mcp.tools.monitor_metrics import update_metric_monitor
@@ -354,6 +358,8 @@ def test_update_metric_monitor_no_op_when_same_values(mock_resolve, db_session_m
 
     assert "No fields changed" in out
     monitor.save.assert_not_called()
+    assert monitor.lock_refresh is False
+    assert monitor.last_manual_update is None
 
 
 @patch(f"{MODULE}.resolve_monitor")
