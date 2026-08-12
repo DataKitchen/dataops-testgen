@@ -76,6 +76,7 @@ const TableGroupWizard = (props) => {
     monitorSuite: van.state({
       generate: true,
       monitor_lookback: 14,
+      monitor_regenerate_freshness: true,
       schedule: '0 */12 * * *',
       timezone: defaultTimezone,
       predict_sensitivity: 'medium',
@@ -361,6 +362,7 @@ const TableGroupWizard = (props) => {
       const monitorSuiteState = stepsState.monitorSuite.rawVal;
       const generateMonitorTests = van.state(monitorSuiteState.generate);
       const monitorSuiteLookback = van.state(monitorSuiteState.monitor_lookback);
+      const monitorSuiteRegenerateFreshness = van.state(monitorSuiteState.monitor_regenerate_freshness);
       const monitorSuiteSchedule = van.state(monitorSuiteState.schedule);
       const monitorSuiteScheduleTimezone = van.state(monitorSuiteState.timezone);
       const monitorPredictSensitivity = van.state(monitorSuiteState.predict_sensitivity);
@@ -374,6 +376,7 @@ const TableGroupWizard = (props) => {
         stepsState.monitorSuite.val = {
           generate: generateMonitorTests.val,
           monitor_lookback: monitorSuiteLookback.val,
+          monitor_regenerate_freshness: monitorSuiteRegenerateFreshness.val,
           schedule: monitorSuiteSchedule.val,
           timezone: monitorSuiteScheduleTimezone.val,
           predict_sensitivity: monitorPredictSensitivity.val,
@@ -416,6 +419,7 @@ const TableGroupWizard = (props) => {
               },
               monitorSuite: {
                 monitor_lookback: monitorSuiteLookback.rawVal,
+                monitor_regenerate_freshness: monitorSuiteRegenerateFreshness.rawVal,
                 predict_sensitivity: monitorPredictSensitivity.rawVal,
                 predict_min_lookback: monitorPredictMinLookback.rawVal,
                 predict_exclude_weekends: monitorPredictExcludeWeekends.rawVal,
@@ -426,6 +430,7 @@ const TableGroupWizard = (props) => {
               onChange: (schedule, monitorTestSuite, formState) => {
                 stepsValidity.monitorSuite.val = formState.valid;
                 monitorSuiteLookback.val = monitorTestSuite.monitor_lookback;
+                monitorSuiteRegenerateFreshness.val = monitorTestSuite.monitor_regenerate_freshness;
                 monitorSuiteSchedule.val = schedule.cron_expr;
                 monitorSuiteScheduleTimezone.val = schedule.cron_tz;
                 monitorPredictSensitivity.val = monitorTestSuite.predict_sensitivity;

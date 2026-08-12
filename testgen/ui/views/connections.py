@@ -6,18 +6,18 @@ from dataclasses import asdict, dataclass
 import streamlit as st
 
 from testgen import settings
-from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.database.connection_service import ConnectionStatus, test_connection_status
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.enums import JobSource
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL
-from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
+from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_suite import PredictSensitivity, TestSuite
+from testgen.common.models.test_suite import TestSuite
+from testgen.common.monitor_service import enable_monitoring
 from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -321,16 +321,7 @@ class ConnectionsPage(Page):
         )
         get_monitor_test_suite_data, set_monitor_test_suite_data = temp_value(
             f"connections:{connection_id}:monitor_suite_data",
-            default={
-                "generate": False,
-                "monitor_lookback": 0,
-                "schedule": "",
-                "timezone": "",
-                "predict_sensitivity": 0,
-                "predict_min_lookback": 0,
-                "predict_exclude_weekends": False,
-                "predict_holiday_codes": None,
-            },
+            default={"generate": False},
         )
 
         add_scorecard_definition = table_group_data.pop("add_scorecard_definition", False)
@@ -396,35 +387,21 @@ class ConnectionsPage(Page):
                     monitor_test_suite_data = get_monitor_test_suite_data() or {}
                     if monitor_test_suite_data.get("generate"):
                         generate_monitor_suite = True
-                        monitor_test_suite = TestSuite(
-                            project_code=project_code,
-                            test_suite=f"{table_group.table_groups_name} Monitors",
-                            connection_id=table_group.connection_id,
-                            table_groups_id=table_group.id,
-                            export_to_observability=False,
-                            dq_score_exclude=True,
-                            is_monitor=True,
-                            monitor_lookback=monitor_test_suite_data.get("monitor_lookback") or 14,
-                            monitor_regenerate_freshness=monitor_test_suite_data.get("monitor_regenerate_freshness") or True,
-                            predict_min_lookback=monitor_test_suite_data.get("predict_min_lookback") or 30,
-                            predict_sensitivity=(
-                                monitor_test_suite_data.get("predict_sensitivity") or PredictSensitivity.medium.value
-                            ),
-                            predict_exclude_weekends=monitor_test_suite_data.get("predict_exclude_weekends") or False,
-                            predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
+                        monitor_test_suite, _ = enable_monitoring(
+                            table_group,
+                            monitor_test_suite_data.get("schedule"),
+                            monitor_test_suite_data.get("timezone") or "UTC",
+                            suite_attrs={
+                                "monitor_lookback": monitor_test_suite_data.get("monitor_lookback"),
+                                "monitor_regenerate_freshness": monitor_test_suite_data.get(
+                                    "monitor_regenerate_freshness"
+                                ),
+                                "predict_min_lookback": monitor_test_suite_data.get("predict_min_lookback"),
+                                "predict_sensitivity": monitor_test_suite_data.get("predict_sensitivity"),
+                                "predict_exclude_weekends": monitor_test_suite_data.get("predict_exclude_weekends"),
+                                "predict_holiday_codes": monitor_test_suite_data.get("predict_holiday_codes"),
+                            },
                         )
-                        monitor_test_suite.save()
-                        # Commit needed to make test suite visible to run_monitor_generation's separate DB connection
-                        get_current_session().commit()
-                        run_monitor_generation(monitor_test_suite.id, ["Volume_Trend", "Schema_Drift"])
-
-                        JobSchedule(
-                            project_code=project_code,
-                            key=RUN_MONITORS_JOB_KEY,
-                            cron_expr=monitor_test_suite_data.get("schedule"),
-                            cron_tz=monitor_test_suite_data.get("timezone"),
-                            kwargs={"test_suite_id": str(monitor_test_suite.id)},
-                        ).save()
 
                     if standard_test_suite or monitor_test_suite:
                         table_group.default_test_suite_id = standard_test_suite.id if standard_test_suite else None
