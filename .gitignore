@@ -132,3 +132,8 @@ cython_debug/
 
 testgen/ui/components/frontend/js/plugins.js
 testgen/ui/components/frontend/js/plugin_pages/
+
+# Editor swap files
+*.swp
+*.swo
+*~
