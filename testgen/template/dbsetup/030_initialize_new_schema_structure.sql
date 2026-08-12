@@ -1090,7 +1090,11 @@ CREATE TABLE job_executions (
     completed_at    TIMESTAMPTZ
 );
 
-CREATE INDEX idx_job_executions_poll ON job_executions (status, created_at) WHERE status = 'pending';
+-- The claim query selects status IN ('pending', 'cancel_requested') ordered by created_at. Keyed
+-- on created_at alone: the partial predicate already fixes status, so leading with it carries no
+-- information and costs the poll's ordered limit its index scan.
+CREATE INDEX idx_job_executions_poll ON job_executions (created_at)
+    WHERE status IN ('pending', 'cancel_requested');
 CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
 CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
 CREATE INDEX idx_job_executions_project_completed
