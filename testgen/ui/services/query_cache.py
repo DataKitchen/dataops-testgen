@@ -64,13 +64,6 @@ def get_memberships_for_project(project_code: str) -> list[ProjectMembership]:
     return ProjectMembership.get_memberships_for_project(project_code)
 
 
-# -- Connection ---------------------------------------------------------------
-
-@st.cache_data(show_spinner=False)
-def get_connection_by_table_group(table_group_id: str | UUID) -> Connection | None:
-    return Connection.get_by_table_group(table_group_id)
-
-
 # -- TestType -----------------------------------------------------------------
 
 @st.cache_data(show_spinner=False)

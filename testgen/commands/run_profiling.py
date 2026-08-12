@@ -94,10 +94,6 @@ def run_profiling(
             _run_column_profiling(sql_generator, data_chars, sampling_params, table_record_counts)
             _run_frequency_analysis(sql_generator, sampling_params, table_record_counts)
             _run_hygiene_issue_detection(sql_generator)
-
-            # if table_group.profile_do_pair_rules == "Y":
-            #     LOG.info("Compiling pairwise contingency rules")
-            #     run_pairwise_contingency_check(profiling_run.id, table_group.profile_pair_rule_pct)
         else:
             LOG.info("No columns were selected to profile.")
     except Exception:
