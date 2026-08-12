@@ -41,6 +41,12 @@ class LoginPage(Page):
             session.auth.jwt_cookie_expiry_days,
         )
     
+        # Left unset, `Authenticate.login` authenticates from the JWT cookie alone. The cookie is
+        # cleared asynchronously on logout, so a rerun landing in that window logs the user back in
+        # and the router bounces them to the default page. Restoring a session from the cookie is
+        # `Authentication.load_user_session`'s job, which runs before this page renders.
+        session.logout = True
+
         _name, authentication_status, username = authenticator.login("Login")
 
         if authentication_status is False:
@@ -53,4 +59,5 @@ class LoginPage(Page):
         if authentication_status:
             session.auth.logging_in = True
             session.auth.logging_out = False
+            session.logout = False
             session.auth.login_user(username)
