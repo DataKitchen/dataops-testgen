@@ -13,27 +13,28 @@ from typing import Any
 from sqlalchemy import func, select
 
 from testgen.commands.test_generation import run_monitor_generation
+from testgen.common.enums import MonitorType
 from testgen.common.models import get_current_session
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_run import TestRun
-from testgen.common.models.test_suite import TestSuite
+from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 
 LOG = logging.getLogger("testgen")
 
 # Monitors generated when monitoring is first enabled. Freshness_Trend depends on
 # per-table freshness fingerprinting and is generated separately, so it is not part
 # of the initial bootstrap set.
-INITIAL_MONITOR_TYPES = ["Volume_Trend", "Schema_Drift"]
+INITIAL_MONITOR_TYPES = [MonitorType.VOLUME.value, MonitorType.SCHEMA.value]
 
 # Default monitor configuration applied at bootstrap, mirroring the UI's setup form.
 _DEFAULT_SUITE_ATTRS: dict[str, Any] = {
     "monitor_lookback": 14,
     "monitor_regenerate_freshness": True,
     "predict_min_lookback": 30,
-    "predict_sensitivity": "medium",
+    "predict_sensitivity": PredictSensitivity.medium.value,
     "predict_exclude_weekends": False,
     "predict_holiday_codes": None,
 }

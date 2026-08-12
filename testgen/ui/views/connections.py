@@ -17,7 +17,7 @@ from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, RUN_TESTS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_suite import TestSuite
+from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.ui.assets import get_asset_data_url
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
@@ -407,7 +407,9 @@ class ConnectionsPage(Page):
                             monitor_lookback=monitor_test_suite_data.get("monitor_lookback") or 14,
                             monitor_regenerate_freshness=monitor_test_suite_data.get("monitor_regenerate_freshness") or True,
                             predict_min_lookback=monitor_test_suite_data.get("predict_min_lookback") or 30,
-                            predict_sensitivity=monitor_test_suite_data.get("predict_sensitivity") or "medium",
+                            predict_sensitivity=(
+                                monitor_test_suite_data.get("predict_sensitivity") or PredictSensitivity.medium.value
+                            ),
                             predict_exclude_weekends=monitor_test_suite_data.get("predict_exclude_weekends") or False,
                             predict_holiday_codes=monitor_test_suite_data.get("predict_holiday_codes") or None,
                         )

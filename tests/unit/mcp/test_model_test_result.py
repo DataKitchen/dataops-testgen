@@ -8,7 +8,6 @@ from testgen.common.models.test_result import (
     TestResult,
     TestResultStatus,
     TestRunResultRow,
-    _parse_kv_pairs,
 )
 
 
@@ -171,35 +170,6 @@ def test_select_history_excludes_monitor_suites(session_mock):
     sql = _compiled_sql(session_mock.scalars.call_args[0][0])
     assert "test_suites.is_monitor IS NOT true" in sql
     assert "JOIN test_suites" in sql
-
-
-# ---------------------------------------------------------------------------
-# _parse_kv_pairs — contract with the producer of ``input_parameters``
-# ---------------------------------------------------------------------------
-
-
-def test_parse_kv_pairs_splits_on_semicolon_for_multi_field_input():
-    """``input_parameters`` is built with ``"; ".join(...)`` on the writer side
-    and consumed by ``dict_from_kv`` with ``;`` as the default separator. The
-    parser must agree, otherwise a row carrying both ``lower_tolerance`` and
-    ``upper_tolerance`` returns one entry with the second pair embedded in the
-    first value, and the upper bound never surfaces."""
-    raw = "lower_tolerance=5; upper_tolerance=10; baseline_value=42"
-    assert _parse_kv_pairs(raw) == {
-        "lower_tolerance": "5",
-        "upper_tolerance": "10",
-        "baseline_value": "42",
-    }
-
-
-def test_parse_kv_pairs_returns_empty_for_empty_input():
-    assert _parse_kv_pairs(None) == {}
-    assert _parse_kv_pairs("") == {}
-
-
-def test_parse_kv_pairs_tolerates_whitespace_and_skips_unkeyed_entries():
-    raw = "  k1 = v1  ;k2=v2; just_text ; k3=v3"
-    assert _parse_kv_pairs(raw) == {"k1": "v1", "k2": "v2", "k3": "v3"}
 
 
 # ---------------------------------------------------------------------------

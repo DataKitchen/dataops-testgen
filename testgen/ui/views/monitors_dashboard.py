@@ -7,6 +7,7 @@ from typing import Any, ClassVar, Literal, cast
 import streamlit as st
 
 from testgen.common.cron_service import get_cron_sample
+from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.models import with_database_session
 from testgen.common.models.data_structure_log import DataStructureLog
 from testgen.common.models.notification_settings import (
@@ -47,10 +48,10 @@ from testgen.utils import make_json_safe
 # Maps the user-facing ``anomaly_type_filter`` values supplied by the dashboard
 # frontend to the internal ``test_type`` codes the model method expects.
 _DASHBOARD_ANOMALY_TYPE_TO_DB: dict[str, str] = {
-    "freshness": "Freshness_Trend",
-    "volume": "Volume_Trend",
-    "schema": "Schema_Drift",
-    "metrics": "Metric_Trend",
+    "freshness": MonitorType.FRESHNESS.value,
+    "volume": MonitorType.VOLUME.value,
+    "schema": MonitorType.SCHEMA.value,
+    "metrics": MonitorType.METRIC.value,
 }
 
 PAGE_ICON = "apps_outage"
@@ -571,7 +572,9 @@ def build_table_trends_data(
     definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
         TestDefinition.table_name == table_name,
-        TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
+        TestDefinition.test_type.in_(
+            [MonitorType.FRESHNESS.value, MonitorType.VOLUME.value, MonitorType.METRIC.value],
+        ),
     )
 
     predictions = {}
@@ -597,7 +600,7 @@ def build_table_trends_data(
         for definition in definitions:
             test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
             if (
-                definition.history_calculation == "PREDICT"
+                definition.history_calculation == MonitorCalculation.PREDICT
                 and definition.prediction
                 and not definition.prediction.get("freshness_gated")
                 and (base_mean_predictions := definition.prediction.get("mean"))
@@ -621,7 +624,7 @@ def build_table_trends_data(
                     "upper_tolerance": upper_tolerance_predictions,
                 }
             elif (
-                definition.history_calculation == "PREDICT"
+                definition.history_calculation == MonitorCalculation.PREDICT
                 and definition.prediction
                 and definition.prediction.get("freshness_gated")
                 and (definition.lower_tolerance is not None or definition.upper_tolerance is not None)
@@ -745,7 +748,9 @@ def build_edit_table_monitors_data(
     definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
         TestDefinition.table_name == table_name,
-        TestDefinition.test_type.in_(["Freshness_Trend", "Volume_Trend", "Metric_Trend"]),
+        TestDefinition.test_type.in_(
+            [MonitorType.FRESHNESS.value, MonitorType.VOLUME.value, MonitorType.METRIC.value],
+        ),
     )
 
     def on_save_test_definition(payload: dict) -> None:
@@ -775,7 +780,10 @@ def build_edit_table_monitors_data(
                 # For Freshness static mode: set threshold_value and lower_tolerance
                 # so the SQL template's staleness and BETWEEN checks work correctly.
                 # Also clear prediction JSON to avoid stale schedule-based exclusions.
-                if merged.get("test_type") == "Freshness_Trend" and merged.get("history_calculation") != "PREDICT":
+                if (
+                    merged.get("test_type") == "Freshness_Trend"
+                    and merged.get("history_calculation") != MonitorCalculation.PREDICT
+                ):
                     merged["threshold_value"] = merged.get("upper_tolerance")
                     merged["lower_tolerance"] = 0
                     merged["prediction"] = None

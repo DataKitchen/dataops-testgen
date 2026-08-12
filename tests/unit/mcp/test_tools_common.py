@@ -3,7 +3,14 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from testgen.common.enums import Disposition, ImpactDimension, IssueLikelihood, PiiRisk, QualityDimension
+from testgen.common.enums import (
+    Disposition,
+    ImpactDimension,
+    IssueLikelihood,
+    MonitorCalculation,
+    PiiRisk,
+    QualityDimension,
+)
 from testgen.common.models.scores import ScoreCategory
 from testgen.common.models.test_definition import Severity
 from testgen.common.models.test_result import TestResultStatus
@@ -1059,6 +1066,20 @@ def test_parse_monitor_calculation_label_appears_in_error():
 
     with pytest.raises(MCPUserError, match=r"Invalid lower_bound_calculation `bogus`"):
         parse_monitor_calculation("bogus", "lower_bound_calculation")
+
+
+def test_parse_monitor_calculation_rejects_predict():
+    """``PREDICT`` is a valid ``MonitorCalculation`` member, but it names Prediction
+    Model mode, not a Historical Calculation option — lower/upper_bound_calculation
+    must keep rejecting it, and the "Valid values" list must not advertise it."""
+    from testgen.mcp.tools.common import parse_monitor_calculation
+
+    with pytest.raises(MCPUserError, match=r"Invalid lower_bound_calculation `PREDICT`\. Valid values:") as exc:
+        parse_monitor_calculation("PREDICT", "lower_bound_calculation")
+    valid_values = str(exc.value).split("Valid values:")[1]
+    assert "PREDICT" not in valid_values
+
+    assert parse_monitor_calculation("Expression", "lower_bound_calculation") == MonitorCalculation.EXPRESSION
 
 
 @pytest.mark.parametrize(

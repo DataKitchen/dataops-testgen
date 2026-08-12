@@ -7,6 +7,7 @@ from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, 
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.enums import MonitorType
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -180,10 +181,10 @@ class MonitorGroupSummary:
 
 
 _ANOMALY_TYPE_TO_COLUMN: dict[str, str] = {
-    "Freshness_Trend": "freshness_anomalies",
-    "Volume_Trend": "volume_anomalies",
-    "Schema_Drift": "schema_anomalies",
-    "Metric_Trend": "metric_anomalies",
+    MonitorType.FRESHNESS.value: "freshness_anomalies",
+    MonitorType.VOLUME.value: "volume_anomalies",
+    MonitorType.SCHEMA.value: "schema_anomalies",
+    MonitorType.METRIC.value: "metric_anomalies",
 }
 
 _MONITOR_SORT_COLUMN: dict[str, str] = {

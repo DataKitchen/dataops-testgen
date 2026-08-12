@@ -396,6 +396,9 @@ def parse_monitor_type(value: str, label: str = "monitor_type") -> MonitorType:
     return db_value
 
 
+_HISTORICAL_CALCULATIONS = tuple(m for m in MonitorCalculation if m is not MonitorCalculation.PREDICT)
+
+
 def parse_monitor_calculation(value: str, label: str) -> MonitorCalculation:
     """Validate a user-facing calculation label and return the stored ``MonitorCalculation``.
 
@@ -404,7 +407,11 @@ def parse_monitor_calculation(value: str, label: str) -> MonitorCalculation:
     caller's argument in the error message — pass ``"lower_bound_calculation"`` or
     ``"upper_bound_calculation"``.
     """
-    return parse_enum(value, MonitorCalculation, label)
+    member = match_enum(value, MonitorCalculation)
+    if member is None or member not in _HISTORICAL_CALCULATIONS:
+        valid = ", ".join(m.value for m in _HISTORICAL_CALCULATIONS)
+        raise MCPUserError(f"Invalid {label} `{value}`. Valid values: {valid}")
+    return member
 
 
 class MonitorTableSort(StrEnum):

@@ -27,7 +27,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
-from testgen.common.enums import MonitorType
+from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -307,7 +307,7 @@ def derive_threshold_mode(
     """
     if test_type == MonitorType.SCHEMA.value:
         return ThresholdMode.NONE, None, None
-    if history_calculation == "PREDICT":
+    if history_calculation == MonitorCalculation.PREDICT:
         return ThresholdMode.PREDICTION, None, None
     if history_calculation and test_type != MonitorType.FRESHNESS.value:
         return ThresholdMode.HISTORICAL, history_calculation, history_calculation_upper

@@ -14,6 +14,7 @@ from testgen.common.database.database_service import (
     get_tg_schema,
     replace_params,
 )
+from testgen.common.enums import MonitorCalculation
 from testgen.common.freshness_service import (
     count_excluded_minutes,
     get_freshness_gated_baseline,
@@ -123,7 +124,9 @@ def build_cat_expressions(
     )
 
     # For prediction mode, return -1 during training period
-    if history_calculation == "PREDICT" and (lower_tolerance in (None, "") or upper_tolerance in (None, "")):
+    if history_calculation == MonitorCalculation.PREDICT and (
+        lower_tolerance in (None, "") or upper_tolerance in (None, "")
+    ):
         condition_expression = "'-1,'"
     else:
         condition = (
