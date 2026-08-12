@@ -12,9 +12,10 @@ from uuid import UUID
 
 from sqlalchemy import text
 
-from testgen.common.enums import MonitorType
+from testgen.common.enums import MonitorCalculation, MonitorType
 from testgen.common.models import get_current_session
 from testgen.common.models.test_definition import ThresholdMode, derive_threshold_mode
+from testgen.common.models.test_suite import PredictSensitivity
 from testgen.utils import dict_from_kv
 
 
@@ -117,7 +118,7 @@ def current_bands(
         }
 
     # Volume / Metric
-    if history_calculation == "PREDICT" and prediction and (mean := prediction.get("mean")):
+    if history_calculation == MonitorCalculation.PREDICT and prediction and (mean := prediction.get("mean")):
         latest = max(mean.keys())  # ms-epoch string keys; lexicographic == chronological for equal width
         lower = prediction.get(f"lower_tolerance|{predict_sensitivity}", {}).get(latest)
         upper = prediction.get(f"upper_tolerance|{predict_sensitivity}", {}).get(latest)
@@ -312,7 +313,8 @@ class Monitor:
         is_training = bool(points and points[-1].get("is_training"))
         bands = current_bands(
             self.test_type, self.history_calculation, self.prediction,
-            self.predict_sensitivity or "medium", self.lower_tolerance, self.upper_tolerance, self.threshold_value,
+            self.predict_sensitivity or PredictSensitivity.medium.value,
+            self.lower_tolerance, self.upper_tolerance, self.threshold_value,
             is_training=is_training,
         )
         threshold_mode, _lower, _upper = derive_threshold_mode(

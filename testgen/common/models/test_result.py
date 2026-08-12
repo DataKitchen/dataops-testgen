@@ -15,6 +15,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
 from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_suite import TestSuite
+from testgen.utils import dict_from_kv
 
 
 class TestResultStatus(enum.Enum):
@@ -169,25 +170,6 @@ class MonitorEvent:
     metric_name: str | None = None
 
 
-def _parse_kv_pairs(raw: str | None) -> dict[str, str]:
-    """Parse an ``input_parameters`` blob (``key=value; key=value; ...``) into a dict.
-
-    ``input_parameters`` is built with ``"; ".join(...)`` in ``execute_tests_query``
-    and read by the dashboard via ``dict_from_kv`` (default separator ``;``).
-    Tolerant of missing values, trailing/leading whitespace, empty strings.
-    Returns ``{}`` on empty input.
-    """
-    if not raw:
-        return {}
-    pairs: dict[str, str] = {}
-    for entry in raw.split(";"):
-        if "=" not in entry:
-            continue
-        key, _, value = entry.partition("=")
-        pairs[key.strip()] = value.strip()
-    return pairs
-
-
 def _build_monitor_event(row) -> MonitorEvent:
     """Translate one CTE row into a ``MonitorEvent``, populating type-specific extras."""
     is_pending = row["result_id"] is None
@@ -208,7 +190,7 @@ def _build_monitor_event(row) -> MonitorEvent:
         signal=row["result_signal"],
     )
 
-    params = _parse_kv_pairs(row["input_parameters"])
+    params = dict_from_kv(row["input_parameters"])
     if event.test_type in (MonitorType.VOLUME.value, MonitorType.METRIC.value):
         event.lower_bound = params.get("lower_tolerance") or None
         event.upper_bound = params.get("upper_tolerance") or None
