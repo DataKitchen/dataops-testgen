@@ -23,6 +23,9 @@ class TestgenSession(Singleton):
     auth: Authentication
     # streamlit_authenticator sets this attribute implicitly
     authentication_status: bool
+    # streamlit_authenticator reads this attribute to decide whether the reauthentication
+    # cookie may log the user back in
+    logout: bool
 
     initialized: bool
     page_pending_cookies: st.Page  # type: ignore
