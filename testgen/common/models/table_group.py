@@ -778,7 +778,8 @@ class TableGroup(Entity):
         cls,
         test_suite_id: str | UUID,
         table_name: str,
-        lookback_multiplier: int = 1,
+        start: datetime | None = None,
+        end: datetime | None = None,
     ) -> dict:
         """Per-table monitor series for all four monitor types.
 
@@ -786,11 +787,15 @@ class TableGroup(Entity):
         ``schema_events``, and ``metric_events`` shaped identically to the monitors
         dashboard's ``get_monitor_events_for_table``. A single batched query covers all
         four types; no N-query regression.
+
+        Passing both ``start`` and ``end`` windows the series by run start time instead of by
+        the suite's configured run count.
         """
         query, params = build_series_sql(
             test_suite_id=test_suite_id,
             table_name=table_name,
-            lookback_multiplier=lookback_multiplier,
+            start=start,
+            end=end,
         )
         rows = [dict(row) for row in get_current_session().execute(text(query), params).mappings().all()]
 

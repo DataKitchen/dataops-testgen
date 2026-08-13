@@ -529,7 +529,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             metric_events: van.derive(() => getValue(props.trends_dialog)?.metric_events ?? []),
             data_structure_logs: van.derive(() => getValue(props.trends_dialog)?.data_structure_logs),
             predictions: van.derive(() => getValue(props.trends_dialog)?.predictions),
-            extended_history: van.derive(() => getValue(props.trends_dialog)?.extended_history),
+            trend_range: van.derive(() => getValue(props.trends_dialog)?.trend_range),
             dialog: van.derive(() => getValue(props.trends_dialog)?.dialog),
         }),
         EditTableMonitors({ emit,

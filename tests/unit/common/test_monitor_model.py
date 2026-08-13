@@ -140,6 +140,44 @@ def test_build_series_sql_table_scope_orders_by_starttime():
     assert "ORDER BY active_runs.id" not in query
 
 
+def test_build_series_sql_table_scope_uses_run_count_window_without_bounds():
+    query, params = build_series_sql(test_suite_id=uuid4(), table_name="orders")
+    assert "ROW_NUMBER()" in query
+    assert "COALESCE(test_suites.monitor_lookback, 1)" in query
+    assert "range_start" not in query
+    assert "range_start" not in params
+
+
+def test_build_series_sql_table_scope_bounded_by_date_range():
+    start = datetime(2026, 6, 1, tzinfo=UTC)
+    end = datetime(2026, 6, 8, tzinfo=UTC)
+    query, params = build_series_sql(test_suite_id=uuid4(), table_name="orders", start=start, end=end)
+    assert "ROW_NUMBER()" not in query
+    assert "test_runs.test_starttime >= :range_start" in query
+    assert "test_runs.test_starttime < :range_end" in query
+    assert params["range_start"] == start
+    assert params["range_end"] == end
+
+
+def test_build_series_sql_table_scope_falls_back_when_only_one_bound_given():
+    query, params = build_series_sql(
+        test_suite_id=uuid4(), table_name="orders", start=datetime(2026, 6, 1, tzinfo=UTC),
+    )
+    assert "ROW_NUMBER()" in query
+    assert "range_start" not in params
+
+
+def test_build_series_sql_monitor_scope_ignores_date_bounds():
+    query, params = build_series_sql(
+        test_suite_id=uuid4(),
+        monitor_id=uuid4(),
+        start=datetime(2026, 6, 1, tzinfo=UTC),
+        end=datetime(2026, 6, 8, tzinfo=UTC),
+    )
+    assert "ROW_NUMBER()" in query
+    assert "range_start" not in params
+
+
 def _row(**overrides) -> dict:
     base = {
         "test_time": NOW,

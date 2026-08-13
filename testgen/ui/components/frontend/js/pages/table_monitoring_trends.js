@@ -43,6 +43,12 @@
  * @property {PredictionSet?} volume_trend
  * @property {PredictionSet?} freshness_trend
  *
+ * @typedef TrendRange
+ * @type {object}
+ * @property {string} preset
+ * @property {number?} start
+ * @property {number?} end
+ *
  * @typedef Properties
  * @type {object}
  * @property {FreshnessEvent[]} freshness_events
@@ -51,7 +57,7 @@
  * @property {MetricEventGroup[]} metric_events
  * @property {(DataStructureLog[])?} data_structure_logs
  * @property {Predictions?} predictions
- * @property {boolean} extended_history
+ * @property {TrendRange?} trend_range
  * @property {{ open: boolean, title: string }?} dialog
  */
 import van from '/app/static/js/van.min.js';
@@ -66,6 +72,16 @@ import { DualPane } from '/app/static/js/components/dual_pane.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
+import { SegmentedControl } from '/app/static/js/components/segmented_control.js';
+import { DateTimeRangeField } from '/app/static/js/components/datetime_range_field.js';
+import { DatePicker } from '/app/static/js/components/date_picker.js';
+import { Portal } from '/app/static/js/components/portal.js';
+import {
+  CUSTOM_RANGE,
+  DEFAULT_RANGE,
+  TREND_RANGE_PRESETS,
+  relativeRangeToBounds,
+} from '/app/static/js/time_range_utils.js';
 
 const { div, span } = van.tags;
 const { circle, clipPath, defs, foreignObject, g, line, path, rect, svg, text } = van.tags("http://www.w3.org/2000/svg");
@@ -111,6 +127,13 @@ const TableMonitoringTrend = (props) => {
     schemaChartSelection.val = event;
   };
 
+  const hasMonitorEvents = () => (
+    (getValue(props.freshness_events) ?? []).length > 0
+    || (getValue(props.volume_events) ?? []).length > 0
+    || (getValue(props.schema_events) ?? []).length > 0
+    || (getValue(props.metric_events) ?? []).length > 0
+  );
+
   const content = div(
     DualPane(
       {
@@ -125,6 +148,15 @@ const TableMonitoringTrend = (props) => {
         { class: '', style: 'width: 100%;' },
         () => {
           if (!getValue(props.dialog)?.open) return div();
+          if (!hasMonitorEvents()) {
+            return div(
+              { class: 'flex-row fx-justify-center trend-empty-message' },
+              span(
+                { class: 'text-secondary' },
+                'No monitor runs in the selected time range. Select a longer range to see trends for this table.',
+              ),
+            );
+          }
           return ChartsSection(props, { schemaChartSelection, getDataStructureLogs });
         },
       ),
@@ -155,7 +187,7 @@ const TableMonitoringTrend = (props) => {
         );
       },
     ),
-    ChartLegend({
+    () => hasMonitorEvents() ? ChartLegend({
       '': {
         items: [
           { icon: svg({ width: 10, height: 10 },
@@ -213,28 +245,126 @@ const TableMonitoringTrend = (props) => {
           { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
         ],
       },
-    }),
+    }) : div(),
   );
 
   const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
-  const historyToggle = () => {
-    const extendedHistory = getValue(props.extended_history) ?? false;
-    return Button({
-      label: extendedHistory ? 'Show default view' : 'Show more history',
-      icon: extendedHistory ? 'history_toggle_off' : 'history',
-      width: 'auto',
-      onclick: () => emit('ToggleExtendedHistory', { payload: {} }),
-    });
+  const selectedRange = van.state(getValue(props.trend_range)?.preset ?? DEFAULT_RANGE);
+  // Only depends on props.trend_range — assigning to selectedRange.val does not register it as a
+  // dependency, so the optimistic click update survives until the server round trip lands.
+  van.derive(() => {
+    selectedRange.val = getValue(props.trend_range)?.preset ?? DEFAULT_RANGE;
+  });
+
+  const rangeControlId = 'monitoring-trends-range-control';
+  const customPanelOpen = van.state(false);
+  const customStart = van.state(null);
+  const customEnd = van.state(null);
+  const customValid = van.state(false);
+
+  const renderedEventTimes = () => [
+    ...(getValue(props.freshness_events) ?? []),
+    ...(getValue(props.volume_events) ?? []),
+    ...(getValue(props.schema_events) ?? []),
+    ...(getValue(props.metric_events) ?? []).flatMap(group => group.events ?? []),
+  ].map(event => parseDate(event.time)).filter(Number.isFinite);
+
+  const seedCustomRange = () => {
+    const range = getValue(props.trend_range) ?? {};
+    if (range.preset === CUSTOM_RANGE && range.start && range.end) {
+      customStart.val = new Date(range.start);
+      customEnd.val = new Date(range.end);
+      return;
+    }
+
+    const bounds = relativeRangeToBounds(range.preset ?? DEFAULT_RANGE);
+    if (bounds) {
+      customStart.val = new Date(bounds.start);
+      customEnd.val = new Date(bounds.end);
+      return;
+    }
+
+    const times = renderedEventTimes();
+    const fallback = relativeRangeToBounds('7d');
+    customStart.val = new Date(times.length ? Math.min(...times) : fallback.start);
+    customEnd.val = new Date(times.length ? Math.max(...times) : fallback.end);
   };
+
+  const rangeSelector = SegmentedControl({
+    id: rangeControlId,
+    options: TREND_RANGE_PRESETS,
+    value: selectedRange,
+    pendingValue: van.derive(() => customPanelOpen.val ? CUSTOM_RANGE : null),
+    onChange: (preset) => {
+      if (preset === CUSTOM_RANGE) {
+        seedCustomRange();
+        customPanelOpen.val = true;
+        return;
+      }
+
+      customPanelOpen.val = false;
+      selectedRange.val = preset;
+      const bounds = relativeRangeToBounds(preset);
+      emit('SelectTrendRange', { payload: { preset, start: bounds?.start ?? null, end: bounds?.end ?? null } });
+    },
+  });
+
+  const customPanel = Portal(
+    {
+      target: rangeControlId,
+      align: 'right',
+      opened: customPanelOpen,
+      // The surface lives on the portal element itself: for a fixed anchor the portal sets
+      // overflow: auto, which would clip the shadow of anything styled inside it.
+      class: 'tg-trend-custom-range',
+      style: 'width: 560px; margin-top: 8px;',
+    },
+    () => div(
+      { class: 'flex-column fx-gap-4 tg-trend-custom-range--content', 'data-testid': 'custom-range-panel' },
+      DateTimeRangeField({
+        start: customStart,
+        end: customEnd,
+        onChange: (result) => customValid.val = result.valid,
+      }),
+      div(
+        { class: 'flex-row fx-gap-5' },
+        DatePicker({ value: customStart }),
+        DatePicker({ value: customEnd }),
+      ),
+      div(
+        { class: 'flex-row' },
+        Button({
+          type: 'stroked',
+          color: 'primary',
+          label: 'Set Custom',
+          width: 'auto',
+          disabled: van.derive(() => !customValid.val),
+          onclick: () => {
+            customPanelOpen.val = false;
+            selectedRange.val = CUSTOM_RANGE;
+            emit('SelectTrendRange', {
+              payload: {
+                preset: CUSTOM_RANGE,
+                start: customStart.rawVal.getTime(),
+                end: customEnd.rawVal.getTime(),
+              },
+            });
+          },
+        }),
+      ),
+    ),
+  );
+
   return Dialog(
     {
       title: dialogTitle,
       open: dialogOpen,
       onClose: () => { dialogOpen.val = false; emit('CloseTrendsDialog', {}); },
       width: '75rem',
-      headerActions: historyToggle,
+      headerActions: rangeSelector,
     },
     content,
+    customPanel,
   );
 };
 
@@ -834,6 +964,24 @@ stylesheet.replace(`
 
   .tick-text {
     font-size: 10px;
+  }
+
+  .trend-empty-message {
+    padding: 64px 24px;
+    text-align: center;
+  }
+
+  .tg-trend-custom-range {
+    border-radius: 8px;
+    background: var(--portal-background);
+    box-shadow: var(--portal-box-shadow);
+    /* Other portals open over the page background; this one opens over a dialog painted the same
+       color, so the shadow alone does not separate it. */
+    border: 1px solid var(--border-color);
+  }
+
+  .tg-trend-custom-range--content {
+    padding: 16px;
   }
 
   .chart-legend {

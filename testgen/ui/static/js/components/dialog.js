@@ -121,6 +121,13 @@ stylesheet.replace(`
 
 .tg-dialog-header-actions {
     margin-left: auto;
+    /* Clear the close button, which is absolutely positioned 0.75rem from the right and 3rem wide. */
+    margin-right: 1rem;
+    /* The header pads 1.5rem top against 0.75rem bottom, so flex-centered content lands half that
+       difference below the header's true center. Shift back up onto the close button's line without
+       taking part in layout, which would grow the header. */
+    position: relative;
+    top: -0.375rem;
     font-size: initial;
     font-weight: initial;
 }

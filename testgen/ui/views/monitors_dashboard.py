@@ -74,6 +74,7 @@ EDIT_TABLE_MONITORS_DIALOG_KEY = "monitors:edit_table_monitors_table"
 TABLE_TRENDS_DIALOG_KEY = "monitors:trends_table"
 SCHEMA_CHANGES_DIALOG_KEY = "monitors:schema_changes_payload"
 EDIT_NOTIFICATIONS_DIALOG_KEY = "monitors:edit_notifications_open"
+DEFAULT_TREND_RANGE = {"preset": "default", "start": None, "end": None}
 
 
 class MonitorsDashboardPage(Page):
@@ -540,7 +541,7 @@ def build_table_trends_data(
 ) -> tuple[dict, dict]:
     table_name = payload.get("table_name")
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
-    extended_history_key = f"table_monitoring_trends:extended:{table_group.monitor_test_suite_id}:{table_name}"
+    trend_range_key = f"table_monitoring_trends:range:{table_group.monitor_test_suite_id}:{table_name}"
 
     def on_show_data_structure_logs(payload):
         try:
@@ -550,15 +551,19 @@ def build_table_trends_data(
         except Exception:  # noqa: S110
             pass
 
-    def on_toggle_extended_history(_payload):
-        st.session_state[extended_history_key] = not st.session_state.get(extended_history_key, False)
+    def on_select_trend_range(payload):
+        st.session_state[trend_range_key] = {
+            "preset": payload.get("preset") or DEFAULT_TREND_RANGE["preset"],
+            "start": payload.get("start"),
+            "end": payload.get("end"),
+        }
 
     def on_close_trends(_payload=None):
         st.session_state.pop(TABLE_TRENDS_DIALOG_KEY, None)
         st.session_state.pop(DIALOG_AUTO_OPENED_KEY, None)
         Router().set_query_params({"table_name": None})
 
-    extended_history = st.session_state.get(extended_history_key, False)
+    trend_range = st.session_state.get(trend_range_key, DEFAULT_TREND_RANGE)
 
     selected_data_point = get_selected_data_point()
     data_structure_logs = None
@@ -567,8 +572,14 @@ def build_table_trends_data(
             table_group.id, table_name, *selected_data_point,
         )
 
-    lookback_multiplier = 3 if extended_history else 1
-    events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name, lookback_multiplier)
+    range_start, range_end = None, None
+    if (start_ms := trend_range.get("start")) and (end_ms := trend_range.get("end")):
+        range_start = datetime.fromtimestamp(start_ms / 1000, UTC)
+        range_end = datetime.fromtimestamp(end_ms / 1000, UTC)
+
+    events = get_monitor_events_for_table(
+        table_group.monitor_test_suite_id, table_name, range_start, range_end,
+    )
     definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
         TestDefinition.table_name == table_name,
@@ -584,9 +595,10 @@ def build_table_trends_data(
         monitor_lookback = test_suite.monitor_lookback
         predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
 
-        last_run_time_per_test_key: dict[str, datetime] = {
-            "volume_trend": max(e["time"] for e in events["volume_events"]),
-        }
+        # A date-bounded window can hold no runs at all, so every lookup below is optional.
+        last_run_time_per_test_key: dict[str, datetime] = {}
+        if volume_times := [e["time"] for e in events["volume_events"]]:
+            last_run_time_per_test_key["volume_trend"] = max(volume_times)
         for metric_group in events["metric_events"]:
             metric_definition_id = metric_group["test_definition_id"]
             last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
@@ -692,20 +704,22 @@ def build_table_trends_data(
         **make_json_safe(events),
         "data_structure_logs": make_json_safe(data_structure_logs),
         "predictions": predictions,
-        "extended_history": extended_history,
+        "trend_range": trend_range,
         "dialog": dialog,
     }
     handlers = {
         "on_ShowDataStructureLogs_change": on_show_data_structure_logs,
-        "on_ToggleExtendedHistory_change": on_toggle_extended_history,
+        "on_SelectTrendRange_change": on_select_trend_range,
         "on_CloseTrendsDialog_change": on_close_trends,
     }
     return data, handlers
 
 
 @st.cache_data(show_spinner=False)
-def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_multiplier: int = 1) -> dict:
-    return TableGroup.get_table_monitor_series(test_suite_id, table_name, lookback_multiplier)
+def get_monitor_events_for_table(
+    test_suite_id: str, table_name: str, start: datetime | None = None, end: datetime | None = None,
+) -> dict:
+    return TableGroup.get_table_monitor_series(test_suite_id, table_name, start, end)
 
 
 @st.cache_data(show_spinner=False)
