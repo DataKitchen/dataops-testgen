@@ -91,7 +91,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(CAST(interval_minutes AS STRING), 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2417'
     test_type: Freshness_Trend
     sql_flavor: databricks
@@ -141,7 +141,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(interval_minutes::STRING, 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2217'
     test_type: Freshness_Trend
     sql_flavor: mssql
@@ -191,7 +191,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(CAST(interval_minutes AS VARCHAR), 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2317'
     test_type: Freshness_Trend
     sql_flavor: postgresql
@@ -241,7 +241,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(interval_minutes::TEXT, 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2017'
     test_type: Freshness_Trend
     sql_flavor: redshift
@@ -291,7 +291,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2517'
     test_type: Freshness_Trend
     sql_flavor: redshift_spectrum
@@ -341,7 +341,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2117'
     test_type: Freshness_Trend
     sql_flavor: snowflake
@@ -391,7 +391,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2817'
     test_type: Freshness_Trend
     sql_flavor: oracle
@@ -442,7 +442,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(TO_CHAR(interval_minutes), 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '2817'
     test_type: Freshness_Trend
     sql_flavor: sap_hana
@@ -492,7 +492,7 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(TO_VARCHAR(interval_minutes), 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
   - id: '10009'
     test_type: Freshness_Trend
     sql_flavor: salesforce_data360
@@ -542,4 +542,4 @@ test_types:
           WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
           ELSE COALESCE(CAST(interval_minutes AS VARCHAR), 'Unknown')
         END AS result_signal
-      FROM test_data;
+      FROM test_data
