@@ -15,7 +15,7 @@ from testgen.common.freshness_service import (
     next_business_day_start,
 )
 from testgen.common.models.test_suite import PredictSensitivity
-from testgen.common.time_series_service import NotEnoughData, get_sarimax_forecast
+from testgen.common.time_series_service import MIN_TRAIN_VALUES, NotEnoughData, get_sarimax_forecast
 
 from .conftest import _make_freshness_history
 
@@ -651,3 +651,24 @@ class Test_GetSarimaxForecast_EventSpace:
         assert len(forecast) == 5
         assert forecast["mean"].notna().all()
         assert forecast["se"].notna().all()
+
+
+def _daily_history(n_points: int) -> pd.DataFrame:
+    """Contiguous daily series so the calendar resample keeps every point."""
+    index = pd.date_range("2026-01-01", periods=n_points, freq="1D")
+    values = np.arange(100.0, 100.0 + n_points)
+    return pd.DataFrame({"result_signal": values}, index=index)
+
+
+def test_sarimax_raises_below_min_train_values():
+    history = _daily_history(MIN_TRAIN_VALUES - 1)
+    with pytest.raises(NotEnoughData):
+        get_sarimax_forecast(history, num_forecast=1)
+
+
+def test_sarimax_succeeds_at_min_train_values():
+    history = _daily_history(MIN_TRAIN_VALUES)
+    forecast = get_sarimax_forecast(history, num_forecast=1)
+    assert len(forecast) == 1
+    assert forecast["mean"].notna().all()
+    assert forecast["se"].notna().all()
