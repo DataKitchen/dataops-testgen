@@ -26,7 +26,7 @@ from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
-SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "synapse_mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
+SQLFlavorCode = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "azure_mssql", "onelake_mssql", "synapse_mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 
 # Fallback when a connection row has a NULL max_query_chars (no DB default; older
 # rows / non-UI insert paths may not seed it). Matches the UI's non-Salesforce
@@ -79,6 +79,7 @@ class Connection(Entity):
     warehouse: str = Column(String)
     service_account_key: JSON_TYPE = Column(EncryptedJson)
     connect_with_identity: bool = Column(Boolean, default=False)
+    connect_with_service_principal: bool = Column(Boolean, default=False)
 
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)

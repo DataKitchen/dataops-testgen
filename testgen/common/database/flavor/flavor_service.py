@@ -29,6 +29,7 @@ class ConnectionParams(TypedDict):
     http_path: str
     service_account_key: dict[str,Any]
     connect_with_identity: bool
+    connect_with_service_principal: bool
     sql_flavor_code: str
 
 
@@ -52,6 +53,7 @@ class ResolvedConnectionParams:
     warehouse: str = ""
     service_account_key: dict[str, Any] | None = None
     connect_with_identity: bool = False
+    connect_with_service_principal: bool = False
 
 
 def _decrypt_if_needed(value: Any) -> str | None:
@@ -88,6 +90,7 @@ def resolve_connection_params(connection_params: ConnectionParams) -> ResolvedCo
         warehouse=connection_params.get("warehouse") or "",
         service_account_key=connection_params.get("service_account_key"),
         connect_with_identity=connection_params.get("connect_with_identity") or False,
+        connect_with_service_principal=connection_params.get("connect_with_service_principal") or False,
     )
 
 
@@ -116,7 +119,20 @@ class FlavorService:
 
     qualifies_table_refs_with_schema = True
     metadata_via_api = False
-    sampleable_object_types: frozenset[ObjectType] | None = None
+
+    def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:  # noqa: ARG002
+        """Object types that can be sampled with TABLESAMPLE.
+
+        ``None`` = sample regardless of type; a non-empty frozenset =
+        restrict to those types; an empty frozenset = disable sampling.
+        """
+        return None
+
+    def table_hint(self, sql_flavor_code: str) -> str:  # noqa: ARG002
+        """SQL fragment appended after a table reference to control read
+        locking. Empty when the flavor doesn't use hints.
+        """
+        return ""
 
     def get_schema_columns(self, _params: ResolvedConnectionParams, _schema: str) -> list[ColumnChars] | None:
         """Return column metadata without querying information_schema.

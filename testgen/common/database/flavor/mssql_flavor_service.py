@@ -11,8 +11,18 @@ class MssqlFlavorService(FlavorService):
     escaped_underscore = "[_]"
     row_limiting_clause = "top"
     url_scheme = "mssql+pyodbc"
-    # TABLESAMPLE is rejected on views; SQL Server has no materialized views, so only base tables.
-    sampleable_object_types = frozenset({ObjectType.TABLE})
+
+    def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:
+        # Fabric rejects TABLESAMPLE; SQL Server accepts it only on base tables.
+        if sql_flavor_code == "onelake_mssql":
+            return frozenset()
+        return frozenset({ObjectType.TABLE})
+
+    def table_hint(self, sql_flavor_code: str) -> str:
+        # Fabric rejects WITH (NOLOCK).
+        if sql_flavor_code == "onelake_mssql":
+            return ""
+        return "WITH (NOLOCK)"
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         connection_url = URL.create(
@@ -31,6 +41,16 @@ class MssqlFlavorService(FlavorService):
             connection_url = connection_url._replace(username=None, password=None).update_query_dict({
                 "encrypt": "yes",
                 "authentication": "ActiveDirectoryMsi",
+            })
+
+        # ODBC Driver 18 masks an Entra token-exchange failure as an HYT00
+        # login-timeout unless TrustServerCertificate is set explicitly.
+        if params.connect_with_service_principal:
+            connection_url = connection_url.update_query_dict({
+                "encrypt": "yes",
+                "trustservercertificate": "no",
+                "authentication": "ActiveDirectoryServicePrincipal",
+                "connectretrycount": "4",
             })
 
         return connection_url.render_as_string(hide_password=False)

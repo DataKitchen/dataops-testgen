@@ -161,7 +161,14 @@ def test_connection(
         mode = connection_mode if inline else effective_mode(connection, connection_mode)
         apply_connection_params(connection, connection.sql_flavor_code, mode, connection_params or {})
 
-    normalize_auth_fields(connection)
+    # normalize_auth_fields raises ValueError on invalid combinations (e.g. both
+    # Entra ID auth flags set). MCP callers need MCPUserError for the message to
+    # reach the caller instead of collapsing to "unexpected error"; other callers
+    # (UI, CLI) see the raw ValueError, which is the shared-code convention.
+    try:
+        normalize_auth_fields(connection)
+    except ValueError as e:
+        raise MCPUserError(str(e)) from e
     # No-op for stored connections; keeps the inline-test contract identical to create.
     apply_connection_defaults(connection)
 

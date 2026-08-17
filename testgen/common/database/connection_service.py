@@ -112,14 +112,38 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
 
 
 def normalize_auth_fields(connection: Connection) -> None:
-    """Clear credential columns the active auth mode doesn't use.
-
-    Mirrors the UI's pre-save scrub at ``ui/views/connections.py`` so flipping
-    auth modes doesn't leave stale opposite-mode values behind. Databricks OAuth
+    """Clear credential columns the active auth mode doesn't use so flipping
+    modes doesn't leave stale opposite-mode values behind. Databricks OAuth
     stores the client secret in ``project_pw_encrypted`` despite
     ``connect_by_key=True``, so it sticks with the password path.
     """
     code = connection.sql_flavor_code
+
+    if connection.connect_with_identity and connection.connect_with_service_principal:
+        raise ValueError(
+            "connect_with_identity and connect_with_service_principal are mutually exclusive; "
+            "only one Entra ID auth mode can be active."
+        )
+    if connection.connect_with_service_principal and code not in ("azure_mssql", "synapse_mssql", "onelake_mssql"):
+        raise ValueError(
+            "connect_with_service_principal is only supported for the Azure SQL Database "
+            "(azure_mssql), Azure Synapse Analytics (synapse_mssql), and OneLake (onelake_mssql) flavors."
+        )
+    if connection.connect_with_service_principal and connection.connect_by_url:
+        # URL-mode connect skips the ODBC driver-keyword machinery where
+        # ``Authentication=ActiveDirectoryServicePrincipal`` is set, so SPN + URL
+        # silently degrades to SQL login.
+        raise ValueError(
+            "connect_with_service_principal cannot be combined with connect_by_url; "
+            "Service Principal auth requires the Host / Port / Database fields, not a URL."
+        )
+    if connection.connect_with_service_principal:
+        halves = (connection.project_user or "").split("@")
+        if len(halves) != 2 or not all(part.strip() for part in halves):
+            raise ValueError(
+                "connect_with_service_principal requires project_user to be "
+                "``<client-id>@<tenant-id>`` with non-empty parts."
+            )
 
     uses_private_key = bool(connection.connect_by_key) and code != "databricks"
     if uses_private_key:

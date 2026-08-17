@@ -76,6 +76,7 @@ CREATE TABLE connections (
    connect_by_url BOOLEAN default FALSE,
    connect_by_key BOOLEAN DEFAULT FALSE,
    connect_with_identity BOOLEAN DEFAULT FALSE,
+   connect_with_service_principal BOOLEAN DEFAULT FALSE,
    private_key BYTEA,
    private_key_passphrase BYTEA,
    http_path              VARCHAR(200),

@@ -32,6 +32,7 @@
  * @property {string?} url
  * @property {boolean} connect_by_key
  * @property {boolean} connect_with_identity
+ * @property {boolean} connect_with_service_principal
  * @property {string?} private_key
  * @property {string?} private_key_passphrase
  * @property {string?} http_path
@@ -78,6 +79,7 @@ const defaultPorts = {
     redshift: '5439',
     redshift_spectrum: '5439',
     azure_mssql: '1433',
+    onelake_mssql: '1433',
     synapse_mssql: '1433',
     mssql: '1433',
     postgresql: '5432',
@@ -139,6 +141,7 @@ const ConnectionForm = (props, saveButton) => {
         url: connection?.url ?? '',
         service_account_key: connection?.service_account_key ?? '',
         connect_with_identity: connection?.connect_with_identity ?? false,
+        connect_with_service_principal: connection?.connect_with_service_principal ?? false,
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
@@ -195,6 +198,16 @@ const ConnectionForm = (props, saveButton) => {
             dynamicConnectionUrl,
         ),
         synapse_mssql: () => SynapseMSSQLForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('mssql_form', isValid);
+            },
+            connection,
+            dynamicConnectionUrl,
+        ),
+        onelake_mssql: () => OneLakeMSSQLForm(
             updatedConnection,
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
             (formValue, isValid) => {
@@ -295,9 +308,26 @@ const ConnectionForm = (props, saveButton) => {
         validityPerField.val = {...validityPerField.val, [field]: validity};
     }
 
+    // Reset the Entra auth flags before constructing the destination form so
+    // its own initial emit — which fires synchronously inside the constructor
+    // and reads ``initialAuthMode`` from the (immutable) ``connection`` prop —
+    // is the last write to those flags for the tick. Doing this in a separate
+    // downstream derive would race the form's emit and clobber it.
+    let previousFlavorCode = connectionFlavor.rawVal;
     const authenticationForm = van.derive(() => {
         const selectedFlavorCode = connectionFlavor.val;
+        const flavorChanged = selectedFlavorCode !== previousFlavorCode;
+        previousFlavorCode = selectedFlavorCode;
         validityPerField.val = {connection_name: validityPerField.val.connection_name};
+
+        if (flavorChanged) {
+            updatedConnection.val = {
+                ...updatedConnection.val,
+                connect_with_identity: false,
+                connect_with_service_principal: false,
+            };
+        }
+
         const flavor = getValue(props.flavors).find(f => f.value === selectedFlavorCode);
         return authenticationForms[flavor.value]();
     });
@@ -446,7 +476,7 @@ const RedshiftForm = (
             project_user: connectionUsername.val,
             project_pw_encrypted: connectionPassword.val,
             connect_by_url: connectByUrl.val,
-            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
+            url: connectByUrl.val ? connectionUrl.val : '',
             connect_by_key: false,
         }, isValid.val);
     });
@@ -600,14 +630,46 @@ const AzureMSSQLForm = (
     dynamicConnectionUrl,
 ) => {
     const isValid = van.state(true);
-    const connectByUrl = van.state(connection.rawVal.connect_by_url ?? false);
+    // OneLake rejects SQL logins and can't use URL-mode connect.
+    const isOneLake = flavor.value === 'onelake_mssql';
+    const supportsServicePrincipal = ['azure_mssql', 'synapse_mssql'].includes(flavor.value) || isOneLake;
+    const supportsPassword = !isOneLake;
+    const supportsUrlMode = !isOneLake;
+    const connectByUrl = van.state(supportsUrlMode ? (connection.rawVal.connect_by_url ?? false) : false);
     const connectionHost = van.state(connection.rawVal.project_host ?? '');
     const connectionPort = van.state(connection.rawVal.project_port || defaultPorts[flavor.flavor]);
     const connectionDatabase = van.state(connection.rawVal.project_db ?? '');
     const connectionUsername = van.state(connection.rawVal.project_user ?? '');
     const connectionPassword = van.state(connection.rawVal?.project_pw_encrypted ?? '');
     const connectionUrl = van.state(connection.rawVal?.url ?? '');
-    const connectWithIdentity = van.state(connection.rawVal?.connect_with_identity ?? '');
+    // SPN mode splits the stored ``project_user`` (``<client-id>@<tenant-id>``)
+    // into two form fields for a friendlier UX; the derive block below re-joins
+    // them so the model contract (single project_user column) stays unchanged.
+    const initialSpnParts = (connection.rawVal.project_user ?? '').split('@');
+    const initialSpnHasBoth = initialSpnParts.length >= 2 && initialSpnParts[0] && initialSpnParts[1];
+    const connectionClientId = van.state(initialSpnHasBoth ? initialSpnParts[0] : '');
+    const connectionTenantId = van.state(initialSpnHasBoth ? initialSpnParts.slice(1).join('@') : '');
+    // Tri-state auth: 'password' | 'identity' | 'service_principal'. Derived from the
+    // two mutually-exclusive bools on the connection; the derive block below re-emits
+    // them to keep the model contract unchanged. When Password isn't offered
+    // (OneLake), fall back to service_principal as the default.
+    const initialAuthMode = connection.rawVal?.connect_with_service_principal
+        ? 'service_principal'
+        : (connection.rawVal?.connect_with_identity
+            ? 'identity'
+            : (supportsPassword ? 'password' : 'service_principal'));
+    const authMode = van.state(initialAuthMode);
+
+    // Keep connectionUsername in sync with the SPN sub-fields. Only writes when
+    // in SPN mode so switching to Password mode preserves whatever the user
+    // typed in the plain Username input.
+    van.derive(() => {
+        if (authMode.val === 'service_principal') {
+            const cid = connectionClientId.val;
+            const tid = connectionTenantId.val;
+            connectionUsername.val = (cid && tid) ? `${cid}@${tid}` : '';
+        }
+    });
 
     const validityPerField = {};
 
@@ -619,9 +681,12 @@ const AzureMSSQLForm = (
             project_user: connectionUsername.val,
             project_pw_encrypted: connectionPassword.val,
             connect_by_url: connectByUrl.val,
-            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
+            // Backend rebuilds the URL from Host/Port/Database in Host mode;
+            // don't persist the on-screen preview.
+            url: connectByUrl.val ? connectionUrl.val : '',
             connect_by_key: false,
-            connect_with_identity: connectWithIdentity.val,
+            connect_with_identity: authMode.val === 'identity',
+            connect_with_service_principal: authMode.val === 'service_principal',
         }, isValid.val);
     });
 
@@ -637,22 +702,26 @@ const AzureMSSQLForm = (
         div(
             { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
             Caption({content: 'Server', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
-            RadioGroup({
-                label: 'Connect by',
-                options: [
-                    {
-                        label: 'Host',
-                        value: false,
-                    },
-                    {
-                        label: 'URL',
-                        value: true,
-                    },
-                ],
-                value: connectByUrl,
-                onChange: (value) => connectByUrl.val = value,
-                layout: 'inline',
-            }),
+            // Reactive so `disabled` re-evaluates when authMode changes.
+            supportsUrlMode
+                ? () => RadioGroup({
+                    label: 'Connect by',
+                    options: [
+                        {
+                            label: 'Host',
+                            value: false,
+                        },
+                        {
+                            label: 'URL',
+                            value: true,
+                        },
+                    ],
+                    value: connectByUrl,
+                    onChange: (value) => connectByUrl.val = value,
+                    layout: 'inline',
+                    disabled: authMode.val === 'service_principal',
+                })
+                : null,
             div(
                 { class: 'flex-row fx-gap-3 fx-flex' },
                 Input({
@@ -704,25 +773,27 @@ const AzureMSSQLForm = (
                     requiredIf(() => !connectByUrl.val),
                 ],
             }),
-            () => div(
-                { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
-                Input({
-                    label: 'URL',
-                    value: connectionUrl,
-                    class: 'fx-flex',
-                    name: 'url_suffix',
-                    prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
-                    disabled: !connectByUrl.val,
-                    onChange: (value, state) => {
-                        connectionUrl.val = value;
-                        validityPerField['url_suffix'] = state.valid;
-                        isValid.val = Object.values(validityPerField).every(v => v);
-                    },
-                    validators: [
-                        requiredIf(() => connectByUrl.val),
-                    ],
-                }),
-            ),
+            supportsUrlMode
+                ? () => div(
+                    { class: 'flex-row fx-gap-3 fx-align-stretch', style: 'position: relative;' },
+                    Input({
+                        label: 'URL',
+                        value: connectionUrl,
+                        class: 'fx-flex',
+                        name: 'url_suffix',
+                        prefix: span({ style: 'white-space: nowrap; color: var(--disabled-text-color)' }, extractPrefix(dynamicConnectionUrl.val)),
+                        disabled: !connectByUrl.val,
+                        onChange: (value, state) => {
+                            connectionUrl.val = value;
+                            validityPerField['url_suffix'] = state.valid;
+                            isValid.val = Object.values(validityPerField).every(v => v);
+                        },
+                        validators: [
+                            requiredIf(() => connectByUrl.val),
+                        ],
+                    }),
+                )
+                : null,
         ),
 
         div(
@@ -732,42 +803,103 @@ const AzureMSSQLForm = (
             RadioGroup({
                 label: 'Connection Strategy',
                 options: [
-                    {label: 'Connect By Password', value: false},
-                    {label: 'Connect with Managed Identity', value: true},
+                    ...(supportsPassword
+                        ? [{label: 'Connect By Password', value: 'password'}]
+                        : []),
+                    {label: 'Connect with Managed Identity', value: 'identity'},
+                    ...(supportsServicePrincipal
+                        ? [{label: 'Connect with Service Principal', value: 'service_principal'}]
+                        : []),
                 ],
-                value: connectWithIdentity,
-                onChange: (value) => connectWithIdentity.val = value,
+                value: authMode,
+                onChange: (value) => {
+                    authMode.val = value;
+                    // SPN + URL mode are incompatible — flip URL off.
+                    if (value === 'service_principal' && connectByUrl.val) {
+                        connectByUrl.val = false;
+                    }
+                    // Leaving SPN: drop the compound project_user so the plain
+                    // Username input doesn't render it verbatim.
+                    if (value !== 'service_principal') {
+                        connectionUsername.val = '';
+                    }
+                    // Un-rendered Inputs don't re-validate; drop stale keys.
+                    delete validityPerField['db_user'];
+                    delete validityPerField['db_client_id'];
+                    delete validityPerField['db_tenant_id'];
+                    // Entering SPN: hold Save disabled until the two identity
+                    // Inputs mount and validate, so an empty form doesn't
+                    // briefly read as saveable.
+                    isValid.val = value === 'service_principal'
+                        ? false
+                        : Object.values(validityPerField).every(v => v);
+                },
                 layout: 'inline',
             }),
 
             () => {
-                const _connectWithIdentity = connectWithIdentity.val;
-                if (_connectWithIdentity) {
+                const _authMode = authMode.val;
+                if (_authMode === 'identity') {
                     return div(
                         {class: 'flex-row p-4 fx-justify-center text-secondary'},
                         'Microsoft Entra ID credentials configured on host machine will be used',
                     );
                 }
 
+                const isServicePrincipal = _authMode === 'service_principal';
                 return div(
                     {class: 'flex-column fx-gap-1'},
-                    Input({
-                        name: 'db_user',
-                        label: 'Username',
-                        value: connectionUsername,
-                        onChange: (value, state) => {
-                            connectionUsername.val = value;
-                            validityPerField['db_user'] = state.valid;
-                            isValid.val = Object.values(validityPerField).every(v => v);
-                        },
-                        validators: [
-                            requiredIf(() => !connectWithIdentity.val),
-                            maxLength(50),
-                        ],
-                    }),
+                    isServicePrincipal
+                        ? div(
+                              {class: 'flex-row fx-gap-3 fx-flex'},
+                              Input({
+                                  name: 'db_client_id',
+                                  label: 'Client ID',
+                                  value: connectionClientId,
+                                  class: 'fx-flex',
+                                  onChange: (value, state) => {
+                                      connectionClientId.val = value;
+                                      validityPerField['db_client_id'] = state.valid;
+                                      isValid.val = Object.values(validityPerField).every(v => v);
+                                  },
+                                  validators: [
+                                      requiredIf(() => authMode.val === 'service_principal'),
+                                      maxLength(64),
+                                  ],
+                              }),
+                              Input({
+                                  name: 'db_tenant_id',
+                                  label: 'Tenant ID',
+                                  value: connectionTenantId,
+                                  class: 'fx-flex',
+                                  onChange: (value, state) => {
+                                      connectionTenantId.val = value;
+                                      validityPerField['db_tenant_id'] = state.valid;
+                                      isValid.val = Object.values(validityPerField).every(v => v);
+                                  },
+                                  validators: [
+                                      requiredIf(() => authMode.val === 'service_principal'),
+                                      maxLength(64),
+                                  ],
+                              }),
+                          )
+                        : Input({
+                              name: 'db_user',
+                              label: 'Username',
+                              value: connectionUsername,
+                              onChange: (value, state) => {
+                                  connectionUsername.val = value;
+                                  validityPerField['db_user'] = state.valid;
+                                  isValid.val = Object.values(validityPerField).every(v => v);
+                              },
+                              validators: [
+                                  requiredIf(() => authMode.val === 'password'),
+                                  maxLength(50),
+                              ],
+                          }),
                     Input({
                         name: 'password',
-                        label: 'Password',
+                        label: isServicePrincipal ? 'Password (Client Secret)' : 'Password',
                         value: connectionPassword,
                         type: 'password',
                         passwordSuggestions: false,
@@ -777,6 +909,15 @@ const AzureMSSQLForm = (
                             validityPerField['password'] = state.valid;
                             isValid.val = Object.values(validityPerField).every(v => v);
                         },
+                        validators: [
+                            // Required on new SPN or on any switch INTO SPN; otherwise the
+                            // stored SQL-login password would be silently reused as the secret.
+                            requiredIf(() =>
+                                authMode.val === 'service_principal'
+                                && (authMode.val !== initialAuthMode
+                                    || !(originalConnection?.connection_id && originalConnection?.project_pw_encrypted))
+                            ),
+                        ],
                     }),
                 )
             },
@@ -785,6 +926,8 @@ const AzureMSSQLForm = (
 };
 
 const SynapseMSSQLForm = AzureMSSQLForm;
+
+const OneLakeMSSQLForm = AzureMSSQLForm;
 
 const MSSQLForm = RedshiftForm;
 
@@ -825,7 +968,7 @@ const DatabricksForm = (
             project_pw_encrypted: connectionPassword.val,
             http_path: connectionHttpPath.val,
             connect_by_url: connectByUrl.val,
-            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
+            url: connectByUrl.val ? connectionUrl.val : '',
             connect_by_key: useOAuth.val,
         }, isValid.val);
     });
@@ -1076,7 +1219,7 @@ const SnowflakeForm = (
             project_user: connectionUsername.val,
             project_pw_encrypted: connectionPassword.val,
             connect_by_url: connectByUrl.val,
-            url: connectByUrl.val ? connectionUrl.val : connectionUrl.rawVal,
+            url: connectByUrl.val ? connectionUrl.val : '',
             connect_by_key: connectByKey.val,
             private_key: connectionPrivateKey.val,
             private_key_passphrase: clearPrivateKeyPhrase.val ? clearSentinel : connectionPrivateKeyPassphrase.val,
@@ -1589,7 +1732,7 @@ function shouldRefreshUrl(previous, current) {
         return false;
     }
 
-    const fields = ['sql_flavor', 'project_host', 'project_port', 'project_db', 'project_user', 'connect_by_key', 'http_path', 'warehouse', 'connect_with_identity'];
+    const fields = ['sql_flavor', 'project_host', 'project_port', 'project_db', 'project_user', 'connect_by_key', 'http_path', 'warehouse', 'connect_with_identity', 'connect_with_service_principal'];
     return fields.some((fieldName) => previous[fieldName] !== current[fieldName]);
 }
 

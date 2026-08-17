@@ -3,7 +3,7 @@ from uuid import UUID
 
 from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
-from testgen.common.database.database_service import process_conditionals, replace_params
+from testgen.common.database.database_service import get_flavor_service, process_conditionals, replace_params
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
@@ -223,8 +223,10 @@ class ProfilingSQL:
         # Runs on Target database
         general_type = column_chars.general_type
         do_sample = bool(table_sampling)
+        table_hint = get_flavor_service(self.flavor).table_hint(self.connection.sql_flavor_code)
 
         extra_params = {
+            "TABLE_HINT": table_hint,
             "do_sample": do_sample,
             "is_type_A": general_type == "A",
             "is_type_N": general_type == "N",
@@ -274,7 +276,10 @@ class ProfilingSQL:
         return self._get_query(
             "project_secondary_profiling_query.sql",
             f"flavors/{self.flavor}/profiling",
-            extra_params={"do_sample_bool": table_sampling is not None},
+            extra_params={
+                "TABLE_HINT": get_flavor_service(self.flavor).table_hint(self.connection.sql_flavor_code),
+                "do_sample_bool": table_sampling is not None,
+            },
             column_chars=column_chars,
             table_sampling=table_sampling,
         )
