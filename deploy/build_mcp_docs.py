@@ -8,6 +8,10 @@ a single Markdown page listing prompts, tools, and resources. Tools are
 grouped by the ``_DOC_GROUP`` constant defined on each tool module — when
 adding a new tool module, declare ``_DOC_GROUP = "..."`` so the new tools
 land under the right heading automatically.
+
+The page is an overview index: each entry is one bullet carrying the opening
+sentence of its docstring. Detail beyond that sentence is omitted from the page
+by design; it still reaches MCP clients, which receive the full description.
 """
 
 import argparse
@@ -21,7 +25,9 @@ from testgen.mcp.server import build_mcp_server
 from testgen.mcp.tools.common import DocGroup
 
 _DEFAULT_OUTPUT = Path("docs/mcp/supported-tools.md")
-_ARGS_HEADER_RE = re.compile(r"^\s*Args:\s*$", re.MULTILINE)
+_SENTENCE_END_RE = re.compile(r"\.(?=\s|$)")
+# Periods closing an abbreviation rather than a sentence — the summary runs on past them.
+_ABBREVIATIONS = ("e.g.", "i.e.", "etc.", "vs.", "approx.")
 
 # Order in which tool groups appear on the page. Each entry is a ``DocGroup``
 # member; tools whose module declares a ``_DOC_GROUP`` not in this list are
@@ -38,15 +44,21 @@ _FALLBACK_GROUP = "Other tools"
 
 
 def _short_description(docstring: str) -> str:
-    """Return the first prose paragraph of a docstring, stripped of Args/Returns sections."""
+    """Return the opening sentence of a docstring — the entry's one-line summary.
+
+    The search is bounded by the first paragraph, so a docstring whose opening sentence
+    carries no closing period yields that paragraph rather than reaching into later ones.
+    """
     if not docstring:
         return ""
     text = textwrap.dedent(docstring).strip()
-    match = _ARGS_HEADER_RE.search(text)
-    if match:
-        text = text[: match.start()].rstrip()
     first_paragraph = text.split("\n\n", 1)[0]
-    return " ".join(line.strip() for line in first_paragraph.splitlines())
+    summary = " ".join(line.strip() for line in first_paragraph.splitlines())
+    for sentence_end in _SENTENCE_END_RE.finditer(summary):
+        sentence = summary[: sentence_end.end()]
+        if not sentence.endswith(_ABBREVIATIONS):
+            return sentence
+    return summary
 
 
 def _entry_name(item: Any) -> str:

@@ -142,8 +142,10 @@ def list_notifications(
 def get_notification(
     notification_id: Annotated[str, Field(description="UUID of the notification, e.g. from ``list_notifications``.")],
 ) -> str:
-    """Get full details of an email notification: event type, trigger or thresholds,
-    scope (project, test suite, table group, or scorecard), and recipients.
+    """Get full details of an email notification.
+
+    Includes the event type, trigger or thresholds, scope (project, test suite, table
+    group, or scorecard), and recipients.
 
     Works on any notification, including ``Monitor Alert`` notifications — those are
     created through monitor setup rather than this tool, but can be viewed here.
