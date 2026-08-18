@@ -80,7 +80,10 @@ def _append_type_parameters(doc: MdDoc, tt: TestType) -> None:
 
 @with_database_session
 def test_types_resource() -> str:
-    """Reference table of all test types with their descriptions and data quality dimensions."""
+    """Reference table of all test types.
+
+    Covers the description and data quality dimensions of each type.
+    """
     test_types = TestType.select_where(TestType.active == "Y", TestType.is_public())
 
     if not test_types:
@@ -130,7 +133,10 @@ def generation_sets_resource() -> str:
 
 @with_database_session
 def hygiene_issue_types_resource() -> str:
-    """Reference table of all hygiene issue types with their data quality dimensions, descriptions, and suggested actions."""
+    """Reference table of all hygiene issue types.
+
+    Covers the data quality dimension, description, and suggested action of each type.
+    """
     issue_types = HygieneIssueType.select_where(order_by=(HygieneIssueType.name,))
 
     if not issue_types:
@@ -304,7 +310,10 @@ so partial inputs catch related variants (e.g. `ID` matches `ID`, `ID-FK`,
 
 
 def glossary_resource() -> str:
-    """Glossary of TestGen concepts, entity hierarchy, result statuses, and quality dimensions."""
+    """Glossary of TestGen concepts.
+
+    Covers the entity hierarchy, result statuses, and quality dimensions.
+    """
     return """\
 # TestGen Glossary
 
@@ -477,9 +486,10 @@ def connection_parameters_resource(flavor: str) -> str:
 
 
 def connection_parameters_index_resource() -> str:
-    """Supported database flavors for the connection tools: the accepted
-    ``sql_flavor`` values and, for each, the resource that documents its
-    connection modes and fields.
+    """Supported database flavors for the connection tools.
+
+    Covers the accepted ``sql_flavor`` values and, for each, the resource that
+    documents its connection modes and fields.
     """
     doc = MdDoc()
     doc.heading(1, "Connection Flavors")
