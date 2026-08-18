@@ -66,6 +66,35 @@ def test_enable_monitoring_merges_defaults_skipping_none(mock_ts, mock_js, mock_
     assert tg.monitor_test_suite_id == suite.id
 
 
+@pytest.mark.parametrize(
+    ("provided", "expected"),
+    [
+        (False, False),
+        (True, True),
+        (None, True),
+    ],
+)
+@patch(f"{MODULE}.run_monitor_generation")
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.JobSchedule")
+@patch(f"{MODULE}.TestSuite")
+def test_enable_monitoring_honors_regenerate_freshness(
+    mock_ts, mock_js, mock_session, mock_gen, provided, expected
+):
+    mock_ts.return_value.id = uuid4()
+
+    from testgen.common.monitor_service import enable_monitoring
+
+    enable_monitoring(
+        _table_group(),
+        "0 6 * * *",
+        "UTC",
+        suite_attrs={"monitor_regenerate_freshness": provided},
+    )
+
+    assert mock_ts.call_args.kwargs["monitor_regenerate_freshness"] is expected
+
+
 # ---------------------------------------------------------------------------
 # update_monitoring
 # ---------------------------------------------------------------------------
