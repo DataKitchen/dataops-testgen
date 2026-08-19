@@ -64,7 +64,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(CAST(interval_minutes AS STRING), 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN CAST({LOWER_TOLERANCE} AS FLOAT64) IS NULL AND CAST({UPPER_TOLERANCE} AS FLOAT64) IS NULL THEN -1
@@ -87,10 +90,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(CAST(interval_minutes AS STRING), 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2417'
     test_type: Freshness_Trend
@@ -114,7 +114,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::STRING, 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -137,10 +140,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(interval_minutes::STRING, 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2217'
     test_type: Freshness_Trend
@@ -164,7 +164,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(CAST(interval_minutes AS VARCHAR), 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -187,10 +190,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(CAST(interval_minutes AS VARCHAR), 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2317'
     test_type: Freshness_Trend
@@ -214,7 +214,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::TEXT, 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -237,10 +240,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(interval_minutes::TEXT, 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2017'
     test_type: Freshness_Trend
@@ -264,7 +264,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -287,10 +290,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2517'
     test_type: Freshness_Trend
@@ -314,7 +314,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -337,10 +340,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2117'
     test_type: Freshness_Trend
@@ -364,7 +364,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -387,10 +390,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(interval_minutes::VARCHAR, 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2817'
     test_type: Freshness_Trend
@@ -415,7 +415,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(TO_CHAR(interval_minutes), 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -438,10 +441,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(TO_CHAR(interval_minutes), 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '2817'
     test_type: Freshness_Trend
@@ -465,7 +465,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(TO_VARCHAR(interval_minutes), 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -488,10 +491,7 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(TO_VARCHAR(interval_minutes), 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data
   - id: '10009'
     test_type: Freshness_Trend
@@ -515,7 +515,10 @@ test_types:
         '{SKIP_ERRORS}' AS threshold_value,
         {SKIP_ERRORS} AS skip_errors,
         '{INPUT_PARAMETERS}' AS input_parameters,
-        fingerprint AS result_measure,
+        CASE
+          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
+          ELSE COALESCE(CAST(interval_minutes AS VARCHAR), 'Unknown')
+        END AS result_signal,
         CASE
           -- Training mode: tolerances not yet calculated
           WHEN {LOWER_TOLERANCE} IS NULL AND {UPPER_TOLERANCE} IS NULL THEN -1
@@ -538,8 +541,5 @@ test_types:
             WHEN fingerprint = '{BASELINE_VALUE}' AND {IS_EXCLUDED_DAY} = 0 AND (interval_minutes - {EXCLUDED_MINUTES}) > {THRESHOLD_VALUE} THEN '. Late.'
             ELSE ''
           END AS result_message,
-        CASE
-          WHEN fingerprint <> '{BASELINE_VALUE}' THEN '0'
-          ELSE COALESCE(CAST(interval_minutes AS VARCHAR), 'Unknown')
-        END AS result_signal
+        fingerprint AS result_measure
       FROM test_data

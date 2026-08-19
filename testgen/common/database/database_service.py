@@ -345,6 +345,8 @@ def fetch_dict_from_db(
 def write_to_app_db(data: list[Row], column_names: Iterable[str], table_name: str) -> None:
     LOG.debug("DB operation: write_to_app_db on App database (User type = normal)")
 
+    columns = list(column_names)
+
     # use_raw is required to make use of the copy_expert method for fast batch ingestion
     connection = _init_db_connection(use_raw=True)
     cursor = connection.cursor()
@@ -353,9 +355,11 @@ def write_to_app_db(data: list[Row], column_names: Iterable[str], table_name: st
     # Sanitize NaN → None: some DB connectors (e.g. Databricks via Arrow) return
     # float('nan') for NULL integers. CSV would serialize these as "nan" which
     # PostgreSQL rejects for numeric columns.
-    # RowMapping objects iterate over keys, not values — extract values explicitly.
+    # COPY is positional, so a RowMapping is looked up by name rather than iterated:
+    # rows from separate queries can share one header while ordering their SELECT
+    # lists differently, and iterating would write those values into the wrong columns.
     def _row_values(row):
-        values = row.values() if isinstance(row, RowMapping) else row
+        values = [row[column] for column in columns] if isinstance(row, RowMapping) else row
         return tuple(None if isinstance(v, float) and math.isnan(v) else v for v in values)
 
     sanitized = [_row_values(row) for row in data]
@@ -367,7 +371,7 @@ def write_to_app_db(data: list[Row], column_names: Iterable[str], table_name: st
     # List should have same column names as destination table, though not all columns in table are required
     query = psycopg2.sql.SQL("COPY {table_name} ({column_names}) FROM STDIN WITH (FORMAT CSV)").format(
         table_name=psycopg2.sql.Identifier(table_name),
-        column_names=psycopg2.sql.SQL(", ").join([psycopg2.sql.Identifier(column) for column in column_names]),
+        column_names=psycopg2.sql.SQL(", ").join([psycopg2.sql.Identifier(column) for column in columns]),
     )
     LOG.debug(f"Query: {query}")
     cursor.copy_expert(query, buffer)
