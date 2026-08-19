@@ -58,7 +58,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} column_name, columns.table_name, CASE WHEN data_type = 'datetime' THEN 'datetime' WHEN data_type = 'datetime2' THEN 'datetime' WHEN data_type = 'varchar' THEN 'varchar(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'char' THEN 'char(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'numeric' THEN 'numeric(' + CAST(numeric_precision AS VARCHAR) + ',' + CAST(numeric_scale AS VARCHAR) + ')' ELSE data_type END AS data_type FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
+      SELECT TOP {LIMIT} column_name, columns.table_name, CASE WHEN data_type = 'datetime' THEN 'datetime' WHEN data_type = 'datetime2' THEN 'datetime' WHEN data_type = 'varchar' THEN 'varchar(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'char' THEN 'char(' + CAST(character_maximum_length AS VARCHAR) + ')' WHEN data_type = 'numeric' THEN 'numeric(' + CAST(numeric_precision AS VARCHAR) + ',' + CAST(numeric_scale AS VARCHAR) + ')' ELSE data_type END AS data_type FROM INFORMATION_SCHEMA.COLUMNS columns JOIN INFORMATION_SCHEMA.TABLES tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND tables.table_type = 'BASE TABLE' ORDER BY data_type, table_name;
     error_type: Profile Anomaly
   - id: '1061'
     test_id: '1004'

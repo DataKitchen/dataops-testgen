@@ -28,6 +28,7 @@ class SqlFlavorLabel(StrEnum):
     SYNAPSE_MSSQL = "Azure Synapse Analytics"
     DATABRICKS = "Databricks"
     BIGQUERY = "Google BigQuery"
+    ONELAKE_MSSQL = "Microsoft OneLake"
     MSSQL = "Microsoft SQL Server"
     ORACLE = "Oracle"
     POSTGRESQL = "PostgreSQL"
@@ -45,6 +46,7 @@ FLAVOR_CODE_TO_LABEL: dict[str, SqlFlavorLabel] = {
     "synapse_mssql": SqlFlavorLabel.SYNAPSE_MSSQL,
     "databricks": SqlFlavorLabel.DATABRICKS,
     "bigquery": SqlFlavorLabel.BIGQUERY,
+    "onelake_mssql": SqlFlavorLabel.ONELAKE_MSSQL,
     "mssql": SqlFlavorLabel.MSSQL,
     "oracle": SqlFlavorLabel.ORACLE,
     "postgresql": SqlFlavorLabel.POSTGRESQL,
@@ -62,6 +64,7 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
     "synapse_mssql": "mssql",
     "databricks": "databricks",
     "bigquery": "bigquery",
+    "onelake_mssql": "mssql",
     "mssql": "mssql",
     "oracle": "oracle",
     "postgresql": "postgresql",

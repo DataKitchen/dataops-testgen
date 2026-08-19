@@ -150,7 +150,7 @@ test_types:
         SELECT
           LOWER(CONVERT(VARCHAR(40), HASHBYTES('MD5', CAST({CUSTOM_QUERY} AS VARCHAR(MAX))), 2)) AS fingerprint,
           DATEDIFF(MINUTE, CAST(NULLIF('{BASELINE_SUM}', '') AS DATETIME2), CAST('{RUN_DATE}' AS DATETIME2)) AS interval_minutes
-        FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WITH (NOLOCK)
+        FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
         WHERE {SUBSET_CONDITION}
       )
       SELECT '{TEST_TYPE}' AS test_type,

@@ -145,7 +145,13 @@ def _compute_sampling_params(
     if not table_group.profile_use_sampling:
         return sampling_params
 
-    sampleable_types = get_flavor_service(sql_generator.flavor).sampleable_object_types
+    sampleable_types = get_flavor_service(sql_generator.flavor).sampleable_object_types(
+        sql_generator.connection.sql_flavor_code
+    )
+    # Empty set = flavor opts out of sampling; skip so exact counts aren't
+    # scaled by a sample ratio that never applied.
+    if sampleable_types == frozenset():
+        return sampling_params
     for column in data_chars:
         if sampling_params.get(column.table_name):
             continue

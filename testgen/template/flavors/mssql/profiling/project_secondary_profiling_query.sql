@@ -2,11 +2,11 @@
 -- One row per top value, ordered by rank. A trailing row with a NULL value carries the
 -- combined count of the values past the top 10, and how many distinct values it covers.
 WITH target_table AS (
-    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-IF do_sample_bool
-        TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT)
+    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) {TABLE_HINT}
+-- TG-ELSE
+    SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
 -- TG-ENDIF
-        WITH (NOLOCK)
     ),
 ranked_vals
 AS

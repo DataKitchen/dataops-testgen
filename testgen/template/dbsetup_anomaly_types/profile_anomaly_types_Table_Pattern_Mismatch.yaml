@@ -55,7 +55,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables  ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY table_name;
+      SELECT TOP {LIMIT} column_name, columns.table_name FROM INFORMATION_SCHEMA.COLUMNS columns JOIN INFORMATION_SCHEMA.TABLES tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY table_name;
     error_type: Profile Anomaly
   - id: '1065'
     test_id: '1008'

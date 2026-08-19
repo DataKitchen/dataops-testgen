@@ -9,8 +9,10 @@ class PostgresqlFlavorService(RedshiftFlavorService):
 
     escaped_underscore = "\\_"
     url_scheme = "postgresql"
-    # TABLESAMPLE applies only to tables and materialized views
-    sampleable_object_types = frozenset({ObjectType.TABLE, ObjectType.MATERIALIZED_VIEW})
+
+    def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:  # noqa: ARG002
+        # TABLESAMPLE applies only to tables and materialized views.
+        return frozenset({ObjectType.TABLE, ObjectType.MATERIALIZED_VIEW})
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         if params.host.startswith("/"):

@@ -16,10 +16,12 @@ from testgen.mcp.tools.common import (
     Req,
     apply_connection_params,
     infer_mode,
+    render_connection_body,
     resolve_mode,
     schema_for,
     validate_connection_fields,
 )
+from testgen.mcp.tools.markdown import MdDoc
 
 pytestmark = pytest.mark.unit
 
@@ -38,6 +40,7 @@ def _conn(**overrides) -> Connection:
         "connect_by_url": False,
         "connect_by_key": False,
         "connect_with_identity": False,
+        "connect_with_service_principal": False,
         "max_threads": 4,
         "max_query_chars": 20000,
     }
@@ -281,6 +284,138 @@ def test_apply_params_azure_managed_identity_sets_flag():
     assert conn.connect_with_identity is True
 
 
+def test_schema_for_azure_mssql_includes_service_principal():
+    schema = schema_for("azure_mssql")
+    modes = {m.mode for m in schema.modes}
+    assert ConnectionMode.SERVICE_PRINCIPAL in modes
+    spn = next(m for m in schema.modes if m.mode == ConnectionMode.SERVICE_PRINCIPAL)
+    labels = {f.label for f in spn.fields}
+    assert labels == {"Host", "Port", "Database", "Client ID", "Tenant ID", "Client Secret"}
+    assert spn.supports_url is False
+    assert spn.sets == {"connect_with_identity": False, "connect_with_service_principal": True}
+
+
+def test_schema_for_synapse_mssql_includes_service_principal():
+    """Synapse offers the full Azure schema — same ODBC ``Authentication=ActiveDirectoryServicePrincipal`` path."""
+    modes = {m.mode for m in schema_for("synapse_mssql").modes}
+    assert modes == {ConnectionMode.PASSWORD, ConnectionMode.MANAGED_IDENTITY, ConnectionMode.SERVICE_PRINCIPAL}
+    spn = next(m for m in schema_for("synapse_mssql").modes if m.mode == ConnectionMode.SERVICE_PRINCIPAL)
+    labels = {f.label for f in spn.fields}
+    assert labels == {"Host", "Port", "Database", "Client ID", "Tenant ID", "Client Secret"}
+    assert spn.sets == {"connect_with_identity": False, "connect_with_service_principal": True}
+
+
+def test_schema_for_onelake_mssql_offers_entra_modes_only():
+    """OneLake (Fabric SQL analytics endpoint) rejects SQL logins — schema exposes MI + SPN only."""
+    schema = schema_for("onelake_mssql")
+    modes = {m.mode for m in schema.modes}
+    assert modes == {ConnectionMode.MANAGED_IDENTITY, ConnectionMode.SERVICE_PRINCIPAL}
+    # URL-mode connect skips the Authentication= driver keyword; disallowed on this flavor.
+    assert schema.url_field is None
+    for mode in schema.modes:
+        assert mode.supports_url is False
+
+
+def test_schema_for_onelake_mssql_spn_fields():
+    schema = schema_for("onelake_mssql")
+    spn = next(m for m in schema.modes if m.mode == ConnectionMode.SERVICE_PRINCIPAL)
+    labels = {f.label for f in spn.fields}
+    assert labels == {"Host", "Port", "Database", "Client ID", "Tenant ID", "Client Secret"}
+    assert spn.sets == {"connect_with_identity": False, "connect_with_service_principal": True}
+
+
+def test_apply_params_onelake_service_principal_sets_flag():
+    conn = Connection(sql_flavor="mssql", sql_flavor_code="onelake_mssql")
+    apply_connection_params(
+        conn,
+        "onelake_mssql",
+        "Service Principal (OAuth)",
+        {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Tenant ID": "tid", "Client Secret": "csec"},
+    )
+    assert conn.connect_with_service_principal is True
+    assert conn.connect_with_identity is False
+    assert conn.project_user == "cid@tid"
+    assert conn.project_pw_encrypted == "csec"
+
+
+def test_apply_params_onelake_managed_identity_sets_flag():
+    conn = Connection(sql_flavor="mssql", sql_flavor_code="onelake_mssql")
+    apply_connection_params(conn, "onelake_mssql", "Managed Identity", {"Host": "h", "Port": 1433, "Database": "d"})
+    assert conn.connect_with_identity is True
+    assert conn.connect_with_service_principal is False
+
+
+@pytest.mark.parametrize("flavor_code", ["azure_mssql", "synapse_mssql", "onelake_mssql"])
+def test_render_connection_body_splits_spn_identity(flavor_code):
+    """SPN connections store ``<cid>@<tid>`` in project_user; the display must
+    split it back so Client ID and Tenant ID render as separate fields, not the
+    raw concatenated string in both."""
+    conn = _conn(
+        sql_flavor_code=flavor_code,
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+        project_host="h.example",
+        project_port="1433",
+        project_db="db",
+        project_user="the-client-id@the-tenant-id",
+    )
+    doc = MdDoc()
+    render_connection_body(doc, conn)
+    body = doc.render()
+
+    assert "**Client ID:** `the-client-id`" in body
+    assert "**Tenant ID:** `the-tenant-id`" in body
+    assert "the-client-id@the-tenant-id" not in body
+
+
+def test_apply_params_azure_service_principal_sets_flag():
+    conn = Connection(sql_flavor="mssql", sql_flavor_code="azure_mssql")
+    apply_connection_params(
+        conn,
+        "azure_mssql",
+        "Service Principal (OAuth)",
+        {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Tenant ID": "tid", "Client Secret": "csec"},
+    )
+    assert conn.connect_with_service_principal is True
+    assert conn.connect_with_identity is False
+    assert conn.project_user == "cid@tid"
+    assert conn.project_pw_encrypted == "csec"
+
+
+def test_apply_params_synapse_service_principal_sets_flag():
+    conn = Connection(sql_flavor="mssql", sql_flavor_code="synapse_mssql")
+    apply_connection_params(
+        conn,
+        "synapse_mssql",
+        "Service Principal (OAuth)",
+        {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Tenant ID": "tid", "Client Secret": "csec"},
+    )
+    assert conn.connect_with_service_principal is True
+    assert conn.connect_with_identity is False
+    assert conn.project_user == "cid@tid"
+    assert conn.project_pw_encrypted == "csec"
+
+
+def test_apply_params_azure_service_principal_rejects_partial_identity():
+    """Client ID without Tenant ID (or vice versa) yields a partial project_user
+    that would silently fail at connect time — reject explicitly."""
+    conn = Connection(sql_flavor="mssql", sql_flavor_code="azure_mssql")
+    with pytest.raises(MCPUserError, match="both `Client ID` and `Tenant ID`"):
+        apply_connection_params(
+            conn,
+            "azure_mssql",
+            "Service Principal (OAuth)",
+            {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Client Secret": "csec"},
+        )
+    with pytest.raises(MCPUserError, match="both `Client ID` and `Tenant ID`"):
+        apply_connection_params(
+            conn,
+            "azure_mssql",
+            "Service Principal (OAuth)",
+            {"Host": "h", "Port": 1433, "Database": "d", "Tenant ID": "tid", "Client Secret": "csec"},
+        )
+
+
 def test_apply_params_salesforce_jwt_field_mapping():
     conn = Connection(sql_flavor="salesforce_data360", sql_flavor_code="salesforce_data360")
     apply_connection_params(
@@ -318,6 +453,17 @@ def test_validate_passes_azure_mssql_with_identity():
         connect_with_identity=True,
         project_user=None,
         project_pw_encrypted=None,
+    )
+    assert validate_connection_fields(conn) == []
+
+
+def test_validate_passes_azure_mssql_with_service_principal():
+    conn = _conn(
+        sql_flavor_code="azure_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+        project_user="cid@tid",
+        project_pw_encrypted="csec",
     )
     assert validate_connection_fields(conn) == []
 
@@ -632,6 +778,44 @@ def test_infer_mode_snowflake_password():
 def test_infer_mode_azure_identity():
     conn = _conn(sql_flavor_code="azure_mssql", sql_flavor="mssql", connect_with_identity=True)
     assert infer_mode(conn) is ConnectionMode.MANAGED_IDENTITY
+
+
+def test_infer_mode_azure_service_principal():
+    conn = _conn(
+        sql_flavor_code="azure_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+    )
+    assert infer_mode(conn) is ConnectionMode.SERVICE_PRINCIPAL
+
+
+def test_infer_mode_synapse_service_principal():
+    conn = _conn(
+        sql_flavor_code="synapse_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+    )
+    assert infer_mode(conn) is ConnectionMode.SERVICE_PRINCIPAL
+
+
+def test_infer_mode_onelake_identity():
+    conn = _conn(sql_flavor_code="onelake_mssql", sql_flavor="mssql", connect_with_identity=True)
+    assert infer_mode(conn) is ConnectionMode.MANAGED_IDENTITY
+
+
+def test_infer_mode_onelake_service_principal():
+    conn = _conn(
+        sql_flavor_code="onelake_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+    )
+    assert infer_mode(conn) is ConnectionMode.SERVICE_PRINCIPAL
+
+
+def test_infer_mode_onelake_defaults_to_service_principal():
+    """No Entra flag set: OneLake defaults to SPN (external-client is the common case)."""
+    conn = _conn(sql_flavor_code="onelake_mssql", sql_flavor="mssql")
+    assert infer_mode(conn) is ConnectionMode.SERVICE_PRINCIPAL
 
 
 def test_infer_mode_databricks_oauth():

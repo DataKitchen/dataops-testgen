@@ -54,6 +54,7 @@ def _mock_connection(**overrides) -> MagicMock:
     conn.private_key = overrides.get("private_key", None)
     conn.private_key_passphrase = overrides.get("private_key_passphrase", None)
     conn.connect_with_identity = overrides.get("connect_with_identity", False)
+    conn.connect_with_service_principal = overrides.get("connect_with_service_principal", False)
     conn.http_path = overrides.get("http_path", None)
     conn.warehouse = overrides.get("warehouse", None)
     conn.service_account_key = overrides.get("service_account_key", None)

@@ -45,6 +45,7 @@ def _conn(**overrides) -> Connection:
         "connect_by_url": False,
         "connect_by_key": False,
         "connect_with_identity": False,
+        "connect_with_service_principal": False,
         "max_threads": 4,
         "max_query_chars": 20000,
     }
@@ -254,6 +255,85 @@ def test_normalize_clears_user_password_when_identity():
     normalize_auth_fields(conn)
     assert not conn.project_user
     assert not conn.project_pw_encrypted
+
+
+def test_normalize_rejects_both_identity_and_service_principal():
+    """Hard fail: the two Entra ID auth flags are mutually exclusive."""
+    conn = _conn(
+        sql_flavor_code="azure_mssql",
+        sql_flavor="mssql",
+        connect_with_identity=True,
+        connect_with_service_principal=True,
+    )
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        normalize_auth_fields(conn)
+
+
+def test_normalize_preserves_user_password_when_service_principal():
+    """SPN mode reuses project_user (client_id@tenant_id) and project_pw_encrypted (client secret)."""
+    conn = _conn(
+        sql_flavor_code="azure_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+        project_user="cid@tid",
+        project_pw_encrypted="csec",
+    )
+    normalize_auth_fields(conn)
+    assert conn.project_user == "cid@tid"
+    assert conn.project_pw_encrypted == "csec"
+
+
+@pytest.mark.parametrize("code", ["mssql", "postgresql", "snowflake"])
+def test_normalize_rejects_service_principal_on_unsupported_flavor(code):
+    """SPN is only supported on azure_mssql, synapse_mssql, and onelake_mssql. Guard against stale flag elsewhere."""
+    conn = _conn(
+        sql_flavor_code=code,
+        sql_flavor="mssql" if code == "mssql" else code,
+        connect_with_service_principal=True,
+    )
+    with pytest.raises(ValueError, match="azure_mssql"):
+        normalize_auth_fields(conn)
+
+
+def test_normalize_accepts_service_principal_on_synapse_mssql():
+    """Synapse's SQL endpoint is Entra-aware and honors the same ODBC ``ActiveDirectoryServicePrincipal`` keyword as Azure SQL DB."""
+    conn = _conn(
+        sql_flavor_code="synapse_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+        project_user="cid@tid",
+        project_pw_encrypted="csec",
+    )
+    normalize_auth_fields(conn)
+    assert conn.project_user == "cid@tid"
+    assert conn.project_pw_encrypted == "csec"
+
+
+def test_normalize_accepts_service_principal_on_onelake_mssql():
+    """SPN is a first-class auth mode on OneLake — Fabric SQL rejects SQL logins."""
+    conn = _conn(
+        sql_flavor_code="onelake_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+        project_user="cid@tid",
+        project_pw_encrypted="csec",
+    )
+    normalize_auth_fields(conn)
+    assert conn.project_user == "cid@tid"
+    assert conn.project_pw_encrypted == "csec"
+
+
+def test_normalize_rejects_service_principal_with_connect_by_url():
+    """SPN + URL is unsupported — the flavor URL header drops the Authentication keyword."""
+    conn = _conn(
+        sql_flavor_code="azure_mssql",
+        sql_flavor="mssql",
+        connect_with_service_principal=True,
+        connect_by_url=True,
+        url="host.example:1433/db",
+    )
+    with pytest.raises(ValueError, match="connect_by_url"):
+        normalize_auth_fields(conn)
 
 
 # ---------------------------------------------------------------------------

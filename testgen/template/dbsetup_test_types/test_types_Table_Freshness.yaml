@@ -134,7 +134,7 @@ test_types:
                ELSE 1
              END AS result_measure
         FROM ( SELECT LOWER(CONVERT(VARCHAR(40), HASHBYTES('MD5', CAST({CUSTOM_QUERY} AS VARCHAR(MAX))), 2)) as fingerprint
-                 FROM "{SCHEMA_NAME}"."{TABLE_NAME}" WITH (NOLOCK)
+                 FROM "{SCHEMA_NAME}"."{TABLE_NAME}"
                 WHERE {SUBSET_CONDITION}
              ) test;
   - id: '2312'

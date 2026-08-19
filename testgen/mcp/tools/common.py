@@ -1174,6 +1174,7 @@ _WAREHOUSE = ConnField("Warehouse", "warehouse", Req.OPTIONAL)
 _PRIVATE_KEY = ConnField("Private Key", "private_key", Req.REQUIRED, secret=True)
 _PRIVATE_KEY_PASSPHRASE = ConnField("Private Key Passphrase", "private_key_passphrase", Req.OPTIONAL, secret=True)
 _URL = ConnField("URL", "url", Req.REQUIRED)
+_CLIENT_ID = ConnField("Client ID", "project_user", Req.REQUIRED)
 
 # Databricks
 _HTTP_PATH_RU = ConnField("HTTP Path", "http_path", Req.REQUIRED_UNLESS_URL)
@@ -1183,8 +1184,10 @@ _PORT_REQ = ConnField("Port", "project_port", Req.REQUIRED)
 _CATALOG = ConnField("Catalog", "project_db", Req.REQUIRED_UNLESS_URL)
 _CATALOG_REQ = ConnField("Catalog", "project_db", Req.REQUIRED)
 _ACCESS_TOKEN = ConnField("Access Token", "project_pw_encrypted", Req.REQUIRED, secret=True)
-_CLIENT_ID = ConnField("Client ID", "project_user", Req.REQUIRED)
 _CLIENT_SECRET = ConnField("Client Secret", "project_pw_encrypted", Req.REQUIRED, secret=True)
+
+# mssql
+_TENANT_ID = ConnField("Tenant ID", "project_user", Req.REQUIRED)
 
 # BigQuery / Salesforce
 _SERVICE_ACCOUNT_KEY = ConnField("Service Account Key", "service_account_key", Req.REQUIRED, secret=True)
@@ -1206,25 +1209,43 @@ def _host_auth_schema(code: str, *, db_field: ConnField = _DATABASE) -> FlavorSc
     )
 
 
-def _azure_schema(code: str) -> FlavorSchema:
+def _azure_schema(
+    code: str,
+    *,
+    include_password: bool = True,
+    include_service_principal: bool = False,
+    url_field: ConnField | None = _URL,
+) -> FlavorSchema:
+    """Build a FlavorSchema for one of the MSSQL-family flavors. Managed
+    Identity is always offered; ``include_password`` / ``include_service_principal``
+    toggle the other two modes; ``url_field=None`` disables URL-mode connect.
+    """
+    modes: list[FlavorMode] = []
+    if include_password:
+        modes.append(FlavorMode(
+            mode=ConnectionMode.PASSWORD,
+            fields=(_HOST, _PORT, _DATABASE, _USERNAME, _PASSWORD_OPT),
+            supports_url=url_field is not None,
+            sets={"connect_with_identity": False, "connect_with_service_principal": False},
+        ))
+    modes.append(FlavorMode(
+        mode=ConnectionMode.MANAGED_IDENTITY,
+        fields=(_HOST, _PORT, _DATABASE),
+        supports_url=url_field is not None,
+        sets={"connect_with_identity": True, "connect_with_service_principal": False},
+    ))
+    if include_service_principal:
+        modes.append(FlavorMode(
+            mode=ConnectionMode.SERVICE_PRINCIPAL,
+            fields=(_HOST, _PORT, _DATABASE, _CLIENT_ID, _TENANT_ID, _CLIENT_SECRET),
+            supports_url=False,
+            sets={"connect_with_identity": False, "connect_with_service_principal": True},
+        ))
     return FlavorSchema(
         code=code,
         label=FLAVOR_CODE_TO_LABEL[code],
-        modes=(
-            FlavorMode(
-                mode=ConnectionMode.PASSWORD,
-                fields=(_HOST, _PORT, _DATABASE, _USERNAME, _PASSWORD_OPT),
-                supports_url=True,
-                sets={"connect_with_identity": False},
-            ),
-            FlavorMode(
-                mode=ConnectionMode.MANAGED_IDENTITY,
-                fields=(_HOST, _PORT, _DATABASE),
-                supports_url=True,
-                sets={"connect_with_identity": True},
-            ),
-        ),
-        url_field=_URL,
+        modes=tuple(modes),
+        url_field=url_field,
     )
 
 
@@ -1235,8 +1256,14 @@ FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
     "mssql": _host_auth_schema("mssql"),
     "oracle": _host_auth_schema("oracle", db_field=_SERVICE_NAME),
     "sap_hana": _host_auth_schema("sap_hana"),
-    "azure_mssql": _azure_schema("azure_mssql"),
-    "synapse_mssql": _azure_schema("synapse_mssql"),
+    "azure_mssql": _azure_schema("azure_mssql", include_service_principal=True),
+    "synapse_mssql": _azure_schema("synapse_mssql", include_service_principal=True),
+    "onelake_mssql": _azure_schema(
+        "onelake_mssql",
+        include_password=False,
+        include_service_principal=True,
+        url_field=None,
+    ),
     "snowflake": FlavorSchema(
         code="snowflake",
         label=FLAVOR_CODE_TO_LABEL["snowflake"],
@@ -1343,7 +1370,18 @@ def infer_mode(connection: Connection) -> ConnectionMode | None:
         return None
 
     if code in {"azure_mssql", "synapse_mssql"}:
+        if connection.connect_with_service_principal:
+            return ConnectionMode.SERVICE_PRINCIPAL
         return ConnectionMode.MANAGED_IDENTITY if connection.connect_with_identity else ConnectionMode.PASSWORD
+    if code == "onelake_mssql":
+        # Fabric SQL analytics endpoints reject SQL logins, so only the two Entra
+        # modes are offered on this flavor. Default to SPN if neither flag is set
+        # (external client is the common case), so validate_connection_fields
+        # complains about the SPN-required fields rather than a nonexistent
+        # password mode.
+        if connection.connect_with_identity:
+            return ConnectionMode.MANAGED_IDENTITY
+        return ConnectionMode.SERVICE_PRINCIPAL
     if code == "snowflake":
         return ConnectionMode.KEY_PAIR if connection.connect_by_key else ConnectionMode.PASSWORD
     if code == "databricks":
@@ -1386,7 +1424,14 @@ def connection_field_labels(connection: Connection) -> dict[str, str]:
     caller's generic labels.
     """
     schema = schema_for(connection.sql_flavor_code)
-    labels = {fld.column: fld.label for fld in _mode_for_connection(connection).fields}
+    fields = _mode_for_connection(connection).fields
+    labels: dict[str, str] = {}
+    for fld in fields:
+        if fld.column in labels:
+            # Two labels sharing one column: combine so the diff reads honestly.
+            labels[fld.column] = f"{labels[fld.column]} / {fld.label}"
+        else:
+            labels[fld.column] = fld.label
     if schema.url_field is not None:
         labels[schema.url_field.column] = schema.url_field.label
     return labels
@@ -1436,8 +1481,38 @@ def apply_connection_params(
     for attr, value in fmode.sets.items():
         setattr(connection, attr, value)
 
+    # mssql-family SPN identity: two fields packed into project_user as
+    # ``<cid>@<tid>``. Enforce both-or-neither.
+    is_spn_compound = (
+        "Client ID" in fields_by_label
+        and "Tenant ID" in fields_by_label
+        and fields_by_label["Client ID"].column == "project_user"
+        and fields_by_label["Tenant ID"].column == "project_user"
+    )
+    if is_spn_compound:
+        cid = params.get("Client ID")
+        tid = params.get("Tenant ID")
+        if bool(cid) != bool(tid):
+            raise MCPUserError(
+                "Service Principal auth requires both `Client ID` and `Tenant ID`; provide either both or neither."
+            )
+        if cid and tid:
+            if "@" in str(cid) or "@" in str(tid):
+                raise MCPUserError(
+                    "`Client ID` and `Tenant ID` must not contain `@`; the compound identifier is built automatically."
+                )
+            connection.project_user = f"{cid}@{tid}"
+        else:
+            existing = connection.project_user or ""
+            if existing.count("@") != 1 or not all(existing.split("@")):
+                raise MCPUserError(
+                    "Service Principal auth requires `Client ID` and `Tenant ID`; no valid stored identity to fall back on."
+                )
+
     for label, value in params.items():
         if label == _URL.label:
+            continue
+        if is_spn_compound and label in ("Client ID", "Tenant ID"):
             continue
         column = fields_by_label[label].column
         setattr(connection, column, str(value) if column == "project_port" and value is not None else value)
@@ -1446,6 +1521,10 @@ def apply_connection_params(
         connection.connect_by_url = True
         connection.url = str(params[_URL.label])
     elif provided_url_fields:
+        connection.connect_by_url = False
+    if not fmode.supports_url:
+        # An existing URL-mode configuration would otherwise carry
+        # ``connect_by_url=True`` into the SPN+URL guard downstream.
         connection.connect_by_url = False
 
 
@@ -1541,10 +1620,26 @@ def render_connection_body(doc: MdDoc, connection: Connection) -> None:
 
     # Each populated, non-secret field under its flavor-specific label
     # (e.g. "Catalog" for Databricks, "Login URL" for Salesforce).
-    for fld in connection_display_fields(connection):
+    display_fields = connection_display_fields(connection)
+    # SPN's compound project_user (``<cid>@<tid>``) needs splitting so each
+    # field renders its own piece.
+    spn_compound_labels = {"Client ID", "Tenant ID"}
+    is_spn_compound = spn_compound_labels.issubset(
+        {f.label for f in display_fields if f.column == "project_user"}
+    )
+    spn_client_id, spn_tenant_id = "", ""
+    if is_spn_compound and connection.project_user and "@" in connection.project_user:
+        cid, _, tid = connection.project_user.partition("@")
+        spn_client_id, spn_tenant_id = cid, tid
+    for fld in display_fields:
         if fld.secret:
             continue
-        value = getattr(connection, fld.column, None)
+        if is_spn_compound and fld.label == "Client ID":
+            value = spn_client_id
+        elif is_spn_compound and fld.label == "Tenant ID":
+            value = spn_tenant_id
+        else:
+            value = getattr(connection, fld.column, None)
         if value in (None, ""):
             continue
         doc.field(fld.label, value, code=fld.column != "project_port")

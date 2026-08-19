@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 import streamlit as st
 
 from testgen import settings
-from testgen.common.database.connection_service import ConnectionStatus, test_connection_status
+from testgen.common.database.connection_service import ConnectionStatus, normalize_auth_fields, test_connection_status
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.enums import JobSource
@@ -183,10 +183,14 @@ class ConnectionsPage(Page):
         if should_save():
             success = True
             try:
+                normalize_auth_fields(connection)
                 connection.save()
                 select_connections_where.clear()
                 get_connection.clear()
                 message = "Changes have been saved successfully."
+            except ValueError as error:
+                message = str(error)
+                success = False
             except Exception as error:
                 message = "Something went wrong while creating the connection."
                 success = False
@@ -250,6 +254,10 @@ class ConnectionsPage(Page):
         return formatted_connection
 
     def test_connection(self, connection: Connection) -> ConnectionStatus:
+        try:
+            normalize_auth_fields(connection)
+        except ValueError as error:
+            return ConnectionStatus(message=str(error), successful=False, details=None)
         return test_connection_status(connection)
 
     @with_database_session
@@ -510,6 +518,7 @@ _FLAVOR_ICONS: dict[str, str] = {
     "synapse_mssql": "flavors/azure_synapse_table.svg",
     "databricks": "flavors/databricks.svg",
     "bigquery": "flavors/bigquery.svg",
+    "onelake_mssql": "flavors/onelake.svg",
     "mssql": "flavors/mssql.svg",
     "oracle": "flavors/oracle.svg",
     "postgresql": "flavors/postgresql.svg",

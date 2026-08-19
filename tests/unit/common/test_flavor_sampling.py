@@ -16,11 +16,19 @@ pytestmark = pytest.mark.unit
 # are sampleable; views/external/other are profiled in full.
 def test_mssql_samples_only_base_tables():
     # SQL Server has no materialized views, so the sampleable set is just base tables.
-    assert get_flavor_service("mssql").sampleable_object_types == {ObjectType.TABLE}
+    assert get_flavor_service("mssql").sampleable_object_types("mssql") == {ObjectType.TABLE}
+    # azure_mssql / synapse_mssql share the mssql family and inherit the same set.
+    assert get_flavor_service("mssql").sampleable_object_types("azure_mssql") == {ObjectType.TABLE}
+
+
+def test_onelake_disables_sampling():
+    # Fabric SQL analytics endpoints reject TABLESAMPLE; the empty set signals
+    # "no object type is sampleable" and _compute_sampling_params skips out.
+    assert get_flavor_service("mssql").sampleable_object_types("onelake_mssql") == frozenset()
 
 
 def test_postgresql_samples_tables_and_materialized_views():
-    assert get_flavor_service("postgresql").sampleable_object_types == {
+    assert get_flavor_service("postgresql").sampleable_object_types("postgresql") == {
         ObjectType.TABLE,
         ObjectType.MATERIALIZED_VIEW,
     }
@@ -30,7 +38,7 @@ def test_postgresql_samples_tables_and_materialized_views():
 def test_sampleable_unrestricted_where_sampling_works_on_views(flavor):
     # None = no restriction. Row-based samplers, or engines that accept the sample clause on
     # views (verified live for snowflake/databricks/oracle).
-    assert get_flavor_service(flavor).sampleable_object_types is None
+    assert get_flavor_service(flavor).sampleable_object_types(flavor) is None
 
 
 def test_object_type_enum_values_match_ddf_strings():
