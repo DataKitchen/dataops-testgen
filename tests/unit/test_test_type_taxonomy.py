@@ -14,6 +14,20 @@ TECHNIQUES = {t.value for t in StatisticalTechnique}
 HEALTH_DIMENSIONS = {"Schema Drift", "Data Drift", "Statistical Drift", "Volume", "Freshness"}
 
 
+# Output columns every QUERY test template selects, in the order they are selected.
+# Schema_Drift is the only METADATA type and selects the same list without these.
+RESULT_COLUMNS = [
+    "test_type", "test_definition_id", "test_suite_id", "test_run_id", "test_time",
+    "schema_name", "table_name", "column_names", "threshold_value", "skip_errors",
+    "input_parameters", "result_signal", "result_code", "result_message", "result_measure",
+]
+SCHEMA_DRIFT_OMITS = {"table_name", "column_names", "threshold_value", "skip_errors"}
+
+
+def _strip_sql_comments(sql: str) -> str:
+    return re.sub(r"--[^\n]*", "", re.sub(r"/\*.*?\*/", "", sql, flags=re.S))
+
+
 def _test_type_docs():
     for path in sorted([*YAML_DIR.glob("*.yaml"), *YAML_DIR.glob("*.yml")]):
         data = safe_load(path.read_text())["test_types"]
@@ -47,20 +61,31 @@ def test_health_dimension_uses_freshness_not_recency():
 
 
 @pytest.mark.unit
-def test_query_templates_agree_on_result_column_order():
-    """QUERY results are bulk-loaded positionally under one header taken from a single
-    template, so every QUERY template of a flavor must order its output columns alike.
-    Covers the four result_* columns, the only ones that can appear solely as top-level
-    aliases."""
-    canonical = ["result_signal", "result_code", "result_message", "result_measure"]
+def test_templates_sharing_a_result_header_agree_on_their_columns():
+    """Results for a run_type are bulk-loaded under one header taken from whichever
+    template's query finished last, and looked up on each row by name. So every
+    template of a (run_type, flavor) must expose the same output columns, under the
+    same names. A missing name aborts the write for the whole batch.
+
+    Pins names, cardinality and order for the columns the load names; a template
+    adding an output column beyond them is not detected.
+    """
+    expected = {
+        "QUERY": RESULT_COLUMNS,
+        "METADATA": [column for column in RESULT_COLUMNS if column not in SCHEMA_DRIFT_OMITS],
+    }
     for filename, tt in _test_type_docs():
-        if tt.get("run_type") != "QUERY":
+        columns = expected.get(tt.get("run_type"))
+        if columns is None:
             continue
         for template in tt.get("test_templates") or []:
-            order = [
+            aliases = [
                 match.group(1).lower()
-                for match in re.finditer(r"\bAS\s+(result_(?:signal|code|message|measure))\b", template["template"], re.I)
+                for match in re.finditer(
+                    r"\bAS\s+([a-z_]+)\b", _strip_sql_comments(template["template"]), re.I
+                )
+                if match.group(1).lower() in set(columns)
             ]
-            assert order == canonical, (
-                f"{filename} [{template['sql_flavor']}]: result columns ordered {order}, expected {canonical}"
+            assert aliases == columns, (
+                f"{filename} [{template['sql_flavor']}]: output columns {aliases}, expected {columns}"
             )

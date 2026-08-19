@@ -1,7 +1,8 @@
-"""Unit tests for how write_to_app_db extracts row values for the positional COPY."""
+"""Unit tests for the header and row values write_to_app_db hands to COPY."""
 import csv
 from unittest.mock import MagicMock, patch
 
+import psycopg2.sql
 import pytest
 from sqlalchemy import create_engine, text
 
@@ -15,7 +16,18 @@ def _mappings(query: str) -> list:
         return list(connection.execute(text(query)).mappings())
 
 
-def _written_rows(data: list, column_names: list[str]) -> list[list[str]]:
+def _identifiers(node, found: list[str] | None = None) -> list[str]:
+    found = [] if found is None else found
+    if isinstance(node, psycopg2.sql.Composed):
+        for item in node.seq:
+            _identifiers(item, found)
+    elif isinstance(node, psycopg2.sql.Identifier):
+        found.extend(node.strings)
+    return found
+
+
+def _copy_call(data: list, column_names) -> tuple[list[str], list[list[str]]]:
+    """Return the COPY statement's identifiers and the CSV rows for one write."""
     cursor = MagicMock()
     connection = MagicMock()
     connection.cursor.return_value = cursor
@@ -25,9 +37,9 @@ def _written_rows(data: list, column_names: list[str]) -> list[list[str]]:
     ):
         write_to_app_db(data, column_names, "test_results")
 
-    buffer = cursor.copy_expert.call_args[0][1]
+    query, buffer = cursor.copy_expert.call_args[0]
     buffer.seek(0)
-    return list(csv.reader(buffer))
+    return _identifiers(query), list(csv.reader(buffer))
 
 
 def test_row_mapping_values_follow_the_column_names_not_the_select_order():
@@ -36,20 +48,27 @@ def test_row_mapping_values_follow_the_column_names_not_the_select_order():
         *_mappings("SELECT 'meas2' AS result_measure, 2 AS result_code, 'sig2' AS result_signal"),
     ]
 
-    written = _written_rows(rows, ["result_signal", "result_code", "result_measure"])
+    header, written = _copy_call(rows, ["result_signal", "result_code", "result_measure"])
 
+    assert header == ["test_results", "result_signal", "result_code", "result_measure"]
     assert written == [["sig", "1", "meas"], ["sig2", "2", "meas2"]]
 
 
 def test_plain_sequences_are_written_positionally():
-    assert _written_rows([["a", "b"], ["c", "d"]], ["one", "two"]) == [["a", "b"], ["c", "d"]]
+    header, written = _copy_call([["a", "b"], ["c", "d"]], ["one", "two"])
+
+    assert header == ["test_results", "one", "two"]
+    assert written == [["a", "b"], ["c", "d"]]
 
 
 def test_nan_is_written_as_null():
-    assert _written_rows([[float("nan"), 1]], ["one", "two"]) == [["", "1"]]
+    _, written = _copy_call([[float("nan"), 1]], ["one", "two"])
+
+    assert written == [["", "1"]]
 
 
 def test_column_names_iterable_is_consumed_once():
-    written = _written_rows(_mappings("SELECT 1 AS one, 2 AS two"), iter(["one", "two"]))
+    header, written = _copy_call(_mappings("SELECT 1 AS one, 2 AS two"), iter(["one", "two"]))
 
+    assert header == ["test_results", "one", "two"]
     assert written == [["1", "2"]]
