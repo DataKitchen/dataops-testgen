@@ -4,6 +4,7 @@
  * @property {Date?} start
  * @property {Date?} end
  * @property {function({start: Date?, end: Date?, valid: boolean, error: string?})?} onChange
+ * @property {{ms: number, label: string}?} maxSpan Longest permitted start-to-end distance
  * @property {string?} class
  */
 import van from '../van.min.js';
@@ -23,6 +24,7 @@ const BOUNDS = ['start', 'end'];
 const PART_PLACEHOLDER = { month: 'MM', day: 'DD', year: 'YYYY', hour: 'hh', minute: 'mm', meridiem: '--' };
 const SEPARATOR_BEFORE = { day: '/', year: '/', hour: ' ', minute: ':', meridiem: ' ' };
 const ORDER_ERROR = 'Start must be before end.';
+const SPAN_ERROR = (/** @type string */ label) => `Range cannot be longer than ${label}.`;
 
 const DateTimeRangeField = (/** @type Properties */ props) => {
     loadStylesheet('datetimeRangeField', stylesheet);
@@ -43,6 +45,31 @@ const DateTimeRangeField = (/** @type Properties */ props) => {
     /** @type {Object.<string, HTMLElement>} */
     const segmentElements = {};
 
+    const rangeError = (/** @type Date? */ start, /** @type Date? */ end) => {
+        if (!start || !end) {
+            return '';
+        }
+        if (start >= end) {
+            return ORDER_ERROR;
+        }
+        const maxSpan = getValue(props.maxSpan);
+        return maxSpan && end - start > maxSpan.ms ? SPAN_ERROR(maxSpan.label) : '';
+    };
+
+    // Re-runs validation and reports outward. Writes no bound, so a derive may call it.
+    const notify = () => {
+        const start = composeDateTime(parts.start.rawVal);
+        const end = composeDateTime(parts.end.rawVal);
+
+        error.val = rangeError(start, end);
+        (props.onChange?.val ?? props.onChange)?.({
+            start,
+            end,
+            valid: !!start && !!end && !error.rawVal,
+            error: error.rawVal || null,
+        });
+    };
+
     const publish = () => {
         const start = composeDateTime(parts.start.rawVal);
         const end = composeDateTime(parts.end.rawVal);
@@ -53,14 +80,7 @@ const DateTimeRangeField = (/** @type Properties */ props) => {
         if (bounds.end.rawVal?.getTime() !== end?.getTime()) {
             bounds.end.val = end;
         }
-
-        error.val = start && end && start >= end ? ORDER_ERROR : '';
-        (props.onChange?.val ?? props.onChange)?.({
-            start,
-            end,
-            valid: !!start && !!end && start < end,
-            error: error.rawVal || null,
-        });
+        notify();
     };
 
     const setParts = (/** @type string */ bound, /** @type object */ next) => {
@@ -68,15 +88,17 @@ const DateTimeRangeField = (/** @type Properties */ props) => {
         publish();
     };
 
-    // An external write (a calendar click) rebuilds this bound's segments and re-runs validation; a
-    // write that originated here composes back to the same instant and is ignored. Declared after
-    // publish so the derive can reach it on its first, eager run.
+    // An external write (a calendar click) rebuilds this bound's segments and re-runs validation.
+    // This must call notify rather than publish: VanJS drops any state a derive both reads and
+    // writes during the same run from that derive's dependencies, so writing bounds[bound] back
+    // here would leave the derive dead after its first run. Declared after notify so the derive can
+    // reach it on that first, eager run.
     for (const bound of BOUNDS) {
         van.derive(() => {
             const incoming = bounds[bound].val;
             if (incoming?.getTime() !== composeDateTime(parts[bound].rawVal)?.getTime()) {
                 parts[bound].val = decomposeDateTime(incoming);
-                publish();
+                notify();
             }
         });
     }

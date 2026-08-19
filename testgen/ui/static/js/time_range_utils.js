@@ -24,6 +24,10 @@ const TREND_RANGE_PRESETS = [
 
 const RANGE_EXPRESSION = /^(\d+)(d|w|mo|y)$/;
 
+// Widest window a custom range may cover. 366 days so that a calendar year spanning a leap day
+// still fits.
+const MAX_CUSTOM_SPAN = { ms: 366 * 24 * 60 * 60 * 1000, label: '1 year' };
+
 /**
  * Shift a date back by whole months, snapping to the last day of the target month instead of
  * rolling forward. Without this, Mar 31 minus one month lands on Mar 3.
@@ -72,6 +76,27 @@ function relativeRangeToBounds(expression, now = new Date()) {
 }
 
 /**
+ * Whether a forecast that opens at `firstPredictionTime` belongs on the axis for the given window.
+ *
+ * The forecast sits near the present, so a window that closed well before it would stretch the axis
+ * across the intervening gap and squeeze the selected days into a sliver. The gap is measured
+ * against the window's own width, which keeps the forecast for a window ending at now and drops it
+ * for one ending months back, with no threshold to tune. An unbounded window, or one with no
+ * forecast, always passes.
+ *
+ * @param {number?} windowStart Epoch milliseconds
+ * @param {number?} windowEnd Epoch milliseconds
+ * @param {number?} firstPredictionTime Epoch milliseconds
+ * @returns {boolean}
+ */
+function forecastBelongsOnAxis(windowStart, windowEnd, firstPredictionTime) {
+    if (windowStart == null || windowEnd == null || firstPredictionTime == null) {
+        return true;
+    }
+    return firstPredictionTime - windowEnd <= windowEnd - windowStart;
+}
+
+/**
  * @typedef Parts
  * @type {object}
  * @property {number?} month 1-12
@@ -104,8 +129,10 @@ function daysInMonth(year, month) {
 }
 
 /**
- * Upper bound for a segment. February accepts 29 until a year is typed, so a leap day can be
- * entered in either order; composeDateTime makes the final call.
+ * Upper bound for a segment. February accepts 29 until a *complete* year is typed, so a leap day
+ * can be entered in either order; composeDateTime makes the final call. A half-typed year is not a
+ * year: `2` on the way to `2024` would otherwise resolve against 1902, since JS maps years 0-99 to
+ * 1900 + year.
  *
  * @param {string} part
  * @param {Parts} parts
@@ -113,7 +140,8 @@ function daysInMonth(year, month) {
  */
 function partMax(part, parts) {
     if (part === 'day') {
-        return daysInMonth(parts.year ?? 2024, parts.month ?? 1);
+        const yearIsComplete = String(parts.year ?? '').length === PART_LIMITS.year.length;
+        return daysInMonth(yearIsComplete ? parts.year : 2024, parts.month ?? 1);
     }
     return PART_LIMITS[part].max;
 }
@@ -174,7 +202,7 @@ function applyDigit(part, parts, buffer, digit) {
     if (typed.length > limits.length) {
         typed = digit;
     }
-    if (part !== 'year' && Number(typed) > max) {
+    if (part !== 'year' && Number(typed) > limits.max) {
         typed = digit;
     }
 
@@ -237,6 +265,7 @@ export {
     DATE_TIME_PARTS,
     DEFAULT_RANGE,
     EMPTY_PARTS,
+    MAX_CUSTOM_SPAN,
     PART_LIMITS,
     TREND_RANGE_PRESETS,
     applyDigit,
@@ -244,6 +273,7 @@ export {
     composeDateTime,
     daysInMonth,
     decomposeDateTime,
+    forecastBelongsOnAxis,
     partMax,
     relativeRangeToBounds,
     stepPart,

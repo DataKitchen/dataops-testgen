@@ -11,6 +11,7 @@ import pytest
 from testgen.common.models.monitor import (
     Monitor,
     MonitorSeries,
+    build_run_count_sql,
     build_series_sql,
     current_bands,
     parse_freshness_event,
@@ -468,3 +469,16 @@ def test_row_count_change_sorts_on_the_same_states_it_renders(sort_by, baseline_
     assert f"monitor_tables.{state_column} = 'added'" in order_by
     assert f"monitor_tables.{state_column} = 'dropped'" in order_by
     assert f"baseline_tables.{baseline_column}" in order_by
+
+
+def test_build_run_count_sql_counts_runs_in_the_window():
+    start = datetime(2026, 6, 1, tzinfo=UTC)
+    end = datetime(2026, 6, 8, tzinfo=UTC)
+    suite_id = uuid4()
+    query, params = build_run_count_sql(test_suite_id=suite_id, start=start, end=end)
+    assert "COUNT(*)" in query
+    assert "test_runs.test_starttime >= :range_start" in query
+    assert "test_runs.test_starttime < :range_end" in query
+    # Nothing to join: the series row count is the run count times the monitor types.
+    assert "test_results" not in query
+    assert params == {"test_suite_id": str(suite_id), "range_start": start, "range_end": end}

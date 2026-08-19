@@ -12,6 +12,7 @@ from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.monitor import (
+    build_run_count_sql,
     build_series_sql,
     parse_freshness_message,
     parse_schema_event,
@@ -772,6 +773,12 @@ class TableGroup(Entity):
         # so the dashboard / MCP can render the "no monitor runs yet" state.
         row = get_current_session().execute(text(query), params).mappings().first()
         return MonitorGroupSummary(**row)
+
+    @classmethod
+    def count_monitor_runs(cls, test_suite_id: str | UUID, start: datetime, end: datetime) -> int:
+        """Number of the suite's monitor runs starting within ``[start, end)``."""
+        query, params = build_run_count_sql(test_suite_id=test_suite_id, start=start, end=end)
+        return get_current_session().execute(text(query), params).scalar() or 0
 
     @classmethod
     def get_table_monitor_series(

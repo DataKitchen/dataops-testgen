@@ -75,6 +75,11 @@ TABLE_TRENDS_DIALOG_KEY = "monitors:trends_table"
 SCHEMA_CHANGES_DIALOG_KEY = "monitors:schema_changes_payload"
 EDIT_NOTIFICATIONS_DIALOG_KEY = "monitors:edit_notifications_open"
 DEFAULT_TREND_RANGE = {"preset": "default", "start": None, "end": None}
+# Widest date-bounded window the trend chart will fetch, in runs. Each run carries one row per
+# monitor type, and the chart is a few hundred pixels wide, so past this the payload grows without
+# anything more becoming visible. The run-count default needs no guard: the suite's configured
+# lookback already bounds it.
+MAX_TREND_RUNS = 5000
 
 
 class MonitorsDashboardPage(Page):
@@ -577,8 +582,38 @@ def build_table_trends_data(
         range_start = datetime.fromtimestamp(start_ms / 1000, UTC)
         range_end = datetime.fromtimestamp(end_ms / 1000, UTC)
 
+    handlers = {
+        "on_ShowDataStructureLogs_change": on_show_data_structure_logs,
+        "on_SelectTrendRange_change": on_select_trend_range,
+        "on_CloseTrendsDialog_change": on_close_trends,
+    }
+    empty_series: dict = {
+        "freshness_events": [], "volume_events": [], "schema_events": [], "metric_events": [],
+    }
+
+    if range_start is not None:
+        run_count = count_monitor_runs(table_group.monitor_test_suite_id, range_start, range_end)
+        if run_count > MAX_TREND_RUNS:
+            return {
+                **empty_series,
+                "data_structure_logs": make_json_safe(data_structure_logs),
+                "predictions": {},
+                "trend_range": trend_range,
+                "trend_notice": (
+                    f"This range covers {run_count:,} monitor runs, more than the chart can display. "
+                    "Select a shorter range."
+                ),
+                "dialog": dialog,
+            }, handlers
+
     events = get_monitor_events_for_table(
         table_group.monitor_test_suite_id, table_name, range_start, range_end,
+    )
+    # The forecast describes the monitor's own state, not the slice of history on screen, so its
+    # anchors come from the full lookback: a narrow window can hold no detected update at all,
+    # which would drop the freshness band and every freshness-gated band with it.
+    anchor_events = events if range_start is None else get_monitor_events_for_table(
+        table_group.monitor_test_suite_id, table_name,
     )
     definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
@@ -595,19 +630,20 @@ def build_table_trends_data(
         monitor_lookback = test_suite.monitor_lookback
         predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
 
-        # A date-bounded window can hold no runs at all, so every lookup below is optional.
         last_run_time_per_test_key: dict[str, datetime] = {}
-        if volume_times := [e["time"] for e in events["volume_events"]]:
+        if volume_times := [e["time"] for e in anchor_events["volume_events"]]:
             last_run_time_per_test_key["volume_trend"] = max(volume_times)
-        for metric_group in events["metric_events"]:
-            metric_definition_id = metric_group["test_definition_id"]
-            last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
+        for metric_group in anchor_events["metric_events"]:
+            if metric_times := [e["time"] for e in metric_group["events"]]:
+                last_run_time_per_test_key[f"metric:{metric_group['test_definition_id']}"] = max(metric_times)
 
         # Predicted next freshness-update window for the table — shared by the Freshness_Trend
         # display window and the freshness-gated Volume/Metric forecast (which expects no change
         # until a refresh lands in this window).
         freshness_definition = next((d for d in definitions if d.test_type == "Freshness_Trend"), None)
-        freshness_window = _freshness_next_update_window(freshness_definition, events, test_suite, monitor_schedule)
+        freshness_window = _freshness_next_update_window(
+            freshness_definition, anchor_events, test_suite, monitor_schedule,
+        )
 
         for definition in definitions:
             test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
@@ -705,17 +741,18 @@ def build_table_trends_data(
         "data_structure_logs": make_json_safe(data_structure_logs),
         "predictions": predictions,
         "trend_range": trend_range,
+        "trend_notice": None,
         "dialog": dialog,
-    }
-    handlers = {
-        "on_ShowDataStructureLogs_change": on_show_data_structure_logs,
-        "on_SelectTrendRange_change": on_select_trend_range,
-        "on_CloseTrendsDialog_change": on_close_trends,
     }
     return data, handlers
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
+def count_monitor_runs(test_suite_id: str, start: datetime, end: datetime) -> int:
+    return TableGroup.count_monitor_runs(test_suite_id, start, end)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
 def get_monitor_events_for_table(
     test_suite_id: str, table_name: str, start: datetime | None = None, end: datetime | None = None,
 ) -> dict:

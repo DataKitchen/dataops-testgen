@@ -58,6 +58,7 @@
  * @property {(DataStructureLog[])?} data_structure_logs
  * @property {Predictions?} predictions
  * @property {TrendRange?} trend_range
+ * @property {string?} trend_notice Why the chart is empty, when the reason is not "no runs"
  * @property {{ open: boolean, title: string }?} dialog
  */
 import van from '/app/static/js/van.min.js';
@@ -79,7 +80,9 @@ import { Portal } from '/app/static/js/components/portal.js';
 import {
   CUSTOM_RANGE,
   DEFAULT_RANGE,
+  MAX_CUSTOM_SPAN,
   TREND_RANGE_PRESETS,
+  forecastBelongsOnAxis,
   relativeRangeToBounds,
 } from '/app/static/js/time_range_utils.js';
 
@@ -153,7 +156,8 @@ const TableMonitoringTrend = (props) => {
               { class: 'flex-row fx-justify-center trend-empty-message' },
               span(
                 { class: 'text-secondary' },
-                'No monitor runs in the selected time range. Select a longer range to see trends for this table.',
+                getValue(props.trend_notice)
+                  ?? 'No monitor runs in the selected time range. Select a longer range to see trends for this table.',
               ),
             );
           }
@@ -256,6 +260,30 @@ const TableMonitoringTrend = (props) => {
     selectedRange.val = getValue(props.trend_range)?.preset ?? DEFAULT_RANGE;
   });
 
+  // Relative presets resolve against the top of the next hour rather than the exact instant, so
+  // that re-resolving inside the same hour reproduces the bounds already stored. Resolving against
+  // `now` would make every reopen emit a different window, and every emit costs a round trip.
+  const nextHour = () => {
+    const boundary = new Date();
+    boundary.setMinutes(0, 0, 0);
+    return new Date(boundary.getTime() + 60 * 60 * 1000);
+  };
+
+  // Session state keeps the preset; its bounds are re-resolved on every open so that '7 days' keeps
+  // meaning seven days from now rather than seven days from whenever it was first clicked. Custom
+  // and Default resolve to null and are left alone.
+  const refreshRelativeRange = () => {
+    const range = getValue(props.trend_range) ?? {};
+    const bounds = relativeRangeToBounds(range.preset, nextHour());
+    if (bounds && (range.start !== bounds.start || range.end !== bounds.end)) {
+      // Deferred so the emit lands after the render pass instead of inside the derive.
+      setTimeout(() => emit('SelectTrendRange', {
+        payload: { preset: range.preset, start: bounds.start, end: bounds.end },
+      }), 0);
+    }
+  };
+  van.derive(() => dialogOpen.val && refreshRelativeRange());
+
   const rangeControlId = 'monitoring-trends-range-control';
   const customPanelOpen = van.state(false);
   const customStart = van.state(null);
@@ -269,18 +297,13 @@ const TableMonitoringTrend = (props) => {
     ...(getValue(props.metric_events) ?? []).flatMap(group => group.events ?? []),
   ].map(event => parseDate(event.time)).filter(Number.isFinite);
 
+  // The panel opens on the window currently on screen. Only Default needs a seed of its own: its
+  // run-count window has no explicit bounds, and is described by the runs it returned.
   const seedCustomRange = () => {
     const range = getValue(props.trend_range) ?? {};
-    if (range.preset === CUSTOM_RANGE && range.start && range.end) {
+    if (range.start && range.end) {
       customStart.val = new Date(range.start);
       customEnd.val = new Date(range.end);
-      return;
-    }
-
-    const bounds = relativeRangeToBounds(range.preset ?? DEFAULT_RANGE);
-    if (bounds) {
-      customStart.val = new Date(bounds.start);
-      customEnd.val = new Date(bounds.end);
       return;
     }
 
@@ -304,7 +327,7 @@ const TableMonitoringTrend = (props) => {
 
       customPanelOpen.val = false;
       selectedRange.val = preset;
-      const bounds = relativeRangeToBounds(preset);
+      const bounds = relativeRangeToBounds(preset, nextHour());
       emit('SelectTrendRange', { payload: { preset, start: bounds?.start ?? null, end: bounds?.end ?? null } });
     },
   });
@@ -324,10 +347,13 @@ const TableMonitoringTrend = (props) => {
       DateTimeRangeField({
         start: customStart,
         end: customEnd,
+        maxSpan: MAX_CUSTOM_SPAN,
         onChange: (result) => customValid.val = result.valid,
       }),
       div(
-        { class: 'flex-row fx-gap-5' },
+        // Months differ in row count, so the default centring would offset one calendar's header
+        // against the other's.
+        { class: 'flex-row fx-align-flex-start fx-gap-5' },
         DatePicker({ value: customStart }),
         DatePicker({ value: customEnd }),
       ),
@@ -383,16 +409,24 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
     + metricEvents.length * ((spacing * 4) + metricTrendChartHeight)
   );
 
-  const predictions = getValue(props.predictions) ?? {};
-  const freshnessWindow = predictions?.freshness_trend?.window;
-  const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
-    ...predictionTimes,
+  const rawPredictions = getValue(props.predictions) ?? {};
+  const rawPredictionTimes = Object.values(rawPredictions).reduce((times, v) => [
+    ...times,
     ...Object.keys(v.mean ?? {}).map(t => ({time: +t})),
     ...(v.window ? [
       v.window.start ? {time: v.window.start} : null,
       {time: v.window.end},
     ].filter(Boolean) : []),
   ], []);
+  const trendRange = getValue(props.trend_range) ?? {};
+  const forecastOnAxis = forecastBelongsOnAxis(
+    trendRange.start,
+    trendRange.end,
+    rawPredictionTimes.length ? Math.min(...rawPredictionTimes.map(p => p.time)) : null,
+  );
+  const predictions = forecastOnAxis ? rawPredictions : {};
+  const predictionTimes = forecastOnAxis ? rawPredictionTimes : [];
+  const freshnessWindow = predictions?.freshness_trend?.window;
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
   const schemaChangesMaxValue = schemaChangeEvents.reduce((currentValue, e) => Math.max(currentValue, e.additions, e.deletions), 10);

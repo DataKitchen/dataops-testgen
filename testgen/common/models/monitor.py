@@ -170,6 +170,27 @@ _TABLE_SCOPE_TYPES = (
 )
 
 
+def build_run_count_sql(
+    test_suite_id,
+    start: datetime,
+    end: datetime,
+) -> tuple[str, dict]:
+    """Build SQL counting the suite's runs whose start time falls in ``[start, end)``.
+
+    The table-scope series emits one row per run per monitor type whether or not the run produced a
+    result, so this count times the number of monitor types is the series row count. Covered by the
+    ``(test_suite_id, test_starttime)`` index, so it costs far less than the series query it guards.
+    """
+    query = """
+    SELECT COUNT(*)
+    FROM test_runs
+    WHERE test_runs.test_suite_id = :test_suite_id
+        AND test_runs.test_starttime >= :range_start
+        AND test_runs.test_starttime < :range_end;
+    """
+    return query, {"test_suite_id": str(test_suite_id), "range_start": start, "range_end": end}
+
+
 def build_series_sql(
     *,
     test_suite_id,
