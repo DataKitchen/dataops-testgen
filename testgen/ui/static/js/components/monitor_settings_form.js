@@ -41,10 +41,10 @@ import { Select } from './select.js';
 import { Checkbox } from './checkbox.js';
 import { CrontabInput, parseSteppedList } from './crontab_input.js';
 import { Icon } from './icon.js';
-import { Link } from './link.js';
 import { withTooltip } from './tooltip.js';
-import { numberBetween, required } from '../form_validators.js';
-import { timezones, holidayCodes } from '../values.js';
+import { numberBetween } from '../form_validators.js';
+import { timezones } from '../values.js';
+import { holidayCodes } from '../holiday_calendars.js';
 import { formatDurationSeconds, humanReadableDuration } from '../display_utils.js';
 
 const { div, span } = van.tags;
@@ -80,8 +80,8 @@ const MonitorSettingsForm = (props) => {
     const predictSensitivity = van.state(monitorSuite.predict_sensitivity ?? 'medium');
     const predictMinLookback = van.state(monitorSuite.predict_min_lookback ?? predictLookbackConfig.default);
     const predictExcludeWeekends = van.state(monitorSuite.predict_exclude_weekends ?? false);
-    const predictHolidayCodes = van.state(monitorSuite.predict_holiday_codes);
-    const excludeHolidays = van.state(!!monitorSuite.predict_holiday_codes);
+    const predictHolidayCodes = van.state(monitorSuite.predict_holiday_codes ?? []);
+    const excludeHolidays = van.state((monitorSuite.predict_holiday_codes ?? []).length > 0);
 
     const updatedSchedule = van.derive(() => {
         return {
@@ -100,7 +100,9 @@ const MonitorSettingsForm = (props) => {
             predict_sensitivity: predictSensitivity.val,
             predict_min_lookback: predictMinLookback.val,
             predict_exclude_weekends: predictExcludeWeekends.val,
-            predict_holiday_codes: excludeHolidays.val ? predictHolidayCodes.val : null,
+            predict_holiday_codes: excludeHolidays.val && predictHolidayCodes.val.length
+                ? predictHolidayCodes.val
+                : null,
         };
     });
 
@@ -119,9 +121,7 @@ const MonitorSettingsForm = (props) => {
     }
 
     van.derive(() => {
-        if (!excludeHolidays.val) {
-            setFieldValidity('predict_holiday_codes', true);
-        }
+        setFieldValidity('predict_holiday_codes', !excludeHolidays.val || predictHolidayCodes.val.length > 0);
     });
 
     return div(
@@ -340,30 +340,20 @@ const PredictionForm = (
         () => excludeHolidays.val
             ? div(
                 { style: 'width: 250px; margin: -8px 0 0 25px; position: relative;' },
-                Input({
-                    name: 'predict_holiday_codes',
-                    label: 'Holiday Codes',
+                Select({
+                    label: 'Holiday calendars',
                     value: predictHolidayCodes,
-                    help: 'Comma-separated list of country or financial market codes',
-                    autocompleteOptions: holidayCodes,
-                    onChange: (value, state) => {
+                    options: holidayCodes,
+                    multiSelect: true,
+                    required: true,
+                    width: 250,
+                    onChange: (value) => {
                         predictHolidayCodes.val = value;
-                        options.setValidity?.('predict_holiday_codes', state.valid);
                     },
-                    validators: [
-                        required,
-                    ],
                 }),
                 div(
                     { class: 'flex-row fx-gap-1 mt-1 text-caption' },
-                    span({}, 'See supported'),
-                    Link({ emit, 
-                        open_new: true,
-                        label: 'codes',
-                        href: 'https://holidays.readthedocs.io/en/latest/#available-countries',
-                        right_icon: 'open_in_new',
-                        right_icon_size: 13,
-                    }),
+                    span({}, 'Holidays observed in the selected countries and markets are excluded from training'),
                 ),
             )
             : '',

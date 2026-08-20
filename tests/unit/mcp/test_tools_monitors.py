@@ -1246,7 +1246,7 @@ def test_update_monitor_settings_unknown_holiday_code(mock_resolve, mock_js, moc
 @patch(f"{MODULE}.JobSchedule")
 @patch(f"{MODULE}.update_monitoring")
 @patch(f"{MODULE}.resolve_monitored_table_group")
-def test_update_monitor_settings_holiday_codes_serialized(mock_resolve, mock_update, mock_js, mock_last, db_session_mock):
+def test_update_monitor_settings_holiday_codes_stored_as_list(mock_resolve, mock_update, mock_js, mock_last, db_session_mock):
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _settings_suite())
     mock_js.get_for_monitor_suite.return_value = _mock_schedule()
@@ -1256,7 +1256,8 @@ def test_update_monitor_settings_holiday_codes_serialized(mock_resolve, mock_upd
     with _patch_perms(permission="edit"):
         update_monitor_settings(str(tg.id), holiday_codes=["US", "NYSE"])
 
-    assert mock_update.call_args.kwargs["suite_attrs"]["predict_holiday_codes"] == "US,NYSE"
+    # Stored as canonical codes (NYSE -> XNYS) matching the UI picker and migrated data.
+    assert mock_update.call_args.kwargs["suite_attrs"]["predict_holiday_codes"] == ["US", "XNYS"]
 
 
 @patch(f"{MODULE}._last_monitor_run", return_value=None)

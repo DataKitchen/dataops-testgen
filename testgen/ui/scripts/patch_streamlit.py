@@ -1,4 +1,5 @@
 
+import json
 import pathlib
 import re
 import shutil
@@ -7,6 +8,8 @@ import streamlit
 import streamlit.components.v2.manifest_scanner as streamlit_manifest_scanner
 import streamlit.web.server.app_static_file_handler as streamlit_app_static_file_handler
 from bs4 import BeautifulSoup, Tag
+
+from testgen.common.holiday_service import list_holiday_calendars
 
 INJECTED_CLASS = "testgen-mods"
 STREAMLIT_ROOT = pathlib.Path(streamlit.__file__).parent
@@ -29,11 +32,25 @@ STATIC_FILES = [
 ]
 
 
+GENERATED_HOLIDAY_MODULE = TESTGEN_STATIC_FOLDER / "js" / "holiday_calendars.js"
+
+
 def patch(dev: bool = False) -> None:
     _allow_static_files([".js", ".css"])
     _patch_streamlit_index(*STATIC_FILES, dev=dev)
+    _generate_holiday_calendars_module()
     if dev:
         _allow_pyproject_from_editable_installs()
+
+
+def _generate_holiday_calendars_module() -> None:
+    calendars = json.dumps(list_holiday_calendars(), indent=4)
+    GENERATED_HOLIDAY_MODULE.write_text(
+        "// Generated at startup from the backend `holidays` package. Do not edit.\n"
+        f"const holidayCodes = {calendars};\n\n"
+        "export { holidayCodes };\n",
+        encoding="utf-8",
+    )
 
 
 def _patch_streamlit_index(*static_files: str, dev: bool = False) -> None:
