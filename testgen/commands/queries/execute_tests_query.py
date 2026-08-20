@@ -1,7 +1,7 @@
 import dataclasses
 from collections.abc import Iterable
 from datetime import date, datetime
-from typing import TypedDict
+from typing import ClassVar, TypedDict
 from uuid import UUID
 
 import pandas as pd
@@ -260,6 +260,41 @@ class TestExecutionSQL:
         "result_message",
         "result_measure",
     )
+    # Columns each run type's test templates select. Stated here rather than read off
+    # whichever query returned last, so a template that stops selecting one fails on
+    # write instead of shifting the run's results into neighbouring columns.
+    template_result_columns: ClassVar[dict[str, tuple[str, ...]]] = {
+        "QUERY": (
+            "test_type",
+            "test_definition_id",
+            "test_suite_id",
+            "test_run_id",
+            "test_time",
+            "schema_name",
+            "table_name",
+            "column_names",
+            "threshold_value",
+            "skip_errors",
+            "input_parameters",
+            "result_signal",
+            "result_code",
+            "result_message",
+            "result_measure",
+        ),
+        "METADATA": (
+            "test_type",
+            "test_definition_id",
+            "test_suite_id",
+            "test_run_id",
+            "test_time",
+            "schema_name",
+            "input_parameters",
+            "result_signal",
+            "result_code",
+            "result_message",
+            "result_measure",
+        ),
+    }
 
     def __init__(self, connection: Connection, table_group: TableGroup, test_suite: TestSuite, test_run: TestRun):
         self.connection = connection

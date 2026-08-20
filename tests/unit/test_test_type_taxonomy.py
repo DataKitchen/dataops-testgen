@@ -5,6 +5,7 @@ import pytest
 from yaml import safe_load
 
 import testgen
+from testgen.commands.queries.execute_tests_query import TestExecutionSQL
 from testgen.common.models.test_definition import StatisticalTechnique, TestAlgorithm
 
 YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
@@ -12,16 +13,6 @@ YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
 ALGORITHMS = {a.value for a in TestAlgorithm}
 TECHNIQUES = {t.value for t in StatisticalTechnique}
 HEALTH_DIMENSIONS = {"Schema Drift", "Data Drift", "Statistical Drift", "Volume", "Freshness"}
-
-
-# Output columns every QUERY test template selects, in the order they are selected.
-# Schema_Drift is the only METADATA type and selects the same list without these.
-RESULT_COLUMNS = [
-    "test_type", "test_definition_id", "test_suite_id", "test_run_id", "test_time",
-    "schema_name", "table_name", "column_names", "threshold_value", "skip_errors",
-    "input_parameters", "result_signal", "result_code", "result_message", "result_measure",
-]
-SCHEMA_DRIFT_OMITS = {"table_name", "column_names", "threshold_value", "skip_errors"}
 
 
 def _strip_sql_comments(sql: str) -> str:
@@ -62,22 +53,19 @@ def test_health_dimension_uses_freshness_not_recency():
 
 @pytest.mark.unit
 def test_templates_sharing_a_result_header_agree_on_their_columns():
-    """Results for a run_type are bulk-loaded under one header taken from whichever
-    template's query finished last, and looked up on each row by name. So every
-    template of a (run_type, flavor) must expose the same output columns, under the
-    same names. A missing name aborts the write for the whole batch.
+    """Results for a run type are bulk-loaded under the header the loader declares, and
+    looked up on each row by name, so every template of that run type must select
+    exactly those columns. A name the loader asks for and a template omits aborts the
+    write for the whole batch.
 
-    Pins names, cardinality and order for the columns the load names; a template
-    adding an output column beyond them is not detected.
+    Pins names, cardinality and order; a template adding a column beyond the declared
+    header is written without it rather than detected here.
     """
-    expected = {
-        "QUERY": RESULT_COLUMNS,
-        "METADATA": [column for column in RESULT_COLUMNS if column not in SCHEMA_DRIFT_OMITS],
-    }
     for filename, tt in _test_type_docs():
-        columns = expected.get(tt.get("run_type"))
-        if columns is None:
+        expected = TestExecutionSQL.template_result_columns.get(tt.get("run_type"))
+        if expected is None:
             continue
+        columns = list(expected)
         for template in tt.get("test_templates") or []:
             aliases = [
                 match.group(1).lower()

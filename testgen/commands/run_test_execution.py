@@ -219,7 +219,7 @@ def _run_tests(
         get_current_session().commit()
 
     LOG.info(f"Running {run_type} tests: {len(test_defs)}")
-    test_results, result_columns, error_data = fetch_from_db_threaded(
+    test_results, _, error_data = fetch_from_db_threaded(
         [sql_generator.run_query_test(td) for td in test_defs],
         use_target_db=run_type != "METADATA",
         max_threads=sql_generator.connection.max_threads,
@@ -228,7 +228,11 @@ def _run_tests(
 
     if test_results:
         LOG.info(f"Writing {run_type} test results")
-        write_to_app_db(test_results, result_columns, sql_generator.test_results_table)
+        write_to_app_db(
+            test_results,
+            sql_generator.template_result_columns[run_type],
+            sql_generator.test_results_table,
+        )
 
     if error_count := len(error_data):
         LOG.warning(f"Errors running {run_type} tests: {error_count}")

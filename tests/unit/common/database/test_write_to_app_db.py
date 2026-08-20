@@ -72,3 +72,10 @@ def test_column_names_iterable_is_consumed_once():
 
     assert header == ["test_results", "one", "two"]
     assert written == [["1", "2"]]
+
+
+def test_a_row_missing_a_header_column_raises():
+    rows = _mappings("SELECT 'sig' AS result_signal, 1 AS result_code")
+
+    with pytest.raises(KeyError):
+        _copy_call(rows, ["result_signal", "result_code", "result_measure"])
