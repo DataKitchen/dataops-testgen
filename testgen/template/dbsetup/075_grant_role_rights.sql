@@ -45,7 +45,12 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.test_definition_notes,
     {SCHEMA_NAME}.oauth2_clients,
     {SCHEMA_NAME}.oauth2_authorization_codes,
-    {SCHEMA_NAME}.oauth2_tokens
+    {SCHEMA_NAME}.oauth2_tokens,
+    {SCHEMA_NAME}.test_types,
+    {SCHEMA_NAME}.test_templates,
+    {SCHEMA_NAME}.cat_test_conditions,
+    {SCHEMA_NAME}.target_data_lookups,
+    {SCHEMA_NAME}.generation_sets
     TO testgen_execute_role;
 
 

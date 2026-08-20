@@ -29,6 +29,16 @@ class ImpactDimension(StrEnum):
     USABILITY = "Usability"
 
 
+class HealthDimension(StrEnum):
+    """Stored ``health_dimension`` values for ``test_types``. The monitor-style axis
+    that groups test types by what class of data-health problem they detect."""
+    SCHEMA_DRIFT = "Schema Drift"
+    DATA_DRIFT = "Data Drift"
+    STATISTICAL_DRIFT = "Statistical Drift"
+    VOLUME = "Volume"
+    FRESHNESS = "Freshness"
+
+
 class JobKey(StrEnum):
     """``job_key`` column values for ``job_executions`` and ``job_schedules``."""
     run_profile = "run-profile"

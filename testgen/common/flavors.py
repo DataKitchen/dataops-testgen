@@ -19,6 +19,25 @@ from __future__ import annotations
 from enum import StrEnum
 
 
+class SqlFlavorCode(StrEnum):
+    """Stored ``sql_flavor_code`` values. Each code resolves to a family via
+    ``FLAVOR_CODE_TO_FAMILY``."""
+
+    REDSHIFT = "redshift"
+    REDSHIFT_SPECTRUM = "redshift_spectrum"
+    AZURE_MSSQL = "azure_mssql"
+    SYNAPSE_MSSQL = "synapse_mssql"
+    DATABRICKS = "databricks"
+    BIGQUERY = "bigquery"
+    ONELAKE_MSSQL = "onelake_mssql"
+    MSSQL = "mssql"
+    ORACLE = "oracle"
+    POSTGRESQL = "postgresql"
+    SAP_HANA = "sap_hana"
+    SALESFORCE_DATA360 = "salesforce_data360"
+    SNOWFLAKE = "snowflake"
+
+
 class SqlFlavorLabel(StrEnum):
     """User-facing database-flavor labels (the ``sql_flavor`` value space)."""
 
@@ -39,20 +58,20 @@ class SqlFlavorLabel(StrEnum):
 
 # code → label. Label strings are written once (on the enum); this only pairs them
 # with flavor codes.
-FLAVOR_CODE_TO_LABEL: dict[str, SqlFlavorLabel] = {
-    "redshift": SqlFlavorLabel.REDSHIFT,
-    "redshift_spectrum": SqlFlavorLabel.REDSHIFT_SPECTRUM,
-    "azure_mssql": SqlFlavorLabel.AZURE_MSSQL,
-    "synapse_mssql": SqlFlavorLabel.SYNAPSE_MSSQL,
-    "databricks": SqlFlavorLabel.DATABRICKS,
-    "bigquery": SqlFlavorLabel.BIGQUERY,
-    "onelake_mssql": SqlFlavorLabel.ONELAKE_MSSQL,
-    "mssql": SqlFlavorLabel.MSSQL,
-    "oracle": SqlFlavorLabel.ORACLE,
-    "postgresql": SqlFlavorLabel.POSTGRESQL,
-    "sap_hana": SqlFlavorLabel.SAP_HANA,
-    "salesforce_data360": SqlFlavorLabel.SALESFORCE_DATA360,
-    "snowflake": SqlFlavorLabel.SNOWFLAKE,
+FLAVOR_CODE_TO_LABEL: dict[SqlFlavorCode, SqlFlavorLabel] = {
+    SqlFlavorCode.REDSHIFT: SqlFlavorLabel.REDSHIFT,
+    SqlFlavorCode.REDSHIFT_SPECTRUM: SqlFlavorLabel.REDSHIFT_SPECTRUM,
+    SqlFlavorCode.AZURE_MSSQL: SqlFlavorLabel.AZURE_MSSQL,
+    SqlFlavorCode.SYNAPSE_MSSQL: SqlFlavorLabel.SYNAPSE_MSSQL,
+    SqlFlavorCode.DATABRICKS: SqlFlavorLabel.DATABRICKS,
+    SqlFlavorCode.BIGQUERY: SqlFlavorLabel.BIGQUERY,
+    SqlFlavorCode.ONELAKE_MSSQL: SqlFlavorLabel.ONELAKE_MSSQL,
+    SqlFlavorCode.MSSQL: SqlFlavorLabel.MSSQL,
+    SqlFlavorCode.ORACLE: SqlFlavorLabel.ORACLE,
+    SqlFlavorCode.POSTGRESQL: SqlFlavorLabel.POSTGRESQL,
+    SqlFlavorCode.SAP_HANA: SqlFlavorLabel.SAP_HANA,
+    SqlFlavorCode.SALESFORCE_DATA360: SqlFlavorLabel.SALESFORCE_DATA360,
+    SqlFlavorCode.SNOWFLAKE: SqlFlavorLabel.SNOWFLAKE,
 }
 
 # code → family (multiple codes can share one engine family, e.g. the two Azure
@@ -72,3 +91,6 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
     "salesforce_data360": "salesforce_data360",
     "snowflake": "snowflake",
 }
+
+# Stored ``sql_flavor`` values (the distinct families).
+FLAVOR_FAMILIES: frozenset[str] = frozenset(FLAVOR_CODE_TO_FAMILY.values())
