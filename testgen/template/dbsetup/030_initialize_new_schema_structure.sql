@@ -558,7 +558,8 @@ CREATE TABLE test_types (
    result_visualization_params   TEXT DEFAULT NULL,
    usage_notes                   VARCHAR,
    active                        VARCHAR,
-   overrides                     VARCHAR
+   overrides                     VARCHAR,
+   uploaded_version              VARCHAR(20)
 );
 
 CREATE TABLE test_templates (

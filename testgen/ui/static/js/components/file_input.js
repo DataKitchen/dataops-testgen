@@ -50,6 +50,7 @@ const FileInput = (options) => {
         const validators = getValue(options.validators) ?? [];
         return validators.map(v => v(value.val)).filter(error => error);
     });
+    const isDirty = van.state(false);
     const isRequired = van.state(false);
 
     van.derive(() => {
@@ -75,6 +76,7 @@ const FileInput = (options) => {
     };
 
     const loadFile = (event) => {
+        isDirty.val = true;
         const selectedFile = event.target.files[0];
         if (!selectedFile) {
             value.val = null;
@@ -107,6 +109,7 @@ const FileInput = (options) => {
 
     const unloadFile = (event) => {
         event.stopPropagation();
+        isDirty.val = true;
         value.val = null;
         showLoading.val = false;
         loadingIndicatorProgress.val = 0;
@@ -169,6 +172,12 @@ const FileInput = (options) => {
                 ? div({ class: 'tg-file-uploader--loading', style: loadingIndicatorStyle }, '')
                 : '',
         ),
+        () => isDirty.val && errors.val.length
+            ? div(
+                { class: 'tg-file-uploader--errors flex-column fx-gap-1' },
+                errors.val.map((message) => span({ class: 'text-error text-caption' }, message)),
+            )
+            : '',
     );
 };
 

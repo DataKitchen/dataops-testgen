@@ -69,7 +69,11 @@ def test_plugin_test_type_paths_are_scanned_and_imported():
 
         with patch("testgen.utils.plugins.discover", return_value=[fake_plugin]), \
              patch.object(loader, "get_template_files", side_effect=fake_get_template_files), \
-             patch.object(loader, "execute_db_queries") as mock_exec:
+             patch.object(loader, "execute_db_queries") as mock_exec, \
+             patch.object(loader.settings, "VERSION", "1.0.0"):
+            # ``_process_yaml_for_import`` also queries the current uploaded_version;
+            # empty return keeps the rule-1 (packaged) path.
+            mock_exec.return_value = ([], [])
             loader.import_metadata_records_from_yaml(PARAMS)
 
     all_queries = [q for call in mock_exec.call_args_list for q, _ in call.args[0]]
@@ -106,7 +110,9 @@ def test_broken_plugin_is_skipped_and_later_import_still_runs():
 
         with patch("testgen.utils.plugins.discover", return_value=[broken_plugin, good_plugin]), \
              patch.object(loader, "get_template_files", side_effect=fake_get_template_files), \
-             patch.object(loader, "execute_db_queries") as mock_exec:
+             patch.object(loader, "execute_db_queries") as mock_exec, \
+             patch.object(loader.settings, "VERSION", "1.0.0"):
+            mock_exec.return_value = ([], [])
             loader.import_metadata_records_from_yaml(PARAMS)
 
     # The broken plugin's load() was attempted but did not propagate.
