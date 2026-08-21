@@ -132,6 +132,7 @@ cython_debug/
 
 testgen/ui/components/frontend/js/plugins.js
 testgen/ui/components/frontend/js/plugin_pages/
+testgen/ui/static/js/holiday_calendars.js
 
 # Editor swap files
 *.swp

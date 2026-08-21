@@ -13,7 +13,7 @@ from testgen.common.history_calculation_service import (
     format_calculation_expression,
     parse_calculation_expression,
 )
-from testgen.common.holiday_service import is_supported_holiday_code
+from testgen.common.holiday_service import canonicalize_holiday_code, is_supported_holiday_code
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.data_structure_log import (
     SCHEMA_CHANGE_ADDED,
@@ -544,7 +544,8 @@ def update_monitor_settings(
                 "or financial-market codes (e.g. `NYSE`, `ECB`); see "
                 "https://holidays.readthedocs.io/en/latest/#available-countries."
             )
-        suite_attrs["predict_holiday_codes"] = ",".join(cleaned) if cleaned else None
+        canonical = list(dict.fromkeys(canonicalize_holiday_code(code) for code in cleaned))
+        suite_attrs["predict_holiday_codes"] = canonical or None
     if regenerate_freshness is not None:
         suite_attrs["monitor_regenerate_freshness"] = regenerate_freshness
 
