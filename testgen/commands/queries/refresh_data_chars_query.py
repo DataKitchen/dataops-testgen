@@ -1,6 +1,7 @@
 import re
 from collections.abc import Iterable
 from datetime import datetime
+from uuid import UUID
 
 from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
@@ -21,6 +22,7 @@ class RefreshDataCharsSQL:
 
     staging_table = "stg_data_chars_updates"
     staging_columns = (
+        "refresh_id",
         "table_groups_id",
         "run_date",
         "schema_name",
@@ -146,9 +148,12 @@ class RefreshDataCharsSQL:
         query = f"SELECT {prefix} 1 FROM {table_ref} {suffix}".strip()
         return (query, None)
 
-    def get_staging_data_chars(self, data_chars: list[ColumnChars], run_date: datetime) -> list[list[str | bool | int]]:
+    def get_staging_data_chars(
+        self, data_chars: list[ColumnChars], run_date: datetime, refresh_id: UUID,
+    ) -> list[list[str | bool | int | UUID | None]]:
         return [
             [
+                refresh_id,
                 self.table_group.id,
                 to_sql_timestamp(run_date),
                 column.schema_name,
@@ -165,9 +170,9 @@ class RefreshDataCharsSQL:
             for column in data_chars
         ]
 
-    def update_data_chars(self, run_date: datetime) -> list[tuple[str, dict]]:
+    def update_data_chars(self, run_date: datetime, refresh_id: UUID) -> list[tuple[str, dict]]:
         # Runs on App database
-        params = {"RUN_DATE": to_sql_timestamp(run_date)}
+        params = {"RUN_DATE": to_sql_timestamp(run_date), "REFRESH_ID": refresh_id}
         return [
             self._get_query("data_chars_update.sql", extra_params=params),
             self._get_query("data_chars_staging_delete.sql", extra_params=params),

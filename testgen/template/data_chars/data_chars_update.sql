@@ -14,7 +14,7 @@ WITH new_chars AS (
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
-      AND run_date = :RUN_DATE
+      AND refresh_id = :REFRESH_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -64,7 +64,7 @@ WITH new_chars AS (
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
-      AND run_date = :RUN_DATE
+      AND refresh_id = :REFRESH_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name,
@@ -121,7 +121,7 @@ WITH new_chars AS (
       table_name
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
-      AND run_date = :RUN_DATE
+      AND refresh_id = :REFRESH_ID
    GROUP BY table_groups_id,
       schema_name,
       table_name
@@ -139,6 +139,9 @@ deleted_records AS (
       AND d.table_groups_id = :TABLE_GROUPS_ID
       AND d.drop_date IS NULL
       AND n.table_name IS NULL
+      -- Reconciling against an empty scan would drop the table group's whole catalog. Callers
+      -- only reach this statement with rows staged, so this holds unless that breaks.
+      AND EXISTS (SELECT 1 FROM new_chars)
    RETURNING data_table_chars.*
 )
 INSERT INTO data_structure_log (
@@ -171,7 +174,7 @@ WITH new_chars AS (
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
-      AND run_date = :RUN_DATE
+      AND refresh_id = :REFRESH_ID
 ),
 update_chars AS (
    UPDATE data_column_chars
@@ -241,7 +244,7 @@ WITH new_chars AS (
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
-      AND run_date = :RUN_DATE
+      AND refresh_id = :REFRESH_ID
 ),
 inserted_records AS (
    INSERT INTO data_column_chars (
@@ -311,7 +314,7 @@ WITH new_chars AS (
       column_name
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
-      AND run_date = :RUN_DATE
+      AND refresh_id = :REFRESH_ID
 ),
 deleted_records AS (
    UPDATE data_column_chars
@@ -328,6 +331,9 @@ deleted_records AS (
       AND d.table_groups_id = :TABLE_GROUPS_ID
       AND d.drop_date IS NULL
       AND n.column_name IS NULL
+      -- Reconciling against an empty scan would drop the table group's whole catalog. Callers
+      -- only reach this statement with rows staged, so this holds unless that breaks.
+      AND EXISTS (SELECT 1 FROM new_chars)
    RETURNING data_column_chars.*
 )
 INSERT INTO data_structure_log (

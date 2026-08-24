@@ -27,6 +27,7 @@ def _make_prediction_instance(suite_id: str = "suite-xyz") -> TestThresholdsPred
     """
     instance = TestThresholdsPrediction.__new__(TestThresholdsPrediction)
     instance.test_suite = MagicMock(id=suite_id)
+    instance.test_run = MagicMock(id="run-xyz")
     instance.run_date = datetime(2026, 1, 1)
     instance.tz = None
     return instance

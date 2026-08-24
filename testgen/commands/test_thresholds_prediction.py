@@ -1,6 +1,5 @@
 import json
 import logging
-from datetime import datetime
 
 import pandas as pd
 from scipy import stats
@@ -19,6 +18,7 @@ from testgen.common.freshness_service import (
 )
 from testgen.common.models import with_database_session
 from testgen.common.models.scheduler import JobSchedule
+from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import PredictSensitivity, TestSuite
 from testgen.common.read_file import read_template_sql_file
 from testgen.common.time_series_service import (
@@ -64,6 +64,7 @@ STALENESS_FACTOR_MAP = {
 class TestThresholdsPrediction:
     staging_table = "stg_test_definition_updates"
     staging_columns = (
+        "test_run_id",
         "test_suite_id",
         "test_definition_id",
         "run_date",
@@ -74,9 +75,10 @@ class TestThresholdsPrediction:
     )
 
     @with_database_session
-    def __init__(self, test_suite: TestSuite, run_date: datetime):
+    def __init__(self, test_suite: TestSuite, test_run: TestRun):
         self.test_suite = test_suite
-        self.run_date = run_date
+        self.test_run = test_run
+        self.run_date = test_run.test_starttime
         schedule = JobSchedule.get(JobSchedule.kwargs["test_suite_id"].astext == str(test_suite.id))
         self.tz = schedule.cron_tz or "UTC" if schedule else None
 
@@ -102,6 +104,7 @@ class TestThresholdsPrediction:
                 history = history.set_index("test_time")
 
                 test_prediction = [
+                    self.test_run.id,
                     self.test_suite.id,
                     test_def_id,
                     to_sql_timestamp(self.run_date),
@@ -162,7 +165,7 @@ class TestThresholdsPrediction:
     ) -> tuple[str, dict]:
         params = {
             "TEST_SUITE_ID": self.test_suite.id,
-            "RUN_DATE": to_sql_timestamp(self.run_date),
+            "TEST_RUN_ID": self.test_run.id,
         }
         query = read_template_sql_file(template_file_name, sub_directory)
         query = replace_params(query, params)
