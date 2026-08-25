@@ -23,5 +23,8 @@ SELECT r.test_definition_id,
   END AS result_signal
 FROM test_results r
 JOIN filtered_defs d ON d.id = r.test_definition_id
+-- test_time carries whole seconds, so two runs of one suite can tie on it. test_starttime
+-- keeps sub-second precision and breaks the tie in the order the runs actually started.
+LEFT JOIN test_runs tr ON tr.id = r.test_run_id
 WHERE r.test_suite_id = :TEST_SUITE_ID
-ORDER BY r.test_time;
+ORDER BY r.test_time, tr.test_starttime;

@@ -427,3 +427,32 @@ def test_freshness_gating_baseline_from_filtered_when_events_extend_past_history
     # baseline_value must be the value at the LAST timestamp present in BOTH history and
     # freshness_updates (not freshness_updates[-1] which points past the history window)
     assert parsed["baseline_value"] == 8.0
+
+
+@patch(MOCK_TARGET)
+def test_freshness_gating_baseline_survives_two_runs_in_one_second(mock_forecast):
+    """test_time labels every result row a run writes and carries whole seconds, so two runs
+    of one suite starting in the same second tie on it. A label lookup against the tied index
+    returns both rows, and converting that Series to a float raises — which escapes the
+    per-definition loop and discards the whole suite's predictions for the run."""
+    mock_forecast.return_value = _make_forecast([220.0], [1.0])
+    timestamps = [f"2026-01-{day:02d}" for day in range(1, 10)]
+    # The two most recent events land in the same second.
+    timestamps.append(timestamps[-1])
+    run_ids = [f"run_{i:02d}" for i in range(len(timestamps))]
+    values = [float(i) for i in range(1, len(timestamps) + 1)]
+    history = pd.DataFrame(
+        {"result_signal": values, "test_run_id": run_ids},
+        index=pd.to_datetime(timestamps),
+    )
+
+    _, _, baseline, prediction = compute_volume_or_metric_threshold(
+        history, run_ids, PredictSensitivity.medium,
+    )
+
+    assert prediction is not None
+    parsed = json.loads(prediction)
+    assert parsed["freshness_gated"] is True
+    # The last row in run order wins, and the value stays a scalar.
+    assert baseline == 10.0
+    assert parsed["baseline_value"] == 10.0
