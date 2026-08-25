@@ -84,14 +84,12 @@ class TestSuite(Entity):
     predict_sensitivity: PredictSensitivity | None = Column(Enum(PredictSensitivity))
     predict_min_lookback: int | None = Column(Integer)
     predict_exclude_weekends: bool = Column(Boolean, default=False)
-    predict_holiday_codes: str | None = Column(String)
+    predict_holiday_codes: list[str] | None = Column(postgresql.ARRAY(String))
     generation_sets: list[str] | None = Column(postgresql.ARRAY(String))
 
     @property
     def holiday_codes_list(self) -> list[str] | None:
-        if not self.predict_holiday_codes:
-            return None
-        return [code.strip() for code in self.predict_holiday_codes.split(",")]
+        return self.predict_holiday_codes or None
 
     _default_order_by = (asc(func.lower(test_suite)),)
     _minimal_columns = TestSuiteMinimal.__annotations__.keys()
