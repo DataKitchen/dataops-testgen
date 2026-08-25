@@ -3,7 +3,14 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 
-from testgen.api.deps import db_session, get_authorized_user, has_project_permission, resolve_job, resolve_table_group
+from testgen.api.deps import (
+    api_error,
+    db_session,
+    get_authorized_user,
+    has_project_permission,
+    resolve_job,
+    resolve_table_group,
+)
 from testgen.api.enums import (
     DISPOSITION_FROM_DB,
     DISPOSITION_TO_DB,
@@ -57,6 +64,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profile_result import ColumnProfileRow, ColumnSort, ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunHistoryRow
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestRunResultRow
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
@@ -118,6 +126,31 @@ def _disposition_from_db(value: str | None) -> Disposition:
         return Disposition.no_decision
 
 
+
+def _validate_test_type(test_type: str) -> None:
+    """Reject a test_type that matches no known type, so a typo is not a silent empty page."""
+    session = get_current_session()
+    if session.scalar(select(TestType.test_type).where(TestType.test_type == test_type)) is None:
+        raise api_error(
+            400,
+            "unknown_test_type",
+            f"Unknown test_type '{test_type}'. Valid values are the codes carried in the test_type "
+            "field of the results themselves; request the run without this filter to see them.",
+        )
+
+
+def _validate_issue_type(issue_type: str) -> None:
+    """Reject an issue_type that matches no known type, so a typo is not a silent empty page."""
+    session = get_current_session()
+    if session.scalar(select(HygieneIssueType.id).where(HygieneIssueType.id == issue_type)) is None:
+        raise api_error(
+            400,
+            "unknown_issue_type",
+            f"Unknown issue_type '{issue_type}'. Valid values are the ids carried in the issue_type "
+            "field of the issues themselves; request the run without this filter to see them.",
+        )
+
+
 def _to_item(row: TestRunResultRow) -> TestResultItem:
     """Map a DB-valued result row to the API item, normalizing enum casing."""
     return TestResultItem(
@@ -139,13 +172,20 @@ def _to_item(row: TestRunResultRow) -> TestResultItem:
 @router.get(
     "/test-runs/{job_id}/results",
     response_model=TestResultListResponse,
+    responses={400: {"model": ErrorResponse, "description": "Unknown test type"}},
 )
 def list_test_run_results(
     job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_tests),  # noqa: B008
     status: ResultStatus | None = Query(default=None),  # noqa: B008
     table_name: str | None = Query(default=None),
     column_name: str | None = Query(default=None),
-    test_type: str | None = Query(default=None),
+    test_type: str | None = Query(
+        default=None,
+        description=(
+            "Filter to one test type, given as its code — the value returned in each result's "
+            "`test_type`, e.g. `Dupe_Rows`."
+        ),
+    ),
     disposition: Disposition | None = Query(default=None),  # noqa: B008
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
@@ -163,6 +203,7 @@ def list_test_run_results(
     if column_name:
         clauses.append(TestResult.column_names == column_name)
     if test_type:
+        _validate_test_type(test_type)
         clauses.append(TestResult.test_type == test_type)
     if disposition is None:
         # Active: confirmed plus no_decision (NULL). Dismissed/muted excluded.
@@ -351,11 +392,18 @@ def _to_pii_item(row: HygieneIssueListRow, can_view_pii: bool) -> PotentialPiiIt
 @router.get(
     "/profiling-runs/{job_id}/hygiene-issues",
     response_model=HygieneIssueListResponse,
+    responses={400: {"model": ErrorResponse, "description": "Unknown issue type"}},
 )
 def list_profiling_run_hygiene_issues(
     job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile),  # noqa: B008
     user: User = Depends(get_authorized_user),  # noqa: B008
-    issue_type: str | None = Query(default=None),
+    issue_type: str | None = Query(
+        default=None,
+        description=(
+            "Filter to one issue type, given as its id — the value returned in each issue's "
+            "`issue_type`, e.g. `1002`."
+        ),
+    ),
     likelihood: IssueLikelihood | None = Query(default=None),  # noqa: B008
     disposition: HygieneDisposition | None = Query(default=None),  # noqa: B008
     page: int = Query(default=1, ge=1),
@@ -371,6 +419,7 @@ def list_profiling_run_hygiene_issues(
     """
     clauses = [HygieneIssueType.likelihood != DbIssueLikelihood.POTENTIAL_PII.value]
     if issue_type:
+        _validate_issue_type(issue_type)
         clauses.append(HygieneIssue.type_id == issue_type)
     if likelihood:
         clauses.append(HygieneIssueType.likelihood == LIKELIHOOD_TO_DB[likelihood].value)
