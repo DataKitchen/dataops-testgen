@@ -653,7 +653,7 @@ def test_enable_monitors_invalid_cron_rejected_before_side_effects(mock_resolve,
 def test_get_monitor_settings_happy_path(mock_resolve, mock_js, mock_last, db_session_mock):
     tg = _mock_table_group()
     suite = _settings_suite(
-        predict_sensitivity=PredictSensitivity.high, monitor_lookback=50, holiday_codes_list=["US", "NYSE"]
+        predict_sensitivity=PredictSensitivity.high, monitor_lookback=50, holiday_codes_list=["US", "XNYS"]
     )
     mock_resolve.return_value = (tg, suite)
     mock_js.get_for_monitor_suite.return_value = _mock_schedule(cron_expr="0 */12 * * *", cron_tz="UTC", active=True)
@@ -666,7 +666,7 @@ def test_get_monitor_settings_happy_path(mock_resolve, mock_js, mock_last, db_se
     assert "# Monitor settings for `Sales`" in out
     assert "**Sensitivity:** high" in out
     assert "**Lookback runs:** 50" in out
-    assert "**Holiday codes:** US, NYSE" in out
+    assert "**Holiday codes:** US, XNYS" in out
     assert "**Regenerate freshness:** Yes" in out
     assert "## Schedule" in out
     assert "**Cron expression:** `0 */12 * * *`" in out

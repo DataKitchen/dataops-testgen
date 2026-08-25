@@ -3,7 +3,7 @@
 Holiday codes name the calendars excluded from prediction baselines — used as SARIMAX
 exogenous regressors and in freshness business-time gap calculations. Each code resolves
 via the ``holidays`` package as either a country (ISO code, e.g. ``US``) or a financial
-market (e.g. ``NYSE``).
+market (MIC, e.g. ``XNYS``).
 """
 
 import logging
@@ -99,6 +99,11 @@ def list_holiday_calendars() -> list[dict[str, str]]:
 def _calendar_label(camel_case_name: str) -> str:
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", camel_case_name)
     return re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", spaced)
+
+
+def list_market_holiday_codes() -> list[str]:
+    """Canonical MICs for every financial-market calendar in the registry, alphabetically."""
+    return sorted(entity[1] for entity in registry.FINANCIAL.values())
 
 
 # Every representation the holidays package accepts (display name, ISO codes, market aliases),

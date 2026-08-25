@@ -13,7 +13,11 @@ from testgen.common.history_calculation_service import (
     format_calculation_expression,
     parse_calculation_expression,
 )
-from testgen.common.holiday_service import canonicalize_holiday_code, is_supported_holiday_code
+from testgen.common.holiday_service import (
+    canonicalize_holiday_code,
+    is_supported_holiday_code,
+    list_market_holiday_codes,
+)
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.data_structure_log import (
     SCHEMA_CHANGE_ADDED,
@@ -476,9 +480,8 @@ def update_monitor_settings(
     holiday_codes: Annotated[
         list[str] | None,
         Field(
-            description="Holiday calendars to exclude from the model's training data — ISO country codes (e.g. ``US``, "
-            "``GB``) or financial-market codes (e.g. ``NYSE``, ``ECB``); see "
-            "https://holidays.readthedocs.io/en/latest/#available-countries. Pass an empty list to clear.",
+            description="Holiday calendars to exclude from the model's training data — ISO 3166-1 alpha-2 country "
+            "codes (e.g. ``US``, ``GB``) or financial-market MICs (e.g. ``XNYS``, ``XECB``). Pass an empty list to clear.",
         ),
     ] = None,
     regenerate_freshness: Annotated[
@@ -540,9 +543,8 @@ def update_monitor_settings(
         invalid = [code for code in cleaned if not is_supported_holiday_code(code)]
         if invalid:
             raise MCPUserError(
-                f"Unknown holiday codes: {', '.join(invalid)}. Use ISO country codes (e.g. `US`, `GB`) "
-                "or financial-market codes (e.g. `NYSE`, `ECB`); see "
-                "https://holidays.readthedocs.io/en/latest/#available-countries."
+                f"Unknown holiday codes: {', '.join(invalid)}. Countries use ISO 3166-1 alpha-2 codes "
+                f"(e.g. `US`, `GB`); financial markets use one of: {', '.join(list_market_holiday_codes())}."
             )
         canonical = list(dict.fromkeys(canonicalize_holiday_code(code) for code in cleaned))
         suite_attrs["predict_holiday_codes"] = canonical or None
