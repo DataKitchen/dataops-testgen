@@ -101,7 +101,7 @@ def _on_logs_refresh(*_) -> None:
 def help_menu(help_topic: str | None = None) -> None:
     with st.container(key="tg-header--help"):
         version = version_service.get_version()
-        if version.latest != version.current:
+        if version.upgrade_available:
             st.page_link(UPGRADE_URL, label=f":small[:red[New version available! {version.latest}]]")
 
         help_container = st.empty()

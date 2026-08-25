@@ -191,7 +191,7 @@ class CliGroup(click.Group):
     help=f"""
     {VERSION_DATA.edition} {VERSION_DATA.current or ""}
 
-    {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.latest != VERSION_DATA.current else ""}
+    {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.upgrade_available else ""}
     """
 )
 @click.option(

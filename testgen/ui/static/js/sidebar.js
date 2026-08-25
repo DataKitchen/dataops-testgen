@@ -13,6 +13,7 @@
  * @property {string} edition
  * @property {string} current
  * @property {string} latest
+ * @property {boolean} upgrade_available
  *
  * @typedef Menu
  * @type {object}
