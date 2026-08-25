@@ -77,6 +77,15 @@ class PluginSpec:
         return []
 
     @classmethod
+    def get_doc_label(cls) -> str | None:
+        """Return Markdown to append to this plugin's entries in generated reference pages.
+
+        Default: none, so an entry is indistinguishable from a core one. Override to mark
+        entries that are only present when this plugin is installed.
+        """
+        return None
+
+    @classmethod
     def get_test_type_template_paths(cls) -> list[str]:
         """Return importable package paths to scan for test-type metadata YAMLs. Default: none.
 

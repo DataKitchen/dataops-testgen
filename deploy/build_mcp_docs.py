@@ -12,9 +12,15 @@ land under the right heading automatically.
 The page is an overview index: each entry is one bullet carrying the opening
 sentence of its docstring. Detail beyond that sentence is omitted from the page
 by design; it still reaches MCP clients, which receive the full description.
+
+An entry contributed by a plugin is followed by whatever label that plugin's
+``get_doc_label`` returns, so a page can list core and plugin entries together and
+still say which is which. A plugin's entries are only present when it is installed
+in the environment this script runs in.
 """
 
 import argparse
+import logging
 import re
 import sys
 import textwrap
@@ -23,6 +29,9 @@ from typing import Any
 
 from testgen.mcp.server import build_mcp_server
 from testgen.mcp.tools.common import DocGroup
+from testgen.utils.plugins import discover
+
+LOG = logging.getLogger("testgen")
 
 _DEFAULT_OUTPUT = Path("docs/mcp/supported-tools.md")
 _SENTENCE_END_RE = re.compile(r"\.(?=\s|$)")
@@ -66,9 +75,33 @@ def _entry_name(item: Any) -> str:
     return str(getattr(item, "uri", None) or item.name)
 
 
-def _render_entry(item: Any) -> str:
+def _plugin_doc_labels() -> dict[str, str]:
+    """Map installed plugin package name to the label it wants on its entries."""
+    labels = {}
+    for plugin in discover():
+        try:
+            label = plugin.load().get_doc_label()
+        except Exception:
+            LOG.warning("Plugin %s failed to load; its entries go unlabelled", plugin.package)
+            continue
+        if label:
+            labels[plugin.package] = label
+    return labels
+
+
+def _entry_label(item: Any, plugin_labels: dict[str, str]) -> str:
+    """Label for the entry's originating package, empty for a core entry.
+
+    Resources are addressed by URI and expose no function, so they resolve to no package.
+    """
+    module = getattr(getattr(item, "fn", None), "__module__", "")
+    return plugin_labels.get(module.split(".", 1)[0], "") if module else ""
+
+
+def _render_entry(item: Any, plugin_labels: dict[str, str]) -> str:
     description = _short_description(item.description or "")
-    return f"- **`{_entry_name(item)}`** — {description}"
+    label = _entry_label(item, plugin_labels)
+    return f"- **`{_entry_name(item)}`** — {description}{f' {label}' if label else ''}"
 
 
 def _group_for_tool(tool: Any) -> str:
@@ -95,6 +128,7 @@ def _group_tools(tools: list[Any]) -> list[tuple[str, list[Any]]]:
 
 
 def _build_markdown(mcp: Any) -> str:
+    plugin_labels = _plugin_doc_labels()
     tools = mcp._tool_manager.list_tools()
     resources = sorted(mcp._resource_manager.list_resources(), key=lambda r: str(r.uri))
     prompts = sorted(mcp._prompt_manager.list_prompts(), key=lambda p: p.name)
@@ -118,14 +152,14 @@ def _build_markdown(mcp: Any) -> str:
         ),
         "",
     ]
-    parts.extend(_render_entry(prompt) for prompt in prompts)
+    parts.extend(_render_entry(prompt, plugin_labels) for prompt in prompts)
     parts.append("")
 
     parts.extend(["## Tools", "", "Tools are operations the assistant calls during a conversation, picked based on what you ask.", ""])
     for heading, bucket in grouped_tools:
         parts.append(f"### {heading}")
         parts.append("")
-        parts.extend(_render_entry(tool) for tool in bucket)
+        parts.extend(_render_entry(tool, plugin_labels) for tool in bucket)
         parts.append("")
 
     parts.extend(
@@ -136,7 +170,7 @@ def _build_markdown(mcp: Any) -> str:
             "",
         ]
     )
-    parts.extend(_render_entry(resource) for resource in resources)
+    parts.extend(_render_entry(resource, plugin_labels) for resource in resources)
 
     return "\n".join(parts).rstrip() + "\n"
 
