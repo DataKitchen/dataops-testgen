@@ -56,6 +56,7 @@ def _mock_result_row(**overrides):
     defaults = {
         "test_definition_id": uuid4(),
         "test_type": "Unique",
+        "test_type_name": "Unique Values",
         "schema_name": "demo",
         "table_name": "orders",
         "column_names": "amount",

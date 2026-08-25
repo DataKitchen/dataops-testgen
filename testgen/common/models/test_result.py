@@ -72,6 +72,7 @@ class TestRunResultRow:
 
     test_definition_id: UUID
     test_type: str
+    test_type_name: str | None
     schema_name: str
     table_name: str | None
     column_names: str | None
@@ -303,6 +304,7 @@ class TestResult(Entity):
             select(
                 cls.test_definition_id.label("test_definition_id"),
                 cls.test_type.label("test_type"),
+                TestType.test_name_short.label("test_type_name"),
                 cls.schema_name.label("schema_name"),
                 cls.table_name.label("table_name"),
                 cls.column_names.label("column_names"),
@@ -314,6 +316,7 @@ class TestResult(Entity):
                 cls.disposition.label("disposition"),
             )
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
+            .outerjoin(TestType, TestType.test_type == cls.test_type)
             .where(cls.test_run_id == test_run_id, TestSuite.is_monitor.isnot(True), *clauses)
             .order_by(cls.status, cls.table_name, cls.column_names, cls.id)
         )

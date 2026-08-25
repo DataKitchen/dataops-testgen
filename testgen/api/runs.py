@@ -123,6 +123,7 @@ def _to_item(row: TestRunResultRow) -> TestResultItem:
     return TestResultItem(
         test_definition_id=row.test_definition_id,
         test_type=row.test_type,
+        test_type_name=row.test_type_name,
         schema_name=row.schema_name,
         table_name=row.table_name,
         column_names=row.column_names,
@@ -322,6 +323,7 @@ def _to_hygiene_item(row: HygieneIssueListRow, can_view_pii: bool) -> HygieneIss
     return HygieneIssueItem(
         id=row.id,
         issue_type=row.issue_type_code,
+        issue_type_name=row.issue_type_name,
         schema_name=row.schema_name,
         table_name=row.table_name,
         column_name=row.column_name,
@@ -336,6 +338,7 @@ def _to_pii_item(row: HygieneIssueListRow, can_view_pii: bool) -> PotentialPiiIt
     return PotentialPiiItem(
         id=row.id,
         issue_type=row.issue_type_code,
+        issue_type_name=row.issue_type_name,
         schema_name=row.schema_name,
         table_name=row.table_name,
         column_name=row.column_name,

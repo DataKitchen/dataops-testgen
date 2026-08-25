@@ -96,6 +96,7 @@ class TestResultItem(BaseModel):
 
     test_definition_id: UUID
     test_type: str
+    test_type_name: str | None = None
     schema_name: str
     table_name: str | None = None
     column_names: str | None = None
@@ -194,6 +195,7 @@ class HygieneIssueItem(BaseModel):
 
     id: UUID
     issue_type: str
+    issue_type_name: str
     schema_name: str
     table_name: str
     column_name: str
@@ -217,6 +219,7 @@ class PotentialPiiItem(BaseModel):
 
     id: UUID
     issue_type: str
+    issue_type_name: str
     schema_name: str
     table_name: str
     column_name: str
