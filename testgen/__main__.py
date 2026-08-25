@@ -173,7 +173,11 @@ class CliGroup(click.Group):
     def invoke(self, ctx: Context):
         try:
             super().invoke(ctx)
-        except click.exceptions.UsageError:
+        # Click signals its own control flow with exceptions: UsageError for a bad
+        # invocation, Exit for `--help` and any ctx.exit(), Abort for Ctrl-C. Click
+        # handles all three itself, including the exit code, so they must reach it
+        # rather than being reported as an unexpected failure.
+        except (click.exceptions.UsageError, click.exceptions.Exit, click.exceptions.Abort):
             raise
         except Exception:
             LOG.exception("There was an unexpected error")
