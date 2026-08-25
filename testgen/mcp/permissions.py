@@ -170,6 +170,10 @@ def mcp_permission(permission: str) -> Callable:
             else:
                 perms = _compute_project_permissions(user, permission)
                 if not perms.allowed_codes:
+                    if not perms.memberships:
+                        raise MCPPermissionDenied(
+                            "You do not have access to any projects. Contact your system administrator."
+                        )
                     raise MCPPermissionDenied(
                         "Your role does not include the necessary permission for this operation on any project."
                     )
