@@ -36,6 +36,14 @@
  * @property {number?} column_adds
  * @property {number?} column_drops
  * @property {number?} column_mods
+ * @property {number?} previous_run_start
+ * @property {number?} previous_run_row_count
+ * @property {number?} latest_run_schema_anomalies
+ * @property {number?} latest_run_column_adds
+ * @property {number?} latest_run_column_drops
+ * @property {number?} latest_run_column_mods
+ * @property {('modified'|'added'|'dropped')?} latest_run_table_state
+ * @property {string?} latest_run_freshness_message
  *
  * @typedef MonitorList
  * @type {object}
@@ -101,6 +109,12 @@ import { SchemaChangesDialog } from './schema_changes_dialog.js';
 
 const { div, i, span, b } = van.tags;
 const SHOW_CHANGES_COLUMNS_KEY = 'testgen__monitors__showchanges';
+const SHOW_LATEST_RUN_COLUMNS_KEY = 'testgen__monitors__showlatestrunchanges';
+
+// Freshness results carry a structured message: "Table update detected: {Yes|No}[. {Detail}]".
+// Detail is "On time" / "Earlier than expected" / "Later than expected" / "Late", or absent
+// while the monitor is still training.
+const FRESHNESS_MESSAGE_PATTERN = /^Table update detected:\s*(Yes|No)(?:\.\s*(.+?))?\.?\s*$/i;
 
 const MonitorsDashboard = (/** @type Properties */ props) => {
     const { emit } = props;
@@ -123,6 +137,16 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         showChangesColumns.val = value ?? false;
         window.localStorage?.setItem(SHOW_CHANGES_COLUMNS_KEY, Number(showChangesColumns.val))
     };
+    const showLatestRunColumns = van.state(Boolean(window.localStorage?.getItem(SHOW_LATEST_RUN_COLUMNS_KEY) === '1'));
+    const setShowLatestRun = (value) => {
+        showLatestRunColumns.val = value ?? false;
+        window.localStorage?.setItem(SHOW_LATEST_RUN_COLUMNS_KEY, Number(showLatestRunColumns.val))
+    };
+    // Shared by the lookback toggle label and the two group headers, so they cannot drift.
+    const lookbackRuns = van.derive(() => {
+        const lookback = getValue(props.summary)?.lookback ?? 0;
+        return lookback === 1 ? 'run' : `${lookback} runs`;
+    });
     const tablePaginator = van.derive(() => {
         const result = getValue(props.monitors);
         return {
@@ -131,12 +155,19 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
             totalItems: result.total_count,
             onPageChange: (page, pageSize) => emit('SetParamValues', { payload: { current_page: page, items_per_page: pageSize } }),
             leftContent: div(
-                { class: 'ml-2' },
+                { class: 'ml-2 flex-row fx-gap-2' },
+                span({ class: 'mr-1' }, 'Show changes in'),
                 Checkbox({
-                    label: span({ class: 'mr-1' }, 'Show changes'),
+                    label: span({ class: 'mr-1' }, `last ${lookbackRuns.val}`),
                     checked: showChangesColumns,
                     disabled: false,
                     onChange: setShowChanges,
+                }),
+                Checkbox({
+                    label: span({ class: 'mr-1' }, 'latest run'),
+                    checked: showLatestRunColumns,
+                    disabled: false,
+                    onChange: setShowLatestRun,
                 }),
             ),
         };
@@ -157,8 +188,6 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         const result = getValue(props.monitors);
         renderTime = new Date();
         return result.items.map(monitor => {
-            const rowCountChange = (monitor.row_count ?? 0) - (monitor.previous_row_count ?? 0);
-
             return {
                 _hasAnomalies: monitor.freshness_anomalies || monitor.volume_anomalies || monitor.schema_anomalies || monitor.metric_anomalies,
                 table_name: () => ['added', 'dropped'].includes(monitor.table_state)
@@ -185,81 +214,37 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         ),
                         { text: `Latest update detected: ${formatTimestamp(monitor.latest_update)}` },
                     )
-                    : span({class: 'text-small text-secondary'}, '-'),
-                row_count: () => rowCountChange !== 0 ?
-                    withTooltip(
-                        div(
-                            {class: 'flex-row fx-gap-1', style: 'position: relative; display: inline-flex;'},
-                            Icon(
-                                {style: 'font-size: 20px; color: var(--primary-text-color);'},
-                                rowCountChange > 0 ? 'arrow_upward' : 'arrow_downward',
-                            ),
-                            span({class: 'text-small'}, formatNumber(Math.abs(rowCountChange))),
-                        ),
-                        {
-                            text: div(
-                                {class: 'flex-column fx-align-flex-start mb-1'},
-                                span(`Previous count: ${formatNumber(monitor.previous_row_count)}`),
-                                span(`Latest count: ${formatNumber(monitor.row_count)}`),
-                                span(`Percent change: ${monitor.previous_row_count ? formatNumber(rowCountChange * 100 / monitor.previous_row_count, 2) : '100'}%`),
-                            ),
-                        },
-                    )
-                    : span({class: 'text-small text-secondary'}, '-'),
-                schema_changes: () => monitor.schema_anomalies ?
-                    withTooltip(
-                        div(
-                            {
-                                class: 'flex-row fx-gap-1 schema-changes',
-                                onclick: () => {
-                                    const summary = getValue(props.summary);
-                                    emit('OpenSchemaChanges', { payload: {
-                                        table_name: monitor.table_name,
-                                        start_time: summary?.lookback_start,
-                                        end_time: summary?.lookback_end,
-                                    }});
-                                },
-                            },
-                            monitor.table_state === 'added'
-                                ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'add_box')
-                                : null,
-                            monitor.table_state === 'dropped'
-                                ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'indeterminate_check_box')
-                                : null,
-                            monitor.column_adds ? div(
-                                {class: 'flex-row'},
-                                Icon({size: 20, classes: 'schema-icon'}, 'add'),
-                                span({class: 'text-small'}, formatNumber(monitor.column_adds)),
-                            ) : null,
-                            monitor.column_drops ? div(
-                                {class: 'flex-row'},
-                                Icon({size: 20, classes: 'schema-icon'}, 'remove'),
-                                span({class: 'text-small'}, formatNumber(monitor.column_drops)),
-                            ) : null,
-                            monitor.column_mods ? div(
-                                {class: 'flex-row'},
-                                Icon({size: 18, classes: 'schema-icon'}, 'change_history'),
-                                span({class: 'text-small'}, formatNumber(monitor.column_mods)),
-                            ) : null,
-                        ),
-                        {
-                            text: div(
-                                {class: 'flex-column fx-align-flex-start'},
-                                monitor.table_state === 'added'
-                                    ? span({class: 'mb-1', style: 'font-size: 14px;'}, 'Table added.')
-                                    : null,
-                                monitor.table_state === 'dropped'
-                                    ? span({class: 'mb-1', style: 'font-size: 14px;'}, 'Table dropped.')
-                                    : null,
-                                b({class: 'mb-1'}, 'Columns'),
-                                monitor.column_adds ? span(`Added: ${monitor.column_adds}`) : null,
-                                monitor.column_drops ? span(`Dropped: ${monitor.column_drops}`) : null,
-                                monitor.column_mods ? span(`Modified: ${monitor.column_mods}`) : null,
-                            ),
-                            width: 200,
-                            position: 'right',
-                        },
-                    ) : span({class: 'text-small text-secondary'}, '-'),
+                    : EmptyCell(),
+                row_count_change: () => RowCountCell(monitor.row_count, monitor.previous_row_count),
+                schema_changes: () => SchemaChangesCell({
+                    anomalies: monitor.schema_anomalies,
+                    tableState: monitor.table_state,
+                    adds: monitor.column_adds,
+                    drops: monitor.column_drops,
+                    mods: monitor.column_mods,
+                    onclick: () => {
+                        const summary = getValue(props.summary);
+                        emit('OpenSchemaChanges', { payload: {
+                            table_name: monitor.table_name,
+                            start_time: summary?.lookback_start,
+                            end_time: summary?.lookback_end,
+                        }});
+                    },
+                }),
+                latest_run_update_status: () => UpdateStatusCell(monitor),
+                latest_run_row_count_change: () => RowCountCell(monitor.row_count, monitor.previous_run_row_count),
+                latest_run_schema_changes: () => SchemaChangesCell({
+                    anomalies: monitor.latest_run_schema_anomalies,
+                    tableState: monitor.latest_run_table_state,
+                    adds: monitor.latest_run_column_adds,
+                    drops: monitor.latest_run_column_drops,
+                    mods: monitor.latest_run_column_mods,
+                    onclick: () => emit('OpenSchemaChanges', { payload: {
+                        table_name: monitor.table_name,
+                        start_time: monitor.previous_run_start,
+                        end_time: monitor.lookback_end,
+                    }}),
+                }),
                 action: () => div(
                     { class: 'flex-row fx-justify-center fx-gap-2' },
                     Button({
@@ -417,9 +402,10 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         },
                     ),
                     columns: () => {
-                        const lookback = getValue(props.summary)?.lookback ?? 0;
-                        const numRuns = lookback === 1 ? 'run' : `${lookback} runs`;
+                        const numRuns = lookbackRuns.val;
                         const showChanges = showChangesColumns.val;
+                        const showLatestRun = showLatestRunColumns.val;
+                        const hasGroupedHeader = showChanges || showLatestRun;
 
                         return [
                             [
@@ -428,12 +414,15 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
 
                                 ...(
                                     showChanges
-                                        ? [
-                                            {name: 'changes', label: `Changes in last ${numRuns}`, colspan: 3, padding: 8, align: 'center'},
-                                            {name: 'filler_2', label: ''},
-                                        ]
+                                        ? [{name: 'changes', label: `Changes in last ${numRuns}`, colspan: 3, padding: 8, align: 'center'}]
                                         : []
                                 ),
+                                ...(
+                                    showLatestRun
+                                        ? [{name: 'latest_run_changes', label: 'Changes in latest run', colspan: 3, padding: 8, align: 'center'}]
+                                        : []
+                                ),
+                                ...(hasGroupedHeader ? [{name: 'filler_2', label: ''}] : []),
                             ],
                             [
                                 {name: 'table_name', label: 'Table', width: 200, align: 'left', sortable: true, overflow: 'visible'},
@@ -446,15 +435,24 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                                     showChanges
                                         ? [
                                             {name: 'latest_update', label: 'Latest Update', width: 150, align: 'left', sortable: true, overflow: 'visible'},
-                                            {name: 'row_count', label: 'Row Count', width: 150, align: 'left', sortable: true, overflow: 'visible'},
+                                            {name: 'row_count_change', label: 'Row Count', width: 150, align: 'left', sortable: true, overflow: 'visible'},
                                             {name: 'schema_changes', label: 'Schema', width: 150, align: 'left', overflow: 'visible'},
+                                        ]
+                                        : []
+                                ),
+                                ...(
+                                    showLatestRun
+                                        ? [
+                                            {name: 'latest_run_update_status', label: 'Update Status', width: 225, align: 'left', overflow: 'visible'},
+                                            {name: 'latest_run_row_count_change', label: 'Row Count', width: 150, align: 'left', sortable: true, overflow: 'visible'},
+                                            {name: 'latest_run_schema_changes', label: 'Schema', width: 150, align: 'left', overflow: 'visible'},
                                         ]
                                         : []
                                 ),
 
                                 {
                                     name: 'action',
-                                    label: showChanges ? `View trends |
+                                    label: hasGroupedHeader ? `View trends |
                                     Edit monitors` : 'View trends | Edit monitors', // Formatted this way for white-space: pre-line
                                     width: 100,
                                     align: 'center',
@@ -550,6 +548,131 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
         )
         : ConditionalEmptyState(projectSummary, userCanEdit, emit);
 }
+
+const EmptyCell = () => span({class: 'text-small text-secondary'}, '-');
+
+/**
+ * Signed row-count delta between the latest run and a chosen earlier point.
+ *
+ * @param {number?} current
+ * @param {number?} previous
+ */
+const RowCountCell = (current, previous) => {
+    const change = (current ?? 0) - (previous ?? 0);
+    if (change === 0) {
+        return EmptyCell();
+    }
+    return withTooltip(
+        div(
+            {class: 'flex-row fx-gap-1', style: 'position: relative; display: inline-flex;'},
+            Icon(
+                {style: 'font-size: 20px; color: var(--primary-text-color);'},
+                change > 0 ? 'arrow_upward' : 'arrow_downward',
+            ),
+            span({class: 'text-small'}, formatNumber(Math.abs(change))),
+        ),
+        {
+            text: div(
+                {class: 'flex-column fx-align-flex-start mb-1'},
+                span(`Previous count: ${formatNumber(previous)}`),
+                span(`Latest count: ${formatNumber(current)}`),
+                span(`Percent change: ${previous ? formatNumber(change * 100 / previous, 2) : '100'}%`),
+            ),
+        },
+    );
+};
+
+/**
+ * Structural-change icons for a table, opening the schema-changes dialog on click.
+ *
+ * @param {{anomalies: number?, tableState: string?, adds: number?, drops: number?, mods: number?, onclick: Function}} options
+ */
+const SchemaChangesCell = ({anomalies, tableState, adds, drops, mods, onclick}) => {
+    if (!anomalies) {
+        return EmptyCell();
+    }
+    return withTooltip(
+        div(
+            {class: 'flex-row fx-gap-1 schema-changes', onclick},
+            tableState === 'added'
+                ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'add_box')
+                : null,
+            tableState === 'dropped'
+                ? Icon({size: 20, classes: 'schema-icon', filled: true}, 'indeterminate_check_box')
+                : null,
+            adds ? div(
+                {class: 'flex-row'},
+                Icon({size: 20, classes: 'schema-icon'}, 'add'),
+                span({class: 'text-small'}, formatNumber(adds)),
+            ) : null,
+            drops ? div(
+                {class: 'flex-row'},
+                Icon({size: 20, classes: 'schema-icon'}, 'remove'),
+                span({class: 'text-small'}, formatNumber(drops)),
+            ) : null,
+            mods ? div(
+                {class: 'flex-row'},
+                Icon({size: 18, classes: 'schema-icon'}, 'change_history'),
+                span({class: 'text-small'}, formatNumber(mods)),
+            ) : null,
+        ),
+        {
+            text: div(
+                {class: 'flex-column fx-align-flex-start'},
+                tableState === 'added'
+                    ? span({class: 'mb-1', style: 'font-size: 14px;'}, 'Table added.')
+                    : null,
+                tableState === 'dropped'
+                    ? span({class: 'mb-1', style: 'font-size: 14px;'}, 'Table dropped.')
+                    : null,
+                b({class: 'mb-1'}, 'Columns'),
+                adds ? span(`Added: ${adds}`) : null,
+                drops ? span(`Dropped: ${drops}`) : null,
+                mods ? span(`Modified: ${mods}`) : null,
+            ),
+            width: 200,
+            position: 'right',
+        },
+    );
+};
+
+/**
+ * The freshness monitor's verdict on the latest run, e.g. "No update - Late".
+ *
+ * Parses the structured result message the Freshness_Trend templates emit,
+ * mirroring the wording of the trend chart's freshness tooltip.
+ *
+ * @param {Monitor} monitor
+ */
+const UpdateStatusCell = (monitor) => {
+    if (monitor.freshness_is_pending) {
+        return withTooltip(
+            span({class: 'text-secondary', style: 'position: relative;'}, '-'),
+            { text: 'No results yet or not configured' },
+        );
+    }
+    // An errored run carries free-form text rather than a verdict, so it falls through to
+    // the empty cell. The Freshness anomaly column reports the error itself.
+    const match = FRESHNESS_MESSAGE_PATTERN.exec((monitor.latest_run_freshness_message ?? '').trim());
+    if (!match) {
+        return EmptyCell();
+    }
+    const updated = match[1].toLowerCase() === 'yes';
+    const detail = match[2] || null;
+
+    return withTooltip(
+        span(
+            {class: 'text-small', style: 'position: relative;'},
+            `${updated ? 'Table updated' : 'No update'}${detail ? ` - ${detail}` : ''}`,
+        ),
+        {
+            text: monitor.latest_update
+                ? `Latest update detected: ${formatTimestamp(monitor.latest_update)}`
+                : 'No update detected yet',
+            width: 220,
+        },
+    );
+};
 
 /**
  * @param {number?} anomalies
@@ -672,25 +795,32 @@ stylesheet.replace(`
     text-transform: none;
 }
 
+/* First column of each section gets the section's left inset. */
 .monitors-table .tg-table-column.table_name,
 .monitors-table .tg-table-column.freshness_anomalies,
 .monitors-table .tg-table-column.latest_update,
+.monitors-table .tg-table-column.latest_run_update_status,
 .monitors-table .tg-table-cell.table_name,
 .monitors-table .tg-table-cell.freshness_anomalies,
-.monitors-table .tg-table-cell.latest_update {
+.monitors-table .tg-table-cell.latest_update,
+.monitors-table .tg-table-cell.latest_run_update_status {
     padding-left: 16px !important;
 }
 
+/* Last column of each section carries the divider to the next one. */
 .monitors-table .tg-table-column.table_name,
 .monitors-table .tg-table-column.metric_anomalies,
 .monitors-table .tg-table-column.schema_changes,
+.monitors-table .tg-table-column.latest_run_schema_changes,
 .monitors-table .tg-table-cell.table_name,
 .monitors-table .tg-table-cell.metric_anomalies,
-.monitors-table .tg-table-cell.schema_changes {
+.monitors-table .tg-table-cell.schema_changes,
+.monitors-table .tg-table-cell.latest_run_schema_changes {
     border-right: 1px dashed var(--border-color);
 }
 
-.monitors-table .tg-table-cell.schema_changes {
+.monitors-table .tg-table-cell.schema_changes,
+.monitors-table .tg-table-cell.latest_run_schema_changes {
     padding-right: 0;
     padding-left: 0;
 }

@@ -11,7 +11,12 @@ from testgen.common.enums import MonitorType
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
-from testgen.common.models.monitor import build_series_sql, parse_schema_event, parse_value_event
+from testgen.common.models.monitor import (
+    build_series_sql,
+    parse_freshness_message,
+    parse_schema_event,
+    parse_value_event,
+)
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import dict_from_kv, is_uuid4
@@ -118,6 +123,17 @@ class MonitorTableSummary:
     result of that type exists in the window (monitor not yet configured / executed).
     Schema is special-cased: ``*_is_pending`` only when no events at all, and ``table_state``
     captures whether the table was added / dropped / column-modified in the window.
+
+    Two prefixes re-scope the change measures from the whole window to a single run.
+    ``latest_run_`` fields measure the most recent run alone: the ``latest_run_column_*``
+    counts, ``latest_run_table_state``, and ``latest_run_schema_anomalies`` cover only that
+    run's schema events, and ``latest_run_freshness_message`` carries its raw
+    ``result_message`` for callers rendering the freshness verdict. ``previous_run_`` fields
+    describe the run before it: ``previous_run_start`` is
+    that run's start time, bounding the latest run's interval, and ``previous_run_row_count``
+    is its row count — the baseline for a run-over-run delta, where ``previous_row_count`` is
+    the baseline for a whole-window one. ``row_count`` is the latest run's count and serves as
+    the current value for both deltas.
     """
     table_name: str
     lookback: int
@@ -149,6 +165,14 @@ class MonitorTableSummary:
     volume_monitor_id: UUID | None = None
     schema_monitor_id: UUID | None = None
     metric_monitors: list = field(default_factory=list)
+    previous_run_start: datetime | None = None
+    previous_run_row_count: int | None = None
+    latest_run_schema_anomalies: int = 0
+    latest_run_column_adds: int = 0
+    latest_run_column_drops: int = 0
+    latest_run_column_mods: int = 0
+    latest_run_table_state: str | None = None
+    latest_run_freshness_message: str | None = None
 
 
 @dataclass
@@ -199,7 +223,13 @@ _MONITOR_SORT_COLUMN: dict[str, str] = {
     ),
     "latest_update": "monitor_tables.latest_update",
     "row_count": "monitor_tables.row_count",
-    "row_count_change": "(monitor_tables.row_count - baseline_tables.previous_row_count)",
+    # A missing baseline counts as zero, so a table first measured inside the window ranks
+    # by its full count rather than sorting last as unknown. A missing current count stays
+    # NULL and sorts last: the change is genuinely unknown, not zero.
+    "row_count_change": "(monitor_tables.row_count - COALESCE(baseline_tables.previous_row_count, 0))",
+    "latest_run_row_count_change": (
+        "(monitor_tables.row_count - COALESCE(baseline_tables.previous_run_row_count, 0))"
+    ),
 }
 
 
@@ -772,18 +802,22 @@ class TableGroup(Entity):
                     "threshold_value": point["threshold_value"],
                 })
 
+        freshness_events = []
+        for event in rows:
+            if event["test_type"] != "Freshness_Trend" or event["result_status"] == "Error":
+                continue
+            changed, detail = parse_freshness_message(event["result_message"])
+            freshness_events.append({
+                "changed": bool(changed),
+                "message": detail,
+                "status": event["result_status"],
+                "is_training": event["result_code"] == -1,
+                "is_pending": not bool(event["result_id"]),
+                "time": event["test_time"],
+            })
+
         return {
-            "freshness_events": [
-                {
-                    "changed": "detected: Yes" in (result_message := event["result_message"] or ""),
-                    "message": parts[1].rstrip(".") if len(parts := result_message.split(". ", 1)) > 1 else None,
-                    "status": event["result_status"],
-                    "is_training": event["result_code"] == -1,
-                    "is_pending": not bool(event["result_id"]),
-                    "time": event["test_time"],
-                }
-                for event in rows if event["test_type"] == "Freshness_Trend" and event["result_status"] != "Error"
-            ],
+            "freshness_events": freshness_events,
             "volume_events": [
                 {
                     "record_count": int(event["result_signal"] or 0),
@@ -924,7 +958,8 @@ class TableGroup(Entity):
                 CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 2), '')::INT ELSE 0 END AS col_adds,
                 CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 3), '')::INT ELSE 0 END AS col_drops,
                 CASE WHEN results.test_type = 'Schema_Drift' THEN NULLIF(SPLIT_PART(results.result_signal, '|', 4), '')::INT ELSE 0 END AS col_mods,
-                CASE WHEN results.result_status = 'Error' THEN results.result_message ELSE NULL END AS error_message
+                CASE WHEN results.result_status = 'Error' THEN results.result_message ELSE NULL END AS error_message,
+                CASE WHEN results.test_type = 'Freshness_Trend' THEN results.result_message ELSE NULL END AS freshness_message
             FROM latest_tables
             LEFT JOIN ranked_test_runs ON TRUE
             LEFT JOIN test_results AS results
@@ -948,6 +983,11 @@ class TableGroup(Entity):
                 COALESCE(SUM(col_adds), 0)::INTEGER AS column_adds,
                 COALESCE(SUM(col_drops), 0)::INTEGER AS column_drops,
                 COALESCE(SUM(col_mods), 0)::INTEGER AS column_mods,
+                COALESCE(SUM(schema_anomaly) FILTER (WHERE position = 1), 0)::INTEGER AS latest_run_schema_anomalies,
+                COALESCE(SUM(col_adds) FILTER (WHERE position = 1), 0)::INTEGER AS latest_run_column_adds,
+                COALESCE(SUM(col_drops) FILTER (WHERE position = 1), 0)::INTEGER AS latest_run_column_drops,
+                COALESCE(SUM(col_mods) FILTER (WHERE position = 1), 0)::INTEGER AS latest_run_column_mods,
+                MAX(freshness_message) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS latest_run_freshness_message,
                 MAX(error_message) FILTER (WHERE test_type = 'Freshness_Trend' AND position = 1) AS freshness_error_message,
                 MAX(error_message) FILTER (WHERE test_type = 'Volume_Trend' AND position = 1) AS volume_error_message,
                 MAX(error_message) FILTER (WHERE test_type = 'Schema_Drift' AND position = 1) AS schema_error_message,
@@ -971,7 +1011,16 @@ class TableGroup(Entity):
                     WHEN SUM(schema_anomaly) > 0
                         THEN 'modified'
                     ELSE NULL
-                END AS table_state
+                END AS table_state,
+                CASE
+                    WHEN MAX(CASE WHEN table_change = 'D' AND position = 1 THEN 1 ELSE 0 END) = 1
+                        THEN 'dropped'
+                    WHEN MAX(CASE WHEN table_change = 'A' AND position = 1 THEN 1 ELSE 0 END) = 1
+                        THEN 'added'
+                    WHEN SUM(CASE WHEN position = 1 THEN schema_anomaly ELSE 0 END) > 0
+                        THEN 'modified'
+                    ELSE NULL
+                END AS latest_run_table_state
             FROM monitor_results
             -- Only aggregate within lookback runs
             WHERE position IS NULL OR position <= COALESCE(lookback, 1)
@@ -998,7 +1047,14 @@ class TableGroup(Entity):
                 MAX(monitor_results.row_count) FILTER (
                     WHERE monitor_results.test_type = 'Volume_Trend'
                     AND monitor_results.position = LEAST(monitor_results.lookback + 1, table_bounds.max_position)
-                ) AS previous_row_count
+                ) AS previous_row_count,
+                MAX(monitor_results.test_starttime) FILTER (
+                    WHERE monitor_results.position = 2
+                ) AS previous_run_start,
+                MAX(monitor_results.row_count) FILTER (
+                    WHERE monitor_results.test_type = 'Volume_Trend'
+                    AND monitor_results.position = 2
+                ) AS previous_run_row_count
             FROM monitor_results
             JOIN table_bounds ON monitor_results.table_name = table_bounds.table_name
             GROUP BY monitor_results.table_name
@@ -1030,6 +1086,14 @@ class TableGroup(Entity):
             monitor_tables.column_drops,
             monitor_tables.column_mods,
             monitor_tables.table_state,
+            baseline_tables.previous_run_start,
+            baseline_tables.previous_run_row_count,
+            monitor_tables.latest_run_schema_anomalies,
+            monitor_tables.latest_run_column_adds,
+            monitor_tables.latest_run_column_drops,
+            monitor_tables.latest_run_column_mods,
+            monitor_tables.latest_run_table_state,
+            monitor_tables.latest_run_freshness_message,
             (SELECT monitor_id FROM monitor_defs md
              WHERE md.table_name = monitor_tables.table_name AND md.test_type = 'Freshness_Trend' LIMIT 1) AS freshness_monitor_id,
             (SELECT monitor_id FROM monitor_defs md

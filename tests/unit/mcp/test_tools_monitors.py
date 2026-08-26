@@ -15,6 +15,7 @@ from testgen.common.models.table_group import MonitorGroupSummary, MonitorTableS
 from testgen.common.models.test_suite import PredictSensitivity
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
+from testgen.mcp.tools.monitors import _format_row_count_change
 
 pytestmark = pytest.mark.unit
 
@@ -2218,3 +2219,20 @@ def test_set_monitor_historical_propagates_inaccessible(mock_resolve, db_session
             upper_bound_calculation="Maximum",
             history_lookback=10,
         )
+
+
+def test_format_row_count_change_missing_baseline_reports_full_count():
+    # A table first measured inside the window has no pre-window count. Report its full
+    # count as the change, matching how the row_count_change sort orders it.
+    assert _format_row_count_change(_table_summary(row_count=200, previous_row_count=None)) == "+200"
+
+
+def test_format_row_count_change_unknown_current_count_is_none():
+    # Without a current count the change is unknown, not zero.
+    assert _format_row_count_change(_table_summary(row_count=None, previous_row_count=500)) is None
+
+
+def test_format_row_count_change_signed_and_zero():
+    assert _format_row_count_change(_table_summary(row_count=1_000, previous_row_count=400)) == "+600"
+    assert _format_row_count_change(_table_summary(row_count=400, previous_row_count=1_000)) == "-600"
+    assert _format_row_count_change(_table_summary(row_count=400, previous_row_count=400)) == "0"

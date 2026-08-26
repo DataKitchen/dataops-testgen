@@ -6,6 +6,7 @@ exposed. This module owns the single-monitor series read (the ``Monitor`` façad
 shared SQL builder and row→event parsers reused by the per-table dashboard wrapper.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -94,6 +95,33 @@ def parse_schema_event(row: dict) -> dict:
         "window_start": datetime.fromisoformat(parts[4]) if parts[4] else None,
         "is_error": _is_error(row),
     }
+
+
+# Freshness results carry a structured message of the form
+# ``"Table update detected: {Yes|No}[. {Detail}]"``, built by the SQL templates in
+# ``template/dbsetup_test_types/test_types_Freshness_Trend.yaml``. Detail is one of
+# "On time", "Earlier than expected", "Later than expected", "Late", or absent (no
+# timing verdict is emitted while tolerances are still NULL).
+_FRESHNESS_MESSAGE_RE = re.compile(
+    r"^Table update detected:\s*(Yes|No)(?:\.\s*(.+?))?\.?\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_freshness_message(message: str | None) -> tuple[bool | None, str | None]:
+    """Split a freshness ``result_message`` into ``(update_detected, detail)``.
+
+    ``update_detected`` is None when the message is missing or doesn't match the
+    expected format (error rows carry free-form text), in which case ``detail`` is the
+    original message so callers can still surface something.
+    """
+    text = (message or "").strip()
+    if not text:
+        return None, None
+    match = _FRESHNESS_MESSAGE_RE.match(text)
+    if not match:
+        return None, text
+    return match.group(1).lower() == "yes", match.group(2) or None
 
 
 def current_bands(

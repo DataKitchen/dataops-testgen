@@ -1,6 +1,7 @@
 """Tests for testgen.common.models.monitor parsers and façade."""
 
 import dataclasses
+import re
 from datetime import UTC, datetime
 from unittest.mock import patch
 from uuid import uuid4
@@ -13,10 +14,11 @@ from testgen.common.models.monitor import (
     build_series_sql,
     current_bands,
     parse_freshness_event,
+    parse_freshness_message,
     parse_schema_event,
     parse_value_event,
 )
-from testgen.common.models.table_group import MonitorTableSummary
+from testgen.common.models.table_group import MonitorTableSummary, TableGroup
 from testgen.common.models.test_definition import ThresholdMode, derive_threshold_mode
 
 pytestmark = pytest.mark.unit
@@ -349,3 +351,59 @@ def test_table_series_metric_events_keep_frontend_tolerance_keys(mock_session):
     # The frontend chart still consumes lower_tolerance/upper_tolerance keys.
     assert event["lower_tolerance"] == 10.0
     assert event["upper_tolerance"] == 90.0
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("Table update detected: Yes. On time.", (True, "On time")),
+        ("Table update detected: Yes. Earlier than expected.", (True, "Earlier than expected")),
+        ("Table update detected: Yes. Later than expected.", (True, "Later than expected")),
+        ("Table update detected: No. Late.", (False, "Late")),
+        # No timing verdict is emitted while tolerances are still NULL (training) or
+        # when a missing update is not yet past its staleness threshold.
+        ("Table update detected: Yes", (True, None)),
+        ("Table update detected: No", (False, None)),
+    ],
+)
+def test_parse_freshness_message_all_verdicts(message, expected):
+    assert parse_freshness_message(message) == expected
+
+
+@pytest.mark.parametrize("message", [None, "", "   "])
+def test_parse_freshness_message_blank(message):
+    assert parse_freshness_message(message) == (None, None)
+
+
+def test_parse_freshness_message_unrecognized_returns_text_as_detail():
+    # Error rows carry free-form text; callers still get something to surface.
+    assert parse_freshness_message("Connection reset by peer") == (None, "Connection reset by peer")
+
+
+def test_monitor_table_summary_has_single_run_scoped_fields():
+    fields = {f.name for f in dataclasses.fields(MonitorTableSummary)}
+    assert {
+        "previous_run_start",
+        "previous_run_row_count",
+        "latest_run_schema_anomalies",
+        "latest_run_column_adds",
+        "latest_run_column_drops",
+        "latest_run_column_mods",
+        "latest_run_table_state",
+        "latest_run_freshness_message",
+    } <= fields
+
+
+def test_monitor_changes_query_projects_every_summary_field():
+    """Every ``MonitorTableSummary`` field must be projected by the query that fills it.
+
+    The rows are splatted in as ``MonitorTableSummary(**row)``, so a field added to the
+    dataclass without a matching alias silently keeps its default instead of the value
+    the caller expects.
+    """
+    query, _params = TableGroup._monitor_changes_by_tables_query(uuid4())
+    missing = [
+        f.name for f in dataclasses.fields(MonitorTableSummary)
+        if not re.search(rf"\b{f.name}\b", query)
+    ]
+    assert not missing
