@@ -16,17 +16,17 @@
 
 What does DataKitchen's DataOps Data Quality TestGen do? It helps you understand and <b>find data issues in new data</b>.
 <p align="center">
-<img alt="DatKitchen Open Source Data Quality TestGen Features - New Data" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-2024-07-23-at-2.22.57 PM.png" width="70%">
+<img alt="DataKitchen Open Source Data Quality TestGen Features - New Data" src="https://raw.githubusercontent.com/DataKitchen/dataops-testgen/main/docs/assets/images/readme/feature-new-data-hygiene.png" width="70%">
 </p>
 It constantly <b>watches your data for data quality anomalies</b> and lets you drill into problems.
 <br></br>
 <p align="center">
-<img alt="DataKitchen Open Source Data Quality TestGen Features - Data Ingestion and Quality Testing" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-2024-07-23-at-2.23.07 PM.png" width="70%">
+<img alt="DataKitchen Open Source Data Quality TestGen Features - Data Ingestion and Quality Testing" src="https://raw.githubusercontent.com/DataKitchen/dataops-testgen/main/docs/assets/images/readme/feature-continuous-monitoring.png" width="70%">
 </p>
 A <b>single place to manage Data Quality</b> across data sets, locations, and teams.
 <br></br>
 <p align="center">
-<img alt="DataKitchen Open Source Data Quality TestGen Features - Single Place" src="https://datakitchen.io/wp-content/uploads/2024/07/Screenshot-dataops-testgen-centralize.png" width="70%">
+<img alt="DataKitchen Open Source Data Quality TestGen Features - Single Place" src="https://raw.githubusercontent.com/DataKitchen/dataops-testgen/main/docs/assets/images/readme/feature-centralized-quality.png" width="70%">
 </p>
 
 ## Installation
