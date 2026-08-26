@@ -7,9 +7,9 @@ test_types:
     Tests that values in column are valid US states.
   except_message: |-
     Column values found that are not valid US states.
-  measure_uom: Not US States
+  measure_uom: Not US states
   measure_uom_description: |-
-    Values that doo not match 2-character US state abbreviations.
+    Values that do not match 2-character US state abbreviations
   selection_criteria: |-
     general_type= 'A' AND column_name ILIKE '%state%' AND distinct_value_ct < 70 AND max_length = 2
   generation_template: null

@@ -7,7 +7,7 @@ test_types:
     Tests that postal codes match the 3-digit format of a regional prefix.
   except_message: |-
     Invalid 3-digit US zip code regional prefix formats found.
-  measure_uom: Invalid Zip-3 Prefix
+  measure_uom: Invalid zip-3 prefix
   measure_uom_description: |-
     Expected count of values with invalid Zip-3 Prefix Codes
   selection_criteria: |-
@@ -32,7 +32,7 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
-    Threshold Invalid Zip3 Count
+    Expected count of invalid zip-3 prefixes
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-

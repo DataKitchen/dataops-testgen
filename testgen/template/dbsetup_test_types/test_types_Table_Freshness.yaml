@@ -7,7 +7,7 @@ test_types:
     Tests that table has been updated based on data fingerprint.
   except_message: |-
     Table has not been updated.
-  measure_uom: Was Change Detected
+  measure_uom: Was change detected
   measure_uom_description: null
   selection_criteria: |-
     TEMPLATE
