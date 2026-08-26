@@ -34,7 +34,7 @@ test_types:
   result_visualization: binary_chart
   result_visualization_params: '{"legend":{"labels":{"0":"Not updated on time","1":"Updated"}}}'
   usage_notes: |-
-    This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated within the expectd time window. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
+    This test compares the current table fingerprint, calculated signature of column contents, to confirm that the table has been updated within the expected time window. The table fingerprint is derived from a set of values and aggregates from columns most likely to change. This test allows you to track the schedule and frequency of updates and refreshes to the table.
   active: Y
   algorithm: Freshness / time
   generation_sets:

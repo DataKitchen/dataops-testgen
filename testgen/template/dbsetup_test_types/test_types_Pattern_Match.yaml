@@ -7,7 +7,7 @@ test_types:
     Tests that all values in column match the same alphanumeric pattern identified in baseline data.
   except_message: |-
     Alpha values do not match consistent pattern in baseline.
-  measure_uom: Pattern Mismatches
+  measure_uom: Pattern mismatches
   measure_uom_description: null
   selection_criteria: |-
     (functional_data_type IN ('Attribute', 'DateTime Stamp', 'Phone') OR functional_data_type ILIKE 'ID%' OR functional_data_type ILIKE 'Period%') AND fn_frequent_size(frequent_patterns) = 1 AND distinct_value_ct > 10

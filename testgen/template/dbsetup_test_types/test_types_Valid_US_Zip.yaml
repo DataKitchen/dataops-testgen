@@ -7,7 +7,7 @@ test_types:
     Tests that postal codes match the 5-digit or 9-digit standard US formats.
   except_message: |-
     Invalid US zip code formats found.
-  measure_uom: Invalid Zip Codes
+  measure_uom: Invalid zip codes
   measure_uom_description: |-
     Expected count of values with invalid Zip Codes
   selection_criteria: |-
@@ -32,7 +32,7 @@ test_types:
   impact_dimension: Conformance
   health_dimension: Schema Drift
   threshold_description: |-
-    Threshold Invalid Value Count
+    Expected count of invalid zip codes
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: null

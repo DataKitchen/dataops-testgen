@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Monthly Records tests that at least one record is present for every calendar month within the minimum and maximum date range for the column. The test is relevant for transactional data, where you would expect at least one transaction to be recorded each month. A failure here would suggest missing records for the number of months identified without data. You can adjust the threshold to accept a number of month that you know legitimately have no records.
+    Monthly Records tests that at least one record is present for every calendar month within the minimum and maximum date range for the column. The test is relevant for transactional data, where you would expect at least one transaction to be recorded each month. A failure here would suggest missing records for the number of months identified without data. You can adjust the threshold to accept a number of months that you know legitimately have no records.
   active: Y
   algorithm: Counting
   generation_sets:

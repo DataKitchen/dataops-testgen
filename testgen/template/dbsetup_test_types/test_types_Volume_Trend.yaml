@@ -29,7 +29,7 @@ test_types:
   health_dimension: Volume
   statistical_technique: Predictive Model
   threshold_description: |-
-    Expected row count range.
+    Expected row count range
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
