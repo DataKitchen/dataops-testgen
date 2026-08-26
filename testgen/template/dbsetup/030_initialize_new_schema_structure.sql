@@ -642,7 +642,7 @@ CREATE TABLE cat_test_conditions (
       CONSTRAINT cat_test_conditions_cat_tests_test_type_fk
          REFERENCES test_types,
    sql_flavor     VARCHAR(20)  NOT NULL,
-   measure        VARCHAR(2000),
+   measure        VARCHAR,
    test_operator  VARCHAR(20),
    test_condition VARCHAR(2000),
    CONSTRAINT cat_test_conditions_test_type_sql_flavor_pk

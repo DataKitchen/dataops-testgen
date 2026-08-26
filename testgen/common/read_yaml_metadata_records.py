@@ -285,7 +285,11 @@ def import_metadata_records_from_yaml(params_mapping: dict) -> None:
                                 current_version=current_version,
                             )
         except Exception:
-            LOG.warning("Plugin %s failed to import test-type metadata; skipping", plugin.package)
+            LOG.exception(
+                "Plugin %s failed to import test-type metadata; skipping. Test types from this "
+                "plugin are partially or wholly absent.",
+                plugin.package,
+            )
             continue
 
     files = sorted(get_template_files(mask="^.*ya?ml$", sub_directory=ANOMALY_TYPES_TEMPLATE_FOLDER), key=lambda key: str(key))
