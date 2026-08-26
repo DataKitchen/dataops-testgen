@@ -33,7 +33,7 @@ test_types:
   impact_dimension: Usability
   health_dimension: Schema Drift
   threshold_description: |-
-    Threshold Invalid Value Count
+    Expected count of values with invalid characters
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-

@@ -7,7 +7,7 @@ test_types:
     Tests for statistically significant shift in mean value for column from average calculated at baseline.
   except_message: |-
     Standardized difference between averages is over the selected threshold level.
-  measure_uom: Difference Measure
+  measure_uom: Difference measure
   measure_uom_description: |-
     Cohen's D Difference (0.20 small, 0.5 mod, 0.8 large, 1.2 very large, 2.0 huge)
   selection_criteria: |-
