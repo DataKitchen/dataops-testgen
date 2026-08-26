@@ -1,7 +1,6 @@
--- Source and target are both keyed on the run. stg_functional_table_updates has no table group
--- and no per-run delete, so rows from every run within the retention window are live candidates
--- and run_date cannot pick out one run's -- two table groups of one project over the same schema
--- stage the same (project_code, schema_name, table_name).
+-- Source and target are both keyed on the run. stg_functional_table_updates carries no table
+-- group, and two table groups of one project over the same schema stage the same
+-- (project_code, schema_name, table_name), so the run id is what selects this run's rows.
 UPDATE profile_results
    SET functional_table_type = COALESCE(s.table_period)||'-'||COALESCE(s.table_type)
 FROM stg_functional_table_updates s

@@ -169,7 +169,7 @@ def test_score_history_uses_protected_keys_from_latest_runs():
 
 def test_staging_sweeps_get_no_carve_out():
     """All staging models receive only cutoff + project_code — no protected_ids
-    arg (these tables have no per-run linkage)."""
+    arg (each run deletes its own staged rows, so the sweep only ever sees orphans)."""
     started, patches = _patch_orchestrator()
     try:
         run_data_cleanup(project_code="proj", retention_days=180)
