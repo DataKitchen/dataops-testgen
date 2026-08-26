@@ -60,7 +60,7 @@ LOG = logging.getLogger("testgen")
 
 ALLOWED_SORT_FIELDS = {
     "table_name", "freshness_anomalies", "volume_anomalies", "schema_anomalies",
-    "metric_anomalies", "latest_update", "row_count",
+    "metric_anomalies", "latest_update", "row_count_change", "latest_run_row_count_change",
 }
 ANOMALY_TYPE_FILTERS = {
     "freshness": "freshness_anomalies",

@@ -1,4 +1,3 @@
-import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Annotated, Any, cast
@@ -26,6 +25,7 @@ from testgen.common.models.data_structure_log import (
     DataStructureLog,
 )
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.monitor import parse_freshness_message
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import MonitorTableSummary, TableGroup
 from testgen.common.models.test_definition import (
@@ -372,15 +372,16 @@ def _format_schema_change(row: MonitorTableSummary) -> str | None:
 def _format_row_count_change(row: MonitorTableSummary) -> str | None:
     """Signed delta between the latest and pre-window row count.
 
-    ``+1,234`` / ``-1,234`` / ``0`` when both endpoints are known; ``None`` (em-dash)
-    when either is missing (e.g. first run with no baseline). Sign reflects net
-    change across the window, not run-to-run variance.
+    ``+1,234`` / ``-1,234`` / ``0``. A missing pre-window count counts as zero, so a table
+    first measured inside the window reports its full count as the change — matching how
+    ``row_count_change`` orders it. ``None`` (em-dash) when the latest count is unknown,
+    which makes the change unknown rather than zero. Sign reflects net change across the
+    window, not run-to-run variance.
     """
     current = row.row_count
-    previous = row.previous_row_count
-    if current is None or previous is None:
+    if current is None:
         return None
-    delta = current - previous
+    delta = current - (row.previous_row_count or 0)
     if delta == 0:
         return "0"
     return f"{delta:+,}"
@@ -796,7 +797,7 @@ def list_monitor_events(
         doc.table(
             ["Time", "Status", "Update detected", "Detail"],
             [
-                [event.test_time, _event_status(event), *_parse_freshness_message(event.message)]
+                [event.test_time, _event_status(event), *_format_freshness_message(event.message)]
                 for event in events
             ],
         )
@@ -921,7 +922,7 @@ def _next_update_window_for_table(
         (
             e.test_time for e in freshness_events
             if e.test_time is not None and not e.is_training and not e.is_pending and not e.is_error
-            and _parse_freshness_message(e.message)[0] == "Yes"
+            and parse_freshness_message(e.message)[0]
         ),
         default=None,
     )
@@ -975,29 +976,14 @@ def _event_status(event: MonitorEvent) -> str:
     return "Ok"
 
 
-# Freshness events carry a structured message of the form
-# ``"Table update detected: {Yes|No}[. {Detail}]"`` — see the SQL templates at
-# ``template/dbsetup_test_types/test_types_Freshness_Trend.yaml``. Parse it into
-# separate columns so the LLM doesn't have to re-derive the same fields.
-_FRESHNESS_MESSAGE_RE = re.compile(
-    r"^Table update detected:\s*(Yes|No)(?:\.\s*(.+?))?\.?\s*$",
-    re.IGNORECASE,
-)
-
-
-def _parse_freshness_message(message: str | None) -> tuple[str, str]:
-    """Return ``(update_detected, detail)``: ``"Yes"``/``"No"``/``"—"`` and the
-    descriptive tail (``"On time"`` / ``"Earlier than expected"`` /
-    ``"Later than expected"`` / ``"Late"`` / ``"—"``). Falls back to the raw
-    message text when the format doesn't match (e.g. error rows)."""
-    if not message:
-        return "—", "—"
-    match = _FRESHNESS_MESSAGE_RE.match(message.strip())
-    if not match:
-        return "—", message
-    detected = match.group(1).capitalize()
-    detail = match.group(2) or "—"
-    return detected, detail
+def _format_freshness_message(message: str | None) -> tuple[str, str]:
+    """Render a freshness ``result_message`` as ``(update_detected, detail)`` table cells:
+    ``"Yes"``/``"No"``/``"—"`` and the descriptive tail (``"On time"`` /
+    ``"Earlier than expected"`` / ``"Later than expected"`` / ``"Late"`` / ``"—"``)."""
+    detected, detail = parse_freshness_message(message)
+    if detected is None:
+        return "—", detail or "—"
+    return ("Yes" if detected else "No"), detail or "—"
 
 
 # ---------------------------------------------------------------------------
