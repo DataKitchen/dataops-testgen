@@ -96,8 +96,10 @@ def run_data_cleanup(project_code: str, retention_days: int) -> None:
         batch_size=BATCH_SIZE,
     )
 
-    # Staging tables: defensive cleanup of orphans left behind by failed jobs.
-    # No carve-out — these are transient operational rows with no run linkage.
+    # Staging tables: defensive cleanup of orphans left behind by failed jobs. Each run deletes
+    # its own rows when it finishes, so anything still here past the cutoff belongs to a run that
+    # never got that far. No carve-out: the cutoff is compared against the staged run_date, which
+    # a backdated run can set far enough in the past to sweep its own rows mid-flight.
     with database_session():
         deleted_stg = (
             StgFunctionalTableUpdate.delete_older_than(cutoff, project_code)

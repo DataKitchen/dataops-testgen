@@ -1,5 +1,6 @@
 import logging
 from datetime import datetime
+from uuid import uuid4
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
 from testgen.common.database.column_chars import ColumnChars
@@ -61,16 +62,20 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
 
 
 def write_data_chars(data_chars: list[ColumnChars], sql_generator: RefreshDataCharsSQL, run_date: datetime) -> None:
-    # The refresh SQL marks as dropped every row of the table group that staging doesn't
-    # account for, so staging nothing reads as "every table and column disappeared".
+    # The refresh SQL marks as dropped every row of the table group that staging doesn't account
+    # for, and an empty scan of the source is not evidence that the source is empty: every flavor
+    # reads a privilege-filtered metadata view filtered by schema name, which returns no rows just
+    # as silently for a renamed schema or a revoked grant as for a schema whose tables are gone.
+    # Reconciling against nothing would drop the whole catalog on any of those.
     if not data_chars:
         LOG.warning("No columns to write for table group, skipping data characteristics refresh")
         return
 
-    staging_results = sql_generator.get_staging_data_chars(data_chars, run_date)
+    refresh_id = uuid4()
+    staging_results = sql_generator.get_staging_data_chars(data_chars, run_date, refresh_id)
 
     LOG.info("Writing data characteristics to staging")
     write_to_app_db(staging_results, sql_generator.staging_columns, sql_generator.staging_table)
 
     LOG.info("Refreshing data characteristics and deleting staging")
-    execute_db_queries(sql_generator.update_data_chars(run_date))
+    execute_db_queries(sql_generator.update_data_chars(run_date, refresh_id))

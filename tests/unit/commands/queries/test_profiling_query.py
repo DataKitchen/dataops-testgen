@@ -226,12 +226,26 @@ def test_tabletype_staging_runs_after_the_second_suggestion_pass():
     assert templates.index("functional_tabletype_stage.sql") > last_suggestion
 
 
+def test_tabletype_staging_is_deleted_after_it_is_consumed():
+    """functional_tabletype_update is the only reader of the staged rows, so deleting them
+    ahead of it leaves functional_table_type unwritten."""
+    sql = _make_profiling_sql()
+
+    with patch.object(sql, "_get_query", side_effect=lambda name, *_args, **_kw: (name, {})):
+        templates = [q[0] for q in sql.update_profiling_results()]
+
+    assert (
+        templates.index("delete_staging_functional_tables.sql")
+        > templates.index("functional_tabletype_update.sql")
+    )
+
+
 # --- Table type staging is keyed on the run ---
 
 
 def test_tabletype_staging_rows_carry_the_run_id():
-    """stg_functional_table_updates has no table group and no per-run delete, so
-    (project_code, schema_name, table_name, run_date) cannot identify one run's rows."""
+    """stg_functional_table_updates carries no table group, so
+    (project_code, schema_name, table_name) cannot identify one run's rows on its own."""
     sql = read_template_sql_file("functional_tabletype_stage.sql", "profiling")
 
     insert_columns = re.search(

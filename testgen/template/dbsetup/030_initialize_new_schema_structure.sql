@@ -17,6 +17,7 @@ CREATE TABLE stg_functional_table_updates (
 );
 
 CREATE TABLE stg_data_chars_updates (
+   refresh_id            UUID,
    table_groups_id       UUID,
    run_date              TIMESTAMP,
    schema_name           VARCHAR(120),
@@ -32,6 +33,7 @@ CREATE TABLE stg_data_chars_updates (
 );
 
 CREATE TABLE stg_test_definition_updates (
+   test_run_id        UUID,
    test_suite_id      UUID,
    test_definition_id UUID,
    run_date           TIMESTAMP,
@@ -825,6 +827,18 @@ CREATE TABLE IF NOT EXISTS score_definition_results_breakdown (
 );
 
 CREATE UNIQUE INDEX table_groups_name_unique ON table_groups(project_code, table_groups_name);
+
+-- Index staging tables
+-- Each staging table is written, read back and deleted under the id of the refresh or run that
+-- staged it.
+CREATE INDEX ix_sdcu_refresh
+   ON stg_data_chars_updates(refresh_id);
+
+CREATE INDEX ix_stdu_test_run
+   ON stg_test_definition_updates(test_run_id);
+
+CREATE INDEX ix_sftu_profile_run
+   ON stg_functional_table_updates(profile_run_id);
 
 -- Index Connections
 CREATE UNIQUE INDEX uix_con_id

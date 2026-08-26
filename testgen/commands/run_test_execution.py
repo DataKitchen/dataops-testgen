@@ -143,7 +143,7 @@ def run_test_execution(
     finally:
         prediction_start = datetime.now(UTC) + time_delta
         try:
-            TestThresholdsPrediction(test_suite, test_run.test_starttime).run()
+            TestThresholdsPrediction(test_suite, test_run).run()
         except Exception:
             LOG.exception("Error predicting test thresholds")
 

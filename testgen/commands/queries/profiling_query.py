@@ -166,6 +166,7 @@ class ProfilingSQL:
             self._get_query("datatype_suggestions.sql"),
             self._get_query("functional_tabletype_stage.sql"),
             self._get_query("functional_tabletype_update.sql"),
+            self._get_query("delete_staging_functional_tables.sql"),
         ]
         if self.table_group.profile_flag_pii:
             queries.append(self._get_query("pii_flag.sql"))
