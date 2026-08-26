@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy.dialects import postgresql
 
@@ -56,6 +56,7 @@ def _mock_result_row(**overrides):
     defaults = {
         "test_definition_id": uuid4(),
         "test_type": "Unique",
+        "test_type_name": "Unique Values",
         "schema_name": "demo",
         "table_name": "orders",
         "column_names": "amount",
@@ -289,11 +290,49 @@ def test_list_results_disposition_render(mock_list, db_disposition, expected):
     assert item.disposition == expected
 
 
+
+@patch(f"{MODULE}.get_current_session")
+@patch.object(TestResult, "list_for_run", return_value=([], 0))
+def test_list_results_rejects_unknown_test_type(mock_list, mock_session):
+    mock_session.return_value.scalar.return_value = None
+
+    with pytest.raises(HTTPException) as err:
+        list_test_run_results(_mock_job(), **_no_filters(test_type="Not A Test Type"))
+
+    assert err.value.status_code == 400
+    assert err.value.detail["errors"][0]["code"] == "unknown_test_type"
+    mock_list.assert_not_called()
+
+
+@patch(f"{MODULE}.get_current_session")
+@patch.object(TestResult, "list_for_run", return_value=([], 0))
+def test_list_results_accepts_known_test_type(mock_list, mock_session):
+    mock_session.return_value.scalar.return_value = "Dupe_Rows"
+
+    list_test_run_results(_mock_job(), **_no_filters(test_type="Dupe_Rows"))
+
+    assert "test_results.test_type = 'Dupe_Rows'" in _result_clauses_sql(mock_list)
+
+
+@patch(f"{MODULE}.get_current_session")
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
+def test_hygiene_rejects_unknown_issue_type(mock_list, _mock_perm, mock_session):
+    mock_session.return_value.scalar.return_value = None
+
+    with pytest.raises(HTTPException) as err:
+        list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters(issue_type="Non-Standard Blank Values"))
+
+    assert err.value.status_code == 400
+    assert err.value.detail["errors"][0]["code"] == "unknown_issue_type"
+    mock_list.assert_not_called()
+
 # --- list_test_run_results: filter clause building ---
 
 
+@patch(f"{MODULE}._validate_test_type")
 @patch.object(TestResult, "list_for_run", return_value=([], 0))
-def test_list_results_builds_filter_clauses(mock_list):
+def test_list_results_builds_filter_clauses(mock_list, _mock_validate):
     list_test_run_results(
         _mock_job(),
         **_no_filters(status=ResultStatus.failed, table_name="orders", column_name="amount", test_type="Unique"),
@@ -704,9 +743,10 @@ def test_hygiene_partition_clause_always_excludes_pii(mock_list, _mock_perm):
     assert "profile_anomaly_types.issue_likelihood != 'Potential PII'" in sql
 
 
+@patch(f"{MODULE}._validate_issue_type")
 @patch(f"{MODULE}.has_project_permission", return_value=True)
 @patch.object(HygieneIssue, "list_for_run", return_value=([], 0))
-def test_hygiene_issue_type_filter_uses_code(mock_list, _mock_perm):
+def test_hygiene_issue_type_filter_uses_code(mock_list, _mock_perm, _mock_validate):
     list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters(issue_type="suggested_column_pk"))
     sql = _hygiene_clauses_sql(mock_list)
     assert "profile_anomaly_results.anomaly_id = 'suggested_column_pk'" in sql

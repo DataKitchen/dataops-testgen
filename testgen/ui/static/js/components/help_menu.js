@@ -4,6 +4,7 @@
  * @property {string} edition
  * @property {string} current
  * @property {string} latest
+ * @property {boolean} upgrade_available
  *
  * @typedef Permissions
  * @type {object}
@@ -96,7 +97,7 @@ const HelpMenu = (/** @type Properties */ props) => {
                     version.current
                         ? HelpLink(`${baseHelpUrl}${releaseNotesTopic}`, `${version.edition} ${version.current}`, null, null)
                         : null,
-                    version.latest !== version.current
+                    version.upgrade_available
                         ? HelpLink(
                             `${baseHelpUrl}${upgradeTopic}`,
                             `New version available! ${version.latest}`,

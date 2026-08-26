@@ -30,7 +30,7 @@ class MssqlFlavorService(FlavorService):
             username=params.username,
             password=params.password or "",
             host=params.host,
-            port=int(params.port or 1443),
+            port=int(params.port or 1433),
             database=params.dbname,
             query={
                 "driver": "ODBC Driver 18 for SQL Server",

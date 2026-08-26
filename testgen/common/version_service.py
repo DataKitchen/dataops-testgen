@@ -2,6 +2,8 @@ import logging
 from dataclasses import dataclass
 
 import requests
+from packaging.version import InvalidVersion
+from packaging.version import Version as ParsedVersion
 
 from testgen import settings
 from testgen.ui.session import session
@@ -14,7 +16,11 @@ LATEST_VERSIONS_URL = "https://dk-support-external.s3.us-east-1.amazonaws.com/te
 class Version:
     edition: str
     current: str
-    latest: str
+    latest: str | None
+    upgrade_available: bool = False
+
+    def __post_init__(self) -> None:
+        self.upgrade_available = _is_newer(self.latest, self.current)
 
 
 def get_version() -> Version:
@@ -25,6 +31,20 @@ def get_version() -> Version:
             latest=_get_latest_version(),
         )
     return session.version
+
+
+def _is_newer(latest: str | None, current: str | None) -> bool:
+    """Whether ``latest`` is a release later than ``current``.
+
+    False when either version is missing or unparseable, so a failed lookup and an
+    unrecognized version both read as "nothing to upgrade to" rather than as an upgrade.
+    """
+    if not latest or not current:
+        return False
+    try:
+        return ParsedVersion(latest) > ParsedVersion(current)
+    except InvalidVersion:
+        return False
 
 
 def _get_app_edition() -> str:

@@ -359,8 +359,8 @@ def compute_volume_or_metric_threshold(
     the raw value series and emits a prediction JSON without the freshness-gating markers.
 
     `history` is expected to have a `test_run_id` column alongside `result_signal`, and to be
-    indexed by `test_time`. `freshness_updates` is the list of run identifiers where
-    Freshness_Trend detected a fingerprint change.
+    indexed by `test_time` in ascending run order. `freshness_updates` is the list of run
+    identifiers where Freshness_Trend detected a fingerprint change.
     """
     filtered_history = history.loc[history["test_run_id"].astype(str).isin(freshness_updates)]
     # Event-space fit: the filtered series has one point per refresh and is irregularly spaced.
@@ -376,9 +376,9 @@ def compute_volume_or_metric_threshold(
         event_space=True,
     )
     if prediction is not None:
-        # Pull the baseline value from the most-recent filtered row.
-        last_update_ts = filtered_history.index.max()
-        baseline_value = filtered_history.loc[last_update_ts, "result_signal"]
+        # Positional, not a label lookup: two runs can share a test_time, and .loc on the
+        # tied label returns both rows, which float() then rejects.
+        baseline_value = filtered_history["result_signal"].iloc[-1]
         baseline_value = float(baseline_value) if not pd.isna(baseline_value) else None
         prediction_dict = json.loads(prediction)
         prediction_dict.update({

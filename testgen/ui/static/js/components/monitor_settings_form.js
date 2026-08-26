@@ -17,7 +17,7 @@
  * @property {('low'|'medium'|'high')?} predict_sensitivity
  * @property {number?} predict_min_lookback
  * @property {boolean?} predict_exclude_weekends
- * @property {string?} predict_holiday_codes
+ * @property {string[]?} predict_holiday_codes
  *
  * @typedef FormState
  * @type {object}

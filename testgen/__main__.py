@@ -113,6 +113,24 @@ from testgen.utils import plugins
 
 LOG = logging.getLogger("testgen")
 
+# Commands TestGen itself invokes, or that bootstrap and maintain an installation. They are
+# exempt from the deprecation notice, and they skip the automatic schema upgrade below: several
+# run before the schema is usable, and ``exec-job`` is spawned once per concurrent job, where
+# racing migrations would collide. Every other command is a data operation the API and MCP
+# server cover. ``quick-start`` and ``export-test-metadata`` are here because neither has an
+# equivalent outside the CLI: one seeds a demo database, the other regenerates the packaged
+# metadata YAMLs.
+SYSTEM_COMMANDS = frozenset({
+    "run-app",
+    "ui",
+    "exec-job",
+    "setup-system-db",
+    "upgrade-system-version",
+    "standalone-setup",
+    "quick-start",
+    "export-test-metadata",
+})
+
 APP_MODULES = ["ui", "scheduler", "server"]
 VERSION_DATA = version_service.get_version()
 CHILDREN_POLL_INTERVAL = 10
@@ -173,7 +191,11 @@ class CliGroup(click.Group):
     def invoke(self, ctx: Context):
         try:
             super().invoke(ctx)
-        except click.exceptions.UsageError:
+        # Click signals its own control flow with exceptions: UsageError for a bad
+        # invocation, Exit for `--help` and any ctx.exit(), Abort for Ctrl-C. Click
+        # handles all three itself, including the exit code, so they must reach it
+        # rather than being reported as an unexpected failure.
+        except (click.exceptions.UsageError, click.exceptions.Exit, click.exceptions.Abort):
             raise
         except Exception:
             LOG.exception("There was an unexpected error")
@@ -191,7 +213,7 @@ class CliGroup(click.Group):
     help=f"""
     {VERSION_DATA.edition} {VERSION_DATA.current or ""}
 
-    {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.latest != VERSION_DATA.current else ""}
+    {f"New version available! {VERSION_DATA.latest}" if VERSION_DATA.upgrade_available else ""}
     """
 )
 @click.option(
@@ -203,6 +225,15 @@ class CliGroup(click.Group):
 )
 @click.pass_context
 def cli(ctx: Context, verbose: bool):
+    if ctx.invoked_subcommand and ctx.invoked_subcommand not in SYSTEM_COMMANDS:
+        # Written to stderr so it cannot corrupt the output of a command being piped.
+        click.secho(
+            f"DEPRECATED: `testgen {ctx.invoked_subcommand}` is deprecated. "
+            "Use the TestGen API or MCP server instead.",
+            fg="yellow",
+            err=True,
+        )
+
     if is_standalone_mode():
         # Children spawned by `run-app all` (and the Streamlit subprocess) inherit the
         # parent's pgserver URI. They must NOT call get_server() themselves — each call
@@ -225,10 +256,7 @@ def cli(ctx: Context, verbose: bool):
             click.secho(message, fg="red")
             sys.exit(1)
 
-    if (
-        ctx.invoked_subcommand not in ["run-app", "ui", "setup-system-db", "upgrade-system-version", "quick-start", "standalone-setup"]
-        and not is_db_revision_up_to_date()
-    ):
+    if ctx.invoked_subcommand not in SYSTEM_COMMANDS and not is_db_revision_up_to_date():
         click.secho("The system database schema is outdated. Automatically running the following command:", fg="red")
         click.secho("testgen upgrade-system-version", fg="red")
         do_upgrade_system_version()

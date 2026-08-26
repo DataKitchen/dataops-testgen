@@ -369,7 +369,7 @@ What aspect of data quality the test or hygiene issue measures.
 What's at stake when the data has issues — the primary breakdown used by scorecards.
 - **Reliability** — Data is available and correct when needed.
 - **Conformance** — Data meets contracts, formats, and reference standards.
-- **Regularity** — Data arrives on schedule and stays structurally consistent.
+- **Regularity** — Data behaves normally, without unexpected statistical shifts from its historical baseline.
 - **Usability** — Data is shaped so consumers can work with it efficiently.
 
 ## Test Scopes
