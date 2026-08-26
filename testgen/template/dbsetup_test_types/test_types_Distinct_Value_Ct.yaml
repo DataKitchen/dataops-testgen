@@ -7,7 +7,7 @@ test_types:
     Tests that count of unique values in column has not changed from baseline.
   except_message: |-
     Count of unique values in column has changed from baseline.
-  measure_uom: Unique Values
+  measure_uom: Unique values
   measure_uom_description: null
   selection_criteria: |-
     distinct_value_ct between 2 and 10 AND value_ct > 50 AND functional_data_type IN ('Code', 'Category', 'Attribute', 'Description') AND frequent_values IS NULL

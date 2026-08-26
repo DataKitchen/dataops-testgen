@@ -27,7 +27,7 @@ test_types:
   impact_dimension: Regularity
   health_dimension: Data Drift
   threshold_description: |-
-    Expected aggregate metric range.
+    Expected aggregate metric range
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-

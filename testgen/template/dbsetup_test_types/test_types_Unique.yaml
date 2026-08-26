@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This test is ideal when the database itself does not enforce a primary key constraint on the table. It serves as an independent check on uniqueness.  If's also useful when there are a small number of exceptions to uniqueness, which can be reflected in the expected threshold count of duplicates.
+    This test is ideal when the database itself does not enforce a primary key constraint on the table. It serves as an independent check on uniqueness.  It's also useful when there are a small number of exceptions to uniqueness, which can be reflected in the expected threshold count of duplicates.
   active: Y
   algorithm: Counting
   generation_sets:
