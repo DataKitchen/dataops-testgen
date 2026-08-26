@@ -1,0 +1,4 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE cat_test_conditions
+    ALTER COLUMN measure TYPE VARCHAR;
