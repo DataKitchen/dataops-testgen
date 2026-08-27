@@ -288,6 +288,7 @@ class TestExecutionSQL:
             "test_run_id",
             "test_time",
             "schema_name",
+            "table_name",
             "input_parameters",
             "result_signal",
             "result_code",
