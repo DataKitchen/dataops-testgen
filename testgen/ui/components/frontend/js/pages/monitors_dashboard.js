@@ -215,7 +215,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                         { text: `Latest update detected: ${formatTimestamp(monitor.latest_update)}` },
                     )
                     : EmptyCell(),
-                row_count_change: () => RowCountCell(monitor.row_count, monitor.previous_row_count),
+                row_count_change: () => RowCountCell(monitor.row_count, monitor.previous_row_count, monitor.table_state),
                 schema_changes: () => SchemaChangesCell({
                     anomalies: monitor.schema_anomalies,
                     tableState: monitor.table_state,
@@ -232,7 +232,7 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
                     },
                 }),
                 latest_run_update_status: () => UpdateStatusCell(monitor),
-                latest_run_row_count_change: () => RowCountCell(monitor.row_count, monitor.previous_run_row_count),
+                latest_run_row_count_change: () => RowCountCell(monitor.row_count, monitor.previous_run_row_count, monitor.latest_run_table_state),
                 latest_run_schema_changes: () => SchemaChangesCell({
                     anomalies: monitor.latest_run_schema_anomalies,
                     tableState: monitor.latest_run_table_state,
@@ -552,13 +552,38 @@ const MonitorsDashboard = (/** @type Properties */ props) => {
 const EmptyCell = () => span({class: 'text-small text-secondary'}, '-');
 
 /**
- * Signed row-count delta between the latest run and a chosen earlier point.
+ * Resolve a row count to a number, treating a missing one as zero only when the table's
+ * state accounts for it: a table added to the window held no rows before it, and a
+ * dropped one holds none now. Any other missing count stays null — a run that measured
+ * nothing is not a run that measured zero.
+ *
+ * @param {number?} count
+ * @param {string?} tableState
+ * @param {string} zeroState
+ * @returns {number?}
+ */
+const measuredCount = (count, tableState, zeroState) => {
+    if (count !== null && count !== undefined) {
+        return count;
+    }
+    return tableState === zeroState ? 0 : null;
+};
+
+/**
+ * Signed row-count delta between the latest run and a chosen earlier point. Renders an
+ * em-dash unless both endpoints resolve to a real count.
  *
  * @param {number?} current
  * @param {number?} previous
+ * @param {string?} tableState state describing the same window as `previous`
  */
-const RowCountCell = (current, previous) => {
-    const change = (current ?? 0) - (previous ?? 0);
+const RowCountCell = (current, previous, tableState) => {
+    const measuredCurrent = measuredCount(current, tableState, 'dropped');
+    const measuredPrevious = measuredCount(previous, tableState, 'added');
+    if (measuredCurrent === null || measuredPrevious === null) {
+        return EmptyCell();
+    }
+    const change = measuredCurrent - measuredPrevious;
     if (change === 0) {
         return EmptyCell();
     }
@@ -574,9 +599,9 @@ const RowCountCell = (current, previous) => {
         {
             text: div(
                 {class: 'flex-column fx-align-flex-start mb-1'},
-                span(`Previous count: ${formatNumber(previous)}`),
-                span(`Latest count: ${formatNumber(current)}`),
-                span(`Percent change: ${previous ? formatNumber(change * 100 / previous, 2) : '100'}%`),
+                span(`Previous count: ${formatNumber(measuredPrevious)}`),
+                span(`Latest count: ${formatNumber(measuredCurrent)}`),
+                span(`Percent change: ${measuredPrevious ? formatNumber(change * 100 / measuredPrevious, 2) : '100'}%`),
             ),
         },
     );

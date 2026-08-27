@@ -369,19 +369,29 @@ def _format_schema_change(row: MonitorTableSummary) -> str | None:
     return None
 
 
+def _measured_count(count: int | None, table_state: str | None, zero_state: str) -> int | None:
+    """Resolve a row count to a number, treating a missing one as zero only when the
+    table's state accounts for it: a table added to the window held no rows before it,
+    and a dropped one holds none now. Any other missing count stays ``None``.
+    """
+    if count is not None:
+        return count
+    return 0 if table_state == zero_state else None
+
+
 def _format_row_count_change(row: MonitorTableSummary) -> str | None:
     """Signed delta between the latest and pre-window row count.
 
-    ``+1,234`` / ``-1,234`` / ``0``. A missing pre-window count counts as zero, so a table
-    first measured inside the window reports its full count as the change — matching how
-    ``row_count_change`` orders it. ``None`` (em-dash) when the latest count is unknown,
-    which makes the change unknown rather than zero. Sign reflects net change across the
-    window, not run-to-run variance.
+    ``+1,234`` / ``-1,234`` / ``0`` when both endpoints are known, counting an added
+    table from zero and a dropped one to zero. ``None`` (em-dash) when either endpoint is
+    missing for any other reason — a run that measured nothing is not a run that measured
+    zero. Sign reflects net change across the window, not run-to-run variance.
     """
-    current = row.row_count
-    if current is None:
+    current = _measured_count(row.row_count, row.table_state, "dropped")
+    previous = _measured_count(row.previous_row_count, row.table_state, "added")
+    if current is None or previous is None:
         return None
-    delta = current - (row.previous_row_count or 0)
+    delta = current - previous
     if delta == 0:
         return "0"
     return f"{delta:+,}"

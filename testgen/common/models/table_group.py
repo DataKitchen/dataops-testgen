@@ -211,6 +211,21 @@ _ANOMALY_TYPE_TO_COLUMN: dict[str, str] = {
     MonitorType.METRIC.value: "metric_anomalies",
 }
 
+
+def _row_count_change_expr(baseline_column: str, state_column: str) -> str:
+    """SQL for a row-count delta that sorts unknown changes last.
+
+    ``baseline_column`` is the ``baseline_tables`` count the delta measures from, and
+    ``state_column`` the ``monitor_tables`` state describing the same window.
+    """
+    return (
+        "(CASE WHEN monitor_tables.row_count IS NOT NULL THEN monitor_tables.row_count"
+        f" WHEN monitor_tables.{state_column} = 'dropped' THEN 0 END"
+        f" - CASE WHEN baseline_tables.{baseline_column} IS NOT NULL THEN baseline_tables.{baseline_column}"
+        f" WHEN monitor_tables.{state_column} = 'added' THEN 0 END)"
+    )
+
+
 _MONITOR_SORT_COLUMN: dict[str, str] = {
     "table_name": "LOWER(monitor_tables.table_name)",
     "freshness_anomalies": "monitor_tables.freshness_anomalies",
@@ -223,13 +238,12 @@ _MONITOR_SORT_COLUMN: dict[str, str] = {
     ),
     "latest_update": "monitor_tables.latest_update",
     "row_count": "monitor_tables.row_count",
-    # A missing baseline counts as zero, so a table first measured inside the window ranks
-    # by its full count rather than sorting last as unknown. A missing current count stays
-    # NULL and sorts last: the change is genuinely unknown, not zero.
-    "row_count_change": "(monitor_tables.row_count - COALESCE(baseline_tables.previous_row_count, 0))",
-    "latest_run_row_count_change": (
-        "(monitor_tables.row_count - COALESCE(baseline_tables.previous_run_row_count, 0))"
-    ),
+    # A missing count is zero only where the table's state accounts for it: an added table
+    # held no rows before it existed, a dropped one holds none now. Any other missing
+    # endpoint leaves the expression NULL so the row sorts last as unknown, matching the
+    # em-dash the cell renders rather than ranking it by a change nobody measured.
+    "row_count_change": _row_count_change_expr("previous_row_count", "table_state"),
+    "latest_run_row_count_change": _row_count_change_expr("previous_run_row_count", "latest_run_table_state"),
 }
 
 

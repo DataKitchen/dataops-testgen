@@ -2221,15 +2221,30 @@ def test_set_monitor_historical_propagates_inaccessible(mock_resolve, db_session
         )
 
 
-def test_format_row_count_change_missing_baseline_reports_full_count():
-    # A table first measured inside the window has no pre-window count. Report its full
-    # count as the change, matching how the row_count_change sort orders it.
-    assert _format_row_count_change(_table_summary(row_count=200, previous_row_count=None)) == "+200"
+def test_format_row_count_change_added_table_counts_from_zero():
+    # A table added inside the window has no pre-window count because it did not exist.
+    # Its baseline is genuinely zero, so the full count is the change.
+    row = _table_summary(row_count=200, previous_row_count=None, table_state="added")
+    assert _format_row_count_change(row) == "+200"
 
 
-def test_format_row_count_change_unknown_current_count_is_none():
-    # Without a current count the change is unknown, not zero.
-    assert _format_row_count_change(_table_summary(row_count=None, previous_row_count=500)) is None
+def test_format_row_count_change_unmeasured_baseline_is_none():
+    # Same missing baseline, but nothing says the table was added -- the earlier run
+    # simply produced no count. The change is unknown, not the full row count.
+    row = _table_summary(row_count=200, previous_row_count=None, table_state=None)
+    assert _format_row_count_change(row) is None
+
+
+def test_format_row_count_change_dropped_table_counts_to_zero():
+    # A dropped table is not unmeasured: it really does hold no rows now.
+    row = _table_summary(row_count=None, previous_row_count=500, table_state="dropped")
+    assert _format_row_count_change(row) == "-500"
+
+
+def test_format_row_count_change_unmeasured_current_count_is_none():
+    # Without a current count, and no drop to explain it, the change is unknown.
+    row = _table_summary(row_count=None, previous_row_count=500, table_state=None)
+    assert _format_row_count_change(row) is None
 
 
 def test_format_row_count_change_signed_and_zero():

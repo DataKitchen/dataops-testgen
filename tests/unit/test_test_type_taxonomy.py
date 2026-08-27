@@ -19,6 +19,25 @@ def _strip_sql_comments(sql: str) -> str:
     return re.sub(r"--[^\n]*", "", re.sub(r"/\*.*?\*/", "", sql, flags=re.S))
 
 
+def _selected_result_columns(sql: str) -> list[str]:
+    """Result-column names a template's SELECT list produces, in selection order.
+
+    Covers both forms the templates use: ``expr AS alias`` and a bare column reference
+    selected on its own line. Names are matched against the columns the loader knows
+    about, so keywords and intermediate expressions fall away.
+    """
+    known = set(TestExecutionSQL.result_columns).union(*TestExecutionSQL.template_result_columns.values())
+    return [
+        name
+        for match in re.finditer(
+            r"\bAS\s+([a-z_][a-z0-9_]*)\b|^[ \t]*([a-z_][a-z0-9_]*)[ \t]*,[ \t]*$",
+            _strip_sql_comments(sql),
+            re.I | re.M,
+        )
+        if (name := (match.group(1) or match.group(2)).lower()) in known
+    ]
+
+
 def _test_type_docs():
     for path in sorted([*YAML_DIR.glob("*.yaml"), *YAML_DIR.glob("*.yml")]):
         data = safe_load(path.read_text())["test_types"]
@@ -55,11 +74,11 @@ def test_health_dimension_uses_freshness_not_recency():
 def test_templates_sharing_a_result_header_agree_on_their_columns():
     """Results for a run type are bulk-loaded under the header the loader declares, and
     looked up on each row by name, so every template of that run type must select
-    exactly those columns. A name the loader asks for and a template omits aborts the
-    write for the whole batch.
+    exactly those columns, in that order.
 
-    Pins names, cardinality and order; a template adding a column beyond the declared
-    header is written without it rather than detected here.
+    The match is exact in both directions. A name the loader asks for and a template
+    omits aborts the write for the whole batch; a column a template selects and the
+    header omits is dropped on write, landing NULL with no error at all.
     """
     for filename, tt in _test_type_docs():
         expected = TestExecutionSQL.template_result_columns.get(tt.get("run_type"))
@@ -67,13 +86,7 @@ def test_templates_sharing_a_result_header_agree_on_their_columns():
             continue
         columns = list(expected)
         for template in tt.get("test_templates") or []:
-            aliases = [
-                match.group(1).lower()
-                for match in re.finditer(
-                    r"\bAS\s+([a-z_]+)\b", _strip_sql_comments(template["template"]), re.I
-                )
-                if match.group(1).lower() in set(columns)
-            ]
-            assert aliases == columns, (
-                f"{filename} [{template['sql_flavor']}]: output columns {aliases}, expected {columns}"
+            selected = _selected_result_columns(template["template"])
+            assert selected == columns, (
+                f"{filename} [{template['sql_flavor']}]: output columns {selected}, expected {columns}"
             )
