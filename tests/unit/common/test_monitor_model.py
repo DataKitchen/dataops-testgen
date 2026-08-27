@@ -407,3 +407,26 @@ def test_monitor_changes_query_projects_every_summary_field():
         if not re.search(rf"\b{f.name}\b", query)
     ]
     assert not missing
+
+
+@pytest.mark.parametrize(
+    ("sort_by", "baseline_column", "state_column"),
+    [
+        ("row_count_change_desc", "previous_row_count", "table_state"),
+        ("latest_run_row_count_change_desc", "previous_run_row_count", "latest_run_table_state"),
+    ],
+)
+def test_row_count_change_sorts_on_the_same_states_it_renders(sort_by, baseline_column, state_column):
+    """Ordering resolves a missing count exactly as the rendered cell does: an added table
+    counts from zero, a dropped one counts to zero, and any other missing endpoint leaves
+    the expression NULL so the row sorts last instead of by a fabricated delta.
+    """
+    query, _params = TableGroup._monitor_changes_by_tables_query(uuid4(), sort_by=sort_by)
+    order_by = query[query.rindex("ORDER BY"):]
+
+    assert f"COALESCE(baseline_tables.{baseline_column}, 0)" not in order_by, (
+        "a missing baseline must not collapse to zero unconditionally"
+    )
+    assert f"monitor_tables.{state_column} = 'added'" in order_by
+    assert f"monitor_tables.{state_column} = 'dropped'" in order_by
+    assert f"baseline_tables.{baseline_column}" in order_by
