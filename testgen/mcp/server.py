@@ -273,6 +273,13 @@ def build_mcp_server(
         set_monitor_static,
         update_monitor_settings,
     )
+    from testgen.mcp.tools.notification_destinations import (
+        create_notification_destination,
+        delete_notification_destination,
+        get_notification_destination,
+        list_notification_destinations,
+        update_notification_destination,
+    )
     from testgen.mcp.tools.notifications import (
         create_notification,
         delete_notification,
@@ -486,6 +493,11 @@ def build_mcp_server(
     tool_wrapper(create_notification)
     tool_wrapper(update_notification)
     tool_wrapper(delete_notification)
+    tool_wrapper(list_notification_destinations)
+    tool_wrapper(get_notification_destination)
+    tool_wrapper(create_notification_destination)
+    tool_wrapper(update_notification_destination)
+    tool_wrapper(delete_notification_destination)
     tool_wrapper(list_connections)
     tool_wrapper(get_connection)
     tool_wrapper(test_connection)

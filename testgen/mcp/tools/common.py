@@ -966,6 +966,27 @@ def resolve_notification(notification_id: str) -> NotificationSettings:
     return notif
 
 
+def resolve_destination(destination_id: str):
+    """Resolve a notification-destination ID, collapsing missing-or-inaccessible into one error.
+
+    Returns the polymorphic ``NotificationDestination`` subclass (``EmailDestination``
+    / ``WebhookDestination``) so callers can read type-specific typed properties.
+    Deferred import keeps ``mcp/tools/common`` importable without the destinations
+    ORM (the destinations module in turn imports from ``notification_settings``,
+    which imports ``NotificationDestination`` at file bottom to register the mapper).
+    """
+    from testgen.common.models.notification_destinations import NotificationDestination
+    dest_uuid = parse_uuid(destination_id, "destination_id")
+    perms = get_project_permissions()
+    destination = NotificationDestination.get(
+        dest_uuid,
+        NotificationDestination.project_code.in_(perms.allowed_codes),
+    )
+    if destination is None:
+        raise MCPResourceNotAccessible("Notification destination", destination_id)
+    return destination
+
+
 def resolve_aggregate_scope(
     project_code: str | None,
     test_suite_id: str | None = None,
