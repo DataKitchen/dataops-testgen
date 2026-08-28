@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, Column, Enum, ForeignKey, String, and_, or_, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import Select
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -17,6 +18,7 @@ from testgen.common.models.entity import Entity
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
+from testgen.common.notifications import messages
 
 SENTINEL_TYPE = type("Sentinel", (object,), {})
 
@@ -68,7 +70,8 @@ class NotificationSettingsValidationError(Exception):
 class NotificationSummary:
     """Row shape for paginated ``NotificationSettings.list_for_*`` queries.
 
-    Field order matches the SELECT projection in the ``list_for_*`` methods.
+    Rows come out of ``_paginate`` as keyword unpacks (``data_class(**row)``), so the
+    dataclass field order does not need to match the SELECT projection.
     ``settings`` keeps the raw JSONB blob so event-specific values (``trigger``,
     ``total_threshold``, ``cde_threshold``, ``table_name``) can be read by the
     consumer's format helpers without forking the dataclass per event type.
@@ -83,6 +86,7 @@ class NotificationSummary:
     table_group_id: UUID | None
     score_definition_id: UUID | None
     settings: dict
+    notification_destination_id: UUID | None = None
 
 
 class NotificationSettings(Entity):
@@ -112,6 +116,17 @@ class NotificationSettings(Entity):
         ForeignKey("score_definitions.id", ondelete="CASCADE"),
         nullable=True,
         default=None,
+    )
+    notification_destination_id: UUID | None = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("notification_destinations.id", ondelete="CASCADE"),
+        nullable=True,
+        default=None,
+    )
+
+    destination = relationship(
+        "NotificationDestination",
+        lazy="joined",
     )
 
     settings: JSON_TYPE = Column(postgresql.JSONB, nullable=False, default={})
@@ -207,6 +222,7 @@ class NotificationSettings(Entity):
                 cls.test_suite_id.label("test_suite_id"),
                 cls.table_group_id.label("table_group_id"),
                 cls.score_definition_id.label("score_definition_id"),
+                cls.notification_destination_id.label("notification_destination_id"),
                 cls.settings.label("settings"),
             )
             .where(scope_clause)
@@ -289,16 +305,54 @@ class NotificationSettings(Entity):
         pass
 
     def validate(self):
-        if len(self.recipients) < 1:
-            raise NotificationSettingsValidationError("At least one recipient must be defined.")
-        for addr in self.recipients:
-            if not is_valid_email(addr):
-                raise NotificationSettingsValidationError(f"Invalid email address: {addr}.")
+        addresses_inline = bool(self.recipients)
+        names_destination = self.notification_destination_id is not None
+        if addresses_inline and names_destination:
+            raise NotificationSettingsValidationError(messages.ADDRESSING_BOTH)
+        if not addresses_inline and not names_destination:
+            raise NotificationSettingsValidationError(messages.ADDRESSING_NEITHER)
+        if addresses_inline:
+            for addr in self.recipients:
+                if not is_valid_email(addr):
+                    raise NotificationSettingsValidationError(messages.invalid_email(addr))
+        else:
+            from testgen.common.models.notification_destinations import NotificationDestination
+            destination = NotificationDestination.get(self.notification_destination_id)
+            if destination is None or destination.project_code != self.project_code:
+                raise NotificationSettingsValidationError(messages.DESTINATION_NOT_FOUND)
         self._validate_settings()
 
     def save(self) -> None:
         self.validate()
         super().save()
+        # After an FK write, the eager-loaded ``destination`` relationship still
+        # holds the old target -- SQLAlchemy does not sync ``notification_destination_id ->
+        # destination``. Expire it so the next read pulls the fresh row, which
+        # ``lazy="joined"`` then reloads on the next attribute access.
+        # Without this, delivery_target / delivery_target_description /
+        # serializers report the previous destination for the whole request.
+        get_current_session().expire(self, ["destination"])
+
+    @property
+    def delivery_target(self):
+        """Object with a ``deliver(context, template)`` method for this rule's addressing.
+
+        Returns the linked ``NotificationDestination`` when the rule names one, or an
+        ``InlineRecipientList`` wrapping ``self.recipients`` otherwise. The send path
+        calls ``self.delivery_target.deliver(...)`` and never branches on addressing.
+        """
+        from testgen.common.models.notification_destinations import InlineRecipientList
+        if self.notification_destination_id is not None:
+            return self.destination
+        return InlineRecipientList(self.recipients)
+
+    @property
+    def delivery_target_description(self) -> str:
+        """Short human-readable label for this rule's delivery target, for log messages."""
+        if self.notification_destination_id is not None:
+            dest = self.destination
+            return f"destination='{dest.name}' ({dest.destination_type})" if dest else f"destination={self.notification_destination_id} (missing)"
+        return f"inline recipients={len(self.recipients)}"
 
 
 class RunNotificationSettings(NotificationSettings, Generic[TriggerT]):
@@ -315,7 +369,7 @@ class RunNotificationSettings(NotificationSettings, Generic[TriggerT]):
 
     def _validate_settings(self):
         if not isinstance(self.trigger, self.trigger_enum):
-            raise NotificationSettingsValidationError("Invalid notification trigger.")
+            raise NotificationSettingsValidationError(messages.INVALID_TRIGGER)
 
 
 class TestRunNotificationSettings(RunNotificationSettings[TestRunNotificationTrigger]):
@@ -330,14 +384,17 @@ class TestRunNotificationSettings(RunNotificationSettings[TestRunNotificationTri
             cls,
             project_code: str,
             test_suite_id: UUID | None,
-            recipients: list[str],
-            trigger: TestRunNotificationTrigger,
+            recipients: list[str] | None = None,
+            trigger: TestRunNotificationTrigger | None = None,
+            *,
+            notification_destination_id: UUID | None = None,
     ) -> Self:
         ns = cls(
             event=NotificationEvent.test_run,
             project_code=project_code,
             test_suite_id=test_suite_id,
-            recipients=recipients,
+            recipients=list(recipients or []),
+            notification_destination_id=notification_destination_id,
             settings={"trigger": trigger.value}
         )
         ns.save()
@@ -356,14 +413,17 @@ class ProfilingRunNotificationSettings(RunNotificationSettings[ProfilingRunNotif
             cls,
             project_code: str,
             table_group_id: UUID | None,
-            recipients: list[str],
-            trigger: ProfilingRunNotificationTrigger,
+            recipients: list[str] | None = None,
+            trigger: ProfilingRunNotificationTrigger | None = None,
+            *,
+            notification_destination_id: UUID | None = None,
     ) -> Self:
         ns = cls(
             event=NotificationEvent.profiling_run,
             project_code=project_code,
             table_group_id=table_group_id,
-            recipients=recipients,
+            recipients=list(recipients or []),
+            notification_destination_id=notification_destination_id,
             settings={"trigger": trigger.value}
         )
         ns.save()
@@ -398,25 +458,28 @@ class ScoreDropNotificationSettings(NotificationSettings):
 
     def _validate_settings(self):
         if not (self.total_score_threshold or self.cde_score_threshold):
-            raise NotificationSettingsValidationError("At least one score threshold must be set.")
+            raise NotificationSettingsValidationError(messages.SCORE_THRESHOLD_MISSING)
         for score, label in ((self.total_score_threshold, "Total"), (self.cde_score_threshold, "CDE")):
             if score is not None and not 0 <= score <= 100:
-                raise NotificationSettingsValidationError(f"The {label} score threshold must be between 0 and 100")
+                raise NotificationSettingsValidationError(messages.score_threshold_out_of_range(label))
 
     @classmethod
     def create(
             cls,
             project_code: str,
             score_definition_id: UUID | None,
-            recipients: list[str],
-            total_score_threshold: float | Decimal | None,
-            cde_score_threshold: float | Decimal | None,
+            recipients: list[str] | None = None,
+            total_score_threshold: float | Decimal | None = None,
+            cde_score_threshold: float | Decimal | None = None,
+            *,
+            notification_destination_id: UUID | None = None,
     ) -> Self:
         ns = cls(
             event=NotificationEvent.score_drop,
             project_code=project_code,
             score_definition_id=score_definition_id,
-            recipients=recipients,
+            recipients=list(recipients or []),
+            notification_destination_id=notification_destination_id,
             settings={
                 "total_threshold": cls._value_to_threshold(total_score_threshold),
                 "cde_threshold": cls._value_to_threshold(cde_score_threshold),
@@ -447,17 +510,27 @@ class MonitorNotificationSettings(RunNotificationSettings[TestRunNotificationTri
             project_code: str,
             table_group_id: UUID,
             test_suite_id: UUID,
-            recipients: list[str],
-            trigger: TestRunNotificationTrigger,
+            recipients: list[str] | None = None,
+            trigger: TestRunNotificationTrigger | None = None,
             table_name: str | None = None,
+            *,
+            notification_destination_id: UUID | None = None,
     ) -> Self:
         ns = cls(
             event=NotificationEvent.monitor_run,
             project_code=project_code,
             table_group_id=table_group_id,
             test_suite_id=test_suite_id,
-            recipients=recipients,
+            recipients=list(recipients or []),
+            notification_destination_id=notification_destination_id,
             settings={"trigger": trigger.value, "table_name": table_name},
         )
         ns.save()
         return ns
+
+
+# Import at module bottom so the string reference `"NotificationDestination"` on
+# the `destination` relationship above resolves at mapper-configuration time.
+# The circular import is safe: notification_destinations only pulls names that
+# are already defined earlier in this module.
+from testgen.common.models import notification_destinations  # noqa: F401

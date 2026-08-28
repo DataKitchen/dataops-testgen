@@ -359,8 +359,12 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     for ns in notifications:
         try:
-            TestRunEmailTemplate().send(
-                ns.recipients, {**context, "notification_trigger": ns.trigger.value}
+            ns.delivery_target.deliver(
+                {**context, "notification_trigger": ns.trigger.value},
+                template=TestRunEmailTemplate(),
             )
         except Exception:
-            LOG.exception("Failed sending test run email notifications")
+            LOG.exception(
+                "Failed sending test run notification (rule=%s, suite=%s, %s)",
+                ns.id, ns.test_suite_id, ns.delivery_target_description,
+            )

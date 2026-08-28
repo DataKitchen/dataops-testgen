@@ -320,7 +320,8 @@ class MonitorsDashboardPage(Page):
 
 
 class MonitorNotificationSettingsDialog(NotificationSettingsDialogBase):
-    title = "Monitor Notifications"
+
+    title: str = "Monitor Notifications"
 
     def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
         return {

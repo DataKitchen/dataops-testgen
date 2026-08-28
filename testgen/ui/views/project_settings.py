@@ -10,6 +10,7 @@ from testgen.commands.run_observability_exporter import test_observability_expor
 from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.notification_settings import NotificationSettingsValidationError
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
 from testgen.common.models.scheduler import (
@@ -17,10 +18,17 @@ from testgen.common.models.scheduler import (
     DEFAULT_RETENTION_CRON_TZ,
     JobSchedule,
 )
+from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.test_run import TestRun
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
+from testgen.ui.services.notification_destinations_service import (
+    add_destination,
+    delete_destination,
+    edit_destination,
+    load_destinations_data,
+)
 from testgen.ui.services.query_cache import get_project, select_projects_where
 from testgen.ui.session import session, temp_value
 from testgen.ui.utils import get_cron_sample_handler
@@ -91,12 +99,41 @@ class ProjectSettingsPage(Page):
                 "retention_cron_sample": cron_sample_result(),
                 "retention_last_run": int(retention_last_run.timestamp() * 1000) if retention_last_run else None,
                 "retention_preview": st.session_state.get(retention_preview_key),
+                "destinations": load_destinations_data(project_code),
+                "smtp_configured": PersistedSetting.get("SMTP_CONFIGURED"),
             },
             on_TestObservabilityClicked_change=on_observability_connection_test,
             on_GetCronSample_change=on_cron_sample,
             on_GetRetentionPreview_change=on_retention_preview,
             on_SaveClicked_change=lambda payload: self.update_project(project_code, payload),
+            on_AddDestinationClicked_change=lambda payload: self._add_destination(project_code, payload),
+            on_EditDestinationClicked_change=lambda payload: self._edit_destination(project_code, payload),
+            on_DeleteDestinationClicked_change=lambda payload: self._delete_destination(project_code, payload),
         )
+
+    @staticmethod
+    def _add_destination(project_code: str, payload: dict) -> None:
+        try:
+            add_destination(project_code, payload)
+            st.toast("Destination added", icon=":material/task_alt:")
+        except (NotificationSettingsValidationError, ValueError) as exc:
+            st.toast(str(exc), icon=":material/error:")
+
+    @staticmethod
+    def _edit_destination(project_code: str, payload: dict) -> None:
+        try:
+            edit_destination(project_code, payload)
+            st.toast("Destination saved", icon=":material/task_alt:")
+        except (NotificationSettingsValidationError, ValueError) as exc:
+            st.toast(str(exc), icon=":material/error:")
+
+    @staticmethod
+    def _delete_destination(project_code: str, payload: dict) -> None:
+        try:
+            delete_destination(project_code, payload.get("id"))
+            st.toast("Destination deleted", icon=":material/task_alt:")
+        except (NotificationSettingsValidationError, ValueError) as exc:
+            st.toast(str(exc), icon=":material/error:")
 
     @staticmethod
     def _get_last_cleanup_timestamp(project_code: str) -> datetime | None:

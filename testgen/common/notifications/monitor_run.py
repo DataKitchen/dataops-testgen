@@ -232,8 +232,7 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
             )
         )
         try:
-            MonitorEmailTemplate().send(
-                notification.recipients,
+            notification.delivery_target.deliver(
                 {
                     "summary": {
                         "test_endtime": test_run.job_execution.completed_at,
@@ -247,9 +246,13 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
                     "truncated": max(len(anomalies) - result_list_ct, 0),
                     "view_in_testgen_url": view_in_testgen_url,
                 },
+                template=MonitorEmailTemplate(),
             )
         except Exception:
-            LOG.exception("Failed sending monitor email notifications")
+            LOG.exception(
+                "Failed sending monitor notification (rule=%s, suite=%s, %s)",
+                notification.id, notification.test_suite_id, notification.delivery_target_description,
+            )
 
 
 _TEST_TYPE_LABELS = {

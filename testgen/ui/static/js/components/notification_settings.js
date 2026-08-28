@@ -5,9 +5,17 @@
  * @property {String?} total_score_threshold
  * @property {String?} cde_score_threshold
  * @property {string[]} recipients
+ * @property {String?} notification_destination_id
  * @property {string} trigger
  * @property {boolean} enabled
  * @property {string[]} duplicates
+ *
+ * @typedef Destination
+ * @type {object}
+ * @property {string} id
+ * @property {string} name
+ * @property {string} destination_type
+ * @property {string[]} recipients
  *
  * @typedef Subtitle
  * @type {object}
@@ -28,6 +36,9 @@
  * @property {Boolean} smtp_configured
  * @property {String} event
  * @property {NotificationItem[]} items
+ * @property {Destination[]} destinations
+ * @property {Boolean} can_manage_destinations
+ * @property {String?} project_settings_url
  * @property {Permissions} permissions
  * @property {String} scope_label
  * @property {import('/app/static/js/components/select.js').Option[]} scope_options
@@ -79,6 +90,20 @@ const NotificationSettings = (/** @type Properties */ props) => {
   const triggerOptions = van.derive(() => getValue(props.trigger_options));
   const nsItems = van.derive(() => getValue(props.items));
   const subtitle = van.derive(() => getValue(props.subtitle));
+  const destinations = van.derive(() => getValue(props.destinations) ?? []);
+  const canManageDestinations = van.derive(() => !!getValue(props.can_manage_destinations));
+  const projectSettingsUrl = van.derive(() => getValue(props.project_settings_url));
+  const destinationsById = van.derive(() =>
+    Object.fromEntries(destinations.val.map((d) => [d.id, d]))
+  );
+  const notifyOptions = van.derive(() => {
+    const options = [{ value: '__inline__', label: 'Email addresses' }];
+    for (const dest of destinations.val) {
+      const typeLabel = dest.destination_type === 'email' ? 'Email' : dest.destination_type;
+      options.push({ value: dest.id, label: `${dest.name} (${typeLabel})` });
+    }
+    return options;
+  });
 
   const scopeLabel = (scope) => {
     const match = scopeOptions.val?.find(([key]) => key === scope);
@@ -94,6 +119,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     id: van.state(null),
     scope: van.state(null),
     recipientsString: van.state(''),
+    notifyTarget: van.state('__inline__'),
     trigger: van.state(triggerOptions.val && triggerOptions.val.length > 0 ? triggerOptions.val[0][0] : null),
     totalScoreThreshold: van.state(0),
     cdeScoreThreshold: van.state(0),
@@ -104,6 +130,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     newNotificationItemForm.id.val = null;
     newNotificationItemForm.scope.val = null;
     newNotificationItemForm.recipientsString.val = '';
+    newNotificationItemForm.notifyTarget.val = '__inline__';
     newNotificationItemForm.trigger.val = triggerOptions.val && triggerOptions.val.length > 0 ? triggerOptions.val[0][0] : null;
     newNotificationItemForm.totalScoreThreshold.val = 0;
     newNotificationItemForm.cdeScoreThreshold.val = 0;
@@ -148,7 +175,18 @@ const NotificationSettings = (/** @type Properties */ props) => {
           ),
         div(
           { style: `flex: ${columns[1]}%` },
-          TruncatedText({ max: 6 }, ...item.recipients),
+          item.notification_destination_id
+            ? (() => {
+                const dest = destinationsById.val[item.notification_destination_id];
+                return dest
+                  ? div(
+                      { class: 'flex-column fx-gap-1' },
+                      span(dest.name),
+                      span({ class: 'text-caption' }, dest.destination_type === 'email' ? 'Email destination' : dest.destination_type),
+                    )
+                  : span({ class: 'text-caption text-warning' }, 'Destination not found');
+              })()
+            : TruncatedText({ max: 6 }, ...item.recipients),
         ),
         div(
           { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
@@ -184,6 +222,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                     newNotificationItemForm.isEdit.val = true;
                     newNotificationItemForm.id.val = item.id;
                     newNotificationItemForm.recipientsString.val = item.recipients.join(', ');
+                    newNotificationItemForm.notifyTarget.val = item.notification_destination_id ?? '__inline__';
                     if (event.val === 'score_drop') {
                       newNotificationItemForm.totalScoreThreshold.val = item.total_score_threshold;
                       newNotificationItemForm.cdeScoreThreshold.val = item.cde_score_threshold;
@@ -226,6 +265,21 @@ const NotificationSettings = (/** @type Properties */ props) => {
         span(subtitle.val.value),
       )
       : '',
+    () => div(
+      { class: 'flex-row fx-gap-1 fx-align-center text-caption text-secondary' },
+      Icon({ size: 16, classes: 'text-secondary' }, 'info'),
+      canManageDestinations.val && projectSettingsUrl.val
+        ? span(
+            'Destinations can be reused across notification rules and are configured in ',
+            van.tags.a(
+              { href: projectSettingsUrl.val, target: '_blank', rel: 'noreferrer' },
+              'Project Settings',
+            ),
+            '.',
+            Icon({ size: 12, classes: 'text-secondary ml-1' }, 'open_in_new'),
+          )
+        : span('Destinations can be reused across notification rules and are configured by admins in Project Settings.'),
+    ),
     ExpansionPanel(
       {
         title: () => newNotificationItemForm.isEdit.val
@@ -291,14 +345,41 @@ const NotificationSettings = (/** @type Properties */ props) => {
         ),
         div(
           { style: 'flex: 60%; height: 100%' },
-          () => Textarea({
-            label: 'Recipients',
-            help: 'List of email addresses, separated by commas or newlines',
-            placeholder: 'Email addresses separated by commas or newlines',
-            height: 100,
-            value: newNotificationItemForm.recipientsString,
-            onChange: (value) => newNotificationItemForm.recipientsString.val = value,
-          }),
+          div(
+            { class: 'flex-column fx-gap-2' },
+            // Two separate reactive slots. Rebuilding the Select on every
+            // ``notifyTarget`` change caused a mount loop -- if ``options`` had
+            // no entry matching the current value (empty list on first render,
+            // or a stale destination id), the Select fired ``onChange(null)``,
+            // the ``?? '__inline__'`` fallback re-set ``notifyTarget``, and the
+            // outer binding rebuilt the Select again.
+            () => Select({
+              label: 'Notify',
+              options: notifyOptions.val,
+              value: newNotificationItemForm.notifyTarget,
+              onChange: (value) => {
+                // Preserve the user's choice; only fall back when the value is
+                // truly missing (no options yet).
+                if (value) {
+                  newNotificationItemForm.notifyTarget.val = value;
+                } else if (newNotificationItemForm.notifyTarget.rawVal !== '__inline__') {
+                  newNotificationItemForm.notifyTarget.val = '__inline__';
+                }
+              },
+              allowNull: false,
+              portalClass: 'short-select-portal',
+            }),
+            () => newNotificationItemForm.notifyTarget.val === '__inline__'
+              ? Textarea({
+                  label: 'Recipients',
+                  help: 'List of email addresses, separated by commas or newlines',
+                  placeholder: 'Email addresses separated by commas or newlines',
+                  height: 100,
+                  value: newNotificationItemForm.recipientsString,
+                  onChange: (value) => newNotificationItemForm.recipientsString.val = value,
+                })
+              : '',
+          ),
         ),
       ),
       div(
@@ -321,7 +402,10 @@ const NotificationSettings = (/** @type Properties */ props) => {
               payload: {
                 id: newNotificationItemForm.isEdit.val ? newNotificationItemForm.id.val : null,
                 scope: newNotificationItemForm.scope.val,
-                recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\n ]+/).filter(s => s.length > 0))],
+                ...(newNotificationItemForm.notifyTarget.val === '__inline__'
+                  ? { recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\n ]+/).filter(s => s.length > 0))], notification_destination_id: null }
+                  : { recipients: [], notification_destination_id: newNotificationItemForm.notifyTarget.val }
+                ),
                 ...(event.val === 'score_drop' ?
                   {
                     total_score_threshold: newNotificationItemForm.totalScoreThreshold.val,

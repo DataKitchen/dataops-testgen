@@ -343,8 +343,12 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
 
     for ns in notifications:
         try:
-            ProfilingRunEmailTemplate().send(
-                ns.recipients, {**context, "notification_trigger": ns.trigger.value}
+            ns.delivery_target.deliver(
+                {**context, "notification_trigger": ns.trigger.value},
+                template=ProfilingRunEmailTemplate(),
             )
         except Exception:
-            LOG.exception("Failed sending test run email notifications")
+            LOG.exception(
+                "Failed sending profiling run notification (rule=%s, table_group=%s, %s)",
+                ns.id, ns.table_group_id, ns.delivery_target_description,
+            )

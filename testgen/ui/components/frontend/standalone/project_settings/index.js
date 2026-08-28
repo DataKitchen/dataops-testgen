@@ -10,6 +10,7 @@ import { Alert } from '/app/static/js/components/alert.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { CrontabInput } from '/app/static/js/components/crontab_input.js';
 import { Select } from '/app/static/js/components/select.js';
+import { NotificationDestinationsSection } from '/app/static/js/components/notification_destinations_section.js';
 import { timezones } from '/app/static/js/values.js';
 import { formatTimestamp } from '/app/static/js/display_utils.js';
 import { createEmitter, debounce, getValue, isEqual } from '/app/static/js/utils.js';
@@ -37,6 +38,8 @@ const { div, span } = van.tags;
  * @property {VanState<object?>} retention_cron_sample
  * @property {VanState<string?>} retention_last_run
  * @property {VanState<{profiling_count: number, test_count: number}?>} retention_preview
+ * @property {VanState<object[]>} destinations
+ * @property {VanState<boolean>} smtp_configured
  *
  * @param {Properties} props
  */
@@ -319,6 +322,13 @@ const ProjectSettings = (props) => {
                     payload: Object.fromEntries(Object.entries(form).map(([fieldName, value]) => [fieldName, value.rawVal]))
                 }),
             }),
+        ),
+        NotificationDestinationsSection(
+            {
+                destinations: props.destinations,
+                smtp_configured: props.smtp_configured,
+            },
+            emit,
         ),
     );
 };

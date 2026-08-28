@@ -1130,6 +1130,23 @@ CREATE TABLE settings (
 INSERT INTO tg_revision (component, revision)
 VALUES  ('metadata_db', 0);
 
+CREATE TABLE notification_destinations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_code VARCHAR(30) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    destination_type VARCHAR(20) NOT NULL,
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    secrets BYTEA NULL,
+
+    CONSTRAINT fk_notification_destinations_project
+        FOREIGN KEY (project_code)
+        REFERENCES projects (project_code)
+        ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX ix_notification_destinations_project_name
+    ON notification_destinations (project_code, LOWER(name));
+
 CREATE TABLE notification_settings (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_code VARCHAR(30) NOT NULL,
@@ -1141,6 +1158,7 @@ CREATE TABLE notification_settings (
     test_suite_id UUID NULL DEFAULT NULL,
     table_group_id UUID NULL DEFAULT NULL,
     score_definition_id UUID NULL DEFAULT NULL,
+    notification_destination_id UUID NULL DEFAULT NULL,
 
     settings JSONB NOT NULL DEFAULT '{}'::jsonb,
 
@@ -1157,7 +1175,15 @@ CREATE TABLE notification_settings (
     CONSTRAINT fk_notification_settings_score_definition
         FOREIGN KEY (score_definition_id)
         REFERENCES score_definitions (id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_notification_settings_destination
+        FOREIGN KEY (notification_destination_id)
+        REFERENCES notification_destinations (id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT ck_notification_settings_addressing
+        CHECK ((notification_destination_id IS NULL) <> (jsonb_array_length(recipients) = 0))
 );
 
 -- Run identity = job execution id, with a cascading delete chain:

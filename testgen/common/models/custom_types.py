@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import UTC, datetime
 from types import NoneType
 
@@ -6,6 +7,8 @@ from sqlalchemy import Integer, String, TypeDecorator
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.encrypt import DecryptText, EncryptText
+
+LOG = logging.getLogger("testgen")
 
 JSON_TYPE = str | int | float | list | dict | NoneType
 
@@ -67,3 +70,27 @@ class EncryptedJson(EncryptedBytea):
 
     def process_result_value(self, value: bytes, _dialect) -> JSON_TYPE:
         return None if value is None else json.loads(super().process_result_value(value, _dialect))
+
+
+class SafeEncryptedJson(EncryptedJson):
+    """``EncryptedJson`` that returns ``None`` (and logs) instead of raising on decrypt failure.
+
+    AES-CBC has no authentication tag, so a rotated or mistyped
+    ``TG_DECRYPT_PASSWORD`` returns garbage that ``json.loads`` then rejects.
+    Use this for columns loaded in bulk queries where one undecryptable row
+    should degrade to a delivery-time failure for that row alone rather than
+    500-ing the entire list. Callers must treat ``None`` as "value unavailable"
+    -- the model's ``_validate`` still enforces presence at save time.
+    """
+
+    def process_result_value(self, value: bytes, _dialect) -> JSON_TYPE:
+        if value is None:
+            return None
+        try:
+            return super().process_result_value(value, _dialect)
+        except Exception:
+            LOG.warning(
+                "Failed to decrypt encrypted-JSON column value; returning None. "
+                "Likely cause: TG_DECRYPT_PASSWORD rotation without re-encrypting stored rows.",
+            )
+            return None

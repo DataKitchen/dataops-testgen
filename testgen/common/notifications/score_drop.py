@@ -191,9 +191,12 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
             }
 
             try:
-                ScoreDropEmailTemplate().send(ns.recipients, context)
+                ns.delivery_target.deliver(context, template=ScoreDropEmailTemplate())
             except Exception:
-                LOG.exception("Failed sending test run email notifications")
+                LOG.exception(
+                    "Failed sending score drop notification (rule=%s, scorecard=%s, %s)",
+                    ns.id, ns.score_definition_id, ns.delivery_target_description,
+                )
 
 
 @log_and_swallow_exception
