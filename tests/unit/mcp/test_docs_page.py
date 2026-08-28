@@ -6,10 +6,12 @@ pinned alongside it, since the page mixes core and plugin entries in the same gr
 """
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
-from deploy.build_mcp_docs import _render_entry, _short_description
+from deploy.build_mcp_docs import _build_markdown, _inspect_plugins, _render_entry, _short_description
+from testgen.utils.plugins import Plugin, PluginSpec
 
 
 @pytest.mark.unit
@@ -78,3 +80,66 @@ def test_entry_without_a_function_is_unlabelled() -> None:
     resource = SimpleNamespace(uri="testgen://glossary", name="glossary", description="Glossary.")
 
     assert _render_entry(resource, _LABELS) == "- **`testgen://glossary`** — Glossary."
+
+
+def _tool(name: str):
+    def fn():
+        """Does a thing."""
+
+    fn.__name__ = name
+    return fn
+
+
+def _spec(tools: list, label: str | None = "[label]") -> type[PluginSpec]:
+    class APlugin(PluginSpec):
+        @classmethod
+        def get_mcp_tools(cls):
+            return tools
+
+        @classmethod
+        def get_doc_label(cls):
+            return label
+
+    return APlugin
+
+
+def _discovers(package: str = "testgen_a_plugin"):
+    return patch("deploy.build_mcp_docs.discover", return_value=[Plugin(package=package, version="1.0.0")])
+
+
+@pytest.mark.unit
+def test_inspect_plugins_reports_the_label_and_contributed_tools():
+    with _discovers(), patch.object(Plugin, "load", return_value=_spec([_tool("a_tool")])):
+        labels, tool_names = _inspect_plugins()
+
+    assert labels == {"testgen_a_plugin": "[label]"}
+    assert tool_names == {"a_tool"}
+
+
+@pytest.mark.unit
+def test_inspect_plugins_rejects_a_plugin_that_fails_to_load():
+    with _discovers(), patch.object(Plugin, "load", side_effect=ImportError("shadowed by /site-packages/x")):
+        with pytest.raises(RuntimeError, match="testgen_a_plugin"):
+            _inspect_plugins()
+
+
+@pytest.mark.unit
+def test_inspect_plugins_rejects_a_plugin_that_exposes_no_spec():
+    """A spec-less plugin contributes nothing, which is indistinguishable from having nothing to give."""
+    with _discovers(), patch.object(Plugin, "load", return_value=PluginSpec):
+        with pytest.raises(RuntimeError, match="exposes no PluginSpec"):
+            _inspect_plugins()
+
+
+@pytest.mark.unit
+def test_build_markdown_rejects_a_contributed_tool_that_never_registered():
+    """A tool can be dropped between the plugin handing it over and the server registering it."""
+    mcp = SimpleNamespace(
+        _tool_manager=SimpleNamespace(list_tools=lambda: []),
+        _resource_manager=SimpleNamespace(list_resources=lambda: []),
+        _prompt_manager=SimpleNamespace(list_prompts=lambda: []),
+    )
+
+    with _discovers(), patch.object(Plugin, "load", return_value=_spec([_tool("a_tool")])):
+        with pytest.raises(RuntimeError, match="a_tool"):
+            _build_markdown(mcp)
