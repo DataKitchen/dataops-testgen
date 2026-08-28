@@ -247,6 +247,39 @@ class NotificationSettings(Entity):
         return cls._paginate(query, page=page, limit=limit, data_class=NotificationSummary)
 
     @classmethod
+    def paginate_for_projects(
+        cls,
+        project_codes: Iterable[str],
+        *clauses,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[Self], int]:
+        """Paginated notification instances (full ORM rows) across one or more projects.
+
+        ``list_for_projects`` returns ``NotificationSummary`` dataclasses for the
+        MCP surface that renders flat markdown; this method returns polymorphic
+        ORM instances for callers that need ``isinstance`` dispatch and full
+        access to relationships (``destination``, per-event trigger enums, etc.).
+        """
+        query = (
+            select(cls)
+            .where(cls.project_code.in_(list(project_codes)))
+            .order_by(
+                cls.project_code, cls.event, cls.test_suite_id,
+                cls.table_group_id, cls.score_definition_id, cls.id,
+            )
+        )
+        if clauses:
+            query = query.where(*clauses)
+        rows, total = cls._paginate(query, page=page, limit=limit)
+        # Without a ``data_class``, ``_paginate`` returns ``RowMapping`` objects.
+        # An entity ``select(cls)`` produces exactly one value per row -- the ORM
+        # instance -- so take that value. Note ``row[0]`` does NOT work here:
+        # ``RowMapping`` is keyed by column name, so an integer subscript raises
+        # ``KeyError``.
+        return [next(iter(row.values())) for row in rows], total
+
+    @classmethod
     def list_for_test_suite(
         cls,
         test_suite_id: UUID,

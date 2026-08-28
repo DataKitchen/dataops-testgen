@@ -11,6 +11,8 @@ from testgen.common.enums import PublicJobKey
 from testgen.common.models import Session, _current_session_wrapper, get_current_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.monitor import Monitor
+from testgen.common.models.notification_destinations import NotificationDestination
+from testgen.common.models.notification_settings import NotificationSettings
 from testgen.common.models.project_membership import ProjectMembership
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -147,4 +149,18 @@ def resolve_monitor(permission: str):
     """
     def dependency(monitor_id: UUID, user: User = _require_user) -> Monitor:
         return _check_access(Monitor.get(monitor_id), user, permission)
+    return Depends(dependency)
+
+
+def resolve_notification_destination(permission: str):
+    """Resolve a NotificationDestination by ``destination_id`` path param and verify project permission."""
+    def dependency(destination_id: UUID, user: User = _require_user) -> NotificationDestination:
+        return _check_access(NotificationDestination.get(destination_id), user, permission)
+    return Depends(dependency)
+
+
+def resolve_notification_rule(permission: str):
+    """Resolve a NotificationSettings rule by ``rule_id`` path param and verify project permission."""
+    def dependency(rule_id: UUID, user: User = _require_user) -> NotificationSettings:
+        return _check_access(NotificationSettings.get(rule_id), user, permission)
     return Depends(dependency)
