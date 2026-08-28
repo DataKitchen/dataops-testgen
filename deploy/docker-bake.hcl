@@ -41,6 +41,15 @@ target "testgen-qa" {
   dockerfile = "deploy/testgen.dockerfile"
   platforms = ["linux/amd64", "linux/arm64"]
   tags = [format("datakitchen/dataops-testgen-qa:%s", index(split(" ", TESTGEN_LABELS), 0))]
+  attest = [
+    {
+      type = "provenance",
+      mode = "max",
+    },
+    {
+      type = "sbom",
+    }
+  ]
 }
 
 target "testgen-base" {
