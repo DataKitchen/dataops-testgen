@@ -82,7 +82,6 @@ import {
   DEFAULT_RANGE,
   MAX_CUSTOM_SPAN,
   TREND_RANGE_PRESETS,
-  forecastBelongsOnAxis,
   relativeRangeToBounds,
 } from '/app/static/js/time_range_utils.js';
 
@@ -148,7 +147,14 @@ const TableMonitoringTrend = (props) => {
         resizablePanelDomId: 'data-structure-logs-sidebar',
       },
       div(
-        { class: '', style: 'width: 100%;' },
+        {
+          class: '',
+          style: 'width: 100%;',
+          'data-testid': 'trend-charts',
+          // Stamped from the server's committed range so a reader can tell the window on screen
+          // from the one a click has only just requested.
+          'data-range-preset': () => getValue(props.trend_range)?.preset ?? DEFAULT_RANGE,
+        },
         () => {
           if (!getValue(props.dialog)?.open) return div();
           if (!hasMonitorEvents()) {
@@ -310,7 +316,9 @@ const TableMonitoringTrend = (props) => {
     const times = renderedEventTimes();
     const fallback = relativeRangeToBounds('7d');
     customStart.val = new Date(times.length ? Math.min(...times) : fallback.start);
-    customEnd.val = new Date(times.length ? Math.max(...times) : fallback.end);
+    // The end is exclusive and the field floors it to the minute, so seeding it on the newest run
+    // would drop that run. Clearing the minute it lands in keeps the seed showing what it plots.
+    customEnd.val = new Date(times.length ? Math.max(...times) + 60_000 : fallback.end);
   };
 
   const rangeSelector = SegmentedControl({
@@ -409,8 +417,8 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
     + metricEvents.length * ((spacing * 4) + metricTrendChartHeight)
   );
 
-  const rawPredictions = getValue(props.predictions) ?? {};
-  const rawPredictionTimes = Object.values(rawPredictions).reduce((times, v) => [
+  const predictions = getValue(props.predictions) ?? {};
+  const predictionTimes = Object.values(predictions).reduce((times, v) => [
     ...times,
     ...Object.keys(v.mean ?? {}).map(t => ({time: +t})),
     ...(v.window ? [
@@ -418,14 +426,6 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
       {time: v.window.end},
     ].filter(Boolean) : []),
   ], []);
-  const trendRange = getValue(props.trend_range) ?? {};
-  const forecastOnAxis = forecastBelongsOnAxis(
-    trendRange.start,
-    trendRange.end,
-    rawPredictionTimes.length ? Math.min(...rawPredictionTimes.map(p => p.time)) : null,
-  );
-  const predictions = forecastOnAxis ? rawPredictions : {};
-  const predictionTimes = forecastOnAxis ? rawPredictionTimes : [];
   const freshnessWindow = predictions?.freshness_trend?.window;
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));

@@ -606,15 +606,19 @@ def build_table_trends_data(
                 "dialog": dialog,
             }, handlers
 
+    # The forecast describes runs still to come, so a window that closed before now sits entirely
+    # behind it: rendering it stretches the axis across the intervening gap.
+    window_is_open = range_end is None or range_end >= datetime.now(UTC)
+
     events = get_monitor_events_for_table(
         table_group.monitor_test_suite_id, table_name, range_start, range_end,
     )
-    # The forecast describes the monitor's own state, not the slice of history on screen, so its
-    # anchors come from the full lookback: a narrow window can hold no detected update at all,
-    # which would drop the freshness band and every freshness-gated band with it.
-    anchor_events = events if range_start is None else get_monitor_events_for_table(
-        table_group.monitor_test_suite_id, table_name,
-    )
+    anchor_events = events
+    if window_is_open and range_start is not None:
+        # The forecast describes the monitor's own state, not the slice of history on screen, so its
+        # anchors come from the full lookback: a narrow window can hold no detected update at all,
+        # which would drop the freshness band and every freshness-gated band with it.
+        anchor_events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
     definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
         TestDefinition.table_name == table_name,
@@ -624,7 +628,7 @@ def build_table_trends_data(
     )
 
     predictions = {}
-    if len(definitions) > 0:
+    if len(definitions) > 0 and window_is_open:
         test_suite = get_test_suite(table_group.monitor_test_suite_id)
         monitor_schedule = get_monitor_schedule(table_group.monitor_test_suite_id)
         monitor_lookback = test_suite.monitor_lookback

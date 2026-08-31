@@ -76,27 +76,6 @@ function relativeRangeToBounds(expression, now = new Date()) {
 }
 
 /**
- * Whether a forecast that opens at `firstPredictionTime` belongs on the axis for the given window.
- *
- * The forecast sits near the present, so a window that closed well before it would stretch the axis
- * across the intervening gap and squeeze the selected days into a sliver. The gap is measured
- * against the window's own width, which keeps the forecast for a window ending at now and drops it
- * for one ending months back, with no threshold to tune. An unbounded window, or one with no
- * forecast, always passes.
- *
- * @param {number?} windowStart Epoch milliseconds
- * @param {number?} windowEnd Epoch milliseconds
- * @param {number?} firstPredictionTime Epoch milliseconds
- * @returns {boolean}
- */
-function forecastBelongsOnAxis(windowStart, windowEnd, firstPredictionTime) {
-    if (windowStart == null || windowEnd == null || firstPredictionTime == null) {
-        return true;
-    }
-    return firstPredictionTime - windowEnd <= windowEnd - windowStart;
-}
-
-/**
  * @typedef Parts
  * @type {object}
  * @property {number?} month 1-12
@@ -273,7 +252,6 @@ export {
     composeDateTime,
     daysInMonth,
     decomposeDateTime,
-    forecastBelongsOnAxis,
     partMax,
     relativeRangeToBounds,
     stepPart,
