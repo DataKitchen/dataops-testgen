@@ -156,6 +156,8 @@ def _is_blank(value: object) -> bool:
 CUSTOM_METADATA_MAX_KEYS = 50
 CUSTOM_METADATA_MAX_BYTES = 10_240
 
+MISSING_TEST_DEFINITION_MESSAGE = "Test definition no longer exists."
+
 
 def validate_custom_metadata(value: object) -> str | None:
     """Return an error message if ``value`` is not a valid ``custom_metadata`` payload, else ``None``.

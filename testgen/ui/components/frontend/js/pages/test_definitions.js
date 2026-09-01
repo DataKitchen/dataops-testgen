@@ -1365,7 +1365,10 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
             open.val;
             const fv = formValues.val;
             const vr = validateResult.val;
-            if (!fv) return '';
+            if (!fv) {
+                const error = dialogInfo.val?.error;
+                return error ? Alert({ type: 'info', style: 'font-size: 14px' }, error) : '';
+            }
             return div(
                 { class: 'flex-column fx-gap-4 td-form-dialog' },
                 TestDefFormContent({

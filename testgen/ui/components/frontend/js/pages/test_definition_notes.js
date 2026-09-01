@@ -13,12 +13,15 @@
  * @property {Array<Note>} notes
  * @property {string} current_user
  * @property {string} test_definition_id
+ * @property {string?} error
+ * @property {string?} draft
  */
 import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { getValue, loadStylesheet } from '/app/static/js/utils.js';
 import { ExpansionPanel } from '/app/static/js/components/expansion_panel.js';
+import { Alert } from '/app/static/js/components/alert.js';
 import { formatTimestamp } from '/app/static/js/display_utils.js';
 
 const { div, span, textarea, p } = van.tags;
@@ -33,7 +36,7 @@ const TestDefinitionNotes = (props) => {
 
     // Form state: shared between add and edit modes
     const editNoteId = van.state(null);
-    const noteText = van.state('');
+    const noteText = van.state(getValue(props.draft) ?? '');
     const isEdit = van.state(false);
 
     const resetForm = () => {
@@ -134,6 +137,10 @@ const TestDefinitionNotes = (props) => {
                 span({ class: 'text-secondary' }, 'Test: '), span(label.test),
             );
         },
+        () => {
+            const error = getValue(props.error);
+            return error ? Alert({ type: 'info', class: 'tdn-error' }, error) : '';
+        },
         ExpansionPanel(
             {
                 title: () => isEdit.val
@@ -173,7 +180,8 @@ const TestDefinitionNotes = (props) => {
                                 resetForm();
                                 emit('NoteUpdated', { payload: { id, text, test_definition_id: tdId } });
                             } else {
-                                resetForm();
+                                // Keep the text until the server round trip replaces the form, so a
+                                // rejected note is not lost.
                                 emit('NoteAdded', { payload: { text, test_definition_id: tdId } });
                             }
                         },
@@ -201,6 +209,9 @@ const TestDefinitionNotes = (props) => {
 
 const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
+.tdn-error {
+    font-size: 14px !important;
+}
 .tdn-separator {
     color: var(--disabled-text-color);
     margin: 0 4px;
