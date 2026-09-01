@@ -133,6 +133,7 @@ const MonitoringSparklineChart = (options, ...points) => {
             );
             if (validPoints.length < 2) return '';
             return path({
+                'data-testid': 'sparkline-prediction',
                 d: generateShadowPath(validPoints, _options.height),
                 fill: colorMap.emptyDark,
                 opacity: 0.25,
@@ -213,6 +214,7 @@ const MonitoringSparklineMarkers = (options, points) => {
             const size = options.anomalySize || defaultAnomalyMarkerSize;
             return g(
                 {
+                    'data-testid': 'sparkline-marker',
                     onmouseenter: () => options.showTooltip?.(MonitoringSparklineChartTooltip(point), point),
                     onmouseleave: () => options.hideTooltip?.(),
                 },

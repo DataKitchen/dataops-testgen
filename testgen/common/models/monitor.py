@@ -170,13 +170,35 @@ _TABLE_SCOPE_TYPES = (
 )
 
 
+def build_run_count_sql(
+    test_suite_id,
+    start: datetime,
+    end: datetime,
+) -> tuple[str, dict]:
+    """Build SQL counting the suite's runs whose start time falls in ``[start, end)``.
+
+    The table-scope series emits one row per run per monitor type whether or not the run produced a
+    result, so this count times the number of monitor types is the series row count. Covered by the
+    ``(test_suite_id, test_starttime)`` index, so it costs far less than the series query it guards.
+    """
+    query = """
+    SELECT COUNT(*)
+    FROM test_runs
+    WHERE test_runs.test_suite_id = :test_suite_id
+        AND test_runs.test_starttime >= :range_start
+        AND test_runs.test_starttime < :range_end;
+    """
+    return query, {"test_suite_id": str(test_suite_id), "range_start": start, "range_end": end}
+
+
 def build_series_sql(
     *,
     test_suite_id,
     monitor_id=None,
     table_name=None,
     lookback_override: int | None = None,
-    lookback_multiplier: int = 1,
+    start: datetime | None = None,
+    end: datetime | None = None,
 ) -> tuple[str, dict]:
     """Build the lookback series SQL, scoped to one monitor (monitor_id) or one table.
 
@@ -184,8 +206,9 @@ def build_series_sql(
 
     For the table scope (``monitor_id is None``), the query CROSS JOINs the four monitor
     types and includes ``results.test_type`` in the SELECT so callers can route each row
-    to its parser. ``lookback_multiplier`` scales the suite-configured lookback for the
-    table scope (default 1, ignored for the monitor scope).
+    to its parser. Passing both ``start`` and ``end`` windows the runs by start time instead
+    of by run count; either one alone falls back to the run-count window. Both are ignored
+    for the monitor scope.
     """
     if monitor_id is not None:
         # Monitor scope: single definition LEFT JOIN, no type routing needed.
@@ -222,17 +245,21 @@ def build_series_sql(
             params["lookback_override"] = lookback_override
         return query, params
 
-    # Table scope: CROSS JOIN over four monitor types, scaled lookback.
-    if lookback_override is not None:
-        lookback_expr = ":lookback_override"
-    elif lookback_multiplier != 1:
-        lookback_expr = "COALESCE(test_suites.monitor_lookback, 1) * :lookback_multiplier"
+    # Table scope: CROSS JOIN over four monitor types.
+    date_bounded = start is not None and end is not None
+    if date_bounded:
+        runs_cte = """
+    active_runs AS (
+        SELECT test_runs.id, test_runs.test_starttime
+        FROM test_runs
+        WHERE test_runs.test_suite_id = :test_suite_id
+            AND test_runs.test_starttime >= :range_start
+            AND test_runs.test_starttime < :range_end
+    )"""
     else:
-        lookback_expr = "COALESCE(test_suites.monitor_lookback, 1)"
-
-    type_union = "\n        UNION ALL ".join(f"SELECT '{t}' AS test_type" for t in _TABLE_SCOPE_TYPES)
-    query = f"""
-    WITH ranked_test_runs AS (
+        lookback_expr = ":lookback_override" if lookback_override is not None else "COALESCE(test_suites.monitor_lookback, 1)"
+        runs_cte = f"""
+    ranked_test_runs AS (
         SELECT
             test_runs.id,
             test_runs.test_starttime,
@@ -246,7 +273,11 @@ def build_series_sql(
     active_runs AS (
         SELECT id, test_starttime FROM ranked_test_runs
         WHERE position <= lookback
-    ),
+    )"""
+
+    type_union = "\n        UNION ALL ".join(f"SELECT '{t}' AS test_type" for t in _TABLE_SCOPE_TYPES)
+    query = f"""
+    WITH {runs_cte},
     target_tests AS (
         {type_union}
     )
@@ -271,11 +302,12 @@ def build_series_sql(
         )
     ORDER BY active_runs.test_starttime, tt.test_type;
     """
-    params = {"test_suite_id": str(test_suite_id), "table_name": table_name}
-    if lookback_override is not None:
+    params: dict = {"test_suite_id": str(test_suite_id), "table_name": table_name}
+    if date_bounded:
+        params["range_start"] = start
+        params["range_end"] = end
+    elif lookback_override is not None:
         params["lookback_override"] = lookback_override
-    elif lookback_multiplier != 1:
-        params["lookback_multiplier"] = lookback_multiplier
     return query, params
 
 

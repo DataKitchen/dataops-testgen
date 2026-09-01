@@ -1,11 +1,12 @@
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
 from testgen.common.monitor_forecast import gated_forecast_prediction
-from testgen.ui.views.monitors_dashboard import _freshness_next_update_window
+from testgen.ui.views.monitors_dashboard import _freshness_next_update_window, build_table_trends_data
 
 pytestmark = pytest.mark.unit
 
@@ -155,3 +156,226 @@ def test_gated_prediction_next_mean_falls_back_to_baseline_without_forecast():
     window = {"start": NOW_MS - HOUR, "end": NOW_MS + 3 * HOUR}
     result = gated_forecast_prediction(_gated_def(mean=None), window, LAST_RUN)
     assert result["mean"][NOW_MS + 3 * HOUR] == 1000.0  # baseline used as the step value
+
+
+# --- build_table_trends_data: forecast anchors are independent of the display window ---
+
+SUITE_ID = "11111111-1111-1111-1111-111111111111"
+LATEST_RUN = datetime(2026, 8, 18, 12, 0, tzinfo=UTC)
+EARLIER_RUN = datetime(2026, 8, 1, 6, 0, tzinfo=UTC)
+IN_PAST_WINDOW_RUN = datetime(2026, 7, 5, 9, 0, tzinfo=UTC)
+
+
+def _series(freshness_times=(), volume_times=()):
+    return {
+        "freshness_events": [
+            {"changed": True, "is_training": False, "is_pending": False, "time": t} for t in freshness_times
+        ],
+        "volume_events": [{"time": t, "record_count": 10} for t in volume_times],
+        "schema_events": [],
+        "metric_events": [],
+    }
+
+
+def _range_ending(offset, span=timedelta(days=30)):
+    end = datetime.now(UTC) + offset
+    return {
+        "preset": "custom",
+        "start": int((end - span).timestamp() * 1000),
+        "end": int(end.timestamp() * 1000),
+    }
+
+
+def _forecast_suite():
+    s = _suite()
+    s.monitor_lookback = 30
+    s.predict_sensitivity = None
+    return s
+
+
+def _table_group():
+    tg = MagicMock()
+    tg.monitor_test_suite_id = SUITE_ID
+    tg.id = "22222222-2222-2222-2222-222222222222"
+    return tg
+
+
+def _monitor_def(test_type, history_calculation="PREDICT", prediction=None, lower=None, upper=None):
+    d = MagicMock()
+    d.test_type = test_type
+    d.history_calculation = history_calculation
+    d.prediction = prediction
+    d.lower_tolerance = lower
+    d.upper_tolerance = upper
+    return d
+
+
+@contextmanager
+def _trends_harness(trend_range, definitions, windowed, unwindowed):
+    """Patch build_table_trends_data's collaborators, yielding the events mock."""
+    table_group = _table_group()
+    session_state = {f"table_monitoring_trends:range:{SUITE_ID}:orders": trend_range}
+
+    def events_for(_suite_id, _table_name, start=None, _end=None):
+        return windowed if start is not None else unwindowed
+
+    with (
+        patch("testgen.common.models.database_session"),
+        patch("testgen.ui.views.monitors_dashboard.temp_value", return_value=(lambda: None, lambda _v: None)),
+        patch("testgen.ui.views.monitors_dashboard.st") as mock_st,
+        patch("testgen.ui.views.monitors_dashboard.select_test_definitions_where", return_value=definitions),
+        patch("testgen.ui.views.monitors_dashboard.get_test_suite", return_value=_forecast_suite()),
+        patch("testgen.ui.views.monitors_dashboard.get_monitor_schedule", return_value=_schedule()),
+        patch("testgen.ui.views.monitors_dashboard.count_monitor_runs", return_value=1),
+        patch("testgen.ui.views.monitors_dashboard.get_monitor_events_for_table", side_effect=events_for) as mock_events,
+    ):
+        mock_st.session_state = session_state
+        yield table_group, mock_events
+
+
+def test_freshness_anchor_ignores_a_narrow_display_window():
+    # A weekly-refreshed table viewed over 7 days: the window holds no detected update, but the
+    # forecast must still anchor on the one outside it.
+    windowed = _series(freshness_times=(), volume_times=(LATEST_RUN,))
+    unwindowed = _series(freshness_times=(EARLIER_RUN,), volume_times=(EARLIER_RUN, LATEST_RUN))
+    trend_range = _range_ending(timedelta(hours=1), span=timedelta(days=7))
+    definitions = [_monitor_def("Freshness_Trend")]
+
+    with _trends_harness(trend_range, definitions, windowed, unwindowed) as (table_group, mock_events):
+        with patch(
+            "testgen.ui.views.monitors_dashboard._freshness_next_update_window", return_value=None,
+        ) as mock_window:
+            data, _handlers = build_table_trends_data(table_group, {"table_name": "orders"})
+
+    # Two fetches: the windowed one for display, the full lookback for the anchors.
+    assert mock_events.call_count == 2
+    assert mock_window.call_args.args[1] is unwindowed
+    # Display still shows only the selected window.
+    assert data["freshness_events"] == []
+
+
+def test_forecast_anchors_reuse_the_display_events_when_unbounded():
+    unwindowed = _series(freshness_times=(EARLIER_RUN,), volume_times=(EARLIER_RUN, LATEST_RUN))
+    trend_range = {"preset": "default", "start": None, "end": None}
+    definitions = [_monitor_def("Freshness_Trend")]
+
+    with _trends_harness(trend_range, definitions, None, unwindowed) as (table_group, mock_events):
+        with patch(
+            "testgen.ui.views.monitors_dashboard._freshness_next_update_window", return_value=None,
+        ) as mock_window:
+            build_table_trends_data(table_group, {"table_name": "orders"})
+
+    assert mock_events.call_count == 1
+    assert mock_window.call_args.args[1] is unwindowed
+
+
+def test_cron_reference_time_anchors_on_the_full_lookback():
+    # The static fallback samples upcoming runs from the last actual run, which must not move
+    # when the user narrows the view to a slice that excludes it.
+    windowed = _series(volume_times=(IN_PAST_WINDOW_RUN,))
+    unwindowed = _series(volume_times=(IN_PAST_WINDOW_RUN, EARLIER_RUN, LATEST_RUN))
+    trend_range = _range_ending(timedelta(hours=1), span=timedelta(days=7))
+    definitions = [_monitor_def("Volume_Trend", history_calculation=None, lower="900", upper="1100")]
+
+    with _trends_harness(trend_range, definitions, windowed, unwindowed) as (table_group, _mock_events):
+        with (
+            patch("testgen.ui.views.monitors_dashboard._freshness_next_update_window", return_value=None),
+            patch(
+                "testgen.ui.views.monitors_dashboard.get_cron_sample", return_value={"samples": []},
+            ) as mock_cron,
+        ):
+            build_table_trends_data(table_group, {"table_name": "orders"})
+
+    assert mock_cron.call_args.kwargs["reference_time"] == LATEST_RUN
+
+
+# --- build_table_trends_data: a window wider than the chart can show is not fetched ---
+
+
+def test_oversized_window_is_not_fetched_and_says_why():
+    with _trends_harness(_range_ending(timedelta(hours=1), span=timedelta(days=365)), [_monitor_def("Freshness_Trend")], None, None) as (tg, mock_events):
+        with patch("testgen.ui.views.monitors_dashboard.count_monitor_runs", return_value=8760):
+            data, _handlers = build_table_trends_data(tg, {"table_name": "orders"})
+
+    mock_events.assert_not_called()
+    assert data["freshness_events"] == []
+    assert data["volume_events"] == []
+    assert data["predictions"] == {}
+    assert "8,760 monitor runs" in data["trend_notice"]
+    assert "shorter range" in data["trend_notice"]
+
+
+def test_window_within_budget_is_fetched_normally():
+    series = _series(freshness_times=(LATEST_RUN,), volume_times=(LATEST_RUN,))
+    with _trends_harness(_range_ending(timedelta(hours=1)), [_monitor_def("Freshness_Trend")], series, series) as (tg, mock_events):
+        with (
+            patch("testgen.ui.views.monitors_dashboard.count_monitor_runs", return_value=720),
+            patch("testgen.ui.views.monitors_dashboard._freshness_next_update_window", return_value=None),
+        ):
+            data, _handlers = build_table_trends_data(tg, {"table_name": "orders"})
+
+    assert mock_events.call_count == 2
+    assert data["trend_notice"] is None
+    assert len(data["freshness_events"]) == 1
+
+
+def test_unbounded_window_is_never_counted():
+    # Default is capped by the suite's configured run count, so there is nothing to guard.
+    series = _series(volume_times=(LATEST_RUN,))
+    trend_range = {"preset": "default", "start": None, "end": None}
+    with _trends_harness(trend_range, [_monitor_def("Freshness_Trend")], None, series) as (tg, _mock_events):
+        with (
+            patch("testgen.ui.views.monitors_dashboard.count_monitor_runs") as mock_count,
+            patch("testgen.ui.views.monitors_dashboard._freshness_next_update_window", return_value=None),
+        ):
+            data, _handlers = build_table_trends_data(tg, {"table_name": "orders"})
+
+    mock_count.assert_not_called()
+    assert data["trend_notice"] is None
+
+
+# --- build_table_trends_data: a window that has already closed gets no forecast ---
+
+
+def _static_volume_monitor():
+    return _monitor_def("Volume_Trend", history_calculation=None, lower="900", upper="1100")
+
+
+@contextmanager
+def _forecast_collaborators():
+    with (
+        patch("testgen.ui.views.monitors_dashboard._freshness_next_update_window", return_value=None),
+        patch("testgen.ui.views.monitors_dashboard.get_cron_sample", return_value={"samples": [1]}),
+    ):
+        yield
+
+
+def test_forecast_is_dropped_for_a_window_that_ends_in_the_past():
+    series = _series(volume_times=(LATEST_RUN,))
+    trend_range = _range_ending(-timedelta(days=7))
+    with _trends_harness(trend_range, [_static_volume_monitor()], series, series) as (tg, _mock_events):
+        with _forecast_collaborators():
+            data, _handlers = build_table_trends_data(tg, {"table_name": "orders"})
+
+    assert data["predictions"] == {}
+
+
+def test_forecast_is_kept_for_a_window_that_is_still_open():
+    series = _series(volume_times=(LATEST_RUN,))
+    trend_range = _range_ending(timedelta(hours=1))
+    with _trends_harness(trend_range, [_static_volume_monitor()], series, series) as (tg, _mock_events):
+        with _forecast_collaborators():
+            data, _handlers = build_table_trends_data(tg, {"table_name": "orders"})
+
+    assert "volume_trend" in data["predictions"]
+
+
+def test_past_window_does_not_fetch_the_forecast_anchors():
+    # The full-lookback fetch exists only to anchor the forecast, so a closed window skips it.
+    series = _series(volume_times=(LATEST_RUN,))
+    trend_range = _range_ending(-timedelta(days=7))
+    with _trends_harness(trend_range, [_static_volume_monitor()], series, series) as (tg, mock_events):
+        with _forecast_collaborators():
+            build_table_trends_data(tg, {"table_name": "orders"})
+
+    assert mock_events.call_count == 1
