@@ -3,12 +3,15 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import inspect
+import logging
 from collections.abc import Callable, Generator
 from typing import ClassVar, get_args
 
 from testgen.ui.assets import get_asset_path
 from testgen.ui.auth import Authentication
 from testgen.ui.navigation.page import Page
+
+LOG = logging.getLogger("testgen")
 
 PLUGIN_PREFIX = "testgen_"
 
@@ -124,14 +127,29 @@ class Plugin:
         self.version = version
 
     def load(self) -> type[PluginSpec]:
-        """Lightweight load: import plugin module and populate PluginHook."""
+        """Lightweight load: import plugin module and populate PluginHook.
+
+        Raises:
+            ImportError: if the package imports as a namespace package, meaning a directory
+                of the same name shadows the installed one and none of its code is reachable.
+        """
         module = importlib.import_module(self.package)
+        if getattr(module, "__file__", None) is None:
+            raise ImportError(
+                f"{self.package} imported as a namespace package from "
+                f"{list(getattr(module, '__path__', []))} — a directory of that name is shadowing "
+                "the installed package"
+            )
+
         spec = _find_plugin_spec(module)
-        if spec is not None:
-            hook = PluginHook.instance()
-            if spec.rbac is not RBACProvider:
-                hook.rbac = spec.rbac
-        return spec or PluginSpec
+        if spec is None:
+            LOG.warning("Plugin %s exposes no PluginSpec", self.package)
+            return PluginSpec
+
+        hook = PluginHook.instance()
+        if spec.rbac is not RBACProvider:
+            hook.rbac = spec.rbac
+        return spec
 
     def load_streamlit(self) -> type[PluginSpec]:
         """Full Streamlit load. Calls load() first, then configure_ui() for UI attributes."""

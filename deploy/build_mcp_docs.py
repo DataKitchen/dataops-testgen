@@ -16,7 +16,9 @@ by design; it still reaches MCP clients, which receive the full description.
 An entry contributed by a plugin is followed by whatever label that plugin's
 ``get_doc_label`` returns, so a page can list core and plugin entries together and
 still say which is which. A plugin's entries are only present when it is installed
-in the environment this script runs in.
+in the environment this script runs in. The export aborts rather than write a page
+quietly missing entries a plugin was meant to contribute — whether the plugin failed
+to load or its tools never reached the server.
 """
 
 import argparse
@@ -29,7 +31,7 @@ from typing import Any
 
 from testgen.mcp.server import build_mcp_server
 from testgen.mcp.tools.common import DocGroup
-from testgen.utils.plugins import discover
+from testgen.utils.plugins import PluginSpec, discover
 
 LOG = logging.getLogger("testgen")
 
@@ -75,18 +77,41 @@ def _entry_name(item: Any) -> str:
     return str(getattr(item, "uri", None) or item.name)
 
 
-def _plugin_doc_labels() -> dict[str, str]:
-    """Map installed plugin package name to the label it wants on its entries."""
-    labels = {}
+def _inspect_plugins() -> tuple[dict[str, str], set[str]]:
+    """Load every installed plugin, returning its entry label and the MCP tools it contributes.
+
+    Prints one line per installed plugin naming the spec it resolved to, how many MCP tools
+    it contributes, and where it was imported from.
+
+    Raises:
+        RuntimeError: if an installed plugin fails to load or exposes no ``PluginSpec``.
+    """
+    labels: dict[str, str] = {}
+    tool_names: set[str] = set()
+    broken: list[str] = []
+
     for plugin in discover():
         try:
-            label = plugin.load().get_doc_label()
-        except Exception:
-            LOG.warning("Plugin %s failed to load; its entries go unlabelled", plugin.package)
+            spec = plugin.load()
+            if spec is PluginSpec:
+                broken.append(f"{plugin.package}: exposes no PluginSpec")
+                continue
+            tools = spec.get_mcp_tools()
+            label = spec.get_doc_label()
+        except Exception as exc:
+            broken.append(f"{plugin.package}: {exc!r}")
             continue
+
+        tool_names.update(tool.__name__ for tool in tools)
+        origin = sys.modules[spec.__module__].__file__
+        print(f"plugin {plugin.package} {plugin.version} spec={spec.__name__} tools={len(tools)} origin={origin}")
         if label:
             labels[plugin.package] = label
-    return labels
+
+    if broken:
+        raise RuntimeError("Installed plugins did not load:\n" + "\n".join(f"- {b}" for b in broken))
+
+    return labels, tool_names
 
 
 def _entry_label(item: Any, plugin_labels: dict[str, str]) -> str:
@@ -128,8 +153,11 @@ def _group_tools(tools: list[Any]) -> list[tuple[str, list[Any]]]:
 
 
 def _build_markdown(mcp: Any) -> str:
-    plugin_labels = _plugin_doc_labels()
+    plugin_labels, plugin_tool_names = _inspect_plugins()
     tools = mcp._tool_manager.list_tools()
+    unregistered = sorted(plugin_tool_names - {tool.name for tool in tools})
+    if unregistered:
+        raise RuntimeError(f"Plugin MCP tools missing from the server: {', '.join(unregistered)}")
     resources = sorted(mcp._resource_manager.list_resources(), key=lambda r: str(r.uri))
     prompts = sorted(mcp._prompt_manager.list_prompts(), key=lambda p: p.name)
     grouped_tools = _group_tools(list(tools))
