@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import ClassVar, Literal, NamedTuple, Self, TypedDict
+from typing import ClassVar, Literal, NamedTuple, Self, TypedDict, get_args
 from uuid import UUID
 
 from sqlalchemy import (
@@ -35,6 +35,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
 
 ProgressKey = Literal["data_chars", "col_profiling", "freq_analysis", "hygiene_issues"]
+PROGRESS_KEYS: frozenset[str] = frozenset(get_args(ProgressKey))
 ProgressStatus = Literal["Pending", "Running", "Completed", "Warning"]
 
 class ProgressStep(TypedDict):
@@ -363,15 +364,13 @@ class ProfilingRun(Entity):
         rows = get_current_session().execute(query).mappings().all()
         return [ProfilingRunTableBreakdown(**row) for row in rows]
 
-    _ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)
-
     @classmethod
     def has_active_job_for(cls, entity_cls: type[Entity], *entity_ids: str | int | UUID) -> bool:
         """Check whether any active profiling job exists for the given entity or entities."""
         query = (
             select(func.count(cls.id))
             .join(JobExecution, cls.id == JobExecution.id)
-            .where(JobExecution.status.in_(cls._ACTIVE_JOB_STATUSES))
+            .where(JobExecution.status.in_(JobStatus.active()))
         )
         if entity_cls is cls:
             query = query.where(cls.id.in_(entity_ids))
@@ -434,8 +433,8 @@ class ProfilingRun(Entity):
         parent rows deleted across all batches — or, with ``dry_run=True``,
         the number that would be deleted (for retention preview, no writes).
 
-        In-flight runs (JE in PENDING/CLAIMED/RUNNING/CANCEL_REQUESTED) are
-        never deleted — they may still be writing data.
+        Runs whose job has not reached a terminal status are never deleted —
+        they may still be writing data.
 
         Each batch runs in its own transaction (committed before the next batch
         is selected), so locks on profiling_runs / profile_results / etc. are
@@ -444,7 +443,7 @@ class ProfilingRun(Entity):
         where_clauses = [
             cls.project_code == project_code,
             cls.profiling_starttime < cutoff,
-            JobExecution.status.in_([JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED]),
+            JobExecution.status.in_(JobStatus.terminal()),
         ]
         if protected_ids:
             where_clauses.append(cls.id.notin_(protected_ids))
@@ -467,6 +466,11 @@ class ProfilingRun(Entity):
         return total
 
     def init_progress(self) -> None:
+        """Prepare the progress steps, keeping whatever an earlier process already recorded.
+
+        A run that resumes skips the steps it finished, so their recorded state is the only
+        account of them there will be.
+        """
         self._progress = {
             "data_chars": {"label": "Refreshing data catalog"},
             "col_profiling": {"label": "Profiling columns"},
@@ -475,6 +479,9 @@ class ProfilingRun(Entity):
         }
         for key in self._progress:
             self._progress[key].update({"key": key, "status": "Pending"})
+        for step in self.progress or []:
+            if step.get("key") in self._progress:
+                self._progress[step["key"]].update(step)
 
     def set_progress(self, key: ProgressKey, status: ProgressStatus, detail: str | None = None, error: str | None = None) -> None:
         self._progress[key]["status"] = status
@@ -485,6 +492,10 @@ class ProfilingRun(Entity):
 
         self.progress = list(self._progress.values())
         flag_modified(self, "progress")
+
+    def progress_error(self, key: str) -> str | None:
+        """The error recorded against a step, by this process or an earlier one."""
+        return self._progress.get(key, {}).get("error")
 
     def get_previous(self) -> Self | None:
         query = (

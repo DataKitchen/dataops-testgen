@@ -1076,13 +1076,20 @@ def run_app(module):
                 for m in APP_MODULES
             ]
 
+            terminating = False
+
             def term_children(signum, _):
+                # Shutdown is underway: record it so the watcher below does not read the
+                # first child's exit as an unexpected death and fire a second round of
+                # signals. A second signal reaches a child as "hurry up" and force-kills a
+                # job mid-pause before it can checkpoint.
+                nonlocal terminating
+                terminating = True
                 for child in children:
                     _forward_signal_to_child(child, signum)
 
             _install_shutdown_handler(term_children)
 
-            terminating = False
             while children:
                 try:
                     children[0].wait(CHILDREN_POLL_INTERVAL)

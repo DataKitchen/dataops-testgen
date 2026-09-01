@@ -340,15 +340,13 @@ class TestRun(Entity):
 
         return TestRunMonitorSummary(**get_current_session().execute(query).mappings().first())
 
-    _ACTIVE_JOB_STATUSES = (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED)
-
     @classmethod
     def has_active_job_for(cls, entity_cls: type[Entity], *entity_ids: str | int | UUID) -> bool:
         """Check whether any active test run job exists for the given entity or entities."""
         query = (
             select(func.count(cls.id))
             .join(JobExecution, cls.id == JobExecution.id)
-            .where(JobExecution.status.in_(cls._ACTIVE_JOB_STATUSES))
+            .where(JobExecution.status.in_(JobStatus.active()))
         )
         if entity_cls is cls:
             query = query.where(cls.id.in_(entity_ids))
@@ -410,8 +408,8 @@ class TestRun(Entity):
         parent rows deleted across all batches — or, with ``dry_run=True``,
         the number that would be deleted (for retention preview, no writes).
 
-        In-flight runs (JE in PENDING/CLAIMED/RUNNING/CANCEL_REQUESTED) are
-        never deleted — they may still be writing data.
+        Runs whose job has not reached a terminal status are never deleted —
+        they may still be writing data.
 
         Each batch runs in its own transaction (committed before the next batch
         is selected), so locks on test_runs / test_results / etc. are released
@@ -420,7 +418,7 @@ class TestRun(Entity):
         where_clauses = [
             TestSuite.project_code == project_code,
             cls.test_starttime < cutoff,
-            JobExecution.status.in_([JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED]),
+            JobExecution.status.in_(JobStatus.terminal()),
         ]
         if protected_ids:
             where_clauses.append(cls.id.notin_(protected_ids))

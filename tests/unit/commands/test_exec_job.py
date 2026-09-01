@@ -1,12 +1,19 @@
+import sys
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
 import pytest
 
 from testgen.commands.exec_job import exec_job
-from testgen.commands.job_registry import JOB_DISPATCH, JOB_FINAL_CALLBACKS, JobConfig, run_final_callbacks
-from testgen.common.enums import JobKey
+from testgen.commands.job_registry import (
+    JOB_DISPATCH,
+    JOB_FINAL_CALLBACKS,
+    JobConfig,
+    run_final_callbacks,
+)
+from testgen.common.enums import PAUSABLE_JOB_KEYS, JobKey
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.pausable_job import JobInterrupted, PausableJob
 
 pytestmark = pytest.mark.unit
 
@@ -98,8 +105,8 @@ def test_exec_job_marks_interrupted_on_unknown_key(mock_session):
     with patch.object(JobExecution, "get", return_value=job):
         exec_job(job.id)
 
-    job.mark_interrupted.assert_called_once()
-    assert "Unknown job key" in job.mark_interrupted.call_args[0][0]
+    job.mark_failed.assert_called_once()
+    assert "Unknown job key" in job.mark_failed.call_args[0][0]
     job.mark_running.assert_not_called()
 
 
@@ -123,8 +130,8 @@ def test_exec_job_marks_interrupted_on_dispatch_error(mock_session):
     ):
         exec_job(job.id)
 
-    job.mark_interrupted.assert_called_once()
-    assert "boom" in job.mark_interrupted.call_args[0][0]
+    job.mark_failed.assert_called_once()
+    assert "boom" in job.mark_failed.call_args[0][0]
     job.mark_completed.assert_not_called()
 
 
@@ -141,6 +148,7 @@ def test_job_dispatch_has_all_job_keys():
     assert JobKey.run_tests in JOB_DISPATCH
     assert JobKey.run_monitors in JOB_DISPATCH
     assert JobKey.run_test_generation in JOB_DISPATCH
+    assert JobKey.run_monitor_generation in JOB_DISPATCH
     assert JobKey.run_score_update in JOB_DISPATCH
     assert JobKey.recalculate_project_scores in JOB_DISPATCH
 
@@ -199,7 +207,7 @@ def test_exec_job_skips_callbacks_when_mark_completed_fails(mock_session):
 def test_exec_job_fires_callbacks_on_interrupted(mock_session):
     job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
-    job.mark_interrupted.return_value = True
+    job.mark_failed.return_value = True
     cb = Mock()
 
     with (
@@ -212,10 +220,10 @@ def test_exec_job_fires_callbacks_on_interrupted(mock_session):
     cb.assert_called_once_with(job)
 
 
-def test_exec_job_skips_callbacks_when_mark_interrupted_fails(mock_session):
+def test_exec_job_skips_callbacks_when_mark_failed_fails(mock_session):
     job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
-    job.mark_interrupted.return_value = False
+    job.mark_failed.return_value = False
     cb = Mock()
 
     with (
@@ -251,3 +259,49 @@ def test_registered_callbacks_cover_notification_job_keys():
     assert JobKey.run_profile in JOB_FINAL_CALLBACKS
     assert JobKey.run_tests in JOB_FINAL_CALLBACKS
     assert JobKey.run_monitors in JOB_FINAL_CALLBACKS
+
+
+def test_exec_job_marks_paused_without_settling_the_run(mock_session):
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    job.mark_running.return_value = True
+    resume_state = {"version": 1, "tasks": ["alpha\x1fa"], "completed": 1}
+    handler = Mock(side_effect=JobInterrupted("alpha", resume_state))
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=handler)}),
+    ):
+        exec_job(job.id)
+
+    job.mark_interrupted.assert_called_once_with(resume_state)
+    job.mark_completed.assert_not_called()
+    job.mark_failed.assert_not_called()
+
+
+def test_exec_job_fires_no_callbacks_on_pause(mock_session):
+    """A paused run has not settled, so it must not notify or roll up scores."""
+    job = _make_job_exec(job_key=JobKey.run_profile)
+    job.mark_running.return_value = True
+    handler = Mock(side_effect=JobInterrupted("col_profiling", {"version": 1, "tasks": [], "completed": 0}))
+    callback = Mock()
+
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_profile: JobConfig(handler=handler)}),
+        patch.dict(JOB_FINAL_CALLBACKS, {JobKey.run_profile: [callback]}),
+    ):
+        exec_job(job.id)
+
+    callback.assert_not_called()
+
+
+def test_only_handlers_built_on_the_engine_are_pausable():
+    """A handler that cannot see a pause request would hold shutdown open waiting for it."""
+    for job_key in PAUSABLE_JOB_KEYS:
+        module = sys.modules[JOB_DISPATCH[job_key].handler.__module__]
+        built_on_engine = [
+            obj
+            for obj in vars(module).values()
+            if isinstance(obj, type) and issubclass(obj, PausableJob) and obj is not PausableJob
+        ]
+        assert built_on_engine, f"{job_key} is pausable but {module.__name__} defines no PausableJob"

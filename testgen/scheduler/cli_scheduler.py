@@ -12,7 +12,7 @@ from uuid import UUID
 
 from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
-from testgen.common.enums import JobStatus
+from testgen.common.enums import PAUSABLE_JOB_KEYS, JobStatus
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import JobSchedule
@@ -33,6 +33,7 @@ class CliScheduler(Scheduler):
     def __init__(self):
         self._running_jobs: dict[UUID, subprocess.Popen] = {}
         self._running_jobs_cond = threading.Condition()
+        self._force_kills: dict[UUID, threading.Timer] = {}
         self.reload_timer = None
         self._current_jobs = {}
         self._poll_interval = settings.JOB_POLL_INTERVAL
@@ -120,7 +121,7 @@ class CliScheduler(Scheduler):
                     LOG.exception("Error processing job execution %s", job_exec.id)
                     try:
                         with database_session():
-                            job_exec.mark_interrupted("Processing failed")
+                            job_exec.mark_failed("Processing failed")
                     except Exception:
                         LOG.exception("Error marking job execution %s as error", job_exec.id)
 
@@ -132,15 +133,47 @@ class CliScheduler(Scheduler):
                 proc.terminate()
             except OSError:
                 pass  # Process already exited — _proc_wrapper will finalize
+            else:
+                self._schedule_force_kill(job_exec.id, proc)
         else:
             with database_session():
                 if job_exec.mark_canceled():
                     run_final_callbacks(job_exec)
 
+    def _schedule_force_kill(self, job_id: UUID, proc: subprocess.Popen) -> None:
+        """Arm a SIGKILL for ``JOB_TERMINATE_TIMEOUT`` seconds from now, and return.
+
+        Deadlines on a timer rather than inline: the poll loop must not block on a process that
+        is ignoring the signal, and ``_proc_wrapper`` is already blocked waiting on this one.
+        A cancel_requested row stays claimable until its process settles, so the poll asks again
+        every cycle -- only the first ask arms a deadline.
+        """
+        if job_id in self._force_kills:
+            return
+
+        def escalate() -> None:
+            # returncode rather than poll(): the waiting thread holds Popen's waitpid lock, and
+            # poll() reports a reaped child as still running when it cannot take it.
+            if proc.returncode is not None:
+                return
+            LOG.warning(
+                "Job PID %d did not exit within %ds of terminate; killing it",
+                proc.pid, settings.JOB_TERMINATE_TIMEOUT,
+            )
+            try:
+                proc.kill()
+            except OSError:
+                pass  # Exited between the check and the signal
+
+        timer = threading.Timer(settings.JOB_TERMINATE_TIMEOUT, escalate)
+        timer.daemon = True
+        self._force_kills[job_id] = timer
+        timer.start()
+
     def _dispatch(self, job_exec: JobExecution):
         if job_exec.job_key not in JOB_DISPATCH:
             with database_session():
-                job_exec.mark_interrupted(f"Unknown job key: {job_exec.job_key}")
+                job_exec.mark_failed(f"Unknown job key: {job_exec.job_key}")
             return
 
         exec_cmd = [sys.executable, sys.argv[0], "exec-job", str(job_exec.id)]
@@ -155,7 +188,7 @@ class CliScheduler(Scheduler):
     def _proc_wrapper(self, proc: subprocess.Popen, job_exec: JobExecution):
         """Monitor a subprocess and act as crash-recovery safety net.
 
-        exec_job owns the full lifecycle (mark_running/completed/interrupted).
+        exec_job owns the full lifecycle (mark_running/completed/interrupted/paused).
         This wrapper only intervenes on nonzero exit codes, which indicate exec_job
         itself crashed before it could update the DB (OOM, kill -9, etc.).
         _transition() guards make redundant calls safe.
@@ -167,17 +200,21 @@ class CliScheduler(Scheduler):
             LOG.info("Job PID %d ended with code %d", proc.pid, ret_code)
             if ret_code != 0:
                 with database_session():
-                    if job_exec.mark_interrupted(f"Process {proc.pid} exited with code {ret_code}"):
+                    if job_exec.mark_failed(f"Process {proc.pid} exited with code {ret_code}"):
                         run_final_callbacks(job_exec)
         except Exception:
             LOG.exception("Error monitoring job PID %d", proc.pid)
             with database_session():
-                if job_exec.mark_interrupted(f"Process monitoring error for PID {proc.pid}"):
+                if job_exec.mark_failed(f"Process monitoring error for PID {proc.pid}"):
                     run_final_callbacks(job_exec)
         finally:
             with self._running_jobs_cond:
                 del self._running_jobs[job_exec.id]
-                self._running_jobs_cond.notify()
+                # Cancel rather than drop: an armed timer keeps its thread, and the Popen it
+                # closes over, alive for the rest of the deadline.
+                if timer := self._force_kills.pop(job_exec.id, None):
+                    timer.cancel()
+                self._running_jobs_cond.notify_all()
 
     def run(self):
         interrupted = threading.Event()
@@ -209,12 +246,52 @@ class CliScheduler(Scheduler):
         finally:
             LOG.info("The scheduler has been shut down. No new jobs will be started.")
 
+            self._request_interrupt_on_running_jobs()
+
             with self._running_jobs_cond:
                 if self._running_jobs:
                     LOG.info("Waiting %d running job(s) to complete", len(self._running_jobs))
-                    self._running_jobs_cond.wait_for(lambda: len(self._running_jobs) == 0)
+                    # Bounded, because the runtime's stop grace period is: waiting past it gets
+                    # the whole container killed, which is worse than leaving a job to the next
+                    # start. A step with no interior stop check cannot honor any deadline.
+                    stopped = self._running_jobs_cond.wait_for(
+                        lambda: len(self._running_jobs) == 0,
+                        timeout=settings.JOB_SHUTDOWN_TIMEOUT,
+                    )
+                else:
+                    stopped = True
+                still_running = len(self._running_jobs)
 
-            LOG.info("All jobs terminated")
+            if stopped:
+                LOG.info("All jobs terminated")
+            else:
+                LOG.warning(
+                    "Exiting with %d job(s) still running after %ds; the next start will settle them",
+                    still_running, settings.JOB_SHUTDOWN_TIMEOUT,
+                )
+
+    def _request_interrupt_on_running_jobs(self) -> set[UUID]:
+        """Ask pausable running jobs to stop at a work-key boundary. Returns the ids asked.
+
+        Only pausable job keys are asked, since no other handler can see the request. This
+        does not wait: the jobs that honor it exit like any other, so the shutdown wait that
+        follows covers them and asking adds no delay of its own. A job that stops writes its own
+        INTERRUPTED and the next start claims it; one killed before it got there is canceled by
+        ``recover_stale``, since nothing recorded where it had reached.
+        """
+        with self._running_jobs_cond:
+            running_ids = set(self._running_jobs)
+        if not running_ids:
+            return set()
+        try:
+            with database_session():
+                interrupting = JobExecution.request_interrupt_bulk(running_ids, PAUSABLE_JOB_KEYS)
+        except Exception:
+            LOG.exception("Could not request interrupt on running jobs")
+            return set()
+        if interrupting:
+            LOG.info("Requested interrupt on %d running job(s)", len(interrupting))
+        return interrupting
 
 
 @with_database_session
@@ -233,18 +310,10 @@ def run_scheduler():
     while not check_db_is_ready():
         time.sleep(10)
 
-    requested = 0
     with database_session():
-        stale = JobExecution.find_stale()
-    for job_exec in stale:
-        with database_session():
-            if job_exec.request_cancel():
-                requested += 1
-    if stale:
-        LOG.info(
-            "Found %d stale job execution(s) from previous session; requested cancel on %d",
-            len(stale), requested,
-        )
+        settled = JobExecution.recover_stale()
+    if settled:
+        LOG.info("Settled %d job execution(s) left by a previous session", settled)
 
     scheduler = CliScheduler()
     scheduler.run()

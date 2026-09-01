@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import JobStatus
 from testgen.common.models.profiling_run import ProfilingRun
 
 pytestmark = pytest.mark.unit
@@ -83,3 +84,23 @@ def test_finishing_run_does_not_bypass_the_as_of_date(mock_session):
 
     sql = _compiled(mock_session)
     assert "CAST(profiling_runs.profiling_starttime AS DATE) <= '2026-07-26'" in sql
+
+
+# --- delete_older_than (data retention) ---
+
+
+def test_retention_deletes_only_runs_whose_job_has_settled(mock_session):
+    """Age alone never decides it: an unsettled run may still be writing results, and one that
+    stopped partway is queued to continue, so both outlive the cutoff."""
+    ProfilingRun.delete_older_than(
+        cutoff=datetime(2026, 1, 1, tzinfo=UTC),
+        project_code="proj",
+        protected_ids=set(),
+        dry_run=True,
+    )
+
+    sql = _compiled(mock_session)
+    for terminal in JobStatus.terminal():
+        assert f"'{terminal.value}'" in sql
+    for unsettled in JobStatus.active():
+        assert f"'{unsettled.value}'" not in sql
