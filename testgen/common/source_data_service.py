@@ -16,7 +16,7 @@ from testgen.common.database.database_service import get_flavor_service, replace
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection, SQLFlavor
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE, TestDefinition
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
 from testgen.ui.services.database_service import fetch_from_target_db
@@ -64,7 +64,7 @@ def fetch_test_result_source_data(
     try:
         test_definition = TestDefinition.get(issue_data["test_definition_id"])
         if not test_definition:
-            return SourceDataResult("NA", "Test definition no longer exists.", None, None)
+            return SourceDataResult("NA", MISSING_TEST_DEFINITION_MESSAGE, None, None)
 
         lookup_query = _build_query_custom(issue_data) if is_custom else _build_query_standard(issue_data, limit or 0)
         if not lookup_query:

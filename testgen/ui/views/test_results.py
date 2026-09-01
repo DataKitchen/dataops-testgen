@@ -10,7 +10,12 @@ from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
-from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote, TestDefinitionSummary
+from testgen.common.models.test_definition import (
+    MISSING_TEST_DEFINITION_MESSAGE,
+    TestDefinition,
+    TestDefinitionNote,
+    TestDefinitionSummary,
+)
 from testgen.common.models.test_suite import TestSuiteMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.common.test_result_disposition_service import (
@@ -250,7 +255,12 @@ class TestResultsPage(Page):
 
         notes_dialog = None
         if notes_state := st.session_state.get(NOTES_DIALOG_KEY):
-            notes_dialog = _load_notes_dialog_data(notes_state.get("id") or notes_state, df)
+            notes_dialog = _load_notes_dialog_data(
+                notes_state.get("id") or notes_state,
+                df,
+                error=notes_state.get("error"),
+                draft=notes_state.get("draft", ""),
+            )
 
         # Event handlers
         @with_database_session
@@ -348,6 +358,11 @@ class TestResultsPage(Page):
         @with_database_session
         def on_note_added(payload: dict) -> None:
             td_id = payload["test_definition_id"]
+            if not TestDefinition.get(td_id):
+                st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(
+                    td_id, df, error=MISSING_TEST_DEFINITION_MESSAGE, draft=payload["text"],
+                )
+                return
             current_user = session.auth.user.username if session.auth.user else "unknown"
             TestDefinitionNote.add_note(td_id, payload["text"], current_user)
             st.session_state[NOTES_DIALOG_KEY] = _load_notes_dialog_data(td_id, df)
@@ -561,7 +576,7 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
 
     test_def = select_test_definitions_where(TestDefinition.id == test_definition_id)
     if not test_def:
-        return None
+        return {"open": True, "error": MISSING_TEST_DEFINITION_MESSAGE}
 
     full_test_suite = get_test_suite(test_suite_minimal.id)
     table_group = get_table_group_minimal(test_suite_minimal.table_groups_id)
@@ -594,8 +609,16 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
     }
 
 
-def _load_notes_dialog_data(td_id_or_state: dict | str, df: pd.DataFrame) -> dict:
-    """Build notes dialog data from a test definition ID or existing state dict."""
+def _load_notes_dialog_data(
+    td_id_or_state: dict | str,
+    df: pd.DataFrame,
+    error: str | None = None,
+    draft: str = "",
+) -> dict:
+    """Build notes dialog data from a test definition ID or existing state dict.
+
+    ``error`` is a message to show above the form, and ``draft`` is note text to restore into it.
+    """
     if isinstance(td_id_or_state, dict):
         td_id = td_id_or_state.get("id")
         test_label = {
@@ -619,6 +642,8 @@ def _load_notes_dialog_data(td_id_or_state: dict | str, df: pd.DataFrame) -> dic
         "test_label": test_label,
         "notes": notes,
         "current_user": current_user,
+        "error": error,
+        "draft": draft,
     }
 
 

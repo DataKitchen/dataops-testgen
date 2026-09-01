@@ -114,6 +114,7 @@ def get_test_results(
             c.id::VARCHAR as connection_id, r.test_suite_id::VARCHAR,
             r.test_definition_id::VARCHAR,
             r.auto_gen,
+            (td.id IS NOT NULL) as test_definition_exists,
             td.flagged,
             td.external_url,
             (SELECT COUNT(*) FROM test_definition_notes tdn WHERE tdn.test_definition_id = td.id) as notes_count,

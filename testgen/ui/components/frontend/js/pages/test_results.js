@@ -764,6 +764,8 @@ const TestResults = (/** @type Properties */ props) => {
                     notes: data.notes,
                     current_user: data.current_user,
                     test_definition_id: data.id,
+                    error: data.error,
+                    draft: data.draft,
                 });
             },
         ),
@@ -869,12 +871,12 @@ const TestResults = (/** @type Properties */ props) => {
                     div(
                         { class: 'flex-row fx-gap-2 fx-justify-content-flex-end' },
                         ...[
-                            permissions.val.can_edit ? Button({
+                            permissions.val.can_edit && row.test_definition_exists ? Button({
                                 type: 'stroked', icon: 'edit', label: 'Edit', width: 'auto',
                                 style: 'background: var(--button-generic-background-color);',
                                 onclick: () => emit('EditTestClicked', { payload: { test_result_id: row.test_result_id } }),
                             }) : '',
-                            row.test_definition_id ? Button({
+                            row.test_definition_exists ? Button({
                                 type: 'stroked', icon: 'sticky_note_2', label: 'Notes', width: 'auto',
                                 style: 'background: var(--button-generic-background-color);',
                                 onclick: () => emit('NotesClicked', { payload: { id: row.test_definition_id, table_name: row.table_name, column_name: row.column_names, test_name_short: row.test_name_short } }),
