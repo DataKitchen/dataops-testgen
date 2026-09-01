@@ -82,7 +82,7 @@ def test_dispatch_unknown_job_key(scheduler_instance, mock_session):
     with patch.dict(JOB_DISPATCH, {}, clear=True):
         scheduler_instance._dispatch(job_exec)
 
-    # mark_interrupted tries error first (valid from claimed)
+    # mark_failed tries error first (valid from claimed)
     assert job_exec.status == "error"
 
 

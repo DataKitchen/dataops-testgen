@@ -6,7 +6,7 @@ from pydantic import Field
 from sqlalchemy import func, or_
 
 from testgen.common.data_catalog_service import build_create_table_script
-from testgen.common.enums import JOB_STATUS_LABEL, PII_FLAG_PREFIX_TO_LABEL, JobStatus
+from testgen.common.enums import JOB_STATUS_LABEL, PII_FLAG_PREFIX_TO_LABEL, JobKey, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
     GENERAL_TYPE_CODE_TO_LABEL,
@@ -43,6 +43,7 @@ from testgen.mcp.tools.common import (
     parse_uuid,
     resolve_profiling_run,
     resolve_table_group,
+    run_status_filter_options,
     validate_limit,
     validate_page,
 )
@@ -477,7 +478,7 @@ def list_profiling_runs(
     ] = None,
     status: Annotated[
         str | None,
-        Field(description="Optional run status filter. One of: Pending, Running, Completed, Canceled, Error."),
+        Field(description=f"Optional run status filter. One of: {run_status_filter_options(JobKey.run_profile)}."),
     ] = None,
     limit: Annotated[int, Field(description="Page size (default 10, max 100).")] = 10,
     page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
@@ -488,7 +489,7 @@ def list_profiling_runs(
     validate_limit(limit, 100)
     validate_page(page)
 
-    statuses = parse_run_status_filter(status) if status else None
+    statuses = parse_run_status_filter(status, JobKey.run_profile) if status else None
     if schedule_id:
         parse_uuid(schedule_id, "schedule_id")
     tg = resolve_table_group(table_group_id)

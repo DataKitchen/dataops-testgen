@@ -1,8 +1,8 @@
 """ORM model for the stg_functional_table_updates staging table.
 
 Each profiling run stages under its own `profile_run_id` and deletes that key
-when it finishes, via `delete_staging_functional_tables.sql`; this model exists
-for data retention to age out orphans left by failed/interrupted profiling runs.
+when it finishes, via `delete_staging_functional_tables.sql`. Orphans left by a
+run that never reached that delete are cleared by key or aged out by retention.
 PK declared is cosmetic; only WHERE columns are needed for bulk DELETE.
 """
 
@@ -23,6 +23,13 @@ class StgFunctionalTableUpdate(Base):
     schema_name: str = Column(String(50), primary_key=True)
     table_name: str = Column(String(120), primary_key=True)
     profile_run_id: UUID = Column(postgresql.UUID(as_uuid=True), primary_key=True)
+
+    @classmethod
+    def delete_for_run(cls, profile_run_id: UUID) -> int:
+        """Remove a run's staged rows and return how many were removed. A run that starts over
+        keeps its id, so rows an abandoned attempt staged would otherwise be read back alongside
+        the new ones under the same key."""
+        return cls.delete_where(cls.profile_run_id == profile_run_id)
 
     @classmethod
     def delete_older_than(cls, cutoff: datetime, project_code: str) -> int:

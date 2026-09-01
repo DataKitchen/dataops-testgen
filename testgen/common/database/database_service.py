@@ -9,7 +9,7 @@ import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, NotRequired, TypedDict, TypeVar
+from typing import Any, Generic, Literal, NotRequired, TypedDict, TypeVar, cast
 from urllib.parse import quote_plus
 
 import psycopg2.sql
@@ -271,6 +271,7 @@ def run_keyed_worker_pool(
     items: Sequence[tuple[K, A]],
     process: Callable[[A], R],
     max_threads: int = 4,
+    stop: Callable[[], bool] | None = None,
 ) -> Iterator[WorkerOutcome[K, R]]:
     """Run ``process`` over ``items`` with a fixed pool of pull-based workers, yielding each
     item's outcome as it completes.
@@ -283,34 +284,62 @@ def run_keyed_worker_pool(
     ``process`` touch caller-thread state such as a thread-local database session. The caller
     consumes the yielded outcomes on its own thread, so all result handling (database writes,
     progress) stays single-threaded. Outcomes arrive in completion order, not item order.
+
+    When ``stop`` is given and returns True, workers stop pulling new items and the iterator
+    ends early, so fewer than ``len(items)`` outcomes are yielded. Items already in flight
+    still run to completion and are yielded. ``stop`` is called on worker threads and must be
+    cheap and thread-safe.
+
+    A caller that stops consuming -- by raising, or by closing the iterator -- also stops the
+    pool, so abandoning the results does not first pay for producing them.
     """
     max_threads = max(1, min(10, max_threads))
-    total = len(items)
     work = iter(items)
     pull_lock = threading.Lock()
-    outcomes: queue.Queue[WorkerOutcome[K, R]] = queue.Queue()
+    # A worker enqueues the sentinel as it leaves, so the consumer knows the pool is drained
+    # without counting items -- which it cannot do once `stop` cuts the run short.
+    done = object()
+    outcomes: queue.Queue[WorkerOutcome[K, R] | object] = queue.Queue()
+
+    abandoned = threading.Event()
 
     def pull() -> tuple[K, A] | None:
+        if abandoned.is_set() or (stop is not None and stop()):
+            return None
         with pull_lock:
             return next(work, None)
 
     def worker() -> None:
-        while (item := pull()) is not None:
-            key, arg = item
-            try:
-                result: R | None = process(arg)
-            except Exception as e:
-                # The consumer blocks for exactly one outcome per pulled item, so every
-                # item must enqueue one; get_exception_message never raises, so it always does.
-                LOG.exception("Error processing work key")
-                outcomes.put(WorkerOutcome(key, None, get_exception_message(e)))
-            else:
-                outcomes.put(WorkerOutcome(key, result, None))
+        try:
+            while (item := pull()) is not None:
+                key, arg = item
+                try:
+                    result: R | None = process(arg)
+                except Exception as e:
+                    # The consumer expects one outcome per pulled item, so every item must
+                    # enqueue one; get_exception_message never raises, so it always does.
+                    LOG.exception("Error processing work key")
+                    outcomes.put(WorkerOutcome(key, None, get_exception_message(e)))
+                else:
+                    outcomes.put(WorkerOutcome(key, result, None))
+        finally:
+            outcomes.put(done)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
         workers = [executor.submit(worker) for _ in range(max_threads)]
-        for _ in range(total):
-            yield outcomes.get()
+        still_working = len(workers)
+        try:
+            while still_working:
+                outcome = outcomes.get()
+                if outcome is done:
+                    still_working -= 1
+                else:
+                    yield cast(WorkerOutcome[K, R], outcome)
+        finally:
+            # Leaving early -- the caller raised, or closed the iterator -- means nothing will
+            # read another outcome. Without this the pool would work through every remaining
+            # item before the exit could proceed, since shutdown waits for the workers.
+            abandoned.set()
         for future in workers:
             future.result()
 

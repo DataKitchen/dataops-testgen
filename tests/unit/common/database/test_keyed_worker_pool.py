@@ -1,5 +1,6 @@
 """Unit tests for run_keyed_worker_pool / WorkerOutcome."""
 import threading
+import time
 
 import pytest
 
@@ -83,3 +84,98 @@ def test_key_is_returned_untouched_and_process_sees_only_the_arg():
 
     assert outcomes[0] == WorkerOutcome(key="KEY", result="ARG", error=None)
     assert seen_args == ["ARG"]
+
+
+def test_stop_predicate_halts_dispatch():
+    stop = threading.Event()
+    items = [(key, key) for key in "abcdef"]
+
+    def process(arg):
+        time.sleep(0.05)
+        return arg.upper()
+
+    outcomes = []
+    for outcome in run_keyed_worker_pool(items, process, max_threads=1, stop=stop.is_set):
+        outcomes.append(outcome)
+        if len(outcomes) == 2:
+            stop.set()
+
+    assert 2 <= len(outcomes) < len(items)
+    assert len({outcome.key for outcome in outcomes}) == len(outcomes)
+
+
+def test_stop_predicate_yields_only_whole_outcomes():
+    stop = threading.Event()
+    items = [(key, key) for key in "abcdef"]
+
+    outcomes = []
+    for outcome in run_keyed_worker_pool(items, lambda a: a, max_threads=2, stop=stop.is_set):
+        outcomes.append(outcome)
+        stop.set()
+
+    assert outcomes
+    for outcome in outcomes:
+        assert (outcome.result is None) != (outcome.error is None)
+
+
+def test_stop_true_from_the_start_yields_nothing():
+    items = [(key, key) for key in "abc"]
+
+    assert list(run_keyed_worker_pool(items, lambda a: a, stop=lambda: True)) == []
+
+
+def test_default_run_still_yields_every_item():
+    items = [(key, key) for key in "abcdef"]
+
+    outcomes = list(run_keyed_worker_pool(items, lambda a: a.upper(), max_threads=3))
+
+    assert {outcome.key for outcome in outcomes} == set("abcdef")
+
+
+def test_pool_terminates_when_a_worker_dies_from_a_base_exception():
+    """A BaseException escapes the per-item guard; the pool must end rather than hang."""
+    def process(arg):
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        list(run_keyed_worker_pool([("a", "a")], process, max_threads=1))
+
+
+def test_a_caller_that_stops_consuming_stops_the_pool():
+    """Abandoning the results must not first pay for producing them."""
+    processed = []
+    lock = threading.Lock()
+
+    def process(arg):
+        with lock:
+            processed.append(arg)
+        # Slow enough that the pool cannot drain the list before the caller gives up, which
+        # is the real shape too: a work item is a query against the target database.
+        time.sleep(0.01)
+        return arg
+
+    items = [(index, index) for index in range(200)]
+    with pytest.raises(RuntimeError):
+        for _ in run_keyed_worker_pool(items, process, max_threads=2):
+            raise RuntimeError("the caller gave up")
+
+    # A couple may already be in flight; the rest must never be picked up.
+    assert len(processed) < len(items) / 2
+
+
+def test_closing_the_iterator_stops_the_pool():
+    processed = []
+    lock = threading.Lock()
+
+    def process(arg):
+        with lock:
+            processed.append(arg)
+        time.sleep(0.01)
+        return arg
+
+    items = [(index, index) for index in range(200)]
+    outcomes = run_keyed_worker_pool(items, process, max_threads=2)
+    next(outcomes)
+    outcomes.close()
+
+    assert len(processed) < len(items) / 2

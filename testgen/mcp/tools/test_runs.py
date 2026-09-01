@@ -3,6 +3,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.enums import JobKey
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
@@ -19,6 +20,7 @@ from testgen.mcp.tools.common import (
     parse_run_status_filter,
     parse_uuid,
     resolve_table_group,
+    run_status_filter_options,
     validate_limit,
     validate_page,
 )
@@ -57,7 +59,7 @@ def list_test_runs(
     ] = None,
     status: Annotated[
         str | None,
-        Field(description="Optional run status filter. One of: Pending, Running, Completed, Canceled, Error."),
+        Field(description=f"Optional run status filter. One of: {run_status_filter_options(JobKey.run_tests)}."),
     ] = None,
     limit: Annotated[int, Field(description="Page size (default 10, max 100).")] = 10,
     page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
@@ -68,7 +70,7 @@ def list_test_runs(
     validate_limit(limit, 100)
     validate_page(page)
 
-    statuses = parse_run_status_filter(status) if status else None
+    statuses = parse_run_status_filter(status, JobKey.run_tests) if status else None
     if schedule_id:
         parse_uuid(schedule_id, "schedule_id")
 

@@ -17,7 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.database.column_chars import ObjectType
+from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.models import get_current_session
 from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.entity import Entity
@@ -103,6 +103,38 @@ class DataTable(Entity):
         if limit is not None:
             query = query.limit(limit)
         return list(get_current_session().scalars(query).all())
+
+    @classmethod
+    def list_column_chars(cls, table_groups_id: UUID) -> list[ColumnChars]:
+        """Read back the catalog a profiling run recorded, in place of querying the target.
+
+        Row counts live here rather than on the column, and they are what a run's sampling was
+        decided from, so a run that continues has to see the ones it started with rather than
+        whatever the target holds now.
+        """
+        query = (
+            select(
+                DataColumnChars.schema_name,
+                DataColumnChars.table_name,
+                DataColumnChars.column_name,
+                DataColumnChars.ordinal_position,
+                DataColumnChars.general_type,
+                DataColumnChars.column_type,
+                DataColumnChars.db_data_type,
+                DataColumnChars.is_decimal,
+                cls.object_type,
+                cls.approx_record_ct,
+                cls.record_ct,
+            )
+            .join(DataColumnChars, DataColumnChars.table_id == cls.id)
+            .where(
+                cls.table_groups_id == table_groups_id,
+                cls.drop_date.is_(None),
+                DataColumnChars.drop_date.is_(None),
+            )
+            .order_by(DataColumnChars.table_name, DataColumnChars.ordinal_position, DataColumnChars.column_name)
+        )
+        return [ColumnChars(**row) for row in get_current_session().execute(query).mappings().all()]
 
     @classmethod
     def count_tables(cls, table_groups_id: UUID, project_codes: list[str] | None = None) -> int:

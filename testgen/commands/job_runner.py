@@ -10,7 +10,7 @@ from uuid import UUID
 import click
 from sqlalchemy import select
 
-from testgen.commands.exec_job import FINAL_STATUSES, POLL_INTERVAL
+from testgen.commands.exec_job import POLL_INTERVAL
 from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.job_execution import JobExecution
@@ -46,11 +46,17 @@ def submit_and_wait(
         return
 
     click.echo("Waiting for completion...")
+    reported_interrupted = False
     while True:
         time.sleep(POLL_INTERVAL)
         with database_session():
             job_exec = JobExecution.get(job_id)
-            if job_exec and job_exec.status in FINAL_STATUSES:
+            # Keep waiting through INTERRUPTED: the run continues when a scheduler next polls,
+            # and polling covers that quick-restart case.
+            if job_exec and job_exec.status == JobStatus.INTERRUPTED and not reported_interrupted:
+                reported_interrupted = True
+                click.echo("The run stopped partway and kept its progress; it continues when the scheduler restarts.")
+            if job_exec and job_exec.status in JobStatus.terminal():
                 break
 
     match job_exec.status:

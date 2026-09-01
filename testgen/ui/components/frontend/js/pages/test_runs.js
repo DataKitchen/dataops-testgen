@@ -62,6 +62,7 @@ import { Select } from '/app/static/js/components/select.js';
 import { Paginator } from '/app/static/js/components/paginator.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
 import { Icon } from '/app/static/js/components/icon.js';
+import { ACTIVE_STATUSES, CANCELABLE_STATUSES, RUNNING_STATUSES, STARTING_STATUSES, STATUS_COLORS } from '/app/static/js/job_status.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
 import { ScheduleList } from '/app/static/js/components/schedule_list.js';
@@ -72,11 +73,6 @@ import { setIntervalWithSignal } from '/app/static/js/timers.js';
 const { b, div, i, span, strong } = van.tags;
 const SCROLL_CONTAINER = window.top.document.querySelector('.stMain');
 const PAGE_KEY = 'testRuns';
-
-const STARTING_STATUSES = new Set(['pending', 'claimed']);
-const RUNNING_STATUSES = new Set(['running', 'cancel_requested']);
-const ACTIVE_STATUSES = new Set([...STARTING_STATUSES, ...RUNNING_STATUSES]);
-const CANCELABLE_STATUSES = new Set(['pending', 'claimed', 'running']);
 
 const REFRESH_STARTING = 6000;
 const REFRESH_RUNNING = 30000;
@@ -509,16 +505,7 @@ const TestRunItem = (
 };
 
 const TestRunStatus = (/** @type TestRun */ item) => {
-    const statusColorMap = {
-        pending: 'grey',
-        claimed: 'grey',
-        running: 'blue',
-        completed: '',
-        error: 'red',
-        canceled: 'purple',
-        cancel_requested: 'grey',
-    };
-    const color = statusColorMap[item.status] ?? 'grey';
+    const color = STATUS_COLORS[item.status] ?? 'grey';
     const hasProgressError = item.progress?.some(({error}) => !!error);
     const errorMessage = item.error_message || item.log_message;
     return span(
