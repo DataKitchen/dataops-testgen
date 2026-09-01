@@ -63,6 +63,24 @@ def test_submit_and_wait_no_wait_returns_immediately(mock_session):
     submit_mock.assert_called_once()
 
 
+def test_submit_and_wait_keeps_waiting_through_paused(mock_session):
+    """A paused run is not terminal; the wait keeps polling so a scheduler restart that
+    resumes it is picked up, rather than giving up at the pause."""
+    submitted = _make_job_exec(status=JobStatus.CLAIMED)
+    paused = _make_job_exec(status=JobStatus.INTERRUPTED)
+    completed = _make_job_exec(status=JobStatus.COMPLETED)
+    mock_session.flush = Mock()
+
+    with (
+        patch.object(JobExecution, "submit", return_value=submitted),
+        patch.object(JobExecution, "get", side_effect=[paused, completed]) as get_mock,
+        patch(f"{JOB_RUNNER_MODULE}.time.sleep"),
+    ):
+        submit_and_wait("run-tests", {"test_suite_id": "suite-123"}, "DEFAULT", no_wait=False)
+
+    assert get_mock.call_count == 2  # polled past PAUSED, broke only on the terminal status
+
+
 def test_submit_and_wait_exits_on_error(mock_session):
     job = _make_job_exec()
     job.status = JobStatus.ERROR

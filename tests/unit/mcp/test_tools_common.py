@@ -7,6 +7,8 @@ from testgen.common.enums import (
     Disposition,
     ImpactDimension,
     IssueLikelihood,
+    JobKey,
+    JobStatus,
     MonitorCalculation,
     PiiRisk,
     QualityDimension,
@@ -33,6 +35,7 @@ from testgen.mcp.tools.common import (
     parse_pii_risk_list,
     parse_quality_dimension,
     parse_result_status,
+    parse_run_status_filter,
     parse_score_filter_field,
     parse_score_group_by,
     parse_score_type,
@@ -43,6 +46,7 @@ from testgen.mcp.tools.common import (
     resolve_profiling_run,
     resolve_test_note,
     resolve_test_type,
+    run_status_filter_options,
     validate_limit,
     validate_page,
 )
@@ -1368,3 +1372,34 @@ def test_default_render_diff_value_str():
 
     assert _default_render_diff_value("hello") == "hello"
     assert _default_render_diff_value(42) == "42"
+
+
+def test_interrupted_is_offered_only_where_a_run_can_pause():
+    assert "Interrupted" in run_status_filter_options(JobKey.run_profile)
+    assert "Interrupted" not in run_status_filter_options(JobKey.run_tests)
+
+
+def test_interrupted_is_rejected_for_a_key_that_cannot_pause():
+    """A filter value a run can never hold must error, not silently return nothing."""
+    with pytest.raises(MCPUserError) as err:
+        parse_run_status_filter("Interrupted", JobKey.run_tests)
+    assert "Interrupted" not in str(err.value).split("Valid values:")[1]
+
+
+def test_interrupted_resolves_to_both_interrupt_statuses_for_profiling():
+    assert parse_run_status_filter("Interrupted", JobKey.run_profile) == [
+        JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
+    ]
+
+
+@pytest.mark.parametrize("job_key", [JobKey.run_profile, JobKey.run_tests])
+def test_shared_labels_resolve_the_same_for_every_key(job_key):
+    assert parse_run_status_filter("Pending", job_key) == [JobStatus.PENDING, JobStatus.CLAIMED]
+    assert parse_run_status_filter("canceled", job_key) == [JobStatus.CANCEL_REQUESTED, JobStatus.CANCELED]
+
+
+def test_the_advertised_options_are_exactly_what_parses():
+    """The tool argument description and the parser must not be able to drift apart."""
+    for job_key in (JobKey.run_profile, JobKey.run_tests):
+        for label in run_status_filter_options(job_key).split(", "):
+            assert parse_run_status_filter(label, job_key)

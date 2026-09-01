@@ -19,6 +19,15 @@ def _returning_row(job, **overrides):
     return row
 
 
+def _mock_claim_results(mock_session, *jobs):
+    """Feed the claim transition one RETURNING row per job, in claim order."""
+    now = datetime.now(UTC)
+    mock_session.execute.side_effect = [
+        Mock(scalar_one_or_none=Mock(return_value=_returning_row(job, status="claimed", claimed_at=now)))
+        for job in jobs
+    ]
+
+
 @pytest.fixture
 def mock_session():
     session = MagicMock()
@@ -80,6 +89,7 @@ def test_claim_actionable_claims_pending_rows(mock_session):
     row1 = JobExecution(id=uuid4(), status="pending", job_key="run-profile")
     row2 = JobExecution(id=uuid4(), status="pending", job_key="run-tests")
     mock_session.scalars.return_value.all.return_value = [row1, row2]
+    _mock_claim_results(mock_session, row1, row2)
 
     result = JobExecution.claim_actionable(limit=5)
 
@@ -94,6 +104,7 @@ def test_claim_actionable_passes_through_cancel_requested(mock_session):
     pending = JobExecution(id=uuid4(), status="pending", job_key="run-profile")
     cancel = JobExecution(id=uuid4(), status="cancel_requested", job_key="run-tests")
     mock_session.scalars.return_value.all.return_value = [pending, cancel]
+    _mock_claim_results(mock_session, pending)
 
     result = JobExecution.claim_actionable(limit=5)
 
@@ -140,6 +151,18 @@ def test_mark_running(mock_session):
     assert job.status == "running"
 
 
+def test_mark_running_coalesces_started_at_to_preserve_the_first_start(mock_session):
+    """A resumed run re-enters RUNNING; started_at must not be restamped. The UPDATE coalesces
+    the existing value so the run's original begin time -- its duration anchor -- is kept."""
+    job = JobExecution(id=uuid4(), status="interrupted")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="running")
+
+    job.mark_running()
+
+    compiled = str(mock_session.execute.call_args[0][0].compile()).lower()
+    assert "coalesce(job_executions.started_at" in compiled
+
+
 def test_mark_completed(mock_session):
     job = JobExecution(id=uuid4(), status="running")
     mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="completed")
@@ -149,21 +172,21 @@ def test_mark_completed(mock_session):
     assert job.status == "completed"
 
 
-def test_mark_interrupted_error(mock_session):
+def test_mark_failed_error(mock_session):
     job = JobExecution(id=uuid4(), status="running")
     mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="error", error_message="Something went wrong")
 
-    job.mark_interrupted("Something went wrong")
+    job.mark_failed("Something went wrong")
 
     assert job.status == "error"
     assert job.error_message == "Something went wrong"
 
 
-def test_mark_interrupted_canceled(mock_session):
+def test_mark_failed_canceled(mock_session):
     job = JobExecution(id=uuid4(), status="cancel_requested")
     mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="canceled")
 
-    job.mark_interrupted("Process exited with code -15")
+    job.mark_failed("Process exited with code -15")
 
     assert job.status == "canceled"
 
@@ -286,3 +309,115 @@ def test_delete_older_than_skips_protected_filter_when_empty(mock_session):
     # Three expected clauses: project_code, completed_at, status IN
     # Absence of "not in" confirms the protected-ids clause was skipped.
     assert "not in" not in rendered
+
+
+def test_claim_actionable_claims_interrupted(mock_session):
+    row = JobExecution(id=uuid4(), status="interrupted", job_key="run-profile")
+    mock_session.scalars.return_value.all.return_value = [row]
+    _mock_claim_results(mock_session, row)
+
+    result = JobExecution.claim_actionable(limit=5)
+
+    assert len(result) == 1
+    assert row.status == "claimed"
+
+
+def test_claim_actionable_drops_a_row_it_lost_the_race_for(mock_session):
+    row = JobExecution(id=uuid4(), status="pending", job_key="run-profile")
+    mock_session.scalars.return_value.all.return_value = [row]
+    mock_session.execute.return_value.scalar_one_or_none.return_value = None
+
+    assert JobExecution.claim_actionable(limit=5) == []
+
+
+def test_actionable_statuses_match_the_transition_graph():
+    """Anything claim_actionable transitions must be allowed to reach CLAIMED."""
+    claimable = set(JobStatus.claimable())
+    assert set(JobExecution.ACTIONABLE_STATUSES) - claimable == {JobStatus.CANCEL_REQUESTED}
+
+
+@pytest.mark.parametrize(
+    ("status", "target", "allowed"),
+    [
+        (JobStatus.RUNNING, JobStatus.INTERRUPT_REQUESTED, True),
+        (JobStatus.CLAIMED, JobStatus.INTERRUPT_REQUESTED, False),
+        (JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED, True),
+        (JobStatus.INTERRUPT_REQUESTED, JobStatus.COMPLETED, True),
+        (JobStatus.INTERRUPT_REQUESTED, JobStatus.ERROR, True),
+        (JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPT_REQUESTED, True),
+        (JobStatus.INTERRUPTED, JobStatus.CLAIMED, True),
+        (JobStatus.INTERRUPTED, JobStatus.CANCEL_REQUESTED, True),
+        (JobStatus.INTERRUPTED, JobStatus.ERROR, False),
+        (JobStatus.COMPLETED, JobStatus.INTERRUPT_REQUESTED, False),
+    ],
+)
+def test_interrupt_transition_edges(status, target, allowed):
+    assert (status in JobStatus.sources_for(target)) is allowed
+
+
+def test_mark_interrupted_persists_the_checkpoint(mock_session):
+    job = JobExecution(id=uuid4(), status="interrupt_requested", job_key="run-profile")
+    state = {"version": 1, "tasks": ["alpha\x1fa"], "completed": 1}
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(
+        job, status="interrupted", resume_state=state
+    )
+
+    assert job.mark_interrupted(state) is True
+    assert job.status == "interrupted"
+    assert job.resume_state == state
+
+
+def test_recover_stale_cancels_every_status_that_implies_a_dead_process(mock_session):
+    mock_session.scalars.return_value.all.return_value = [uuid4(), uuid4()]
+
+    # Two passes now -- continue the checkpointed rows, cancel the rest -- so both are counted.
+    assert JobExecution.recover_stale() == 4
+
+    cancel = mock_session.scalars.call_args_list[-1][0][0].compile().params
+    assert set(cancel["status_2"]) == set(JobStatus.stale_recoverable())
+    assert cancel["status"] == JobStatus.CANCEL_REQUESTED
+
+
+def test_recover_stale_continues_a_row_that_carries_a_checkpoint(mock_session):
+    """The checkpoint is the job's last write before it unwinds, so a row holding one has its
+    work accounted for and only its exit went unrecorded. Canceling it would throw that away."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.recover_stale()
+
+    resume = mock_session.scalars.call_args_list[0][0][0].compile()
+    assert resume.params["status"] == JobStatus.INTERRUPTED
+    assert "resume_state IS NOT NULL" in str(resume)
+
+
+def test_recover_stale_never_continues_a_row_with_no_checkpoint(mock_session):
+    """Without a checkpoint the status alone is not evidence the process finished -- exec-job
+    outlives its scheduler -- so continuing would hand a second worker a run still writing."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.recover_stale()
+
+    for call in mock_session.scalars.call_args_list:
+        compiled = call[0][0].compile()
+        if compiled.params["status"] == JobStatus.INTERRUPTED:
+            assert "resume_state IS NOT NULL" in str(compiled)
+
+
+def test_request_interrupt_bulk_is_empty_without_pausable_keys(mock_session):
+    assert JobExecution.request_interrupt_bulk([uuid4()], []) == set()
+    mock_session.scalars.assert_not_called()
+
+
+def test_transition_bulk_is_empty_without_ids(mock_session):
+    assert JobExecution.request_interrupt_bulk([], ["run-profile"]) == set()
+    mock_session.scalars.assert_not_called()
+
+
+def test_request_interrupt_bulk_only_reports_the_jobs_it_asked(mock_session):
+    """The transition guard accepts a job already stopping, so asking twice is harmless -- but
+    the query narrows to RUNNING, so the returned ids are the ones this call actually asked.
+    """
+    JobExecution.request_interrupt_bulk([uuid4()], ["run-profile"])
+
+    params = mock_session.scalars.call_args[0][0].compile().params
+    assert JobStatus.RUNNING in params.values()

@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, Column, ForeignKey, String, and_, case, null, select, update
+from sqlalchemy import Boolean, Column, ForeignKey, String, and_, case, delete, null, select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import aliased, relationship
@@ -217,6 +217,12 @@ class HygieneIssue(Entity):
         for p in ("Definite", "Likely", "Possible", "High", "Moderate"):
             result.setdefault(p, IssueCount())
         return result
+
+    @classmethod
+    def delete_for_run(cls, profile_run_id: UUID) -> int:
+        """Remove a run's findings. Detection inserts, so a re-run would otherwise double them."""
+        result = get_current_session().execute(delete(cls).where(cls.profile_run_id == profile_run_id))
+        return result.rowcount or 0
 
     @classmethod
     def count_for_run(cls, profile_run_id: UUID) -> IssueCounts:

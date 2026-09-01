@@ -302,7 +302,7 @@ def on_delete_runs(job_execution_ids: list[str]) -> None:
             job_exec = JobExecution.get(je_id)
             if not job_exec:
                 continue
-            if job_exec.status in (JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED):
+            if job_exec.status in JobStatus.active():
                 job_exec.request_cancel()
             profiling_run = next(iter(select_profiling_runs_where(ProfilingRun.id == je_id)), None)
             if profiling_run:

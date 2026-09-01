@@ -7,7 +7,7 @@ Two registries keyed by `job_key`:
     (notifications, follow-up job submissions). `run_final_callbacks` iterates.
 
 `run_final_callbacks` is invoked wherever a JE reaches a terminal status:
-`exec_job` after mark_completed/mark_interrupted, `_proc_wrapper`'s nonzero-exit
+`exec_job` after mark_completed/mark_failed, `_proc_wrapper`'s nonzero-exit
 safety net, and `_handle_cancellation`'s no-subprocess branch.
 """
 
@@ -22,7 +22,7 @@ from testgen.commands.run_profiling import run_profiling
 from testgen.commands.run_recalculate_project_scores import run_recalculate_project_scores
 from testgen.commands.run_score_update import run_score_update
 from testgen.commands.run_test_execution import run_test_execution
-from testgen.commands.test_generation import run_test_generation
+from testgen.commands.test_generation import run_monitor_generation, run_test_generation
 from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
@@ -58,6 +58,7 @@ JOB_DISPATCH: dict[JobKey, JobConfig] = {
     JobKey.run_tests:                  JobConfig(handler=run_test_execution),
     JobKey.run_monitors:               JobConfig(handler=run_test_execution),
     JobKey.run_test_generation:        JobConfig(handler=run_test_generation),
+    JobKey.run_monitor_generation:     JobConfig(handler=run_monitor_generation, scheduler_source=JobSource.system),
     JobKey.run_score_update:           JobConfig(handler=run_score_update, scheduler_source=JobSource.system),
     JobKey.recalculate_project_scores: JobConfig(handler=run_recalculate_project_scores, scheduler_source=JobSource.system),
     JobKey.run_data_cleanup:           JobConfig(handler=run_data_cleanup, scheduler_source=JobSource.system),

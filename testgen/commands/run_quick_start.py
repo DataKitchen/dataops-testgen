@@ -3,8 +3,10 @@ import math
 import random
 from datetime import UTC, datetime
 from typing import Any
+from uuid import UUID
 
 import click
+from sqlalchemy import select
 
 from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH
@@ -29,11 +31,15 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.base import smtp_configured
 from testgen.common.read_file import read_template_sql_file
 from testgen.common.standalone_postgres import EMBEDDED_HOST_SENTINEL, is_standalone_mode
+from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 random.seed(42)
 
 SCOREABLE_JOB_KEYS = frozenset({"run-profile", "run-tests"})
+# Batch size for each sweep of the follow-up queue. Seeding queues a handful at most; the
+# drain keeps sweeping until none are left, so this bounds one query, not the loop.
+FOLLOW_UP_POLL_LIMIT = 25
 
 
 def run_with_job_execution(
@@ -74,8 +80,70 @@ def run_with_job_execution(
         je = JobExecution.get(je_id)
         je.completed_at = effective_date + (datetime.now(UTC) - wall_start)
 
+    _drain_queued_jobs()
+
     if job_key in SCOREABLE_JOB_KEYS:
         run_score_update(parent_job_id=str(je_id), parent_job_key=job_key)
+
+
+def _drain_queued_jobs() -> None:
+    """Run the follow-up jobs a handler queued for itself.
+
+    Handlers submit follow-up work as job_executions rows and leave the scheduler to claim it.
+    Quick-start calls handlers directly with no scheduler, so those rows would sit pending and
+    their work would never happen. Loops rather than draining once, because a job this runs can
+    queue more of its own.
+    """
+    while queued := _claim_queued_follow_ups():
+        for job_id, job_key, kwargs, source in queued:
+            _run_queued_job(job_id, job_key, kwargs, source)
+
+
+def _claim_queued_follow_ups() -> list[tuple[UUID, str, dict[str, Any], str]]:
+    """Claim the seeded project's pending system jobs, returning what each needs to run.
+
+    Scoped to the seeded project and to system-submitted rows, so seeding a database that has
+    real queued work cannot pick that work up.
+    """
+    claimed = []
+    with database_session() as session:
+        rows = session.scalars(
+            select(JobExecution)
+            .where(
+                JobExecution.project_code == settings.PROJECT_KEY,
+                JobExecution.source == JobSource.system,
+                JobExecution.status == JobStatus.PENDING,
+            )
+            .order_by(JobExecution.created_at)
+            .limit(FOLLOW_UP_POLL_LIMIT)
+        ).all()
+        for row in rows:
+            if row.claim():
+                claimed.append((row.id, row.job_key, dict(row.kwargs), row.source))
+    return claimed
+
+
+def _run_queued_job(job_id: UUID, job_key: str, kwargs: dict[str, Any], source: str) -> None:
+    """Take one claimed job through running to a terminal status, without callbacks."""
+    token = job_context.set(JobContext(job_id=job_id, source=source))
+    try:
+        with database_session():
+            JobExecution.get(job_id).mark_running()
+        # Inside a session, the way exec-job runs it: the handlers read entities straight off
+        # the current session and do not open one of their own.
+        with database_session():
+            JOB_DISPATCH[job_key].handler(**kwargs)
+    except Exception as e:
+        # Seeding continues: a follow-up that fails is recorded and stepped over, matching how
+        # generation failures were handled when they ran inline.
+        LOG.exception("Queued job %s (%s) failed", job_id, job_key)
+        with database_session():
+            JobExecution.get(job_id).mark_failed(get_exception_message(e))
+    else:
+        with database_session():
+            JobExecution.get(job_id).mark_completed()
+    finally:
+        job_context.reset(token)
 
 
 def _get_max_date(iteration: int):
