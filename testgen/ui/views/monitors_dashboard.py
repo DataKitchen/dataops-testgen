@@ -74,6 +74,12 @@ EDIT_TABLE_MONITORS_DIALOG_KEY = "monitors:edit_table_monitors_table"
 TABLE_TRENDS_DIALOG_KEY = "monitors:trends_table"
 SCHEMA_CHANGES_DIALOG_KEY = "monitors:schema_changes_payload"
 EDIT_NOTIFICATIONS_DIALOG_KEY = "monitors:edit_notifications_open"
+DEFAULT_TREND_RANGE = {"preset": "default", "start": None, "end": None}
+# Widest date-bounded window the trend chart will fetch, in runs. Each run carries one row per
+# monitor type, and the chart is a few hundred pixels wide, so past this the payload grows without
+# anything more becoming visible. The run-count default needs no guard: the suite's configured
+# lookback already bounds it.
+MAX_TREND_RUNS = 5000
 
 
 class MonitorsDashboardPage(Page):
@@ -540,7 +546,7 @@ def build_table_trends_data(
 ) -> tuple[dict, dict]:
     table_name = payload.get("table_name")
     get_selected_data_point, set_selected_data_point = temp_value("table_monitoring_trends:dsl_time", default=None)
-    extended_history_key = f"table_monitoring_trends:extended:{table_group.monitor_test_suite_id}:{table_name}"
+    trend_range_key = f"table_monitoring_trends:range:{table_group.monitor_test_suite_id}:{table_name}"
 
     def on_show_data_structure_logs(payload):
         try:
@@ -550,15 +556,19 @@ def build_table_trends_data(
         except Exception:  # noqa: S110
             pass
 
-    def on_toggle_extended_history(_payload):
-        st.session_state[extended_history_key] = not st.session_state.get(extended_history_key, False)
+    def on_select_trend_range(payload):
+        st.session_state[trend_range_key] = {
+            "preset": payload.get("preset") or DEFAULT_TREND_RANGE["preset"],
+            "start": payload.get("start"),
+            "end": payload.get("end"),
+        }
 
     def on_close_trends(_payload=None):
         st.session_state.pop(TABLE_TRENDS_DIALOG_KEY, None)
         st.session_state.pop(DIALOG_AUTO_OPENED_KEY, None)
         Router().set_query_params({"table_name": None})
 
-    extended_history = st.session_state.get(extended_history_key, False)
+    trend_range = st.session_state.get(trend_range_key, DEFAULT_TREND_RANGE)
 
     selected_data_point = get_selected_data_point()
     data_structure_logs = None
@@ -567,8 +577,48 @@ def build_table_trends_data(
             table_group.id, table_name, *selected_data_point,
         )
 
-    lookback_multiplier = 3 if extended_history else 1
-    events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name, lookback_multiplier)
+    range_start, range_end = None, None
+    if (start_ms := trend_range.get("start")) and (end_ms := trend_range.get("end")):
+        range_start = datetime.fromtimestamp(start_ms / 1000, UTC)
+        range_end = datetime.fromtimestamp(end_ms / 1000, UTC)
+
+    handlers = {
+        "on_ShowDataStructureLogs_change": on_show_data_structure_logs,
+        "on_SelectTrendRange_change": on_select_trend_range,
+        "on_CloseTrendsDialog_change": on_close_trends,
+    }
+    empty_series: dict = {
+        "freshness_events": [], "volume_events": [], "schema_events": [], "metric_events": [],
+    }
+
+    if range_start is not None:
+        run_count = count_monitor_runs(table_group.monitor_test_suite_id, range_start, range_end)
+        if run_count > MAX_TREND_RUNS:
+            return {
+                **empty_series,
+                "data_structure_logs": make_json_safe(data_structure_logs),
+                "predictions": {},
+                "trend_range": trend_range,
+                "trend_notice": (
+                    f"This range covers {run_count:,} monitor runs, more than the chart can display. "
+                    "Select a shorter range."
+                ),
+                "dialog": dialog,
+            }, handlers
+
+    # The forecast describes runs still to come, so a window that closed before now sits entirely
+    # behind it: rendering it stretches the axis across the intervening gap.
+    window_is_open = range_end is None or range_end >= datetime.now(UTC)
+
+    events = get_monitor_events_for_table(
+        table_group.monitor_test_suite_id, table_name, range_start, range_end,
+    )
+    anchor_events = events
+    if window_is_open and range_start is not None:
+        # The forecast describes the monitor's own state, not the slice of history on screen, so its
+        # anchors come from the full lookback: a narrow window can hold no detected update at all,
+        # which would drop the freshness band and every freshness-gated band with it.
+        anchor_events = get_monitor_events_for_table(table_group.monitor_test_suite_id, table_name)
     definitions = select_test_definitions_where(
         TestDefinition.test_suite_id == table_group.monitor_test_suite_id,
         TestDefinition.table_name == table_name,
@@ -578,24 +628,26 @@ def build_table_trends_data(
     )
 
     predictions = {}
-    if len(definitions) > 0:
+    if len(definitions) > 0 and window_is_open:
         test_suite = get_test_suite(table_group.monitor_test_suite_id)
         monitor_schedule = get_monitor_schedule(table_group.monitor_test_suite_id)
         monitor_lookback = test_suite.monitor_lookback
         predict_sensitivity = test_suite.predict_sensitivity or PredictSensitivity.medium
 
-        last_run_time_per_test_key: dict[str, datetime] = {
-            "volume_trend": max(e["time"] for e in events["volume_events"]),
-        }
-        for metric_group in events["metric_events"]:
-            metric_definition_id = metric_group["test_definition_id"]
-            last_run_time_per_test_key[f"metric:{metric_definition_id}"] = max(e["time"] for e in metric_group["events"])
+        last_run_time_per_test_key: dict[str, datetime] = {}
+        if volume_times := [e["time"] for e in anchor_events["volume_events"]]:
+            last_run_time_per_test_key["volume_trend"] = max(volume_times)
+        for metric_group in anchor_events["metric_events"]:
+            if metric_times := [e["time"] for e in metric_group["events"]]:
+                last_run_time_per_test_key[f"metric:{metric_group['test_definition_id']}"] = max(metric_times)
 
         # Predicted next freshness-update window for the table — shared by the Freshness_Trend
         # display window and the freshness-gated Volume/Metric forecast (which expects no change
         # until a refresh lands in this window).
         freshness_definition = next((d for d in definitions if d.test_type == "Freshness_Trend"), None)
-        freshness_window = _freshness_next_update_window(freshness_definition, events, test_suite, monitor_schedule)
+        freshness_window = _freshness_next_update_window(
+            freshness_definition, anchor_events, test_suite, monitor_schedule,
+        )
 
         for definition in definitions:
             test_key = f"metric:{definition.id}" if definition.test_type == "Metric_Trend" else definition.test_type.lower()
@@ -692,20 +744,23 @@ def build_table_trends_data(
         **make_json_safe(events),
         "data_structure_logs": make_json_safe(data_structure_logs),
         "predictions": predictions,
-        "extended_history": extended_history,
+        "trend_range": trend_range,
+        "trend_notice": None,
         "dialog": dialog,
-    }
-    handlers = {
-        "on_ShowDataStructureLogs_change": on_show_data_structure_logs,
-        "on_ToggleExtendedHistory_change": on_toggle_extended_history,
-        "on_CloseTrendsDialog_change": on_close_trends,
     }
     return data, handlers
 
 
-@st.cache_data(show_spinner=False)
-def get_monitor_events_for_table(test_suite_id: str, table_name: str, lookback_multiplier: int = 1) -> dict:
-    return TableGroup.get_table_monitor_series(test_suite_id, table_name, lookback_multiplier)
+@st.cache_data(show_spinner=False, max_entries=32)
+def count_monitor_runs(test_suite_id: str, start: datetime, end: datetime) -> int:
+    return TableGroup.count_monitor_runs(test_suite_id, start, end)
+
+
+@st.cache_data(show_spinner=False, max_entries=32)
+def get_monitor_events_for_table(
+    test_suite_id: str, table_name: str, start: datetime | None = None, end: datetime | None = None,
+) -> dict:
+    return TableGroup.get_table_monitor_series(test_suite_id, table_name, start, end)
 
 
 @st.cache_data(show_spinner=False)

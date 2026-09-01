@@ -43,6 +43,12 @@
  * @property {PredictionSet?} volume_trend
  * @property {PredictionSet?} freshness_trend
  *
+ * @typedef TrendRange
+ * @type {object}
+ * @property {string} preset
+ * @property {number?} start
+ * @property {number?} end
+ *
  * @typedef Properties
  * @type {object}
  * @property {FreshnessEvent[]} freshness_events
@@ -51,7 +57,8 @@
  * @property {MetricEventGroup[]} metric_events
  * @property {(DataStructureLog[])?} data_structure_logs
  * @property {Predictions?} predictions
- * @property {boolean} extended_history
+ * @property {TrendRange?} trend_range
+ * @property {string?} trend_notice Why the chart is empty, when the reason is not "no runs"
  * @property {{ open: boolean, title: string }?} dialog
  */
 import van from '/app/static/js/van.min.js';
@@ -66,6 +73,17 @@ import { DualPane } from '/app/static/js/components/dual_pane.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { MonitoringSparklineChart, MonitoringSparklineMarkers } from '/app/static/js/components/monitoring_sparkline.js';
+import { SegmentedControl } from '/app/static/js/components/segmented_control.js';
+import { DateTimeRangeField } from '/app/static/js/components/datetime_range_field.js';
+import { DatePicker } from '/app/static/js/components/date_picker.js';
+import { Portal } from '/app/static/js/components/portal.js';
+import {
+  CUSTOM_RANGE,
+  DEFAULT_RANGE,
+  MAX_CUSTOM_SPAN,
+  TREND_RANGE_PRESETS,
+  relativeRangeToBounds,
+} from '/app/static/js/time_range_utils.js';
 
 const { div, span } = van.tags;
 const { circle, clipPath, defs, foreignObject, g, line, path, rect, svg, text } = van.tags("http://www.w3.org/2000/svg");
@@ -111,6 +129,13 @@ const TableMonitoringTrend = (props) => {
     schemaChartSelection.val = event;
   };
 
+  const hasMonitorEvents = () => (
+    (getValue(props.freshness_events) ?? []).length > 0
+    || (getValue(props.volume_events) ?? []).length > 0
+    || (getValue(props.schema_events) ?? []).length > 0
+    || (getValue(props.metric_events) ?? []).length > 0
+  );
+
   const content = div(
     DualPane(
       {
@@ -122,9 +147,26 @@ const TableMonitoringTrend = (props) => {
         resizablePanelDomId: 'data-structure-logs-sidebar',
       },
       div(
-        { class: '', style: 'width: 100%;' },
+        {
+          class: '',
+          style: 'width: 100%;',
+          'data-testid': 'trend-charts',
+          // Stamped from the server's committed range so a reader can tell the window on screen
+          // from the one a click has only just requested.
+          'data-range-preset': () => getValue(props.trend_range)?.preset ?? DEFAULT_RANGE,
+        },
         () => {
           if (!getValue(props.dialog)?.open) return div();
+          if (!hasMonitorEvents()) {
+            return div(
+              { class: 'flex-row fx-justify-center trend-empty-message' },
+              span(
+                { class: 'text-secondary' },
+                getValue(props.trend_notice)
+                  ?? 'No monitor runs in the selected time range. Select a longer range to see trends for this table.',
+              ),
+            );
+          }
           return ChartsSection(props, { schemaChartSelection, getDataStructureLogs });
         },
       ),
@@ -155,7 +197,7 @@ const TableMonitoringTrend = (props) => {
         );
       },
     ),
-    ChartLegend({
+    () => hasMonitorEvents() ? ChartLegend({
       '': {
         items: [
           { icon: svg({ width: 10, height: 10 },
@@ -213,28 +255,150 @@ const TableMonitoringTrend = (props) => {
           { icon: svg({ width: 10, height: 10 }, rect({ width: 10, height: 10, fill: colorMap.purple })), label: 'Modifications' },
         ],
       },
-    }),
+    }) : div(),
   );
 
   const dialogTitle = van.derive(() => getValue(props.dialog)?.title ?? '');
-  const historyToggle = () => {
-    const extendedHistory = getValue(props.extended_history) ?? false;
-    return Button({
-      label: extendedHistory ? 'Show default view' : 'Show more history',
-      icon: extendedHistory ? 'history_toggle_off' : 'history',
-      width: 'auto',
-      onclick: () => emit('ToggleExtendedHistory', { payload: {} }),
-    });
+  const selectedRange = van.state(getValue(props.trend_range)?.preset ?? DEFAULT_RANGE);
+  // Only depends on props.trend_range — assigning to selectedRange.val does not register it as a
+  // dependency, so the optimistic click update survives until the server round trip lands.
+  van.derive(() => {
+    selectedRange.val = getValue(props.trend_range)?.preset ?? DEFAULT_RANGE;
+  });
+
+  // Relative presets resolve against the top of the next hour rather than the exact instant, so
+  // that re-resolving inside the same hour reproduces the bounds already stored. Resolving against
+  // `now` would make every reopen emit a different window, and every emit costs a round trip.
+  const nextHour = () => {
+    const boundary = new Date();
+    boundary.setMinutes(0, 0, 0);
+    return new Date(boundary.getTime() + 60 * 60 * 1000);
   };
+
+  // Session state keeps the preset; its bounds are re-resolved on every open so that '7 days' keeps
+  // meaning seven days from now rather than seven days from whenever it was first clicked. Custom
+  // and Default resolve to null and are left alone.
+  const refreshRelativeRange = () => {
+    const range = getValue(props.trend_range) ?? {};
+    const bounds = relativeRangeToBounds(range.preset, nextHour());
+    if (bounds && (range.start !== bounds.start || range.end !== bounds.end)) {
+      // Deferred so the emit lands after the render pass instead of inside the derive.
+      setTimeout(() => emit('SelectTrendRange', {
+        payload: { preset: range.preset, start: bounds.start, end: bounds.end },
+      }), 0);
+    }
+  };
+  van.derive(() => dialogOpen.val && refreshRelativeRange());
+
+  const rangeControlId = 'monitoring-trends-range-control';
+  const customPanelOpen = van.state(false);
+  const customStart = van.state(null);
+  const customEnd = van.state(null);
+  const customValid = van.state(false);
+
+  const renderedEventTimes = () => [
+    ...(getValue(props.freshness_events) ?? []),
+    ...(getValue(props.volume_events) ?? []),
+    ...(getValue(props.schema_events) ?? []),
+    ...(getValue(props.metric_events) ?? []).flatMap(group => group.events ?? []),
+  ].map(event => parseDate(event.time)).filter(Number.isFinite);
+
+  // The panel opens on the window currently on screen. Only Default needs a seed of its own: its
+  // run-count window has no explicit bounds, and is described by the runs it returned.
+  const seedCustomRange = () => {
+    const range = getValue(props.trend_range) ?? {};
+    if (range.start && range.end) {
+      customStart.val = new Date(range.start);
+      customEnd.val = new Date(range.end);
+      return;
+    }
+
+    const times = renderedEventTimes();
+    const fallback = relativeRangeToBounds('7d');
+    customStart.val = new Date(times.length ? Math.min(...times) : fallback.start);
+    // The end is exclusive and the field floors it to the minute, so seeding it on the newest run
+    // would drop that run. Clearing the minute it lands in keeps the seed showing what it plots.
+    customEnd.val = new Date(times.length ? Math.max(...times) + 60_000 : fallback.end);
+  };
+
+  const rangeSelector = SegmentedControl({
+    id: rangeControlId,
+    options: TREND_RANGE_PRESETS,
+    value: selectedRange,
+    pendingValue: van.derive(() => customPanelOpen.val ? CUSTOM_RANGE : null),
+    onChange: (preset) => {
+      if (preset === CUSTOM_RANGE) {
+        seedCustomRange();
+        customPanelOpen.val = true;
+        return;
+      }
+
+      customPanelOpen.val = false;
+      selectedRange.val = preset;
+      const bounds = relativeRangeToBounds(preset, nextHour());
+      emit('SelectTrendRange', { payload: { preset, start: bounds?.start ?? null, end: bounds?.end ?? null } });
+    },
+  });
+
+  const customPanel = Portal(
+    {
+      target: rangeControlId,
+      align: 'right',
+      opened: customPanelOpen,
+      // The surface lives on the portal element itself: for a fixed anchor the portal sets
+      // overflow: auto, which would clip the shadow of anything styled inside it.
+      class: 'tg-trend-custom-range',
+      style: 'width: 560px; margin-top: 8px;',
+    },
+    () => div(
+      { class: 'flex-column fx-gap-4 tg-trend-custom-range--content', 'data-testid': 'custom-range-panel' },
+      DateTimeRangeField({
+        start: customStart,
+        end: customEnd,
+        maxSpan: MAX_CUSTOM_SPAN,
+        onChange: (result) => customValid.val = result.valid,
+      }),
+      div(
+        // Months differ in row count, so the default centring would offset one calendar's header
+        // against the other's.
+        { class: 'flex-row fx-align-flex-start fx-gap-5' },
+        DatePicker({ value: customStart }),
+        DatePicker({ value: customEnd }),
+      ),
+      div(
+        { class: 'flex-row' },
+        Button({
+          type: 'stroked',
+          color: 'primary',
+          label: 'Set Custom',
+          width: 'auto',
+          disabled: van.derive(() => !customValid.val),
+          onclick: () => {
+            customPanelOpen.val = false;
+            selectedRange.val = CUSTOM_RANGE;
+            emit('SelectTrendRange', {
+              payload: {
+                preset: CUSTOM_RANGE,
+                start: customStart.rawVal.getTime(),
+                end: customEnd.rawVal.getTime(),
+              },
+            });
+          },
+        }),
+      ),
+    ),
+  );
+
   return Dialog(
     {
       title: dialogTitle,
       open: dialogOpen,
       onClose: () => { dialogOpen.val = false; emit('CloseTrendsDialog', {}); },
       width: '75rem',
-      headerActions: historyToggle,
+      headerActions: rangeSelector,
     },
     content,
+    customPanel,
   );
 };
 
@@ -254,15 +418,15 @@ const ChartsSection = (props, { schemaChartSelection, getDataStructureLogs }) =>
   );
 
   const predictions = getValue(props.predictions) ?? {};
-  const freshnessWindow = predictions?.freshness_trend?.window;
-  const predictionTimes = Object.values(predictions ?? {}).reduce((predictionTimes, v) => [
-    ...predictionTimes,
+  const predictionTimes = Object.values(predictions).reduce((times, v) => [
+    ...times,
     ...Object.keys(v.mean ?? {}).map(t => ({time: +t})),
     ...(v.window ? [
       v.window.start ? {time: v.window.start} : null,
       {time: v.window.end},
     ].filter(Boolean) : []),
   ], []);
+  const freshnessWindow = predictions?.freshness_trend?.window;
   const freshnessEvents = (getValue(props.freshness_events) ?? []).map(e => ({ ...e, time: parseDate(e.time) }));
   const schemaChangeEvents = (getValue(props.schema_events) ?? []).map(e => ({ ...e, time: parseDate(e.time), window_start: parseDate(e.window_start) }));
   const schemaChangesMaxValue = schemaChangeEvents.reduce((currentValue, e) => Math.max(currentValue, e.additions, e.deletions), 10);
@@ -834,6 +998,24 @@ stylesheet.replace(`
 
   .tick-text {
     font-size: 10px;
+  }
+
+  .trend-empty-message {
+    padding: 64px 24px;
+    text-align: center;
+  }
+
+  .tg-trend-custom-range {
+    border-radius: 8px;
+    background: var(--portal-background);
+    box-shadow: var(--portal-box-shadow);
+    /* Other portals open over the page background; this one opens over a dialog painted the same
+       color, so the shadow alone does not separate it. */
+    border: 1px solid var(--border-color);
+  }
+
+  .tg-trend-custom-range--content {
+    padding: 16px;
   }
 
   .chart-legend {
