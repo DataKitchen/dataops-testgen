@@ -1,9 +1,10 @@
 """Subprocess entry point for the scheduler's `testgen exec-job <id>` command.
 
 Owns the end-to-end lifecycle of a single claimed job: dispatch to its handler,
-transition the JobExecution to a terminal state, and fire final callbacks.
-Concrete wiring (which handler runs for which job_key, which callbacks fire
-after termination) lives in `job_registry.py`.
+settle the JobExecution, and fire final callbacks. A job that stops at a
+checkpoint is recorded as interrupted instead, which is not terminal and fires
+no callbacks. Concrete wiring (which handler runs for which job_key, which
+callbacks fire after termination) lives in `job_registry.py`.
 """
 
 import logging
@@ -11,22 +12,22 @@ import sys
 from uuid import UUID
 
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
-from testgen.common.enums import JobStatus
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.pausable_job import JobInterrupted
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
-FINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCELED})
 POLL_INTERVAL = 2
 
 
 def exec_job(job_execution_id: UUID) -> None:
     """Execute a queued job. Called as a subprocess by the scheduler.
 
-    Owns the full lifecycle: mark_running -> dispatch -> mark_completed/mark_interrupted.
+    Owns the full lifecycle: mark_running -> dispatch -> mark_completed/mark_failed,
+    or mark_interrupted when the handler stopped at a checkpoint.
     Only exits non-zero for truly unrecoverable failures (DB unreachable, record not found).
     """
     try:
@@ -38,7 +39,7 @@ def exec_job(job_execution_id: UUID) -> None:
 
             job_config = JOB_DISPATCH.get(job_exec.job_key)
             if not job_config:
-                job_exec.mark_interrupted(f"Unknown job key: {job_exec.job_key}")
+                job_exec.mark_failed(f"Unknown job key: {job_exec.job_key}")
                 return
 
             if not job_exec.mark_running():
@@ -56,11 +57,21 @@ def exec_job(job_execution_id: UUID) -> None:
                 transitioned = job_exec.mark_completed()
             if transitioned:
                 run_final_callbacks(job_exec)
+        except JobInterrupted as interrupted:
+            # Publishing the status here rather than where the stop was detected is deliberate:
+            # by now the handler has finished unwinding, so the run this hands to the next
+            # claimer is one no process still holds. The checkpoint is already durable.
+            # No final callbacks: the run has not settled, so nothing should notify on it or
+            # roll up its scores. Returning exits 0, which the scheduler reads as a clean stop.
+            LOG.info("Job %s interrupted in step '%s'", job_execution_id, interrupted.step)
+            with database_session():
+                job_exec = JobExecution.get(job_execution_id)
+                job_exec.mark_interrupted(interrupted.resume_state)
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
-                transitioned = job_exec.mark_interrupted(get_exception_message(e))
+                transitioned = job_exec.mark_failed(get_exception_message(e))
             if transitioned:
                 run_final_callbacks(job_exec)
 

@@ -17,13 +17,14 @@ from sqlalchemy import (
     and_,
     asc,
     case,
+    delete,
     desc,
     func,
     select,
 )
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.models import database_session
+from testgen.common.models import database_session, get_current_session
 from testgen.common.models.entity import Entity
 
 
@@ -159,6 +160,13 @@ class ProfileResult(Entity):
             statement = statement.on_conflict_do_nothing(index_elements=list(cls._upsert_key))
         with database_session() as session, session.begin_nested():
             session.execute(statement)
+
+    @classmethod
+    def delete_for_run(cls, profile_run_id: UUID) -> int:
+        """Remove a run's results. A run that starts over keeps its id, so anything it wrote
+        for a column that has since gone would otherwise outlive the column."""
+        result = get_current_session().execute(delete(cls).where(cls.profile_run_id == profile_run_id))
+        return result.rowcount or 0
 
     @classmethod
     def get_for_column(

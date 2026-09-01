@@ -9,10 +9,13 @@ from sqlalchemy import func, select
 
 from testgen.common.date_service import parse_since
 from testgen.common.enums import (
+    INTERRUPT_STATUSES,
+    PAUSABLE_JOB_KEYS,
     PII_FLAG_PREFIX_TO_LABEL,
     Disposition,
     ImpactDimension,
     IssueLikelihood,
+    JobKey,
     JobStatus,
     MonitorCalculation,
     MonitorType,
@@ -319,21 +322,44 @@ def parse_category(value: str) -> ScoreCategory:
 # Maps user-facing run-status labels to underlying ``JobStatus`` values. Transient states
 # (Starting/Canceling) are excluded because they're sub-second and noisy as filters.
 # ``Pending`` collapses PENDING+CLAIMED; ``Canceled`` collapses CANCEL_REQUESTED+CANCELED.
+# ``Interrupted`` covers a run stopped partway through, whether it is still stopping or
+# already queued to continue -- both read to a user as "stopped, will pick up where it left off".
 _RUN_STATUS_FILTER: dict[str, list[JobStatus]] = {
     "Pending": [JobStatus.PENDING, JobStatus.CLAIMED],
     "Running": [JobStatus.RUNNING],
+    "Interrupted": [JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED],
     "Completed": [JobStatus.COMPLETED],
     "Canceled": [JobStatus.CANCEL_REQUESTED, JobStatus.CANCELED],
     "Error": [JobStatus.ERROR],
 }
 
 
-def parse_run_status_filter(value: str) -> list[JobStatus]:
-    """Map a user-facing run status label (e.g. ``Pending``) to the underlying ``JobStatus`` values."""
-    statuses = match_mapping(value, _RUN_STATUS_FILTER)
+def _run_status_filters_for(job_key: JobKey) -> dict[str, list[JobStatus]]:
+    """Narrow the filter labels to the ones a run of this ``job_key`` can actually hold."""
+    if job_key in PAUSABLE_JOB_KEYS:
+        return _RUN_STATUS_FILTER
+    return {
+        label: statuses
+        for label, statuses in _RUN_STATUS_FILTER.items()
+        if not INTERRUPT_STATUSES.issuperset(statuses)
+    }
+
+
+def run_status_filter_options(job_key: JobKey) -> str:
+    """Render the status labels a run of this ``job_key`` can be filtered by, for a tool argument."""
+    return ", ".join(_run_status_filters_for(job_key))
+
+
+def parse_run_status_filter(value: str, job_key: JobKey) -> list[JobStatus]:
+    """Map a user-facing run status label (e.g. ``Pending``) to the underlying ``JobStatus`` values.
+
+    A label naming a status this ``job_key`` can never reach is rejected, so a caller filtering
+    on it gets an error rather than an empty result.
+    """
+    filters = _run_status_filters_for(job_key)
+    statuses = match_mapping(value, filters)
     if statuses is None:
-        valid = ", ".join(_RUN_STATUS_FILTER.keys())
-        raise MCPUserError(f"Invalid status `{value}`. Valid values: {valid}")
+        raise MCPUserError(f"Invalid status `{value}`. Valid values: {', '.join(filters)}")
     return statuses
 
 

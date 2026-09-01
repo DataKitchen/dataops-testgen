@@ -1,38 +1,67 @@
-from unittest.mock import MagicMock, Mock, patch
-from uuid import UUID
+from datetime import UTC, datetime, timedelta
+from typing import get_args
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
 import pytest
 
-from testgen.commands.run_profiling import _generate_tests, _order_largest_work_first, _run_column_profiling
+from testgen.commands.run_profiling import (
+    PROFILE_RESULT_SHAPE_VERSION,
+    ProfilingJob,
+    _order_largest_work_first,
+    _profiling_template_digest,
+    _write_frequency_error,
+)
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome
+from testgen.common.database.flavor.flavor_service import SQLFlavor
+from testgen.common.enums import JobKey
+from testgen.common.models.hygiene_issue import HygieneIssue
+from testgen.common.models.profile_result import ProfileResult
+from testgen.common.models.profiling_run import PROGRESS_KEYS
+from testgen.common.models.stg_functional_table_update import StgFunctionalTableUpdate
+from testgen.common.pausable_job import PausableJob, Step, WorkTasksChanged
 
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.commands.run_profiling"
+POOL = "testgen.common.pausable_job.run_keyed_worker_pool"
 
 
 def _col(table: str, column: str, record_ct: int = 10) -> ColumnChars:
     return ColumnChars(schema_name="s", table_name=table, column_name=column, record_ct=record_ct)
 
 
-# --- _run_column_profiling: outcome-handling branches ------------------------------------
+def _no_job_row_session() -> MagicMock:
+    """A session with no job_executions row, so the engine sees a fresh run rather than
+    reading a checkpoint off an auto-created mock attribute."""
+    session = MagicMock()
+    session.get.return_value = None
+    return session
+
+
+# --- the column profiling step: outcome-handling branches --------------------------------
 
 def _run_columns(outcomes: dict[str, tuple[str, object]]):
-    """Drive _run_column_profiling with a stubbed worker pool.
+    """Drive the column profiling step through the engine with a stubbed worker pool.
 
-    ``outcomes`` maps column_name -> ("ok", result_list) | ("err", message). The stubbed
-    pool yields one WorkerOutcome per built work item, so the consumer loop under test runs
-    its real branching over controlled results. Returns (profiling_run, ProfileResult mock,
-    _write_column_error mock).
+    ``outcomes`` maps column_name -> ("ok", result_list) | ("err", message). Returns
+    (profiling_run, ProfileResult mock, _write_column_error mock).
     """
     data_chars = [_col("t", name) for name in outcomes]
-    sql_generator = MagicMock()
-    sql_generator.run_column_profiling.return_value = ("SELECT 1", {})
-    sql_generator.connection.max_threads = 4
-    profiling_run = sql_generator.profiling_run
 
-    def fake_pool(items, _process, *, max_threads):
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.data_chars = data_chars
+    job.table_record_counts = {"t": 10}
+    job.sampling_params = {}
+    job.sql_generator = MagicMock()
+    job.sql_generator.run_column_profiling.return_value = ("SELECT 1", {})
+    job.connection = MagicMock(max_threads=4)
+    job.profiling_run = MagicMock(**{"progress_error.return_value": None})
+    job.STEPS = (Step("col_profiling", ProfilingJob._col_profiling),)
+
+    def fake_pool(items, _process, *, max_threads, stop=None):
         for column, _built in items:
             kind, payload = outcomes[column.column_name]
             if kind == "err":
@@ -40,15 +69,21 @@ def _run_columns(outcomes: dict[str, tuple[str, object]]):
             else:
                 yield WorkerOutcome(key=column, result=payload, error=None)
 
+    # on_start/on_end derive entities and stamp timing; this helper supplies the state directly
+    # and only exercises the column-profiling step, so they are no-ops here.
     with (
-        patch(f"{MODULE}.run_keyed_worker_pool", side_effect=fake_pool),
+        patch(POOL, side_effect=fake_pool),
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch(f"{MODULE}.with_frequent_patterns", side_effect=lambda row: row),
+        patch.object(ProfilingJob, "on_start", lambda _self: None),
+        patch.object(ProfilingJob, "on_end", lambda _self: None),
         patch(f"{MODULE}.ProfileResult") as profile_result,
         patch(f"{MODULE}._write_column_error") as write_error,
     ):
-        _run_column_profiling(sql_generator, data_chars, {}, {"t": 10})
+        job.execute()
 
-    return profiling_run, profile_result, write_error
+    return job.profiling_run, profile_result, write_error
 
 
 def _final_status(profiling_run: MagicMock) -> str:
@@ -80,12 +115,110 @@ def test_all_columns_failing_raises():
 
 
 def test_empty_result_is_skipped_without_error():
-    # Characterizes current behavior: a column whose query returns no rows writes nothing
-    # and is not counted as an error, so the pass still completes.
     profiling_run, profile_result, write_error = _run_columns({"c1": ("ok", [])})
     assert _final_status(profiling_run) == "Completed"
     profile_result.upsert.assert_not_called()
     write_error.assert_not_called()
+
+
+# --- the frequency analysis step ---------------------------------------------------------
+
+def _freq_job(tasks: list[str], completed: int) -> ProfilingJob:
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.data_chars = [_col("t", "c1")]
+    job.table_record_counts = {"t": 10}
+    job.sampling_params = {}
+    job.sql_generator = MagicMock()
+    job.connection = MagicMock(max_threads=4)
+    job.profiling_run = MagicMock(**{"progress_error.return_value": None})
+    job._tasks = list(tasks)
+    job._completed = completed
+    job._step = Step("freq_analysis", ProfilingJob._freq_analysis, fatal=False)
+    return job
+
+
+def test_a_frequency_error_records_only_the_error_on_the_columns_row():
+    """The column pass measured this column; a frequency failure must not blank its measures."""
+    sql_generator = MagicMock(max_error_length=2000)
+    with patch(f"{MODULE}.ProfileResult") as profile_result:
+        _write_frequency_error(sql_generator, _col("t", "c1"), "boom")
+
+    row = profile_result.upsert.call_args[0][0]
+    assert row["query_error"] == "boom"
+    assert row["table_name"] == "t"
+    assert row["column_name"] == "c1"
+    assert not row.keys() & {"general_type", "position", "column_type", "db_data_type", "record_ct"}
+
+
+def test_a_frequency_error_does_not_write_the_column_pass_error_row():
+    outcomes = {"c1": ("err", "boom")}
+
+    job = _freq_job(tasks=[], completed=0)
+    job.STEPS = (Step("freq_analysis", ProfilingJob._freq_analysis, fatal=False),)
+
+    def fake_pool(items, _process, *, max_threads, stop=None):
+        for column, _built in items:
+            _kind, payload = outcomes[column.column_name]
+            yield WorkerOutcome(key=column, result=None, error=payload)
+
+    with (
+        patch(POOL, side_effect=fake_pool),
+        patch(f"{MODULE}.fetch_dict_from_db", return_value=[{"schema_name": "s", "table_name": "t", "column_name": "c1"}]),
+        patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch.object(ProfilingJob, "on_start", lambda _self: None),
+        patch.object(ProfilingJob, "on_end", lambda _self: None),
+        patch(f"{MODULE}._write_frequency_error") as write_frequency_error,
+        patch(f"{MODULE}._write_column_error") as write_column_error,
+    ):
+        job.execute()
+
+    write_frequency_error.assert_called_once()
+    write_column_error.assert_not_called()
+
+
+def test_losing_every_eligible_column_restarts_the_run():
+    job = _freq_job(tasks=["freq_analysis\x1fs\x1ft\x1fc1"], completed=1)
+
+    with patch(f"{MODULE}.fetch_dict_from_db", return_value=[]), pytest.raises(WorkTasksChanged):
+        job._freq_analysis()
+
+
+def test_nothing_eligible_on_a_fresh_run_is_not_drift():
+    job = _freq_job(tasks=[], completed=0)
+
+    with patch(f"{MODULE}.fetch_dict_from_db", return_value=[]):
+        job._freq_analysis()
+
+    assert job._tasks == []
+
+
+# --- the step declaration ----------------------------------------------------------------
+
+def test_steps_run_in_the_order_the_results_depend_on():
+    assert [step.name for step in ProfilingJob.STEPS] == [
+        "data_chars",
+        "col_profiling",
+        "freq_analysis",
+        "hygiene_issues",
+        "generate_tests",
+    ]
+
+
+def test_only_the_steps_everything_depends_on_are_fatal():
+    fatal = {step.name for step in ProfilingJob.STEPS if step.fatal}
+    assert fatal == {"data_chars", "col_profiling"}
+
+
+def test_reporting_steps_match_the_progress_display():
+    reported = {step.name for step in ProfilingJob.STEPS if step.name in PROGRESS_KEYS}
+    assert reported == {"data_chars", "col_profiling", "freq_analysis", "hygiene_issues"}
+
+
+def test_a_column_is_identified_by_where_it_lives():
+    job = ProfilingJob.__new__(ProfilingJob)
+    assert job.canonical_key(_col("t", "c")) == "s\x1ft\x1fc"
 
 
 # --- _order_largest_work_first -----------------------------------------------------------
@@ -102,72 +235,238 @@ def test_missing_record_count_sorts_as_zero():
     assert [c.table_name for c in ordered] == ["known", "unknown"]
 
 
-def test_equal_counts_preserve_input_order():
-    columns = [_col("a", "c"), _col("b", "c"), _col("d", "c")]
+def test_equal_counts_are_broken_by_name_not_by_input_order():
+    """Input order is no tie-break: the queries these columns come from do not all sort their
+    rows, and a resume that regenerates them in a different sequence must still match."""
+    columns = [_col("d", "c"), _col("a", "c"), _col("b", "c")]
     ordered = _order_largest_work_first(columns, {"a": 5, "b": 5, "d": 5})
     assert [c.table_name for c in ordered] == ["a", "b", "d"]
 
 
-# --- _generate_tests: post-profiling auto-generation --------------------------------------
+def test_the_order_is_the_same_whatever_order_the_columns_arrive_in():
+    counts = {"big": 100, "small": 1}
+    columns = [_col("big", "y"), _col("small", "b"), _col("big", "x"), _col("small", "a")]
+    def key(cols):
+        return [(c.table_name, c.column_name) for c in _order_largest_work_first(cols, counts)]
+
+    assert key(columns) == key(list(reversed(columns)))
+    # Largest table first is still the point; names only settle ties.
+    assert key(columns) == [("big", "x"), ("big", "y"), ("small", "a"), ("small", "b")]
+
+
+# --- generation is enqueued as follow-up jobs, not run in-process -------------------------
 
 SUITE_ID = "8f8d1cb5-2f2c-4f0f-9f9c-6f1a2b3c4d5e"
-PROFILE_RUN_ID = UUID("1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f")
+MONITOR_SUITE_ID = "9a9e2dc6-3030-4a1a-8080-7c2b3c4d5e6f"
 
 
-def _run_generate_tests(
-    *,
-    default_test_suite_id: str | None = SUITE_ID,
-    last_complete_profile_run_id: str | None = None,
-    monitor_test_suite_id: str | None = None,
-    generation_error: Exception | None = None,
-):
-    table_group = MagicMock()
-    table_group.default_test_suite_id = default_test_suite_id
-    table_group.last_complete_profile_run_id = last_complete_profile_run_id
-    table_group.monitor_test_suite_id = monitor_test_suite_id
+def _enqueue(*, default_test_suite_id=SUITE_ID, monitor_test_suite_id=None, last_complete_profile_run_id=None):
+    job = ProfilingJob.__new__(ProfilingJob)
+    job.profiling_run = MagicMock(id=uuid4())
+    job.table_group = MagicMock(
+        default_test_suite_id=default_test_suite_id,
+        monitor_test_suite_id=monitor_test_suite_id,
+        last_complete_profile_run_id=last_complete_profile_run_id,
+        project_code="DEFAULT",
+    )
+    with (
+        patch(f"{MODULE}.TestSuite") as test_suite,
+        patch(f"{MODULE}.JobExecution") as job_execution,
+    ):
+        test_suite.get.return_value = MagicMock(monitor_regenerate_freshness=False)
+        job._enqueue_generation()
+    return job_execution.submit
 
-    def db_ctx():
-        ctx = MagicMock()
-        ctx.__enter__ = Mock(return_value=MagicMock())
-        ctx.__exit__ = Mock(return_value=False)
-        return ctx
+
+def _submitted_keys(submit_mock):
+    return [c.kwargs["job_key"] for c in submit_mock.call_args_list]
+
+
+def test_first_run_enqueues_both_monitor_and_test_generation():
+    submit = _enqueue(monitor_test_suite_id=MONITOR_SUITE_ID)
+    keys = _submitted_keys(submit)
+    assert JobKey.run_monitor_generation in keys
+    assert JobKey.run_test_generation in keys
+    monitor_call = next(c for c in submit.call_args_list if c.kwargs["job_key"] == JobKey.run_monitor_generation)
+    assert monitor_call.kwargs["kwargs"]["mode"] == "upsert"
+
+
+def test_later_run_enqueues_monitor_only_and_in_insert_mode():
+    submit = _enqueue(monitor_test_suite_id=MONITOR_SUITE_ID, last_complete_profile_run_id="a-previous-run")
+    keys = _submitted_keys(submit)
+    assert keys == [JobKey.run_monitor_generation]  # no standard test generation after the first run
+    assert submit.call_args_list[0].kwargs["kwargs"]["mode"] == "insert"
+
+
+def test_no_monitor_suite_enqueues_no_monitor_generation():
+    submit = _enqueue(monitor_test_suite_id=None)
+    assert JobKey.run_monitor_generation not in _submitted_keys(submit)
+
+
+def test_no_default_suite_enqueues_no_test_generation():
+    submit = _enqueue(default_test_suite_id=None, monitor_test_suite_id=MONITOR_SUITE_ID)
+    assert JobKey.run_test_generation not in _submitted_keys(submit)
+
+
+# --- lifecycle: inert __init__, on_start derives, on_end stamps, on_restart clears --------
+
+ORIGINAL_START = datetime(2020, 1, 1, tzinfo=UTC)
+
+
+def test_constructing_the_job_reads_nothing_and_writes_nothing():
+    """The constructor records inputs only; entity loads and the run row belong to on_start."""
+    with (
+        patch(f"{MODULE}.job_context") as job_ctx,
+        patch(f"{MODULE}.TableGroup") as table_group,
+        patch(f"{MODULE}.Connection") as connection,
+        patch(f"{MODULE}.set_target_db_params") as set_params,
+        patch(f"{MODULE}.get_current_session") as session,
+    ):
+        job_ctx.get.return_value = MagicMock(job_id=uuid4())
+        job = ProfilingJob("tg-id", username="someone")
+
+    assert job.table_group_id == "tg-id"
+    assert job.table_group is None and job.connection is None and job.profiling_run is None
+    table_group.get.assert_not_called()
+    connection.get.assert_not_called()
+    set_params.assert_not_called()
+    session.assert_not_called()
+
+
+def test_a_job_with_no_context_is_refused():
+    with patch(f"{MODULE}.job_context") as job_ctx:
+        job_ctx.get.return_value = MagicMock(job_id=None)
+        with pytest.raises(ValueError, match="must run as a job"):
+            ProfilingJob("tg-id")
+
+
+def _started_job(existing_run=None):
+    with (
+        patch(f"{MODULE}.job_context") as job_ctx,
+        patch(f"{MODULE}.TableGroup") as table_group,
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.ProfilingRun") as profiling_run_cls,
+        patch(f"{MODULE}.ProfilingSQL") as sql_generator_cls,
+        patch(f"{MODULE}.set_target_db_params") as set_params,
+        patch(f"{MODULE}.get_current_session"),
+    ):
+        job_ctx.get.return_value = MagicMock(job_id=uuid4())
+        profiling_run_cls.get.return_value = existing_run
+        job = ProfilingJob("tg-id")
+        job.on_start()
+        return job, table_group, profiling_run_cls, sql_generator_cls, set_params
+
+
+def test_on_start_derives_the_entities_and_creates_a_fresh_run():
+    job, table_group, profiling_run_cls, sql_generator_cls, set_params = _started_job(existing_run=None)
+    table_group.get.assert_called_once_with("tg-id")
+    set_params.assert_called_once()
+    assert job.profiling_run is profiling_run_cls.return_value  # constructed, since get returned None
+    assert job.sql_generator is sql_generator_cls.return_value
+
+
+def test_on_start_reuses_an_existing_run_row_on_resume():
+    existing = MagicMock()
+    job, _, profiling_run_cls, _, _ = _started_job(existing_run=existing)
+    assert job.profiling_run is existing
+    profiling_run_cls.assert_not_called()  # did not construct a second row
+    existing.init_progress.assert_called_once()
+
+
+def test_on_start_keeps_a_resumed_runs_original_start_time():
+    """A resume continues the same run, so its start time anchors the whole run and not the
+    attempt that picked it back up -- otherwise the recorded duration loses the paused span."""
+    existing = MagicMock()
+    existing.profiling_starttime = ORIGINAL_START
+
+    _started_job(existing_run=existing)
+
+    assert existing.profiling_starttime == ORIGINAL_START
+
+
+def test_on_end_stamps_the_end_time():
+    job = ProfilingJob.__new__(ProfilingJob)
+    job.time_delta = timedelta()
+    job.end_time = datetime(2000, 1, 1, tzinfo=UTC)
+    job.on_end()
+    assert job.end_time.year > 2000
+
+
+def test_on_restart_clears_the_abandoned_run_and_resets_the_start_time():
+    """The zero-coverage path where the misplaced delete_for_run hid in build-step 1."""
+    job = ProfilingJob.__new__(ProfilingJob)
+    job.time_delta = timedelta()
+    job.profiling_run = MagicMock()
+    job.profiling_run.profiling_starttime = ORIGINAL_START
+    with (
+        patch(f"{MODULE}.ProfileResult") as profile_result,
+        patch(f"{MODULE}.HygieneIssue") as hygiene_issue,
+        patch(f"{MODULE}.StgFunctionalTableUpdate") as staged_tables,
+        patch(f"{MODULE}.get_current_session"),
+    ):
+        profile_result.delete_for_run.return_value = 5
+        job.on_restart()
+        profile_result.delete_for_run.assert_called_once_with(job.profiling_run.id)
+        hygiene_issue.delete_for_run.assert_called_once_with(job.profiling_run.id)
+        staged_tables.delete_for_run.assert_called_once_with(job.profiling_run.id)
+    # Restamped, not merely assigned: a restart is a new run and its duration starts here.
+    assert job.profiling_run.profiling_starttime > ORIGINAL_START
+
+
+def test_the_cleanup_methods_exist_on_the_models_on_restart_calls():
+    """Guards the exact build-step-1 bug: delete_for_run landed on HygieneIssueType, not
+    HygieneIssue, so on_restart raised AttributeError only at runtime."""
+    assert hasattr(HygieneIssue, "delete_for_run")
+    assert hasattr(ProfileResult, "delete_for_run")
+    assert hasattr(StgFunctionalTableUpdate, "delete_for_run")
+
+
+# --- the measurement fence: a resume must not mix two builds' readings --------------------
+
+def test_the_template_digest_resolves_for_every_flavor():
+    """A flavor whose profiling templates cannot be located would fail the fence at runtime,
+    on that flavor only."""
+    for flavor in get_args(SQLFlavor):
+        assert len(_profiling_template_digest(flavor)) == 64
+
+
+def test_the_template_digest_tracks_content_and_names():
+    def digest(text: str, name: str = "project_profiling_query.sql"):
+        entry = MagicMock(**{"read_text.return_value": text})
+        entry.name = name  # `name` is reserved in the MagicMock constructor
+        with patch(f"{MODULE}.get_template_files", return_value=[entry]):
+            return _profiling_template_digest("snowflake")
+
+    baseline = digest("SELECT 1")
+    assert digest("SELECT 1") == baseline
+    assert digest("SELECT 2") != baseline
+    assert digest("SELECT 1", name="renamed.sql") != baseline
+
+
+def test_data_chars_pins_the_result_shape_and_the_templates():
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.table_group = MagicMock(profile_exclude_xde=False)
+    job.profiling_run = MagicMock()
+    job.sql_generator = MagicMock(flavor="snowflake")
+    job.data_chars = []
 
     with (
-        patch("testgen.common.models.database_session", side_effect=lambda: db_ctx()),
-        patch(f"{MODULE}.TestSuite"),
-        patch(f"{MODULE}.run_monitor_generation"),
-        patch(f"{MODULE}.run_test_generation", side_effect=generation_error) as run_generation,
+        patch.object(ProfilingJob, "once", return_value=False),
+        patch(f"{MODULE}.DataTable") as data_table,
     ):
-        _generate_tests(table_group, PROFILE_RUN_ID)
+        data_table.list_column_chars.return_value = []
+        job._data_chars()
 
-    return run_generation
-
-
-def test_post_profiling_generation_leaves_the_generation_sets_to_the_test_suite():
-    """No generation set is passed, so run_test_generation resolves the suite's stored sets.
-
-    Passing a set here would pin every post-profiling run to it regardless of what the
-    suite was last generated with.
-    """
-    run_generation = _run_generate_tests()
-
-    run_generation.assert_called_once_with(SUITE_ID, profile_run_id=PROFILE_RUN_ID)
-    assert "generation_sets" not in run_generation.call_args.kwargs
+    assert job._pins["result_shape"] == PROFILE_RESULT_SHAPE_VERSION
+    assert job._pins["profiling_templates"] == _profiling_template_digest("snowflake")
 
 
-def test_post_profiling_generation_only_runs_on_the_first_profile_run():
-    run_generation = _run_generate_tests(last_complete_profile_run_id="a-previous-run")
+def test_a_checkpoint_from_a_build_that_measured_differently_is_discarded():
+    """The fence rides pin(), so a drifted value restarts the run rather than extending it."""
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job._pins = {"result_shape": PROFILE_RESULT_SHAPE_VERSION + 1}
 
-    run_generation.assert_not_called()
-
-
-def test_post_profiling_generation_skipped_without_a_default_test_suite():
-    run_generation = _run_generate_tests(default_test_suite_id=None)
-
-    run_generation.assert_not_called()
-
-
-def test_post_profiling_generation_failure_does_not_fail_profiling():
-    run_generation = _run_generate_tests(generation_error=RuntimeError("no generation sets"))
-
-    run_generation.assert_called_once_with(SUITE_ID, profile_run_id=PROFILE_RUN_ID)
+    with pytest.raises(WorkTasksChanged):
+        job.pin("result_shape", PROFILE_RESULT_SHAPE_VERSION)

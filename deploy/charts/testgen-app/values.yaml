@@ -35,6 +35,11 @@ cliHooks:
 
 replicaCount: 1
 
+# Time the pod is given to stop on a rollout or delete. Must exceed TG_JOB_SHUTDOWN_TIMEOUT
+# (default 60s) plus the time the process needs to record what stopped, or Kubernetes kills
+# the scheduler mid-wait and running jobs are cut instead of parked.
+terminationGracePeriodSeconds: 90
+
 image:
   repository: "datakitchen/dataops-testgen"
   pullPolicy: IfNotPresent

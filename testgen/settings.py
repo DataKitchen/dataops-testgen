@@ -527,6 +527,35 @@ from env variable: 'TG_JOB_POLL_INTERVAL'
 defaults to: 5
 """
 
+JOB_PAUSE_CHECK_INTERVAL: int = int(getenv("TG_JOB_PAUSE_CHECK_INTERVAL", "5"))
+"""
+Seconds a running job caches the answer to "have I been asked to stop" before asking the
+database again. Bounds how long a job takes to notice the request.
+
+from env variable: 'TG_JOB_PAUSE_CHECK_INTERVAL'
+defaults to: 5
+"""
+
+JOB_SHUTDOWN_TIMEOUT: int = int(getenv("TG_JOB_SHUTDOWN_TIMEOUT", "60"))
+"""
+Seconds the scheduler waits for running jobs to stop before it exits anyway. Must stay below
+the runtime's stop grace period, or the container is killed mid-wait and jobs that would have
+stopped cleanly are cut instead. A job that outlives this is left for the next start to settle.
+
+from env variable: 'TG_JOB_SHUTDOWN_TIMEOUT'
+defaults to: 60
+"""
+
+JOB_TERMINATE_TIMEOUT: int = int(getenv("TG_JOB_TERMINATE_TIMEOUT", "10"))
+"""
+Seconds a canceled job's process is given to exit after SIGTERM before it is killed.
+A job process that installs no handler is terminated by the signal itself, so this bounds the
+cases that do: a handler that runs cleanup, or a process the kernel cannot deliver to promptly.
+
+from env variable: 'TG_JOB_TERMINATE_TIMEOUT'
+defaults to: 10
+"""
+
 ACCESS_TOKEN_EXPIRES_IN: int = 3600  # 1 hour
 REFRESH_TOKEN_EXPIRES_IN: int = 2_592_000  # 30 days
 """

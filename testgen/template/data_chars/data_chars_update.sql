@@ -171,6 +171,7 @@ WITH new_chars AS (
       position,
       column_type,
       db_data_type,
+      is_decimal,
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
@@ -181,6 +182,7 @@ update_chars AS (
    SET ordinal_position = n.position,
       column_type = n.column_type,
       db_data_type = n.db_data_type,
+      is_decimal = n.is_decimal,
       last_mod_date = CASE WHEN n.db_data_type <> d.db_data_type THEN n.run_date ELSE d.last_mod_date END,
       drop_date = NULL
    FROM new_chars n
@@ -241,6 +243,7 @@ WITH new_chars AS (
       general_type,
       column_type,
       db_data_type,
+      is_decimal,
       run_date
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
@@ -257,6 +260,7 @@ inserted_records AS (
          general_type,
          column_type,
          db_data_type,
+         is_decimal,
          add_date,
          last_mod_date
       )
@@ -269,6 +273,7 @@ inserted_records AS (
       n.general_type,
       n.column_type,
       n.db_data_type,
+      n.is_decimal,
       n.run_date,
       n.run_date
    FROM new_chars n

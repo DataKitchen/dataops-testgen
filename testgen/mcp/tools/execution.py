@@ -120,7 +120,7 @@ def cancel_profiling_run(
         Field(description="UUID of a profiling run, e.g. from ``list_profiling_summaries``."),
     ],
 ) -> str:
-    """Request cancellation of a queued or running profiling run."""
+    """Request cancellation of a profiling run that has not finished."""
     job = _resolve_job_execution(job_execution_id, JobKey.run_profile, "Profiling run")
     return _render_cancel(job, "Profiling run", "list_profiling_summaries")
 
@@ -165,7 +165,7 @@ def _render_cancel(job: JobExecution, kind: str, poll_tool: str) -> str:
     if not job.request_cancel():
         status_label = JOB_STATUS_LABEL.get(job.status, job.status)
         raise MCPUserError(
-            f"Cannot cancel — current status is {status_label}. Only queued or running jobs can be canceled."
+            f"Cannot cancel — current status is {status_label}. Only a job that has not finished can be canceled."
         )
     doc = MdDoc()
     doc.heading(1, f"{kind} cancellation requested")
