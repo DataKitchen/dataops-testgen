@@ -15,7 +15,7 @@ from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.pausable_job import JobInterrupted
+from testgen.common.pausable_job import JobParked
 from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
@@ -27,7 +27,7 @@ def exec_job(job_execution_id: UUID) -> None:
     """Execute a queued job. Called as a subprocess by the scheduler.
 
     Owns the full lifecycle: mark_running -> dispatch -> mark_completed/mark_failed,
-    or mark_interrupted when the handler stopped at a checkpoint.
+    or park when the handler stopped at a checkpoint.
     Only exits non-zero for truly unrecoverable failures (DB unreachable, record not found).
     """
     try:
@@ -57,16 +57,18 @@ def exec_job(job_execution_id: UUID) -> None:
                 transitioned = job_exec.mark_completed()
             if transitioned:
                 run_final_callbacks(job_exec)
-        except JobInterrupted as interrupted:
+        except JobParked as interrupted:
             # Publishing the status here rather than where the stop was detected is deliberate:
-            # by now the handler has finished unwinding, so the run this hands to the next
-            # claimer is one no process still holds. The checkpoint is already durable.
+            # by now the handler has finished unwinding, so a run this hands to the next claimer
+            # is one no process still holds. The checkpoint is already durable. Which parked
+            # status it lands in follows from what asked it to stop, so a pause is held rather
+            # than handed on.
             # No final callbacks: the run has not settled, so nothing should notify on it or
             # roll up its scores. Returning exits 0, which the scheduler reads as a clean stop.
-            LOG.info("Job %s interrupted in step '%s'", job_execution_id, interrupted.step)
+            LOG.info("Job %s stopped in step '%s'", job_execution_id, interrupted.step)
             with database_session():
                 job_exec = JobExecution.get(job_execution_id)
-                job_exec.mark_interrupted(interrupted.resume_state)
+                job_exec.park(interrupted.resume_state)
         except Exception as e:
             LOG.exception("Job %s failed", job_execution_id)
             with database_session():

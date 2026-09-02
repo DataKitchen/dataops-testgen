@@ -13,7 +13,7 @@ from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.notifications import BaseNotificationTemplate
-from testgen.utils import log_and_swallow_exception
+from testgen.utils import log_and_swallow_exception, run_duration_seconds
 
 LOG = logging.getLogger("testgen")
 
@@ -64,7 +64,7 @@ class TestRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
                 <tr>
                   <td class="summary__label">Duration</td>
-                  <td class="summary__value">{{format_duration test_run.started_at test_run.completed_at}}</td>
+                  <td class="summary__value">{{format_duration_seconds duration_seconds}}</td>
                 </tr>
               </table>
             </div>
@@ -337,6 +337,10 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     context = {
         "test_run": tr_summary,
+        # Through the shared helper, so an unfinished run reports nothing here as well. A
+        # notification only fires once a run has settled, but that is the caller's habit rather
+        # than something this template can see.
+        "duration_seconds": run_duration_seconds(tr_summary.active_seconds, tr_summary.completed_at),
         "test_run_url": test_run_url,
         "test_run_id": str(test_run.id),
         "test_result_summary": [

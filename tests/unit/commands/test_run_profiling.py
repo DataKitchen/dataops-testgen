@@ -11,11 +11,13 @@ from testgen.commands.run_profiling import (
     _order_largest_work_first,
     _profiling_template_digest,
     _write_frequency_error,
+    report_profiling_run,
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.enums import JobKey
+from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import PROGRESS_KEYS
@@ -69,7 +71,7 @@ def _run_columns(outcomes: dict[str, tuple[str, object]]):
             else:
                 yield WorkerOutcome(key=column, result=payload, error=None)
 
-    # on_start/on_end derive entities and stamp timing; this helper supplies the state directly
+    # on_start derives the entities this helper supplies directly
     # and only exercises the column-profiling step, so they are no-ops here.
     with (
         patch(POOL, side_effect=fake_pool),
@@ -77,7 +79,6 @@ def _run_columns(outcomes: dict[str, tuple[str, object]]):
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
         patch(f"{MODULE}.with_frequent_patterns", side_effect=lambda row: row),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
-        patch.object(ProfilingJob, "on_end", lambda _self: None),
         patch(f"{MODULE}.ProfileResult") as profile_result,
         patch(f"{MODULE}._write_column_error") as write_error,
     ):
@@ -168,7 +169,6 @@ def test_a_frequency_error_does_not_write_the_column_pass_error_row():
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
-        patch.object(ProfilingJob, "on_end", lambda _self: None),
         patch(f"{MODULE}._write_frequency_error") as write_frequency_error,
         patch(f"{MODULE}._write_column_error") as write_column_error,
     ):
@@ -308,7 +308,7 @@ def test_no_default_suite_enqueues_no_test_generation():
     assert JobKey.run_test_generation not in _submitted_keys(submit)
 
 
-# --- lifecycle: inert __init__, on_start derives, on_end stamps, on_restart clears --------
+# --- lifecycle: inert __init__, on_start derives, on_restart clears ----------------------
 
 ORIGINAL_START = datetime(2020, 1, 1, tzinfo=UTC)
 
@@ -384,12 +384,91 @@ def test_on_start_keeps_a_resumed_runs_original_start_time():
     assert existing.profiling_starttime == ORIGINAL_START
 
 
-def test_on_end_stamps_the_end_time():
-    job = ProfilingJob.__new__(ProfilingJob)
-    job.time_delta = timedelta()
-    job.end_time = datetime(2000, 1, 1, tzinfo=UTC)
-    job.on_end()
-    assert job.end_time.year > 2000
+def _settled_job_exec(active_seconds=None, started_at=None, completed_at=None):
+    job_exec = MagicMock()
+    job_exec.id = uuid4()
+    job_exec.source = "ui"
+    job_exec.kwargs = {}
+    job_exec.active_seconds = active_seconds
+    job_exec.started_at = started_at
+    job_exec.completed_at = completed_at
+    return job_exec
+
+
+def test_the_report_uses_the_accumulated_active_time():
+    """The point of the accumulator: a run that stopped and continued spans more wall-clock
+    time than it worked, so the elapsed span between its start and end overstates it."""
+    started = datetime(2026, 1, 1, 10, 0, tzinfo=UTC)
+    completed = datetime(2026, 1, 1, 11, 0, tzinfo=UTC)  # an hour of wall clock
+    job_exec = _settled_job_exec(active_seconds=90.0, started_at=started, completed_at=completed)
+
+    with (
+        patch(f"{MODULE}.ProfilingRun"),
+        patch(f"{MODULE}.TableGroup"),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        report_profiling_run(job_exec)
+
+    assert mixpanel.return_value.send_event.call_args.kwargs["run_duration"] == 90.0
+
+
+def test_the_report_sends_no_duration_for_a_run_that_never_worked():
+    """The accumulated total is the only answer now, and a backfill gave one to every run that
+    had already finished -- so a missing total means the run never worked, not that the span
+    has to be computed instead."""
+    completed = datetime(2026, 1, 1, 10, 2, tzinfo=UTC)
+    job_exec = _settled_job_exec(active_seconds=None, completed_at=completed)
+
+    with (
+        patch(f"{MODULE}.ProfilingRun"),
+        patch(f"{MODULE}.TableGroup"),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        report_profiling_run(job_exec)
+
+    assert mixpanel.return_value.send_event.call_args.kwargs["run_duration"] is None
+
+
+def test_the_report_runs_inside_a_session_it_opened_itself(db_session_mock):
+    """Final callbacks fire outside the transaction that settled the run, so a callback that
+    reaches for entities has to open one itself. Without a session it raises into a caller that
+    swallows the error, losing the event instead of reporting the failure.
+
+    Asserts the session is live rather than waiting for a raise: with the entities patched
+    nothing touches the session, which is exactly why patching them hid this."""
+    job_exec = _settled_job_exec(active_seconds=5.0)
+    session_during_send = []
+
+    with (
+        patch(f"{MODULE}.ProfilingRun"),
+        patch(f"{MODULE}.TableGroup"),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        mixpanel.return_value.send_event.side_effect = (
+            lambda *_a, **_k: session_during_send.append(get_current_session())
+        )
+        report_profiling_run(job_exec)
+
+    assert session_during_send, "the event was never sent"
+    assert session_during_send[0] is not None
+
+
+def test_the_report_is_skipped_when_the_run_never_got_a_row():
+    """A failure before the run row is written leaves nothing to report on, and reaching for
+    its table group would raise inside a best-effort callback that swallows the error."""
+    job_exec = _settled_job_exec()
+
+    with (
+        patch(f"{MODULE}.ProfilingRun") as profiling_run,
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        profiling_run.get.return_value = None
+        report_profiling_run(job_exec)
+
+    mixpanel.return_value.send_event.assert_not_called()
 
 
 def test_on_restart_clears_the_abandoned_run_and_resets_the_start_time():

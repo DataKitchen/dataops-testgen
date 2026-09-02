@@ -15,7 +15,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.notifications import BaseNotificationTemplate
-from testgen.utils import log_and_swallow_exception
+from testgen.utils import log_and_swallow_exception, run_duration_seconds
 
 LOG = logging.getLogger("testgen")
 
@@ -66,7 +66,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
                 <tr>
                   <td class="summary__label">Duration</td>
-                  <td class="summary__value">{{format_duration profiling_run.start_time profiling_run.end_time}}</td>
+                  <td class="summary__value">{{format_duration_seconds profiling_run.duration_seconds}}</td>
                 </tr>
                 <tr>
                   <td colspan="4">
@@ -324,7 +324,12 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
                 )
             ),
             "start_time": job_execution.started_at,
-            "end_time": job_execution.completed_at,
+            # The time the run worked, not the span it covered: a paused run covers more of the
+            # latter, and the email would otherwise disagree with every other surface reporting
+            # the same run.
+            "duration_seconds": run_duration_seconds(
+                job_execution.active_seconds, job_execution.completed_at
+            ),
             "status": job_execution.status,
             "status_label": JOB_STATUS_LABEL.get(job_execution.status, job_execution.status),
             "log_message": job_execution.error_message,

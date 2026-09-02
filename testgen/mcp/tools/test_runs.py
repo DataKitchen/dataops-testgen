@@ -193,7 +193,7 @@ def get_test_run(
     doc.field("Submitted", summary.created_at)
     doc.field("Started", summary.started_at or "—")
     doc.field("Ended", summary.completed_at or "In progress")
-    duration = format_run_duration(summary.started_at, summary.completed_at)
+    duration = format_run_duration(summary.active_seconds, summary.completed_at)
     if duration:
         doc.field("Duration", duration)
 
@@ -329,7 +329,7 @@ def _render_test_run_section(doc: MdDoc, run: TestRunSummary) -> None:
     doc.field("Submitted", run.created_at)
     doc.field("Started", run.started_at or "—")
     doc.field("Ended", run.completed_at or "In progress")
-    duration = format_run_duration(run.started_at, run.completed_at)
+    duration = format_run_duration(run.active_seconds, run.completed_at)
     if duration:
         doc.field("Duration", duration)
 

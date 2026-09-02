@@ -637,5 +637,8 @@ class TableGroupsPage(Page):
             select_table_groups_minimal_where.clear()
             st.toast(f"Table Group {table_group_name} has been deleted.", icon=":material/check:")
         else:
-            st.toast("This Table Group is in use by a running process and cannot be deleted.", icon=":material/error:")
+            st.toast(
+                "This Table Group has an unfinished run and cannot be deleted. Cancel the run first.",
+                icon=":material/error:",
+            )
         st.session_state.pop("tg_delete_dialog", None)

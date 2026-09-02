@@ -9,9 +9,9 @@ from sqlalchemy import func, select
 
 from testgen.common.date_service import parse_since
 from testgen.common.enums import (
-    INTERRUPT_STATUSES,
     PAUSABLE_JOB_KEYS,
     PII_FLAG_PREFIX_TO_LABEL,
+    STOPPABLE_ONLY_STATUSES,
     Disposition,
     ImpactDimension,
     IssueLikelihood,
@@ -51,6 +51,7 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
 from testgen.mcp.tools.markdown import MdDoc
+from testgen.utils import run_duration_seconds
 
 # User-facing label for ``Disposition.INACTIVE`` is "Muted" — accept that label on input.
 _DISPOSITION_USER_TO_DB: dict[str, Disposition] = {
@@ -322,12 +323,13 @@ def parse_category(value: str) -> ScoreCategory:
 # Maps user-facing run-status labels to underlying ``JobStatus`` values. Transient states
 # (Starting/Canceling) are excluded because they're sub-second and noisy as filters.
 # ``Pending`` collapses PENDING+CLAIMED; ``Canceled`` collapses CANCEL_REQUESTED+CANCELED.
-# ``Interrupted`` covers a run stopped partway through, whether it is still stopping or
-# already queued to continue -- both read to a user as "stopped, will pick up where it left off".
+# ``Interrupted`` and ``Paused`` each cover a run stopped partway through, whether it is still
+# stopping or already parked -- what separates them is whether it picks itself back up.
 _RUN_STATUS_FILTER: dict[str, list[JobStatus]] = {
     "Pending": [JobStatus.PENDING, JobStatus.CLAIMED],
     "Running": [JobStatus.RUNNING],
     "Interrupted": [JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED],
+    "Paused": [JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED, JobStatus.RESUME_REQUESTED],
     "Completed": [JobStatus.COMPLETED],
     "Canceled": [JobStatus.CANCEL_REQUESTED, JobStatus.CANCELED],
     "Error": [JobStatus.ERROR],
@@ -341,7 +343,7 @@ def _run_status_filters_for(job_key: JobKey) -> dict[str, list[JobStatus]]:
     return {
         label: statuses
         for label, statuses in _RUN_STATUS_FILTER.items()
-        if not INTERRUPT_STATUSES.issuperset(statuses)
+        if not STOPPABLE_ONLY_STATUSES.issuperset(statuses)
     }
 
 
@@ -375,11 +377,16 @@ def parse_failure_group_by(value: str) -> FailureGroupBy:
     return parse_enum(value, FailureGroupBy, "group_by")
 
 
-def format_run_duration(started_at: datetime | None, completed_at: datetime | None) -> str | None:
-    """Render an elapsed duration as ``Xs`` / ``Xm Ys`` / ``Xh Ym``. Returns ``None`` if either bound is missing."""
-    if not started_at or not completed_at:
+def format_run_duration(active_seconds: float | None, completed_at: datetime | None) -> str | None:
+    """Render how long a run worked as ``Xs`` / ``Xm Ys`` / ``Xh Ym``, or ``None`` if unfinished.
+
+    Reports the time the run worked, which for one that stopped and continued is less than the
+    span between its start and its end.
+    """
+    resolved = run_duration_seconds(active_seconds, completed_at)
+    if resolved is None:
         return None
-    seconds = int((completed_at - started_at).total_seconds())
+    seconds = int(resolved)
     if seconds < 60:
         return f"{seconds}s"
     if seconds < 3600:

@@ -422,7 +422,7 @@ def get_schedule(
             JOB_STATUS_LABEL.get(je.status, je.status),
             je.started_at,
             je.completed_at,
-            format_run_duration(je.started_at, je.completed_at),
+            format_run_duration(je.active_seconds, je.completed_at),
         ])
     doc.table(
         [_kind_display(sched.key), "Status", "Started", "Completed", "Duration"],

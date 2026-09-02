@@ -1374,21 +1374,28 @@ def test_default_render_diff_value_str():
     assert _default_render_diff_value(42) == "42"
 
 
-def test_interrupted_is_offered_only_where_a_run_can_pause():
-    assert "Interrupted" in run_status_filter_options(JobKey.run_profile)
-    assert "Interrupted" not in run_status_filter_options(JobKey.run_tests)
+@pytest.mark.parametrize("label", ["Interrupted", "Paused"])
+def test_a_stopped_run_is_offered_only_where_a_run_can_stop(label):
+    assert label in run_status_filter_options(JobKey.run_profile)
+    assert label not in run_status_filter_options(JobKey.run_tests)
 
 
-def test_interrupted_is_rejected_for_a_key_that_cannot_pause():
+@pytest.mark.parametrize("label", ["Interrupted", "Paused"])
+def test_a_stopped_run_is_rejected_for_a_key_that_cannot_stop(label):
     """A filter value a run can never hold must error, not silently return nothing."""
     with pytest.raises(MCPUserError) as err:
-        parse_run_status_filter("Interrupted", JobKey.run_tests)
-    assert "Interrupted" not in str(err.value).split("Valid values:")[1]
+        parse_run_status_filter(label, JobKey.run_tests)
+    assert label not in str(err.value).split("Valid values:")[1]
 
 
-def test_interrupted_resolves_to_both_interrupt_statuses_for_profiling():
+def test_the_two_stop_intents_filter_separately():
+    # Only one of them picks itself back up, so collapsing the two would hide which runs are
+    # waiting to be resumed.
     assert parse_run_status_filter("Interrupted", JobKey.run_profile) == [
         JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
+    ]
+    assert parse_run_status_filter("Paused", JobKey.run_profile) == [
+        JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED, JobStatus.RESUME_REQUESTED,
     ]
 
 

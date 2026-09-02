@@ -4,11 +4,11 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String, Text, case, delete, func, select, text, update
+from sqlalchemy import Column, Float, String, Text, case, delete, func, literal, select, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import ColumnElement
 
-from testgen.common.enums import JobSource, JobStatus
+from testgen.common.enums import PAUSABLE_JOB_KEYS, WORKING_STATUSES, JobSource, JobStatus
 from testgen.common.models import Base, database_session, get_current_session
 
 LOG = logging.getLogger("testgen")
@@ -36,6 +36,16 @@ class JobExecution(Base):
     # none_as_null, so clearing a checkpoint writes SQL NULL rather than a JSON null that
     # every IS NULL test would miss.
     resume_state: dict[str, Any] | None = Column(postgresql.JSONB(none_as_null=True), nullable=True)
+    # Seconds this job spent actually working, summed over however many processes ran it, and
+    # the only answer any display gives for how long a run took. Every route out of a working
+    # status records a segment, so NULL means the run never worked rather than that nobody
+    # looked -- which is what lets the displays read this alone.
+    #
+    # A process that dies alone is reaped by the scheduler and billed then and there. Only a
+    # death that takes the scheduler with it waits for the next start to settle the row, and
+    # that segment runs to the recovery, so it carries the downtime with it. A run that was
+    # claimed but never started records nothing at all, since none of that time was work.
+    active_seconds: float | None = Column(Float, nullable=True)
 
     @classmethod
     def submit(
@@ -67,9 +77,10 @@ class JobExecution(Base):
     def claim_actionable(cls, limit: int = 5) -> list[Self]:
         """Claim startable rows and fetch cancel_requested rows in one query.
 
-        PENDING (fresh start) and INTERRUPTED (continue an earlier run) both transition
-        to claimed; the resume state on the row is what tells them apart, so the dispatch path
-        is identical. Cancel_requested rows are returned as-is for the scheduler to act on.
+        PENDING (fresh start), INTERRUPTED (a shutdown stopped it) and RESUME_REQUESTED (a resume
+        was requested) all transition to claimed; the resume state on the row is what tells
+        a fresh start from a continuation, so the dispatch path is identical for all three.
+        Cancel_requested rows are returned as-is for the scheduler to act on.
         Uses SELECT FOR UPDATE SKIP LOCKED to prevent concurrent processing. Every returned
         row is claimed or cancel_requested.
         """
@@ -136,18 +147,36 @@ class JobExecution(Base):
         own is not enough: inferring a continue from it would claim a run whose process is
         merely unreachable -- ``exec-job`` is started in its own session and outlives its
         scheduler -- and hand a second worker the same run.
+
+        Where it continues from follows what stopped it. A run someone asked to pause is held at
+        PAUSED, because releasing it is a decision rather than a consequence; anything else is
+        queued at INTERRUPTED for the next poll. Parking runs first, so a pause carrying a
+        checkpoint is settled before the cancel pass can reach it.
         """
+        # Each pass ends a working period, so each bills what the dead process worked. Rows only
+        # reach here when the scheduler died too -- one that merely lost its subprocess was
+        # billed when the wrapper reaped it -- so the segment runs to this restart and carries
+        # the downtime. Recording nothing would instead read as no work at all. A row that was
+        # claimed and never started is the exception, and records nothing because that is true.
+        paused = cls._transition_bulk_where(
+            JobStatus.PAUSED,
+            cls.status == JobStatus.PAUSE_REQUESTED,
+            cls.resume_state.isnot(None),
+        )
         resumable = cls._transition_bulk_where(
             JobStatus.INTERRUPTED,
             cls.status.in_(JobStatus.stale_recoverable()),
             cls.resume_state.isnot(None),
         )
         canceled = cls._transition_bulk_where(
-            JobStatus.CANCEL_REQUESTED, cls.status.in_(JobStatus.stale_recoverable())
+            JobStatus.CANCEL_REQUESTED,
+            cls.status.in_(JobStatus.stale_recoverable()),
         )
+        if paused:
+            LOG.info("Parked %d job execution(s) that a previous session was pausing", len(paused))
         if resumable:
             LOG.info("Queued %d job execution(s) to continue from their checkpoint", len(resumable))
-        return len(resumable) + len(canceled)
+        return len(paused) + len(resumable) + len(canceled)
 
     @classmethod
     def get(cls, execution_id: UUID) -> Self | None:
@@ -220,10 +249,14 @@ class JobExecution(Base):
         widen the lifecycle guard.
         """
         session = get_current_session()
+        billable = (
+            set() if target in WORKING_STATUSES
+            else set(JobStatus.sources_for(target)) & WORKING_STATUSES
+        )
         return set(session.scalars(
             update(cls)
             .where(cls.status.in_(JobStatus.sources_for(target)), *clauses)
-            .values(status=target.value)
+            .values(status=target.value, **cls._bill_worked_from(billable))
             .returning(cls.id)
         ).all())
 
@@ -244,6 +277,53 @@ class JobExecution(Base):
             cls.status == JobStatus.RUNNING,
         )
 
+    @classmethod
+    def _worked_segment(cls) -> ColumnElement[float]:
+        """Seconds this process worked, added to whatever earlier processes recorded.
+
+        Measured from ``claimed_at``, which every claim restamps, so it marks where the current
+        process began rather than where the run did and the sum across resumes needs no other
+        bookkeeping.
+
+        Both ends come from an application clock rather than the database's, which is also what
+        wrote ``claimed_at``. Not always the same process -- a cancel is asked for wherever the
+        request arrives -- but the same host in every topology this ships in, where taking one
+        end from the database would instead fold app-to-database skew into every answer.
+        """
+        return func.coalesce(cls.active_seconds, 0.0) + func.extract(
+            "epoch", literal(datetime.now(UTC)) - cls.claimed_at
+        )
+
+    @classmethod
+    def _bill_worked_from(cls, sources: set[JobStatus]) -> dict[str, Any]:
+        """The ``active_seconds`` write for a transition out of ``sources``, or nothing at all.
+
+        ``sources`` is the set a transition bills from, and it is read off the lifecycle rather
+        than chosen: a row bills when it leaves the working period, meaning it was in a status
+        where a process was doing the work and the status it moves to is not one of those.
+
+        Both halves matter. The segment runs from the claim, not from the previous transition,
+        so billing it again on a step taken *within* the working period -- CLAIMED to RUNNING is
+        one -- would add the whole span a second time. And a row arriving from a status that was
+        not working has either done nothing yet or been billed already.
+
+        Gated on the run having started as well. A row can be claimed and never dispatched, and
+        the span from its claim is then not work anybody did: billing it would charge a run that
+        never began for the whole time until something noticed.
+        """
+        if not sources:
+            return {}
+        ordered = JobStatus.ordered(sources)
+        return {
+            "active_seconds": case(
+                (
+                    cls.status.in_(ordered) & cls.started_at.isnot(None),
+                    cls._worked_segment(),
+                ),
+                else_=cls.active_seconds,
+            )
+        }
+
     def _transition(self, *targets: JobStatus, **values: Any) -> bool:
         """Transition to a new status, guarded by the valid-transitions map.
 
@@ -260,17 +340,20 @@ class JobExecution(Base):
         cases = []
         all_valid_from = []
         consumed: set[JobStatus] = set()
+        billable: set[JobStatus] = set()
         for target in targets:
             valid_from = set(JobStatus.sources_for(target)) - consumed
             if valid_from:
                 cases.append((cls.status.in_([s.value for s in valid_from]), target.value))
                 all_valid_from.extend(s.value for s in valid_from)
                 consumed |= valid_from
+                if target not in WORKING_STATUSES:
+                    billable |= valid_from & WORKING_STATUSES
 
         row = session.execute(
             update(cls)
             .where(cls.id == self.id, cls.status.in_(all_valid_from))
-            .values(status=case(*cases), **values)
+            .values(status=case(*cases), **cls._bill_worked_from(billable), **values)
             .returning(cls)
         ).scalar_one_or_none()
         if row is not None:
@@ -291,9 +374,29 @@ class JobExecution(Base):
             started_at=func.coalesce(type(self).started_at, datetime.now(UTC)),
         )
 
-    def mark_interrupted(self, resume_state: dict[str, Any]) -> bool:
-        """Stop the run and persist its checkpoint in one statement."""
-        return self._transition(JobStatus.INTERRUPTED, resume_state=resume_state)
+    def park(self, resume_state: dict[str, Any]) -> bool:
+        """Stop the run and persist its checkpoint in one statement.
+
+        Which parked status it lands in follows from the request that stopped it, so the job
+        never has to be told which intent it is serving: an interrupted run is queued for the
+        next poll, a paused one waits to be asked back.
+        """
+        return self._transition(JobStatus.INTERRUPTED, JobStatus.PAUSED, resume_state=resume_state)
+
+    def request_pause(self) -> bool:
+        """Ask a running job to stop at a work-key boundary and stay stopped.
+
+        Refused for a job key with no cooperative machinery behind it, since nothing would ever
+        park the row: it would read as pausing forever, with no process looking at the request.
+        """
+        if self.job_key not in PAUSABLE_JOB_KEYS:
+            LOG.warning("Job %s (%s) cannot be paused", self.id, self.job_key)
+            return False
+        return self._transition(JobStatus.PAUSE_REQUESTED)
+
+    def request_resume(self) -> bool:
+        """Hand a paused job back to the poll."""
+        return self._transition(JobStatus.RESUME_REQUESTED)
 
     def mark_canceled(self) -> bool:
         return self._transition(JobStatus.CANCELED, completed_at=datetime.now(UTC))
@@ -306,4 +409,6 @@ class JobExecution(Base):
 
     def mark_failed(self, error_message: str) -> bool:
         """Mark as ERROR, or CANCELED if a cancellation was requested concurrently."""
-        return self._transition(JobStatus.ERROR, JobStatus.CANCELED, completed_at=datetime.now(UTC), error_message=error_message)
+        return self._transition(
+            JobStatus.ERROR, JobStatus.CANCELED, completed_at=datetime.now(UTC), error_message=error_message
+        )
