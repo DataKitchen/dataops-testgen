@@ -22,6 +22,51 @@ LOG = logging.getLogger("testgen")
 
 class ProfilingRunEmailTemplate(BaseNotificationTemplate):
 
+    event_type = "profiling_run"
+
+    def webhook_data(self, context) -> dict:
+        """Plain-value snapshot of a profiling-run event for the webhook payload's ``data`` field."""
+        ctx = context or {}
+        pr = ctx.get("profiling_run") or {}
+
+        def _iso(value):
+            return value.isoformat() if value is not None else None
+
+        # Issue entries in ``hygiene_issues_summary[*].issues`` are dicts assembled
+        # earlier in this module ({"table_name", "column_name", "issue_name",
+        # "is_new", "detail"}); use dict access, not getattr, so fields don't
+        # silently land as null.
+        issues = []
+        for group in ctx.get("hygiene_issues_summary") or []:
+            for issue in group.get("issues") or []:
+                issues.append({
+                    "table": issue.get("table_name"),
+                    "columns": issue.get("column_name"),
+                    "issue": issue.get("issue_name"),
+                    "likelihood": group.get("priority"),
+                    "is_new": bool(issue.get("is_new")),
+                })
+
+        return {
+            "status": pr.get("status_label") or pr.get("status"),
+            "table_group": ctx.get("table_groups_name"),
+            "schema": ctx.get("table_group_schema"),
+            "started_at": _iso(pr.get("start_time")),
+            "completed_at": _iso(pr.get("end_time")),
+            "table_count": pr.get("table_ct"),
+            "column_count": pr.get("column_ct"),
+            "issue_count": ctx.get("issue_count"),
+            "hygiene_issues": issues,
+        }
+
+    def webhook_project_name(self, context) -> str | None:
+        return (context or {}).get("project_name")
+
+    def webhook_summary_url(self, context) -> str | None:
+        # The "View issues" link email templates use as the primary click-through.
+        pr = (context or {}).get("profiling_run") or {}
+        return pr.get("issues_url") or pr.get("results_url")
+
     def get_subject_template(self) -> str:
         return (
             "[TestGen] Profiling Run {{profiling_run.status_label}}: {{table_groups_name}}"
@@ -324,6 +369,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
                 )
             ),
             "start_time": job_execution.started_at,
+            "end_time": job_execution.completed_at,
             # The time the run worked, not the span it covered: a paused run covers more of the
             # latter, and the email would otherwise disagree with every other surface reporting
             # the same run.

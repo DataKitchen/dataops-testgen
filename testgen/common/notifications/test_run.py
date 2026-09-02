@@ -20,6 +20,54 @@ LOG = logging.getLogger("testgen")
 
 class TestRunEmailTemplate(BaseNotificationTemplate):
 
+    event_type = "test_run"
+
+    def webhook_data(self, context) -> dict:
+        """Plain-value snapshot of a test-run event for the webhook payload's ``data`` field."""
+        tr = (context or {}).get("test_run")
+        if tr is None:
+            return {}
+
+        def _iso(value):
+            return value.isoformat() if value is not None else None
+
+        summary_rows = (context or {}).get("test_result_summary") or []
+        failing = []
+        for section in summary_rows:
+            for result in section.get("result_list", []) or []:
+                failing.append({
+                    "status": section.get("status"),
+                    "table": result.get("table_name"),
+                    "columns": result.get("column_names"),
+                    "test_type": result.get("test_type"),
+                    "message": result.get("message"),
+                    "is_new": bool(result.get("is_new")),
+                })
+
+        return {
+            "status": getattr(tr, "status_label", None) or getattr(tr, "status", None),
+            "test_suite": getattr(tr, "test_suite", None),
+            "table_group": getattr(tr, "table_groups_name", None),
+            "started_at": _iso(getattr(tr, "started_at", None)),
+            "completed_at": _iso(getattr(tr, "completed_at", None)),
+            "counts": {
+                "total": getattr(tr, "test_ct", None),
+                "passed": getattr(tr, "passed_ct", None),
+                "warning": getattr(tr, "warning_ct", None),
+                "failed": getattr(tr, "failed_ct", None),
+                "error": getattr(tr, "error_ct", None),
+                "dismissed": getattr(tr, "dismissed_ct", None),
+            },
+            "failing_tests": failing,
+        }
+
+    def webhook_project_name(self, context) -> str | None:
+        tr = (context or {}).get("test_run")
+        return getattr(tr, "project_name", None) if tr is not None else None
+
+    def webhook_summary_url(self, context) -> str | None:
+        return (context or {}).get("test_run_url")
+
     def get_subject_template(self) -> str:
         return (
             "[TestGen] Test Run {{test_run.status_label}}: {{test_run.test_suite}}"

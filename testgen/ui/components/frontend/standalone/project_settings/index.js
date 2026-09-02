@@ -40,6 +40,7 @@ const { div, span } = van.tags;
  * @property {VanState<{profiling_count: number, test_count: number}?>} retention_preview
  * @property {VanState<object[]>} destinations
  * @property {VanState<boolean>} smtp_configured
+ * @property {VanState<object?>} destination_test_result
  *
  * @param {Properties} props
  */
@@ -326,6 +327,7 @@ const ProjectSettings = (props) => {
         NotificationDestinationsSection(
             {
                 destinations: props.destinations,
+                destination_test_result: props.destination_test_result,
                 smtp_configured: props.smtp_configured,
             },
             emit,

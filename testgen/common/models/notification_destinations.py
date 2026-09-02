@@ -8,7 +8,7 @@ from sqlalchemy import Column, ForeignKey, String, func, select
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models import get_current_session
-from testgen.common.models.custom_types import JSON_TYPE, EncryptedJson
+from testgen.common.models.custom_types import JSON_TYPE, SafeEncryptedJson
 from testgen.common.models.entity import Entity
 from testgen.common.models.notification_settings import (
     NotificationSettingsValidationError,
@@ -50,7 +50,13 @@ class NotificationDestination(Entity):
     name: str = Column(String(100), nullable=False)
     destination_type: str = Column(String(20), nullable=False)
     config: JSON_TYPE = Column(postgresql.JSONB, nullable=False, default=dict)
-    secrets: JSON_TYPE = Column(EncryptedJson, nullable=True)
+    # ``SafeEncryptedJson`` returns ``None`` (and logs) on decrypt failure
+    # instead of raising during row hydration. A single undecryptable row
+    # (typically from a ``TG_DECRYPT_PASSWORD`` rotation with no re-encryption)
+    # would otherwise 500 the entire destinations list, email destinations
+    # included. ``_validate`` still requires ``url`` at save time, so a live
+    # destination will not silently deliver with missing secrets.
+    secrets: JSON_TYPE = Column(SafeEncryptedJson, nullable=True)
 
     __mapper_args__: ClassVar = {
         "polymorphic_on": destination_type,
@@ -166,13 +172,40 @@ class WebhookDestination(NotificationDestination):
         # Do not silently coerce an unknown stored value to ``None`` (or via
         # ``wrap_for`` to the generic envelope): a corrupted config would
         # otherwise ship a differently-shaped payload to hooks.slack.com. Fail
-        # loudly so the corruption surfaces.
+        # loudly so the corruption surfaces on ``_validate`` and ``deliver``.
+        # Read-path callers that must not 500 the whole list use
+        # ``webhook_type_safe`` instead.
         return WebhookType(raw)
+
+    @property
+    def webhook_type_safe(self) -> WebhookType | None:
+        """``webhook_type``, or ``None`` when the stored value is unrecognized.
+
+        For read paths that render many destinations at once -- the REST and MCP
+        list/detail serializers, the Project Settings table, the notification
+        dialog's destination picker. One row with a corrupted ``config`` would
+        otherwise raise mid-serialization and take down the whole surface.
+        ``_validate`` and ``deliver`` deliberately use the strict property so
+        the corruption still surfaces where acting on it matters.
+        """
+        try:
+            return self.webhook_type
+        except ValueError:
+            return None
 
     @webhook_type.setter
     def webhook_type(self, value: WebhookType | str | None) -> None:
         stored = value.value if isinstance(value, WebhookType) else value
-        self.config = {**(self.config or {}), "webhook_type": stored}
+        config = {**(self.config or {}), "webhook_type": stored}
+        # Only the generic type carries an authorization header, so moving to any
+        # other type drops it here rather than failing validation. The fields are
+        # hidden on the form the moment the type changes, which leaves no way to
+        # clear them by hand, so a stored header would make the switch impossible
+        # on every write path at once.
+        if stored != WebhookType.generic.value:
+            config.pop("auth_header_name", None)
+            self.secrets = {**(self.secrets or {}), "auth_header_value": None}
+        self.config = config
 
     @property
     def url(self) -> str | None:
@@ -209,8 +242,18 @@ class WebhookDestination(NotificationDestination):
 
     @property
     def target_summary(self) -> str:
-        type_label = WEBHOOK_TYPE_LABELS.get(self.webhook_type, "Webhook") if self.webhook_type else "Webhook"
-        host = urlparse(self.url).netloc if self.url else ""
+        # A corrupted ``webhook_type`` or an undecryptable secrets blob must not
+        # 500 the destinations list from inside ``list_for_project``, so both
+        # reads degrade instead of raising.
+        webhook_type = self.webhook_type_safe
+        type_label = WEBHOOK_TYPE_LABELS.get(webhook_type, "Webhook")
+        # ``SafeEncryptedJson`` already returns ``None`` for an undecryptable
+        # ``secrets`` blob, so ``url`` cannot raise here.
+        url = self.url
+        # ``hostname`` strips userinfo so a stored ``user:pass@`` URL cannot
+        # leak the credential portion into the Project Settings "Sends To"
+        # column; matches ``mask_webhook_url`` on the same read path.
+        host = urlparse(url).hostname if url else ""
         return f"{type_label} — {host}" if host else type_label
 
     def _validate(self) -> None:
@@ -277,15 +320,39 @@ def _validate_webhook_auth_header(name: str | None, value: str | None) -> None:
         # A missing value is fine; a name without a value is fine too (harmless).
         if name and _HEADER_VALUE_FORBIDDEN.search(name):
             raise NotificationSettingsValidationError(messages.WEBHOOK_AUTH_HEADER_NAME_INVALID)
+        if name and _is_reserved_header_name(name):
+            raise NotificationSettingsValidationError(messages.WEBHOOK_AUTH_HEADER_NAME_RESERVED)
         return
     if not name or not name.strip():
         raise NotificationSettingsValidationError(messages.WEBHOOK_AUTH_HEADER_NAME_MISSING)
     if not _HEADER_NAME_RE.match(name) or _HEADER_VALUE_FORBIDDEN.search(name):
         raise NotificationSettingsValidationError(messages.WEBHOOK_AUTH_HEADER_NAME_INVALID)
+    if _is_reserved_header_name(name):
+        # Names on the transport denylist ``Host`` / ``Content-Type`` / ``Content-Length`` /
+        # ``Transfer-Encoding`` / ``Connection`` and every ``X-TestGen-`` header would either
+        # break delivery, spoof the built-in event tag a receiver may route on, or (in the
+        # case of ``Host``) enable vhost confusion against a receiver on a shared IP.
+        raise NotificationSettingsValidationError(messages.WEBHOOK_AUTH_HEADER_NAME_RESERVED)
     if _HEADER_VALUE_FORBIDDEN.search(value):
         # Malformed header values are treated the same as invalid names -- the receiver
         # cannot distinguish, and this catches header-injection attempts.
         raise NotificationSettingsValidationError(messages.WEBHOOK_AUTH_HEADER_NAME_INVALID)
+
+
+_RESERVED_HEADER_NAMES: frozenset[str] = frozenset({
+    "host",
+    "content-type",
+    "content-length",
+    "transfer-encoding",
+    "connection",
+})
+
+
+def _is_reserved_header_name(name: str) -> bool:
+    lowered = name.strip().lower()
+    if lowered in _RESERVED_HEADER_NAMES:
+        return True
+    return lowered.startswith("x-testgen-")
 
 
 def mask_webhook_url(url: str | None) -> str:
@@ -315,8 +382,11 @@ def mask_webhook_url(url: str | None) -> str:
         return f"{base}/•••"
     first_segment, _, rest = path.partition("/")
     if rest:
+        # Multi-segment path: keep the leading segment (Slack ``services``,
+        # Teams ``workflows``, etc.) as identity and mask the rest.
         return f"{base}/{first_segment}/•••"
-    return f"{base}/{first_segment}/•••"
+    # Single-segment path: ``first_segment`` IS the credential portion, drop it.
+    return f"{base}/•••"
 
 
 class InlineRecipientList:

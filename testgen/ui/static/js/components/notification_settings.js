@@ -15,7 +15,9 @@
  * @property {string} id
  * @property {string} name
  * @property {string} destination_type
- * @property {string[]} recipients
+ * @property {string?} webhook_type Present only on webhook destinations; drives the
+ *   Slack / Microsoft Teams / Generic label. Recipient addresses are deliberately
+ *   NOT sent to this component -- see ``manage_notifications.build_data``.
  *
  * @typedef Subtitle
  * @type {object}
@@ -64,6 +66,20 @@ import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty
 
 const { div, span, b } = van.tags;
 
+const WEBHOOK_TYPE_DISPLAY = {
+    slack: 'Slack',
+    microsoft_teams: 'Microsoft Teams',
+    generic: 'Generic',
+};
+
+const destinationTypeLabel = (dest) => {
+    if (dest.destination_type === 'email') return 'Email';
+    if (dest.destination_type === 'webhook') {
+        return WEBHOOK_TYPE_DISPLAY[dest.webhook_type] ?? 'Webhook';
+    }
+    return dest.destination_type;
+};
+
 const NotificationSettings = (/** @type Properties */ props) => {
     const emit = props.emit;
   loadStylesheet('notification-settings', stylesheet);
@@ -99,7 +115,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
   const notifyOptions = van.derive(() => {
     const options = [{ value: '__inline__', label: 'Email addresses' }];
     for (const dest of destinations.val) {
-      const typeLabel = dest.destination_type === 'email' ? 'Email' : dest.destination_type;
+      const typeLabel = destinationTypeLabel(dest);
       options.push({ value: dest.id, label: `${dest.name} (${typeLabel})` });
     }
     return options;
@@ -182,7 +198,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                   ? div(
                       { class: 'flex-column fx-gap-1' },
                       span(dest.name),
-                      span({ class: 'text-caption' }, dest.destination_type === 'email' ? 'Email destination' : dest.destination_type),
+                      span({ class: 'text-caption' }, `${destinationTypeLabel(dest)} destination`),
                     )
                   : span({ class: 'text-caption text-warning' }, 'Destination not found');
               })()
@@ -463,11 +479,24 @@ const NotificationSettings = (/** @type Properties */ props) => {
   // and the items list would not update when the dialog is reopened.
   const mainContent = mainContentBuilder();
 
+  // A rule delivers to either an email recipient list or a destination, and only
+  // the email side needs SMTP. The empty state stands in for the form only when
+  // there is no destination to address either, since nothing can deliver then.
+  const noDeliveryPossible = van.derive(() => !smtpConfigured.val && destinations.val.length <= 0);
+
   const content = div(
-    div({ style: () => smtpConfigured.val ? '' : 'display: none' }, mainContent),
-    () => smtpConfigured.val
-      ? ''
-      : EmptyState({ emit, 
+    div(
+      { style: () => noDeliveryPossible.val ? 'display: none' : '' },
+      () => smtpConfigured.val
+        ? ''
+        : Alert(
+          { type: 'warn', icon: 'warning', class: 'mb-0' },
+          'Email recipients cannot deliver until an email server is configured. Webhook destinations are unaffected.',
+        ),
+      mainContent,
+    ),
+    () => noDeliveryPossible.val
+      ? EmptyState({ emit, 
         label: 'Email server not configured.',
         message: EMPTY_STATE_MESSAGE.notifications,
         class: 'notifications--empty',
@@ -476,7 +505,8 @@ const NotificationSettings = (/** @type Properties */ props) => {
           href: 'https://docs.datakitchen.io/articles/dataops-testgen-help/configure-email-server',
           open_new: true,
         },
-      }),
+      })
+      : '',
   );
 
   if (dialogProp) {

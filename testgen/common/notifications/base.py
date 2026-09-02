@@ -78,11 +78,50 @@ class BaseEmailTemplate:
 
             raise EmailTemplateException("Invalid or insufficient email/SMTP settings")
 
+    event_type: str = ""
+    """Value of ``NotificationEvent`` this template renders for. Set by subclasses.
+    Tags webhook payloads so a receiver can route by event.
+    """
+
     def get_subject_template(self) -> str:
         raise NotImplementedError
 
     def get_body_template(self) -> str:
         raise NotImplementedError
+
+    def webhook_summary(self, context: Mapping | None) -> str:
+        """Rendered subject line with the ``[TestGen] `` prefix stripped.
+
+        Reuses the compiled subject template so a receiver sees the same wording
+        the matching email would carry, without prefix.
+        """
+        subject = self.compiled_subject(context or {}) or ""
+        return subject.removeprefix("[TestGen] ")
+
+    def webhook_data(self, context: Mapping | None) -> dict:  # noqa: ARG002
+        """Plain-value event data for the webhook envelope's ``data`` field.
+
+        Base returns ``{}``; subclasses override to expose event-specific facts.
+        """
+        return {}
+
+    def webhook_project_name(self, context: Mapping | None) -> str | None:  # noqa: ARG002
+        """Human-readable project name for the webhook envelope's ``project.name``.
+
+        Base returns ``None``; each event subclass extracts the value from the
+        shape its handler assembles (a nested summary attribute, a top-level key,
+        etc.) so the envelope schema stays uniform across events.
+        """
+        return None
+
+    def webhook_summary_url(self, context: Mapping | None) -> str | None:  # noqa: ARG002
+        """Click-through URL for the webhook envelope's ``url`` field.
+
+        Base returns ``None``; each event subclass returns the URL its email
+        template uses as its "View on TestGen" link so a webhook receiver can
+        offer the same navigation.
+        """
+        return None
 
     def get_message(self, recipients: list[str], context: Mapping | None) -> MIMEMultipart:
         subject = self.compiled_subject(context)

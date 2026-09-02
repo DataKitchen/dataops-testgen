@@ -171,8 +171,8 @@ class NotificationSettingsDialogBase:
                 "name": d.name,
                 "destination_type": d.destination_type,
             }
-            if isinstance(d, WebhookDestination) and d.webhook_type is not None:
-                entry["webhook_type"] = d.webhook_type.value
+            if isinstance(d, WebhookDestination) and d.webhook_type_safe is not None:
+                entry["webhook_type"] = d.webhook_type_safe.value
             destination_options.append(entry)
 
         ns_json_list = []
