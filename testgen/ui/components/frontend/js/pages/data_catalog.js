@@ -461,6 +461,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
         label: 'Export',
         items: () => {
             const items = [
+                { header: 'Excel' },
                 {
                     label: 'All columns',
                     onclick: () => emit('ExportClicked', { payload: null }),
@@ -505,11 +506,10 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                     },
                 });
             }
-            items.push({
-                label: 'Metadata CSV',
-                separator: true,
-                onclick: () => emit('ExportCsvClicked', {}),
-            });
+            items.push(
+                { header: 'CSV' },
+                { label: 'Metadata', onclick: () => emit('ExportCsvClicked', {}) },
+            );
             return items;
         },
     });

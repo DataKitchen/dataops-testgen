@@ -15,6 +15,7 @@ import { Tabs, Tab } from '/app/static/js/components/tabs.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
+import { ImportTestDefinitionsDialog } from './import_test_definitions_dialog.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { dot } from '/app/static/js/components/dot.js';
@@ -103,6 +104,14 @@ const TestDefinitions = (/** @type object */ props) => {
     // Notes dialog: persistent local state + one-time sync from Python prop
     const notesDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.notes_dialog)) notesDialogOpen.val = true; });
+
+    const importDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.import_dialog)) importDialogOpen.val = true; });
+    // Owned here, not in the dialog: the dialog is rebuilt on every rerender, so state
+    // declared inside it would reset the user's choice when the preview comes back.
+    const importBehavior = van.state('upsert');
+    const importDeleteConfirmed = van.state(false);
+    const importFileValue = van.state(null);
 
     const permissions = van.derive(() => getValue(props.permissions) ?? {});
     const canEdit = van.derive(() => getValue(permissions).can_edit ?? false);
@@ -498,6 +507,23 @@ const TestDefinitions = (/** @type object */ props) => {
             () => selectedRowId.val || selectedIdsCount.val > 0,
             getSelectedDefinitionIds,
         ),
+        () => canEdit.val
+            ? Button({
+                type: 'stroked',
+                color: 'basic',
+                icon: 'upload',
+                label: 'Import',
+                width: 'fit-content',
+                size: 'small',
+                style: 'background-color: var(--button-generic-background-color);',
+                onclick: () => {
+                    importBehavior.val = 'upsert';
+                    importDeleteConfirmed.val = false;
+                    importFileValue.val = null;
+                    emit('ImportDialogOpened', {});
+                },
+            })
+            : '',
     );
 
     // Build table once
@@ -676,6 +702,37 @@ const TestDefinitions = (/** @type object */ props) => {
             },
         ),
 
+        // Import test definitions dialog
+        Dialog(
+            {
+                title: 'Import Test Definitions',
+                open: importDialogOpen,
+                onClose: () => {
+                    importDialogOpen.val = false;
+                    emit('ImportDialogClosed', {});
+                },
+                width: '50rem',
+            },
+            () => {
+                const data = getValue(props.import_dialog);
+                if (!data) return span();
+                return ImportTestDefinitionsDialog({ emit,
+                    preview: data.preview,
+                    result: data.result,
+                    behavior: importBehavior,
+                    deleteConfirmed: importDeleteConfirmed,
+                    fileValue: importFileValue,
+                    onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
+                    onFileCleared: () => emit('ImportFileCleared', {}),
+                    onImportConfirmed: () => emit('ImportConfirmed', {}),
+                    onAutoClose: () => {
+                        importDialogOpen.val = false;
+                        emit('ImportDialogClosed', {});
+                    },
+                });
+            },
+        ),
+
         // --- Top bar: filters + Add + Run Tests ---
         div(
             { class: 'flex-row fx-align-flex-end fx-gap-3 fx-flex-wrap' },
@@ -800,6 +857,7 @@ const ExportMenu = (props, testDefinitions, hasSelection, getSelectedIds) => {
         buttonSize: 'small',
         items: () => {
             const items = [
+                { header: 'Excel' },
                 { label: 'All tests', onclick: () => emit('ExportAll', {}) },
                 {
                     label: 'Filtered tests',
@@ -812,6 +870,10 @@ const ExportMenu = (props, testDefinitions, hasSelection, getSelectedIds) => {
                     onclick: () => emit('ExportSelected', { payload: { ids: getSelectedIds() } }),
                 });
             }
+            items.push(
+                { header: 'JSON' },
+                { label: 'Test definitions', onclick: () => emit('ExportJson', {}) },
+            );
             return items;
         },
     });
