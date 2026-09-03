@@ -118,6 +118,10 @@ const DataCatalog = (/** @type Properties */ props) => {
     // Import dialog: persistent local state + one-time sync from Python prop
     const importDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.import_metadata_dialog)) importDialogOpen.val = true; });
+    // Owned here, not in the dialog: the dialog is rebuilt on every rerender, so state
+    // declared inside it would reset the user's choice when the preview comes back.
+    const importBlankBehavior = van.state('keep');
+    const importFileValue = van.state(null);
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
@@ -243,7 +247,11 @@ const DataCatalog = (/** @type Properties */ props) => {
                             tooltipPosition: 'left',
                             width: 'fit-content',
                             style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emit('ImportClicked', {}),
+                            onclick: () => {
+                                importBlankBehavior.val = 'keep';
+                                importFileValue.val = null;
+                                emit('ImportClicked', {});
+                            },
                         })
                         : null,
                     ExportOptions(treeNodes, multiSelectedItems, userCanEdit, emit),
@@ -440,6 +448,8 @@ const DataCatalog = (/** @type Properties */ props) => {
                     return ImportMetadataDialog({ emit,
                         preview: data.preview,
                         result: data.result,
+                        blankBehavior: importBlankBehavior,
+                        fileValue: importFileValue,
                         onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
                         onFileCleared: () => emit('ImportFileCleared', {}),
                         onImportConfirmed: () => emit('ImportConfirmed', {}),

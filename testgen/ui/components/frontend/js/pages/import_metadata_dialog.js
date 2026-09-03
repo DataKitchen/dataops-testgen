@@ -3,6 +3,8 @@
  * @type {object}
  * @property {object|null} preview
  * @property {object|null} result
+ * @property {object} blankBehavior
+ * @property {object} fileValue
  * @property {Function?} onAutoClose
  */
 import van from '/app/static/js/van.min.js';
@@ -11,6 +13,7 @@ import { RadioGroup } from '/app/static/js/components/radio_group.js';
 import { FileInput } from '/app/static/js/components/file_input.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Alert } from '/app/static/js/components/alert.js';
+import { Icon } from '/app/static/js/components/icon.js';
 import { Table } from '/app/static/js/components/table.js';
 import { capitalize } from '/app/static/js/display_utils.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
@@ -18,14 +21,14 @@ import { sizeLimit } from '/app/static/js/form_validators.js';
 
 const CSV_SIZE_LIMIT = 2 * 1024 * 1024; // 2 MB
 
-const { div, i, span } = van.tags;
+const { div, span } = van.tags;
 
 const ImportMetadataDialog = (/** @type Properties */ props) => {
     const emit = props.emit;
     loadStylesheet('import-metadata-dialog', stylesheet);
 
-    const blankBehavior = van.state('keep');
-    const fileValue = van.state(null);
+    const blankBehavior = props.blankBehavior;
+    const fileValue = props.fileValue;
     let autoCloseScheduled = false;
 
     return div(
@@ -37,6 +40,11 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
             validators: [sizeLimit(CSV_SIZE_LIMIT)],
             value: fileValue,
             onChange: (value) => {
+                // FileInput replays onChange when it mounts. The caller owns fileValue, so on a
+                // rebuild that replay arrives holding the same file and would re-parse it.
+                if (value === fileValue.val) {
+                    return;
+                }
                 const hadFile = fileValue.val?.content;
                 fileValue.val = value;
                 if (value?.content) {
@@ -176,11 +184,8 @@ const PreviewTable = (preview, emit) => {
         const icon = STATUS_ICONS[status] || STATUS_ICONS.ok;
         const truncatedFields = row._truncated_fields || [];
 
-        const statusIcon = i(
-            {
-                class: `material-symbols-rounded import-status-${status}`,
-                style: 'font-size: 16px; cursor: default; overflow: visible; position: relative',
-            },
+        const statusIcon = Icon(
+            { size: 18, classes: `import-status-${status} display-table-cell` },
             icon,
         );
 
