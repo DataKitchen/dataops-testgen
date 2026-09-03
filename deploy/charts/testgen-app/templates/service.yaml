@@ -16,5 +16,14 @@ spec:
       nodePort: {{ . }}
       {{- end }}
       {{- end }}
+    - port: {{ .Values.service.apiPort }}
+      targetPort: api
+      protocol: TCP
+      name: api
+      {{- if eq .Values.service.type "NodePort" }}
+      {{- with .Values.service.apiNodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+      {{- end }}
   selector:
     {{- include "testgen.selectorLabels" . | nindent 4 }}
