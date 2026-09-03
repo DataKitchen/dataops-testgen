@@ -1,20 +1,33 @@
 # Default values for testgen.
 
 testgen:
+  # Application database. The database and schema are created on install.
   databaseHost: "postgres"
+  databasePort: 5432
   databaseName: "datakitchen"
   databaseSchema: "tgapp"
+  # Role TestGen connects as. Needs CREATEDB and CREATEROLE on first install.
   databaseUser: "postgres"
+  # Secret and key holding the password for databaseUser.
   databasePasswordSecret:
     name: "services-secret"
     key: "postgres-password"
+  # Secret holding decrypt-salt, decrypt-password and jwt-hashing-key, which
+  # encrypt stored database credentials and sign session tokens. Supply your own
+  # secret and set create: false when the application database lives outside the
+  # cluster: credentials stored under one salt cannot be read back under another.
   authSecrets:
     create: true
     name: testgen-auth
+  # Initial administrator account, created when the database is first prepared.
+  # Both values can be removed once the account exists.
   uiUser: "admin"
   uiPassword:
+  # Trust the server certificate when connecting to the databases under test.
   trustTargetDatabaseCertificate: false
+  # Verify the server certificate when exporting results to DataOps Observability.
   observabilityVerifySsl: true
+  # Sender address and SMTP server used for notification emails.
   emailNotifications:
     fromAddress:
     smtp:
@@ -22,9 +35,28 @@ testgen:
       port:
       username:
       password:
+  # Externally reachable URL of the UI
   uiBaseUrl:
+  # Externally reachable URL of the API and MCP server
+  baseUrl:
+  # Name that identifies this TestGen instance.
+  instanceId:
+  # Additional labels added to every resource the chart creates.
   labels:
 
+# Any additional environment variable, in Kubernetes env format. Use this for
+# settings the values above do not cover.
+extraEnv: []
+# - name: TG_ANALYTICS
+#   value: "no"
+
+# Additional volumes and mounts, for configuration files the application reads,
+# such as a database certificate authority.
+extraVolumes: []
+extraVolumeMounts: []
+
+# TestGen commands run as Helm hooks: the database is prepared on install and
+# migrated on upgrade.
 cliHooks:
   - name: "setup-db"
     triggers: "pre-install"
@@ -33,13 +65,17 @@ cliHooks:
     triggers: "post-upgrade"
     command: ["/dk/bin/testgen", "upgrade-system-version"]
 
+# Number of application pods. Keep at 1: each browser session is served by a
+# single pod.
 replicaCount: 1
 
 image:
   repository: "datakitchen/dataops-testgen"
   pullPolicy: IfNotPresent
-  tag: "v4"
+  # A major version (v5), a minor version, or an exact version.
+  tag: "v5"
 
+# Registry credentials, for pulling the image from a private registry.
 imagePullSecrets:
 nameOverride: ""
 fullnameOverride: ""
@@ -71,9 +107,49 @@ securityContext: {}
 
 service:
   type: NodePort
+  # UI
   port: 8501
   nodePort:
+  # API and MCP server
+  apiPort: 8530
+  apiNodePort:
 
+# Publish the UI by setting className and hosts. To publish the API and MCP
+# server, add a host entry whose path uses servicePort: api.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host:
+      paths:
+        - path: /
+          pathType: Prefix
+          # Service port to route to: "http" for the UI, "api" for the API and
+          # MCP server.
+          servicePort: http
+  tls: []
+
+# Both probes use the health endpoint on the UI port.
+livenessProbe:
+  httpGet:
+    path: /_stcore/health
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 4
+
+readinessProbe:
+  httpGet:
+    path: /_stcore/health
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Requests and limits for the application pod.
 resources: {}
   # limits:
   #   cpu: 100m

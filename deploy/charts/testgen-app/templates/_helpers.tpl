@@ -34,15 +34,15 @@ Create chart name and version as used by the chart label.
 Common labels
 */}}
 {{- define "testgen.labels" -}}
-{{- with .Values.testgen.labels }}
-{{- . | toYaml }}
-{{- end }}
 helm.sh/chart: {{ include "testgen.chart" . }}
 {{ include "testgen.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- with .Values.testgen.labels }}
+{{- toYaml . | nindent 0 }}
+{{- end }}
 {{- end }}
 
 {{/*

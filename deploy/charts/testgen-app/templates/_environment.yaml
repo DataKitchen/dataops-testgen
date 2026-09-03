@@ -16,6 +16,8 @@
       key: "jwt-hashing-key"
 - name: TG_METADATA_DB_HOST
   value: {{ .Values.testgen.databaseHost | quote }}
+- name: TG_METADATA_DB_PORT
+  value: {{ .Values.testgen.databasePort | quote }}
 - name: TG_METADATA_DB_NAME
   value: {{ .Values.testgen.databaseName | quote }}
 - name: TG_METADATA_DB_SCHEMA
@@ -32,20 +34,41 @@
 - name: TG_EXPORT_TO_OBSERVABILITY_VERIFY_SSL
   value: {{ .Values.testgen.observabilityVerifySsl | ternary "yes" "no" | quote }}
 {{- with .Values.testgen.emailNotifications }}
+{{- if .smtp.endpoint }}
 - name: TG_SMTP_ENDPOINT
   value: {{ .smtp.endpoint | quote }}
+{{- end }}
+{{- if .smtp.port }}
 - name: TG_SMTP_PORT
   value: {{ .smtp.port | quote }}
+{{- end }}
+{{- if .smtp.username }}
 - name: TG_SMTP_USERNAME
   value: {{ .smtp.username | quote }}
+{{- end }}
+{{- if .smtp.password }}
 - name: TG_SMTP_PASSWORD
   value: {{ .smtp.password | quote }}
+{{- end }}
+{{- if .fromAddress }}
 - name: TG_EMAIL_FROM_ADDRESS
   value: {{ .fromAddress | quote }}
-{{- end -}}
+{{- end }}
+{{- end }}
+{{- if .Values.testgen.instanceId }}
+- name: TG_INSTANCE_ID
+  value: {{ .Values.testgen.instanceId | quote }}
+{{- end }}
 {{- if .Values.testgen.uiBaseUrl }}
 - name: TG_UI_BASE_URL
   value: {{ .Values.testgen.uiBaseUrl | quote }}
+{{- end }}
+{{- if .Values.testgen.baseUrl }}
+- name: TG_BASE_URL
+  value: {{ .Values.testgen.baseUrl | quote }}
+{{- end }}
+{{- with .Values.extraEnv }}
+{{- toYaml . | nindent 0 }}
 {{- end }}
 {{- end -}}
 
