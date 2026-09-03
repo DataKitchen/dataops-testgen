@@ -182,6 +182,55 @@ from env variable: `TG_METADATA_DB_SCHEMA`
 defaults to: `testgen`
 """
 
+_metadata_db_sslmode = getenv("TG_METADATA_DB_SSLMODE")
+
+DATABASE_SSLMODE: str | None = _metadata_db_sslmode.lower() if _metadata_db_sslmode else None
+"""
+libpq sslmode for the testgen application postgres database: `disable`,
+`allow`, `prefer`, `require`, `verify-ca` or `verify-full`. When unset,
+libpq's own default applies, which negotiates TLS where the server offers
+it but does not verify the server certificate.
+
+`verify-ca` and `verify-full` need a certificate authority, which
+`DATABASE_SSLROOTCERT` supplies.
+
+from env variable: `TG_METADATA_DB_SSLMODE`
+defaults to: unset
+"""
+
+DATABASE_SSLROOTCERT: str = getenv("TG_METADATA_DB_SSLROOTCERT", "system")
+"""
+Certificate authority used to verify the application postgres database's
+server certificate. Either a path to a PEM bundle or `system` for the
+operating system's trust store, which carries the authorities that the
+managed postgres services chain to.
+
+Only consulted when `DATABASE_SSLMODE` is `verify-ca` or `verify-full`.
+
+from env variable: `TG_METADATA_DB_SSLROOTCERT`
+defaults to: `system`
+"""
+
+
+def _database_ssl_connect_args() -> dict[str, str]:
+    if not DATABASE_SSLMODE:
+        return {}
+    args = {"sslmode": DATABASE_SSLMODE}
+    # libpq accepts sslrootcert=system only alongside verify-full, and rejects the
+    # combination outright rather than ignoring it. A file path suits either mode.
+    if DATABASE_SSLMODE == "verify-full" or (
+        DATABASE_SSLMODE == "verify-ca" and DATABASE_SSLROOTCERT != "system"
+    ):
+        args["sslrootcert"] = DATABASE_SSLROOTCERT
+    return args
+
+
+DATABASE_SSL_CONNECT_ARGS: dict[str, str] = _database_ssl_connect_args()
+"""
+libpq connect arguments carrying the application database's TLS
+configuration. Empty when `DATABASE_SSLMODE` is unset.
+"""
+
 PROJECT_KEY: str = getenv("PROJECT_KEY", "DEFAULT")
 """
 Code used to uniquely identify the auto generated project.

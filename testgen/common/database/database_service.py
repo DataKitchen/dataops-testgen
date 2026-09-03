@@ -505,6 +505,7 @@ def _init_app_db_connection(
                     "connect_timeout": 3600,
                     # Force UTC so TIMESTAMP-without-tz inserts aren't silently shifted.
                     "options": "-c TimeZone=UTC",
+                    **settings.DATABASE_SSL_CONNECT_ARGS,
                 },
                 # Admin operations (schema_admin / database_admin) are one-shot.
                 # NullPool closes the connection on `.close()` instead of parking
