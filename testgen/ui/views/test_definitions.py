@@ -119,7 +119,7 @@ class TestDefinitionsPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        test_suite = get_test_suite(test_suite_id)
+        test_suite = get_test_suite(test_suite_id, TestSuite.is_monitor.isnot(True))
         if not test_suite:
             self.router.navigate_with_warning(
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
