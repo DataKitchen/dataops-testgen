@@ -21,6 +21,7 @@ from testgen.common.enums import (
     MonitorType,
     PiiRisk,
     QualityDimension,
+    SuiteType,
     run_duration_seconds,
 )
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorLabel
@@ -791,7 +792,7 @@ def resolve_test_suite(test_suite_id: str) -> TestSuite:
     perms = get_project_permissions()
     suite = TestSuite.get(
         suite_uuid,
-        TestSuite.is_monitor.isnot(True),
+        TestSuite.suite_type == SuiteType.REGULAR,
         TestSuite.project_code.in_(perms.allowed_codes),
     )
     if suite is None:
@@ -804,7 +805,7 @@ def resolve_monitored_table_group(table_group_id: str) -> tuple[TableGroup, Test
 
     Returns ``(table_group, monitor_suite)``. ``monitor_suite`` is ``None`` when the
     table group has no ``monitor_test_suite_id`` set, or that pointer doesn't resolve
-    to an ``is_monitor=True`` suite — callers render the "not monitored" output in
+    to a monitor suite — callers render the "not monitored" output in
     that case rather than raising an inaccessible error. Raises
     ``MCPResourceNotAccessible`` when the table group itself is missing or out of
     scope.
@@ -812,7 +813,7 @@ def resolve_monitored_table_group(table_group_id: str) -> tuple[TableGroup, Test
     tg = resolve_table_group(table_group_id)
     if tg.monitor_test_suite_id is None:
         return tg, None
-    suite = TestSuite.get(tg.monitor_test_suite_id, TestSuite.is_monitor.is_(True))
+    suite = TestSuite.get(tg.monitor_test_suite_id, TestSuite.suite_type == SuiteType.MONITOR)
     return tg, suite
 
 
@@ -853,7 +854,7 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinition.id == td_uuid,
-            TestSuite.is_monitor.isnot(True),
+            TestSuite.suite_type == SuiteType.REGULAR,
             TestSuite.project_code.in_(perms.allowed_codes),
         )
     )
@@ -867,7 +868,7 @@ def resolve_monitor(monitor_id: str) -> TestDefinition:
     """Resolve a monitor ID to the live ORM model, collapsing missing-or-inaccessible.
 
     A monitor is a ``TestDefinition`` row whose parent ``TestSuite`` has
-    ``is_monitor=True`` — the inverse filter from ``resolve_test_definition``.
+    ``suite_type`` of ``monitor`` — the inverse filter from ``resolve_test_definition``.
     Scoped to allowed projects via the parent suite. Returns the ORM model so
     callers can mutate and save / delete.
     """
@@ -878,7 +879,7 @@ def resolve_monitor(monitor_id: str) -> TestDefinition:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinition.id == monitor_uuid,
-            TestSuite.is_monitor.is_(True),
+            TestSuite.suite_type == SuiteType.MONITOR,
             TestSuite.project_code.in_(perms.allowed_codes),
         )
     )
@@ -900,7 +901,7 @@ def resolve_test_result(test_result_id: str) -> TestResult:
         .join(TestSuite, TestResult.test_suite_id == TestSuite.id)
         .where(
             TestResult.id == result_uuid,
-            TestSuite.is_monitor.isnot(True),
+            TestSuite.suite_type == SuiteType.REGULAR,
             TestSuite.project_code.in_(perms.allowed_codes),
         )
     )
@@ -923,7 +924,7 @@ def resolve_test_note(test_note_id: str) -> TestDefinitionNote:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinitionNote.id == note_uuid,
-            TestSuite.is_monitor.isnot(True),
+            TestSuite.suite_type == SuiteType.REGULAR,
             TestSuite.project_code.in_(perms.allowed_codes),
         )
     )

@@ -6,6 +6,8 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import SuiteType
+
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.common.monitor_service"
@@ -54,7 +56,7 @@ def test_enable_monitoring_merges_defaults_skipping_none(mock_ts, mock_js, mock_
     )
 
     kwargs = mock_ts.call_args.kwargs
-    assert kwargs["is_monitor"] is True
+    assert kwargs["suite_type"] == SuiteType.MONITOR
     assert kwargs["monitor_lookback"] == 14            # None override skipped → default
     assert kwargs["predict_sensitivity"] == "high"     # override applied
     assert kwargs["predict_exclude_weekends"] is False  # False is not None → applied
@@ -109,7 +111,11 @@ def test_update_monitoring_whitelists_suite_attrs_and_edits_schedule_in_place():
     update_monitoring(
         suite,
         schedule,
-        suite_attrs={"predict_sensitivity": "high", "predict_holiday_codes": None, "is_monitor": False},
+        suite_attrs={
+            "predict_sensitivity": "high",
+            "predict_holiday_codes": None,
+            "suite_type": SuiteType.REGULAR,
+        },
         cron_expr="0 */12 * * *",
         active=False,
     )
@@ -117,7 +123,7 @@ def test_update_monitoring_whitelists_suite_attrs_and_edits_schedule_in_place():
     # Whitelisted columns applied (a present None clears); non-whitelisted key ignored.
     assert suite.predict_sensitivity == "high"
     assert suite.predict_holiday_codes is None
-    assert not hasattr(suite, "is_monitor")
+    assert not hasattr(suite, "suite_type")
     suite.save.assert_called_once()
 
     # Schedule edited in place — same object, no recreate.

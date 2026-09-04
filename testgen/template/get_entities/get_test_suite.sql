@@ -9,4 +9,4 @@ SELECT
  FROM test_suites
 WHERE project_code = :PROJECT_CODE
 AND test_suite = :TEST_SUITE
-AND is_monitor IS NOT TRUE;
+AND suite_type = 'regular';

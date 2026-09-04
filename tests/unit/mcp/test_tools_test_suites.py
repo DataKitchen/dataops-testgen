@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import SuiteType
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -45,7 +46,7 @@ def _mock_test_suite(**overrides) -> MagicMock:
     suite.component_key = overrides.get("component_key", None)
     suite.component_type = overrides.get("component_type", None)
     suite.component_name = overrides.get("component_name", None)
-    suite.is_monitor = overrides.get("is_monitor", False)
+    suite.suite_type = overrides.get("suite_type", SuiteType.REGULAR)
     return suite
 
 
@@ -184,7 +185,7 @@ def test_create_test_suite_with_severity(mock_resolve, mock_suite_cls, db_sessio
 
     _, kwargs = mock_suite_cls.call_args
     assert kwargs["severity"] == "Fail"
-    assert kwargs["is_monitor"] is False
+    assert "suite_type" not in kwargs
     assert "Fail" in out
 
 
@@ -433,10 +434,10 @@ def test_update_test_suite_invalid_severity_collected(mock_resolve, db_session_m
 
 
 def test_update_test_suite_monitor_suite_unified_wording(db_session_mock):
-    """Per TG-1053 review feedback: exercising an is_monitor=True suite must surface
-    the unified missing-or-inaccessible error, not a distinct rejection. The filter
-    side-effect is in ``resolve_test_suite``; this test exercises it end-to-end with
-    the real TestSuite.get patched to behave as it would in DB (filter applied → None)."""
+    """Exercising a monitor suite must surface the unified missing-or-inaccessible
+    error, not a distinct rejection. The filter side-effect is in
+    ``resolve_test_suite``; this test exercises it end-to-end with the real
+    TestSuite.get patched to behave as it would in DB (filter applied → None)."""
     with patch("testgen.mcp.tools.common.TestSuite") as mock_ts:
         mock_ts.get.return_value = None  # filter excluded the monitor suite
         from testgen.mcp.tools.test_suites import update_test_suite

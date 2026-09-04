@@ -3,6 +3,8 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import SuiteType
+from testgen.common.models.test_suite import TestSuite as RealTestSuite
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -320,7 +322,7 @@ def _mock_test_suite(**overrides):
     suite.test_suite_description = overrides.get("test_suite_description", "Daily QA")
     suite.severity = overrides.get("severity", "Warning")
     suite.export_to_observability = overrides.get("export_to_observability", True)
-    suite.is_monitor = overrides.get("is_monitor", False)
+    suite.suite_type = overrides.get("suite_type", SuiteType.REGULAR)
     return suite
 
 
@@ -389,21 +391,27 @@ def test_get_test_suite_rejects_inaccessible_id(mock_common_suite, db_session_mo
 
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_test_suite_rejects_actual_monitor_suite(mock_common_suite, db_session_mock):
-    """An existing ``is_monitor=True`` suite is rejected because resolve_test_suite
-    passes ``TestSuite.is_monitor.isnot(True)`` as a filter clause.
+    """A monitor suite is rejected because resolve_test_suite passes a
+    ``suite_type == REGULAR`` clause.
 
     Simulates the real DB filter behaviour: ``TestSuite.get`` returns the monitor
     suite when called without the filter clause, ``None`` when the clause is present.
     """
-    monitor_suite = _mock_test_suite(is_monitor=True)
+    monitor_suite = _mock_test_suite(suite_type=SuiteType.MONITOR)
+    # The patched class must carry the real column descriptors. Comparing a bare MagicMock
+    # attribute against an enum member yields a plain False rather than a clause, and every
+    # MagicMock answers `compare()` truthily, which would make the check below always match.
+    mock_common_suite.suite_type = RealTestSuite.suite_type
+    mock_common_suite.project_code = RealTestSuite.project_code
+    exclusion = RealTestSuite.suite_type == SuiteType.REGULAR
 
     def filtered_get(_uuid, *clauses):
-        # The resolver's contract: pass an `is_monitor.isnot(True)` clause to TestSuite.get.
+        # The resolver's contract: pass the regular-suite clause to TestSuite.get.
         # If the clause is present, a DB query against it would not match this monitor row.
-        for clause in clauses:
-            clause_str = str(clause).lower()
-            if "is_monitor" in clause_str and "not" in clause_str:
-                return None
+        # Compared structurally, not as text: the value sits in a bound parameter, so
+        # `str(clause)` cannot tell `= 'regular'` from `= 'monitor'`.
+        if any(clause.compare(exclusion) for clause in clauses):
+            return None
         return monitor_suite
 
     mock_common_suite.get.side_effect = filtered_get

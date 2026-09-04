@@ -8,6 +8,7 @@ import streamlit as st
 
 from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
+from testgen.common.enums import SuiteType
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import (
@@ -149,7 +150,7 @@ class TestResultsPage(Page):
         **_kwargs,
     ) -> None:
         run = get_test_run_minimal(run_id)
-        if not run or not get_test_suite(run.test_suite_id, TestSuite.is_monitor.isnot(True)):
+        if not run or not get_test_suite(run.test_suite_id, TestSuite.suite_type == SuiteType.REGULAR):
             self.router.navigate_with_warning(
                 f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
                 "test-runs",

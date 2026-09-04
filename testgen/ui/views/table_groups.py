@@ -402,7 +402,6 @@ class TableGroupsPage(Page):
                             table_groups_id=table_group.id,
                             export_to_observability=False,
                             dq_score_exclude=False,
-                            is_monitor=False,
                             monitor_lookback=0,
                             predict_min_lookback=0,
                         )

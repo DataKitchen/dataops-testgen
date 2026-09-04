@@ -20,7 +20,7 @@ from testgen.api.jobs import (
     submit_test_run,
 )
 from testgen.api.schemas import TestGenerationRequest
-from testgen.common.enums import JobKey, PublicJobKey
+from testgen.common.enums import JobKey, PublicJobKey, SuiteType
 from testgen.common.models.job_execution import JobExecution
 
 pytestmark = pytest.mark.unit
@@ -58,7 +58,7 @@ def _mock_table_group(**overrides):
 
 
 def _mock_test_suite(**overrides):
-    defaults = {"id": uuid4(), "project_code": "test_project", "is_monitor": False}
+    defaults = {"id": uuid4(), "project_code": "test_project", "suite_type": SuiteType.REGULAR}
     defaults.update(overrides)
     ts = MagicMock()
     for key, value in defaults.items():

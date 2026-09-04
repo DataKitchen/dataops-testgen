@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from testgen.api.schemas import ImportRequest
+from testgen.common.enums import SuiteType
 from testgen.common.test_definition_export_import_service import (
     ExportDocument,
     ExportSource,
@@ -44,7 +45,7 @@ def _make_test_suite(**overrides):
         "table_groups_id": uuid4(),
         "project_code": "proj",
         "test_suite": "suite_1",
-        "is_monitor": False,
+        "suite_type": SuiteType.REGULAR,
     }
     defaults.update(overrides)
     ts = MagicMock()

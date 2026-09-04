@@ -10,6 +10,7 @@ from testgen.common.database.database_service import (
     get_flavor_service,
     replace_params,
 )
+from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import MONITOR_GENERATION_SET, resolve_generation_sets
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
@@ -49,7 +50,7 @@ def run_test_generation(
 
     LOG.info("Retrieving connection, table group, and test suite parameters")
     test_suite = TestSuite.get(test_suite_id)
-    if test_suite.is_monitor:
+    if test_suite.suite_type == SuiteType.MONITOR:
         raise ValueError("Cannot run regular test generation for monitor suite")
 
     resolved_sets = resolve_generation_sets(test_suite, generation_sets)
@@ -97,7 +98,7 @@ def run_monitor_generation(
     LOG.info(f"Starting monitor generation for {monitor_suite_id} (Mode = {mode}, Monitors = {monitors})")
 
     monitor_suite = TestSuite.get(monitor_suite_id)
-    if not monitor_suite.is_monitor:
+    if monitor_suite.suite_type != SuiteType.MONITOR:
         raise ValueError("Cannot run monitor generation for regular test suite")
     table_group = TableGroup.get(monitor_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)

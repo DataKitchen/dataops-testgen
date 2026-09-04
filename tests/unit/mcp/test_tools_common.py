@@ -12,6 +12,7 @@ from testgen.common.enums import (
     MonitorCalculation,
     PiiRisk,
     QualityDimension,
+    SuiteType,
 )
 from testgen.common.models.scores import ScoreCategory
 from testgen.common.models.test_definition import Severity
@@ -1128,7 +1129,7 @@ def test_resolve_monitored_table_group_returns_suite():
     tg.id = uuid4()
     tg.monitor_test_suite_id = uuid4()
     suite = MagicMock(spec=TestSuite)
-    suite.is_monitor = True
+    suite.suite_type = SuiteType.MONITOR
 
     with (
         patch("testgen.mcp.tools.common.resolve_table_group", return_value=tg),
@@ -1158,7 +1159,7 @@ def test_resolve_monitored_table_group_returns_none_when_unlinked():
 
 
 def test_resolve_monitored_table_group_returns_none_when_pointer_stale():
-    """Pointer set, but suite no longer exists or no longer ``is_monitor=True``."""
+    """Pointer set, but suite no longer exists or is no longer a monitor suite."""
     from testgen.common.models.table_group import TableGroup
     from testgen.mcp.tools.common import resolve_monitored_table_group
 

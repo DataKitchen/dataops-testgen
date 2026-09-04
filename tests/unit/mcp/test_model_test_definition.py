@@ -23,7 +23,9 @@ def session_mock():
 
 
 def _compiled_sql(captured_query) -> str:
-    return str(captured_query.compile(dialect=postgresql.dialect()))
+    return str(captured_query.compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    ))
 
 
 def test_get_for_project_excludes_monitor_suites(session_mock):
@@ -32,7 +34,7 @@ def test_get_for_project_excludes_monitor_suites(session_mock):
     TestDefinition.get_for_project(uuid4())
 
     sql = _compiled_sql(session_mock.execute.call_args[0][0])
-    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.suite_type = 'regular'" in sql
     assert "JOIN test_suites" in sql
 
 
@@ -42,7 +44,7 @@ def test_get_for_project_excludes_monitor_suites_with_project_codes(session_mock
     TestDefinition.get_for_project(uuid4(), project_codes=["demo"])
 
     sql = _compiled_sql(session_mock.execute.call_args[0][0])
-    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.suite_type = 'regular'" in sql
     assert "test_suites.project_code IN" in sql
 
 
@@ -52,12 +54,12 @@ def test_list_for_suite_excludes_monitor_suites(session_mock):
 
     TestDefinition.list_for_suite(test_suite_id=uuid4())
 
-    # _paginate wraps the original query as a subquery for counting — the is_monitor
+    # _paginate wraps the original query as a subquery for counting — the suite_type
     # filter is preserved in the compiled SQL for either call, so check both.
     queries = [call[0][0] for call in session_mock.scalar.call_args_list]
     queries += [call[0][0] for call in session_mock.execute.call_args_list]
     sql_joined = "\n".join(_compiled_sql(q) for q in queries)
-    assert "test_suites.is_monitor IS NOT true" in sql_joined
+    assert "test_suites.suite_type = 'regular'" in sql_joined
     assert "JOIN test_suites" in sql_joined
 
 

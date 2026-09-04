@@ -299,3 +299,13 @@ class MonitorCalculation(StrEnum):
     SUM = "Sum"
     AVERAGE = "Average"
     EXPRESSION = "Expression"
+
+
+class SuiteType(StrEnum):
+    """``test_suites.suite_type`` values — what kind of suite a test suite is.
+
+    Set at creation and never subsequently edited. Internal: the value is not displayed,
+    and a surface offering the choice picks its own labels.
+    """
+    REGULAR = "regular"
+    MONITOR = "monitor"
