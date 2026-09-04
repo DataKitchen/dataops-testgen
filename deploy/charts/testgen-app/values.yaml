@@ -29,7 +29,7 @@ testgen:
     create: true
     name: testgen-auth
   # Initial administrator account, created when the database is first prepared.
-  # Both values can be removed once the account exists.
+  # uiPassword is required: preparing the database fails without it.
   uiUser: "admin"
   uiPassword:
   # Trust the server certificate when connecting to the databases under test.
@@ -127,6 +127,10 @@ service:
   # API and MCP server
   apiPort: 8530
   apiNodePort:
+  # Annotations on the Service, for cloud load balancer and ingress controller
+  # settings. These apply to the Service as a whole, so both the UI and the API
+  # port are covered by the same values.
+  annotations: {}
 
 # Publish the UI by setting className and hosts. To publish the API and MCP
 # server, add a host entry whose path uses servicePort: api.
