@@ -5,6 +5,7 @@ from testgen.common.enums import (
     STOPPABLE_ONLY_STATUSES,
     WORKING_STATUSES,
     JobStatus,
+    SuiteType,
     run_duration_seconds,
 )
 from testgen.common.models.profiling_run import ProfilingRunSummary
@@ -161,3 +162,16 @@ def test_every_status_either_reports_a_duration_or_withholds_one():
         JobStatus.CANCELED,
         JobStatus.PAUSED,
     }
+
+
+def test_suite_type_has_three_kinds():
+    assert set(SuiteType) == {SuiteType.REGULAR, SuiteType.MONITOR, SuiteType.CONTRACT}
+
+
+def test_a_contract_is_neither_regular_nor_monitor():
+    # Every regular-test read path filters `== SuiteType.REGULAR` and every monitor branch
+    # asks `== SuiteType.MONITOR`. A contract suite must satisfy neither, or it surfaces as
+    # one of the two kinds that already have screens.
+    assert SuiteType.CONTRACT != SuiteType.REGULAR
+    assert SuiteType.CONTRACT != SuiteType.MONITOR
+    assert SuiteType.CONTRACT == "contract"
