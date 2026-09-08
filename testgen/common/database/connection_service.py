@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
 from testgen.common.database.database_service import empty_cache, get_flavor_service
+from testgen.common.database.flavor.flavor_service import FlavorConnectionError
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.ui.services.database_service import fetch_from_target_db
 
@@ -76,7 +77,12 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
 
         if not connection_successful:
             return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
+
         return ConnectionStatus(message="The connection was successful.", successful=True)
+    except FlavorConnectionError as error:
+        # The flavor wrote this for the user, so it is shown instead of a generic failure.
+        LOG.info(f"Connection test failed: {error}")
+        return ConnectionStatus(message="Error attempting the connection.", details=str(error), successful=False)
     except KeyError:
         return ConnectionStatus(
             message="Error attempting the connection. ",
@@ -112,12 +118,16 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
 
 
 def normalize_auth_fields(connection: Connection) -> None:
-    """Clear credential columns the active auth mode doesn't use so flipping
-    modes doesn't leave stale opposite-mode values behind. Databricks OAuth
-    stores the client secret in ``project_pw_encrypted`` despite
-    ``connect_by_key=True``, so it sticks with the password path.
+    """Validate a connection and clear the credential columns its auth mode doesn't use.
+
+    Clearing keeps a flip between modes from leaving stale opposite-mode values behind.
+    Databricks OAuth stores the client secret in ``project_pw_encrypted`` despite
+    ``connect_by_key=True``, so it sticks with the password path. Raises ``ValueError``
+    when the connection cannot be saved as posted.
     """
     code = connection.sql_flavor_code
+
+    get_flavor_service(connection.sql_flavor).validate_parameters(connection.parameters)
 
     if connection.connect_with_identity and connection.connect_with_service_principal:
         raise ValueError(

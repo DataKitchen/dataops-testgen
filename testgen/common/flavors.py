@@ -28,6 +28,7 @@ class SqlFlavorCode(StrEnum):
     AZURE_MSSQL = "azure_mssql"
     SYNAPSE_MSSQL = "synapse_mssql"
     DATABRICKS = "databricks"
+    DUCKDB = "duckdb"
     BIGQUERY = "bigquery"
     ONELAKE_MSSQL = "onelake_mssql"
     MSSQL = "mssql"
@@ -46,6 +47,7 @@ class SqlFlavorLabel(StrEnum):
     AZURE_MSSQL = "Azure SQL Database"
     SYNAPSE_MSSQL = "Azure Synapse Analytics"
     DATABRICKS = "Databricks"
+    DUCKDB = "DuckDB"
     BIGQUERY = "Google BigQuery"
     ONELAKE_MSSQL = "Microsoft OneLake"
     MSSQL = "Microsoft SQL Server"
@@ -64,6 +66,7 @@ FLAVOR_CODE_TO_LABEL: dict[SqlFlavorCode, SqlFlavorLabel] = {
     SqlFlavorCode.AZURE_MSSQL: SqlFlavorLabel.AZURE_MSSQL,
     SqlFlavorCode.SYNAPSE_MSSQL: SqlFlavorLabel.SYNAPSE_MSSQL,
     SqlFlavorCode.DATABRICKS: SqlFlavorLabel.DATABRICKS,
+    SqlFlavorCode.DUCKDB: SqlFlavorLabel.DUCKDB,
     SqlFlavorCode.BIGQUERY: SqlFlavorLabel.BIGQUERY,
     SqlFlavorCode.ONELAKE_MSSQL: SqlFlavorLabel.ONELAKE_MSSQL,
     SqlFlavorCode.MSSQL: SqlFlavorLabel.MSSQL,
@@ -82,6 +85,7 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
     "azure_mssql": "mssql",
     "synapse_mssql": "mssql",
     "databricks": "databricks",
+    "duckdb": "duckdb",
     "bigquery": "bigquery",
     "onelake_mssql": "mssql",
     "mssql": "mssql",

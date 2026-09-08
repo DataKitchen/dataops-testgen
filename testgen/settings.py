@@ -801,3 +801,14 @@ Referrer-Policy header value.
 from env variable: `TG_API_REFERRER_POLICY`
 defaults to: `no-referrer`
 """
+
+DUCKDB_EXTENSION_DIRECTORY: str = getenv("TG_DUCKDB_EXTENSION_DIRECTORY", "")
+"""
+Directory holding the DuckDB extensions bundled into the container image. Set by the image so
+that the bundle location is written once rather than duplicated in code; not a value to change.
+Empty on a pip install, where DuckDB falls back to its own location under the user's home.
+
+from env variable: `TG_DUCKDB_EXTENSION_DIRECTORY`
+defaults to: empty
+"""
+

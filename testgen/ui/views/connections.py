@@ -486,6 +486,9 @@ class ConnectionsPage(Page):
 def format_connection(connection: Connection | ConnectionMinimal) -> dict:
     formatted_connection = connection.to_dict(json_safe=True)
 
+    # Decrypted on read, so it has to be dropped rather than masked.
+    formatted_connection.pop("secrets", None)
+
     if formatted_connection.get("project_pw_encrypted"):
         formatted_connection["project_pw_encrypted"] = "***"
     if formatted_connection.get("private_key"):
@@ -506,6 +509,7 @@ class ConnectionFlavor:
     label: str
     icon: str
     flavor: str
+    field_help: dict[str, str]
 
 
 # Labels and families come from the shared source in ``common/flavors.py`` (the
@@ -516,6 +520,7 @@ _FLAVOR_ICONS: dict[str, str] = {
     "azure_mssql": "flavors/azure_sql.svg",
     "synapse_mssql": "flavors/azure_synapse_table.svg",
     "databricks": "flavors/databricks.svg",
+    "duckdb": "flavors/duckdb.svg",
     "bigquery": "flavors/bigquery.svg",
     "onelake_mssql": "flavors/onelake.svg",
     "mssql": "flavors/mssql.svg",
@@ -526,12 +531,23 @@ _FLAVOR_ICONS: dict[str, str] = {
     "snowflake": "flavors/snowflake.svg",
 }
 
+_RUNS_IN_CONTAINER = settings.CHECK_FOR_LATEST_VERSION == "docker"
+_CONTAINER_PATH_NOTE = ". It must be a path inside the TestGen container, so the file has to be on a mounted volume."
+
+_FLAVOR_FIELD_HELP: dict[str, dict[str, str]] = {
+    "duckdb": {
+        "database_file": "Path to the DuckDB database file"
+        + (_CONTAINER_PATH_NOTE if _RUNS_IN_CONTAINER else ""),
+    },
+}
+
 FLAVOR_OPTIONS = [
     ConnectionFlavor(
         value=code,
         label=str(FLAVOR_CODE_TO_LABEL[code]),
         flavor=FLAVOR_CODE_TO_FAMILY[code],
         icon=get_asset_data_url(icon),
+        field_help=_FLAVOR_FIELD_HELP.get(code, {}),
     )
     for code, icon in _FLAVOR_ICONS.items()
 ]

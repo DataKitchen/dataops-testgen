@@ -1198,9 +1198,23 @@ class Req(StrEnum):
 @dataclass(frozen=True)
 class ConnField:
     label: str  # exact UI label == connection_params key
-    column: str  # Connection ORM attribute it maps to
+    column: str  # Connection ORM attribute, or a key within ``parameters`` when in_parameters
     requirement: Req
     secret: bool = False
+    in_parameters: bool = False  # stored under the generic ``parameters`` column
+
+
+def read_conn_field(connection: Connection, fld: ConnField) -> object | None:
+    if fld.in_parameters:
+        return (connection.parameters or {}).get(fld.column)
+    return getattr(connection, fld.column, None)
+
+
+def write_conn_field(connection: Connection, fld: ConnField, value: object) -> None:
+    if fld.in_parameters:
+        connection.parameters = {**(connection.parameters or {}), fld.column: value}
+        return
+    setattr(connection, fld.column, str(value) if fld.column == "project_port" and value is not None else value)
 
 
 @dataclass(frozen=True)
@@ -1254,6 +1268,9 @@ _LOGIN_URL = ConnField("Login URL", "project_host", Req.REQUIRED)
 _CONSUMER_KEY = ConnField("Consumer Key", "project_user", Req.REQUIRED)
 _SF_USERNAME = ConnField("Username", "project_db", Req.REQUIRED)
 _CONSUMER_SECRET = ConnField("Consumer Secret", "project_pw_encrypted", Req.REQUIRED, secret=True)
+
+# DuckDB
+_DATABASE_FILE = ConnField("Database File", "database_file", Req.REQUIRED, in_parameters=True)
 
 
 def _host_auth_schema(code: str, *, db_field: ConnField = _DATABASE) -> FlavorSchema:
@@ -1315,6 +1332,12 @@ FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
     "mssql": _host_auth_schema("mssql"),
     "oracle": _host_auth_schema("oracle", db_field=_SERVICE_NAME),
     "sap_hana": _host_auth_schema("sap_hana"),
+    "duckdb": FlavorSchema(
+        code="duckdb",
+        label=FLAVOR_CODE_TO_LABEL["duckdb"],
+        modes=(FlavorMode(mode=None, fields=(_DATABASE_FILE,), supports_url=False),),
+        url_field=None,
+    ),
     "azure_mssql": _azure_schema("azure_mssql", include_service_principal=True),
     "synapse_mssql": _azure_schema("synapse_mssql", include_service_principal=True),
     "onelake_mssql": _azure_schema(
@@ -1573,8 +1596,7 @@ def apply_connection_params(
             continue
         if is_spn_compound and label in ("Client ID", "Tenant ID"):
             continue
-        column = fields_by_label[label].column
-        setattr(connection, column, str(value) if column == "project_port" and value is not None else value)
+        write_conn_field(connection, fields_by_label[label], value)
 
     if has_url:
         connection.connect_by_url = True
@@ -1641,7 +1663,7 @@ def validate_connection_fields(connection: Connection) -> list[str]:
         )
 
     for fld in _required_fields_for(connection):
-        if _missing(getattr(connection, fld.column, None)):
+        if _missing(read_conn_field(connection, fld)):
             errors.append(f"`{fld.label}` is required for {flavor_label}.")
 
     threads = connection.max_threads
@@ -1698,7 +1720,7 @@ def render_connection_body(doc: MdDoc, connection: Connection) -> None:
         elif is_spn_compound and fld.label == "Tenant ID":
             value = spn_tenant_id
         else:
-            value = getattr(connection, fld.column, None)
+            value = read_conn_field(connection, fld)
         if value in (None, ""):
             continue
         doc.field(fld.label, value, code=fld.column != "project_port")

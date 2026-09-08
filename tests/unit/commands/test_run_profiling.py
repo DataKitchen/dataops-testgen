@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import get_args
 from unittest.mock import MagicMock, patch
@@ -505,9 +506,16 @@ def test_the_cleanup_methods_exist_on_the_models_on_restart_calls():
 
 def test_the_template_digest_resolves_for_every_flavor():
     """A flavor whose profiling templates cannot be located would fail the fence at runtime,
-    on that flavor only."""
+    on that flavor only.
+
+    An empty template directory still hashes, so the digest of no input is rejected explicitly —
+    otherwise a flavor with a directory but no templates passes.
+    """
+    digest_of_nothing = hashlib.sha256().hexdigest()
     for flavor in get_args(SQLFlavor):
-        assert len(_profiling_template_digest(flavor)) == 64
+        digest = _profiling_template_digest(flavor)
+        assert len(digest) == 64
+        assert digest != digest_of_nothing, f"{flavor} has no profiling templates"
 
 
 def test_the_template_digest_tracks_content_and_names():

@@ -88,6 +88,11 @@ def empty_cache() -> None:
 def set_target_db_params(connection_params: ConnectionParams) -> None:
     global target_db_params
     target_db_params = dict(connection_params)
+    # The cache holds one unkeyed slot, so a cached engine built for the previous parameters
+    # would otherwise be handed out for these.
+    if engine_cache.target_db is not None:
+        engine_cache.target_db.dispose()
+        engine_cache.target_db = None
 
 
 def get_flavor_service(flavor: SQLFlavor) -> FlavorService:
@@ -569,5 +574,7 @@ def _init_target_db_connection() -> Connection:
                 exc_info=settings.IS_DEBUG,
                 stack_info=settings.IS_DEBUG,
             )
+
+    flavor_service.init(connection, params)
 
     return connection

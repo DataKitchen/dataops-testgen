@@ -55,6 +55,7 @@ SET datatype_suggestion =
                    WHEN '{SQL_FLAVOR}' LIKE 'mssql%' THEN 'DATETIMEOFFSET'
                    WHEN '{SQL_FLAVOR}' = 'databricks' THEN 'TIMESTAMP'
                    WHEN '{SQL_FLAVOR}' = 'bigquery' THEN 'TIMESTAMP'
+                   WHEN '{SQL_FLAVOR}' = 'duckdb' THEN 'TIMESTAMPTZ'
                    ELSE 'TIMESTAMPZ'
                  END
 
@@ -70,6 +71,7 @@ SET datatype_suggestion =
                    WHEN '{SQL_FLAVOR}' LIKE 'mssql%' THEN 'DATETIME2'
                    WHEN '{SQL_FLAVOR}' = 'databricks' THEN 'TIMESTAMP_NTZ'
                    WHEN '{SQL_FLAVOR}' = 'bigquery' THEN 'DATETIME'
+                   WHEN '{SQL_FLAVOR}' = 'duckdb' THEN 'TIMESTAMP'
                    ELSE 'TIMESTAMP_NTZ'
                  END
 

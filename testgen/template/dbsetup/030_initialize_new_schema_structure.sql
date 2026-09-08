@@ -84,7 +84,9 @@ CREATE TABLE connections (
    private_key_passphrase BYTEA,
    http_path              VARCHAR(200),
    warehouse              VARCHAR(200),
-   service_account_key    BYTEA
+   service_account_key    BYTEA,
+   parameters             JSONB,
+   secrets                BYTEA
 );
 
 CREATE TABLE table_groups
