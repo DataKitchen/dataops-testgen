@@ -37,7 +37,7 @@ COPY ./pyproject.toml /tmp/dk/pyproject.toml
 RUN mkdir /dk
 
 # Upgrading pip for security
-RUN python3 -m pip install --no-cache-dir --upgrade pip==26.1.2
+RUN python3 -m pip install --no-cache-dir --upgrade pip==26.2.1
 
 # hdbcli only ships manylinux wheels (no musl). pip 26+ correctly rejects these on Alpine.
 # We download the wheel for the correct arch, then extract it directly into site-packages
