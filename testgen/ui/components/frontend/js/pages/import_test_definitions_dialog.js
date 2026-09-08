@@ -3,9 +3,17 @@
  * @type {object}
  * @property {object|null} preview
  * @property {object|null} result
- * @property {object} behavior
+ * @property {string?} fileName
+ * @property {object} onNew
+ * @property {object} onMatch
+ * @property {object} onAbsence
  * @property {object} deleteConfirmed
  * @property {object} fileValue
+ * @property {object} autoCloseScheduled
+ * @property {Function} onFileUploaded
+ * @property {Function} onPolicyChanged
+ * @property {Function} onFileCleared
+ * @property {Function} onImportConfirmed
  * @property {Function?} onAutoClose
  */
 import van from '/app/static/js/van.min.js';
@@ -22,33 +30,60 @@ import { sizeLimit } from '/app/static/js/form_validators.js';
 
 const JSON_SIZE_LIMIT = 10 * 1024 * 1024; // 10 MB
 
-const BEHAVIOR_OPTIONS = [
-    {
-        label: 'Add and update tests',
-        value: 'upsert',
-        caption: 'Create tests from the file and update matching ones. Locked tests are left alone.',
-    },
-    {
-        label: 'Update existing tests only',
-        value: 'update_only',
-        caption: 'Update matching tests. Nothing is created.',
-    },
-    {
-        label: 'Add new tests only',
-        value: 'insert_only',
-        caption: 'Create tests that do not already exist. Matching tests are left alone.',
-    },
-    {
-        label: 'Promote from another environment',
-        value: 'promote',
-        caption: 'Create and update tests, and lock what is created so test generation does not overwrite it.',
-    },
-    {
-        label: 'Replace all tests in this test suite',
-        value: 'replace',
-        caption: 'Create and update tests from the file, and delete every test that is not in it.',
-    },
-];
+// The service's three policy axes, the same ones the REST and MCP surfaces take.
+const POLICY_OPTIONS = {
+    onNew: [
+        {
+            label: 'Create',
+            value: 'create',
+            caption: 'Add the test to this test suite.',
+        },
+        {
+            label: 'Create and lock',
+            value: 'create_and_lock',
+            caption: 'Add the test and lock it, so test generation does not overwrite its values.',
+        },
+        {
+            label: 'Do not create',
+            value: 'skip',
+            caption: 'Leave the test out of this test suite.',
+        },
+    ],
+    onMatch: [
+        {
+            label: 'Update unlocked tests',
+            value: 'overwrite_unlocked',
+            caption: 'Overwrite matching tests. Locked tests are skipped.',
+        },
+        {
+            label: 'Update all tests',
+            value: 'overwrite_all',
+            caption: 'Overwrite matching tests, including locked ones.',
+        },
+        {
+            label: 'Do not update',
+            value: 'skip',
+            caption: 'Leave matching tests as they are.',
+        },
+    ],
+    onAbsence: [
+        {
+            label: 'Leave alone',
+            value: 'do_nothing',
+            caption: 'Keep tests that are not in the file.',
+        },
+        {
+            label: 'Delete unlocked tests',
+            value: 'delete_unlocked',
+            caption: 'Permanently delete tests that are not in the file. Locked tests are kept.',
+        },
+        {
+            label: 'Delete all tests',
+            value: 'delete_all',
+            caption: 'Permanently delete tests that are not in the file, including locked ones.',
+        },
+    ],
+};
 
 const { div, span } = van.tags;
 
@@ -56,21 +91,32 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
     const emit = props.emit;
     loadStylesheet('import-test-definitions-dialog', stylesheet);
 
-    const behavior = props.behavior;
-    const deleteConfirmed = props.deleteConfirmed;
-    const fileValue = props.fileValue;
-    let autoCloseScheduled = false;
+    const { onNew, onMatch, onAbsence, deleteConfirmed, fileValue, autoCloseScheduled } = props;
 
-    const requestPreview = () => {
-        if (fileValue.val?.content) {
-            const payload = { content: fileValue.val.content, behavior: behavior.val };
-            if (props.onFileUploaded) {
-                props.onFileUploaded(payload);
-            } else {
-                emit('FileUploaded', { payload });
-            }
-        }
-    };
+    const policy = () => ({
+        on_new: onNew.val,
+        on_match: onMatch.val,
+        on_absence: onAbsence.val,
+    });
+
+    const PolicySelect = (label, stateKey) => div(
+        { class: 'fx-flex' },
+        Select({
+            label,
+            value: props[stateKey],
+            options: POLICY_OPTIONS[stateKey],
+            allowNull: false,
+            onChange: (value) => {
+                props[stateKey].val = value;
+                deleteConfirmed.val = false;
+                // Python still holds the uploaded document, so a policy change asks it to
+                // reproject rather than shipping the file back up.
+                if (fileValue.val?.content || getValue(props.fileName)) {
+                    props.onPolicyChanged(policy());
+                }
+            },
+        }),
+    );
 
     return div(
         { class: 'flex-column fx-gap-4' },
@@ -80,7 +126,7 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
             help: 'Use the Export menu on this page to download the current test definitions JSON as a starting point.',
             validators: [sizeLimit(JSON_SIZE_LIMIT)],
             value: fileValue,
-            onChange: (value) => {
+            onChange: (value, state) => {
                 // FileInput replays onChange when it mounts. The caller owns fileValue, so on a
                 // rebuild that replay arrives holding the same file and would re-request a preview.
                 if (value === fileValue.val) {
@@ -90,32 +136,41 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
                 fileValue.val = value;
                 deleteConfirmed.val = false;
                 if (value?.content) {
-                    requestPreview();
-                } else if (hadFile) {
-                    if (props.onFileCleared) {
-                        props.onFileCleared();
-                    } else {
-                        emit('FileCleared', {});
+                    // The validators only paint a message; without this an oversized file
+                    // would still be encoded, uploaded, and parked in session state.
+                    if (state?.valid === false) {
+                        return;
                     }
+                    props.onFileUploaded({ content: value.content, file_name: value.name, ...policy() });
+                } else if (hadFile) {
+                    props.onFileCleared();
                 }
             },
         }),
-        Select({
-            label: 'Behavior',
-            value: behavior,
-            options: BEHAVIOR_OPTIONS,
-            allowNull: false,
-            onChange: (value) => {
-                behavior.val = value;
-                deleteConfirmed.val = false;
-                requestPreview();
-            },
-        }),
+        () => {
+            const armedName = getValue(props.fileName);
+            return !fileValue.val?.content && armedName
+                ? span(
+                    { class: 'text-caption text-secondary' },
+                    `Using the previously uploaded file ${armedName}. Upload another file to replace it.`,
+                )
+                : '';
+        },
+        div(
+            { class: 'flex-row fx-gap-3' },
+            PolicySelect('Tests in the file with no match', 'onNew'),
+            PolicySelect('Tests in the file that match', 'onMatch'),
+            PolicySelect('Tests not in the file', 'onAbsence'),
+        ),
+        span(
+            { class: 'text-caption text-secondary' },
+            'Only the fields present in the file are written. A matching test keeps its existing values for anything the file omits.',
+        ),
         () => {
             const result = getValue(props.result);
             if (result) {
-                if (result.success && props.onAutoClose && !autoCloseScheduled) {
-                    autoCloseScheduled = true;
+                if (result.success && props.onAutoClose && !autoCloseScheduled.val) {
+                    autoCloseScheduled.val = true;
                     setTimeout(() => props.onAutoClose(), 2000);
                 }
                 return Alert(
@@ -170,9 +225,10 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
                         icon: 'upload',
                         width: 'auto',
                         disabled: nothingToDo || (deleting && !deleteConfirmed.val),
-                        onclick: () => props.onImportConfirmed
-                            ? props.onImportConfirmed()
-                            : emit('ImportConfirmed', {}),
+                        onclick: () => props.onImportConfirmed({
+                            delete_confirmed: deleteConfirmed.val,
+                            ...policy(),
+                        }),
                     }),
                 ),
             );

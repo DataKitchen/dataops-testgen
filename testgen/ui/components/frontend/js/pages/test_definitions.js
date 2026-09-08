@@ -109,9 +109,25 @@ const TestDefinitions = (/** @type object */ props) => {
     van.derive(() => { if (getValue(props.import_dialog)) importDialogOpen.val = true; });
     // Owned here, not in the dialog: the dialog is rebuilt on every rerender, so state
     // declared inside it would reset the user's choice when the preview comes back.
-    const importBehavior = van.state('upsert');
+    const importOnNew = van.state('create');
+    const importOnMatch = van.state('overwrite_unlocked');
+    const importOnAbsence = van.state('do_nothing');
     const importDeleteConfirmed = van.state(false);
     const importFileValue = van.state(null);
+    const importAutoCloseScheduled = van.state(false);
+    // These states are remounted fresh while the Python-side dialog state survives
+    // navigation, so a reopened dialog adopts the policy its stored preview was built
+    // with rather than showing defaults that contradict what the import would do.
+    let importPolicyHydrated = false;
+    van.derive(() => {
+        const armed = getValue(props.import_dialog)?.policy;
+        if (armed && !importPolicyHydrated) {
+            importPolicyHydrated = true;
+            importOnNew.val = armed.on_new;
+            importOnMatch.val = armed.on_match;
+            importOnAbsence.val = armed.on_absence;
+        }
+    });
 
     const permissions = van.derive(() => getValue(props.permissions) ?? {});
     const canEdit = van.derive(() => getValue(permissions).can_edit ?? false);
@@ -517,9 +533,13 @@ const TestDefinitions = (/** @type object */ props) => {
                 size: 'small',
                 style: 'background-color: var(--button-generic-background-color);',
                 onclick: () => {
-                    importBehavior.val = 'upsert';
+                    importPolicyHydrated = true;
+                    importOnNew.val = 'create';
+                    importOnMatch.val = 'overwrite_unlocked';
+                    importOnAbsence.val = 'do_nothing';
                     importDeleteConfirmed.val = false;
                     importFileValue.val = null;
+                    importAutoCloseScheduled.val = false;
                     emit('ImportDialogOpened', {});
                 },
             })
@@ -719,12 +739,17 @@ const TestDefinitions = (/** @type object */ props) => {
                 return ImportTestDefinitionsDialog({ emit,
                     preview: data.preview,
                     result: data.result,
-                    behavior: importBehavior,
+                    fileName: data.file_name,
+                    onNew: importOnNew,
+                    onMatch: importOnMatch,
+                    onAbsence: importOnAbsence,
                     deleteConfirmed: importDeleteConfirmed,
                     fileValue: importFileValue,
+                    autoCloseScheduled: importAutoCloseScheduled,
                     onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
+                    onPolicyChanged: (payload) => emit('ImportPolicyChanged', { payload }),
                     onFileCleared: () => emit('ImportFileCleared', {}),
-                    onImportConfirmed: () => emit('ImportConfirmed', {}),
+                    onImportConfirmed: (payload) => emit('ImportConfirmed', { payload }),
                     onAutoClose: () => {
                         importDialogOpen.val = false;
                         emit('ImportDialogClosed', {});
