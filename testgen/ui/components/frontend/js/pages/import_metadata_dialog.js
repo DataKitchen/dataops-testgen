@@ -5,6 +5,10 @@
  * @property {object|null} result
  * @property {object} blankBehavior
  * @property {object} fileValue
+ * @property {object} autoCloseScheduled
+ * @property {Function} onFileUploaded
+ * @property {Function} onFileCleared
+ * @property {Function} onImportConfirmed
  * @property {Function?} onAutoClose
  */
 import van from '/app/static/js/van.min.js';
@@ -29,7 +33,13 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
 
     const blankBehavior = props.blankBehavior;
     const fileValue = props.fileValue;
-    let autoCloseScheduled = false;
+    const autoCloseScheduled = props.autoCloseScheduled;
+
+    const requestPreview = () => {
+        if (fileValue.val?.content) {
+            props.onFileUploaded({ content: fileValue.val.content, blank_behavior: blankBehavior.val });
+        }
+    };
 
     return div(
         { class: 'flex-column fx-gap-4' },
@@ -39,7 +49,7 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
             help: 'Use the Export menu on the Data Catalog page to download the current metadata as a CSV template.',
             validators: [sizeLimit(CSV_SIZE_LIMIT)],
             value: fileValue,
-            onChange: (value) => {
+            onChange: (value, state) => {
                 // FileInput replays onChange when it mounts. The caller owns fileValue, so on a
                 // rebuild that replay arrives holding the same file and would re-parse it.
                 if (value === fileValue.val) {
@@ -48,18 +58,14 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                 const hadFile = fileValue.val?.content;
                 fileValue.val = value;
                 if (value?.content) {
-                    const payload = { content: value.content, blank_behavior: blankBehavior.val };
-                    if (props.onFileUploaded) {
-                        props.onFileUploaded(payload);
-                    } else {
-                        emit('FileUploaded', { payload });
+                    // The validators only paint a message; without this an oversized file
+                    // would still be encoded, uploaded, and parsed.
+                    if (state?.valid === false) {
+                        return;
                     }
+                    requestPreview();
                 } else if (hadFile) {
-                    if (props.onFileCleared) {
-                        props.onFileCleared();
-                    } else {
-                        emit('FileCleared', {});
-                    }
+                    props.onFileCleared();
                 }
             },
         }),
@@ -71,14 +77,19 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                 { label: 'Clear existing values', value: 'clear' },
             ],
             value: blankBehavior,
-            onChange: (value) => blankBehavior.val = value,
+            onChange: (value) => {
+                blankBehavior.val = value;
+                // The stored preview is what the import applies, so a choice made after
+                // the upload only takes effect if the preview is rebuilt with it.
+                requestPreview();
+            },
             layout: 'default',
         }),
         () => {
             const result = getValue(props.result);
             if (result) {
-                if (result.success && props.onAutoClose && !autoCloseScheduled) {
-                    autoCloseScheduled = true;
+                if (result.success && props.onAutoClose && !autoCloseScheduled.val) {
+                    autoCloseScheduled.val = true;
                     setTimeout(() => props.onAutoClose(), 2000);
                 }
                 return Alert(
@@ -142,7 +153,7 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                         icon: 'upload',
                         width: 'auto',
                         disabled: !hasMatches,
-                        onclick: () => props.onImportConfirmed ? props.onImportConfirmed() : emit('ImportConfirmed', {}),
+                        onclick: () => props.onImportConfirmed(),
                     }),
                 ),
             );

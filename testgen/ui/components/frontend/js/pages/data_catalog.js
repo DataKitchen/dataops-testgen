@@ -122,6 +122,7 @@ const DataCatalog = (/** @type Properties */ props) => {
     // declared inside it would reset the user's choice when the preview comes back.
     const importBlankBehavior = van.state('keep');
     const importFileValue = van.state(null);
+    const importAutoCloseScheduled = van.state(false);
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
@@ -250,6 +251,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                             onclick: () => {
                                 importBlankBehavior.val = 'keep';
                                 importFileValue.val = null;
+                                importAutoCloseScheduled.val = false;
                                 emit('ImportClicked', {});
                             },
                         })
@@ -450,6 +452,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                         result: data.result,
                         blankBehavior: importBlankBehavior,
                         fileValue: importFileValue,
+                        autoCloseScheduled: importAutoCloseScheduled,
                         onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
                         onFileCleared: () => emit('ImportFileCleared', {}),
                         onImportConfirmed: () => emit('ImportConfirmed', {}),
