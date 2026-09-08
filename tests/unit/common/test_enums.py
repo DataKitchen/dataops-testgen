@@ -1,6 +1,12 @@
 import pytest
 
-from testgen.common.enums import JOB_STATUS_LABEL, STOPPABLE_ONLY_STATUSES, JobStatus
+from testgen.common.enums import (
+    JOB_STATUS_LABEL,
+    STOPPABLE_ONLY_STATUSES,
+    WORKING_STATUSES,
+    JobStatus,
+    run_duration_seconds,
+)
 from testgen.common.models.profiling_run import ProfilingRunSummary
 from testgen.common.models.test_run import TestRunSummary
 
@@ -126,3 +132,32 @@ def test_every_stopped_run_can_still_be_canceled():
     # up on, and cancel is the only way out that does not need a worker.
     for status in STOPPABLE_ONLY_STATUSES:
         assert status in JobStatus.sources_for(JobStatus.CANCEL_REQUESTED), status
+
+
+def test_a_run_with_more_work_coming_reports_no_duration_yet():
+    """Only the segments it already finished are recorded. A queued run counts too: the next
+    poll takes it without anybody asking, so its total grows the way a working run's does."""
+    for status in WORKING_STATUSES | frozenset(JobStatus.claimable()):
+        assert run_duration_seconds(120.0, status) is None, status
+
+
+def test_a_settled_or_paused_run_reports_the_time_it_worked():
+    """A requested pause is the one stop that holds, so its total is final until somebody
+    releases it."""
+    # Plain strings too, which is what every caller reads off the status column.
+    for status in (JobStatus.COMPLETED, JobStatus.CANCELED, JobStatus.PAUSED, "paused"):
+        assert run_duration_seconds(120.0, status) == 120.0, status
+
+
+def test_every_status_either_reports_a_duration_or_withholds_one():
+    """Spelled out rather than derived the way the code derives it, so a status crossing between
+    the two fails here rather than quietly changing what every duration display shows."""
+    reporting = {status for status in JobStatus if run_duration_seconds(1.0, status) is not None}
+
+    assert reporting == {
+        JobStatus.COMPLETED,
+        JobStatus.ERROR,
+        JobStatus.CANCEL_REQUESTED,
+        JobStatus.CANCELED,
+        JobStatus.PAUSED,
+    }

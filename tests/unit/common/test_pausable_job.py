@@ -46,6 +46,26 @@ class _FakeJobExecution:
         return True
 
 
+class _LoadedRow:
+    """The job's own row as the session's identity map holds it.
+
+    Reads and writes of ``resume_state`` pass through. ``status`` is refused: the real session
+    loaded this row before the job began and ``expire_on_commit=False`` keeps that copy, so a
+    status read here could never see a request made from another session.
+    """
+
+    def __init__(self, row):
+        object.__setattr__(self, "_row", row)
+
+    def __getattr__(self, name):
+        if name == "status":
+            raise AssertionError("read the status column, not the job's own row")
+        return getattr(self._row, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._row, name, value)
+
+
 @pytest.fixture
 def job_exec():
     return _FakeJobExecution()
@@ -53,11 +73,11 @@ def job_exec():
 
 @pytest.fixture
 def session(job_exec):
-    """Stand in for the session the job runs inside, returning the fake row from get()."""
+    """Stand in for the session the job runs inside: get() hands back the identity map's copy
+    of the row, scalar() reads the live column."""
     mock = MagicMock()
-    mock.get.return_value = job_exec
-
     mock.scalar.side_effect = lambda *_a, **_k: job_exec.status
+    mock.get.side_effect = lambda *_a, **_k: _LoadedRow(job_exec)
 
     with patch(f"{MODULE}.get_current_session", return_value=mock):
         yield mock
@@ -264,14 +284,20 @@ def _stoppable(keys, job_exec, after, requesting=JobStatus.INTERRUPT_REQUESTED, 
 
 
 @pytest.mark.parametrize(
-    "requesting", [JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED]
+    "requesting",
+    [
+        JobStatus.INTERRUPT_REQUESTED,
+        JobStatus.PAUSE_REQUESTED,
+        JobStatus.INTERRUPTED,
+        JobStatus.PAUSED,
+    ],
 )
 def test_a_detected_stop_commits_the_checkpoint_before_unwinding(session, job_exec, requesting):
     """The checkpoint has to be durable by the time JobParked leaves: unwinding still has to
     drain the pool, and a kill during that drain would otherwise lose the run's progress.
 
-    Both intents, because the durability gate reads the row's status: an interrupt and a pause
-    are equally resumable, and admitting only one would silently drop the other's progress."""
+    Every status that signals a stop, because the durability gate reads the row's: the requests,
+    and the parked statuses a restart can leave on a row whose process is still running."""
     committed = []
     session.commit.side_effect = lambda: committed.append((job_exec.status, job_exec.resume_state))
     job = _stoppable(["a", "b", "c", "d", "e"], job_exec, after=2, requesting=requesting)

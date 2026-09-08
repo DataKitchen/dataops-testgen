@@ -141,17 +141,18 @@ class JobExecution(Base):
     def recover_stale(cls) -> int:
         """Settle rows left behind by a dead process. Returns how many were settled.
 
-        A row carrying a checkpoint continues instead of being canceled. The job commits that
-        checkpoint as the last write it makes before unwinding, so its presence means the work
-        is accounted for and only the process's exit went unrecorded. A stopping status on its
-        own is not enough: inferring a continue from it would claim a run whose process is
-        merely unreachable -- ``exec-job`` is started in its own session and outlives its
-        scheduler -- and hand a second worker the same run.
+        A row that was asked to stop and carries a checkpoint continues instead of being
+        canceled. The job commits that checkpoint as the last write it makes before unwinding,
+        so its presence means the work is accounted for and only the process's exit went
+        unrecorded. A stopping status on its own is not enough: inferring a continue from it
+        would claim a run whose process is merely unreachable -- ``exec-job`` is started in its
+        own session and outlives its scheduler -- and hand a second worker the same run.
 
         Where it continues from follows what stopped it. A run someone asked to pause is held at
-        PAUSED, because releasing it is a decision rather than a consequence; anything else is
-        queued at INTERRUPTED for the next poll. Parking runs first, so a pause carrying a
-        checkpoint is settled before the cancel pass can reach it.
+        PAUSED, because releasing it is a decision rather than a consequence, and one that was
+        interrupted is queued at INTERRUPTED for the next poll. Parking runs first, so a pause
+        carrying a checkpoint is settled before the cancel pass can reach it. Everything else
+        the passes reach is canceled, a checkpoint it never got to signal included.
         """
         # Each pass ends a working period, so each bills what the dead process worked. Rows only
         # reach here when the scheduler died too -- one that merely lost its subprocess was
@@ -307,19 +308,19 @@ class JobExecution(Base):
         one -- would add the whole span a second time. And a row arriving from a status that was
         not working has either done nothing yet or been billed already.
 
-        Gated on the run having started as well. A row can be claimed and never dispatched, and
-        the span from its claim is then not work anybody did: billing it would charge a run that
-        never began for the whole time until something noticed.
+        A claim that never dispatched is excluded as well: work happens in RUNNING, which is
+        where ``mark_running`` moves the row, so the span from a claim the row is still sitting
+        on is nobody's work. Keyed on the status rather than on ``started_at``, which
+        ``mark_running`` coalesces -- after the first segment that column says the run has
+        started, not that this claim did.
         """
+        sources = sources - {JobStatus.CLAIMED}
         if not sources:
             return {}
         ordered = JobStatus.ordered(sources)
         return {
             "active_seconds": case(
-                (
-                    cls.status.in_(ordered) & cls.started_at.isnot(None),
-                    cls._worked_segment(),
-                ),
+                (cls.status.in_(ordered), cls._worked_segment()),
                 else_=cls.active_seconds,
             )
         }

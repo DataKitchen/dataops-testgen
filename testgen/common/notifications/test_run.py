@@ -3,7 +3,7 @@ import logging
 from sqlalchemy import case, literal, select
 
 from testgen import settings
-from testgen.common.enums import JobStatus
+from testgen.common.enums import JobStatus, run_duration_seconds
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_settings import (
     TestRunNotificationSettings,
@@ -13,7 +13,7 @@ from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.notifications import BaseNotificationTemplate
-from testgen.utils import log_and_swallow_exception, run_duration_seconds
+from testgen.utils import log_and_swallow_exception
 
 LOG = logging.getLogger("testgen")
 
@@ -340,7 +340,7 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
         # Through the shared helper, so an unfinished run reports nothing here as well. A
         # notification only fires once a run has settled, but that is the caller's habit rather
         # than something this template can see.
-        "duration_seconds": run_duration_seconds(tr_summary.active_seconds, tr_summary.completed_at),
+        "duration_seconds": run_duration_seconds(tr_summary.active_seconds, tr_summary.status),
         "test_run_url": test_run_url,
         "test_run_id": str(test_run.id),
         "test_result_summary": [

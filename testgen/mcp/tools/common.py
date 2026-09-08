@@ -21,6 +21,7 @@ from testgen.common.enums import (
     MonitorType,
     PiiRisk,
     QualityDimension,
+    run_duration_seconds,
 )
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorLabel
 from testgen.common.models import get_current_session
@@ -51,7 +52,6 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
 from testgen.mcp.tools.markdown import MdDoc
-from testgen.utils import run_duration_seconds
 
 # User-facing label for ``Disposition.INACTIVE`` is "Muted" — accept that label on input.
 _DISPOSITION_USER_TO_DB: dict[str, Disposition] = {
@@ -377,13 +377,13 @@ def parse_failure_group_by(value: str) -> FailureGroupBy:
     return parse_enum(value, FailureGroupBy, "group_by")
 
 
-def format_run_duration(active_seconds: float | None, completed_at: datetime | None) -> str | None:
-    """Render how long a run worked as ``Xs`` / ``Xm Ys`` / ``Xh Ym``, or ``None`` if unfinished.
+def format_run_duration(active_seconds: float | None, status: str) -> str | None:
+    """Render how long a run worked as ``Xs`` / ``Xm Ys`` / ``Xh Ym``, or ``None`` if still working.
 
     Reports the time the run worked, which for one that stopped and continued is less than the
     span between its start and its end.
     """
-    resolved = run_duration_seconds(active_seconds, completed_at)
+    resolved = run_duration_seconds(active_seconds, status)
     if resolved is None:
         return None
     seconds = int(resolved)

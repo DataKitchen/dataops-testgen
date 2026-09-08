@@ -304,12 +304,3 @@ def log_and_swallow_exception(func):
                 LOG.exception("Error executing '%s.%s':", func.__module__, func.__name__)
 
         return wrapped
-
-def run_duration_seconds(active_seconds: float | None, completed_at: datetime | None) -> float | None:
-    """How long a run worked, in seconds, or None if it has not finished.
-
-    ``active_seconds`` is the whole answer: it leaves out any period the run spent stopped, and
-    a backfill gave it to every run that finished before it was being recorded. A run still
-    going has a total that is still growing, which is progress rather than a duration.
-    """
-    return active_seconds if completed_at else None

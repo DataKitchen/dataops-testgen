@@ -4,7 +4,7 @@ from urllib.parse import quote
 from sqlalchemy import select
 
 from testgen import settings
-from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, run_duration_seconds
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.notification_settings import (
@@ -15,7 +15,7 @@ from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup
 from testgen.common.notifications.notifications import BaseNotificationTemplate
-from testgen.utils import log_and_swallow_exception, run_duration_seconds
+from testgen.utils import log_and_swallow_exception
 
 LOG = logging.getLogger("testgen")
 
@@ -328,7 +328,7 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
             # latter, and the email would otherwise disagree with every other surface reporting
             # the same run.
             "duration_seconds": run_duration_seconds(
-                job_execution.active_seconds, job_execution.completed_at
+                job_execution.active_seconds, job_execution.status
             ),
             "status": job_execution.status,
             "status_label": JOB_STATUS_LABEL.get(job_execution.status, job_execution.status),

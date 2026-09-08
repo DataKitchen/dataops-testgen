@@ -214,6 +214,22 @@ WORKING_STATUSES: frozenset[JobStatus] = frozenset({
     JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED,
 })
 
+
+# A run in one of these will work more without anybody asking it to: it is either working now
+# or queued for the next poll to take. Only the requested pause is left out, since releasing it
+# is a decision somebody has to make.
+_ACCRUING_STATUSES: frozenset[JobStatus] = WORKING_STATUSES | frozenset(_CLAIMABLE)
+
+
+def run_duration_seconds(active_seconds: float | None, status: str) -> float | None:
+    """How long a run worked, in seconds, or None while the total is still growing.
+
+    ``active_seconds`` leaves out any period the run spent stopped. A run with more work coming
+    has only the segments it already finished recorded, which is progress rather than a
+    duration; one that has settled or is waiting to be resumed has its whole total.
+    """
+    return None if status in _ACCRUING_STATUSES else active_seconds
+
 # Statuses reached only by stopping a run at a task boundary, so a job whose key is not in
 # ``PAUSABLE_JOB_KEYS`` never holds one.
 STOPPABLE_ONLY_STATUSES: frozenset[JobStatus] = frozenset({

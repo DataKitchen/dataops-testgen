@@ -28,6 +28,7 @@ from testgen.mcp.tools.common import (
     ScoreGroupBy,
     ScoreType,
     format_disposition,
+    format_run_duration,
     parse_category,
     parse_disposition,
     parse_impact_dimension,
@@ -1410,3 +1411,19 @@ def test_the_advertised_options_are_exactly_what_parses():
     for job_key in (JobKey.run_profile, JobKey.run_tests):
         for label in run_status_filter_options(job_key).split(", "):
             assert parse_run_status_filter(label, job_key)
+
+
+@pytest.mark.parametrize(
+    ("active_seconds", "expected"),
+    [(0, "0s"), (45, "45s"), (60, "1m 0s"), (3599, "59m 59s"), (3600, "1h 0m"), (7265, "2h 1m")],
+)
+def test_a_settled_run_renders_the_time_it_worked(active_seconds, expected):
+    assert format_run_duration(active_seconds, JobStatus.COMPLETED) == expected
+
+
+def test_a_paused_run_renders_a_duration_and_a_working_one_does_not():
+    """Its total is final until somebody resumes it, so it reports; a working run's is still
+    accumulating and reports nothing."""
+    assert format_run_duration(90, JobStatus.PAUSED) == "1m 30s"
+    assert format_run_duration(90, JobStatus.RUNNING) is None
+    assert format_run_duration(None, JobStatus.COMPLETED) is None

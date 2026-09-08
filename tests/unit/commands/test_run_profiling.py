@@ -16,7 +16,7 @@ from testgen.commands.run_profiling import (
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome
 from testgen.common.database.flavor.flavor_service import SQLFlavor
-from testgen.common.enums import JobKey
+from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.profile_result import ProfileResult
@@ -384,7 +384,7 @@ def test_on_start_keeps_a_resumed_runs_original_start_time():
     assert existing.profiling_starttime == ORIGINAL_START
 
 
-def _settled_job_exec(active_seconds=None, started_at=None, completed_at=None):
+def _settled_job_exec(active_seconds=None, started_at=None, completed_at=None, status=JobStatus.COMPLETED):
     job_exec = MagicMock()
     job_exec.id = uuid4()
     job_exec.source = "ui"
@@ -392,6 +392,7 @@ def _settled_job_exec(active_seconds=None, started_at=None, completed_at=None):
     job_exec.active_seconds = active_seconds
     job_exec.started_at = started_at
     job_exec.completed_at = completed_at
+    job_exec.status = status
     return job_exec
 
 
@@ -549,3 +550,35 @@ def test_a_checkpoint_from_a_build_that_measured_differently_is_discarded():
 
     with pytest.raises(WorkTasksChanged):
         job.pin("result_shape", PROFILE_RESULT_SHAPE_VERSION)
+
+
+@pytest.mark.parametrize("status", [JobStatus.CANCELED, JobStatus.CANCEL_REQUESTED])
+def test_a_canceled_run_is_not_reported(status):
+    """It settles through these same callbacks, but its counts describe work somebody abandoned
+    partway rather than a run that produced results."""
+    job_exec = _settled_job_exec(active_seconds=90.0, status=status)
+
+    with (
+        patch(f"{MODULE}.ProfilingRun"),
+        patch(f"{MODULE}.TableGroup"),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        report_profiling_run(job_exec)
+
+    mixpanel.return_value.send_event.assert_not_called()
+
+
+def test_a_run_that_errored_is_still_reported():
+    """It ran and measured what it could; only a cancel is excluded."""
+    job_exec = _settled_job_exec(active_seconds=90.0, status=JobStatus.ERROR)
+
+    with (
+        patch(f"{MODULE}.ProfilingRun"),
+        patch(f"{MODULE}.TableGroup"),
+        patch(f"{MODULE}.Connection"),
+        patch(f"{MODULE}.MixpanelService") as mixpanel,
+    ):
+        report_profiling_run(job_exec)
+
+    mixpanel.return_value.send_event.assert_called_once()

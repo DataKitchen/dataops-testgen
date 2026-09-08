@@ -42,67 +42,6 @@ SCOREABLE_JOB_KEYS = frozenset({"run-profile", "run-tests"})
 FOLLOW_UP_POLL_LIMIT = 25
 
 
-class _ForgedRun:
-    """The ``job_executions`` row for work quick-start runs itself.
-
-    Quick-start has no scheduler, so nothing claims these rows, dispatches them, or stamps what
-    a settlement normally would. Their timestamps are chosen rather than observed -- backdating
-    is the point, since demo runs have to look like they happened across days -- so every field
-    derived from those timestamps has to be written here as well.
-
-    Owning both ends of the row in one place is what keeps that list from being rediscovered a
-    field at a time: the closing half runs on the way out rather than at a call site that can
-    forget it.
-    """
-
-    def __init__(
-        self,
-        job_key: str,
-        source: JobSource,
-        effective_date: datetime,
-        kwargs: dict[str, str],
-    ) -> None:
-        self._job_key = job_key
-        self._source = source
-        self._effective_date = effective_date
-        self._kwargs = kwargs
-        self._wall_start = datetime.now(UTC)
-        self.job_id: UUID | None = None
-
-    def __enter__(self) -> UUID:
-        with database_session() as session:
-            je = JobExecution(
-                job_key=self._job_key,
-                kwargs=self._kwargs,
-                source=self._source,
-                project_code=settings.PROJECT_KEY,
-                status=JobStatus.COMPLETED.value,
-                started_at=self._effective_date,
-            )
-            session.add(je)
-            session.flush([je])
-            self.job_id = je.id
-        return self.job_id
-
-    def __exit__(self, exc_type: type[BaseException] | None, *_: object) -> None:
-        """Close the row out with what the run cost.
-
-        Left untouched when the handler raised, the same as before: a seed that failed part way
-        is not a run that finished, and the exception is what the caller acts on.
-        """
-        if exc_type is not None:
-            return
-
-        worked = datetime.now(UTC) - self._wall_start
-        with database_session():
-            je = JobExecution.get(self.job_id)
-            je.completed_at = self._effective_date + worked
-            # Nothing claimed this row, so the accumulator that normally measures a run never
-            # ran for it. The handler's own elapsed time is what it worked, and this column is
-            # the only thing any duration display reads.
-            je.active_seconds = worked.total_seconds()
-
-
 def run_with_job_execution(
     job_key: str,
     run_date: datetime | None = None,
@@ -115,15 +54,42 @@ def run_with_job_execution(
     to the JE via job_context), then invoke `run_score_update` inline for the
     run/profile job types. No notifications — this is seed data, nobody's
     watching an inbox.
+
+    Nothing claims or settles the row, and its timestamps are chosen rather than observed --
+    backdating is the point, since demo runs have to look like they happened across days -- so
+    every field a claim and a settlement would stamp is written here instead.
     """
     effective_date = run_date or datetime.now(UTC)
     # Match the source a real trigger would use so demo data mirrors production attribution.
     source = JobSource.scheduler if job_key == "run-monitors" else JobSource.ui
     kwargs = {k: str(v) for k, v in handler_kwargs.items()}
 
-    with _ForgedRun(job_key, source, effective_date, kwargs) as je_id:
-        job_context.set(JobContext(job_id=je_id, source=source))
-        JOB_DISPATCH[job_key].handler(**handler_kwargs, run_date=run_date)
+    wall_start = datetime.now(UTC)
+    with database_session() as session:
+        je = JobExecution(
+            job_key=job_key,
+            kwargs=kwargs,
+            source=source,
+            project_code=settings.PROJECT_KEY,
+            status=JobStatus.COMPLETED.value,
+            started_at=effective_date,
+        )
+        session.add(je)
+        session.flush([je])
+        je_id = je.id
+
+    job_context.set(JobContext(job_id=je_id, source=source))
+    # No try/finally: a seed that raises leaves the row's end unstamped.
+    JOB_DISPATCH[job_key].handler(**handler_kwargs, run_date=run_date)
+
+    worked = datetime.now(UTC) - wall_start
+    with database_session():
+        je = JobExecution.get(je_id)
+        je.completed_at = effective_date + worked
+        # Nothing claimed this row, so the accumulator that normally measures a run never ran
+        # for it. The handler's own elapsed time is what it worked, and this column is the only
+        # thing any duration display reads.
+        je.active_seconds = worked.total_seconds()
 
     _drain_queued_jobs()
 

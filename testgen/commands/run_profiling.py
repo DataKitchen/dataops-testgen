@@ -18,7 +18,7 @@ from testgen.common import (
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome, get_flavor_service
-from testgen.common.enums import JobKey, JobSource
+from testgen.common.enums import JobKey, JobSource, JobStatus, run_duration_seconds
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
@@ -35,7 +35,7 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.pausable_job import PausableJob, Step
 from testgen.common.profile_frequency import build_frequent_values, with_frequent_patterns
 from testgen.common.read_file import get_template_files
-from testgen.utils import get_exception_message, run_duration_seconds
+from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
@@ -50,30 +50,32 @@ PROFILE_RESULT_SHAPE_VERSION = 1
 def report_profiling_run(job_exec: JobExecution) -> None:
     """Send the ``run-profiling`` telemetry event for a run that has settled.
 
-    Runs as a final callback rather than from the handler, so the run's own timestamps are
-    already stamped and the duration is the one the run ended up with -- including across a
-    stop and continue, where the handler that finishes the work only knows its own share of it.
-
-    Opens its own session: final callbacks are fired outside the transaction that settled the
-    run, and one that reaches for entities without a session raises into a caller that swallows
-    it, which would lose the event rather than report the failure.
+    Runs as a final callback so the duration is the one the run ended up with, which across a
+    stop and continue is more than the handler that finished the work knows about.
     """
+    if job_exec.status not in (JobStatus.COMPLETED, JobStatus.ERROR):
+        # A cancel settles through these same callbacks, and the counts it would carry describe
+        # work somebody abandoned rather than a run that produced results.
+        return
+
     profiling_run = ProfilingRun.get(job_exec.id)
     if profiling_run is None:
         # A failure before the run row is written leaves nothing to report on.
         return
 
+    # Settling releases the delete guard that held these in place, so either can be gone by
+    # now. Report what is left rather than raising into a caller that swallows the event.
     table_group = TableGroup.get(profiling_run.table_groups_id)
     connection = Connection.get(profiling_run.connection_id)
     MixpanelService().send_event(
         "run-profiling",
         source=job_exec.source.upper(),
         username=job_exec.kwargs.get("username"),
-        sql_flavor=connection.sql_flavor_code,
-        sampling=table_group.profile_use_sampling,
+        sql_flavor=connection.sql_flavor_code if connection else None,
+        sampling=table_group.profile_use_sampling if table_group else None,
         table_count=profiling_run.table_ct or 0,
         column_count=profiling_run.column_ct or 0,
-        run_duration=run_duration_seconds(job_exec.active_seconds, job_exec.completed_at),
+        run_duration=run_duration_seconds(job_exec.active_seconds, job_exec.status),
     )
 
 

@@ -651,16 +651,25 @@ def test_a_parked_run_is_not_billed_for_standing_still(mock_session, parked):
     assert "'running'" in billing
 
 
-def test_a_run_that_never_started_is_not_billed(mock_session):
+@pytest.mark.parametrize("transition", ["mark_failed", "request_cancel"])
+def test_a_claim_that_never_dispatched_is_not_billed(mock_session, transition):
     """A row can be claimed and never dispatched. The span from its claim is nobody's work, so
-    settling it records nothing rather than charging it for the wait."""
-    job = JobExecution(id=uuid4(), status="running", job_key="run-profile")
-    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="completed")
+    settling it records nothing rather than charging it for the wait.
 
-    job.mark_completed()
+    Keyed on the status, not on started_at: mark_running coalesces that column, so on every
+    claim after the first it reports that the run has started rather than that this claim did,
+    and a resumed run whose claim died before dispatch would be charged for the whole wait.
+    """
+    job = JobExecution(id=uuid4(), status="claimed", job_key="run-profile", active_seconds=300.0)
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="error")
 
-    # Guarded on the run having started, not on its status alone.
-    assert "started_at IS NOT NULL" in str(mock_session.execute.call_args[0][0])
+    getattr(job, transition)(*(["boom"] if transition == "mark_failed" else []))
+
+    # The clause is present -- other sources of this transition do bill -- so what matters is
+    # that a claimed row is not among the ones it admits.
+    billing = _billing_expression(mock_session.execute.call_args[0][0])
+    assert "'claimed'" not in billing
+    assert "'running'" in billing
 
 
 def test_a_terminal_transition_does_not_rebill_a_cancel(mock_session):
@@ -687,7 +696,21 @@ def test_the_recovery_passes_bill_what_the_dead_process_worked(mock_session):
     for target in (JobStatus.PAUSED, JobStatus.INTERRUPTED, JobStatus.CANCEL_REQUESTED):
         statement = str(_settling_pass(mock_session, target)).split(" WHERE ")[0]
         assert "active_seconds=CASE" in statement, target
-        assert "started_at IS NOT NULL" in statement, target
+        assert "coalesce(job_executions.active_seconds" in statement, target
+
+
+def test_the_recovery_cancel_pass_does_not_bill_a_claim_that_never_dispatched(mock_session):
+    """It is the one recovery pass a claimed row reaches, and the span from a claim the row is
+    still sitting on is nobody's work. Spelled out rather than derived the way the code derives
+    it, so re-admitting CLAIMED fails here rather than passing silently."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.recover_stale()
+
+    assert _narrows_to(
+        _settling_pass(mock_session, JobStatus.CANCEL_REQUESTED),
+        {JobStatus.RUNNING, JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED},
+    )
 
 
 @pytest.mark.parametrize(

@@ -454,7 +454,7 @@ const ProfilingRunItem = (
                 )
                 : div(
                     { class: 'text-caption mt-1' },
-                    item.status === 'running' && runningStep
+                    ACTIVE_STATUSES.has(item.status) && runningStep
                         ? [
                             div(
                                 runningStep.label,

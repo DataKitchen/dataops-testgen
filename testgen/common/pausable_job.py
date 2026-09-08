@@ -327,8 +327,8 @@ class PausableJob(ABC, Generic[K]):
             session.commit()
 
         if result.processed < len(pending):
-            # The pool stopped pulling on its own, so no per-task commit carried the final
-            # checkpoint out. Persist it here, on the same terms as the in-loop stop.
+            # The pool stopped dispatching before every task ran, so the loop above never
+            # reached its stop check. Persist the checkpoint here, on the same terms.
             payload = self._state_payload()
             self._park_checkpoint(payload)
             raise JobParked(step.name, payload)
@@ -420,12 +420,12 @@ class PausableJob(ABC, Generic[K]):
         """Commit the checkpoint, unless the row is no longer one a resume can reach.
 
         A cancel that arrived first wins and the scheduler settles it, so a checkpoint written
-        now would only outlive the run that wrote it. Both intents' statuses pass: a pause is
-        just as resumable as an interrupt, and gating on the interrupt's alone would drop the
-        checkpoint of every run stopped by request.
+        now would only outlive the run that wrote it.
         """
-        job_exec = get_current_session().get(JobExecution, self.job_id)
-        if job_exec and job_exec.status in _STOP_SIGNALLING_STATUSES:
+        # Read the column, not the row: this job's JobExecution is already in the session's
+        # identity map, so fetching the entity would never see a status set from elsewhere.
+        status = get_current_session().scalar(select(JobExecution.status).where(JobExecution.id == self.job_id))
+        if status in _STOP_SIGNALLING_STATUSES:
             self._stage_state(payload)
         get_current_session().commit()
 
