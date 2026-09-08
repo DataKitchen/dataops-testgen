@@ -3,7 +3,6 @@
  * @type {object}
  * @property {string} label
  * @property {() => void} onclick
- * @property {boolean?} separator
  *
  * @typedef DropdownHeader
  * @type {object}
@@ -59,7 +58,6 @@ const DropdownButton = (props) => {
                         : div({
                             class: 'tg-dropdown-button--item',
                             'data-testid': 'dropdown-item',
-                            style: item.separator ? 'border-top: var(--button-stroked-border);' : '',
                             onclick: () => { menuOpen.val = false; item.onclick(); },
                         }, item.label),
                     ),
