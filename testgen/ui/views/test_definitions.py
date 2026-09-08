@@ -4,7 +4,7 @@ import re
 import typing
 from datetime import UTC, datetime
 from enum import StrEnum
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pandas as pd
 import streamlit as st
@@ -651,9 +651,14 @@ class TestDefinitionsPage(Page):
             return st.session_state.get(TD_IMPORT_DIALOG_KEY) == str(test_suite.id)
 
         def _store_import_preview(content: str, policy: dict, file_name: str | None) -> None:
-            st.session_state[TD_IMPORT_PREVIEW_KEY] = _build_import_preview(content, policy, test_suite)
+            preview = _build_import_preview(content, policy, test_suite)
+            # Identifies this projection so the apply can tell whether the browser is
+            # authorizing the preview it actually rendered.
+            preview["token"] = str(uuid4())
+            st.session_state[TD_IMPORT_PREVIEW_KEY] = preview
             st.session_state[TD_IMPORT_PREVIEW_POLICY_KEY] = policy
             st.session_state[TD_IMPORT_PREVIEW_CONTENT_KEY] = content
+            st.session_state.pop(TD_IMPORT_RESULT_KEY, None)
             if file_name:
                 st.session_state[TD_IMPORT_FILE_NAME_KEY] = file_name
 
@@ -680,24 +685,28 @@ class TestDefinitionsPage(Page):
             st.session_state.pop(TD_IMPORT_FILE_NAME_KEY, None)
 
         def on_import_confirmed(payload: dict | None = None) -> None:
+            payload = payload or {}
             content = st.session_state.get(TD_IMPORT_PREVIEW_CONTENT_KEY)
-            stored_policy = st.session_state.get(TD_IMPORT_PREVIEW_POLICY_KEY, IMPORT_POLICY_DEFAULTS)
             refusal = _refuse_import(
                 user_can_edit=user_can_edit,
                 targets_this_suite=_import_targets_this_suite(),
                 content=content,
                 preview=st.session_state.get(TD_IMPORT_PREVIEW_KEY),
-                stored_policy=stored_policy,
-                submitted_policy=_import_policy(payload or {}),
-                delete_confirmed=bool((payload or {}).get("delete_confirmed")),
+                submitted_token=payload.get("preview_token"),
+                delete_confirmed=bool(payload.get("delete_confirmed")),
             )
             if refusal:
                 LOG.warning("Refused test definition import: %s", refusal)
                 return
 
-            st.session_state[TD_IMPORT_RESULT_KEY] = _run_import(test_suite, content, stored_policy)
-            st.session_state.pop(TD_IMPORT_PREVIEW_KEY, None)
-            st.session_state.pop(TD_IMPORT_PREVIEW_CONTENT_KEY, None)
+            policy = st.session_state.get(TD_IMPORT_PREVIEW_POLICY_KEY, IMPORT_POLICY_DEFAULTS)
+            result = _run_import(test_suite, content, policy)
+            st.session_state[TD_IMPORT_RESULT_KEY] = result
+            # A failed import keeps its preview and content so a retry is one click away;
+            # storing a new preview clears the result.
+            if result["success"]:
+                st.session_state.pop(TD_IMPORT_PREVIEW_KEY, None)
+                st.session_state.pop(TD_IMPORT_PREVIEW_CONTENT_KEY, None)
 
         def on_import_dialog_closed(*_) -> None:
             _clear_import_state()
@@ -987,15 +996,14 @@ def _refuse_import(
     targets_this_suite: bool,
     content: str | None,
     preview: dict | None,
-    stored_policy: dict,
-    submitted_policy: dict,
+    submitted_token: str | None,
     delete_confirmed: bool,
 ) -> str | None:
     """Return why an import must not proceed, or None when it may.
 
-    The policy comparison rejects a preview the user never saw: a policy change and a
-    confirm click can land in the same rerun, and the change is applied first, so the
-    click would otherwise carry a policy the on-screen preview was not built with.
+    The token rejects a projection the user never saw: a policy change and a confirm
+    click can land in the same rerun, and the change is applied first, so the click
+    would otherwise authorize a preview that had already been replaced.
     """
     if not user_can_edit:
         return "user cannot edit"
@@ -1003,7 +1011,7 @@ def _refuse_import(
         return "dialog is armed for a different test suite"
     if not content or not preview or preview.get("error"):
         return "no valid preview"
-    if dict(submitted_policy) != dict(stored_policy):
+    if not submitted_token or submitted_token != preview.get("token"):
         return "preview is stale"
     if preview.get("summary", {}).get("deleted") and not delete_confirmed:
         return "deletion was not confirmed"

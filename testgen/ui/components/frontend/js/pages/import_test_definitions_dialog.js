@@ -9,7 +9,7 @@
  * @property {object} onAbsence
  * @property {object} deleteConfirmed
  * @property {object} fileValue
- * @property {object} autoCloseScheduled
+ * @property {object} autoCloseTimer
  * @property {Function} onFileUploaded
  * @property {Function} onPolicyChanged
  * @property {Function} onFileCleared
@@ -91,7 +91,7 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
     const emit = props.emit;
     loadStylesheet('import-test-definitions-dialog', stylesheet);
 
-    const { onNew, onMatch, onAbsence, deleteConfirmed, fileValue, autoCloseScheduled } = props;
+    const { onNew, onMatch, onAbsence, deleteConfirmed, fileValue, autoCloseTimer } = props;
 
     const policy = () => ({
         on_new: onNew.val,
@@ -133,15 +133,14 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
                     return;
                 }
                 const hadFile = fileValue.val?.content;
-                fileValue.val = value;
+                // A file that fails a validator is held as nothing at all. Keeping it would
+                // leave the picker naming one document while Python still holds the previous
+                // one armed, and the import applies what Python holds.
+                const accepted = value?.content && state?.valid !== false ? value : null;
+                fileValue.val = accepted;
                 deleteConfirmed.val = false;
-                if (value?.content) {
-                    // The validators only paint a message; without this an oversized file
-                    // would still be encoded, uploaded, and parked in session state.
-                    if (state?.valid === false) {
-                        return;
-                    }
-                    props.onFileUploaded({ content: value.content, file_name: value.name, ...policy() });
+                if (accepted) {
+                    props.onFileUploaded({ content: accepted.content, file_name: accepted.name, ...policy() });
                 } else if (hadFile) {
                     props.onFileCleared();
                 }
@@ -169,9 +168,8 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
         () => {
             const result = getValue(props.result);
             if (result) {
-                if (result.success && props.onAutoClose && !autoCloseScheduled.val) {
-                    autoCloseScheduled.val = true;
-                    setTimeout(() => props.onAutoClose(), 2000);
+                if (result.success && props.onAutoClose && !autoCloseTimer.val) {
+                    autoCloseTimer.val = setTimeout(() => props.onAutoClose(), 2000);
                 }
                 return Alert(
                     { type: result.success ? 'success' : 'error', icon: result.success ? 'check_circle' : 'error' },
@@ -189,6 +187,7 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
             }
 
             const summary = preview.summary ?? {};
+            const previewToken = preview.token;
             const deleting = summary.deleted > 0;
             const nothingToDo = !(summary.created || summary.updated || summary.deleted);
 
@@ -224,10 +223,13 @@ const ImportTestDefinitionsDialog = (/** @type Properties */ props) => {
                         label: 'Import Tests',
                         icon: 'upload',
                         width: 'auto',
-                        disabled: nothingToDo || (deleting && !deleteConfirmed.val),
+                        // A function, so the button owns the deleteConfirmed dependency. Read
+                        // eagerly it would belong to this child and rebuild the whole preview
+                        // table on every toggle click.
+                        disabled: () => nothingToDo || (deleting && !deleteConfirmed.val),
                         onclick: () => props.onImportConfirmed({
                             delete_confirmed: deleteConfirmed.val,
-                            ...policy(),
+                            preview_token: previewToken,
                         }),
                     }),
                 ),

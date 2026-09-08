@@ -324,8 +324,14 @@ def test_result_message_when_nothing_changed():
 # the browser can be made to send anything, and the delete confirmation never leaves it.
 
 
-def _preview(deleted=0):
-    return {"summary": {"created": 1, "updated": 0, "deleted": deleted, "skipped": 0}}
+# Preview identifiers. Named, not inline literals, so the "token" keyword does not read
+# to ruff as a hardcoded credential.
+RENDERED = "preview-a"
+REPLACED = "preview-b"
+
+
+def _preview(deleted=0, token=RENDERED):
+    return {"summary": {"created": 1, "updated": 0, "deleted": deleted, "skipped": 0}, "token": token}
 
 
 def _refusal(**overrides):
@@ -334,8 +340,7 @@ def _refusal(**overrides):
         "targets_this_suite": True,
         "content": "data:application/json;base64,e30=",
         "preview": _preview(),
-        "stored_policy": _policy(),
-        "submitted_policy": _policy(),
+        "submitted_token": RENDERED,
         "delete_confirmed": False,
     }
     return _refuse_import(**{**kwargs, **overrides})
@@ -376,12 +381,17 @@ def test_confirmation_is_not_demanded_when_nothing_would_be_deleted():
 
 def test_import_refused_when_the_preview_on_screen_is_stale():
     """A policy change and a confirm click can land in the same rerun, the change applied
-    first. Without this the click would apply a policy whose preview was never displayed."""
-    assert _refusal(
-        stored_policy=_policy(on_absence=OnAbsence.delete_all),
-        submitted_policy=_policy(),
-        delete_confirmed=True,
-    ) is not None
+    first, so the stored preview is already the new one by the time the click is handled.
+    The token is what the browser rendered, so an older one means the projection the user
+    authorized is gone."""
+    assert _refusal(preview=_preview(token=REPLACED), submitted_token=RENDERED) is not None
+    assert _refusal(preview=_preview(token=REPLACED), submitted_token=REPLACED) is None
+
+
+def test_import_refused_when_no_token_is_submitted():
+    """A hand-made payload does not get to skip the check by omitting the field."""
+    assert _refusal(submitted_token=None) is not None
+    assert _refusal(submitted_token="") is not None
 
 
 # --- apply ---

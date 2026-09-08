@@ -114,10 +114,18 @@ const TestDefinitions = (/** @type object */ props) => {
     const importOnAbsence = van.state('do_nothing');
     const importDeleteConfirmed = van.state(false);
     const importFileValue = van.state(null);
-    const importAutoCloseScheduled = van.state(false);
+    const importAutoCloseTimer = van.state(null);
     // These states are remounted fresh while the Python-side dialog state survives
     // navigation, so a reopened dialog adopts the policy its stored preview was built
     // with rather than showing defaults that contradict what the import would do.
+    // The success auto-close is a timer, so closing the dialog before it fires has to
+    // cancel it — otherwise it closes whatever dialog is open 2 seconds later.
+    const cancelImportAutoClose = () => {
+        if (importAutoCloseTimer.val) {
+            clearTimeout(importAutoCloseTimer.val);
+            importAutoCloseTimer.val = null;
+        }
+    };
     let importPolicyHydrated = false;
     van.derive(() => {
         const armed = getValue(props.import_dialog)?.policy;
@@ -539,7 +547,7 @@ const TestDefinitions = (/** @type object */ props) => {
                     importOnAbsence.val = 'do_nothing';
                     importDeleteConfirmed.val = false;
                     importFileValue.val = null;
-                    importAutoCloseScheduled.val = false;
+                    cancelImportAutoClose();
                     emit('ImportDialogOpened', {});
                 },
             })
@@ -728,6 +736,7 @@ const TestDefinitions = (/** @type object */ props) => {
                 title: 'Import Test Definitions',
                 open: importDialogOpen,
                 onClose: () => {
+                    cancelImportAutoClose();
                     importDialogOpen.val = false;
                     emit('ImportDialogClosed', {});
                 },
@@ -745,12 +754,13 @@ const TestDefinitions = (/** @type object */ props) => {
                     onAbsence: importOnAbsence,
                     deleteConfirmed: importDeleteConfirmed,
                     fileValue: importFileValue,
-                    autoCloseScheduled: importAutoCloseScheduled,
+                    autoCloseTimer: importAutoCloseTimer,
                     onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
                     onPolicyChanged: (payload) => emit('ImportPolicyChanged', { payload }),
                     onFileCleared: () => emit('ImportFileCleared', {}),
                     onImportConfirmed: (payload) => emit('ImportConfirmed', { payload }),
                     onAutoClose: () => {
+                        importAutoCloseTimer.val = null;
                         importDialogOpen.val = false;
                         emit('ImportDialogClosed', {});
                     },

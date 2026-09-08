@@ -5,7 +5,7 @@
  * @property {object|null} result
  * @property {object} blankBehavior
  * @property {object} fileValue
- * @property {object} autoCloseScheduled
+ * @property {object} autoCloseTimer
  * @property {Function} onFileUploaded
  * @property {Function} onFileCleared
  * @property {Function} onImportConfirmed
@@ -33,7 +33,7 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
 
     const blankBehavior = props.blankBehavior;
     const fileValue = props.fileValue;
-    const autoCloseScheduled = props.autoCloseScheduled;
+    const autoCloseTimer = props.autoCloseTimer;
 
     const requestPreview = () => {
         if (fileValue.val?.content) {
@@ -56,13 +56,12 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                     return;
                 }
                 const hadFile = fileValue.val?.content;
-                fileValue.val = value;
-                if (value?.content) {
-                    // The validators only paint a message; without this an oversized file
-                    // would still be encoded, uploaded, and parsed.
-                    if (state?.valid === false) {
-                        return;
-                    }
+                // A file that fails a validator is held as nothing at all. Keeping it would
+                // leave the picker naming one document while Python still holds the previous
+                // one armed, and would let the blank-value radio upload it on the next click.
+                const accepted = value?.content && state?.valid !== false ? value : null;
+                fileValue.val = accepted;
+                if (accepted) {
                     requestPreview();
                 } else if (hadFile) {
                     props.onFileCleared();
@@ -88,9 +87,8 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
         () => {
             const result = getValue(props.result);
             if (result) {
-                if (result.success && props.onAutoClose && !autoCloseScheduled.val) {
-                    autoCloseScheduled.val = true;
-                    setTimeout(() => props.onAutoClose(), 2000);
+                if (result.success && props.onAutoClose && !autoCloseTimer.val) {
+                    autoCloseTimer.val = setTimeout(() => props.onAutoClose(), 2000);
                 }
                 return Alert(
                     { type: result.success ? 'success' : 'error', icon: result.success ? 'check_circle' : 'error' },

@@ -122,7 +122,15 @@ const DataCatalog = (/** @type Properties */ props) => {
     // declared inside it would reset the user's choice when the preview comes back.
     const importBlankBehavior = van.state('keep');
     const importFileValue = van.state(null);
-    const importAutoCloseScheduled = van.state(false);
+    const importAutoCloseTimer = van.state(null);
+    // The success auto-close is a timer, so closing the dialog before it fires has to
+    // cancel it — otherwise it closes whatever dialog is open 2 seconds later.
+    const cancelImportAutoClose = () => {
+        if (importAutoCloseTimer.val) {
+            clearTimeout(importAutoCloseTimer.val);
+            importAutoCloseTimer.val = null;
+        }
+    };
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
@@ -251,7 +259,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                             onclick: () => {
                                 importBlankBehavior.val = 'keep';
                                 importFileValue.val = null;
-                                importAutoCloseScheduled.val = false;
+                                cancelImportAutoClose();
                                 emit('ImportClicked', {});
                             },
                         })
@@ -439,6 +447,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     title: 'Import Metadata',
                     open: importDialogOpen,
                     onClose: () => {
+                        cancelImportAutoClose();
                         importDialogOpen.val = false;
                         emit('ImportDialogClosed', {});
                     },
@@ -452,11 +461,12 @@ const DataCatalog = (/** @type Properties */ props) => {
                         result: data.result,
                         blankBehavior: importBlankBehavior,
                         fileValue: importFileValue,
-                        autoCloseScheduled: importAutoCloseScheduled,
+                        autoCloseTimer: importAutoCloseTimer,
                         onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
                         onFileCleared: () => emit('ImportFileCleared', {}),
                         onImportConfirmed: () => emit('ImportConfirmed', {}),
                         onAutoClose: () => {
+                            importAutoCloseTimer.val = null;
                             importDialogOpen.val = false;
                             emit('ImportDialogClosed', {});
                         },
