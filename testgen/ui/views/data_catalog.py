@@ -194,12 +194,15 @@ class DataCatalogPage(Page):
                 st.session_state.pop(DC_IMPORT_RESULT_KEY, None)
                 st.session_state[DC_IMPORT_DIALOG_KEY] = str(selected_table_group.id)
 
-        @with_database_session
         def on_import_file_uploaded(payload: dict) -> None:
             tg_id = st.session_state.get(DC_IMPORT_DIALOG_KEY)
             if tg_id:
                 try:
-                    preview = parse_import_csv(payload["content"], tg_id, payload["blank_behavior"])
+                    # The session is opened inside the try so a failure rolls back. Catching
+                    # the exception outside it would take database_session's clean-exit path
+                    # and commit a transaction that needs rolling back.
+                    with database_session():
+                        preview = parse_import_csv(payload["content"], tg_id, payload["blank_behavior"])
                 except Exception:
                     LOG.exception("Failed to parse import CSV")
                     preview = {"error": "Something went wrong while parsing the file."}
@@ -208,28 +211,12 @@ class DataCatalogPage(Page):
         def on_import_file_cleared(_) -> None:
             st.session_state.pop(DC_IMPORT_PREVIEW_KEY, None)
 
-        @with_database_session
         def on_import_confirmed(_) -> None:
             tg_id = st.session_state.get(DC_IMPORT_DIALOG_KEY)
             preview = st.session_state.get(DC_IMPORT_PREVIEW_KEY)
             if not preview or preview.get("error"):
                 return
-            try:
-                apply_metadata_import(preview, tg_id)
-                from testgen.ui.queries.profiling_queries import get_column_by_id, get_table_by_id
-                for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where]:
-                    func.clear()
-                st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
-                parts = []
-                if tc := preview.get("matched_tables", 0):
-                    parts.append(f"{tc} {'table' if tc == 1 else 'tables'}")
-                if cc := preview.get("matched_columns", 0):
-                    parts.append(f"{cc} {'column' if cc == 1 else 'columns'}")
-                summary = f"Metadata for {', '.join(parts)} imported." if parts else "No metadata was imported."
-                st.session_state[DC_IMPORT_RESULT_KEY] = {"success": True, "message": summary}
-            except Exception:
-                LOG.exception("Metadata import failed")
-                st.session_state[DC_IMPORT_RESULT_KEY] = {"success": False, "message": "Something went wrong while importing the metadata."}
+            st.session_state[DC_IMPORT_RESULT_KEY] = _run_metadata_import(preview, tg_id)
             st.session_state.pop(DC_IMPORT_PREVIEW_KEY, None)
 
         def on_import_dialog_closed(_) -> None:
@@ -650,6 +637,32 @@ def on_tags_changed(spinner_container: DeltaGenerator, payload: dict) -> None:
     for func in [ get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values, select_table_groups_minimal_where ]:
         func.clear()
     st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
+
+
+def _run_metadata_import(preview: dict, table_group_id: str) -> dict:
+    """Apply a metadata preview to a table group and describe the outcome for the dialog."""
+    try:
+        # The session is opened inside the try so a failed write rolls back. Catching the
+        # exception outside it would take database_session's clean-exit path and commit a
+        # partially applied import.
+        with database_session():
+            apply_metadata_import(preview, table_group_id)
+    except Exception:
+        LOG.exception("Metadata import failed")
+        return {"success": False, "message": "Something went wrong while importing the metadata."}
+
+    for func in [get_table_group_columns, get_table_by_id, get_column_by_id, get_tag_values,
+                 select_table_groups_minimal_where]:
+        func.clear()
+    st.session_state["data_catalog:last_saved_timestamp"] = datetime.now().timestamp()
+
+    parts = []
+    if tc := preview.get("matched_tables", 0):
+        parts.append(f"{tc} {'table' if tc == 1 else 'tables'}")
+    if cc := preview.get("matched_columns", 0):
+        parts.append(f"{cc} {'column' if cc == 1 else 'columns'}")
+    summary = f"Metadata for {', '.join(parts)} imported." if parts else "No metadata was imported."
+    return {"success": True, "message": summary}
 
 
 @st.cache_data(show_spinner=False)
