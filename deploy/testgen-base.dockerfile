@@ -6,75 +6,72 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONFAULTHANDLER=1
 ENV ACCEPT_EULA=Y
 
-RUN apk update && apk upgrade && apk add --no-cache \
-    # Tools needed for building the python wheels
-    gcc \
-    g++ \
-    make \
-    cmake \
-    musl-dev \
-    gfortran \
-    linux-headers=6.16.12-r0 \
-    # Tools needed for installing the MSSQL ODBC drivers
-    curl \
-    gpg \
-    gpgv \
-    openssl \
-    # glibc compatibility layer for packages that only ship manylinux wheels (e.g. hdbcli)
-    gcompat \
-    # Additional libraries needed and their dev counterparts. We add both so that we can remove
-    # the *-dev later, keeping the libraries
-    openblas=0.3.30-r2 \
-    openblas-dev=0.3.30-r2 \
-    unixodbc=2.3.14-r0 \
-    unixodbc-dev=2.3.14-r0
-
 COPY --chmod=775 ./deploy/install_linuxodbc.sh /tmp/dk/install_linuxodbc.sh
-RUN /tmp/dk/install_linuxodbc.sh
 
 # Install TestGen's main project empty pyproject.toml to install (and cache) the dependencies first
 COPY ./pyproject.toml /tmp/dk/pyproject.toml
-RUN mkdir /dk
 
-# Upgrading pip for security
-RUN python3 -m pip install --no-cache-dir --upgrade pip==26.1.2
-
-# hdbcli only ships manylinux wheels (no musl). pip 26+ correctly rejects these on Alpine.
-# We download the wheel for the correct arch, then extract it directly into site-packages
-# (wheels are zip files). gcompat provides the glibc shim needed at runtime.
-RUN ARCH=$(uname -m) && \
-    pip download --platform manylinux2014_${ARCH} --python-version 3.13 --only-binary :all: \
-        --no-deps -d /tmp/wheels hdbcli==2.25.31 && \
-    python3 -m zipfile -e /tmp/wheels/hdbcli-*.whl /dk/lib/python3.13/site-packages/ && \
+# The toolchain install, the wheel builds and the `apk del` have to stay in this one RUN. A layer is
+# immutable once committed, so deleting the packages from a later layer only writes whiteouts over
+# them: they are gone from the running container but still download on every pull. Splitting this
+# up costs ~165 MB (amd64) / ~139 MB (arm64) of pulled bytes.
+RUN apk update && apk upgrade && apk add --no-cache \
+        # Tools needed for building the python wheels
+        gcc \
+        g++ \
+        make \
+        cmake \
+        musl-dev \
+        gfortran \
+        linux-headers=6.16.12-r0 \
+        # Tools needed for installing the MSSQL ODBC drivers
+        curl \
+        gpg \
+        gpgv \
+        openssl \
+        # glibc compatibility layer for packages that only ship manylinux wheels (e.g. hdbcli)
+        gcompat \
+        # Additional libraries needed and their dev counterparts. We add both so that we can remove
+        # the *-dev later, keeping the libraries
+        openblas=0.3.30-r2 \
+        openblas-dev=0.3.30-r2 \
+        unixodbc=2.3.14-r0 \
+        unixodbc-dev=2.3.14-r0 \
+    && /tmp/dk/install_linuxodbc.sh \
+    && mkdir /dk \
+    # Upgrading pip for security
+    && python3 -m pip install --no-cache-dir --upgrade pip==26.2.1 \
+    # hdbcli only ships manylinux wheels (no musl). pip 26+ correctly rejects these on Alpine.
+    # We download the wheel for the correct arch, then extract it directly into site-packages
+    # (wheels are zip files). gcompat provides the glibc shim needed at runtime.
+    && ARCH=$(uname -m) \
+    && pip download --platform manylinux2014_${ARCH} --python-version 3.13 --only-binary :all: \
+        --no-deps -d /tmp/wheels hdbcli==2.25.31 \
+    && python3 -m zipfile -e /tmp/wheels/hdbcli-*.whl /dk/lib/python3.13/site-packages/ \
     # Copy dist-info to system site-packages so pip sees hdbcli as installed during
     # dependency resolution (sqlalchemy-hana transitively depends on hdbcli~=2.10)
-    cp -r /dk/lib/python3.13/site-packages/hdbcli-*.dist-info \
-        "$(python3 -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"/ && \
-    rm -rf /tmp/wheels
-
-# Strip hdbcli from pyproject.toml before installing — it's already extracted above and
-# pip 26+ would fail trying to resolve it from PyPI on musl
-RUN sed -i '/hdbcli/d' /tmp/dk/pyproject.toml
-
-RUN python3 -m pip install --no-cache-dir --prefix=/dk /tmp/dk
-
-RUN apk del \
-    gcc \
-    g++ \
-    make \
-    cmake \
-    curl \
-    musl-dev \
-    gfortran \
-    gpg \
-    gpgv \
-    openssl \
-    linux-headers \
-    openblas-dev \
-    unixodbc-dev
-
-# Remove interactive ODBC tools — not needed at runtime, and iusql triggers
-# false-positive secret detection in security scanners (SECRET-3010)
-RUN rm -f /usr/bin/iusql /usr/bin/isql
-
-RUN rm -rf /root/.cache/pip /tmp/dk/install_linuxodbc.sh
+    && cp -r /dk/lib/python3.13/site-packages/hdbcli-*.dist-info \
+        "$(python3 -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"/ \
+    && rm -rf /tmp/wheels \
+    # Strip hdbcli from pyproject.toml before installing — it's already extracted above and
+    # pip 26+ would fail trying to resolve it from PyPI on musl
+    && sed -i '/hdbcli/d' /tmp/dk/pyproject.toml \
+    && python3 -m pip install --no-cache-dir --prefix=/dk /tmp/dk \
+    && apk del \
+        gcc \
+        g++ \
+        make \
+        cmake \
+        curl \
+        musl-dev \
+        gfortran \
+        gpg \
+        gpgv \
+        openssl \
+        linux-headers \
+        openblas-dev \
+        unixodbc-dev \
+    # Remove interactive ODBC tools — not needed at runtime, and iusql triggers
+    # false-positive secret detection in security scanners (SECRET-3010)
+    && rm -f /usr/bin/iusql /usr/bin/isql \
+    && rm -rf /root/.cache/pip /tmp/dk/install_linuxodbc.sh
