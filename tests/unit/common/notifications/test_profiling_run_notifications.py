@@ -16,8 +16,14 @@ from testgen.common.notifications.profiling_run import send_profiling_run_notifi
 pytestmark = pytest.mark.unit
 
 
-def make_job_execution(status, started_at=None, completed_at=None, error_message=None):
-    return Mock(status=status, started_at=started_at, completed_at=completed_at, error_message=error_message)
+def make_job_execution(status, started_at=None, completed_at=None, error_message=None, active_seconds=None):
+    return Mock(
+        status=status,
+        started_at=started_at,
+        completed_at=completed_at,
+        error_message=error_message,
+        active_seconds=active_seconds,
+    )
 
 
 def create_ns(**kwargs):
@@ -146,7 +152,8 @@ def test_send_profiling_run_notification(
                         "issues_url": "http://tg-base-url/profiling-runs:hygiene?project_code=proj&run_id=pr-id&source=email",
                         "results_url": "http://tg-base-url/profiling-runs:results?project_code=proj&run_id=pr-id&source=email",
                         "start_time": None,
-                        "end_time": None,
+                        # Nothing worked was recorded, so there is no duration to report.
+                        "duration_seconds": None,
                         "status": profiling_run_status,
                         "status_label": JOB_STATUS_LABEL[profiling_run_status],
                         "log_message": None,

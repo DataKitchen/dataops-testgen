@@ -1,6 +1,12 @@
 import pytest
 
-from testgen.common.enums import INTERRUPT_STATUSES, JOB_STATUS_LABEL, JobStatus
+from testgen.common.enums import (
+    JOB_STATUS_LABEL,
+    STOPPABLE_ONLY_STATUSES,
+    WORKING_STATUSES,
+    JobStatus,
+    run_duration_seconds,
+)
 from testgen.common.models.profiling_run import ProfilingRunSummary
 from testgen.common.models.test_run import TestRunSummary
 
@@ -27,7 +33,9 @@ def test_terminal_is_read_off_the_transition_graph():
 
 
 def test_claimable_is_read_off_the_transition_graph():
-    assert set(JobStatus.claimable()) == {JobStatus.PENDING, JobStatus.INTERRUPTED}
+    assert set(JobStatus.claimable()) == {
+        JobStatus.PENDING, JobStatus.INTERRUPTED, JobStatus.RESUME_REQUESTED,
+    }
     assert JobStatus.claimable() == JobStatus.sources_for(JobStatus.CLAIMED)
 
 
@@ -46,16 +54,12 @@ def test_pending_is_never_swept_at_startup():
     assert JobStatus.PENDING not in JobStatus.stale_recoverable()
 
 
-def test_an_interrupted_row_can_be_marked_interrupted_again():
-    """The engine settles the row itself, and exec_job re-marks it as a belt for a stop that
-    unwound without settling. Without the self-loop that belt logs a failed transition."""
-    assert JobStatus.INTERRUPTED in JobStatus.sources_for(JobStatus.INTERRUPTED)
-
-
-def test_stale_recoverable_excludes_exactly_the_queued_statuses():
-    # Everything else in active() implies a process that is now gone, so a restart settles it.
-    assert set(JobStatus.stale_recoverable()) == set(JobStatus.active()) - {
-        JobStatus.PENDING, JobStatus.INTERRUPTED,
+def test_stale_recoverable_is_what_a_dead_process_leaves_behind():
+    # Each of these implies a process that is now gone, so a restart settles it. Everything
+    # else in active() is either queued for a poll or parked waiting to be resumed.
+    assert set(JobStatus.stale_recoverable()) == {
+        JobStatus.CLAIMED, JobStatus.RUNNING, JobStatus.CANCEL_REQUESTED,
+        JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED,
     }
 
 
@@ -75,22 +79,85 @@ def test_run_summaries_share_the_job_status_label_map():
     assert ProfilingRunSummary.STATUS_LABEL is JOB_STATUS_LABEL
 
 
-def test_pause_statuses_are_entered_only_from_running_or_each_other():
+def test_stoppable_statuses_are_entered_only_from_running_or_each_other():
     """Nothing derives the constant, so the graph is what keeps it honest."""
-    for status in INTERRUPT_STATUSES:
+    for status in STOPPABLE_ONLY_STATUSES:
         sources = set(JobStatus.sources_for(status))
-        assert sources <= INTERRUPT_STATUSES | {JobStatus.RUNNING}, status
+        assert sources <= STOPPABLE_ONLY_STATUSES | {JobStatus.RUNNING}, status
 
 
-def test_no_pause_status_is_left_out_of_the_constant():
-    """A status entered only from a pause status belongs in INTERRUPT_STATUSES too."""
-    for status in set(JobStatus) - INTERRUPT_STATUSES:
+def test_no_stoppable_status_is_left_out_of_the_constant():
+    """A status entered only from a stopped one belongs in STOPPABLE_ONLY_STATUSES too."""
+    for status in set(JobStatus) - STOPPABLE_ONLY_STATUSES:
         sources = set(JobStatus.sources_for(status))
-        assert not sources or not sources <= INTERRUPT_STATUSES, status
+        assert not sources or not sources <= STOPPABLE_ONLY_STATUSES, status
 
 
-def test_pause_statuses_are_not_part_of_the_ordinary_lifecycle():
-    assert not INTERRUPT_STATUSES & {
+def test_stoppable_statuses_are_not_part_of_the_ordinary_lifecycle():
+    assert not STOPPABLE_ONLY_STATUSES & {
         JobStatus.PENDING, JobStatus.CLAIMED, JobStatus.RUNNING,
         JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED, JobStatus.CANCELED,
+    }
+
+
+def test_a_paused_run_is_held_rather_than_queued():
+    # The property that separates the two stop intents: no poll may pick a paused run up, or a
+    # requested pause would auto-continue like an interrupt and the distinction would be cosmetic.
+    assert JobStatus.PAUSED not in JobStatus.claimable()
+    assert JobStatus.PAUSED in JobStatus.active()
+    assert JobStatus.PAUSED not in JobStatus.stale_recoverable()
+
+
+def test_resume_is_what_puts_a_paused_run_back_in_the_queue():
+    assert JobStatus.RESUME_REQUESTED in JobStatus.sources_for(JobStatus.CLAIMED)
+    assert JobStatus.PAUSED in JobStatus.sources_for(JobStatus.RESUME_REQUESTED)
+    assert JobStatus.RESUME_REQUESTED not in JobStatus.stale_recoverable()
+
+
+def test_the_two_park_targets_are_reached_from_disjoint_statuses():
+    """What lets ``JobExecution.park`` name both targets and let the row's own status decide.
+    Overlapping sources would make its CASE order-dependent and the choice arbitrary."""
+    assert not set(JobStatus.sources_for(JobStatus.INTERRUPTED)) & set(JobStatus.sources_for(JobStatus.PAUSED))
+
+
+def test_a_parked_row_can_be_parked_again():
+    """The engine settles the row itself, and exec_job re-parks it as a belt for a stop that
+    unwound without settling. Without the self-loops that belt logs a failed transition."""
+    assert JobStatus.INTERRUPTED in JobStatus.sources_for(JobStatus.INTERRUPTED)
+    assert JobStatus.PAUSED in JobStatus.sources_for(JobStatus.PAUSED)
+
+
+def test_every_stopped_run_can_still_be_canceled():
+    # A run parked with no process behind it is exactly the one a user is most likely to give
+    # up on, and cancel is the only way out that does not need a worker.
+    for status in STOPPABLE_ONLY_STATUSES:
+        assert status in JobStatus.sources_for(JobStatus.CANCEL_REQUESTED), status
+
+
+def test_a_run_with_more_work_coming_reports_no_duration_yet():
+    """Only the segments it already finished are recorded. A queued run counts too: the next
+    poll takes it without anybody asking, so its total grows the way a working run's does."""
+    for status in WORKING_STATUSES | frozenset(JobStatus.claimable()):
+        assert run_duration_seconds(120.0, status) is None, status
+
+
+def test_a_settled_or_paused_run_reports_the_time_it_worked():
+    """A requested pause is the one stop that holds, so its total is final until somebody
+    releases it."""
+    # Plain strings too, which is what every caller reads off the status column.
+    for status in (JobStatus.COMPLETED, JobStatus.CANCELED, JobStatus.PAUSED, "paused"):
+        assert run_duration_seconds(120.0, status) == 120.0, status
+
+
+def test_every_status_either_reports_a_duration_or_withholds_one():
+    """Spelled out rather than derived the way the code derives it, so a status crossing between
+    the two fails here rather than quietly changing what every duration display shows."""
+    reporting = {status for status in JobStatus if run_duration_seconds(1.0, status) is not None}
+
+    assert reporting == {
+        JobStatus.COMPLETED,
+        JobStatus.ERROR,
+        JobStatus.CANCEL_REQUESTED,
+        JobStatus.CANCELED,
+        JobStatus.PAUSED,
     }

@@ -13,6 +13,7 @@
  * @property {string} job_execution_id
  * @property {string?} profiling_run_id
  * @property {string} status
+ * @property {number?} active_seconds
  * @property {string} status_label
  * @property {number} created_at
  * @property {number?} started_at
@@ -57,13 +58,13 @@ import { SummaryCounts } from '/app/static/js/components/summary_counts.js';
 import { Link } from '/app/static/js/components/link.js';
 import { Button } from '/app/static/js/components/button.js';
 import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
-import { formatTimestamp, formatDuration, formatNumber, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
+import { formatTimestamp, formatDurationSeconds, formatNumber, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Paginator } from '/app/static/js/components/paginator.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
 import { Icon } from '/app/static/js/components/icon.js';
-import { ACTIVE_STATUSES, CANCELABLE_STATUSES, RUNNING_STATUSES, STARTING_STATUSES, STATUS_COLORS } from '/app/static/js/job_status.js';
+import { ACTIVE_STATUSES, CANCELABLE_STATUSES, PAUSABLE_STATUSES, RESUMABLE_STATUSES, RUNNING_STATUSES, STARTING_STATUSES, STATUS_COLORS } from '/app/static/js/job_status.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { RunProfilingDialog } from '/app/static/js/components/run_profiling_dialog.js';
 import { ScheduleList } from '/app/static/js/components/schedule_list.js';
@@ -435,23 +436,25 @@ const ProfilingRunItem = (
             div(
                 { class: 'flex-row' },
                 ProfilingRunStatus(item),
-                CANCELABLE_STATUSES.has(item.status) && userCanEdit ? Button({
-                    type: 'stroked',
-                    label: 'Cancel',
-                    style: 'width: 64px; height: 28px; color: var(--purple); margin-left: 12px;',
-                    onclick: () => {
-                        emit('RunCanceled', { payload: { job_execution_id: item.job_execution_id, profiling_run_id: item.profiling_run_id } });
-                    },
-                }) : null,
+                userCanEdit && PAUSABLE_STATUSES.has(item.status)
+                    ? RunActionButton(emit, item, { icon: 'pause', tooltip: 'Pause this run', event: 'RunPaused' })
+                    : null,
+                userCanEdit && RESUMABLE_STATUSES.has(item.status)
+                    ? RunActionButton(emit, item, { icon: 'play_arrow', tooltip: 'Resume this run', event: 'RunResumed' })
+                    : null,
+                userCanEdit && CANCELABLE_STATUSES.has(item.status)
+                    ? RunActionButton(emit, item, { icon: 'block', tooltip: 'Cancel this run', event: 'RunCanceled' })
+                    : null,
             ),
             item.completed_at && item.started_at
                 ? div(
                     { class: 'text-caption mt-1', 'data-testid': 'profiling-run-item-duration' },
-                    formatDuration(item.started_at, item.completed_at),
+                    // The time the run worked, which excludes any period it spent stopped.
+                    formatDurationSeconds(item.active_seconds != null ? Math.floor(item.active_seconds) : null),
                 )
                 : div(
                     { class: 'text-caption mt-1' },
-                    item.status === 'running' && runningStep
+                    ACTIVE_STATUSES.has(item.status) && runningStep
                         ? [
                             div(
                                 runningStep.label,
@@ -525,6 +528,20 @@ const ProfilingRunItem = (
         ),
     );
 }
+
+const RunActionButton = (emit, /** @type ProfilingRun */ item, { icon, tooltip, event }) => Button({
+    // Stroked rather than icon-typed, so the action reads as a button at rest: same treatment
+    // as the toolbar's refresh, which is the page's other icon-only control.
+    type: 'stroked',
+    size: 'small',
+    icon,
+    tooltip,
+    tooltipPosition: 'top',
+    style: 'color: var(--purple); background: var(--button-generic-background-color); margin-left: 4px;',
+    onclick: () => {
+        emit(event, { payload: { job_execution_id: item.job_execution_id, profiling_run_id: item.profiling_run_id } });
+    },
+});
 
 const ProfilingRunStatus = (/** @type ProfilingRun */ item) => {
     const color = STATUS_COLORS[item.status] ?? 'grey';

@@ -13,7 +13,7 @@ from testgen.commands.job_registry import (
 )
 from testgen.common.enums import PAUSABLE_JOB_KEYS, JobKey
 from testgen.common.models.job_execution import JobExecution
-from testgen.common.pausable_job import JobInterrupted, PausableJob
+from testgen.common.pausable_job import JobParked, PausableJob
 
 pytestmark = pytest.mark.unit
 
@@ -265,7 +265,7 @@ def test_exec_job_marks_paused_without_settling_the_run(mock_session):
     job = _make_job_exec(job_key=JobKey.run_tests)
     job.mark_running.return_value = True
     resume_state = {"version": 1, "tasks": ["alpha\x1fa"], "completed": 1}
-    handler = Mock(side_effect=JobInterrupted("alpha", resume_state))
+    handler = Mock(side_effect=JobParked("alpha", resume_state))
 
     with (
         patch.object(JobExecution, "get", return_value=job),
@@ -273,7 +273,7 @@ def test_exec_job_marks_paused_without_settling_the_run(mock_session):
     ):
         exec_job(job.id)
 
-    job.mark_interrupted.assert_called_once_with(resume_state)
+    job.park.assert_called_once_with(resume_state)
     job.mark_completed.assert_not_called()
     job.mark_failed.assert_not_called()
 
@@ -282,7 +282,7 @@ def test_exec_job_fires_no_callbacks_on_pause(mock_session):
     """A paused run has not settled, so it must not notify or roll up scores."""
     job = _make_job_exec(job_key=JobKey.run_profile)
     job.mark_running.return_value = True
-    handler = Mock(side_effect=JobInterrupted("col_profiling", {"version": 1, "tasks": [], "completed": 0}))
+    handler = Mock(side_effect=JobParked("col_profiling", {"version": 1, "tasks": [], "completed": 0}))
     callback = Mock()
 
     with (

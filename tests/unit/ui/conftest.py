@@ -10,3 +10,7 @@ sys.modules.setdefault("testgen.ui.components.widgets.testgen_component", MagicM
 # views that import widgets don't fail collection without a Streamlit runtime.
 sys.modules.setdefault("testgen.ui.components.widgets", MagicMock())
 sys.modules.setdefault("testgen.ui.components.widgets.download_dialog", MagicMock())
+
+# Imported here rather than in each test module so a test can name it as a parameter without
+# shadowing the import.
+from testgen.testing.fixtures import db_session_mock  # noqa: F401

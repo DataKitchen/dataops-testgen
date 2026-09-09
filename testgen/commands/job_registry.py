@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from sqlalchemy import select
 
 from testgen.commands.run_data_cleanup import run_data_cleanup
-from testgen.commands.run_profiling import run_profiling
+from testgen.commands.run_profiling import report_profiling_run, run_profiling
 from testgen.commands.run_recalculate_project_scores import run_recalculate_project_scores
 from testgen.commands.run_score_update import run_score_update
 from testgen.commands.run_test_execution import run_test_execution
@@ -125,7 +125,7 @@ def _enqueue_score_update(job_exec: JobExecution) -> None:
 
 
 JOB_FINAL_CALLBACKS: dict[JobKey, list[FinalCallback]] = {
-    JobKey.run_profile: [_notify_profiling_run, _enqueue_score_update],
+    JobKey.run_profile: [_notify_profiling_run, report_profiling_run, _enqueue_score_update],
     JobKey.run_tests: [_notify_test_run, _enqueue_score_update],
     JobKey.run_monitors: [_notify_monitor_run],
 }

@@ -54,16 +54,21 @@ def run_with_job_execution(
     to the JE via job_context), then invoke `run_score_update` inline for the
     run/profile job types. No notifications — this is seed data, nobody's
     watching an inbox.
+
+    Nothing claims or settles the row, and its timestamps are chosen rather than observed --
+    backdating is the point, since demo runs have to look like they happened across days -- so
+    every field a claim and a settlement would stamp is written here instead.
     """
     effective_date = run_date or datetime.now(UTC)
-    wall_start = datetime.now(UTC)
     # Match the source a real trigger would use so demo data mirrors production attribution.
     source = JobSource.scheduler if job_key == "run-monitors" else JobSource.ui
+    kwargs = {k: str(v) for k, v in handler_kwargs.items()}
 
+    wall_start = datetime.now(UTC)
     with database_session() as session:
         je = JobExecution(
             job_key=job_key,
-            kwargs={k: str(v) for k, v in handler_kwargs.items()},
+            kwargs=kwargs,
             source=source,
             project_code=settings.PROJECT_KEY,
             status=JobStatus.COMPLETED.value,
@@ -74,11 +79,17 @@ def run_with_job_execution(
         je_id = je.id
 
     job_context.set(JobContext(job_id=je_id, source=source))
+    # No try/finally: a seed that raises leaves the row's end unstamped.
     JOB_DISPATCH[job_key].handler(**handler_kwargs, run_date=run_date)
 
+    worked = datetime.now(UTC) - wall_start
     with database_session():
         je = JobExecution.get(je_id)
-        je.completed_at = effective_date + (datetime.now(UTC) - wall_start)
+        je.completed_at = effective_date + worked
+        # Nothing claimed this row, so the accumulator that normally measures a run never ran
+        # for it. The handler's own elapsed time is what it worked, and this column is the only
+        # thing any duration display reads.
+        je.active_seconds = worked.total_seconds()
 
     _drain_queued_jobs()
 

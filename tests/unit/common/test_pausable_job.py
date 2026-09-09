@@ -8,7 +8,7 @@ import pytest
 from testgen.common.enums import JobStatus
 from testgen.common.pausable_job import (
     RESUME_STATE_VERSION,
-    JobInterrupted,
+    JobParked,
     JobSignal,
     PausableJob,
     PauseSignal,
@@ -21,20 +21,49 @@ pytestmark = pytest.mark.unit
 MODULE = "testgen.common.pausable_job"
 
 
+_PARK_TARGET = {
+    JobStatus.INTERRUPT_REQUESTED: JobStatus.INTERRUPTED,
+    JobStatus.INTERRUPTED: JobStatus.INTERRUPTED,
+    JobStatus.PAUSE_REQUESTED: JobStatus.PAUSED,
+    JobStatus.PAUSED: JobStatus.PAUSED,
+}
+
+
 class _FakeJobExecution:
     def __init__(self, status="running", resume_state=None):
         self.status = status
         self.resume_state = resume_state
         self.interrupt_attempts = 0
 
-    def mark_interrupted(self, resume_state):
-        """Mirror the real lifecycle guard: only a stopping or stopped row parks."""
+    def park(self, resume_state):
+        """Mirror the real lifecycle guard: only a stopping or stopped row parks, and it lands
+        wherever the request that stopped it points."""
         self.interrupt_attempts += 1
-        if self.status not in (JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED):
+        if self.status not in _PARK_TARGET:
             return False
-        self.status = JobStatus.INTERRUPTED
+        self.status = _PARK_TARGET[self.status]
         self.resume_state = resume_state
         return True
+
+
+class _LoadedRow:
+    """The job's own row as the session's identity map holds it.
+
+    Reads and writes of ``resume_state`` pass through. ``status`` is refused: the real session
+    loaded this row before the job began and ``expire_on_commit=False`` keeps that copy, so a
+    status read here could never see a request made from another session.
+    """
+
+    def __init__(self, row):
+        object.__setattr__(self, "_row", row)
+
+    def __getattr__(self, name):
+        if name == "status":
+            raise AssertionError("read the status column, not the job's own row")
+        return getattr(self._row, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._row, name, value)
 
 
 @pytest.fixture
@@ -44,11 +73,11 @@ def job_exec():
 
 @pytest.fixture
 def session(job_exec):
-    """Stand in for the session the job runs inside, returning the fake row from get()."""
+    """Stand in for the session the job runs inside: get() hands back the identity map's copy
+    of the row, scalar() reads the live column."""
     mock = MagicMock()
-    mock.get.return_value = job_exec
-
     mock.scalar.side_effect = lambda *_a, **_k: job_exec.status
+    mock.get.side_effect = lambda *_a, **_k: _LoadedRow(job_exec)
 
     with patch(f"{MODULE}.get_current_session", return_value=mock):
         yield mock
@@ -166,7 +195,7 @@ def test_fresh_run_commits_every_completed_task(session):
 
 def test_a_once_body_is_committed_with_its_checkpoint(session):
     """A pause after a once-body records it done; its write must be durable by then, not
-    riding an owning transaction that JobInterrupted discards."""
+    riding an owning transaction that JobParked discards."""
     committed_when_body_ran = []
     job = _Job(["a"], job_id=uuid4())
 
@@ -196,7 +225,7 @@ def test_on_start_runs_before_any_step_and_on_end_after(session):
 def test_on_end_does_not_run_on_a_pause(session):
     job = _Job(["a", "b", "c"], delays=_SLOW, pause_after=1, job_id=uuid4())
 
-    with pytest.raises(JobInterrupted):
+    with pytest.raises(JobParked):
         _run(job)
 
     assert job.lifecycle == ["start"]  # started, never ended
@@ -223,7 +252,7 @@ _SLOW = dict.fromkeys("abcde", 0.05)
 def test_pause_stops_dispatch_and_raises(session):
     job = _Job(["a", "b", "c", "d", "e"], delays=_SLOW, pause_after=2, job_id=uuid4())
 
-    with pytest.raises(JobInterrupted) as raised:
+    with pytest.raises(JobParked) as raised:
         _run(job)
 
     assert raised.value.step == "spread"
@@ -231,37 +260,49 @@ def test_pause_stops_dispatch_and_raises(session):
     assert raised.value.resume_state["completed"] == len(job.handled)
 
 
-def _stopping_after(job_exec, job, handled_count):
-    """Flip the row to INTERRUPT_REQUESTED once ``handled_count`` outcomes have landed.
+def _stopping_after(job_exec, job, handled_count, requesting=JobStatus.INTERRUPT_REQUESTED):
+    """Flip the row to a stop-requesting status once ``handled_count`` outcomes have landed.
 
-    Mirrors a shutdown arriving mid-run: the request is made from another session, and the
-    job notices it on its next check rather than up front.
+    Mirrors a request arriving mid-run: it is made from another session, and the job notices it
+    on its next check rather than up front.
     """
     handle = job._handle
 
     def flip(outcome):
         handle(outcome)
         if len(job.handled) >= handled_count:
-            job_exec.status = JobStatus.INTERRUPT_REQUESTED
+            job_exec.status = requesting
 
     job._handle = flip
     return job
 
 
-def _stoppable(keys, job_exec, after, **kwargs):
+def _stoppable(keys, job_exec, after, requesting=JobStatus.INTERRUPT_REQUESTED, **kwargs):
     job_id = uuid4()
     job = _Job(keys, delays=_SLOW, job_id=job_id, pause_signal=PauseSignal(job_id, ttl=0), **kwargs)
-    return _stopping_after(job_exec, job, after)
+    return _stopping_after(job_exec, job, after, requesting)
 
 
-def test_a_detected_stop_commits_the_checkpoint_before_unwinding(session, job_exec):
-    """The checkpoint has to be durable by the time JobInterrupted leaves: unwinding still has
-    to drain the pool, and a kill during that drain would otherwise lose the run's progress."""
+@pytest.mark.parametrize(
+    "requesting",
+    [
+        JobStatus.INTERRUPT_REQUESTED,
+        JobStatus.PAUSE_REQUESTED,
+        JobStatus.INTERRUPTED,
+        JobStatus.PAUSED,
+    ],
+)
+def test_a_detected_stop_commits_the_checkpoint_before_unwinding(session, job_exec, requesting):
+    """The checkpoint has to be durable by the time JobParked leaves: unwinding still has to
+    drain the pool, and a kill during that drain would otherwise lose the run's progress.
+
+    Every status that signals a stop, because the durability gate reads the row's: the requests,
+    and the parked statuses a restart can leave on a row whose process is still running."""
     committed = []
     session.commit.side_effect = lambda: committed.append((job_exec.status, job_exec.resume_state))
-    job = _stoppable(["a", "b", "c", "d", "e"], job_exec, after=2)
+    job = _stoppable(["a", "b", "c", "d", "e"], job_exec, after=2, requesting=requesting)
 
-    with pytest.raises(JobInterrupted):
+    with pytest.raises(JobParked):
         _run(job)
 
     assert 0 < len(job.handled) < 5
@@ -274,7 +315,7 @@ def test_a_detected_stop_leaves_the_status_for_the_caller_to_publish(session, jo
     the unwind drains the pool. Publishing here would offer it to a second worker meanwhile."""
     job = _stoppable(["a", "b", "c", "d", "e"], job_exec, after=2)
 
-    with pytest.raises(JobInterrupted):
+    with pytest.raises(JobParked):
         _run(job)
 
     assert job_exec.status == JobStatus.INTERRUPT_REQUESTED
@@ -285,7 +326,7 @@ def test_a_detected_stop_leaves_the_outcomes_behind_it_unhandled(session, job_ex
     nothing would claim, and the tasks it covers are redone on resume anyway."""
     job = _stoppable(["a", "b", "c", "d", "e"], job_exec, after=2, max_threads=3)
 
-    with pytest.raises(JobInterrupted):
+    with pytest.raises(JobParked):
         _run(job)
 
     assert len(job.handled) == 2
@@ -299,7 +340,7 @@ def test_a_cancel_that_arrived_first_is_not_overwritten(session, job_exec):
     job = _Job(["a", "b"], job_id=uuid4())
     job._pause.request()
 
-    with pytest.raises(JobInterrupted):
+    with pytest.raises(JobParked):
         _run(job)
 
     assert job_exec.status == JobStatus.CANCEL_REQUESTED
@@ -310,21 +351,21 @@ def test_pause_is_a_base_exception_not_an_error(session):
     """A pause must pass through the blanket except Exception that wraps each step."""
     job = _Job(["a", "b", "c"], delays=_SLOW, pause_after=1, job_id=uuid4())
 
-    with pytest.raises(JobInterrupted):
+    with pytest.raises(JobParked):
         try:
             _run(job)
         except Exception as e:
-            pytest.fail(f"JobInterrupted was caught as an Exception: {e!r}")
+            pytest.fail(f"JobParked was caught as an Exception: {e!r}")
 
 
 def test_every_signal_passes_through_a_failure_handler():
     """Engine signals unwind a job that is stopping or starting over, so a handler written
     for failures -- the engine's own, or one a step wraps its own work in -- must not see
     them. Anything that does intercept one turns it into silence."""
-    assert set(JobSignal.__subclasses__()) == {JobInterrupted, WorkTasksChanged}, (
+    assert set(JobSignal.__subclasses__()) == {JobParked, WorkTasksChanged}, (
         "a signal that is not a JobSignal can be swallowed as an error; add it here once it is one"
     )
-    for signal in (JobInterrupted, WorkTasksChanged):
+    for signal in (JobParked, WorkTasksChanged):
         assert not issubclass(signal, Exception), f"{signal.__name__} can be swallowed as an error"
 
 
@@ -346,7 +387,7 @@ def test_pause_before_a_guard_does_no_work(session):
     job = _Job(["a", "b"], job_id=uuid4())
     job._pause.request()
 
-    with pytest.raises(JobInterrupted):
+    with pytest.raises(JobParked):
         _run(job)
 
     assert job.built == []
