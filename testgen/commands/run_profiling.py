@@ -18,7 +18,7 @@ from testgen.common import (
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome, get_flavor_service
-from testgen.common.enums import JobKey, JobSource
+from testgen.common.enums import JobKey, JobSource, JobStatus, run_duration_seconds
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
@@ -47,6 +47,39 @@ PROFILE_RESULT_SHAPE_VERSION = 1
 
 
 @with_database_session
+def report_profiling_run(job_exec: JobExecution) -> None:
+    """Send the ``run-profiling`` telemetry event for a run that has settled.
+
+    Runs as a final callback so the duration is the one the run ended up with, which across a
+    stop and continue is more than the handler that finished the work knows about.
+    """
+    if job_exec.status not in (JobStatus.COMPLETED, JobStatus.ERROR):
+        # A cancel settles through these same callbacks, and the counts it would carry describe
+        # work somebody abandoned rather than a run that produced results.
+        return
+
+    profiling_run = ProfilingRun.get(job_exec.id)
+    if profiling_run is None:
+        # A failure before the run row is written leaves nothing to report on.
+        return
+
+    # Settling releases the delete guard that held these in place, so either can be gone by
+    # now. Report what is left rather than raising into a caller that swallows the event.
+    table_group = TableGroup.get(profiling_run.table_groups_id)
+    connection = Connection.get(profiling_run.connection_id)
+    MixpanelService().send_event(
+        "run-profiling",
+        source=job_exec.source.upper(),
+        username=job_exec.kwargs.get("username"),
+        sql_flavor=connection.sql_flavor_code if connection else None,
+        sampling=table_group.profile_use_sampling if table_group else None,
+        table_count=profiling_run.table_ct or 0,
+        column_count=profiling_run.column_ct or 0,
+        run_duration=run_duration_seconds(job_exec.active_seconds, job_exec.status),
+    )
+
+
+@with_database_session
 def run_profiling(
     table_group_id: str | UUID,
     username: str | None = None,
@@ -56,18 +89,7 @@ def run_profiling(
         raise ValueError("Table Group ID was not specified")
 
     job = ProfilingJob(table_group_id, username=username, run_date=run_date)
-    try:
-        job.execute()
-    # JobInterrupted is a BaseException, so it passes through: a stopped run is not over, and
-    # the process that finishes it reports for the whole thing.
-    except Exception:
-        job.mark_ended()
-        # A failure in on_start leaves no run row, so a report would crash on it and mask the
-        # error being raised.
-        if job.profiling_run is not None:
-            job.send_telemetry()
-        raise
-    job.send_telemetry()
+    job.execute()
     return job.profiling_run.id
 
 
@@ -104,7 +126,6 @@ class ProfilingJob(PausableJob[ColumnChars]):
         self.data_chars: list[ColumnChars] = []
         self.sampling_params: dict[str, TableSampling] = {}
         self.table_record_counts: dict[str, int] = {}
-        self.end_time = datetime.now(UTC) + self.time_delta
 
     def canonical_key(self, key: ColumnChars) -> str:
         return f"{key.schema_name}\x1f{key.table_name}\x1f{key.column_name}"
@@ -136,9 +157,6 @@ class ProfilingJob(PausableJob[ColumnChars]):
             f"Profiling run: {self.profiling_run.id}, Table group: {self.table_group.table_groups_name}, "
             f"Connection: {self.connection.connection_name}"
         )
-
-    def on_end(self) -> None:
-        self.mark_ended()
 
     def on_restart(self) -> None:
         # The world moved under the pause, so the results are a fresh run's, not the old one's.
@@ -417,24 +435,6 @@ class ProfilingJob(PausableJob[ColumnChars]):
                 source=JobSource.system,
                 project_code=self.table_group.project_code,
             )
-
-    def mark_ended(self) -> None:
-        """Stamp when the profiling work stopped, which is what the reported duration covers."""
-        self.end_time = datetime.now(UTC) + self.time_delta
-
-    def send_telemetry(self) -> None:
-        MixpanelService().send_event(
-            "run-profiling",
-            source=job_context.get().source.upper(),
-            username=self.username,
-            sql_flavor=self.connection.sql_flavor_code,
-            sampling=self.table_group.profile_use_sampling,
-            table_count=self.profiling_run.table_ct or 0,
-            column_count=self.profiling_run.column_ct or 0,
-            run_duration=(
-                self.end_time - self.profiling_run.profiling_starttime.replace(tzinfo=UTC)
-            ).total_seconds(),
-        )
 
     STEPS = (
         Step("data_chars", _data_chars),

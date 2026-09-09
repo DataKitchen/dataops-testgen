@@ -63,22 +63,43 @@ def test_submit_and_wait_no_wait_returns_immediately(mock_session):
     submit_mock.assert_called_once()
 
 
-def test_submit_and_wait_keeps_waiting_through_paused(mock_session):
-    """A paused run is not terminal; the wait keeps polling so a scheduler restart that
-    resumes it is picked up, rather than giving up at the pause."""
+def test_submit_and_wait_keeps_waiting_through_interrupted(mock_session):
+    """An interrupted run is not terminal and continues unattended, so the wait keeps polling
+    and the scheduler restart that picks it up is what ends the wait."""
     submitted = _make_job_exec(status=JobStatus.CLAIMED)
-    paused = _make_job_exec(status=JobStatus.INTERRUPTED)
+    interrupted = _make_job_exec(status=JobStatus.INTERRUPTED)
     completed = _make_job_exec(status=JobStatus.COMPLETED)
     mock_session.flush = Mock()
 
     with (
         patch.object(JobExecution, "submit", return_value=submitted),
-        patch.object(JobExecution, "get", side_effect=[paused, completed]) as get_mock,
+        patch.object(JobExecution, "get", side_effect=[interrupted, completed]) as get_mock,
         patch(f"{JOB_RUNNER_MODULE}.time.sleep"),
     ):
         submit_and_wait("run-tests", {"test_suite_id": "suite-123"}, "DEFAULT", no_wait=False)
 
-    assert get_mock.call_count == 2  # polled past PAUSED, broke only on the terminal status
+    assert get_mock.call_count == 2  # polled past INTERRUPTED, broke only on the terminal status
+
+
+def test_submit_and_wait_gives_up_on_a_paused_run(mock_session):
+    """A pause is where the wait has to stop. Nothing moves the run until a resume is asked
+    for, so polling on would block for as long as the run stays parked."""
+    submitted = _make_job_exec(status=JobStatus.CLAIMED)
+    paused = _make_job_exec(status=JobStatus.PAUSED)
+    mock_session.flush = Mock()
+
+    with (
+        patch.object(JobExecution, "submit", return_value=submitted),
+        # A bounded side_effect, not return_value: if the break ever regresses, the mock runs
+        # dry and the test fails instead of spinning on a status that never settles.
+        patch.object(JobExecution, "get", side_effect=[paused, paused]) as get_mock,
+        patch(f"{JOB_RUNNER_MODULE}.time.sleep"),
+        pytest.raises(SystemExit) as exited,
+    ):
+        submit_and_wait("run-tests", {"test_suite_id": "suite-123"}, "DEFAULT", no_wait=False)
+
+    assert exited.value.code == 1  # an unfinished run is not a successful command
+    assert get_mock.call_count == 1  # broke on the first poll rather than waiting it out
 
 
 def test_submit_and_wait_exits_on_error(mock_session):

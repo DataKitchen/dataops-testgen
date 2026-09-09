@@ -67,6 +67,7 @@ class ProfilingRunSummary(EntityMinimal):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    active_seconds: float | None
     error_message: str | None
     progress: list[ProgressStep]
     table_groups_name: str | None
@@ -272,6 +273,7 @@ class ProfilingRun(Entity):
             je.created_at,
             je.started_at,
             je.completed_at,
+            je.active_seconds,
             je.error_message,
             COALESCE(pr.progress, '[]'::jsonb) AS progress,
             tg.table_groups_name,

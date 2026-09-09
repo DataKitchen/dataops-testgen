@@ -4,7 +4,7 @@ from urllib.parse import quote
 from sqlalchemy import select
 
 from testgen import settings
-from testgen.common.enums import JOB_STATUS_LABEL, JobStatus
+from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, run_duration_seconds
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.notification_settings import (
@@ -66,7 +66,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 </tr>
                 <tr>
                   <td class="summary__label">Duration</td>
-                  <td class="summary__value">{{format_duration profiling_run.start_time profiling_run.end_time}}</td>
+                  <td class="summary__value">{{format_duration_seconds profiling_run.duration_seconds}}</td>
                 </tr>
                 <tr>
                   <td colspan="4">
@@ -324,7 +324,12 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
                 )
             ),
             "start_time": job_execution.started_at,
-            "end_time": job_execution.completed_at,
+            # The time the run worked, not the span it covered: a paused run covers more of the
+            # latter, and the email would otherwise disagree with every other surface reporting
+            # the same run.
+            "duration_seconds": run_duration_seconds(
+                job_execution.active_seconds, job_execution.status
+            ),
             "status": job_execution.status,
             "status_label": JOB_STATUS_LABEL.get(job_execution.status, job_execution.status),
             "log_message": job_execution.error_message,

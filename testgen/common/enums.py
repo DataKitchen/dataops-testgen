@@ -93,6 +93,14 @@ class JobStatus(StrEnum):
     CANCELED = "canceled"
     INTERRUPT_REQUESTED = "interrupt_requested"
     INTERRUPTED = "interrupted"
+    PAUSE_REQUESTED = "pause_requested"
+    PAUSED = "paused"
+    RESUME_REQUESTED = "resume_requested"
+
+    @classmethod
+    def ordered(cls, statuses: Iterable["JobStatus"]) -> tuple["JobStatus", ...]:
+        """Order statuses by declaration, so an ``IN`` clause reads the same every time."""
+        return _in_declaration_order(statuses)
 
     @classmethod
     def sources_for(cls, target: "JobStatus") -> tuple["JobStatus", ...]:
@@ -118,9 +126,9 @@ class JobStatus(StrEnum):
     def stale_recoverable(cls) -> tuple["JobStatus", ...]:
         """Statuses a restart must settle, because they imply a process that is now gone.
 
-        Two active statuses are excluded, for reasons the graph cannot express: PENDING was
-        never claimed, so no process died and the next poll starts it normally, and INTERRUPTED
-        is already queued for the next poll to claim.
+        Excludes what the graph cannot express: a claimable status has a poll coming for it, so
+        no process needs to be alive, and PAUSED is parked on purpose and waits to be resumed
+        rather than for a process.
         """
         return _STALE_RECOVERABLE
 
@@ -136,6 +144,9 @@ JOB_STATUS_LABEL: dict[str, str] = {
     JobStatus.ERROR: "Error",
     JobStatus.INTERRUPT_REQUESTED: "Interrupting",
     JobStatus.INTERRUPTED: "Interrupted",
+    JobStatus.PAUSE_REQUESTED: "Pausing",
+    JobStatus.PAUSED: "Paused",
+    JobStatus.RESUME_REQUESTED: "Resuming",
 }
 
 
@@ -144,7 +155,8 @@ _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED}),
     JobStatus.CLAIMED: frozenset({JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
     JobStatus.RUNNING: frozenset({
-        JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED, JobStatus.INTERRUPT_REQUESTED,
+        JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED,
+        JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED,
     }),
     # The CANCEL_REQUESTED self-loop makes requesting a cancel idempotent.
     JobStatus.CANCEL_REQUESTED: frozenset({JobStatus.CANCELED, JobStatus.CANCEL_REQUESTED}),
@@ -159,6 +171,22 @@ _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     # The checkpoint on the row is what tells the two apart.
     JobStatus.INTERRUPTED: frozenset({
         JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED, JobStatus.INTERRUPTED,
+    }),
+    # A pause request also races the run finishing, failing, or being canceled, so it needs the
+    # same escapes: the request only asks, and the run may reach the boundary it would park at
+    # after it has already stopped for another reason.
+    JobStatus.PAUSE_REQUESTED: frozenset({
+        JobStatus.PAUSED, JobStatus.COMPLETED, JobStatus.ERROR,
+        JobStatus.CANCEL_REQUESTED, JobStatus.PAUSE_REQUESTED,
+    }),
+    # No route to CLAIMED, which is the whole difference between the two parked statuses: a
+    # poll takes an interrupted run on its own, and cannot take this one at all.
+    JobStatus.PAUSED: frozenset({
+        JobStatus.RESUME_REQUESTED, JobStatus.CANCEL_REQUESTED, JobStatus.PAUSED,
+    }),
+    # Claimable again, so the poll that would have skipped a paused run now takes this one.
+    JobStatus.RESUME_REQUESTED: frozenset({
+        JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED, JobStatus.RESUME_REQUESTED,
     }),
 }
 
@@ -175,13 +203,38 @@ _TERMINAL: tuple[JobStatus, ...] = _in_declaration_order(
 _ACTIVE: tuple[JobStatus, ...] = _in_declaration_order(set(JobStatus) - set(_TERMINAL))
 _CLAIMABLE: tuple[JobStatus, ...] = JobStatus.sources_for(JobStatus.CLAIMED)
 _STALE_RECOVERABLE: tuple[JobStatus, ...] = _in_declaration_order(
-    set(_ACTIVE) - {JobStatus.PENDING, JobStatus.INTERRUPTED}
+    set(_ACTIVE) - set(_CLAIMABLE) - {JobStatus.PAUSED}
 )
 
-# Statuses reached only by way of an interrupt request, so a job whose key is not in
+# Statuses held while a process is doing the run's work. Time spent in one of these counts
+# toward how long the run worked; time in any other does not -- a queued run has not started,
+# and a parked one has stopped.
+WORKING_STATUSES: frozenset[JobStatus] = frozenset({
+    JobStatus.CLAIMED, JobStatus.RUNNING,
+    JobStatus.INTERRUPT_REQUESTED, JobStatus.PAUSE_REQUESTED,
+})
+
+
+# A run in one of these will work more without anybody asking it to: it is either working now
+# or queued for the next poll to take. Only the requested pause is left out, since releasing it
+# is a decision somebody has to make.
+_ACCRUING_STATUSES: frozenset[JobStatus] = WORKING_STATUSES | frozenset(_CLAIMABLE)
+
+
+def run_duration_seconds(active_seconds: float | None, status: str) -> float | None:
+    """How long a run worked, in seconds, or None while the total is still growing.
+
+    ``active_seconds`` leaves out any period the run spent stopped. A run with more work coming
+    has only the segments it already finished recorded, which is progress rather than a
+    duration; one that has settled or is waiting to be resumed has its whole total.
+    """
+    return None if status in _ACCRUING_STATUSES else active_seconds
+
+# Statuses reached only by stopping a run at a task boundary, so a job whose key is not in
 # ``PAUSABLE_JOB_KEYS`` never holds one.
-INTERRUPT_STATUSES: frozenset[JobStatus] = frozenset({
+STOPPABLE_ONLY_STATUSES: frozenset[JobStatus] = frozenset({
     JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
+    JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED, JobStatus.RESUME_REQUESTED,
 })
 
 

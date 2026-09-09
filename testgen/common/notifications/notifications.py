@@ -17,8 +17,9 @@ class BaseNotificationTemplate(BaseEmailTemplate):
     def format_dt_helper(self, dt: datetime) -> str:
         return "" if dt is None else date_service.format_friendly_datetime(dt, "%b %d, %-I:%M %p UTC")
 
-    def format_duration_helper(self, start_time: datetime, end_time: datetime) -> str:
-        total_seconds = abs(end_time - start_time).total_seconds()
+    def format_duration_seconds_helper(self, total_seconds: float | None) -> str:
+        if total_seconds is None:
+            return ""
         units = [
           (math.floor(total_seconds / (3600 * 24)), "d"),
           (math.floor((total_seconds % (3600 * 24)) / 3600), "h"),

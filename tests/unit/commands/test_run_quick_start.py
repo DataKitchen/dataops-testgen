@@ -1,5 +1,7 @@
 """Quick-start runs handlers directly, with no scheduler behind them."""
 
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -195,3 +197,52 @@ def test_follow_ups_are_drained_before_the_score_rollup():
         run_with_job_execution("run-profile", table_group_id=str(uuid4()))
 
     assert order == ["drain", "score"]
+
+
+@contextmanager
+def _seeded_run(row, handler):
+    """Stand ``row`` in for the synthetic JE a quick-start run creates and closes out."""
+    with (
+        patch(f"{MODULE}.database_session") as session,
+        patch(f"{MODULE}.JobExecution") as je_cls,
+        patch(f"{MODULE}.JOB_DISPATCH", _dispatch(handler)),
+        patch(f"{MODULE}._drain_queued_jobs"),
+        patch(f"{MODULE}.run_score_update"),
+        patch(f"{MODULE}.job_context"),
+    ):
+        session.return_value.__enter__ = MagicMock(return_value=MagicMock())
+        session.return_value.__exit__ = MagicMock(return_value=False)
+        je_cls.return_value = row
+        je_cls.get.return_value = row
+        yield
+
+
+def test_a_seeded_run_records_what_it_worked():
+    """Nothing claims a quick-start row, so the accumulator that measures a real run never runs
+    for it. The duration displays read that column alone, so a row left without one reports no
+    duration at all -- which is how seeded demo runs came to show none."""
+    row = _Row("run-profile")
+    row.started_at = row.completed_at = row.active_seconds = None
+    effective = datetime(2026, 3, 1, 9, 0, tzinfo=UTC)
+
+    with _seeded_run(row, MagicMock()):
+        run_with_job_execution("run-profile", run_date=effective, table_group_id=str(uuid4()))
+
+    assert row.completed_at is not None, "a settled run has an end"
+    assert row.active_seconds is not None, "a settled run has a worked time"
+    # Backdated, so the end follows the chosen start rather than the wall clock.
+    assert row.completed_at >= effective
+
+
+def test_a_seeded_run_keeps_no_end_when_its_handler_raises():
+    """The exception is what the caller acts on, and stamping an end would report the worked
+    time of a seed that did not finish."""
+    row = _Row("run-profile")
+    row.started_at = row.completed_at = row.active_seconds = None
+    handler = MagicMock(side_effect=RuntimeError("seed blew up"))
+
+    with _seeded_run(row, handler), pytest.raises(RuntimeError):
+        run_with_job_execution("run-profile", table_group_id=str(uuid4()))
+
+    assert row.completed_at is None
+    assert row.active_seconds is None

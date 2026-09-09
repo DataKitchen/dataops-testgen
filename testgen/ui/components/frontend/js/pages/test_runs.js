@@ -12,6 +12,7 @@
  * @type {object}
  * @property {string} job_execution_id
  * @property {string?} test_run_id
+ * @property {number?} active_seconds
  * @property {string} status
  * @property {string} status_label
  * @property {number} created_at
@@ -56,7 +57,7 @@ import { SummaryBar } from '/app/static/js/components/summary_bar.js';
 import { Link } from '/app/static/js/components/link.js';
 import { Button } from '/app/static/js/components/button.js';
 import { createEmitter, getValue, isEqual, loadStylesheet } from '/app/static/js/utils.js';
-import { formatTimestamp, formatDuration, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
+import { formatTimestamp, formatDurationSeconds, DISABLED_ACTION_TEXT } from '/app/static/js/display_utils.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Paginator } from '/app/static/js/components/paginator.js';
@@ -462,7 +463,7 @@ const TestRunItem = (
             item.completed_at && item.started_at
                 ? div(
                     { class: 'text-caption mt-1' },
-                    formatDuration(item.started_at, item.completed_at),
+                    formatDurationSeconds(item.active_seconds != null ? Math.floor(item.active_seconds) : null),
                 )
                 : div(
                     { class: 'text-caption mt-1' },

@@ -66,11 +66,11 @@ class JobSignal(BaseException):
     """
 
 
-class JobInterrupted(JobSignal):
+class JobParked(JobSignal):
     """A job stopped at a task boundary after a stop request, and can continue from it."""
 
     def __init__(self, step: str, resume_state: dict[str, Any]) -> None:
-        super().__init__(f"Job interrupted in step '{step}'")
+        super().__init__(f"Job parked in step '{step}'")
         self.step = step
         self.resume_state = resume_state
 
@@ -110,8 +110,19 @@ class FanOutResult:
         return self.processed > 0 and self.errors == self.processed and self.skipped == 0
 
 
-# Membership, not equality: statuses that ask a running job to stop at a work-key boundary.
-_STOP_REQUESTING_STATUSES: frozenset[JobStatus] = frozenset({JobStatus.INTERRUPT_REQUESTED})
+# Membership, not equality: statuses that mean this run must not keep working. One cooperative
+# stop serves both intents; where the run parks is decided when it gets there.
+#
+# The parked statuses are here too, not just the requests. A row can be parked by something
+# other than its own process -- a restart settling a pause it found -- and that process may
+# still be alive, since it is started in its own session and outlives the scheduler. Seeing its
+# own row already parked, it has to stop: carrying on would run to a completion the lifecycle
+# then refuses, leaving the work done, the row parked, and the final callbacks unfired. Parking
+# again is a no-op, because a parked status is a source of itself.
+_STOP_SIGNALLING_STATUSES: frozenset[JobStatus] = frozenset({
+    JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
+    JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED,
+})
 
 
 class PauseSignal:
@@ -155,7 +166,7 @@ class PauseSignal:
         status = get_current_session().scalar(
             select(JobExecution.status).where(JobExecution.id == self._job_id)
         )
-        if status in _STOP_REQUESTING_STATUSES:
+        if status in _STOP_SIGNALLING_STATUSES:
             LOG.info("Stop requested for job %s", self._job_id)
             self._event.set()
         return self._event.is_set()
@@ -229,13 +240,13 @@ class PausableJob(ABC, Generic[K]):
         if self._is_done(name):
             LOG.info("Step '%s' already completed; skipping", name)
             return False
-        self._pause_if_requested()
+        self._park_if_requested()
 
         body()
         self._advance(self._tasks.index(name))
         # Stage the checkpoint advance and commit it with the body's writes, the same as a
         # fan-out task: without staging, a kill after this commit would leave the body's effects
-        # durable while the step reads as not-done, and the re-run would repeat them. A JobInterrupted
+        # durable while the step reads as not-done, and the re-run would repeat them. A JobParked
         # unwinds the owning session without committing, so an uncommitted write is never marked
         # complete.
         self._stage_state(self._state_payload())
@@ -269,7 +280,7 @@ class PausableJob(ABC, Generic[K]):
         A task that fails, in the worker or in ``handle``, is counted and passed to
         ``on_error`` rather than ending the step: one bad item must not discard the rest.
 
-        Raises :class:`JobInterrupted` when a stop request cut the work short.
+        Raises :class:`JobParked` when a stop request cut the work short.
         """
         step = self._require_step()
         names = [self._task_name(step.name, key) for key in keys]
@@ -287,7 +298,7 @@ class PausableJob(ABC, Generic[K]):
             LOG.info("Step '%s': skipping %d task(s) done before the pause", step.name, result.skipped)
         if not pending:
             return result
-        self._pause_if_requested()
+        self._park_if_requested()
 
         session = get_current_session()
         items = [(by_name[name], build_arg(by_name[name])) for name in pending]
@@ -309,18 +320,18 @@ class PausableJob(ABC, Generic[K]):
             # An errored task still counts as done: its error was recorded, and holding the
             # checkpoint back for it would make every later resume redo everything after it.
             self._advance(position[self._task_name(step.name, outcome.key)])
-            self._pause_if_requested()
+            self._park_if_requested()
             result.processed += 1
             # Progress writes onto this session, so it lands in the commit below.
             self.on_step_progress(step, result.processed + result.skipped, len(keys))
             session.commit()
 
         if result.processed < len(pending):
-            # The pool stopped pulling on its own, so no per-task commit carried the final
-            # checkpoint out. Persist it here, on the same terms as the in-loop stop.
+            # The pool stopped dispatching before every task ran, so the loop above never
+            # reached its stop check. Persist the checkpoint here, on the same terms.
             payload = self._state_payload()
             self._park_checkpoint(payload)
-            raise JobInterrupted(step.name, payload)
+            raise JobParked(step.name, payload)
         return result
 
     def pin(self, key: str, value: Any) -> None:
@@ -390,20 +401,20 @@ class PausableJob(ABC, Generic[K]):
     def _is_done(self, name: str) -> bool:
         return name in self._tasks and self._tasks.index(name) < self._completed
 
-    def _pause_if_requested(self) -> None:
+    def _park_if_requested(self) -> None:
         """Commit the checkpoint and unwind, if a stop has been requested.
 
-        Writes the checkpoint but not the status. INTERRUPTED is claimable the moment it
-        lands, and this process is not finished when the checkpoint is: unwinding still has
-        to drain the worker pool, which waits out every task already in flight. Publishing
-        here would offer the run to a new claimer while the old one still holds it, so
-        ``exec_job`` publishes it once the process is genuinely done.
+        Writes the checkpoint but not the status. A claimable status published here would offer
+        the run to a new claimer while this process still holds it: the process is not finished
+        when the checkpoint is, since unwinding still has to drain the worker pool and wait out
+        every task already in flight. ``exec_job`` publishes the status once the process is
+        genuinely done, and picks which parked status from what asked the run to stop.
         """
         if not self._should_pause():
             return
         payload = self._state_payload()
         self._park_checkpoint(payload)
-        raise JobInterrupted(self._require_step().name, payload)
+        raise JobParked(self._require_step().name, payload)
 
     def _park_checkpoint(self, payload: dict[str, Any]) -> None:
         """Commit the checkpoint, unless the row is no longer one a resume can reach.
@@ -411,8 +422,10 @@ class PausableJob(ABC, Generic[K]):
         A cancel that arrived first wins and the scheduler settles it, so a checkpoint written
         now would only outlive the run that wrote it.
         """
-        job_exec = get_current_session().get(JobExecution, self.job_id)
-        if job_exec and job_exec.status in JobStatus.sources_for(JobStatus.INTERRUPTED):
+        # Read the column, not the row: this job's JobExecution is already in the session's
+        # identity map, so fetching the entity would never see a status set from elsewhere.
+        status = get_current_session().scalar(select(JobExecution.status).where(JobExecution.id == self.job_id))
+        if status in _STOP_SIGNALLING_STATUSES:
             self._stage_state(payload)
         get_current_session().commit()
 

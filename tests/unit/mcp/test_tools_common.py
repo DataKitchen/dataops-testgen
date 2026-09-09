@@ -28,6 +28,7 @@ from testgen.mcp.tools.common import (
     ScoreGroupBy,
     ScoreType,
     format_disposition,
+    format_run_duration,
     parse_category,
     parse_disposition,
     parse_impact_dimension,
@@ -1374,21 +1375,28 @@ def test_default_render_diff_value_str():
     assert _default_render_diff_value(42) == "42"
 
 
-def test_interrupted_is_offered_only_where_a_run_can_pause():
-    assert "Interrupted" in run_status_filter_options(JobKey.run_profile)
-    assert "Interrupted" not in run_status_filter_options(JobKey.run_tests)
+@pytest.mark.parametrize("label", ["Interrupted", "Paused"])
+def test_a_stopped_run_is_offered_only_where_a_run_can_stop(label):
+    assert label in run_status_filter_options(JobKey.run_profile)
+    assert label not in run_status_filter_options(JobKey.run_tests)
 
 
-def test_interrupted_is_rejected_for_a_key_that_cannot_pause():
+@pytest.mark.parametrize("label", ["Interrupted", "Paused"])
+def test_a_stopped_run_is_rejected_for_a_key_that_cannot_stop(label):
     """A filter value a run can never hold must error, not silently return nothing."""
     with pytest.raises(MCPUserError) as err:
-        parse_run_status_filter("Interrupted", JobKey.run_tests)
-    assert "Interrupted" not in str(err.value).split("Valid values:")[1]
+        parse_run_status_filter(label, JobKey.run_tests)
+    assert label not in str(err.value).split("Valid values:")[1]
 
 
-def test_interrupted_resolves_to_both_interrupt_statuses_for_profiling():
+def test_the_two_stop_intents_filter_separately():
+    # Only one of them picks itself back up, so collapsing the two would hide which runs are
+    # waiting to be resumed.
     assert parse_run_status_filter("Interrupted", JobKey.run_profile) == [
         JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED,
+    ]
+    assert parse_run_status_filter("Paused", JobKey.run_profile) == [
+        JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED, JobStatus.RESUME_REQUESTED,
     ]
 
 
@@ -1403,3 +1411,19 @@ def test_the_advertised_options_are_exactly_what_parses():
     for job_key in (JobKey.run_profile, JobKey.run_tests):
         for label in run_status_filter_options(job_key).split(", "):
             assert parse_run_status_filter(label, job_key)
+
+
+@pytest.mark.parametrize(
+    ("active_seconds", "expected"),
+    [(0, "0s"), (45, "45s"), (60, "1m 0s"), (3599, "59m 59s"), (3600, "1h 0m"), (7265, "2h 1m")],
+)
+def test_a_settled_run_renders_the_time_it_worked(active_seconds, expected):
+    assert format_run_duration(active_seconds, JobStatus.COMPLETED) == expected
+
+
+def test_a_paused_run_renders_a_duration_and_a_working_one_does_not():
+    """Its total is final until somebody resumes it, so it reports; a working run's is still
+    accumulating and reports nothing."""
+    assert format_run_duration(90, JobStatus.PAUSED) == "1m 30s"
+    assert format_run_duration(90, JobStatus.RUNNING) is None
+    assert format_run_duration(None, JobStatus.COMPLETED) is None
