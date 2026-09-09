@@ -16,8 +16,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
-# Packages installed temporarily during Docker build — never in pyproject.toml.
-_BUILD_ONLY = {"pip-licenses", "prettytable"}
+# Packages present only while the image is built — never in pyproject.toml.
+_BUILD_ONLY = {"pip-licenses", "pip", "setuptools", "wheel"}
 
 # Internal DK packages not discoverable from pyproject.toml structure.
 _EXTRA_INTERNAL = {"requests-extensions", "requests_extensions"}
@@ -93,7 +93,7 @@ def _resolve_transitive(names: set[str]) -> set[str]:
 
 def _build_exclude_sets(repo_root: Path) -> tuple[set[str], set[str]]:
     """Read pyproject.toml files to build dev-only and internal package sets."""
-    dev_direct: set[str] = set(_BUILD_ONLY)
+    dev_direct: set[str] = set()
     internal: set[str] = set(_EXTRA_INTERNAL)
 
     for pyproject_path in _find_pyprojects(repo_root):
@@ -109,7 +109,9 @@ def _build_exclude_sets(repo_root: Path) -> tuple[set[str], set[str]]:
 
     # Expand dev deps transitively, then subtract anything reachable from the main
     # package. This keeps shared deps (e.g. requests, urllib3) in the runtime set.
-    dev_all = _resolve_transitive(dev_direct)
+    # _BUILD_ONLY is unioned in literally rather than seeded into the expansion: pip-licenses
+    # requires prettytable, which is also a runtime dependency and must stay attributed.
+    dev_all = _resolve_transitive(dev_direct) | {_normalize(name) for name in _BUILD_ONLY}
     runtime_all = _resolve_transitive(internal)
     dev_only = dev_all - runtime_all
     return dev_only, internal
@@ -158,6 +160,10 @@ def get_packages() -> list[dict]:
             "--with-license-file",
             "--with-notice-file",
             "--no-license-path",
+            # pip-licenses hides its own SYSTEM_PACKAGES list by default, which includes
+            # prettytable and wcwidth — both runtime dependencies that need attribution.
+            # _BUILD_ONLY filters out the entries this exposes that are genuinely build-only.
+            "--with-system",
         ],
         capture_output=True,
         text=True,
