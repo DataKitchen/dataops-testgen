@@ -205,7 +205,9 @@ server certificate. Either a path to a PEM bundle or `system` for the
 operating system's trust store, which carries the authorities that the
 managed postgres services chain to.
 
-Only consulted when `DATABASE_SSLMODE` is `verify-ca` or `verify-full`.
+`system` pairs only with `verify-full`, so `verify-ca` needs a PEM path.
+A PEM path suits any mode, and `require` verifies the certificate chain
+against it in the same way as `verify-ca`.
 
 from env variable: `TG_METADATA_DB_SSLROOTCERT`
 defaults to: `system`
@@ -217,10 +219,10 @@ def _database_ssl_connect_args() -> dict[str, str]:
         return {}
     args = {"sslmode": DATABASE_SSLMODE}
     # libpq accepts sslrootcert=system only alongside verify-full, and rejects the
-    # combination outright rather than ignoring it. A file path suits either mode.
-    if DATABASE_SSLMODE == "verify-full" or (
-        DATABASE_SSLMODE == "verify-ca" and DATABASE_SSLROOTCERT != "system"
-    ):
+    # combination outright rather than ignoring it. A file path suits any mode, and
+    # libpq verifies the chain against it, so require plus a mounted authority
+    # verifies as verify-ca does.
+    if DATABASE_SSLROOTCERT != "system" or DATABASE_SSLMODE == "verify-full":
         args["sslrootcert"] = DATABASE_SSLROOTCERT
     return args
 

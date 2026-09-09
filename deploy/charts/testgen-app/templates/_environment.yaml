@@ -1,6 +1,11 @@
 {{- define "testgen.environment" -}}
-{{- if and (not .Values.testgen.databaseSslMode) (ne (.Values.testgen.databaseSslRootCert | default "system") "system") }}
-{{- fail "testgen.databaseSslRootCert is set but testgen.databaseSslMode is empty, so the certificate would never be used. Set databaseSslMode to verify-full." }}
+{{- $sslMode := .Values.testgen.databaseSslMode | default "" | lower }}
+{{- $sslRootCert := .Values.testgen.databaseSslRootCert | default "system" }}
+{{- if and (not $sslMode) (ne $sslRootCert "system") }}
+{{- fail "testgen.databaseSslRootCert is set but testgen.databaseSslMode is empty, so the certificate would never be used. Set databaseSslMode to verify-full, or to verify-ca to verify the authority without the host name." }}
+{{- end }}
+{{- if and (eq $sslMode "verify-ca") (eq $sslRootCert "system") }}
+{{- fail "testgen.databaseSslMode is verify-ca, which needs a certificate authority, and testgen.databaseSslRootCert is system, which libpq takes only alongside verify-full. Set databaseSslMode to verify-full, or point databaseSslRootCert at a PEM bundle mounted through extraVolumes." }}
 {{- end }}
 - name: TG_DECRYPT_SALT
   valueFrom:

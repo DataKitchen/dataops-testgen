@@ -98,6 +98,13 @@ route to the `http` service port for the UI or `api` for the API and MCP server.
 `testgen.baseUrl` must be set to the externally reachable API URL, because it is
 the OAuth issuer and the source of the MCP allowed-host list.
 
+The `api` port answers on four prefixes — `/api` for the REST API and its
+documentation, `/oauth` for the token exchange, `/.well-known` for OAuth
+discovery, and `/mcp` for the MCP endpoint. Publish the API on a host of its
+own, or route all four paths on a shared host. A host that routes only `/api`
+to the `api` port sends discovery and the MCP endpoint to the UI instead, and
+MCP clients then fail while authenticating.
+
 # Installing
 
 The following command will install the required services for DataOps TestGen,

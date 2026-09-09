@@ -54,7 +54,10 @@ testgen:
   labels:
 
 # Any additional environment variable, in Kubernetes env format. Use this for
-# settings the values above do not cover.
+# settings the values above do not cover. TG_UI_PORT and TG_API_PORT are the
+# exception: they move the application's own listeners, while the container
+# ports, the Service and both probes stay pinned to 8501 and 8530, so the pod
+# fails its liveness probe and restarts.
 extraEnv: []
 # - name: TG_ANALYTICS
 #   value: "no"
@@ -133,7 +136,10 @@ service:
   annotations: {}
 
 # Publish the UI by setting className and hosts. To publish the API and MCP
-# server, add a host entry whose path uses servicePort: api.
+# server, add a host entry whose path uses servicePort: api. The api port
+# answers on /api, /oauth, /.well-known and /mcp, so give it a host of its own
+# or route all four paths: routing only /api leaves OAuth discovery and the MCP
+# endpoint on the UI port.
 ingress:
   enabled: false
   className: ""
