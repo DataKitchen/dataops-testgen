@@ -1,6 +1,6 @@
 import logging
 import typing
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 import streamlit as st
 
@@ -191,6 +191,8 @@ class DataProfilingPage(Page):
             on_RefreshData_change=refresh_data,
             on_RunsDeleted_change=on_delete_runs,
             on_RunCanceled_change=on_cancel_run,
+            on_RunPaused_change=on_pause_run,
+            on_RunResumed_change=on_resume_run,
             # RunProfilingDialog events
             on_RunProfilingConfirmed_change=on_run_profiling_confirmed,
             on_GoToProfilingRunsClicked_change=on_go_to_profiling_runs_clicked,
@@ -282,17 +284,43 @@ class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
 
 @with_database_session
 def on_cancel_run(payload: dict) -> None:
-    job_execution_id = payload.get("job_execution_id")
-    if not job_execution_id:
-        fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
+    _request_transition(payload, JobExecution.request_cancel, "Cancellation requested.", "This run cannot be canceled.")
+
+
+@with_database_session
+def on_pause_run(payload: dict) -> None:
+    _request_transition(payload, JobExecution.request_pause, "Pause requested.", "This run cannot be paused.")
+
+
+@with_database_session
+def on_resume_run(payload: dict) -> None:
+    _request_transition(payload, JobExecution.request_resume, "Resume requested.", "This run cannot be resumed.")
+
+
+def _request_transition(
+    payload: dict,
+    transition: Callable[[JobExecution], bool],
+    confirmation: str,
+    refusal: str,
+) -> None:
+    """Ask a run to change state, and report back whichever way it went.
+
+    The transition is guarded against the run's status in the database, so one that finished
+    or was canceled between the page rendering and the click is refused rather than acted on,
+    and against the caller's permission, so hiding the control is not the only thing stopping
+    the event from arriving.
+    """
+    if not session.auth.user_has_permission("edit"):
+        fm.reset_post_updates(str_message=f":red[{refusal}]", as_toast=True)
         return
 
-    job_exec = JobExecution.get(job_execution_id)
-    if job_exec and job_exec.request_cancel():
+    job_execution_id = payload.get("job_execution_id")
+    job_exec = JobExecution.get(job_execution_id) if job_execution_id else None
+    if job_exec and transition(job_exec):
         get_profiling_run_summaries.clear()
-        fm.reset_post_updates(str_message=":green[Cancellation requested.]", as_toast=True)
+        fm.reset_post_updates(str_message=f":green[{confirmation}]", as_toast=True)
     else:
-        fm.reset_post_updates(str_message=":red[This run cannot be canceled.]", as_toast=True)
+        fm.reset_post_updates(str_message=f":red[{refusal}]", as_toast=True)
 
 
 @with_database_session

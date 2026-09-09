@@ -19,6 +19,11 @@ from testgen.common.models.test_run import TestRun
 
 LOG = logging.getLogger("testgen")
 
+# Where a wait gives up. Neither parked status is terminal, but only one of them continues on
+# its own: a run stopped by a shutdown is picked up by the next scheduler start, so waiting
+# through it ends somewhere, while a paused one waits to be resumed and would never return.
+_WAIT_ENDS_AT: frozenset[str] = frozenset({*JobStatus.terminal(), JobStatus.PAUSED})
+
 
 def submit_and_wait(
     job_key: str,
@@ -51,12 +56,12 @@ def submit_and_wait(
         time.sleep(POLL_INTERVAL)
         with database_session():
             job_exec = JobExecution.get(job_id)
-            # Keep waiting through INTERRUPTED: the run continues when a scheduler next polls,
-            # and polling covers that quick-restart case.
-            if job_exec and job_exec.status == JobStatus.INTERRUPTED and not reported_interrupted:
+            if not job_exec:
+                continue
+            if job_exec.status == JobStatus.INTERRUPTED and not reported_interrupted:
                 reported_interrupted = True
                 click.echo("The run stopped partway and kept its progress; it continues when the scheduler restarts.")
-            if job_exec and job_exec.status in JobStatus.terminal():
+            if job_exec.status in _WAIT_ENDS_AT:
                 break
 
     match job_exec.status:
@@ -68,6 +73,9 @@ def submit_and_wait(
             sys.exit(1)
         case JobStatus.CANCELED:
             click.echo(f"Job {job_id} was canceled.", err=True)
+            sys.exit(1)
+        case JobStatus.PAUSED:
+            click.echo(f"Job {job_id} was paused and kept its progress. Resume it to finish the run.", err=True)
             sys.exit(1)
 
 

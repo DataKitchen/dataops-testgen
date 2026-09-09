@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from unittest.mock import ANY, Mock, call, patch
 
 import pytest
@@ -162,7 +163,13 @@ def test_send_test_run_notification(
     else:
         diff_mock.return_value = create_diff(**diff_mock_args)
         get_prev_mock.return_value = TestRun(id="tr-prev-id")
-    summary = Mock(project_code="test_project")
+    # Real values, so the duration the context carries is the one the helper resolves rather
+    # than an auto-attribute that happens to be truthy.
+    summary = Mock(
+        project_code="test_project",
+        active_seconds=42.0,
+        completed_at=datetime(2026, 3, 1, 9, 5, tzinfo=UTC),
+    )
     select_summary_mock.return_value = ([summary], 1)
 
     send_test_run_notifications(test_run)
@@ -185,6 +192,8 @@ def test_send_test_run_notification(
 
     expected_context = {
         "test_run": summary,
+        # Resolved through the shared helper, not read off the summary raw.
+        "duration_seconds": 42.0,
         "test_run_url": "http://tg-base-url/test-runs:results?project_code=test_project&run_id=tr-id&source=email",
         "test_run_id": "tr-id",
         "test_result_summary": ANY,
