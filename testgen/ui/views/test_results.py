@@ -16,7 +16,7 @@ from testgen.common.models.test_definition import (
     TestDefinitionNote,
     TestDefinitionSummary,
 )
-from testgen.common.models.test_suite import TestSuiteMinimal
+from testgen.common.models.test_suite import TestSuite, TestSuiteMinimal
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
 from testgen.common.test_result_disposition_service import (
     coerce_ui_disposition,
@@ -149,7 +149,7 @@ class TestResultsPage(Page):
         **_kwargs,
     ) -> None:
         run = get_test_run_minimal(run_id)
-        if not run:
+        if not run or not get_test_suite(run.test_suite_id, TestSuite.is_monitor.isnot(True)):
             self.router.navigate_with_warning(
                 f"Test run with ID '{run_id}' does not exist. Redirecting to list of Test Runs ...",
                 "test-runs",

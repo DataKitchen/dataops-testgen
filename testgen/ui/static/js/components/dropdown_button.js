@@ -4,12 +4,16 @@
  * @property {string} label
  * @property {() => void} onclick
  *
+ * @typedef DropdownHeader
+ * @type {object}
+ * @property {string} header
+ *
  * @typedef DropdownButtonProps
  * @type {object}
  * @property {string} icon
  * @property {string} label
  * @property {('normal' | 'small')?} buttonSize
- * @property {DropdownItem[] | (() => DropdownItem[])} items
+ * @property {(DropdownItem | DropdownHeader)[] | (() => (DropdownItem | DropdownHeader)[])} items
  */
 import van from '/app/static/js/van.min.js';
 import { Button } from '/app/static/js/components/button.js';
@@ -46,11 +50,14 @@ const DropdownButton = (props) => {
                 const items = typeof props.items === 'function' ? props.items() : props.items;
                 return div(
                     { class: 'tg-dropdown-button--menu', 'data-testid': 'dropdown-menu' },
-                    ...items.map(item =>
-                        div({
+                    ...items.map(item => item.header
+                        ? div({
+                            class: 'tg-dropdown-button--header text-caption',
+                            'data-testid': 'dropdown-header',
+                        }, item.header)
+                        : div({
                             class: 'tg-dropdown-button--item',
                             'data-testid': 'dropdown-item',
-                            style: item.separator ? 'border-top: var(--button-stroked-border);' : '',
                             onclick: () => { menuOpen.val = false; item.onclick(); },
                         }, item.label),
                     ),
@@ -77,6 +84,11 @@ stylesheet.replace(`
 
 .tg-dropdown-button--item:hover {
     background: var(--select-hover-background);
+}
+
+.tg-dropdown-button--header {
+    padding: 8px 16px 4px;
+    text-transform: uppercase;
 }
 `);
 

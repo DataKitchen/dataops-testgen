@@ -118,6 +118,19 @@ const DataCatalog = (/** @type Properties */ props) => {
     // Import dialog: persistent local state + one-time sync from Python prop
     const importDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.import_metadata_dialog)) importDialogOpen.val = true; });
+    // Owned here, not in the dialog: the dialog is rebuilt on every rerender, so state
+    // declared inside it would reset the user's choice when the preview comes back.
+    const importBlankBehavior = van.state('keep');
+    const importFileValue = van.state(null);
+    const importAutoCloseTimer = van.state(null);
+    // The success auto-close is a timer, so closing the dialog before it fires has to
+    // cancel it — otherwise it closes whatever dialog is open 2 seconds later.
+    const cancelImportAutoClose = () => {
+        if (importAutoCloseTimer.val) {
+            clearTimeout(importAutoCloseTimer.val);
+            importAutoCloseTimer.val = null;
+        }
+    };
 
     /** @type TreeNode[] */
     const treeNodes = van.derive(() => {
@@ -243,7 +256,12 @@ const DataCatalog = (/** @type Properties */ props) => {
                             tooltipPosition: 'left',
                             width: 'fit-content',
                             style: 'background: var(--button-generic-background-color);',
-                            onclick: () => emit('ImportClicked', {}),
+                            onclick: () => {
+                                importBlankBehavior.val = 'keep';
+                                importFileValue.val = null;
+                                cancelImportAutoClose();
+                                emit('ImportClicked', {});
+                            },
                         })
                         : null,
                     ExportOptions(treeNodes, multiSelectedItems, userCanEdit, emit),
@@ -429,6 +447,7 @@ const DataCatalog = (/** @type Properties */ props) => {
                     title: 'Import Metadata',
                     open: importDialogOpen,
                     onClose: () => {
+                        cancelImportAutoClose();
                         importDialogOpen.val = false;
                         emit('ImportDialogClosed', {});
                     },
@@ -440,10 +459,14 @@ const DataCatalog = (/** @type Properties */ props) => {
                     return ImportMetadataDialog({ emit,
                         preview: data.preview,
                         result: data.result,
+                        blankBehavior: importBlankBehavior,
+                        fileValue: importFileValue,
+                        autoCloseTimer: importAutoCloseTimer,
                         onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
                         onFileCleared: () => emit('ImportFileCleared', {}),
                         onImportConfirmed: () => emit('ImportConfirmed', {}),
                         onAutoClose: () => {
+                            importAutoCloseTimer.val = null;
                             importDialogOpen.val = false;
                             emit('ImportDialogClosed', {});
                         },
@@ -461,6 +484,7 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
         label: 'Export',
         items: () => {
             const items = [
+                { header: 'Excel' },
                 {
                     label: 'All columns',
                     onclick: () => emit('ExportClicked', { payload: null }),
@@ -505,11 +529,10 @@ const ExportOptions = (/** @type TreeNode[] */ treeNodes, /** @type SelectedNode
                     },
                 });
             }
-            items.push({
-                label: 'Metadata CSV',
-                separator: true,
-                onclick: () => emit('ExportCsvClicked', {}),
-            });
+            items.push(
+                { header: 'CSV' },
+                { label: 'Metadata', onclick: () => emit('ExportCsvClicked', {}) },
+            );
             return items;
         },
     });
