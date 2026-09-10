@@ -21,13 +21,20 @@ COPY . /tmp/dk/
 RUN sed -i '/hdbcli/d' /tmp/dk/pyproject.toml /tmp/dk/testgen/pyproject.toml 2>/dev/null; \
     python3 -m pip install --no-cache-dir --prefix=/dk /tmp/dk
 
-# Generate third-party license notices from installed packages
-RUN pip install --no-cache-dir pip-licenses \
+# Generate third-party license notices from installed packages. pip-licenses is pinned because
+# its prettytable floor decides whether pip sees the prettytable in /dk as an upgrade target and
+# uninstalls it out of the runtime prefix.
+RUN pip install --no-cache-dir pip-licenses==5.5.5 \
     && SCRIPT=$(find /tmp/dk -name generate_third_party_notices.py | head -1) \
     && PYTHONPATH=/dk/lib/python3.13/site-packages python3 "$SCRIPT" --output /dk/THIRD-PARTY-NOTICES \
     && pip uninstall -y pip-licenses
 
 RUN rm -Rf /tmp/dk /root/.cache/pip
+
+# pip is needed only while the image is built. Removing it drops the vendored dependency bundle
+# it ships under pip/_vendor, which container scanners report against even though none of it is
+# reachable at runtime. `python3 -m ensurepip` restores pip offline if a container ever needs it.
+RUN python3 -m pip uninstall -y pip
 
 RUN tg-patch-streamlit
 
