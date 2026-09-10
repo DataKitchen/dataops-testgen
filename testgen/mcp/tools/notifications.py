@@ -49,14 +49,6 @@ from testgen.mcp.tools.common import (
 )
 from testgen.mcp.tools.markdown import MdDoc
 
-# Kept in sync with ``notification_destinations._TYPE_TO_LABEL`` so the destination
-# type reads identically wherever the MCP surface names one -- destination list,
-# destination detail, and here on a rule's "Delivery target" line.
-_DESTINATION_TYPE_TO_LABEL: dict[str, str] = {
-    "email": "Email",
-    "webhook": "Webhook",
-}
-
 _DOC_GROUP = DocGroup.MANAGE
 
 # ``Monitor Alert`` is intentionally excluded from creation: a monitor notification is
@@ -980,12 +972,10 @@ def _render_notification_body(doc: MdDoc, notif: NotificationSettings) -> None:
         if destination is not None:
             doc.field("Destination", destination.name)
             doc.field("Destination ID", destination.id, code=True)
-            # Match ``list_notification_destinations`` / ``get_notification_destination`` labels
-            # so a caller sees the same vocabulary across all destination read paths.
-            doc.field(
-                "Destination Type",
-                _DESTINATION_TYPE_TO_LABEL.get(destination.destination_type, destination.destination_type),
-            )
+            # ``type_summary`` is what the destination list reports, so a rule names its
+            # delivery target with the same vocabulary and identifies the receiving service
+            # rather than reporting every webhook subtype as a bare "Webhook".
+            doc.field("Destination Type", destination.type_summary)
         else:
             doc.field("Destination ID", notif.notification_destination_id, code=True)
             doc.text("_Destination not found._")
