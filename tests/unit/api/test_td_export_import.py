@@ -891,6 +891,41 @@ class Test_import_update:
         assert "external_id" in compiled
 
 
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_update_leaves_fields_the_file_omits_untouched(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        """Export omits fields sitting at their default, and a matched update writes only
+        what the file carries. Edits made on the destination — a deactivated test, a
+        lowered severity, a skip-errors allowance — therefore survive a re-import that
+        refreshes calibration values. Changing this breaks the promotion workflow."""
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+
+        existing = _make_existing_row(id_=uuid4(), lock_refresh=False)
+        session.execute.return_value.all.return_value = [existing]
+
+        ts = _make_test_suite()
+        # Only threshold_value is set; test_active, severity and skip_errors are absent.
+        td = _make_import_td(
+            test_type="Alpha", table_name="t1", column_name="c1",
+            threshold_value="99",
+        )
+        config = _make_config(mode=ImportMode.apply, on_match=OnMatch.overwrite_unlocked)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+            import_definitions(ts, config, _make_payload(td))
+
+        update_stmt = session.execute.call_args_list[-1][0][0]
+        written = {column.name for column in update_stmt.compile().statement._values}
+        assert "threshold_value" in written
+        assert written.isdisjoint({"test_active", "severity", "skip_errors"})
+
+
 # --- Import: matched TDs protected from absence delete ---
 
 

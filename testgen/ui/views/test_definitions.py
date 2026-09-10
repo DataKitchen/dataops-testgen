@@ -1,6 +1,10 @@
+import base64
 import logging
+import re
 import typing
 from datetime import UTC, datetime
+from enum import StrEnum
+from uuid import UUID, uuid4
 
 import pandas as pd
 import streamlit as st
@@ -10,7 +14,7 @@ from testgen.common import date_service
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.enums import JobSource
-from testgen.common.models import with_database_session
+from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
@@ -25,6 +29,22 @@ from testgen.common.models.test_definition import (
 )
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.pii_masking import get_pii_columns, mask_profiling_pii
+from testgen.common.test_definition_export_import_service import (
+    ImportAction,
+    ImportConfig,
+    ImportMode,
+    ImportPayload,
+    ImportReason,
+    ImportResponse,
+    ImportSummary,
+    InvalidImportPayload,
+    OnAbsence,
+    OnMatch,
+    OnNew,
+    Origin,
+    export_definitions,
+    import_definitions,
+)
 from testgen.ui.components import widgets as testgen
 from testgen.ui.components.widgets.download_dialog import (
     FILE_DATA_TYPE,
@@ -74,6 +94,12 @@ TD_COPY_MOVE_COLLISION_KEY = "td:copy_move_collision"
 TD_COPY_MOVE_OVERWRITE_KEY = "td:copy_move_overwrite"
 TD_NOTES_DIALOG_KEY = "td:notes_dialog"
 TD_PROFILING_KEY = "td:profiling"
+TD_IMPORT_DIALOG_KEY = "td:import_dialog"
+TD_IMPORT_PREVIEW_KEY = "td:import_preview"
+TD_IMPORT_RESULT_KEY = "td:import_result"
+TD_IMPORT_PREVIEW_CONTENT_KEY = "td:import_preview_content"
+TD_IMPORT_PREVIEW_POLICY_KEY = "td:import_preview_policy"
+TD_IMPORT_FILE_NAME_KEY = "td:import_file_name"
 
 
 def _parse_sort_param(sort: str | None) -> tuple[list | None, list[dict]]:
@@ -119,7 +145,7 @@ class TestDefinitionsPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        test_suite = get_test_suite(test_suite_id)
+        test_suite = get_test_suite(test_suite_id, TestSuite.is_monitor.isnot(True))
         if not test_suite:
             self.router.navigate_with_warning(
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
@@ -619,6 +645,80 @@ class TestDefinitionsPage(Page):
                     args=(test_suite, table_group.table_group_schema, data),
                 )
 
+        def _import_targets_this_suite() -> bool:
+            """The dialog state outlives navigation between test suites, and the page reopens it
+            from session state alone, so an import must confirm it is aimed where it was built."""
+            return st.session_state.get(TD_IMPORT_DIALOG_KEY) == str(test_suite.id)
+
+        def _store_import_preview(content: str, policy: dict, file_name: str | None) -> None:
+            preview = _build_import_preview(content, policy, test_suite)
+            # Identifies this projection so the apply can tell whether the browser is
+            # authorizing the preview it actually rendered.
+            preview["token"] = str(uuid4())
+            st.session_state[TD_IMPORT_PREVIEW_KEY] = preview
+            st.session_state[TD_IMPORT_PREVIEW_POLICY_KEY] = policy
+            st.session_state[TD_IMPORT_PREVIEW_CONTENT_KEY] = content
+            st.session_state.pop(TD_IMPORT_RESULT_KEY, None)
+            if file_name:
+                st.session_state[TD_IMPORT_FILE_NAME_KEY] = file_name
+
+        def on_import_dialog_opened(*_) -> None:
+            _clear_import_state()
+            st.session_state[TD_IMPORT_DIALOG_KEY] = str(test_suite.id)
+
+        def on_import_file_uploaded(payload: dict) -> None:
+            if not _import_targets_this_suite():
+                return
+            _store_import_preview(payload["content"], _import_policy(payload), payload.get("file_name"))
+
+        def on_import_policy_changed(payload: dict) -> None:
+            """Rebuild the preview from the content already held here, so a policy change
+            does not make the browser re-send the uploaded document."""
+            content = st.session_state.get(TD_IMPORT_PREVIEW_CONTENT_KEY)
+            if not content or not _import_targets_this_suite():
+                return
+            _store_import_preview(content, _import_policy(payload), None)
+
+        def on_import_file_cleared(*_) -> None:
+            st.session_state.pop(TD_IMPORT_PREVIEW_KEY, None)
+            st.session_state.pop(TD_IMPORT_PREVIEW_CONTENT_KEY, None)
+            st.session_state.pop(TD_IMPORT_FILE_NAME_KEY, None)
+
+        def on_import_confirmed(payload: dict | None = None) -> None:
+            payload = payload or {}
+            content = st.session_state.get(TD_IMPORT_PREVIEW_CONTENT_KEY)
+            refusal = _refuse_import(
+                user_can_edit=user_can_edit,
+                targets_this_suite=_import_targets_this_suite(),
+                content=content,
+                preview=st.session_state.get(TD_IMPORT_PREVIEW_KEY),
+                submitted_token=payload.get("preview_token"),
+                delete_confirmed=bool(payload.get("delete_confirmed")),
+            )
+            if refusal:
+                LOG.warning("Refused test definition import: %s", refusal)
+                return
+
+            policy = st.session_state.get(TD_IMPORT_PREVIEW_POLICY_KEY, IMPORT_POLICY_DEFAULTS)
+            result = _run_import(test_suite, content, policy)
+            st.session_state[TD_IMPORT_RESULT_KEY] = result
+            # A failed import keeps its preview and content so a retry is one click away;
+            # storing a new preview clears the result.
+            if result["success"]:
+                st.session_state.pop(TD_IMPORT_PREVIEW_KEY, None)
+                st.session_state.pop(TD_IMPORT_PREVIEW_CONTENT_KEY, None)
+
+        def on_import_dialog_closed(*_) -> None:
+            _clear_import_state()
+            st.session_state.pop(TD_IMPORT_DIALOG_KEY, None)
+
+        def on_export_json(*_) -> None:
+            download_dialog(
+                dialog_title="Download Test Definitions",
+                file_content_func=get_test_definitions_json_data,
+                args=(test_suite,),
+            )
+
         def on_filter_changed(filters: dict) -> None:
             norm = lambda v: None if v in (None, "None", "") else str(v)
             if (
@@ -652,6 +752,18 @@ class TestDefinitionsPage(Page):
             if sort_value == sort and current_page == 0:
                 return
             Router().set_query_params({"sort": sort_value, "page": "0"})
+
+        import_dialog_data = None
+        if st.session_state.get(TD_IMPORT_DIALOG_KEY) == str(test_suite.id):
+            # The armed policy and file name ride along so a dialog reopened from session
+            # state after navigation shows the controls the stored preview was built with,
+            # rather than the frontend's freshly mounted defaults.
+            import_dialog_data = {
+                "preview": st.session_state.get(TD_IMPORT_PREVIEW_KEY),
+                "result": st.session_state.get(TD_IMPORT_RESULT_KEY),
+                "policy": dict(st.session_state.get(TD_IMPORT_PREVIEW_POLICY_KEY, IMPORT_POLICY_DEFAULTS)),
+                "file_name": st.session_state.get(TD_IMPORT_FILE_NAME_KEY),
+            }
 
         testgen.test_definitions_widget(
             key="test_definitions",
@@ -690,6 +802,7 @@ class TestDefinitionsPage(Page):
                 "run_tests_dialog": run_tests_data,
                 "notes_dialog": notes_dialog,
                 "profiling_column": st.session_state.get(TD_PROFILING_KEY),
+                "import_dialog": import_dialog_data,
             },
             on_AddDialogOpened_change=on_add_dialog_opened,
             on_EditDialogOpened_change=on_edit_dialog_opened,
@@ -720,6 +833,13 @@ class TestDefinitionsPage(Page):
             on_ExportAll_change=on_export_all,
             on_ExportFiltered_change=on_export_filtered,
             on_ExportSelected_change=on_export_selected,
+            on_ExportJson_change=on_export_json,
+            on_ImportDialogOpened_change=on_import_dialog_opened,
+            on_ImportFileUploaded_change=on_import_file_uploaded,
+            on_ImportPolicyChanged_change=on_import_policy_changed,
+            on_ImportFileCleared_change=on_import_file_cleared,
+            on_ImportConfirmed_change=on_import_confirmed,
+            on_ImportDialogClosed_change=on_import_dialog_closed,
             on_NotesClicked_change=on_notes_clicked,
             on_NoteAdded_change=on_note_added,
             on_NoteUpdated_change=on_note_updated,
@@ -806,6 +926,233 @@ def get_excel_report_data(
         columns=columns,
         update_progress=update_progress,
     )
+
+
+IMPORT_POLICY_AXES: dict[str, type[StrEnum]] = {
+    "on_new": OnNew,
+    "on_match": OnMatch,
+    "on_absence": OnAbsence,
+}
+
+IMPORT_POLICY_DEFAULTS: dict[str, StrEnum] = {
+    "on_new": OnNew.create,
+    "on_match": OnMatch.overwrite_unlocked,
+    "on_absence": OnAbsence.do_nothing,
+}
+
+IMPORT_REASON_LABELS = {
+    ImportReason.matched: "Matches an existing test",
+    ImportReason.no_match: "No matching test",
+    ImportReason.policy: "Excluded by the selected policy",
+    ImportReason.locked: "Existing test is locked",
+    ImportReason.invalid_test_type: "Unknown test type",
+    ImportReason.non_public_test_type: "Test type cannot be imported",
+    ImportReason.invalid_table: "Table has not been profiled",
+    ImportReason.missing_external_id: "Missing external ID",
+    ImportReason.absent: "Not in the file",
+}
+
+IMPORT_ACTION_LABELS = {
+    ImportAction.create: "Create",
+    ImportAction.update: "Update",
+    ImportAction.skip: "Skip",
+    ImportAction.delete: "Delete",
+}
+
+IMPORT_PREVIEW_ROW_LIMIT = 500
+
+# Preview ordering: what the user has to act on first. Skips lead because they are the
+# rows that silently will not be imported, and there are usually few of them among many
+# routine updates; deletes follow because they destroy data. Without this a single skip
+# sorts in among hundreds of updates and is invisible in a scrolling table.
+IMPORT_ACTION_ORDER = {
+    ImportAction.skip: 0,
+    ImportAction.delete: 1,
+    ImportAction.create: 2,
+    ImportAction.update: 3,
+}
+
+
+def _import_policy(payload: dict) -> dict[str, StrEnum]:
+    """Read the three import policy axes out of an event payload, defaulting each independently."""
+    policy = {}
+    for axis, enum_class in IMPORT_POLICY_AXES.items():
+        try:
+            policy[axis] = enum_class(payload[axis])
+        except (KeyError, ValueError):
+            if payload.get(axis) is not None:
+                LOG.warning("Unrecognized import %s %r; falling back to a default", axis, payload[axis])
+            policy[axis] = IMPORT_POLICY_DEFAULTS[axis]
+    return policy
+
+
+def _import_config(policy: dict, mode: ImportMode) -> ImportConfig:
+    return ImportConfig(mode=mode, **policy)
+
+
+def _refuse_import(
+    *,
+    user_can_edit: bool,
+    targets_this_suite: bool,
+    content: str | None,
+    preview: dict | None,
+    submitted_token: str | None,
+    delete_confirmed: bool,
+) -> str | None:
+    """Return why an import must not proceed, or None when it may.
+
+    The token rejects a projection the user never saw: a policy change and a confirm
+    click can land in the same rerun, and the change is applied first, so the click
+    would otherwise authorize a preview that had already been replaced.
+    """
+    if not user_can_edit:
+        return "user cannot edit"
+    if not targets_this_suite:
+        return "dialog is armed for a different test suite"
+    if not content or not preview or preview.get("error"):
+        return "no valid preview"
+    if not submitted_token or submitted_token != preview.get("token"):
+        return "preview is stale"
+    if preview.get("summary", {}).get("deleted") and not delete_confirmed:
+        return "deletion was not confirmed"
+    return None
+
+
+def _run_import(test_suite: TestSuite, content: str, policy: dict) -> dict:
+    """Apply an import document to a test suite and describe the outcome for the dialog."""
+    try:
+        # The session is opened inside the try so a failure rolls back. Catching the
+        # exception outside it would take database_session's clean-exit path and commit
+        # a partially applied import.
+        with database_session():
+            payload = ImportPayload.model_validate_json(base64.b64decode(content.split(",", 1)[1]))
+            response = import_definitions(test_suite, _import_config(policy, ImportMode.apply), payload)
+    except InvalidImportPayload as e:
+        return {"success": False, "message": str(e)}
+    except Exception:
+        LOG.exception("Test definition import failed")
+        return {"success": False, "message": "Something went wrong while importing the test definitions."}
+
+    st.cache_data.clear()
+    get_test_suite_columns.clear()
+    return {"success": True, "message": _import_result_message(response.summary)}
+
+
+def _clear_import_state() -> None:
+    for key in (TD_IMPORT_PREVIEW_KEY, TD_IMPORT_RESULT_KEY, TD_IMPORT_PREVIEW_CONTENT_KEY,
+                TD_IMPORT_PREVIEW_POLICY_KEY, TD_IMPORT_FILE_NAME_KEY):
+        st.session_state.pop(key, None)
+
+
+def _build_import_preview(content: str, policy: dict, test_suite: TestSuite) -> dict:
+    """Project an uploaded export document onto the suite without persisting anything."""
+    try:
+        raw = base64.b64decode(content.split(",", 1)[1])
+        payload = ImportPayload.model_validate_json(raw)
+    except Exception:
+        LOG.warning("Could not parse test definition import file", exc_info=True)
+        return {"error": "Could not read this file. Export a test suite to see the expected format."}
+
+    try:
+        # The session is opened inside the try for the same reason it is in _run_import:
+        # returning an error from outside it would take database_session's clean-exit path
+        # and commit a transaction that needs rolling back.
+        with database_session():
+            response = import_definitions(test_suite, _import_config(policy, ImportMode.preview), payload)
+            short_names = {
+                row["test_type"]: row["test_name_short"] for row in run_test_type_lookup_query().to_dict("records")
+            }
+            target_labels = _import_target_labels(response, test_suite, short_names)
+    except InvalidImportPayload as e:
+        return {"error": str(e)}
+    except Exception:
+        LOG.exception("Could not build test definition import preview")
+        return {"error": "Something went wrong while reading this file."}
+
+    rows = []
+    for item in response.items:
+        for td in item.tds:
+            source = payload.definitions[td.idx] if td.idx is not None else None
+            if source is not None:
+                test_name = short_names.get(source.test_type, source.test_type or "")
+                table_name, column_name = source.table_name, source.column_name
+            else:
+                test_name, table_name, column_name = target_labels.get(td.target_id, ("", "", ""))
+            rows.append({
+                "action_code": item.action.value,
+                "action": IMPORT_ACTION_LABELS.get(item.action, item.action.value),
+                "reason": IMPORT_REASON_LABELS.get(item.reason, item.reason.value),
+                "test_name": test_name,
+                "table_name": table_name or "",
+                "column_name": column_name or "",
+            })
+
+    rows.sort(
+        key=lambda row: (
+            IMPORT_ACTION_ORDER.get(row["action_code"], len(IMPORT_ACTION_ORDER)),
+            row["table_name"],
+            row["column_name"],
+        )
+    )
+
+    return {
+        "summary": response.summary.model_dump(),
+        "preview_rows": rows[:IMPORT_PREVIEW_ROW_LIMIT],
+        "total_rows": len(rows),
+        "truncated": len(rows) > IMPORT_PREVIEW_ROW_LIMIT,
+    }
+
+
+def _import_result_message(summary: ImportSummary) -> str:
+    parts = [
+        f"{count} {label}"
+        for count, label in (
+            (summary.created, "created"),
+            (summary.updated, "updated"),
+            (summary.deleted, "deleted"),
+            (summary.skipped, "skipped"),
+        )
+        if count
+    ]
+    if not parts:
+        return "No test definitions were changed."
+    return f"Test definitions imported: {', '.join(parts)}."
+
+
+def _import_target_labels(
+    response: ImportResponse, test_suite: TestSuite, short_names: dict[str, str]
+) -> dict[UUID, tuple[str, str, str]]:
+    """Resolve type/table/column for actions that name an existing test rather than a file entry."""
+    target_ids = [td.target_id for item in response.items for td in item.tds if td.idx is None and td.target_id]
+    if not target_ids:
+        return {}
+    existing = select_test_definitions_where(
+        TestDefinition.test_suite_id == test_suite.id,
+        TestDefinition.id.in_(target_ids),
+    )
+    return {
+        td.id: (short_names.get(td.test_type, td.test_type or ""), td.table_name, td.column_name)
+        for td in existing
+    }
+
+
+@with_database_session
+def get_test_definitions_json_data(
+    update_progress: PROGRESS_UPDATE_TYPE,
+    test_suite: TestSuite,
+) -> FILE_DATA_TYPE:
+    update_progress(0.3)
+    document = export_definitions(test_suite, Origin.both, None, None)
+    update_progress(0.8)
+
+    # exclude_defaults keeps the document compact and, more importantly, lets import
+    # distinguish an explicitly set field from a defaulted one. Without it, a re-import
+    # overwrites every target field that happens to equal its schema default.
+    content = document.model_dump_json(indent=2, exclude_defaults=True)
+
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", f"{test_suite.project_code}_{test_suite.test_suite}").strip("_")
+    file_name = f"test_definitions_{slug}_{datetime.now(UTC):%Y%m%d}.json"
+    return file_name, "application/json", content
 
 
 @st.cache_data(show_spinner=False)

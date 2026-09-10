@@ -1,5 +1,6 @@
 import base64
-from unittest.mock import patch
+from contextlib import ExitStack
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -368,3 +369,81 @@ def test_build_fields_column_drops_pii_without_permission():
         fields = _build_metadata_fields(row, ["pii_flag", "excluded_data_element"], is_column=True)
     assert fields == {"excluded_data_element": True}
     assert "pii_flag" not in fields
+
+
+# --- apply ---
+#
+# The apply lives at module level rather than in render's closure so the rollback contract
+# can be asserted here.
+
+
+VIEW_MODULE = "testgen.ui.views.data_catalog"
+
+
+def _run_metadata_import(*args, **kwargs):
+    from testgen.ui.views.data_catalog import _run_metadata_import as run
+    return run(*args, **kwargs)
+
+
+CLEARABLE_CACHES = (
+    "get_table_group_columns", "get_table_by_id", "get_column_by_id",
+    "get_tag_values", "select_table_groups_minimal_where",
+)
+
+
+def _patch_caches(stack: ExitStack) -> dict:
+    """The apply clears five cached queries on success; each is a module attribute."""
+    return {
+        name: stack.enter_context(patch(f"{VIEW_MODULE}.{name}", MagicMock()))
+        for name in CLEARABLE_CACHES
+    }
+
+
+def test_a_failed_metadata_import_rolls_back_rather_than_reporting_success():
+    """The session is opened inside the try. Catching outside it would take
+    database_session's clean-exit path and commit a partially applied import."""
+    with (
+        patch(f"{VIEW_MODULE}.database_session") as session_cm,
+        patch(f"{VIEW_MODULE}.apply_metadata_import", side_effect=RuntimeError("deadlock")),
+    ):
+        result = _run_metadata_import({"matched_tables": 2}, "tg-1")
+
+    assert result["success"] is False
+    assert "deadlock" not in result["message"]
+    # The context manager saw the exception, which is what drives its rollback.
+    assert session_cm.return_value.__exit__.call_args.args[0] is RuntimeError
+
+
+def test_a_failed_metadata_import_does_not_clear_caches():
+    with ExitStack() as stack:
+        stack.enter_context(patch(f"{VIEW_MODULE}.database_session"))
+        stack.enter_context(
+            patch(f"{VIEW_MODULE}.apply_metadata_import", side_effect=RuntimeError("deadlock"))
+        )
+        caches = _patch_caches(stack)
+        _run_metadata_import({"matched_tables": 2}, "tg-1")
+
+    assert [name for name, mock in caches.items() if mock.clear.called] == []
+
+
+def test_a_successful_metadata_import_summarizes_what_matched():
+    with ExitStack() as stack:
+        stack.enter_context(patch(f"{VIEW_MODULE}.database_session"))
+        stack.enter_context(patch(f"{VIEW_MODULE}.apply_metadata_import"))
+        caches = _patch_caches(stack)
+        result = _run_metadata_import({"matched_tables": 1, "matched_columns": 3}, "tg-1")
+
+    assert result["success"] is True
+    assert result["message"] == "Metadata for 1 table, 3 columns imported."
+    assert all(mock.clear.called for mock in caches.values())
+
+
+def test_a_metadata_import_that_matched_nothing_says_so():
+    with ExitStack() as stack:
+        stack.enter_context(patch(f"{VIEW_MODULE}.database_session"))
+        stack.enter_context(patch(f"{VIEW_MODULE}.apply_metadata_import"))
+        _patch_caches(stack)
+        result = _run_metadata_import({}, "tg-1")
+
+    assert result["success"] is True
+    assert result["message"] == "No metadata was imported."

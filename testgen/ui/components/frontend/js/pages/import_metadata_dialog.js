@@ -3,6 +3,12 @@
  * @type {object}
  * @property {object|null} preview
  * @property {object|null} result
+ * @property {object} blankBehavior
+ * @property {object} fileValue
+ * @property {object} autoCloseTimer
+ * @property {Function} onFileUploaded
+ * @property {Function} onFileCleared
+ * @property {Function} onImportConfirmed
  * @property {Function?} onAutoClose
  */
 import van from '/app/static/js/van.min.js';
@@ -11,6 +17,7 @@ import { RadioGroup } from '/app/static/js/components/radio_group.js';
 import { FileInput } from '/app/static/js/components/file_input.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Alert } from '/app/static/js/components/alert.js';
+import { Icon } from '/app/static/js/components/icon.js';
 import { Table } from '/app/static/js/components/table.js';
 import { capitalize } from '/app/static/js/display_utils.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
@@ -18,15 +25,21 @@ import { sizeLimit } from '/app/static/js/form_validators.js';
 
 const CSV_SIZE_LIMIT = 2 * 1024 * 1024; // 2 MB
 
-const { div, i, span } = van.tags;
+const { div, span } = van.tags;
 
 const ImportMetadataDialog = (/** @type Properties */ props) => {
     const emit = props.emit;
     loadStylesheet('import-metadata-dialog', stylesheet);
 
-    const blankBehavior = van.state('keep');
-    const fileValue = van.state(null);
-    let autoCloseScheduled = false;
+    const blankBehavior = props.blankBehavior;
+    const fileValue = props.fileValue;
+    const autoCloseTimer = props.autoCloseTimer;
+
+    const requestPreview = () => {
+        if (fileValue.val?.content) {
+            props.onFileUploaded({ content: fileValue.val.content, blank_behavior: blankBehavior.val });
+        }
+    };
 
     return div(
         { class: 'flex-column fx-gap-4' },
@@ -36,22 +49,22 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
             help: 'Use the Export menu on the Data Catalog page to download the current metadata as a CSV template.',
             validators: [sizeLimit(CSV_SIZE_LIMIT)],
             value: fileValue,
-            onChange: (value) => {
+            onChange: (value, state) => {
+                // FileInput replays onChange when it mounts. The caller owns fileValue, so on a
+                // rebuild that replay arrives holding the same file and would re-parse it.
+                if (value === fileValue.val) {
+                    return;
+                }
                 const hadFile = fileValue.val?.content;
-                fileValue.val = value;
-                if (value?.content) {
-                    const payload = { content: value.content, blank_behavior: blankBehavior.val };
-                    if (props.onFileUploaded) {
-                        props.onFileUploaded(payload);
-                    } else {
-                        emit('FileUploaded', { payload });
-                    }
+                // A file that fails a validator is held as nothing at all. Keeping it would
+                // leave the picker naming one document while Python still holds the previous
+                // one armed, and would let the blank-value radio upload it on the next click.
+                const accepted = value?.content && state?.valid !== false ? value : null;
+                fileValue.val = accepted;
+                if (accepted) {
+                    requestPreview();
                 } else if (hadFile) {
-                    if (props.onFileCleared) {
-                        props.onFileCleared();
-                    } else {
-                        emit('FileCleared', {});
-                    }
+                    props.onFileCleared();
                 }
             },
         }),
@@ -63,15 +76,19 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                 { label: 'Clear existing values', value: 'clear' },
             ],
             value: blankBehavior,
-            onChange: (value) => blankBehavior.val = value,
+            onChange: (value) => {
+                blankBehavior.val = value;
+                // The stored preview is what the import applies, so a choice made after
+                // the upload only takes effect if the preview is rebuilt with it.
+                requestPreview();
+            },
             layout: 'default',
         }),
         () => {
             const result = getValue(props.result);
             if (result) {
-                if (result.success && props.onAutoClose && !autoCloseScheduled) {
-                    autoCloseScheduled = true;
-                    setTimeout(() => props.onAutoClose(), 2000);
+                if (result.success && props.onAutoClose && !autoCloseTimer.val) {
+                    autoCloseTimer.val = setTimeout(() => props.onAutoClose(), 2000);
                 }
                 return Alert(
                     { type: result.success ? 'success' : 'error', icon: result.success ? 'check_circle' : 'error' },
@@ -134,7 +151,7 @@ const ImportMetadataDialog = (/** @type Properties */ props) => {
                         icon: 'upload',
                         width: 'auto',
                         disabled: !hasMatches,
-                        onclick: () => props.onImportConfirmed ? props.onImportConfirmed() : emit('ImportConfirmed', {}),
+                        onclick: () => props.onImportConfirmed(),
                     }),
                 ),
             );
@@ -176,11 +193,8 @@ const PreviewTable = (preview, emit) => {
         const icon = STATUS_ICONS[status] || STATUS_ICONS.ok;
         const truncatedFields = row._truncated_fields || [];
 
-        const statusIcon = i(
-            {
-                class: `material-symbols-rounded import-status-${status}`,
-                style: 'font-size: 16px; cursor: default; overflow: visible; position: relative',
-            },
+        const statusIcon = Icon(
+            { size: 18, classes: `import-status-${status} display-table-cell` },
             icon,
         );
 

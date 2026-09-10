@@ -15,6 +15,7 @@ import { Tabs, Tab } from '/app/static/js/components/tabs.js';
 import { Checkbox } from '/app/static/js/components/checkbox.js';
 import { DropdownButton } from '/app/static/js/components/dropdown_button.js';
 import { TestDefinitionNotes } from './test_definition_notes.js';
+import { ImportTestDefinitionsDialog } from './import_test_definitions_dialog.js';
 import { withTooltip } from '/app/static/js/components/tooltip.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { dot } from '/app/static/js/components/dot.js';
@@ -103,6 +104,38 @@ const TestDefinitions = (/** @type object */ props) => {
     // Notes dialog: persistent local state + one-time sync from Python prop
     const notesDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.notes_dialog)) notesDialogOpen.val = true; });
+
+    const importDialogOpen = van.state(false);
+    van.derive(() => { if (getValue(props.import_dialog)) importDialogOpen.val = true; });
+    // Owned here, not in the dialog: the dialog is rebuilt on every rerender, so state
+    // declared inside it would reset the user's choice when the preview comes back.
+    const importOnNew = van.state('create');
+    const importOnMatch = van.state('overwrite_unlocked');
+    const importOnAbsence = van.state('do_nothing');
+    const importDeleteConfirmed = van.state(false);
+    const importFileValue = van.state(null);
+    const importAutoCloseTimer = van.state(null);
+    // These states are remounted fresh while the Python-side dialog state survives
+    // navigation, so a reopened dialog adopts the policy its stored preview was built
+    // with rather than showing defaults that contradict what the import would do.
+    // The success auto-close is a timer, so closing the dialog before it fires has to
+    // cancel it — otherwise it closes whatever dialog is open 2 seconds later.
+    const cancelImportAutoClose = () => {
+        if (importAutoCloseTimer.val) {
+            clearTimeout(importAutoCloseTimer.val);
+            importAutoCloseTimer.val = null;
+        }
+    };
+    let importPolicyHydrated = false;
+    van.derive(() => {
+        const armed = getValue(props.import_dialog)?.policy;
+        if (armed && !importPolicyHydrated) {
+            importPolicyHydrated = true;
+            importOnNew.val = armed.on_new;
+            importOnMatch.val = armed.on_match;
+            importOnAbsence.val = armed.on_absence;
+        }
+    });
 
     const permissions = van.derive(() => getValue(props.permissions) ?? {});
     const canEdit = van.derive(() => getValue(permissions).can_edit ?? false);
@@ -498,6 +531,27 @@ const TestDefinitions = (/** @type object */ props) => {
             () => selectedRowId.val || selectedIdsCount.val > 0,
             getSelectedDefinitionIds,
         ),
+        () => canEdit.val
+            ? Button({
+                type: 'stroked',
+                color: 'basic',
+                icon: 'upload',
+                label: 'Import',
+                width: 'fit-content',
+                size: 'small',
+                style: 'background-color: var(--button-generic-background-color);',
+                onclick: () => {
+                    importPolicyHydrated = true;
+                    importOnNew.val = 'create';
+                    importOnMatch.val = 'overwrite_unlocked';
+                    importOnAbsence.val = 'do_nothing';
+                    importDeleteConfirmed.val = false;
+                    importFileValue.val = null;
+                    cancelImportAutoClose();
+                    emit('ImportDialogOpened', {});
+                },
+            })
+            : '',
     );
 
     // Build table once
@@ -676,6 +730,44 @@ const TestDefinitions = (/** @type object */ props) => {
             },
         ),
 
+        // Import test definitions dialog
+        Dialog(
+            {
+                title: 'Import Test Definitions',
+                open: importDialogOpen,
+                onClose: () => {
+                    cancelImportAutoClose();
+                    importDialogOpen.val = false;
+                    emit('ImportDialogClosed', {});
+                },
+                width: '50rem',
+            },
+            () => {
+                const data = getValue(props.import_dialog);
+                if (!data) return span();
+                return ImportTestDefinitionsDialog({ emit,
+                    preview: data.preview,
+                    result: data.result,
+                    fileName: data.file_name,
+                    onNew: importOnNew,
+                    onMatch: importOnMatch,
+                    onAbsence: importOnAbsence,
+                    deleteConfirmed: importDeleteConfirmed,
+                    fileValue: importFileValue,
+                    autoCloseTimer: importAutoCloseTimer,
+                    onFileUploaded: (payload) => emit('ImportFileUploaded', { payload }),
+                    onPolicyChanged: (payload) => emit('ImportPolicyChanged', { payload }),
+                    onFileCleared: () => emit('ImportFileCleared', {}),
+                    onImportConfirmed: (payload) => emit('ImportConfirmed', { payload }),
+                    onAutoClose: () => {
+                        importAutoCloseTimer.val = null;
+                        importDialogOpen.val = false;
+                        emit('ImportDialogClosed', {});
+                    },
+                });
+            },
+        ),
+
         // --- Top bar: filters + Add + Run Tests ---
         div(
             { class: 'flex-row fx-align-flex-end fx-gap-3 fx-flex-wrap' },
@@ -800,6 +892,7 @@ const ExportMenu = (props, testDefinitions, hasSelection, getSelectedIds) => {
         buttonSize: 'small',
         items: () => {
             const items = [
+                { header: 'Excel' },
                 { label: 'All tests', onclick: () => emit('ExportAll', {}) },
                 {
                     label: 'Filtered tests',
@@ -812,6 +905,10 @@ const ExportMenu = (props, testDefinitions, hasSelection, getSelectedIds) => {
                     onclick: () => emit('ExportSelected', { payload: { ids: getSelectedIds() } }),
                 });
             }
+            items.push(
+                { header: 'JSON' },
+                { label: 'Test definitions', onclick: () => emit('ExportJson', {}) },
+            );
             return items;
         },
     });
