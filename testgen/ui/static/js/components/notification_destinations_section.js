@@ -157,7 +157,7 @@ const NotificationDestinationsSection = (props, emit) => {
     const tableRows = van.derive(() =>
         destinations.val.map((destination) => ({
             name: span(destination.name),
-            destination_type: span(DESTINATION_TYPE_LABELS[destination.destination_type] ?? destination.destination_type),
+            destination_type: span(destination.type_summary ?? DESTINATION_TYPE_LABELS[destination.destination_type] ?? destination.destination_type),
             target_summary: span(
                 { style: 'overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block;' },
                 destination.target_summary || '--',

@@ -143,7 +143,7 @@ def list_notification_destinations(
         [
             str(d.id),
             d.name,
-            _TYPE_TO_LABEL.get(d.destination_type, d.destination_type),
+            d.type_summary,
             d.target_summary or "—",
             str(rule_counts.get(d.id, 0)),
             d.project_code,

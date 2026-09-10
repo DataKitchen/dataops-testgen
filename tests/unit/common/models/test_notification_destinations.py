@@ -243,17 +243,19 @@ def test_webhook_destination_url_setter_preserves_other_secrets():
     assert dest.secrets == {"url": "https://b.example.com", "auth_header_value": "bearer x"}
 
 
-def test_webhook_destination_target_summary_shows_type_and_host():
+def test_webhook_destination_target_summary_is_the_host():
     dest = _webhook(
         config={"webhook_type": "microsoft_teams"},
         secrets={"url": "https://prod-06.westus.logic.azure.com/workflows/abc/triggers/manual"},
     )
-    assert dest.target_summary == "Microsoft Teams — prod-06.westus.logic.azure.com"
+    assert dest.target_summary == "prod-06.westus.logic.azure.com"
+    assert dest.type_summary == "Webhook | Microsoft Teams"
 
 
-def test_webhook_destination_target_summary_falls_back_when_url_missing():
+def test_webhook_destination_target_summary_is_empty_when_url_missing():
     dest = _webhook(secrets={})
-    assert dest.target_summary == "Slack"
+    assert dest.target_summary == ""
+    assert dest.type_summary == "Webhook | Slack"
 
 
 def test_webhook_destination_has_auth_header_reads_secret_presence():
@@ -417,20 +419,28 @@ def test_webhook_type_safe_returns_none_on_unknown_stored_value():
     assert dest.webhook_type_safe is None
 
 
+def test_type_summary_omits_the_generic_subtype():
+    """A generic webhook names no service, so it reads as the bare type."""
+    dest = _webhook(config={"webhook_type": "generic"})
+    assert dest.type_summary == "Webhook"
+
+
 def test_target_summary_survives_a_corrupt_webhook_type():
     """One bad row must not 500 the destinations list."""
     dest = _webhook(
         config={"webhook_type": "carrier-pigeon"},
         secrets={"url": "https://hooks.example.com/services/abc"},
     )
-    assert dest.target_summary == "Webhook — hooks.example.com"
+    assert dest.target_summary == "hooks.example.com"
+    assert dest.type_summary == "Webhook"
 
 
 def test_target_summary_survives_undecryptable_secrets():
-    """``SafeEncryptedJson`` hands back ``None``; the summary degrades to the label."""
+    """``SafeEncryptedJson`` hands back ``None``; the summary degrades to empty."""
     dest = _webhook(config={"webhook_type": "slack"})
     dest.secrets = None
-    assert dest.target_summary == "Slack"
+    assert dest.target_summary == ""
+    assert dest.type_summary == "Webhook | Slack"
 
 
 # ─── mask_webhook_url ────────────────────────────────────────────────

@@ -31,10 +31,19 @@ class WebhookType(StrEnum):
     generic = "generic"
 
 
+# Names the receiving service, for display alongside the destination type. ``generic`` is
+# deliberately absent rather than an oversight: it names no service, so a generic webhook
+# reads as plain "Webhook" instead of "Webhook | Generic". Adding an entry back changes what
+# the destinations table and the notification dialogs show. "Generic" remains the label where
+# the user is choosing a webhook type or reading one back as a stored field.
 WEBHOOK_TYPE_LABELS: dict[WebhookType, str] = {
     WebhookType.slack: "Slack",
     WebhookType.microsoft_teams: "Microsoft Teams",
-    WebhookType.generic: "Generic",
+}
+
+DESTINATION_TYPE_LABELS: dict[str, str] = {
+    "email": "Email",
+    "webhook": "Webhook",
 }
 
 
@@ -88,11 +97,13 @@ class NotificationDestination(Entity):
 
     @property
     def target_summary(self) -> str:
-        """Short human-readable description of where this destination sends.
-
-        Rendered in the destinations-table 'Sends To' column. Subclasses override.
-        """
+        """Short human-readable description of where this destination sends. Subclasses override."""
         return ""
+
+    @property
+    def type_summary(self) -> str:
+        """Human-readable destination type, including the webhook subtype where there is one."""
+        return DESTINATION_TYPE_LABELS.get(self.destination_type, self.destination_type)
 
     def deliver(self, context: dict, template) -> None:
         """Deliver a notification through this destination."""
@@ -242,19 +253,22 @@ class WebhookDestination(NotificationDestination):
 
     @property
     def target_summary(self) -> str:
-        # A corrupted ``webhook_type`` or an undecryptable secrets blob must not
-        # 500 the destinations list from inside ``list_for_project``, so both
-        # reads degrade instead of raising.
-        webhook_type = self.webhook_type_safe
-        type_label = WEBHOOK_TYPE_LABELS.get(webhook_type, "Webhook")
-        # ``SafeEncryptedJson`` already returns ``None`` for an undecryptable
-        # ``secrets`` blob, so ``url`` cannot raise here.
+        # An undecryptable secrets blob must not 500 the destinations list from
+        # inside ``list_for_project``, so this degrades instead of raising:
+        # ``SafeEncryptedJson`` already returns ``None`` for one, so ``url``
+        # cannot raise here.
         url = self.url
         # ``hostname`` strips userinfo so a stored ``user:pass@`` URL cannot
         # leak the credential portion into the Project Settings "Sends To"
         # column; matches ``mask_webhook_url`` on the same read path.
-        host = urlparse(url).hostname if url else ""
-        return f"{type_label} — {host}" if host else type_label
+        return (urlparse(url).hostname or "") if url else ""
+
+    @property
+    def type_summary(self) -> str:
+        # A corrupted ``webhook_type`` degrades to the bare type rather than raising.
+        webhook_type = self.webhook_type_safe
+        subtype = WEBHOOK_TYPE_LABELS.get(webhook_type)
+        return f"Webhook | {subtype}" if subtype else "Webhook"
 
     def _validate(self) -> None:
         super()._validate()

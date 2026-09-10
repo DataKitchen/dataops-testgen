@@ -47,6 +47,7 @@ def _serialize(destination: NotificationDestination, rule_count: int) -> dict:
             "destination_type": destination.destination_type,
             "recipients": destination.recipients,
             "target_summary": destination.target_summary,
+            "type_summary": destination.type_summary,
             "rule_count": rule_count,
         }
     if isinstance(destination, WebhookDestination):
@@ -59,6 +60,7 @@ def _serialize(destination: NotificationDestination, rule_count: int) -> dict:
             "auth_header_name": destination.auth_header_name or "",
             "has_auth_header": destination.has_auth_header,
             "target_summary": destination.target_summary,
+            "type_summary": destination.type_summary,
             "rule_count": rule_count,
         }
     return {
@@ -66,6 +68,7 @@ def _serialize(destination: NotificationDestination, rule_count: int) -> dict:
         "name": destination.name,
         "destination_type": destination.destination_type,
         "target_summary": destination.target_summary,
+        "type_summary": destination.type_summary,
         "rule_count": rule_count,
     }
 

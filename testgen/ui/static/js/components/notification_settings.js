@@ -64,12 +64,14 @@ import { Input } from '/app/static/js/components/input.js';
 import { numberBetween } from '/app/static/js/form_validators.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
 
-const { div, span, b } = van.tags;
+const { div, span, b, a } = van.tags;
 
+// "Generic" is the type a user picks when creating a destination, but in a rule the
+// only useful distinction is which service receives it, so a generic one reads "Webhook".
 const WEBHOOK_TYPE_DISPLAY = {
     slack: 'Slack',
     microsoft_teams: 'Microsoft Teams',
-    generic: 'Generic',
+    generic: 'Webhook',
 };
 
 const destinationTypeLabel = (dest) => {
@@ -198,11 +200,15 @@ const NotificationSettings = (/** @type Properties */ props) => {
                   ? div(
                       { class: 'flex-column fx-gap-1' },
                       span(dest.name),
-                      span({ class: 'text-caption' }, `${destinationTypeLabel(dest)} destination`),
+                      span({ class: 'text-caption' }, destinationTypeLabel(dest)),
                     )
                   : span({ class: 'text-caption text-warning' }, 'Destination not found');
               })()
-            : TruncatedText({ max: 6 }, ...item.recipients),
+            : div(
+                { class: 'flex-column fx-gap-1' },
+                TruncatedText({ max: 6 }, ...item.recipients),
+                span({ class: 'text-caption' }, 'Email'),
+              ),
         ),
         div(
           { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
@@ -281,21 +287,6 @@ const NotificationSettings = (/** @type Properties */ props) => {
         span(subtitle.val.value),
       )
       : '',
-    () => div(
-      { class: 'flex-row fx-gap-1 fx-align-center text-caption text-secondary' },
-      Icon({ size: 16, classes: 'text-secondary' }, 'info'),
-      canManageDestinations.val && projectSettingsUrl.val
-        ? span(
-            'Destinations can be reused across notification rules and are configured in ',
-            van.tags.a(
-              { href: projectSettingsUrl.val, target: '_blank', rel: 'noreferrer' },
-              'Project Settings',
-            ),
-            '.',
-            Icon({ size: 12, classes: 'text-secondary ml-1' }, 'open_in_new'),
-          )
-        : span('Destinations can be reused across notification rules and are configured by admins in Project Settings.'),
-    ),
     ExpansionPanel(
       {
         title: () => newNotificationItemForm.isEdit.val
@@ -399,41 +390,59 @@ const NotificationSettings = (/** @type Properties */ props) => {
         ),
       ),
       div(
-        { class: 'flex-row fx-justify-content-flex-end fx-gap-2 mt-3' },
-        () => newNotificationItemForm.isEdit.val
-          ? Button({
+        { class: 'flex-row fx-justify-space-between fx-align-flex-center fx-gap-2 mt-3' },
+        () => div(
+          { class: 'flex-row fx-gap-1 fx-align-flex-center text-caption text-secondary' },
+          Icon({ size: 16, classes: 'text-secondary' }, 'info'),
+          canManageDestinations.val && projectSettingsUrl.val
+            ? span(
+                'Destinations can be reused across notification rules and are configured in ',
+                a(
+                  { href: projectSettingsUrl.val, target: '_blank', rel: 'noreferrer' },
+                  'Project Settings',
+                  Icon({ size: 12, classes: 'ml-1 notifications--link-icon' }, 'open_in_new'),
+                ),
+                '.',
+              )
+            : span('Destinations can be reused across notification rules and are configured by admins in Project Settings.'),
+        ),
+        div(
+          { class: 'flex-row fx-gap-2' },
+          () => newNotificationItemForm.isEdit.val
+            ? Button({
+              type: 'stroked',
+              label: 'Cancel',
+              width: 'auto',
+              onclick: resetForm,
+            })
+            : '',
+          Button({
             type: 'stroked',
-            label: 'Cancel',
+            label: van.derive(() => newNotificationItemForm.isEdit.val ? 'Save Changes' : 'Add Notification'),
             width: 'auto',
-            onclick: resetForm,
-          })
-          : '',
-        Button({
-          type: 'stroked',
-          label: van.derive(() => newNotificationItemForm.isEdit.val ? 'Save Changes' : 'Add Notification'),
-          width: 'auto',
-          onclick: () => emit(
-            newNotificationItemForm.isEdit.val ? 'UpdateNotification' : 'AddNotification',
-            {
-              payload: {
-                id: newNotificationItemForm.isEdit.val ? newNotificationItemForm.id.val : null,
-                scope: newNotificationItemForm.scope.val,
-                ...(newNotificationItemForm.notifyTarget.val === '__inline__'
-                  ? { recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\n ]+/).filter(s => s.length > 0))], notification_destination_id: null }
-                  : { recipients: [], notification_destination_id: newNotificationItemForm.notifyTarget.val }
-                ),
-                ...(event.val === 'score_drop' ?
-                  {
-                    total_score_threshold: newNotificationItemForm.totalScoreThreshold.val,
-                    cde_score_threshold: newNotificationItemForm.cdeScoreThreshold.val,
-                  } : {
-                    trigger: newNotificationItemForm.trigger.val,
-                  }
-                ),
+            onclick: () => emit(
+              newNotificationItemForm.isEdit.val ? 'UpdateNotification' : 'AddNotification',
+              {
+                payload: {
+                  id: newNotificationItemForm.isEdit.val ? newNotificationItemForm.id.val : null,
+                  scope: newNotificationItemForm.scope.val,
+                  ...(newNotificationItemForm.notifyTarget.val === '__inline__'
+                    ? { recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\n ]+/).filter(s => s.length > 0))], notification_destination_id: null }
+                    : { recipients: [], notification_destination_id: newNotificationItemForm.notifyTarget.val }
+                  ),
+                  ...(event.val === 'score_drop' ?
+                    {
+                      total_score_threshold: newNotificationItemForm.totalScoreThreshold.val,
+                      cde_score_threshold: newNotificationItemForm.cdeScoreThreshold.val,
+                    } : {
+                      trigger: newNotificationItemForm.trigger.val,
+                    }
+                  ),
+                }
               }
-            }
-          ),
-        }),
+            ),
+          }),
+        ),
       ),
     ),
     () => {
@@ -459,7 +468,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
         ),
         span(
           { style: `flex: ${columns[1]}%` },
-          'Recipients',
+          'Destination | Type',
         ),
         span(
           { style: `flex: ${columns[2]}%` },
@@ -502,7 +511,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
         class: 'notifications--empty',
         link: {
           label: 'View documentation',
-          href: 'https://docs.datakitchen.io/articles/dataops-testgen-help/configure-email-server',
+          href: 'https://docs.datakitchen.io/testgen/administer/configure-email-server/',
           open_new: true,
         },
       })
@@ -534,6 +543,10 @@ stylesheet.replace(`
 }
 .notifications--editing {
     color: var(--purple);
+}
+.notifications--link-icon {
+    color: var(--link-color);
+    vertical-align: middle;
 }
 .short-select-portal {
     max-height: 250px !important;
