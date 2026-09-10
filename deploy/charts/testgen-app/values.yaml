@@ -1,20 +1,42 @@
 # Default values for testgen.
 
 testgen:
+  # Application database. The database and schema are created on install.
   databaseHost: "postgres"
+  databasePort: 5432
   databaseName: "datakitchen"
   databaseSchema: "tgapp"
+  # Role TestGen connects as. Needs CREATEDB and CREATEROLE on first install.
   databaseUser: "postgres"
+  # Secret and key holding the password for databaseUser.
   databasePasswordSecret:
     name: "services-secret"
     key: "postgres-password"
+  # libpq sslmode for the application database: disable, allow, prefer,
+  # require, verify-ca or verify-full. When empty, TLS is negotiated where the
+  # server offers it but the server certificate is not verified.
+  databaseSslMode:
+  # Certificate authority used by verify-ca and verify-full: a path to a PEM
+  # bundle, or "system" for the operating system trust store. The trust store
+  # carries the public authorities, and pairs only with verify-full; verify-ca
+  # and a server presenting a private authority both need a PEM path.
+  databaseSslRootCert: system
+  # Secret holding decrypt-salt, decrypt-password and jwt-hashing-key, which
+  # encrypt stored database credentials and sign session tokens. Supply your own
+  # secret and set create: false when the application database lives outside the
+  # cluster: credentials stored under one salt cannot be read back under another.
   authSecrets:
     create: true
     name: testgen-auth
+  # Initial administrator account, created when the database is first prepared.
+  # uiPassword is required: preparing the database fails without it.
   uiUser: "admin"
   uiPassword:
+  # Trust the server certificate when connecting to the databases under test.
   trustTargetDatabaseCertificate: false
+  # Verify the server certificate when exporting results to DataOps Observability.
   observabilityVerifySsl: true
+  # Sender address and SMTP server used for notification emails.
   emailNotifications:
     fromAddress:
     smtp:
@@ -22,9 +44,31 @@ testgen:
       port:
       username:
       password:
+  # Externally reachable URL of the UI
   uiBaseUrl:
+  # Externally reachable URL of the API and MCP server
+  baseUrl:
+  # Name that identifies this TestGen instance.
+  instanceId:
+  # Additional labels added to every resource the chart creates.
   labels:
 
+# Any additional environment variable, in Kubernetes env format. Use this for
+# settings the values above do not cover. TG_UI_PORT and TG_API_PORT are the
+# exception: they move the application's own listeners, while the container
+# ports, the Service and both probes stay pinned to 8501 and 8530, so the pod
+# fails its liveness probe and restarts.
+extraEnv: []
+# - name: TG_ANALYTICS
+#   value: "no"
+
+# Additional volumes and mounts, for configuration files the application reads,
+# such as a database certificate authority.
+extraVolumes: []
+extraVolumeMounts: []
+
+# TestGen commands run as Helm hooks: the database is prepared on install and
+# migrated on upgrade.
 cliHooks:
   - name: "setup-db"
     triggers: "pre-install"
@@ -33,18 +77,22 @@ cliHooks:
     triggers: "post-upgrade"
     command: ["/dk/bin/testgen", "upgrade-system-version"]
 
+# Number of application pods. Keep at 1: each browser session is served by a
+# single pod.
 replicaCount: 1
 
-# Time the pod is given to stop on a rollout or delete. Must exceed TG_JOB_SHUTDOWN_TIMEOUT
-# (default 60s) plus the time the process needs to record what stopped, or Kubernetes kills
-# the scheduler mid-wait and running jobs are cut instead of parked.
+# Time the pod is given to stop on a rollout or delete. Must exceed
+# TG_JOB_SHUTDOWN_TIMEOUT (60s by default) so that jobs still running stop at a
+# checkpoint rather than being cut.
 terminationGracePeriodSeconds: 90
 
 image:
   repository: "datakitchen/dataops-testgen"
   pullPolicy: IfNotPresent
-  tag: "v4"
+  # A major version (v5), a minor version, or an exact version.
+  tag: "v5"
 
+# Registry credentials, for pulling the image from a private registry.
 imagePullSecrets:
 nameOverride: ""
 fullnameOverride: ""
@@ -76,9 +124,56 @@ securityContext: {}
 
 service:
   type: NodePort
+  # UI
   port: 8501
   nodePort:
+  # API and MCP server
+  apiPort: 8530
+  apiNodePort:
+  # Annotations on the Service, for cloud load balancer and ingress controller
+  # settings. These apply to the Service as a whole, so both the UI and the API
+  # port are covered by the same values.
+  annotations: {}
 
+# Publish the UI by setting className and hosts. To publish the API and MCP
+# server, add a host entry whose path uses servicePort: api. The api port
+# answers on /api, /oauth, /.well-known and /mcp, so give it a host of its own
+# or route all four paths: routing only /api leaves OAuth discovery and the MCP
+# endpoint on the UI port.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host:
+      paths:
+        - path: /
+          pathType: Prefix
+          # Service port to route to: "http" for the UI, "api" for the API and
+          # MCP server.
+          servicePort: http
+  tls: []
+
+# Both probes use the health endpoint on the UI port.
+livenessProbe:
+  httpGet:
+    path: /_stcore/health
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 4
+
+readinessProbe:
+  httpGet:
+    path: /_stcore/health
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Requests and limits for the application pod.
 resources: {}
   # limits:
   #   cpu: 100m

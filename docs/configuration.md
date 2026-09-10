@@ -117,6 +117,20 @@ Name of the schema inside the postgres database on which to store testgen metada
 
 default: `testgen`
 
+#### `TG_METADATA_DB_SSLMODE`
+
+libpq sslmode for the connection to the testgen application postgres database: `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full`. When unset, libpq's own default applies, which negotiates TLS where the server offers it but does not verify the server certificate.
+
+default: unset
+
+#### `TG_METADATA_DB_SSLROOTCERT`
+
+Certificate authority used to verify the testgen application postgres database's server certificate. Either a path to a PEM bundle, or `system` for the operating system trust store, which carries the public authorities that managed postgres services chain to.
+
+`system` pairs only with `verify-full`, so `verify-ca` needs a PEM path. A PEM path suits any mode, and `require` verifies the certificate chain against it in the same way as `verify-ca`.
+
+default: `system`
+
 #### `PROJECT_KEY`
 
 Code used to uniquely identify the auto generated project.

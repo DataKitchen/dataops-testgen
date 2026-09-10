@@ -4,6 +4,10 @@ metadata:
   name: {{ include "testgen.fullname" . }}
   labels:
     {{- include "testgen.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.service.type }}
   ports:
@@ -13,6 +17,15 @@ spec:
       name: http
       {{- if eq .Values.service.type "NodePort" }}
       {{- with .Values.service.nodePort }}
+      nodePort: {{ . }}
+      {{- end }}
+      {{- end }}
+    - port: {{ .Values.service.apiPort }}
+      targetPort: api
+      protocol: TCP
+      name: api
+      {{- if eq .Values.service.type "NodePort" }}
+      {{- with .Values.service.apiNodePort }}
       nodePort: {{ . }}
       {{- end }}
       {{- end }}

@@ -136,6 +136,8 @@ def _reinitialize_orm_engine(base_uri: str | None = None) -> None:
         connect_args={
             "application_name": platform.node(),
             # Keep in sync with models/__init__.py — UTC avoids silent tz shifts on TIMESTAMP inserts.
+            # DATABASE_SSL_CONNECT_ARGS is deliberately absent: this engine reaches pgserver over a
+            # Unix socket, where libpq ignores sslmode.
             "options": f"-csearch_path={settings.DATABASE_SCHEMA} -c TimeZone=UTC",
         },
     )

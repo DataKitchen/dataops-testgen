@@ -22,6 +22,7 @@ engine = create_engine(
         # Without this, pgserver inherits the OS TZ and silently shifts
         # timestamps on insert, which make_json_safe then re-reads as UTC.
         "options": f"-csearch_path={settings.DATABASE_SCHEMA} -c TimeZone=UTC",
+        **settings.DATABASE_SSL_CONNECT_ARGS,
     },
 )
 

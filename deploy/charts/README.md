@@ -46,7 +46,7 @@ that a file named `tg-values.yaml` exists with this configuration.
 image:
 
   # DataOps TestGen version to be installed / upgraded
-  tag: v4
+  tag: v5
 
 testgen:
 
@@ -72,6 +72,38 @@ testgen:
       username:
       password:
 ```
+
+Settings without a dedicated value are passed through `extraEnv`, which takes
+entries in Kubernetes env format. Configuration files the application reads are
+mounted with `extraVolumes` and `extraVolumeMounts`.
+
+```yaml
+extraEnv:
+  - name: TG_ANALYTICS
+    value: "no"
+
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: testgen-db-ca
+
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /dk/certs
+    readOnly: true
+```
+
+To reach the UI or the API through an ingress, enable the `ingress` block and
+route to the `http` service port for the UI or `api` for the API and MCP server.
+`testgen.baseUrl` must be set to the externally reachable API URL, because it is
+the OAuth issuer and the source of the MCP allowed-host list.
+
+The `api` port answers on four prefixes — `/api` for the REST API and its
+documentation, `/oauth` for the token exchange, `/.well-known` for OAuth
+discovery, and `/mcp` for the MCP endpoint. Publish the API on a host of its
+own, or route all four paths on a shared host. A host that routes only `/api`
+to the `api` port sends discovery and the MCP endpoint to the UI instead, and
+MCP clients then fail while authenticating.
 
 # Installing
 
