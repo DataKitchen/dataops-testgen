@@ -6,7 +6,11 @@ from dataclasses import asdict, dataclass
 import streamlit as st
 
 from testgen import settings
-from testgen.common.database.connection_service import ConnectionStatus, normalize_auth_fields, test_connection_status
+from testgen.common.database.connection_service import (
+    ConnectionStatus,
+    enforce_connection_rules,
+    test_connection_status,
+)
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.enums import JobSource
@@ -183,7 +187,7 @@ class ConnectionsPage(Page):
         if should_save():
             success = True
             try:
-                normalize_auth_fields(connection)
+                enforce_connection_rules(connection)
                 connection.save()
                 select_connections_where.clear()
                 get_connection.clear()
@@ -255,7 +259,7 @@ class ConnectionsPage(Page):
 
     def test_connection(self, connection: Connection) -> ConnectionStatus:
         try:
-            normalize_auth_fields(connection)
+            enforce_connection_rules(connection)
         except ValueError as error:
             return ConnectionStatus(message=str(error), successful=False, details=None)
         return test_connection_status(connection)

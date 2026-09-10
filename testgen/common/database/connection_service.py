@@ -7,8 +7,8 @@ column / flag (no user-facing labels — those are presentation):
 
 * ``ConnectionStatus`` + ``test_connection_status`` — open an external connection
   and report success / failure with driver-text details.
-* ``normalize_auth_fields`` — pre-save scrub of mutually-exclusive credential
-  columns so flipping auth modes doesn't leave orphan values behind.
+* ``enforce_connection_rules`` — raise on a connection that cannot be saved as posted,
+  then scrub the credential columns its auth mode doesn't use.
 * ``apply_connection_defaults`` — pre-save fill of flavor-dependent defaults the
   caller didn't supply.
 
@@ -117,13 +117,15 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
 # ---------------------------------------------------------------------------
 
 
-def normalize_auth_fields(connection: Connection) -> None:
-    """Validate a connection and clear the credential columns its auth mode doesn't use.
+def enforce_connection_rules(connection: Connection) -> None:
+    """Enforce the rules a connection must satisfy to be saved or used.
 
-    Clearing keeps a flip between modes from leaving stale opposite-mode values behind.
-    Databricks OAuth stores the client secret in ``project_pw_encrypted`` despite
-    ``connect_by_key=True``, so it sticks with the password path. Raises ``ValueError``
-    when the connection cannot be saved as posted.
+    Raises ``ValueError`` on the first rule a connection breaks: a flavor's ``parameters``
+    not matching its declared shape, or a combination of auth flags that cannot work.
+    Then clears the credential columns the chosen auth mode does not use, so flipping
+    between modes leaves no stale opposite-mode values behind. Databricks OAuth stores
+    the client secret in ``project_pw_encrypted`` despite ``connect_by_key=True``, so it
+    sticks with the password path.
     """
     code = connection.sql_flavor_code
 

@@ -14,7 +14,7 @@ from sqlalchemy.exc import DatabaseError, DBAPIError
 from testgen.common.database.connection_service import (
     ConnectionStatus,
     apply_connection_defaults,
-    normalize_auth_fields,
+    enforce_connection_rules,
 )
 
 # Aliased on import so pytest doesn't try to collect the ``test_*`` function as a test.
@@ -197,7 +197,7 @@ def test_connection_status_generic_exception(mock_fetch, mock_flavor, mock_empty
 
 
 # ---------------------------------------------------------------------------
-# normalize_auth_fields
+# enforce_connection_rules
 # ---------------------------------------------------------------------------
 
 
@@ -210,7 +210,7 @@ def test_normalize_clears_password_when_connect_by_key_non_databricks():
         project_pw_encrypted="old_pw",
         private_key="key",
     )
-    normalize_auth_fields(conn)
+    enforce_connection_rules(conn)
     assert conn.project_pw_encrypted in (None, "")
     assert conn.private_key == "key"  # untouched
 
@@ -223,7 +223,7 @@ def test_normalize_keeps_password_for_databricks_connect_by_key():
         connect_by_key=True,
         project_pw_encrypted="client_secret_xyz",
     )
-    normalize_auth_fields(conn)
+    enforce_connection_rules(conn)
     assert conn.project_pw_encrypted == "client_secret_xyz"
     assert not conn.private_key
     assert not conn.private_key_passphrase
@@ -238,7 +238,7 @@ def test_normalize_clears_private_key_fields_when_password_auth():
         private_key="old_key",
         private_key_passphrase="old_phrase",  # noqa: S106
     )
-    normalize_auth_fields(conn)
+    enforce_connection_rules(conn)
     assert not conn.private_key
     assert not conn.private_key_passphrase
 
@@ -252,7 +252,7 @@ def test_normalize_clears_user_password_when_identity():
         project_user="leftover_user",
         project_pw_encrypted="leftover_pw",
     )
-    normalize_auth_fields(conn)
+    enforce_connection_rules(conn)
     assert not conn.project_user
     assert not conn.project_pw_encrypted
 
@@ -266,7 +266,7 @@ def test_normalize_rejects_both_identity_and_service_principal():
         connect_with_service_principal=True,
     )
     with pytest.raises(ValueError, match="mutually exclusive"):
-        normalize_auth_fields(conn)
+        enforce_connection_rules(conn)
 
 
 def test_normalize_preserves_user_password_when_service_principal():
@@ -278,7 +278,7 @@ def test_normalize_preserves_user_password_when_service_principal():
         project_user="cid@tid",
         project_pw_encrypted="csec",
     )
-    normalize_auth_fields(conn)
+    enforce_connection_rules(conn)
     assert conn.project_user == "cid@tid"
     assert conn.project_pw_encrypted == "csec"
 
@@ -292,7 +292,7 @@ def test_normalize_rejects_service_principal_on_unsupported_flavor(code):
         connect_with_service_principal=True,
     )
     with pytest.raises(ValueError, match="azure_mssql"):
-        normalize_auth_fields(conn)
+        enforce_connection_rules(conn)
 
 
 def test_normalize_accepts_service_principal_on_synapse_mssql():
@@ -304,7 +304,7 @@ def test_normalize_accepts_service_principal_on_synapse_mssql():
         project_user="cid@tid",
         project_pw_encrypted="csec",
     )
-    normalize_auth_fields(conn)
+    enforce_connection_rules(conn)
     assert conn.project_user == "cid@tid"
     assert conn.project_pw_encrypted == "csec"
 
@@ -318,7 +318,7 @@ def test_normalize_accepts_service_principal_on_onelake_mssql():
         project_user="cid@tid",
         project_pw_encrypted="csec",
     )
-    normalize_auth_fields(conn)
+    enforce_connection_rules(conn)
     assert conn.project_user == "cid@tid"
     assert conn.project_pw_encrypted == "csec"
 
@@ -333,7 +333,7 @@ def test_normalize_rejects_service_principal_with_connect_by_url():
         url="host.example:1433/db",
     )
     with pytest.raises(ValueError, match="connect_by_url"):
-        normalize_auth_fields(conn)
+        enforce_connection_rules(conn)
 
 
 # ---------------------------------------------------------------------------
