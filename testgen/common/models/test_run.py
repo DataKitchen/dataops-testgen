@@ -116,6 +116,7 @@ class TestRun(Entity):
     dq_affected_data_points: int = Column(BigInteger)
     dq_total_data_points: int = Column(BigInteger)
     dq_score_test_run: float = Column(Float)
+    version_id: UUID = Column(postgresql.UUID(as_uuid=True))
 
     job_execution = relationship(
         JobExecution,

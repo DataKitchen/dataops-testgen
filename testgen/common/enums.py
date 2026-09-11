@@ -309,3 +309,4 @@ class SuiteType(StrEnum):
     """
     REGULAR = "regular"
     MONITOR = "monitor"
+    CONTRACT = "contract"
