@@ -129,7 +129,7 @@ class TestGeneration:
 
         self.run_date = datetime.now(UTC)
         self.as_of_date = self.run_date
-        if (delay_days := int(self.table_group.profiling_delay_days)):
+        if delay_days := self.table_group.profiling_delay_days:
             self.as_of_date = self.run_date - timedelta(days=delay_days)
 
         # A run that has just finished cannot be identified any other way at this point: its

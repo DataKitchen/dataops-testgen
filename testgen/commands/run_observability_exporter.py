@@ -175,7 +175,9 @@ def _get_event_data(event):
                         "uses_sampling": event.profile_use_sampling == "Y",
                         "project_code": event.project_code,
                         "sample_percentage": (
-                            event.profile_sample_percent if event.profile_use_sampling == "Y" else None
+                            str(event.profile_sample_percent)
+                            if event.profile_use_sampling == "Y" and event.profile_sample_percent is not None
+                            else None
                         ),
                         "sample_minimum_count": (
                             event.profile_sample_minimum_count if event.profile_use_sampling == "Y" else None

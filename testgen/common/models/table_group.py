@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, String, asc, func, text, update
+from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, text, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
@@ -34,7 +34,7 @@ class TableGroupMinimal(EntityMinimal):
     profiling_include_mask: str
     profiling_exclude_mask: str
     profile_use_sampling: bool
-    profiling_delay_days: str
+    profiling_delay_days: int
     monitor_test_suite_id: UUID | None
     profile_flag_cdes: bool
     profile_flag_pii: bool
@@ -294,9 +294,9 @@ class TableGroup(Entity):
     profile_id_column_mask: str = Column(String, default="%id")
     profile_sk_column_mask: str = Column(String, default="%_sk")
     profile_use_sampling: bool = Column(YNString, default="N")
-    profile_sample_percent: str = Column(String, default="30")
+    profile_sample_percent: int = Column(Integer, default=30)
     profile_sample_min_count: int = Column(BigInteger, default=100000)
-    profiling_delay_days: str = Column(String, default="0")
+    profiling_delay_days: int = Column(Integer, default=0)
     profile_flag_cdes: bool = Column(Boolean, default=True)
     profile_flag_pii: bool = Column(Boolean, default=True)
     profile_exclude_xde: bool = Column(Boolean, default=True)

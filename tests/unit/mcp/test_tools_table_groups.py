@@ -55,9 +55,9 @@ def _mock_table_group(**overrides) -> MagicMock:
     tg.profile_id_column_mask = overrides.get("profile_id_column_mask", "%id")
     tg.profile_sk_column_mask = overrides.get("profile_sk_column_mask", "%_sk")
     tg.profile_use_sampling = overrides.get("profile_use_sampling", False)
-    tg.profile_sample_percent = overrides.get("profile_sample_percent", "30")
+    tg.profile_sample_percent = overrides.get("profile_sample_percent", 30)
     tg.profile_sample_min_count = overrides.get("profile_sample_min_count", 100000)
-    tg.profiling_delay_days = overrides.get("profiling_delay_days", "0")
+    tg.profiling_delay_days = overrides.get("profiling_delay_days", 0)
     tg.profile_flag_cdes = overrides.get("profile_flag_cdes", True)
     tg.profile_flag_pii = overrides.get("profile_flag_pii", True)
     tg.profile_exclude_xde = overrides.get("profile_exclude_xde", True)
@@ -144,9 +144,9 @@ def test_create_table_group_applies_model_defaults_when_optional_args_omitted(
         )
 
     kwargs = mock_tg_cls.call_args.kwargs
-    assert kwargs["profile_sample_percent"] == "30"
+    assert kwargs["profile_sample_percent"] == 30
     assert kwargs["profile_sample_min_count"] == 100000
-    assert kwargs["profiling_delay_days"] == "0"
+    assert kwargs["profiling_delay_days"] == 0
 
 
 @patch(f"{MODULE}.TableGroup")
@@ -179,7 +179,7 @@ def test_create_table_group_renders_sample_settings_when_sampling_on(
     mock_resolve.return_value = _mock_connection()
     instance = _mock_table_group(
         profile_use_sampling=True,
-        profile_sample_percent="50",
+        profile_sample_percent=50,
         profile_sample_min_count=5000,
     )
     mock_tg_cls.return_value = instance
@@ -540,9 +540,8 @@ def test_update_table_group_not_accessible(mock_resolve, db_session_mock):
 
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_table_group")
-def test_update_table_group_delay_days_int_cast_to_str(mock_resolve, mock_tg_cls, db_session_mock):
-    """``profiling_delay_days: int`` from the caller gets cast to ``str`` to match the model column."""
-    tg = _mock_table_group(profiling_delay_days="0")
+def test_update_table_group_delay_days_assigned(mock_resolve, mock_tg_cls, db_session_mock):
+    tg = _mock_table_group(profiling_delay_days=0)
     mock_resolve.return_value = tg
     mock_tg_cls.is_in_use.return_value = False
 
@@ -551,7 +550,7 @@ def test_update_table_group_delay_days_int_cast_to_str(mock_resolve, mock_tg_cls
     with _patch_perms():
         update_table_group(table_group_id=str(tg.id), profiling_delay_days=3)
 
-    assert tg.profiling_delay_days == "3"
+    assert tg.profiling_delay_days == 3
 
 
 # ---------------------------------------------------------------------------
@@ -1001,7 +1000,7 @@ def test_get_table_group_renders_all_dialog_sections(mock_resolve, mock_resolve_
         profiling_exclude_mask="tmp_%",
         profiling_table_set="payments,refunds",
         profile_use_sampling=True,
-        profile_sample_percent="50",
+        profile_sample_percent=50,
         data_source="DataKitchen",
         business_domain="Finance",
         dq_score_testing=0.91,
