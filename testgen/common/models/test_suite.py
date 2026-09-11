@@ -8,6 +8,7 @@ from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, S
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
+from testgen.common.enums import SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -78,7 +79,9 @@ class TestSuite(Entity):
     component_name: str = Column(NullIfEmptyString)
     last_complete_test_run_id: UUID = Column(postgresql.UUID(as_uuid=True))
     dq_score_exclude: bool = Column(Boolean, default=False)
-    is_monitor: bool = Column(Boolean, default=False)
+    suite_type: SuiteType = Column(
+        String(20), nullable=False, default=SuiteType.REGULAR, server_default=text("'regular'")
+    )
     monitor_lookback: int | None = Column(Integer)
     monitor_regenerate_freshness: bool = Column(Boolean, default=True)
     predict_sensitivity: PredictSensitivity | None = Column(Enum(PredictSensitivity))
@@ -97,7 +100,7 @@ class TestSuite(Entity):
     @classmethod
     def get_regular(cls, identifier: str | UUID) -> "TestSuite | None":
         """Like get(), but returns None for monitor suites."""
-        query = select(cls).where(cls.id == identifier, cls.is_monitor.isnot(True))
+        query = select(cls).where(cls.id == identifier, cls.suite_type == SuiteType.REGULAR)
         return get_current_session().scalars(query).first()
 
 
@@ -211,7 +214,7 @@ class TestSuite(Entity):
             ON (connections.connection_id = suites.connection_id)
         LEFT JOIN table_groups AS groups
             ON (groups.id = suites.table_groups_id)
-        WHERE suites.is_monitor IS NOT TRUE
+        WHERE suites.suite_type = 'regular'
             AND suites.project_code = :project_code
             {"AND suites.table_groups_id = :table_group_id" if table_group_id else ""}
             {"AND suites.test_suite ILIKE :test_suite_name" if test_suite_name else ""}

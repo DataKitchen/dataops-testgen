@@ -10,6 +10,7 @@ from sqlalchemy import select
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
 from testgen.commands.run_refresh_score_cards_results import run_refresh_score_cards_results
 from testgen.common import execute_db_queries
+from testgen.common.enums import SuiteType
 from testgen.common.models import database_session
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
@@ -36,7 +37,7 @@ def run_recalculate_project_scores(project_code: str) -> None:
             test_suites = session.scalars(
                 select(TestSuite).where(
                     TestSuite.table_groups_id == tg.id,
-                    TestSuite.is_monitor.isnot(True),
+                    TestSuite.suite_type == SuiteType.REGULAR,
                     TestSuite.last_complete_test_run_id.isnot(None),
                 )
             ).all()

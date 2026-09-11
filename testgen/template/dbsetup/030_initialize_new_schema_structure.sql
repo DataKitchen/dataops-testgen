@@ -165,7 +165,7 @@ CREATE TABLE test_suites (
    component_name          VARCHAR(100),
    last_complete_test_run_id UUID,
    dq_score_exclude        BOOLEAN DEFAULT FALSE,
-   is_monitor              BOOLEAN DEFAULT FALSE,
+   suite_type              VARCHAR(20) NOT NULL DEFAULT 'regular',
    monitor_lookback        INTEGER DEFAULT NULL,
    monitor_regenerate_freshness BOOLEAN DEFAULT TRUE,
    predict_sensitivity     VARCHAR(6),

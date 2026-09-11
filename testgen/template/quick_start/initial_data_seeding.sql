@@ -45,7 +45,7 @@ SELECT '9df7489d-92b3-49f9-95ca-512160d7896f'::UUID as id,
 
 INSERT INTO test_suites
    (id, project_code, test_suite, connection_id, table_groups_id, test_suite_description,
-    export_to_observability, is_monitor, monitor_lookback, predict_min_lookback)
+    export_to_observability, suite_type, monitor_lookback, predict_min_lookback)
 SELECT '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID AS id,
        '{PROJECT_CODE}'                             AS project_code,
        '{TABLE_GROUPS_NAME} Monitors'               AS test_suite,
@@ -53,7 +53,7 @@ SELECT '823a1fef-9b6d-48d5-9d0f-2db9812cc318'::UUID AS id,
        '0ea85e17-acbe-47fe-8394-9970725ad37d'::UUID AS table_groups_id,
        '{TABLE_GROUPS_NAME} Monitor Suite'          AS test_suite_description,
        'N'                                          AS export_to_observability,
-       TRUE                                         AS is_monitor,
+       'monitor'                                    AS suite_type,
        28                                           AS monitor_lookback,
        30                                           AS predict_min_lookback;
 

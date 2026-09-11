@@ -1,7 +1,7 @@
 """Monitor read-model façade and shared series parsing.
 
 A "monitor" is the public concept backing the monitors dashboard. Internally it is a
-``TestDefinition`` in a monitor ``TestSuite`` (``is_monitor`` = True); that fact is never
+``TestDefinition`` in a monitor ``TestSuite`` (``suite_type`` = ``monitor``); that fact is never
 exposed. This module owns the single-monitor series read (the ``Monitor`` façade) plus the
 shared SQL builder and row→event parsers reused by the per-table dashboard wrapper.
 """
@@ -354,7 +354,7 @@ class Monitor:
             ts.monitor_lookback, ts.predict_sensitivity
         FROM test_definitions td
         INNER JOIN test_suites ts ON ts.id = td.test_suite_id
-        WHERE td.id = :monitor_id AND ts.is_monitor IS TRUE
+        WHERE td.id = :monitor_id AND ts.suite_type = 'monitor'
         """
         row = get_current_session().execute(text(query), {"monitor_id": str(monitor_id)}).mappings().first()
         return cls(**row) if row else None

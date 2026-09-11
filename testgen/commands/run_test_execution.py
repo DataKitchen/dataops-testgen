@@ -16,6 +16,7 @@ from testgen.common import (
     write_to_app_db,
 )
 from testgen.common.database.database_service import ThreadedProgress
+from testgen.common.enums import SuiteType
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
@@ -71,7 +72,7 @@ def run_test_execution(
 
         sql_generator = TestExecutionSQL(connection, table_group, test_suite, test_run)
 
-        if test_suite.is_monitor:
+        if test_suite.suite_type == SuiteType.MONITOR:
             _sync_monitor_definitions(sql_generator)
 
         # Update the thresholds before retrieving the test definitions in the next steps
@@ -114,7 +115,7 @@ def run_test_execution(
                 # without revisiting freshness-gating in the SQL templates and exec params.
                 for run_type in ["QUERY", "CAT", "METADATA"]:
                     if (run_test_defs := [td for td in valid_test_defs if td.run_type == run_type]):
-                        run_functions[run_type](run_test_defs, save_progress=not test_suite.is_monitor)
+                        run_functions[run_type](run_test_defs, save_progress=test_suite.suite_type != SuiteType.MONITOR)
                     else:
                         test_run.set_progress(run_type, "Completed")
                         LOG.info(f"No {run_type} tests to run")
@@ -148,7 +149,7 @@ def run_test_execution(
             LOG.exception("Error predicting test thresholds")
 
         MixpanelService().send_event(
-            "run-monitors" if test_suite.is_monitor else "run-tests",
+            "run-monitors" if test_suite.suite_type == SuiteType.MONITOR else "run-tests",
             source=job_context.get().source.upper(),
             username=username,
             sql_flavor=connection.sql_flavor_code,

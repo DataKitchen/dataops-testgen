@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.commands.test_generation import TestGeneration, run_test_generation
+from testgen.common.enums import SuiteType
 
 MODULE = "testgen.commands.test_generation"
 
@@ -158,7 +159,7 @@ def generation_mocks():
         patch(f"{MODULE}.resolve_generation_sets") as resolve,
         patch(f"{MODULE}.job_context") as ctx,
     ):
-        suite = MagicMock(is_monitor=False, generation_sets=None)
+        suite = MagicMock(suite_type=SuiteType.REGULAR, generation_sets=None)
         suite_cls.get.return_value = suite
         tg_cls.get.return_value = MagicMock()
         conn_cls.get.return_value = MagicMock(sql_flavor="postgresql")
@@ -224,7 +225,7 @@ def test_run_test_generation_defaults_to_none_requested(generation_mocks):
 
 
 def test_run_test_generation_rejects_monitor_suite(generation_mocks):
-    generation_mocks["suite"].is_monitor = True
+    generation_mocks["suite"].suite_type = SuiteType.MONITOR
 
     with pytest.raises(ValueError, match="Cannot run regular test generation for monitor suite"):
         run_test_generation("suite-1", ["Standard"])

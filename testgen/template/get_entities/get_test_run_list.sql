@@ -17,7 +17,7 @@ INNER JOIN test_suites ts ON tr.test_suite_id = ts.id
 INNER JOIN job_executions je ON je.id = tr.id
      WHERE ts.project_code = :PROJECT_CODE
        AND ts.test_suite = :TEST_SUITE
-       AND ts.is_monitor IS NOT TRUE
+       AND ts.suite_type = 'regular'
   GROUP BY tr.id,
            ts.project_code,
            ts.test_suite,

@@ -10,6 +10,7 @@ from testgen.common.database.database_service import (
     replace_params,
     write_to_app_db,
 )
+from testgen.common.enums import SuiteType
 from testgen.common.freshness_service import (
     get_freshness_gap_threshold,
     infer_schedule,
@@ -93,7 +94,9 @@ class TestThresholdsPrediction:
             # is a monitor — Volume_Trend / Metric_Trend in monitor suites couple to the
             # Freshness_Trend signal to avoid stairstep false positives.
             freshness_updates_by_table: dict[tuple[str, str], list[str]] = (
-                self._fetch_freshness_updates_by_table() if self.test_suite.is_monitor else {}
+                self._fetch_freshness_updates_by_table()
+                if self.test_suite.suite_type == SuiteType.MONITOR
+                else {}
             )
 
             LOG.info(f"Training prediction models for tests: {len(grouped_dfs)}")

@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import func, select
 
 from testgen.commands.test_generation import run_monitor_generation
-from testgen.common.enums import MonitorType
+from testgen.common.enums import MonitorType, SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
@@ -78,7 +78,7 @@ def enable_monitoring(
         table_groups_id=table_group.id,
         export_to_observability=False,
         dq_score_exclude=True,
-        is_monitor=True,
+        suite_type=SuiteType.MONITOR,
         **attrs,
     )
     monitor_suite.save()

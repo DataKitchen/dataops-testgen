@@ -13,7 +13,7 @@ from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 from testgen.common import date_service
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.database_service import get_flavor_service
-from testgen.common.enums import JobSource
+from testgen.common.enums import JobSource, SuiteType
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
@@ -145,7 +145,7 @@ class TestDefinitionsPage(Page):
         sort: str | None = None,
         **_kwargs,
     ) -> None:
-        test_suite = get_test_suite(test_suite_id, TestSuite.is_monitor.isnot(True))
+        test_suite = get_test_suite(test_suite_id, TestSuite.suite_type == SuiteType.REGULAR)
         if not test_suite:
             self.router.navigate_with_warning(
                 f"Test suite with ID '{test_suite_id}' does not exist. Redirecting to list of Test Suites ...",
@@ -276,7 +276,7 @@ class TestDefinitionsPage(Page):
             )
             editable_test_suites = select_test_suites_minimal_where(
                 TestSuite.table_groups_id.in_([str(tg.id) for tg in editable_table_groups]),
-                TestSuite.is_monitor.isnot(True),
+                TestSuite.suite_type == SuiteType.REGULAR,
             )
             tgs_by_project: dict[str, list] = {}
             for tg in editable_table_groups:

@@ -637,7 +637,7 @@ class TableGroup(Entity):
             SELECT ts.table_groups_id, MAX(tr.test_starttime) AS test_starttime
             FROM test_runs tr
                 JOIN test_suites ts ON ts.id = tr.test_suite_id
-            WHERE ts.is_monitor IS NOT TRUE
+            WHERE ts.suite_type = 'regular'
             GROUP BY ts.table_groups_id
         )
         SELECT

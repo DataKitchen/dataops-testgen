@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.custom_test_validation import CustomQueryResult
-from testgen.common.enums import MonitorType
+from testgen.common.enums import MonitorType, SuiteType
 from testgen.mcp.exceptions import (
     MCPPermissionDenied,
     MCPResourceNotAccessible,
@@ -59,7 +59,7 @@ def _mock_table_group(**overrides) -> MagicMock:
 def _mock_monitor_suite(**overrides) -> MagicMock:
     suite = MagicMock()
     suite.id = overrides.get("id", uuid4())
-    suite.is_monitor = True
+    suite.suite_type = SuiteType.MONITOR
     return suite
 
 
