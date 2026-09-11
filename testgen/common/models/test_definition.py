@@ -27,7 +27,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
-from testgen.common.enums import MonitorCalculation, MonitorType
+from testgen.common.enums import MonitorCalculation, MonitorType, SuiteType
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -642,7 +642,7 @@ class TestDefinition(Entity):
             select(*select_columns)
             .join(TestType, cls.test_type == TestType.test_type)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(cls.id == identifier, TestSuite.is_monitor.isnot(True))
+            .where(cls.id == identifier, TestSuite.suite_type == SuiteType.REGULAR)
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -701,7 +701,7 @@ class TestDefinition(Entity):
             select(*select_columns)
             .join(TestType, cls.test_type == TestType.test_type)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(cls.test_suite_id == test_suite_id, TestSuite.is_monitor.isnot(True))
+            .where(cls.test_suite_id == test_suite_id, TestSuite.suite_type == SuiteType.REGULAR)
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))

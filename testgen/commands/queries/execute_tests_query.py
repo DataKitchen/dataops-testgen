@@ -14,7 +14,7 @@ from testgen.common.database.database_service import (
     get_tg_schema,
     replace_params,
 )
-from testgen.common.enums import MonitorCalculation
+from testgen.common.enums import MonitorCalculation, SuiteType
 from testgen.common.freshness_service import (
     count_excluded_minutes,
     get_freshness_gated_baseline,
@@ -309,7 +309,7 @@ class TestExecutionSQL:
         self._exclude_weekends = bool(self.test_suite.predict_exclude_weekends)
         self._holiday_dates: set[date] | None = None
         self._schedule_tz: str | None = None
-        if test_suite.is_monitor:
+        if test_suite.suite_type == SuiteType.MONITOR:
             schedule = JobSchedule.get(JobSchedule.kwargs["test_suite_id"].astext == str(test_suite.id))
             self._schedule_tz = schedule.cron_tz or "UTC" if schedule else None
             if test_suite.holiday_codes_list:

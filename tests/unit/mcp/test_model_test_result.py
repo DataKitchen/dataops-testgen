@@ -18,7 +18,9 @@ def session_mock():
 
 
 def _compiled_sql(captured_query) -> str:
-    return str(captured_query.compile(dialect=postgresql.dialect()))
+    return str(captured_query.compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    ))
 
 
 def test_select_results_basic(session_mock):
@@ -118,7 +120,7 @@ def test_select_results_excludes_monitor_suites(session_mock):
     TestResult.select_results(test_run_id=uuid4())
 
     sql = _compiled_sql(session_mock.scalars.call_args[0][0])
-    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.suite_type = 'regular'" in sql
     assert "JOIN test_suites" in sql
 
 
@@ -128,7 +130,7 @@ def test_select_results_excludes_monitor_suites_with_project_codes(session_mock)
     TestResult.select_results(test_run_id=uuid4(), project_codes=["demo"])
 
     sql = _compiled_sql(session_mock.scalars.call_args[0][0])
-    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.suite_type = 'regular'" in sql
     assert "test_suites.project_code IN" in sql
 
 
@@ -137,7 +139,7 @@ def test_list_for_run_excludes_monitor_suites():
         TestResult.list_for_run(uuid4())
 
     sql = _compiled_sql(mock_paginate.call_args.args[0])
-    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.suite_type = 'regular'" in sql
     assert "JOIN test_suites" in sql
 
 
@@ -158,7 +160,7 @@ def test_select_failures_excludes_monitor_suites(session_mock):
     TestResult.select_failures(test_run_id=uuid4(), group_by="test_type")
 
     sql = _compiled_sql(session_mock.execute.call_args[0][0])
-    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.suite_type = 'regular'" in sql
     assert "JOIN test_suites" in sql
 
 
@@ -168,7 +170,7 @@ def test_select_history_excludes_monitor_suites(session_mock):
     TestResult.select_history(test_definition_id=uuid4())
 
     sql = _compiled_sql(session_mock.scalars.call_args[0][0])
-    assert "test_suites.is_monitor IS NOT true" in sql
+    assert "test_suites.suite_type = 'regular'" in sql
     assert "JOIN test_suites" in sql
 
 

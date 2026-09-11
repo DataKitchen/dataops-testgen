@@ -3,7 +3,7 @@ from typing import Annotated
 
 from pydantic import Field
 
-from testgen.common.enums import JobKey
+from testgen.common.enums import JobKey, SuiteType
 from testgen.common.models import with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
@@ -98,7 +98,7 @@ def list_test_runs(
         suites = TestSuite.select_minimal_where(
             TestSuite.project_code == project_code,
             TestSuite.test_suite == test_suite,
-            TestSuite.is_monitor.isnot(True),
+            TestSuite.suite_type == SuiteType.REGULAR,
         )
         if not suites:
             raise MCPResourceNotAccessible("Test suite", test_suite)
@@ -256,7 +256,7 @@ def _next_test_run(
             for s in TestSuite.select_minimal_where(
                 TestSuite.project_code == project_code,
                 TestSuite.table_groups_id == table_group_id,
-                TestSuite.is_monitor.isnot(True),
+                TestSuite.suite_type == SuiteType.REGULAR,
             )
         ]
         candidates = [
@@ -288,7 +288,7 @@ def _select_pending_test_jes(
             for s in TestSuite.select_minimal_where(
                 TestSuite.project_code == project_code,
                 TestSuite.table_groups_id == table_group_id,
-                TestSuite.is_monitor.isnot(True),
+                TestSuite.suite_type == SuiteType.REGULAR,
             )
         ]
         if not suite_ids:

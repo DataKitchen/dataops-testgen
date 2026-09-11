@@ -265,7 +265,7 @@ class TestRun(Entity):
             LEFT JOIN projects p ON p.project_code = je.project_code
             LEFT JOIN run_results rr ON rr.test_run_id = tr.id
         WHERE je.job_key = 'run-tests'
-            AND (ts.is_monitor IS NOT TRUE OR ts.id IS NULL)
+            AND (ts.suite_type = 'regular' OR ts.id IS NULL)
             {" AND je.project_code = :project_code" if project_code else ""}
             {" AND ts.table_groups_id = :table_group_id" if table_group_id else ""}
             {" AND ts.id = :test_suite_id" if test_suite_id else ""}
@@ -378,7 +378,7 @@ class TestRun(Entity):
         """Return the latest completed test run id per test suite for the
         project.
 
-        Includes monitor suites (`is_monitor=True`). Used by data retention to
+        Includes monitor suites (`suite_type='monitor'`). Used by data retention to
         protect at least one run per scope so each suite keeps a usable
         baseline when retention sweeps clear older history. Failed and
         in-flight runs are skipped.

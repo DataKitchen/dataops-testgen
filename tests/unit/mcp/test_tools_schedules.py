@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.common.enums import JobKey
+from testgen.common.enums import JobKey, SuiteType
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 
 
@@ -16,12 +16,12 @@ def _make_table_group(project_code="demo", name="orders_tg"):
     return tg
 
 
-def _make_suite(project_code="demo", name="suite_a", is_monitor=False):
+def _make_suite(project_code="demo", name="suite_a", suite_type=SuiteType.REGULAR):
     suite = MagicMock()
     suite.id = uuid4()
     suite.project_code = project_code
     suite.test_suite = name
-    suite.is_monitor = is_monitor
+    suite.suite_type = suite_type
     return suite
 
 

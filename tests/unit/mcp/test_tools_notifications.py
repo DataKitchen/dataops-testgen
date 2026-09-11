@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from testgen.common.enums import SuiteType
 from testgen.common.models.notification_settings import (
     MonitorNotificationTrigger,
     NotificationEvent,
@@ -775,7 +776,7 @@ def _make_create_suite(name="orders_v1", project_code="demo"):
     suite.id = uuid4()
     suite.test_suite = name
     suite.project_code = project_code
-    suite.is_monitor = False
+    suite.suite_type = SuiteType.REGULAR
     return suite
 
 

@@ -1,6 +1,6 @@
 """MCP write tools for test suites — create and update regular (non-monitor) suites.
 
-Monitor suites (``is_monitor=True``) are managed exclusively through the dedicated
+Monitor suites (``suite_type`` of ``monitor``) are managed exclusively through the dedicated
 monitors surface. ``resolve_test_suite`` already filters them out, so an
 ``update_test_suite`` call against a monitor-suite ID surfaces the unified
 ``not found or not accessible`` error.
@@ -103,7 +103,6 @@ def create_test_suite(
         component_key=_empty_to_none(component_key),
         component_type=_empty_to_none(component_type),
         component_name=_empty_to_none(component_name),
-        is_monitor=False,
     )
     session = get_current_session()
     session.add(suite)

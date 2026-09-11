@@ -6,7 +6,7 @@ from typing import Any
 import streamlit as st
 
 import testgen.ui.services.form_service as fm
-from testgen.common.enums import JobSource, JobStatus
+from testgen.common.enums import JobSource, JobStatus, SuiteType
 from testgen.common.models import database_session, get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.notification_settings import (
@@ -68,7 +68,9 @@ class TestRunsPage(Page):
             project_summary = get_project_summary(project_code)
             test_runs, total_count = get_test_run_summaries(project_code, table_group_id, test_suite_id, page=page)
             table_groups = select_table_groups_minimal_where(TableGroup.project_code == project_code)
-            test_suites = select_test_suites_minimal_where(TestSuite.project_code == project_code, TestSuite.is_monitor.isnot(True))
+            test_suites = select_test_suites_minimal_where(
+                TestSuite.project_code == project_code, TestSuite.suite_type == SuiteType.REGULAR
+            )
 
         def on_run_tests_clicked(*_) -> None:
             st.session_state[TR_RUN_TESTS_DIALOG_KEY] = True
@@ -248,7 +250,7 @@ class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
             (str(ts.id), ts.test_suite)
             for ts in select_test_suites_minimal_where(
                 TestSuite.project_code == self.ns_attrs["project_code"],
-                TestSuite.is_monitor.isnot(True),
+                TestSuite.suite_type == SuiteType.REGULAR,
             )
         ]
         test_suite_options.insert(0, (None, "All Test Suites"))
@@ -276,7 +278,7 @@ class TestRunScheduleDialog(ScheduleDialog):
     def init(self) -> None:
         self.test_suites = select_test_suites_minimal_where(
             TestSuite.project_code == self.project_code,
-            TestSuite.is_monitor.isnot(True),
+            TestSuite.suite_type == SuiteType.REGULAR,
         )
 
     def get_arg_value(self, job):

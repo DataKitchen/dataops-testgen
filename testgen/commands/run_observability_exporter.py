@@ -15,6 +15,7 @@ from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
 )
+from testgen.common.enums import SuiteType
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite
 
@@ -318,7 +319,7 @@ def run_observability_exporter(project_code, test_suite):
     test_suites = TestSuite.select_minimal_where(
         TestSuite.project_code == project_code,
         TestSuite.test_suite == test_suite,
-        TestSuite.is_monitor.isnot(True),
+        TestSuite.suite_type == SuiteType.REGULAR,
     )
     qty_of_exported_events = export_test_results(test_suites[0].id)
     click.echo(f"{qty_of_exported_events} events have been exported.")

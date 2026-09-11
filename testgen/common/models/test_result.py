@@ -10,7 +10,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql.expression import case
 
-from testgen.common.enums import MonitorType
+from testgen.common.enums import MonitorType, SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.entity import Entity
 from testgen.common.models.test_definition import TestType
@@ -281,7 +281,7 @@ class TestResult(Entity):
         query = (
             select(cls)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(*clauses, TestSuite.is_monitor.isnot(True))
+            .where(*clauses, TestSuite.suite_type == SuiteType.REGULAR)
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -317,7 +317,7 @@ class TestResult(Entity):
             )
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
             .outerjoin(TestType, TestType.test_type == cls.test_type)
-            .where(cls.test_run_id == test_run_id, TestSuite.is_monitor.isnot(True), *clauses)
+            .where(cls.test_run_id == test_run_id, TestSuite.suite_type == SuiteType.REGULAR, *clauses)
             .order_by(cls.status, cls.table_name, cls.column_names, cls.id)
         )
         return cls._paginate(query, page=page, limit=limit, data_class=TestRunResultRow)
@@ -365,7 +365,7 @@ class TestResult(Entity):
         query = (
             select(*group_cols, func.count().label("failure_count"))
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(*where, TestSuite.is_monitor.isnot(True))
+            .where(*where, TestSuite.suite_type == SuiteType.REGULAR)
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -408,7 +408,7 @@ class TestResult(Entity):
         query = (
             select(cls)
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(cls.test_definition_id == test_definition_id, TestSuite.is_monitor.isnot(True))
+            .where(cls.test_definition_id == test_definition_id, TestSuite.suite_type == SuiteType.REGULAR)
         )
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
@@ -473,7 +473,7 @@ class TestResult(Entity):
             .join(TestRun, cls.test_run_id == TestRun.id)
             .outerjoin(TestType, cls.test_type == TestType.test_type)
             .where(
-                TestSuite.is_monitor.isnot(True),
+                TestSuite.suite_type == SuiteType.REGULAR,
                 func.coalesce(cls.disposition, "Confirmed") == "Confirmed",
                 *clauses,
             )
@@ -515,7 +515,7 @@ class TestResult(Entity):
             )
             .join(TestSuite, cls.test_suite_id == TestSuite.id)
             .where(
-                TestSuite.is_monitor.isnot(True),
+                TestSuite.suite_type == SuiteType.REGULAR,
                 cls.test_time >= start_date,
                 cls.test_time < upper_bound,
                 func.coalesce(cls.disposition, "Confirmed") == "Confirmed",

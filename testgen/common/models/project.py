@@ -68,21 +68,21 @@ class Project(Entity):
             (
                 SELECT COUNT(*) FROM test_suites
                 WHERE test_suites.project_code = :project_code
-                  AND test_suites.is_monitor IS NOT TRUE
+                  AND test_suites.suite_type = 'regular'
             ) AS test_suite_count,
             (
                 SELECT COUNT(*)
                 FROM test_definitions
                     LEFT JOIN test_suites ON test_definitions.test_suite_id = test_suites.id
                 WHERE test_suites.project_code = :project_code
-                  AND test_suites.is_monitor IS NOT TRUE
+                  AND test_suites.suite_type = 'regular'
             ) AS test_definition_count,
             (
                 SELECT COUNT(*)
                 FROM test_runs
                     LEFT JOIN test_suites ON test_runs.test_suite_id = test_suites.id
                 WHERE test_suites.project_code = :project_code
-                  AND test_suites.is_monitor IS NOT TRUE
+                  AND test_suites.suite_type = 'regular'
             ) AS test_run_count,
             (
                 SELECT COALESCE(observability_api_key, '') <> ''

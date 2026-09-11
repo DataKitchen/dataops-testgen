@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal, cast
 import streamlit as st
 
 from testgen.common.cron_service import get_cron_sample
-from testgen.common.enums import MonitorCalculation, MonitorType
+from testgen.common.enums import MonitorCalculation, MonitorType, SuiteType
 from testgen.common.models import with_database_session
 from testgen.common.models.data_structure_log import DataStructureLog
 from testgen.common.models.notification_settings import (
@@ -432,7 +432,7 @@ def build_edit_monitor_settings_data(
             table_groups_id=table_group.id,
             export_to_observability=False,
             dq_score_exclude=True,
-            is_monitor=True,
+            suite_type=SuiteType.MONITOR,
         )
 
     def on_save_settings_clicked(payload: dict) -> None:

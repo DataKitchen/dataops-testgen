@@ -10,6 +10,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.common.enums import SuiteType
 from testgen.common.models.data_structure_log import DataStructureLog
 from testgen.common.models.table_group import MonitorGroupSummary, MonitorTableSummary
 from testgen.common.models.test_suite import PredictSensitivity
@@ -51,7 +52,7 @@ def _mock_monitor_suite(**overrides) -> MagicMock:
 
     suite = MagicMock()
     suite.id = overrides.get("id", uuid4())
-    suite.is_monitor = True
+    suite.suite_type = SuiteType.MONITOR
     suite.monitor_lookback = overrides.get("monitor_lookback", 7)
     suite.predict_sensitivity = overrides.get("predict_sensitivity", PredictSensitivity.medium)
     return suite

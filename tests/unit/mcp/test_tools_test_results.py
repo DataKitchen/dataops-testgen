@@ -721,7 +721,7 @@ def test_get_failure_summary_rejects_inaccessible_test_suite(mock_compute, mock_
 
 @patch("testgen.mcp.tools.common.TestSuite")
 def test_get_failure_summary_rejects_unknown_or_monitor_test_suite(mock_suite_cls, db_session_mock):
-    # resolve_test_suite's access + is_monitor scoped query returns None for monitor suites and unknown ids alike.
+    # resolve_test_suite's access + suite_type scoped query returns None for monitor suites and unknown ids alike.
     mock_suite_cls.get.return_value = None
 
     from testgen.mcp.tools.test_results import get_failure_summary
