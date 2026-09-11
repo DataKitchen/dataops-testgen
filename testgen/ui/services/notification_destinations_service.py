@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.notification_destinations import (
+    DestinationType,
     EmailDestination,
     NotificationDestination,
     WebhookDestination,
@@ -76,14 +77,14 @@ def _serialize(destination: NotificationDestination, rule_count: int) -> dict:
 @with_database_session
 def add_destination(project_code: str, payload: dict) -> None:
     destination_type = payload.get("destination_type")
-    if destination_type == "email":
+    if destination_type == DestinationType.email:
         EmailDestination.create(
             project_code=project_code,
             name=(payload.get("name") or "").strip(),
             recipients=payload.get("recipients") or [],
         )
         return
-    if destination_type == "webhook":
+    if destination_type == DestinationType.webhook:
         webhook_type = _parse_webhook_type(payload.get("webhook_type"))
         # The form hides both auth inputs as soon as the type leaves generic, but the
         # payload still carries whatever they last held. Passing those through would

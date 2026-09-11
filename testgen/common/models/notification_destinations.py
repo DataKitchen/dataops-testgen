@@ -41,9 +41,23 @@ WEBHOOK_TYPE_LABELS: dict[WebhookType, str] = {
     WebhookType.microsoft_teams: "Microsoft Teams",
 }
 
-DESTINATION_TYPE_LABELS: dict[str, str] = {
-    "email": "Email",
-    "webhook": "Webhook",
+class DestinationType(StrEnum):
+    email = "email"
+    webhook = "webhook"
+
+
+DESTINATION_TYPE_LABELS: dict[DestinationType, str] = {
+    DestinationType.email: "Email",
+    DestinationType.webhook: "Webhook",
+}
+
+# Every webhook type, for the surfaces where a user picks the type or reads back
+# the one that is stored. ``WEBHOOK_TYPE_LABELS`` above names the receiving
+# *service* and omits ``generic`` on purpose, so it cannot serve this.
+WEBHOOK_TYPE_SELECTION_LABELS: dict[WebhookType, str] = {
+    WebhookType.slack: "Slack",
+    WebhookType.microsoft_teams: "Microsoft Teams",
+    WebhookType.generic: "Generic",
 }
 
 
@@ -57,7 +71,7 @@ class NotificationDestination(Entity):
         nullable=False,
     )
     name: str = Column(String(100), nullable=False)
-    destination_type: str = Column(String(20), nullable=False)
+    destination_type: DestinationType = Column(String(20), nullable=False)
     config: JSON_TYPE = Column(postgresql.JSONB, nullable=False, default=dict)
     # ``SafeEncryptedJson`` returns ``None`` (and logs) on decrypt failure
     # instead of raising during row hydration. A single undecryptable row
@@ -129,7 +143,7 @@ class NotificationDestination(Entity):
 
 class EmailDestination(NotificationDestination):
     __mapper_args__: ClassVar = {
-        "polymorphic_identity": "email",
+        "polymorphic_identity": DestinationType.email.value,
     }
 
     @property
@@ -163,7 +177,7 @@ class EmailDestination(NotificationDestination):
         destination = cls(
             project_code=project_code,
             name=name,
-            destination_type="email",
+            destination_type=DestinationType.email,
             config={"recipients": list(recipients)},
         )
         destination.save()
@@ -172,7 +186,7 @@ class EmailDestination(NotificationDestination):
 
 class WebhookDestination(NotificationDestination):
     __mapper_args__: ClassVar = {
-        "polymorphic_identity": "webhook",
+        "polymorphic_identity": DestinationType.webhook.value,
     }
 
     @property
@@ -302,7 +316,7 @@ class WebhookDestination(NotificationDestination):
         destination = cls(
             project_code=project_code,
             name=name,
-            destination_type="webhook",
+            destination_type=DestinationType.webhook,
             config={
                 "webhook_type": webhook_type.value if isinstance(webhook_type, WebhookType) else webhook_type,
                 "auth_header_name": auth_header_name,

@@ -21,6 +21,8 @@ from sqlalchemy import func, select
 
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.notification_destinations import (
+    DESTINATION_TYPE_LABELS,
+    WEBHOOK_TYPE_SELECTION_LABELS,
     EmailDestination,
     NotificationDestination,
     WebhookDestination,
@@ -47,37 +49,20 @@ from testgen.mcp.tools.markdown import MdDoc
 _DOC_GROUP = DocGroup.MANAGE
 
 
-class _DestinationTypeLabel(StrEnum):
-    email = "Email"
-    webhook = "Webhook"
-
-
-_LABEL_TO_TYPE: dict[_DestinationTypeLabel, str] = {
-    _DestinationTypeLabel.email: "email",
-    _DestinationTypeLabel.webhook: "webhook",
-}
-
-
-class _WebhookTypeLabel(StrEnum):
-    slack = "Slack"
-    microsoft_teams = "Microsoft Teams"
-    generic = "Generic"
-
-
-_LABEL_TO_WEBHOOK_TYPE: dict[_WebhookTypeLabel, WebhookType] = {
-    _WebhookTypeLabel.slack: WebhookType.slack,
-    _WebhookTypeLabel.microsoft_teams: WebhookType.microsoft_teams,
-    _WebhookTypeLabel.generic: WebhookType.generic,
-}
-
-_TYPE_TO_LABEL: dict[str, str] = {
-    "email": "Email",
-    "webhook": "Webhook",
-}
+# Every label vocabulary here is derived from the model's maps. Restating them
+# would make the tool arguments drift from what the rest of the product shows the
+# moment a type is added or relabelled.
+_TYPE_TO_LABEL: dict[str, str] = {kind.value: label for kind, label in DESTINATION_TYPE_LABELS.items()}
 _WEBHOOK_TYPE_TO_LABEL: dict[str, str] = {
-    "slack": "Slack",
-    "microsoft_teams": "Microsoft Teams",
-    "generic": "Generic",
+    kind.value: label for kind, label in WEBHOOK_TYPE_SELECTION_LABELS.items()
+}
+
+_DestinationTypeLabel = StrEnum("_DestinationTypeLabel", {kind.name: label for kind, label in DESTINATION_TYPE_LABELS.items()})
+_LABEL_TO_TYPE: dict[str, str] = {label: kind.value for kind, label in DESTINATION_TYPE_LABELS.items()}
+
+_WebhookTypeLabel = StrEnum("_WebhookTypeLabel", {kind.name: label for kind, label in WEBHOOK_TYPE_SELECTION_LABELS.items()})
+_LABEL_TO_WEBHOOK_TYPE: dict[str, WebhookType] = {
+    label: kind for kind, label in WEBHOOK_TYPE_SELECTION_LABELS.items()
 }
 
 
