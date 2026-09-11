@@ -128,6 +128,14 @@ test_types:
     test_operator: '<'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11090'
+    test_type: Variability_Decrease
+    sql_flavor: duckdb
+    measure: |-
+      100.0*STDDEV({COLUMN_NAME}::FLOAT)/{BASELINE_SD}::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1395'
     test_id: '1041'
@@ -209,5 +217,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11091'
+    test_id: '1041'
+    test_type: Variability_Decrease
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) as current_standard_deviation FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
     error_type: Test Results
   test_templates: []

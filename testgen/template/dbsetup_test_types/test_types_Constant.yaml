@@ -122,6 +122,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11018'
+    test_type: Constant
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} <> {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1367'
     test_id: '1007'
@@ -206,5 +214,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11019'
+    test_id: '1007'
+    test_type: Constant
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" <> {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

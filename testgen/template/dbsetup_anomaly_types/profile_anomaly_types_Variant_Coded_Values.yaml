@@ -106,3 +106,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE LOWER("{COLUMN_NAME}") IN (SELECT TRIM(val) FROM UNNEST(STRING_TO_ARRAY(SUBSTRING('{DETAIL_EXPRESSION}', STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|')) AS t(val)) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '11128'
+    test_id: '1027'
+    test_type: Variant_Coded_Values
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LOWER("{COLUMN_NAME}") = ANY(STRING_TO_ARRAY(SUBSTRING('{DETAIL_EXPRESSION}',  STRPOS('{DETAIL_EXPRESSION}', ':') + 2), '|')) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Profile Anomaly

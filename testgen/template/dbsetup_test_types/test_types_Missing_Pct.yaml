@@ -124,6 +124,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11051'
+    test_type: Missing_Pct
+    sql_flavor: duckdb
+    measure: |-
+      ABS( 2.0 * ASIN( SQRT( {BASELINE_VALUE_CT}::FLOAT / {BASELINE_CT}::FLOAT ) ) - 2 * ASIN( SQRT( COUNT( {COLUMN_NAME} )::FLOAT / NULLIF(COUNT(*), 0)::FLOAT )) )
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1380'
     test_id: '1022'
@@ -207,5 +215,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT * FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR CAST("{COLUMN_NAME}" AS VARCHAR(255)) = '' LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11052'
+    test_id: '1022'
+    test_type: Missing_Pct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT * FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" :: VARCHAR(255) = '' LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

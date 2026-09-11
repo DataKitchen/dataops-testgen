@@ -122,6 +122,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11032'
+    test_type: Email_Format
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1372'
     test_id: '1014'
@@ -206,5 +214,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NOT REGEXP_LIKE(CAST("{COLUMN_NAME}" AS VARCHAR), '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$') GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11033'
+    test_id: '1014'
+    test_type: Email_Format
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[A-Za-z0-9._''%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

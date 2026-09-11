@@ -106,3 +106,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE REGEXP_REPLACE(CAST("{COLUMN_NAME}" AS VARCHAR), '[0-8]', '9', 'g') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '11104'
+    test_id: '1024'
+    test_type: Invalid_Zip3_USA
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE TRANSLATE("{COLUMN_NAME}",'012345678','999999999') <> '999' GROUP BY "{COLUMN_NAME}" ORDER BY count DESC, "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Profile Anomaly

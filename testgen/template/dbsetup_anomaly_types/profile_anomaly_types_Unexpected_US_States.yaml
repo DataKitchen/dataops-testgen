@@ -107,3 +107,11 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
     error_type: Profile Anomaly
+  - id: '11126'
+    test_id: '1021'
+    test_type: Unexpected US States
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC LIMIT {LIMIT};
+    error_type: Profile Anomaly

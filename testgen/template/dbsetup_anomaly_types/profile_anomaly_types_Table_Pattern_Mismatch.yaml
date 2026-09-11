@@ -112,3 +112,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: null
     error_type: Profile Anomaly
+  - id: '11124'
+    test_id: '1008'
+    test_type: Table_Pattern_Mismatch
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT column_name, columns.table_name FROM information_schema.columns JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}' AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY columns.table_name LIMIT {LIMIT};
+    error_type: Profile Anomaly

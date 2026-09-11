@@ -128,6 +128,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11057'
+    test_type: Outlier_Pct_Below
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME}::FLOAT < {BASELINE_AVG}-(2.0*{BASELINE_SD}) THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1383'
     test_id: '1025'
@@ -212,5 +220,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT ({BASELINE_AVG} - (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS FLOAT) < ({BASELINE_AVG} - (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
+    error_type: Test Results
+  - id: '11058'
+    test_id: '1025'
+    test_type: Outlier_Pct_Below
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT ({BASELINE_AVG} - (2*{BASELINE_SD})) AS outlier_threshold, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" :: FLOAT < ({BASELINE_AVG} - (2*{BASELINE_SD})) GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" DESC;
     error_type: Test Results
   test_templates: []
