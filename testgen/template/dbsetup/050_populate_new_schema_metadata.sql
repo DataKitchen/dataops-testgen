@@ -328,3 +328,7 @@ VALUES  ('measure', 'meter|m|metre'),
          ('pharma','priority review|pr|priority assessment'),
          ('pharma','tentative approval|ta|conditional approval'),
          ('pharma','off-label use|off-label|olu|unapproved use|unapproved');
+
+INSERT INTO suite_versions (id, test_suite_id, version, frozen_at)
+VALUES ('00000000-0000-0000-0000-000000000000', NULL, 0, NOW())
+ON CONFLICT (id) DO NOTHING;

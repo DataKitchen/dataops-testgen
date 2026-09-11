@@ -50,7 +50,8 @@ GRANT SELECT, INSERT, DELETE, UPDATE ON
     {SCHEMA_NAME}.test_templates,
     {SCHEMA_NAME}.cat_test_conditions,
     {SCHEMA_NAME}.target_data_lookups,
-    {SCHEMA_NAME}.generation_sets
+    {SCHEMA_NAME}.generation_sets,
+    {SCHEMA_NAME}.suite_versions
     TO testgen_execute_role;
 
 
