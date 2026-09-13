@@ -20,6 +20,7 @@ from testgen.common.models.scheduler import (
 )
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.test_run import TestRun
+from testgen.common.notifications import messages
 from testgen.ui.components import widgets as testgen
 from testgen.ui.navigation.menu import MenuItem
 from testgen.ui.navigation.page import Page
@@ -38,6 +39,8 @@ from testgen.ui.utils import get_cron_sample_handler
 DEFAULT_RETENTION_DAYS = 180
 
 PAGE_TITLE = "Project Settings"
+
+WEBHOOK_ALLOWED_HOSTS_URL = "https://docs.datakitchen.io/testgen/notifications/#allow-an-internal-webhook-host"
 
 
 class ProjectSettingsPage(Page):
@@ -162,6 +165,11 @@ class ProjectSettingsPage(Page):
             }
         except WebhookDeliveryError as exc:
             outcome = {"successful": False, "message": f"Test failed: {exc}"}
+            if str(exc) == messages.WEBHOOK_URL_ADDRESS_REFUSED:
+                outcome["help_link"] = {
+                    "label": "Allow an internal webhook host",
+                    "href": WEBHOOK_ALLOWED_HOSTS_URL,
+                }
         except (NotificationSettingsValidationError, ValueError) as exc:
             outcome = {"successful": False, "message": str(exc)}
         st.session_state[key] = {**outcome, "sequence": sequence}

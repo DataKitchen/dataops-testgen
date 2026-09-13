@@ -142,6 +142,73 @@ function notIn(values, options) {
     };
 }
 
+// Mirrors the server-side rule in ``common/models/notification_settings._EMAIL_REGEX``.
+// The two must agree, or an address passes here and is rejected on save.
+const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+/**
+ * Validate that the value is empty (optional) or a single well-formed email address.
+ *
+ * @param {any} value
+ * @returns {string}
+ */
+function email(value) {
+    const trimmed = String(value ?? '').trim();
+    if (!trimmed) {
+        return null;
+    }
+    return EMAIL_PATTERN.test(trimmed) ? null : `${trimmed} is not a valid email address.`;
+}
+
+/**
+ * Validate a comma-, semicolon- or whitespace-separated list of email addresses,
+ * naming the entries that do not parse.
+ *
+ * @param {any} value
+ * @returns {string}
+ */
+function emailList(value) {
+    const invalid = [...new Set(
+        String(value ?? '')
+            .split(/[,;\s]+/)
+            .map((token) => token.trim())
+            .filter((token) => token && !EMAIL_PATTERN.test(token))
+    )];
+    if (invalid.length <= 0) {
+        return null;
+    }
+    if (invalid.length === 1) {
+        return `${invalid[0]} is not a valid email address.`;
+    }
+    return `Not valid email addresses: ${invalid.join(', ')}.`;
+}
+
+/**
+ * Validate that the value is empty (optional) or an HTTPS URL with a host.
+ *
+ * @param {string} [label] Field name used to open the message, e.g. "Webhook URL".
+ * @returns {Validator}
+ */
+function httpsUrl(label = 'Value') {
+    return (value) => {
+        const trimmed = String(value ?? '').trim();
+        if (!trimmed) {
+            return null;
+        }
+        if (!trimmed.toLowerCase().startsWith('https://')) {
+            return `${label} must start with https://.`;
+        }
+        try {
+            if (!new URL(trimmed).hostname) {
+                return `${label} is not a valid URL.`;
+            }
+        } catch {
+            return `${label} is not a valid URL.`;
+        }
+        return null;
+    };
+}
+
 /**
  * Validate that the value is empty (optional) or a well-formed JSON object of key-value pairs.
  *
@@ -165,6 +232,9 @@ function jsonObject(value) {
 }
 
 export {
+    email,
+    emailList,
+    httpsUrl,
     maxLength,
     minLength,
     numberBetween,

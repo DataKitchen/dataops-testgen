@@ -6,13 +6,16 @@ import { Alert } from '/app/static/js/components/alert.js';
 import { Button } from '/app/static/js/components/button.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { Input } from '/app/static/js/components/input.js';
+import { Link } from '/app/static/js/components/link.js';
 import { Select } from '/app/static/js/components/select.js';
 import { Table } from '/app/static/js/components/table.js';
 import { Textarea } from '/app/static/js/components/textarea.js';
-import { required } from '/app/static/js/form_validators.js';
+import { emailList, httpsUrl, required, requiredIf } from '/app/static/js/form_validators.js';
 import { getValue } from '/app/static/js/utils.js';
 
 const { div, span } = van.tags;
+
+const EMAIL_SERVER_DOCS_URL = 'https://docs.datakitchen.io/testgen/administer/configure-email-server/';
 
 const DESTINATION_TYPE_OPTIONS = [
     { value: 'email', label: 'Email' },
@@ -77,10 +80,9 @@ const NotificationDestinationsSection = (props, emit) => {
     const destinations = van.derive(() => getValue(props.destinations) ?? []);
     const smtpConfigured = van.derive(() => !!getValue(props.smtp_configured));
     const testResult = van.derive(() => getValue(props.destination_test_result) ?? null);
-    const hasEmailDestination = van.derive(() =>
-        destinations.val.some((d) => d.destination_type === 'email')
-    );
-    const showSmtpWarn = van.derive(() => !smtpConfigured.val && hasEmailDestination.val);
+    // Shown whenever email cannot deliver, not only once an email destination exists:
+    // the constraint applies while the user is deciding which type to create.
+    const showSmtpWarn = van.derive(() => !smtpConfigured.val);
 
     const showFormDialog = van.state(false);
     const editingDestination = van.state(/** @type {Destination | null} */ (null));
@@ -103,6 +105,7 @@ const NotificationDestinationsSection = (props, emit) => {
         recipientsValid: van.state(false),
         webhookType: van.state('slack'),
         webhookUrl: van.state(''),
+        webhookUrlValid: van.state(false),
         webhookUrlPlaceholder: van.state(''),
         authHeaderName: van.state(''),
         authHeaderValue: van.state(''),
@@ -129,6 +132,7 @@ const NotificationDestinationsSection = (props, emit) => {
         formState.recipientsValid.val = (destination?.recipients ?? []).length > 0;
         formState.webhookType.val = destination?.webhook_type ?? 'slack';
         formState.webhookUrl.val = '';
+        formState.webhookUrlValid.val = destination !== null;
         formState.webhookUrlPlaceholder.val = destination?.url_masked ?? '';
         formState.authHeaderName.val = destination?.auth_header_name ?? '';
         formState.authHeaderValue.val = '';
@@ -200,7 +204,13 @@ const NotificationDestinationsSection = (props, emit) => {
         () => showSmtpWarn.val
             ? Alert(
                 { type: 'warn', icon: 'warning', class: 'mb-0' },
-                'Email destinations cannot deliver until an email server is configured.',
+                span('Email destinations cannot be used until an email server is configured.'),
+                Link({
+                    label: 'Configure an email server',
+                    href: EMAIL_SERVER_DOCS_URL,
+                    open_new: true,
+                    right_icon: 'open_in_new',
+                }),
             )
             : '',
         Table(
@@ -325,16 +335,9 @@ const DestinationForm = (props) => {
     const emailReady = van.derive(() =>
         state.type.val === 'email' && state.recipientsValid.val
     );
-    const webhookReady = van.derive(() => {
-        if (state.type.val !== 'webhook') return false;
-        // On create the URL is required in the form; on edit the field can stay
-        // blank to keep the stored URL, but a fresh URL must still look like an
-        // HTTPS one when supplied.
-        const editing = state.editing.val !== null;
-        if (!editing && !state.webhookUrl.val.trim()) return false;
-        if (state.webhookUrl.val && !state.webhookUrl.val.trim().toLowerCase().startsWith('https://')) return false;
-        return true;
-    });
+    const webhookReady = van.derive(() =>
+        state.type.val === 'webhook' && state.webhookUrlValid.val
+    );
     const sendTestDisabled = van.derive(() => !state.webhookUrl.val.trim() && state.editing.val === null);
 
     const saveDisabled = van.derive(() =>
@@ -396,7 +399,7 @@ const DestinationForm = (props) => {
                 label: 'Recipients',
                 value: state.recipientsString,
                 help: 'List of email addresses, separated by commas or newlines',
-                validators: [required],
+                validators: [required, emailList],
                 onChange: (value, validity) => {
                     state.recipientsString.val = value;
                     state.recipientsValid.val = validity.valid && parseRecipients(value).length > 0;
@@ -416,7 +419,16 @@ const DestinationForm = (props) => {
                     value: state.webhookUrl,
                     help: WEBHOOK_URL_HELP[state.webhookType.val] ?? WEBHOOK_URL_HELP.generic,
                     placeholder: state.webhookUrlPlaceholder.val,
-                    onChange: (value) => { state.webhookUrl.val = value; },
+                    // Required on create. On edit a blank field keeps the stored URL,
+                    // so only a supplied value is checked.
+                    validators: [
+                        requiredIf(() => state.editing.rawVal === null),
+                        httpsUrl('Webhook URL'),
+                    ],
+                    onChange: (value, validity) => {
+                        state.webhookUrl.val = value;
+                        state.webhookUrlValid.val = validity.valid;
+                    },
                 }),
                 () => state.webhookType.val === 'generic'
                     ? div(
@@ -466,12 +478,26 @@ const DestinationForm = (props) => {
                 // outcome sits next to the fields it is about and persists until the
                 // next test instead of expiring on a timer.
                 () => currentTestResult.val
-                    ? Alert(
-                        {
-                            type: currentTestResult.val.successful ? 'success' : 'error',
-                            closeable: true,
-                        },
-                        span(currentTestResult.val.message),
+                    ? div( // Wrapper div needed, otherwise new Alert does not appear after closing previous one
+                        Alert(
+                            {
+                                type: currentTestResult.val.successful ? 'success' : 'error',
+                                closeable: true,
+                            },
+                            div(
+                                { class: 'flex-column fx-gap-1' },
+                                span(currentTestResult.val.message),
+                                currentTestResult.val.help_link
+                                    ? Link({
+                                        href: currentTestResult.val.help_link.href,
+                                        label: currentTestResult.val.help_link.label,
+                                        open_new: true,
+                                        underline: true,
+                                        right_icon: 'open_in_new',
+                                    })
+                                    : '',
+                            ),
+                        ),
                     )
                     : '',
             ),

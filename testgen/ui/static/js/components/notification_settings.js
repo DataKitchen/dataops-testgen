@@ -61,10 +61,13 @@ import { Textarea } from '/app/static/js/components/textarea.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { TruncatedText } from '/app/static/js/components/truncated_text.js';
 import { Input } from '/app/static/js/components/input.js';
-import { numberBetween } from '/app/static/js/form_validators.js';
+import { emailList, numberBetween, required } from '/app/static/js/form_validators.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
+import { Link } from '/app/static/js/components/link.js';
 
 const { div, span, b, a } = van.tags;
+
+const EMAIL_SERVER_DOCS_URL = 'https://docs.datakitchen.io/testgen/administer/configure-email-server/';
 
 // "Generic" is the type a user picks when creating a destination, but in a rule the
 // only useful distinction is which service receives it, so a generic one reads "Webhook".
@@ -137,6 +140,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     id: van.state(null),
     scope: van.state(null),
     recipientsString: van.state(''),
+    recipientsValid: van.state(false),
     notifyTarget: van.state('__inline__'),
     trigger: van.state(triggerOptions.val && triggerOptions.val.length > 0 ? triggerOptions.val[0][0] : null),
     totalScoreThreshold: van.state(0),
@@ -148,6 +152,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
     newNotificationItemForm.id.val = null;
     newNotificationItemForm.scope.val = null;
     newNotificationItemForm.recipientsString.val = '';
+    newNotificationItemForm.recipientsValid.val = false;
     newNotificationItemForm.notifyTarget.val = '__inline__';
     newNotificationItemForm.trigger.val = triggerOptions.val && triggerOptions.val.length > 0 ? triggerOptions.val[0][0] : null;
     newNotificationItemForm.totalScoreThreshold.val = 0;
@@ -383,7 +388,11 @@ const NotificationSettings = (/** @type Properties */ props) => {
                   placeholder: 'Email addresses separated by commas or newlines',
                   height: 100,
                   value: newNotificationItemForm.recipientsString,
-                  onChange: (value) => newNotificationItemForm.recipientsString.val = value,
+                  validators: [required, emailList],
+                  onChange: (value, validity) => {
+                    newNotificationItemForm.recipientsString.val = value;
+                    newNotificationItemForm.recipientsValid.val = validity.valid;
+                  },
                 })
               : '',
           ),
@@ -420,6 +429,11 @@ const NotificationSettings = (/** @type Properties */ props) => {
             type: 'stroked',
             label: van.derive(() => newNotificationItemForm.isEdit.val ? 'Save Changes' : 'Add Notification'),
             width: 'auto',
+            // Only the inline-email path can be invalid; a destination is picked from a list.
+            disabled: van.derive(() =>
+              newNotificationItemForm.notifyTarget.val === '__inline__'
+              && !newNotificationItemForm.recipientsValid.val
+            ),
             onclick: () => emit(
               newNotificationItemForm.isEdit.val ? 'UpdateNotification' : 'AddNotification',
               {
@@ -427,7 +441,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                   id: newNotificationItemForm.isEdit.val ? newNotificationItemForm.id.val : null,
                   scope: newNotificationItemForm.scope.val,
                   ...(newNotificationItemForm.notifyTarget.val === '__inline__'
-                    ? { recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\n ]+/).filter(s => s.length > 0))], notification_destination_id: null }
+                    ? { recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\s]+/).filter(s => s.length > 0))], notification_destination_id: null }
                     : { recipients: [], notification_destination_id: newNotificationItemForm.notifyTarget.val }
                   ),
                   ...(event.val === 'score_drop' ?
@@ -499,21 +513,40 @@ const NotificationSettings = (/** @type Properties */ props) => {
       () => smtpConfigured.val
         ? ''
         : Alert(
-          { type: 'warn', icon: 'warning', class: 'mb-0' },
-          'Email recipients cannot deliver until an email server is configured. Webhook destinations are unaffected.',
+          { type: 'warn', icon: 'warning', class: 'mb-2' },
+          div(
+            { class: 'flex-column fx-gap-1' },
+            span('Email notifications cannot be delivered until an email server is configured.'),
+            Link({
+              label: 'Configure an email server',
+              href: EMAIL_SERVER_DOCS_URL,
+              open_new: true,
+              right_icon: 'open_in_new',
+            }),
+          ),
         ),
       mainContent,
     ),
     () => noDeliveryPossible.val
-      ? EmptyState({ emit, 
-        label: 'Email server not configured.',
+      ? EmptyState({ emit,
+        label: 'No delivery method configured.',
         message: EMPTY_STATE_MESSAGE.notifications,
         class: 'notifications--empty',
-        link: {
-          label: 'View documentation',
-          href: 'https://docs.datakitchen.io/testgen/administer/configure-email-server/',
-          open_new: true,
-        },
+        // A user who can manage destinations can act immediately; everyone else
+        // gets the documentation covering both delivery methods.
+        link: canManageDestinations.val && projectSettingsUrl.val
+          ? {
+            // Link prefixes internal routes with "/", so a leading slash here would
+            // produce a protocol-relative "//settings" and send the browser to a host.
+            label: 'Go to Project Settings',
+            href: projectSettingsUrl.val.replace(/^\//, ''),
+            open_new: true,
+          }
+          : {
+            label: 'View documentation',
+            href: 'https://docs.datakitchen.io/testgen/notifications/',
+            open_new: true,
+          },
       })
       : '',
   );

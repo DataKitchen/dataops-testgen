@@ -56,8 +56,8 @@ const EMPTY_STATE_MESSAGE = {
         line2: 'Filter or select columns to assess the quality of your data assets across different categories.',
     },
     notifications: {
-        line1: '',
-        line2: 'Configure an SMTP email server for TestGen to get alerts on profiling runs, test runs, and quality scorecards.',
+        line1: 'Set up a delivery method to get notified',
+        line2: 'Configure an SMTP email server, or add a webhook destination like Slack or Teams in Project Settings.',
     },
     monitors: {
         line1: 'Monitor your tables',
