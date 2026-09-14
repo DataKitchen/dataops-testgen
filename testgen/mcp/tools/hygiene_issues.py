@@ -15,6 +15,7 @@ from testgen.common.models.table_group import TableGroup
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.services.source_data_protection import mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
     format_disposition,
@@ -205,6 +206,7 @@ def list_hygiene_issues(
         doc.text(info)
 
     view_pii_codes = set(perms.codes_allowed_to("view_pii"))
+    hide_source_data = mcp_source_data_protected()
     for r in rows:
         location = f"`{r.column_name}` in `{r.table_name}`" if r.column_name else f"`{r.table_name}`"
         doc.heading(2, f"[{r.priority or 'Unknown'}] {r.issue_type_name} on {location}")
@@ -217,7 +219,7 @@ def list_hygiene_issues(
         doc.field("Disposition", format_disposition(r.disposition))
         if r.priority:
             doc.field("Priority", r.priority)
-        if r.detail:
+        if r.detail and not hide_source_data:
             doc.field("Detail", _redact_detail(r, view_pii_codes))
 
     if footer := format_page_footer(total, page, limit):
@@ -286,7 +288,7 @@ def get_hygiene_issue(
     doc.field("Disposition", format_disposition(detail.disposition))
     if detail.priority:
         doc.field("Priority", detail.priority)
-    if detail.detail:
+    if detail.detail and not mcp_source_data_protected():
         view_pii_codes = set(perms.codes_allowed_to("view_pii"))
         doc.field("Detail", _redact_detail(detail, view_pii_codes))
 
@@ -431,6 +433,7 @@ def search_hygiene_issues(
         doc.text(info)
 
     view_pii_codes = set(perms.codes_allowed_to("view_pii"))
+    hide_source_data = mcp_source_data_protected()
     for r in rows:
         location = f"`{r.column_name}` in `{r.table_name}`" if r.column_name else f"`{r.table_name}`"
         doc.heading(2, f"[{r.priority or 'Unknown'}] {r.issue_type_name} on {location}")
@@ -446,7 +449,7 @@ def search_hygiene_issues(
         if r.priority:
             doc.field("Priority", r.priority)
         doc.field("Disposition", format_disposition(r.disposition))
-        if r.detail:
+        if r.detail and not hide_source_data:
             doc.field("Detail", _redact_detail(r, view_pii_codes))
 
     if footer := format_page_footer(total, page, limit):

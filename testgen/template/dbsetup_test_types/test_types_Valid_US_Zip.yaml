@@ -37,6 +37,7 @@ test_types:
   result_visualization_params: null
   usage_notes: null
   active: Y
+  ai_redact_values: false
   algorithm: Pattern / regex
   generation_sets:
     - Standard

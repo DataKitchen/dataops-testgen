@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.enums import Disposition, JobStatus
+from testgen.common.models.test_definition import TestType
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.test_result_disposition_service import DispositionUpdate
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
@@ -43,6 +44,7 @@ def test_list_test_results_basic(mock_result, mock_td_cls, mock_tt_cls, mock_tes
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
     tt.test_name_short = "Alpha Truncation"
+    tt.active = "Y"
     mock_tt_cls.select_where.return_value = [tt]
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -82,6 +84,7 @@ def test_list_test_results_emits_test_result_id(mock_result, mock_td_cls, mock_t
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
     tt.test_name_short = "Alpha Truncation"
+    tt.active = "Y"
     mock_tt_cls.select_where.return_value = [tt]
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -116,6 +119,7 @@ def test_list_test_results_table_level_title(mock_result, mock_td_cls, mock_tt_c
     tt = MagicMock()
     tt.test_type = "Row_Ct"
     tt.test_name_short = "Row Count"
+    tt.active = "Y"
     mock_tt_cls.select_where.return_value = [tt]
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -154,6 +158,7 @@ def test_list_test_results_with_filters(
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
     tt.test_name_short = "Alpha Truncation"
+    tt.active = "Y"
     mock_tt_cls.select_where.return_value = [tt]
     mock_tt_common.select_where.return_value = [tt]
     mock_result.select_results.return_value = []
@@ -357,6 +362,7 @@ def test_list_test_results_by_suite_id_resolves_latest_run(
     tt = MagicMock()
     tt.test_type = "Alpha_Trunc"
     tt.test_name_short = "Alpha Truncation"
+    tt.active = "Y"
     mock_tt_cls.select_where.return_value = [tt]
 
     from testgen.mcp.tools.test_results import list_test_results
@@ -552,6 +558,7 @@ def test_list_test_result_history_basic(mock_result, mock_tt_cls, db_session_moc
     tt = MagicMock()
     tt.test_type = "Unique_Pct"
     tt.test_name_short = "Unique Percent"
+    tt.active = "Y"
     mock_tt_cls.select_where.return_value = [tt]
 
     from testgen.mcp.tools.test_results import list_test_result_history
@@ -565,6 +572,159 @@ def test_list_test_result_history_basic(mock_result, mock_tt_cls, db_session_moc
     assert "88.0" in result
     assert "Passed" in result
     assert "Failed" in result
+
+
+@patch("testgen.mcp.tools.test_results.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.test_results.TestDefinition")
+@patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+def test_list_test_results_redacts_measure_per_test_type_when_protected(
+    mock_run, mock_suite, mock_result, mock_tt_cls, mock_td, _mock_flag, db_session_mock,
+):
+    """Within one run, a flagged type loses its measure while an unflagged one keeps it."""
+    run = MagicMock()
+    run.id = uuid4()
+    run.test_suite_id = uuid4()
+    mock_run.get.return_value = run
+    suite = MagicMock()
+    suite.project_code = "demo"
+    mock_suite.get_regular.return_value = suite
+
+    flagged, plain = MagicMock(), MagicMock()
+    for r, test_type, measure in ((flagged, "Recency", "1999-12-31"), (plain, "Required", "17")):
+        r.id = uuid4()
+        r.test_definition_id = uuid4()
+        r.test_type = test_type
+        r.table_name = "orders"
+        r.column_names = "order_date"
+        r.status = TestResultStatus.Failed
+        r.result_measure = measure
+        r.threshold_value = "0"
+        r.message = None
+    mock_result.select_results.return_value = [flagged, plain]
+
+    mock_tt_cls.select_where.return_value = []
+    mock_tt_cls.value_redacted_types.return_value = frozenset({"Recency"})
+    mock_td.select_where.return_value = []
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    out = list_test_results(job_execution_id=str(run.id))
+
+    # The flagged type's measure is gone; the unflagged type's count survives.
+    assert "1999-12-31" not in out
+    assert "17" in out
+    assert out.count("**Measured value:**") == 1
+
+
+@patch("testgen.mcp.tools.test_results.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.test_results.TestDefinition")
+@patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestResult")
+@patch("testgen.mcp.tools.test_results.TestSuite")
+@patch("testgen.mcp.tools.test_results.TestRun")
+def test_list_test_results_redacts_the_measure_of_a_deactivated_flagged_type(
+    mock_run, mock_suite, mock_result, mock_tt_cls, mock_td, _mock_flag, db_session_mock,
+):
+    """A result outlives the deactivation of its type, and stays redacted after it."""
+    run = MagicMock()
+    run.id = uuid4()
+    run.test_suite_id = uuid4()
+    mock_run.get.return_value = run
+    suite = MagicMock()
+    suite.project_code = "demo"
+    mock_suite.get_regular.return_value = suite
+
+    result = MagicMock()
+    result.id = uuid4()
+    result.test_definition_id = uuid4()
+    result.test_type = "Recency"
+    result.table_name = "orders"
+    result.column_names = "order_date"
+    result.status = TestResultStatus.Failed
+    result.result_measure = "1999-12-31"
+    result.threshold_value = "0"
+    result.message = None
+    mock_result.select_results.return_value = [result]
+
+    deactivated = TestType(
+        test_type="Recency", test_name_short="Recency", active="N", ai_redact_values=True
+    )
+    # Stand in for the database honouring the clause: a catalog restricted to active
+    # types cannot see this row, so a narrowed read loses the classification.
+    mock_tt_cls.select_where.side_effect = lambda *clauses: [] if clauses else [deactivated]
+    mock_tt_cls.value_redacted_types = TestType.value_redacted_types
+    mock_td.select_where.return_value = []
+
+    from testgen.mcp.tools.test_results import list_test_results
+
+    out = list_test_results(job_execution_id=str(run.id))
+
+    assert "1999-12-31" not in out
+    assert "**Measured value:**" not in out
+
+
+def _history_mocks(mock_result, mock_tt_cls, test_type: str):
+    r1 = MagicMock()
+    r1.test_type = test_type
+    r1.table_name = "orders"
+    r1.column_names = "order_id"
+    r1.test_time = "2024-01-15T10:00:00"
+    r1.result_measure = "99.5"
+    r1.threshold_value = "95.0"
+    r1.status = TestResultStatus.Passed
+    mock_result.select_history.return_value = [r1]
+
+    tt = MagicMock()
+    tt.test_type = test_type
+    tt.test_name_short = test_type
+    tt.active = "Y"
+    mock_tt_cls.select_where.return_value = [tt]
+
+
+@patch("testgen.mcp.tools.test_results.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestResult")
+def test_list_test_result_history_keeps_measure_for_unflagged_type_when_protected(
+    mock_result, mock_tt_cls, _mock_flag, db_session_mock,
+):
+    """A percentage measure survives the mode; only the threshold is dropped."""
+    _history_mocks(mock_result, mock_tt_cls, "Unique_Pct")
+    mock_tt_cls.value_redacted_types.return_value = frozenset({"Recency", "LOV_All"})
+
+    from testgen.mcp.tools.test_results import list_test_result_history
+
+    result = list_test_result_history(str(uuid4()))
+
+    assert "| Measure |" in result
+    assert "99.5" in result
+    # Threshold is dropped uniformly — storage cannot tell user-set from calibrated.
+    assert "| Threshold |" not in result
+    assert "95.0" not in result
+    assert "Passed" in result
+
+
+@patch("testgen.mcp.tools.test_results.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.test_results.TestType")
+@patch("testgen.mcp.tools.test_results.TestResult")
+def test_list_test_result_history_drops_measure_for_flagged_type_when_protected(
+    mock_result, mock_tt_cls, _mock_flag, db_session_mock,
+):
+    """A measure that can carry a data value is dropped along with the threshold."""
+    _history_mocks(mock_result, mock_tt_cls, "Recency")
+    mock_tt_cls.value_redacted_types.return_value = frozenset({"Recency", "LOV_All"})
+
+    from testgen.mcp.tools.test_results import list_test_result_history
+
+    result = list_test_result_history(str(uuid4()))
+
+    assert "| Measure |" not in result
+    assert "99.5" not in result
+    assert "| Threshold |" not in result
+    assert "95.0" not in result
+    assert "Passed" in result
 
 
 @patch("testgen.mcp.tools.test_results.TestResult")

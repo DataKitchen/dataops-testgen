@@ -14,6 +14,7 @@ from testgen.common.models.test_definition import TestDefinition, ThresholdMode
 from testgen.common.pii_masking import get_pii_columns
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.services.source_data_protection import mcp_source_data_only
 from testgen.mcp.tools.common import (
     DocGroup,
     raise_validation_error,
@@ -178,6 +179,7 @@ def delete_metric_monitor(
     return doc.render()
 
 
+@mcp_source_data_only
 @with_database_session
 @mcp_permission("edit")
 def validate_metric_expression(

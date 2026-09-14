@@ -36,6 +36,7 @@ test_types:
   result_visualization_params: null
   usage_notes: null
   active: Y
+  ai_redact_values: false
   algorithm: Boundary check
   generation_sets:
     - Standard

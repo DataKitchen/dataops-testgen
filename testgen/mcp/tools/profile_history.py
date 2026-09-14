@@ -27,6 +27,7 @@ from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
+from testgen.mcp.services.source_data_protection import mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
     parse_profile_metrics,
@@ -243,6 +244,17 @@ _METRIC_TABLE_BY_TYPE: dict[str, list[ProfileMetric]] = {
     ],
 }
 
+# Value-shaped metrics excluded from `_METRIC_TABLE_BY_TYPE` / trend metrics
+# when source-data protection is on. Extrema (min/max value/date) are the only
+# entries in `_METRIC_TABLE_BY_TYPE` and in `ProfileMetric` overall that surface
+# raw source values rather than aggregates.
+_SOURCE_DATA_METRICS: frozenset[ProfileMetric] = frozenset({
+    ProfileMetric.MIN,
+    ProfileMetric.MAX,
+    ProfileMetric.MIN_DATE,
+    ProfileMetric.MAX_DATE,
+})
+
 # Categorical attributes rendered only when they change. Keys are user-facing
 # field labels; values are ProfileResult attribute names.
 _CATEGORICAL_FIELDS: dict[str, str] = {
@@ -421,6 +433,8 @@ def _build_metric_rows_for_type(
 ) -> tuple[list[str], list[list[str]]]:
     """Build (headers, rows) for the metric-change table for one general_type bucket."""
     metrics = _METRIC_TABLE_BY_TYPE[general_type]
+    if mcp_source_data_protected():
+        metrics = [m for m in metrics if m not in _SOURCE_DATA_METRICS]
     headers = ["Table", "Column", *(m.value for m in metrics)]
     rows: list[list[str]] = []
     for (_, table, column), sides in sorted(shared.items()):
@@ -571,6 +585,14 @@ def get_profiling_trends(
 
     tg = resolve_table_group(table_group_id)
     metric_enums = parse_profile_metrics(metrics)
+    if mcp_source_data_protected():
+        metric_enums = [m for m in metric_enums if m not in _SOURCE_DATA_METRICS]
+        if not metric_enums:
+            raise MCPUserError(
+                "All requested metrics are excluded by the MCP source-data protection policy on this install. "
+                "Try aggregate metrics such as `Null Ratio`, `Distinct Ratio`, `Row Count`, `Average Value`, "
+                "`Standard Deviation`, or `Profiling Score`."
+            )
     _validate_metric_scope(metric_enums, table_name, column_name)
 
     runs = ProfilingRun.list_recent_complete(tg.id, limit=limit)

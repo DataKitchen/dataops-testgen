@@ -46,6 +46,7 @@ test_types:
     \ that should be noted and assessed by business users. If the average does not\
     \ shift, this may point to a data quality or data collection problem. "
   active: Y
+  ai_redact_values: false
   algorithm: Statistical drift
   statistical_technique: SD Shift
   generation_sets:

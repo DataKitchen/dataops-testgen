@@ -21,6 +21,7 @@ from testgen.mcp.tools.common import (
     parse_uuid,
     resolve_table_group,
     run_status_filter_options,
+    target_db_error_text,
     validate_limit,
     validate_page,
 )
@@ -214,7 +215,7 @@ def get_test_run(
 
     if summary.error_message:
         doc.heading(2, "Error")
-        doc.text(summary.error_message)
+        doc.text(target_db_error_text(summary.error_message))
 
     return doc.render()
 

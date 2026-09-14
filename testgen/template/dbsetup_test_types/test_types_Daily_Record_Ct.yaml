@@ -41,6 +41,7 @@ test_types:
     \ of days identified without data. You can adjust the threshold to accept a number\
     \ of days that you know legitimately have no records. "
   active: Y
+  ai_redact_values: false
   algorithm: Counting
   generation_sets:
     - Standard

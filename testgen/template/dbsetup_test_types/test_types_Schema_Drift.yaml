@@ -33,6 +33,7 @@ test_types:
   usage_notes: |-
     This test compares the current table column types with previous data, to check whether the table schema has changed. This test allows you to track any changes to the table structure.
   active: Y
+  ai_redact_values: false
   algorithm: Schema / metadata
   generation_sets:
     - Monitor

@@ -476,6 +476,27 @@ def test_validate_metric_expression_happy_path(
     assert "PII redacted" not in out
 
 
+@patch(
+    "testgen.mcp.services.source_data_protection.mcp_source_data_protected",
+    return_value=True,
+)
+def test_validate_metric_expression_refuses_when_source_data_protected(_mock_flag):
+    """The tool is unavailable under the mode rather than trimming its output.
+
+    Its error path returns the driver message and its verdict returns a row count,
+    both derived from caller-supplied SQL — so neither can be made safe while the
+    tool runs at all.
+    """
+    from testgen.mcp.tools.monitor_metrics import validate_metric_expression
+
+    with pytest.raises(MCPUserError, match="disabled by the MCP source-data protection policy"):
+        validate_metric_expression(
+            table_group_id=str(uuid4()),
+            table_name="orders",
+            metric_expression="SUM(amount)",
+        )
+
+
 @patch(f"{MODULE}.get_pii_columns")
 @patch(f"{MODULE}.get_flavor_service")
 @patch(f"{MODULE}._table_in_catalog", return_value=True)

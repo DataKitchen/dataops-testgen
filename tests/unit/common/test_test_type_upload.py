@@ -300,3 +300,28 @@ def test_parsed_shape_strips_container_keys() -> None:
     assert "generation_sets" not in result.parsed.parent
     assert result.parsed.cat_test_conditions[0]["measure"] == "X"
     assert result.parsed.generation_sets == ["Standard"]
+
+
+# -- ai_redact_values -------------------------------------------------------
+
+
+def test_ai_redact_values_accepts_booleans() -> None:
+    for literal in ("true", "false"):
+        result = validate_test_type_yaml(_valid_parent_yaml(f"  ai_redact_values: {literal}\n"))
+        assert result.ok, result.errors
+        assert result.parsed.parent["ai_redact_values"] is (literal == "true")
+
+
+def test_ai_redact_values_omitted_is_allowed() -> None:
+    """An upload need not declare the field; the apply step defaults it to withheld."""
+    result = validate_test_type_yaml(_valid_parent_yaml())
+    assert result.ok, result.errors
+    assert "ai_redact_values" not in result.parsed.parent
+
+
+def test_ai_redact_values_rejects_yn_string() -> None:
+    """The column is a real BOOLEAN — a Y/N string would fail at insert with a
+    driver error instead of a message the uploader can act on."""
+    result = validate_test_type_yaml(_valid_parent_yaml("  ai_redact_values: 'Y'\n"))
+    assert not result.ok
+    assert "ai_redact_values: must be true or false." in result.errors
