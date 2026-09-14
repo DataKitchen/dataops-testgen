@@ -35,6 +35,9 @@ RUN apk update && apk upgrade && apk add --no-cache \
         # both it and its extensions link against libstdc++ at runtime. Naming it here keeps the
         # apk del below from removing it along with g++
         libstdc++ \
+        # Allocator preloaded over musl's at the end of this file. It is a runtime dependency, so
+        # it has to stay out of the apk del list below
+        mimalloc2 \
         # Additional libraries needed and their dev counterparts. We add both so that we can remove
         # the *-dev later, keeping the libraries
         openblas=0.3.30-r2 \
@@ -98,3 +101,11 @@ RUN set -e; \
             "$extension"; \
     done; \
     chmod -R a+rX "$TG_DUCKDB_EXTENSION_DIRECTORY"
+
+# Replaces musl's allocator for every process in the image. Under musl, concurrent allocation
+# serializes badly enough to invert DuckDB's parallel scaling: a profiling query gets slower as
+# DuckDB is given more threads, and since DuckDB sizes its thread pool from the detected CPU count,
+# a larger container is worse than a small one. Measured on one profiling statement over 100M rows
+# at 10 threads: 43.5s on musl against 0.7s here and 0.6s on glibc. Build steps deliberately run on
+# the stock allocator; this applies from here on. Removing mimalloc2 above breaks every process.
+ENV LD_PRELOAD=/usr/lib/libmimalloc.so.2
