@@ -18,6 +18,7 @@ from testgen.common.source_data_service import (
 )
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.services.source_data_protection import mcp_source_data_only
 from testgen.mcp.tools.common import (
     DocGroup,
     parse_uuid,
@@ -95,6 +96,7 @@ def _render_header_fields(doc: MdDoc, context: dict) -> None:
         doc.field("Column", column, code=True)
 
 
+@mcp_source_data_only
 @with_database_session
 @mcp_permission("view")
 def get_source_data_query(
@@ -157,6 +159,7 @@ def get_source_data_query(
     return doc.render()
 
 
+@mcp_source_data_only
 @with_database_session
 @mcp_permission("view")
 def get_source_data(
@@ -233,6 +236,7 @@ def get_source_data(
     return doc.render()
 
 
+@mcp_source_data_only
 @with_database_session
 @mcp_permission("catalog")
 def get_table_sample(

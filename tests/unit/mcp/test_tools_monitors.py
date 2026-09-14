@@ -2252,3 +2252,93 @@ def test_format_row_count_change_signed_and_zero():
     assert _format_row_count_change(_table_summary(row_count=1_000, previous_row_count=400)) == "+600"
     assert _format_row_count_change(_table_summary(row_count=400, previous_row_count=1_000)) == "-600"
     assert _format_row_count_change(_table_summary(row_count=400, previous_row_count=400)) == "0"
+
+
+# ---------------------------------------------------------------------------
+# Source-data protection: forecast visibility gate
+# ---------------------------------------------------------------------------
+
+
+def test_forecast_visible_off_returns_true_for_all_types():
+    """When the mode is off, forecasts render for every monitor type."""
+    from testgen.common.enums import MonitorType
+    from testgen.mcp.tools.monitors import _forecast_visible
+
+    with patch("testgen.mcp.tools.monitors.mcp_source_data_protected", return_value=False):
+        for mt in (MonitorType.SCHEMA, MonitorType.FRESHNESS, MonitorType.METRIC, MonitorType.VOLUME):
+            assert _forecast_visible(mt) is True
+
+
+def test_forecast_visible_on_hides_only_metric():
+    """When the mode is on, only the metric forecast is hidden.
+
+    Volume forecasts predict row counts and freshness forecasts a timestamp window —
+    both aggregate-shaped. A metric forecast predicts the metric expression's own
+    output, which may be an actual cell value.
+    """
+    from testgen.common.enums import MonitorType
+    from testgen.mcp.tools.monitors import _forecast_visible
+
+    with patch("testgen.mcp.tools.monitors.mcp_source_data_protected", return_value=True):
+        assert _forecast_visible(MonitorType.SCHEMA) is True
+        assert _forecast_visible(MonitorType.FRESHNESS) is True
+        assert _forecast_visible(MonitorType.VOLUME) is True
+        assert _forecast_visible(MonitorType.METRIC) is False
+
+
+# ---------------------------------------------------------------------------
+# Source-data protection: monitor surfaces
+# ---------------------------------------------------------------------------
+
+
+@patch(f"{MODULE}.mcp_source_data_protected", return_value=True)
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitors_suppresses_bounds_per_row_when_protected(
+    mock_resolve, mock_td_cls, _mock_flag, db_session_mock,
+):
+    """Volume and freshness bounds are aggregates and stay; a metric bound is
+    expressed in whatever the metric expression returns, so only it is suppressed."""
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_td_cls.list_monitor_configs_for_table.return_value = [
+        _monitor_config(test_type="Volume_Trend", threshold_lower="900", threshold_upper="1100"),
+        _monitor_config(
+            test_type="Metric_Trend",
+            metric_name="total_amount",
+            custom_query="SUM(total_amount)",
+            threshold_lower="7777",
+            threshold_upper="8888",
+        ),
+    ]
+
+    from testgen.mcp.tools.monitors import list_monitors
+
+    with _patch_perms():
+        out = list_monitors(str(tg.id), "orders")
+
+    # Columns stay in the header; only the metric row's cells are emptied.
+    assert "| Lower |" in out
+    assert "| Upper |" in out
+    assert "900" in out and "1100" in out
+    assert "7777" not in out and "8888" not in out
+
+
+@patch(f"{MODULE}.mcp_source_data_protected", return_value=True)
+@patch(f"{MODULE}.TestDefinition")
+@patch(f"{MODULE}.resolve_monitored_table_group")
+def test_list_monitors_keeps_all_bounds_when_no_metric_monitor(
+    mock_resolve, mock_td_cls, _mock_flag, db_session_mock,
+):
+    tg = _mock_table_group()
+    mock_resolve.return_value = (tg, _mock_monitor_suite())
+    mock_td_cls.list_monitor_configs_for_table.return_value = [
+        _monitor_config(test_type="Freshness_Trend", threshold_lower=None, threshold_upper="60"),
+    ]
+
+    from testgen.mcp.tools.monitors import list_monitors
+
+    with _patch_perms():
+        out = list_monitors(str(tg.id), "orders")
+
+    assert "60" in out

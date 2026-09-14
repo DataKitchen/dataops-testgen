@@ -52,6 +52,7 @@ from testgen.common.models.test_result import TestResult, TestResultStatus
 from testgen.common.models.test_suite import TestSuite
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions
+from testgen.mcp.services.source_data_protection import mcp_source_data_protected
 from testgen.mcp.tools.markdown import MdDoc
 
 # User-facing label for ``Disposition.INACTIVE`` is "Muted" — accept that label on input.
@@ -1695,3 +1696,22 @@ def authentication_label(connection: Connection) -> str:
     if connection.service_account_key:
         return "Service Account Key"
     return "Password"
+
+
+_TARGET_DB_ERROR_WITHHELD = (
+    "The target database reported an error. Its text is withheld by the source-data "
+    "protection policy on this install, because driver messages quote the value that "
+    "caused them."
+)
+
+
+def target_db_error_text(message: str | None) -> str | None:
+    """Render a target-database error message, withholding its text under the protection mode.
+
+    Driver errors quote the offending datum — ``invalid input syntax for type integer:
+    "alice@example.com"`` — so the text carries source data even though the error itself
+    is useful signal. Returns ``message`` unchanged when the mode is off.
+    """
+    if message and mcp_source_data_protected():
+        return _TARGET_DB_ERROR_WITHHELD
+    return message

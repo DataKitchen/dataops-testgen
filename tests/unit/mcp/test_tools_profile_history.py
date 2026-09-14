@@ -592,3 +592,37 @@ def test_get_schema_history_no_runs(mock_tg_cls, mock_pr_cls, db_session_mock):
 
     result = get_schema_history(str(uuid4()))
     assert "No completed profiling runs" in result
+
+
+# ---------------------------------------------------------------------------
+# Source-data protection: metric-table filter for compare_profiling_runs
+# ---------------------------------------------------------------------------
+
+
+def test_build_metric_rows_for_type_drops_extrema_when_source_data_protected():
+    """Numeric MIN/MAX and date MIN_DATE/MAX_DATE columns disappear when the mode is on."""
+    from unittest.mock import patch as _patch
+
+    from testgen.common.models.data_column import ProfileMetric
+    from testgen.mcp.tools.profile_history import (
+        _METRIC_TABLE_BY_TYPE,
+        _TYPE_DATE,
+        _TYPE_NUMERIC,
+        _build_metric_rows_for_type,
+    )
+
+    with _patch("testgen.mcp.tools.profile_history.mcp_source_data_protected", return_value=True):
+        numeric_headers, _ = _build_metric_rows_for_type(_TYPE_NUMERIC, {})
+        date_headers, _ = _build_metric_rows_for_type(_TYPE_DATE, {})
+
+    # Extrema absent under protection.
+    assert ProfileMetric.MIN.value not in numeric_headers
+    assert ProfileMetric.MAX.value not in numeric_headers
+    assert ProfileMetric.MIN_DATE.value not in date_headers
+    assert ProfileMetric.MAX_DATE.value not in date_headers
+    # Aggregates still present.
+    assert ProfileMetric.AVG.value in numeric_headers
+    assert ProfileMetric.NULL_RATIO.value in date_headers
+
+    # And the module-level metric table itself is untouched (headers filtered per-call).
+    assert ProfileMetric.MIN in _METRIC_TABLE_BY_TYPE[_TYPE_NUMERIC]

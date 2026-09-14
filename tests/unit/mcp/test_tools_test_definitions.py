@@ -322,6 +322,75 @@ def test_get_test_with_parameters(mock_td, mock_tr, mock_notes, db_session_mock)
     assert "5.0" in result
 
 
+@patch("testgen.mcp.tools.test_definitions.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestResult")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+def test_get_test_drops_calibration_params_when_source_data_protected(
+    mock_td, mock_tr, mock_notes, _mock_flag, db_session_mock,
+):
+    td_id = uuid4()
+
+    td = MagicMock()
+    td.id = td_id
+    td.test_type = "Alpha_Trunc"
+    td.test_name_short = "Alpha Truncation"
+    td.display_name = "Alpha Truncation"
+    td.impact_dimension = None
+    td.default_impact_dimension = "Conformance"
+    td.dq_dimension = None
+    td.table_name = "orders"
+    td.column_name = "name"
+    td.schema_name = "public"
+    td.test_scope = "column"
+    td.test_suite_id = uuid4()
+    td.test_active = True
+    td.severity = None
+    td.default_severity = None
+    td.lock_refresh = False
+    td.export_to_observability = False
+    td.measure_uom = None
+    td.flagged = False
+    td.last_auto_gen_date = None
+    td.last_manual_update = None
+    td.default_parm_columns = "threshold_value,baseline_value,subset_condition"
+    td.param_columns = {"threshold_value", "baseline_value", "subset_condition"}
+    td.param_fields = [
+        ("threshold_value", "Threshold", ""),
+        ("baseline_value", "Baseline", ""),
+        ("subset_condition", "Subset condition", ""),
+    ]
+    td.threshold_value = "5.0"
+    td.baseline_value = "3.0"
+    td.subset_condition = "status = 'active'"
+    td.custom_query = None
+    td.match_schema_name = None
+    td.match_table_name = None
+    td.match_column_names = None
+    td.match_subset_condition = None
+    td.match_groupby_names = None
+    td.match_having_condition = None
+    td.test_description = None
+    td.default_test_description = None
+    td.usage_notes = None
+    mock_td.get_for_project.return_value = td
+    mock_notes.get_notes.return_value = []
+
+    mock_tr.select_history.return_value = []
+
+    from testgen.mcp.tools.test_definitions import get_test
+
+    result = get_test(str(td_id))
+
+    # Calibration-shaped columns filtered from Parameters; user-authored keep.
+    assert "threshold_value" not in result
+    assert "baseline_value" not in result
+    assert "5.0" not in result
+    assert "3.0" not in result
+    assert "subset_condition" in result
+    assert "status = 'active'" in result
+
+
 @patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
 @patch("testgen.mcp.tools.test_definitions.TestResult")
 @patch("testgen.mcp.tools.test_definitions.TestDefinition")

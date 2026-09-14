@@ -48,8 +48,11 @@ _PARENT_FIELDS: frozenset[str] = frozenset({
     "default_severity", "run_type", "test_scope", "dq_dimension", "impact_dimension",
     "health_dimension", "algorithm", "statistical_technique",
     "threshold_description", "result_visualization", "result_visualization_params",
-    "usage_notes", "active", "overrides",
+    "usage_notes", "active", "overrides", "ai_redact_values",
 })
+
+# Parent fields stored as a real boolean rather than a string.
+_PARENT_BOOLEAN_FIELDS: frozenset[str] = frozenset({"ai_redact_values"})
 
 # ``uploaded_version`` is system-managed; the file must not set it.
 _RESERVED_PARENT_FIELDS: frozenset[str] = frozenset({"uploaded_version"})
@@ -175,6 +178,7 @@ def validate_test_type_yaml(content: str | bytes) -> ValidationResult:
     _check_reserved_parent_fields(parent, errors)
     _check_parent_field_names(parent, errors)
     _check_required_parent_fields(parent, errors)
+    _check_parent_boolean_fields(parent, errors)
     _check_parent_enum_values(parent, errors)
     _check_parent_specials(parent, errors)
     _check_parent_lengths(parent, errors)
@@ -218,6 +222,21 @@ def _check_parent_field_names(parent: dict[str, Any], errors: list[str]) -> None
             continue  # already reported by the reserved-fields check
         if field_name not in known:
             errors.append(f"'{field_name}' is not a recognized field.")
+
+
+def _check_parent_boolean_fields(parent: dict[str, Any], errors: list[str]) -> None:
+    """Boolean-typed parent fields must carry a YAML boolean.
+
+    Rejects both a ``Y``/``N`` string, which would coerce to the wrong value rather
+    than error, and an explicit ``null`` — the columns are ``NOT NULL``, and other
+    keys in these files accept ``null`` (``dq_dimension`` on Schema_Drift), so an
+    author copying that idiom would otherwise pass validation and fail at insert.
+    """
+    for field_name in _PARENT_BOOLEAN_FIELDS:
+        if field_name not in parent:
+            continue
+        if not isinstance(parent[field_name], bool):
+            errors.append(f"{field_name}: must be true or false.")
 
 
 def _check_required_parent_fields(parent: dict[str, Any], errors: list[str]) -> None:
@@ -424,7 +443,16 @@ def _emit_apply_statements(session, parsed: ParsedTestType, current_version: str
             {"test_type": test_type},
         )
 
-    parent = {**parsed.parent, "uploaded_version": current_version}
+    # An uploaded type carries arbitrary measure SQL — the same reason the packaged
+    # CUSTOM type is flagged — so withhold its measure from AI consumers unless the
+    # file explicitly declares the measure safe. Seeding the default here rather than
+    # relying on the column default also keeps the key in the upsert column list, so a
+    # re-upload that drops the key resets the flag instead of retaining the old value.
+    parent = {
+        "ai_redact_values": True,
+        **parsed.parent,
+        "uploaded_version": current_version,
+    }
     session.execute(
         text(_build_upsert_sql(_PARENT_TABLE, _PARENT_KEY, list(parent.keys()))),
         parent,

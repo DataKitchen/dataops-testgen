@@ -221,12 +221,14 @@ def test_general_type_prose_lists_match_the_enum():
     dead end the vocabulary is meant to prevent. Order follows the enum declaration.
     """
     from testgen.common.models.data_column import GeneralType
-    from testgen.mcp.server import SERVER_INSTRUCTIONS
+    from testgen.mcp.server import _build_server_instructions
     from testgen.mcp.tools.reference import column_profile_fields_resource
 
     expected = " / ".join(general_type.value for general_type in GeneralType)
 
-    assert expected in SERVER_INSTRUCTIONS
+    # The list lives in the header, which both protection modes share.
+    for source_data_protected in (False, True):
+        assert expected in _build_server_instructions(source_data_protected=source_data_protected)
     assert expected in column_profile_fields_resource()
 
 
@@ -288,17 +290,18 @@ def test_column_profile_fields_resource_describes_per_type_fields():
 
 
 def test_server_instructions_reference_column_profile_fields_resource():
-    """The LLM relies on SERVER_INSTRUCTIONS to learn which resources to consult.
+    """The LLM relies on the server instructions to learn which resources to consult.
 
     The new resource must be named alongside test-types and hygiene-issue-types so
     the LLM knows when to look up column-profile field semantics.
     """
-    from testgen.mcp.server import SERVER_INSTRUCTIONS
+    from testgen.mcp.server import _build_server_instructions
 
-    assert "testgen://column-profile-fields" in SERVER_INSTRUCTIONS
+    instructions = _build_server_instructions(source_data_protected=False)
+    assert "testgen://column-profile-fields" in instructions
     # Sanity check the existing references are still present.
-    assert "testgen://test-types" in SERVER_INSTRUCTIONS
-    assert "testgen://hygiene-issue-types" in SERVER_INSTRUCTIONS
+    assert "testgen://test-types" in instructions
+    assert "testgen://hygiene-issue-types" in instructions
 
 
 # ---------------------------------------------------------------------------

@@ -42,6 +42,7 @@ test_types:
     \ process, better precision in measurement, the elimination of outliers, or a\
     \ more homogeneous cohort. "
   active: Y
+  ai_redact_values: false
   algorithm: Statistical drift
   statistical_technique: SD Shift
   generation_sets:

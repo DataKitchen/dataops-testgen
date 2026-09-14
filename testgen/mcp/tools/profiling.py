@@ -27,6 +27,7 @@ from testgen.common.pii_masking import PII_REDACTED, mask_profiling_pii
 from testgen.common.profile_frequency import format_frequent, frequent_entries
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.services.source_data_protection import mcp_source_data_only, mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
     build_ilike_pattern,
@@ -44,6 +45,7 @@ from testgen.mcp.tools.common import (
     resolve_profiling_run,
     resolve_table_group,
     run_status_filter_options,
+    target_db_error_text,
     validate_limit,
     validate_page,
 )
@@ -630,7 +632,7 @@ def get_profiling_run(
 
     if summary.error_message:
         doc.heading(2, "Error")
-        doc.text(summary.error_message)
+        doc.text(target_db_error_text(summary.error_message))
 
     return doc.render()
 
@@ -851,7 +853,7 @@ def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
         f"Started: {started_label}. Ended: {ended_label}.",
     ]
     if status == JobStatus.ERROR and detail.profile_run_log_message:
-        lines.append(f"Error: {detail.profile_run_log_message}")
+        lines.append(f"Error: {target_db_error_text(detail.profile_run_log_message)}")
     raise MCPUserError("\n".join(lines))
 
 
@@ -892,7 +894,7 @@ def _render_column_profile_detail(p: dict) -> str:
             _render_unknown_block(doc, p)
     else:
         doc.heading(2, "Profiling Error")
-        doc.text(p["query_error"])
+        doc.text(target_db_error_text(p["query_error"]))
 
     return doc.render()
 
@@ -914,6 +916,7 @@ def _render_counts(doc: MdDoc, p: dict) -> None:
 
 
 def _render_alpha_block(doc: MdDoc, p: dict) -> None:
+    hide_source_data = mcp_source_data_protected()
     _render_counts(doc, p)
     doc.field("Zero Length", p.get("zero_length_ct"))
 
@@ -922,15 +925,17 @@ def _render_alpha_block(doc: MdDoc, p: dict) -> None:
     doc.field("Maximum Length", p.get("max_length"))
     doc.field("Average Length", p.get("avg_length"))
 
-    doc.heading(2, "Text Range")
-    doc.field("Minimum Text", p.get("min_text"))
-    doc.field("Maximum Text", p.get("max_text"))
+    if not hide_source_data:
+        doc.heading(2, "Text Range")
+        doc.field("Minimum Text", p.get("min_text"))
+        doc.field("Maximum Text", p.get("max_text"))
 
     doc.heading(2, "Patterns")
     doc.field("Standard Pattern Match", _format_std_pattern(p.get("std_pattern_match")))
     doc.field("Distinct Patterns", p.get("distinct_pattern_ct"))
-    doc.field("Frequent Patterns", format_frequent(p.get("frequent_patterns")) or None)
-    doc.field("Frequent Values", format_frequent(p.get("frequent_values")) or None)
+    if not hide_source_data:
+        doc.field("Frequent Patterns", format_frequent(p.get("frequent_patterns")) or None)
+        doc.field("Frequent Values", format_frequent(p.get("frequent_values")) or None)
     doc.field("Distinct Standard Values", p.get("distinct_std_value_ct"))
 
     doc.heading(2, "Case & Composition")
@@ -948,27 +953,32 @@ def _render_alpha_block(doc: MdDoc, p: dict) -> None:
 
 
 def _render_numeric_block(doc: MdDoc, p: dict) -> None:
+    hide_source_data = mcp_source_data_protected()
     _render_counts(doc, p)
 
     doc.heading(2, "Distribution")
-    doc.field("Minimum Value", p.get("min_value"))
-    doc.field("Minimum Value > 0", p.get("min_value_over_0"))
-    doc.field("Maximum Value", p.get("max_value"))
+    if not hide_source_data:
+        doc.field("Minimum Value", p.get("min_value"))
+        doc.field("Minimum Value > 0", p.get("min_value_over_0"))
+        doc.field("Maximum Value", p.get("max_value"))
     doc.field("Average Value", p.get("avg_value"))
     doc.field("Standard Deviation", p.get("stdev_value"))
 
-    doc.heading(2, "Percentiles")
-    doc.field("25th Percentile", p.get("percentile_25"))
-    doc.field("Median Value", p.get("percentile_50"))
-    doc.field("75th Percentile", p.get("percentile_75"))
+    if not hide_source_data:
+        doc.heading(2, "Percentiles")
+        doc.field("25th Percentile", p.get("percentile_25"))
+        doc.field("Median Value", p.get("percentile_50"))
+        doc.field("75th Percentile", p.get("percentile_75"))
 
 
 def _render_date_block(doc: MdDoc, p: dict) -> None:
+    hide_source_data = mcp_source_data_protected()
     _render_counts(doc, p)
 
-    doc.heading(2, "Date Range")
-    doc.field("Minimum Date", p.get("min_date"))
-    doc.field("Maximum Date", p.get("max_date"))
+    if not hide_source_data:
+        doc.heading(2, "Date Range")
+        doc.field("Minimum Date", p.get("min_date"))
+        doc.field("Maximum Date", p.get("max_date"))
 
     doc.heading(2, "Age Buckets")
     doc.field("Before 1 Year", p.get("before_1yr_date_ct"))
@@ -999,6 +1009,7 @@ def _render_unknown_block(doc: MdDoc, p: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
+@mcp_source_data_only
 @with_database_session
 @mcp_permission("catalog")
 def get_column_frequent_values(
@@ -1058,6 +1069,7 @@ def get_column_frequent_values(
     return doc.render()
 
 
+@mcp_source_data_only
 @with_database_session
 @mcp_permission("catalog")
 def get_column_patterns(

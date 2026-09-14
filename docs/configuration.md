@@ -308,3 +308,11 @@ Must be set in production when TestGen is behind a reverse proxy or load balance
 Example: `https://testgen.example.com`
 
 default: `http://localhost:8501`
+
+### MCP Server
+
+#### `TG_MCP_SOURCE_DATA_PROTECTION`
+
+Hides source-derived data values from the MCP surface, for deployments whose policies forbid exposing production values to an LLM. Accepts `strict` or `off`. An unrecognized value resolves to `strict` so that a typo cannot silently disable the protection. Changing it requires an MCP server restart.
+
+default: `off`

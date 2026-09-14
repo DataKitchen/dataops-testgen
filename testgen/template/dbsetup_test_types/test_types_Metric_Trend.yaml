@@ -33,6 +33,7 @@ test_types:
   usage_notes: |-
     This test compares the aggregate metric of all or a subset of records in a table against a derived tolerance range.
   active: Y
+  ai_redact_values: true
   algorithm: Custom SQL
   cat_test_conditions:
   - id: '2516'

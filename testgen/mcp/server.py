@@ -16,6 +16,11 @@ from testgen.common.auth import AuthError, decode_jwt_token
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPUserError
 from testgen.mcp.permissions import get_mcp_username, set_mcp_token, set_mcp_username
+from testgen.mcp.services.source_data_protection import (
+    SourceDataProtectionMode,
+    mcp_source_data_env_mode,
+    mcp_source_data_protected,
+)
 
 LOG = logging.getLogger("testgen")
 
@@ -33,7 +38,7 @@ class HandlerKind(StrEnum):
     PROMPT = "prompt"
 
 
-SERVER_INSTRUCTIONS = """\
+_SERVER_INSTRUCTIONS_HEADER = """\
 TestGen is a data quality platform that profiles databases, generates tests, and monitors tables.
 
 DATA MODEL
@@ -57,17 +62,38 @@ Hygiene issue types similarly have specific meanings. ALWAYS look them up using 
 
 Column profile fields are type-specific (different stats per Alpha / Numeric / Datetime / Boolean / Time / Other).
 ALWAYS look them up using the `testgen://column-profile-fields` resource.
+"""
+
+_SERVER_INSTRUCTIONS_INVESTIGATING_FAILURES = """\
 
 INVESTIGATING FAILURES
 
-Use list_test_results to find failures, then get_source_data to see relevant data from the connected database.
-Results reflect the current state of the data — values may have changed since the test ran.
-Use get_source_data_query to preview the SQL without executing it.
+Use list_test_results to find failures, then drill into the relevant source rows using the
+source-data tools when they are available on this install. Results reflect the current state
+of the data — values may have changed since the test ran.
+"""
+
+_SERVER_INSTRUCTIONS_SOURCE_DATA_PROTECTION_NOTICE = """\
+
+SOURCE-DATA PROTECTION
+
+Source-data exposure is disabled by global policy on this install — only aggregates and structure are surfaced through this MCP.
+"""
+
+_SERVER_INSTRUCTIONS_FOOTER = """\
 
 CONVENTIONS
 - Identifiers are UUIDs passed as strings.
 - Dates are ISO 8601 format.
 """
+
+
+def _build_server_instructions(source_data_protected: bool) -> str:
+    if source_data_protected:
+        middle = _SERVER_INSTRUCTIONS_SOURCE_DATA_PROTECTION_NOTICE
+    else:
+        middle = _SERVER_INSTRUCTIONS_INVESTIGATING_FAILURES
+    return _SERVER_INSTRUCTIONS_HEADER + middle + _SERVER_INSTRUCTIONS_FOOTER
 
 
 class JWTTokenVerifier:
@@ -337,9 +363,17 @@ def build_mcp_server(
     if server_url is None:
         server_url = f"{api_base_url}/mcp"
 
+    # Two-tier source-data protection at server-construction time:
+    # - Env var → source-only tools are NOT registered (restart-controlled).
+    # - DB setting → source-only tools remain in the schema but refuse at invocation
+    #   (dynamic, no restart). See ``mcp_source_data_only``.
+    # - The instructions block carries the policy line whenever either signal is on
+    #   so a connecting client can attribute the absence.
+    env_hides_source_only_tools = mcp_source_data_env_mode() is not SourceDataProtectionMode.OFF
+
     mcp = FastMCP(
         "TestGen",
-        instructions=SERVER_INSTRUCTIONS,
+        instructions=_build_server_instructions(mcp_source_data_protected()),
         auth=AuthSettings(
             issuer_url=api_base_url,
             resource_server_url=server_url,
@@ -376,22 +410,25 @@ def build_mcp_server(
     tool_wrapper(update_test_result)
     tool_wrapper(bulk_update_test_results)
     tool_wrapper(get_test_type)
-    tool_wrapper(get_source_data)
-    tool_wrapper(get_source_data_query)
+    if not env_hides_source_only_tools:
+        tool_wrapper(get_source_data)
+        tool_wrapper(get_source_data_query)
     tool_wrapper(list_tests)
     tool_wrapper(get_test)
     tool_wrapper(list_test_notes)
     tool_wrapper(list_test_types)
     tool_wrapper(get_table)
     tool_wrapper(generate_create_table_script)
-    tool_wrapper(get_table_sample)
+    if not env_hides_source_only_tools:
+        tool_wrapper(get_table_sample)
     tool_wrapper(list_column_profiles)
     tool_wrapper(list_profiling_summaries)
     tool_wrapper(list_profiling_runs)
     tool_wrapper(get_profiling_run)
     tool_wrapper(get_column_profile_detail)
-    tool_wrapper(get_column_frequent_values)
-    tool_wrapper(get_column_patterns)
+    if not env_hides_source_only_tools:
+        tool_wrapper(get_column_frequent_values)
+        tool_wrapper(get_column_patterns)
     tool_wrapper(search_columns)
     tool_wrapper(compare_profiling_runs)
     tool_wrapper(get_profiling_trends)
@@ -408,7 +445,8 @@ def build_mcp_server(
     tool_wrapper(create_metric_monitor)
     tool_wrapper(update_metric_monitor)
     tool_wrapper(delete_metric_monitor)
-    tool_wrapper(validate_metric_expression)
+    if not env_hides_source_only_tools:
+        tool_wrapper(validate_metric_expression)
     tool_wrapper(set_monitor_predictive)
     tool_wrapper(set_monitor_static)
     tool_wrapper(set_monitor_historical)
@@ -419,7 +457,8 @@ def build_mcp_server(
     tool_wrapper(generate_tests)
     tool_wrapper(create_test)
     tool_wrapper(update_test)
-    tool_wrapper(validate_custom_test)
+    if not env_hides_source_only_tools:
+        tool_wrapper(validate_custom_test)
     tool_wrapper(bulk_update_tests)
     tool_wrapper(export_tests)
     tool_wrapper(import_tests)

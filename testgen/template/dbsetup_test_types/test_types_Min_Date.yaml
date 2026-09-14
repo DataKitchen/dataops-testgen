@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     This test is appropriate for a cumulative dataset only, because it assumes all prior values are still present. It's appropriate where new records are added with more recent dates, but old dates do not change.
   active: Y
+  ai_redact_values: false
   algorithm: Boundary check
   generation_sets:
     - Standard

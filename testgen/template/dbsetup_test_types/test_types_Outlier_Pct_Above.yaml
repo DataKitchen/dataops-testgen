@@ -42,6 +42,7 @@ test_types:
     \ you expect to see.  This test uses the baseline mean rather than the mean for\
     \ the latest dataset to capture systemic shift as well as individual outliers. "
   active: Y
+  ai_redact_values: false
   algorithm: Statistical drift
   statistical_technique: Outlier Detection
   generation_sets:

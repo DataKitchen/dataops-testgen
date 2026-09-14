@@ -667,6 +667,17 @@ from env variable: `TG_MCP_ENABLED`
 defaults to: `yes`
 """
 
+MCP_SOURCE_DATA_PROTECTION: str = getenv("TG_MCP_SOURCE_DATA_PROTECTION", "off")
+"""
+Protection level for source-derived data values returned by the MCP server.
+`strict` withholds them; `off` allows them. An unrecognized value resolves to
+`strict`, so a typo cannot silently disable the protection. Changing this
+requires an MCP server restart.
+
+from env variable: `TG_MCP_SOURCE_DATA_PROTECTION`
+defaults to: `off`
+"""
+
 UI_PORT: int = int(getenv("TG_UI_PORT", "8501"))
 """
 Port for the UI server.
