@@ -11,6 +11,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     Enum,
+    FetchedValue,
     ForeignKey,
     String,
     Text,
@@ -31,6 +32,7 @@ from testgen.common.enums import MonitorCalculation, MonitorType, SuiteType
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.utils import is_uuid4
 
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
@@ -607,6 +609,13 @@ class TestDefinition(Entity):
     impact_dimension: str | None = Column(String, nullable=True)
     external_url: str | None = Column(NullIfEmptyString)
     custom_metadata: dict | None = Column(postgresql.JSONB)
+    version_id: UUID = Column(
+        postgresql.UUID(as_uuid=True),
+        ForeignKey("suite_versions.id", ondelete="CASCADE"),
+        nullable=False,
+        server_default=FetchedValue(),
+    )
+    contract_term_id: str | None = Column(String)
 
     _default_order_by = (
         asc(func.lower(schema_name)),
@@ -634,19 +643,52 @@ class TestDefinition(Entity):
         profiling_as_of_date,
         prediction,
         external_id,
+        version_id,
+        contract_term_id,
     )
+
+    @classmethod
+    def _version_clause(cls):
+        """Narrow to the rows belonging to each row's resolved suite version."""
+        return cls.version_id == SuiteVersion.resolved_for(cls.test_suite_id)
+
+    @classmethod
+    def _scoped_select(
+        cls,
+        columns: list[str | InstrumentedAttribute],
+        *clauses,
+        join_target=None,
+        join_clause=None,
+        order_by: tuple[str | InstrumentedAttribute] | None = None,
+    ):
+        """Build a select over *columns* narrowed to each row's resolved suite version."""
+        if join_target is not None:
+            select_columns = [
+                getattr(cls, col, None) or getattr(join_target, col) if isinstance(col, str) else col
+                for col in columns
+            ]
+            query = select(*select_columns).join(join_target, join_clause)
+        else:
+            select_columns = [getattr(cls, col) if isinstance(col, str) else col for col in columns]
+            query = select(*select_columns)
+
+        query = query.where(cls._version_clause(), *clauses)
+        if order_by is not None:
+            query = query.order_by(*order_by)
+        return query
 
     @classmethod
     def get(cls, identifier: str | UUID) -> TestDefinitionSummary | None:
         if not is_uuid4(identifier):
             return None
 
-        result = cls._get_columns(
-            identifier,
+        query = cls._scoped_select(
             cls._summary_columns,
+            cls.id == identifier,
             join_target=TestType,
             join_clause=cls.test_type == TestType.test_type,
         )
+        result = get_current_session().execute(query).mappings().first()
         return TestDefinitionSummary(**result) if result else None
 
     @classmethod
@@ -659,16 +701,13 @@ class TestDefinition(Entity):
         """
         from testgen.common.models.test_suite import TestSuite
 
-        select_columns = [
-            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
-            for col in cls._summary_columns
-        ]
-        query = (
-            select(*select_columns)
-            .join(TestType, cls.test_type == TestType.test_type)
-            .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(cls.id == identifier, TestSuite.suite_type == SuiteType.REGULAR)
-        )
+        query = cls._scoped_select(
+            cls._summary_columns,
+            cls.id == identifier,
+            TestSuite.suite_type == SuiteType.REGULAR,
+            join_target=TestType,
+            join_clause=cls.test_type == TestType.test_type,
+        ).join(TestSuite, cls.test_suite_id == TestSuite.id)
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
         result = get_current_session().execute(query).mappings().first()
@@ -678,26 +717,28 @@ class TestDefinition(Entity):
     def select_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[TestDefinitionSummary]:
-        results = cls._select_columns_where(
+        query = cls._scoped_select(
             cls._summary_columns,
             *clauses,
             join_target=TestType,
             join_clause=cls.test_type == TestType.test_type,
-            order_by=order_by,
+            order_by=order_by or cls._default_order_by,
         )
+        results = get_current_session().execute(query).mappings().all()
         return [TestDefinitionSummary(**row) for row in results]
 
     @classmethod
     def select_minimal_where(
         cls, *clauses, order_by: tuple[str | InstrumentedAttribute] = _default_order_by
     ) -> Iterable[TestDefinitionMinimal]:
-        results = cls._select_columns_where(
+        query = cls._scoped_select(
             cls._minimal_columns,
             *clauses,
             join_target=TestType,
             join_clause=cls.test_type == TestType.test_type,
-            order_by=order_by,
+            order_by=order_by or cls._default_order_by,
         )
+        results = get_current_session().execute(query).mappings().all()
         return [TestDefinitionMinimal(**row) for row in results]
 
     @classmethod
@@ -718,16 +759,13 @@ class TestDefinition(Entity):
         """
         from testgen.common.models.test_suite import TestSuite
 
-        select_columns = [
-            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
-            for col in cls._summary_columns
-        ]
-        query = (
-            select(*select_columns)
-            .join(TestType, cls.test_type == TestType.test_type)
-            .join(TestSuite, cls.test_suite_id == TestSuite.id)
-            .where(cls.test_suite_id == test_suite_id, TestSuite.suite_type == SuiteType.REGULAR)
-        )
+        query = cls._scoped_select(
+            cls._summary_columns,
+            cls.test_suite_id == test_suite_id,
+            TestSuite.suite_type == SuiteType.REGULAR,
+            join_target=TestType,
+            join_clause=cls.test_type == TestType.test_type,
+        ).join(TestSuite, cls.test_suite_id == TestSuite.id)
         if project_codes is not None:
             query = query.where(TestSuite.project_code.in_(project_codes))
         if table_name:
@@ -754,6 +792,7 @@ class TestDefinition(Entity):
         session = get_current_session()
         return session.execute(
             select(cls)
+            .where(cls._version_clause())
             .where(cls.test_suite_id == test_suite_id)
             .where(cls.table_name == table_name)
             .where(cls.test_type == test_type)
@@ -812,15 +851,12 @@ class TestDefinition(Entity):
         page: int = 1,
         limit: int = 500,
     ) -> tuple[list["TestDefinitionSummary"], int]:
-        select_columns = [
-            getattr(cls, col, None) or getattr(TestType, col) if isinstance(col, str) else col
-            for col in cls._summary_columns
-        ]
-        query = (
-            select(*select_columns)
-            .join(TestType, cls.test_type == TestType.test_type)
-            .where(*clauses)
-            .order_by(*(order_by or cls._default_order_by))
+        query = cls._scoped_select(
+            cls._summary_columns,
+            *clauses,
+            join_target=TestType,
+            join_clause=cls.test_type == TestType.test_type,
+            order_by=order_by or cls._default_order_by,
         )
         return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
@@ -993,6 +1029,9 @@ class TestDefinition(Entity):
     @classmethod
     def get_source_data_context(cls, test_definition_id: UUID, project_codes: list[str] | None = None) -> dict | None:
         """Get the fields needed by the source data service for a given test definition."""
+        if cls.get(test_definition_id) is None:
+            return None
+
         session = get_current_session()
 
         sql = """

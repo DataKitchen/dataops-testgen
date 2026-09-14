@@ -269,8 +269,12 @@ CREATE TABLE test_definitions (
    impact_dimension       VARCHAR(20),
    external_url           VARCHAR,
    custom_metadata        JSONB,
+   version_id             UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
+   contract_term_id       VARCHAR(100),
    CONSTRAINT test_definitions_test_suites_test_suite_id_fk
-      FOREIGN KEY (test_suite_id) REFERENCES test_suites
+      FOREIGN KEY (test_suite_id) REFERENCES test_suites,
+   CONSTRAINT test_definitions_version_fk
+      FOREIGN KEY (version_id) REFERENCES suite_versions ON DELETE CASCADE
 );
 
 CREATE TABLE test_definition_notes (
@@ -906,7 +910,7 @@ CREATE UNIQUE INDEX idx_ts_last_run
 
 -- Index test_definitions
 CREATE INDEX ix_td_ts_fk
-   ON test_definitions(test_suite_id);
+   ON test_definitions(test_suite_id, version_id);
 
 CREATE INDEX ix_td_pc_stc_tst
    ON test_definitions(test_suite_id, schema_name, table_name, column_name, test_type);
@@ -921,26 +925,30 @@ CREATE INDEX ix_td_ts_tc
    ON test_definitions(test_suite_id, table_name, column_name, test_type);
 
 CREATE UNIQUE INDEX uix_td_autogen_schema
-   ON test_definitions (test_suite_id, test_type, schema_name)
+   ON test_definitions (test_suite_id, version_id, test_type, schema_name)
    WHERE last_auto_gen_date IS NOT NULL
       AND table_name IS NULL
       AND column_name IS NULL;
 
 CREATE UNIQUE INDEX uix_td_autogen_table
-   ON test_definitions (test_suite_id, test_type, schema_name, table_name)
+   ON test_definitions (test_suite_id, version_id, test_type, schema_name, table_name)
    WHERE last_auto_gen_date IS NOT NULL
       AND table_name IS NOT NULL
       AND column_name IS NULL;
 
 CREATE UNIQUE INDEX uix_td_autogen_column
-   ON test_definitions (test_suite_id, test_type, schema_name, table_name, column_name)
+   ON test_definitions (test_suite_id, version_id, test_type, schema_name, table_name, column_name)
    WHERE last_auto_gen_date IS NOT NULL
       AND table_name IS NOT NULL
       AND column_name IS NOT NULL;
 
 CREATE UNIQUE INDEX uix_td_external_id
-   ON test_definitions (test_suite_id, external_id)
+   ON test_definitions (test_suite_id, version_id, external_id)
    WHERE external_id IS NOT NULL;
+
+CREATE UNIQUE INDEX uix_td_contract_term
+   ON test_definitions (version_id, contract_term_id)
+   WHERE contract_term_id IS NOT NULL;
 
 -- Index test_runs
 CREATE INDEX ix_trun_ts_fk

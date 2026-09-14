@@ -26,7 +26,7 @@ WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID
   {TABLE_FILTER}
 
 -- Match "uix_td_autogen_table" unique index exactly
-ON CONFLICT (test_suite_id, test_type, schema_name, table_name) 
+ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name) 
 WHERE last_auto_gen_date IS NOT NULL 
   AND table_name IS NOT NULL 
   AND column_name IS NULL

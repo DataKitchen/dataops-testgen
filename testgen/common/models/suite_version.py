@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, ForeignKey, Integer, String, text
+from sqlalchemy import Column, ColumnElement, ForeignKey, Integer, String, func, select, text
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.custom_types import NullIfEmptyString
@@ -43,3 +43,27 @@ class SuiteVersion(Entity):
             except (ValueError, TypeError):
                 return None
         return super().get(identifier, *clauses)
+
+    @classmethod
+    def resolved_for(cls, suite_id) -> ColumnElement[UUID]:
+        """The version a read of the given suite's rows scopes to.
+
+        The suite's draft where one exists, otherwise its highest frozen version, otherwise the
+        placeholder. Accepts a literal id or a column expression and returns a correlated scalar
+        subquery, so a caller that does not know the suite until the query runs can still scope
+        by it.
+        """
+        draft = (
+            select(cls.id)
+            .where(cls.test_suite_id == suite_id, cls.frozen_at.is_(None))
+            .scalar_subquery()
+        )
+        latest_frozen = (
+            select(cls.id)
+            .where(cls.test_suite_id == suite_id)
+            .order_by(cls.version.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+        placeholder = select(cls.id).where(cls.test_suite_id.is_(None)).scalar_subquery()
+        return func.coalesce(draft, latest_frozen, placeholder)

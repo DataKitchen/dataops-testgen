@@ -21,6 +21,7 @@ def _make_generation(generation_sets=None, profile_run_id=None) -> TestGeneratio
     tg.flavor = "postgresql"
     tg.flavor_service = MagicMock(quote_character='"')
     tg.profile_run_id = profile_run_id or uuid4()
+    tg.version_id = uuid4()
     return tg
 
 
@@ -229,3 +230,25 @@ def test_run_test_generation_rejects_monitor_suite(generation_mocks):
 
     with pytest.raises(ValueError, match="Cannot run regular test generation for monitor suite"):
         run_test_generation("suite-1", ["Standard"])
+
+
+def test_generation_params_carry_the_resolved_version():
+    tg = _make_generation()
+
+    assert tg._get_params()["VERSION_ID"] == tg.version_id
+
+
+@patch(f"{MODULE}.execute_db_queries")
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[])
+def test_the_stale_delete_is_bound_to_a_version(_mock_gen, mock_exec):
+    tg = _make_generation()
+
+    tg.run()
+
+    stale_query, stale_params = next(
+        (query, params) for query, params in mock_exec.call_args[0][0]
+        if "last_auto_gen_date < :RUN_DATE" in query
+    )
+
+    assert "version_id = :VERSION_ID" in stale_query
+    assert stale_params["VERSION_ID"] == tg.version_id

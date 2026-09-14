@@ -15,7 +15,7 @@ SELECT
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Schema_Drift' AND active = 'Y')
 
 -- Match "uix_td_autogen_schema" unique index exactly
-ON CONFLICT (test_suite_id, test_type, schema_name) 
+ON CONFLICT (test_suite_id, version_id, test_type, schema_name) 
 WHERE last_auto_gen_date IS NOT NULL 
   AND table_name IS NULL 
   AND column_name IS NULL
