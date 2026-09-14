@@ -18,6 +18,7 @@ from testgen.common.test_result_disposition_service import (
 )
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
+from testgen.mcp.services.source_data_protection import mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
     FailureGroupBy,
@@ -135,7 +136,8 @@ def list_test_results(
         filter_str = f" (filters: {', '.join(filters)})" if filters else ""
         return f"No test results found for run `{run_id_label}`{filter_str}."
 
-    type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
+    test_types = TestType.select_where()
+    type_names = {tt.test_type: tt.test_name_short for tt in test_types if tt.active == "Y"}
 
     td_ids = {r.test_definition_id for r in results if r.test_definition_id}
     source_by_td = {
@@ -149,6 +151,8 @@ def list_test_results(
         doc.text(f"_Latest completed run of test suite `{test_suite_id}`._")
     doc.text(f"Showing {len(results)} result(s) (page {page}).")
 
+    hide_source_data = mcp_source_data_protected()
+    value_redacted_types = TestType.value_redacted_types(test_types) if hide_source_data else frozenset()
     for r in results:
         status_str = r.status.value if r.status else "Unknown"
         test_name = type_names.get(r.test_type, r.test_type)
@@ -160,12 +164,13 @@ def list_test_results(
         doc.field("Test definition", r.test_definition_id, code=True)
         if r.column_names:
             doc.field("Column", r.column_names, code=True)
-        if r.result_measure is not None:
+        if r.result_measure is not None and r.test_type not in value_redacted_types:
             doc.field("Measured value", r.result_measure)
-        if r.threshold_value is not None:
-            doc.field("Threshold", r.threshold_value)
-        if r.message:
-            doc.field("Message", r.message)
+        if not hide_source_data:
+            if r.threshold_value is not None:
+                doc.field("Threshold", r.threshold_value)
+            if r.message:
+                doc.field("Message", r.message)
         external_url, custom_metadata = source_by_td.get(r.test_definition_id, (None, None))
         if external_url:
             doc.field("External URL", external_url)
@@ -314,7 +319,7 @@ def list_test_result_history(
     page: Annotated[int, Field(description="Page number, starting from 1 (default 1).")] = 1,
 ) -> str:
     """Get the historical results of one test definition across runs.
-    Shows how the measure and status changed over time.
+    Shows how status — and, when available, the measure and threshold — changed over time.
     """
     def_uuid = parse_uuid(test_definition_id, "test_definition_id")
     validate_page(page)
@@ -330,7 +335,8 @@ def list_test_result_history(
     if not results:
         return f"No historical results found for test definition `{test_definition_id}`."
 
-    type_names = {tt.test_type: tt.test_name_short for tt in TestType.select_where(TestType.active == "Y")}
+    test_types = TestType.select_where()
+    type_names = {tt.test_type: tt.test_name_short for tt in test_types if tt.active == "Y"}
 
     first = results[0]
     test_name = type_names.get(first.test_type, first.test_type)
@@ -342,13 +348,31 @@ def list_test_result_history(
     if first.column_names:
         doc.field("Column", first.column_names, code=True)
     doc.text(f"Showing {len(results)} result(s), newest first (page {page}).")
-    doc.table(
-        headers=["Date", "Measure", "Threshold", "Status"],
-        rows=[
-            [r.test_time, r.result_measure, r.threshold_value, r.status.value if r.status else None]
-            for r in results
-        ],
-    )
+    # Every row belongs to the same test definition, so one classification governs
+    # the whole table and the Measure column is present or absent as a unit.
+    if mcp_source_data_protected():
+        measure_redacted = first.test_type in TestType.value_redacted_types(test_types)
+        if measure_redacted:
+            doc.table(
+                headers=["Date", "Status"],
+                rows=[[r.test_time, r.status.value if r.status else None] for r in results],
+            )
+        else:
+            doc.table(
+                headers=["Date", "Measure", "Status"],
+                rows=[
+                    [r.test_time, r.result_measure, r.status.value if r.status else None]
+                    for r in results
+                ],
+            )
+    else:
+        doc.table(
+            headers=["Date", "Measure", "Threshold", "Status"],
+            rows=[
+                [r.test_time, r.result_measure, r.threshold_value, r.status.value if r.status else None]
+                for r in results
+            ],
+        )
 
     return doc.render()
 
@@ -426,6 +450,8 @@ def search_test_results(
     doc.heading(1, "Test Result Search")
     doc.text(format_page_info(total, page, limit))
 
+    hide_source_data = mcp_source_data_protected()
+    value_redacted_types = TestType.value_redacted_types() if hide_source_data else frozenset()
     for r in rows:
         display_name = r.test_name_short or r.test_type
         status_str = r.status.value if r.status else "Unknown"
@@ -437,12 +463,13 @@ def search_test_results(
         doc.field("Run time", r.test_time)
         doc.field("Test suite", r.test_suite_name)
         doc.field("Test definition", r.test_definition_id, code=True)
-        if r.result_measure is not None:
+        if r.result_measure is not None and r.test_type not in value_redacted_types:
             doc.field("Measured value", r.result_measure)
-        if r.threshold_value is not None:
-            doc.field("Threshold", r.threshold_value)
-        if r.result_message:
-            doc.field("Message", r.result_message)
+        if not hide_source_data:
+            if r.threshold_value is not None:
+                doc.field("Threshold", r.threshold_value)
+            if r.result_message:
+                doc.field("Message", r.result_message)
 
     footer = format_page_footer(total, page, limit)
     if footer:
@@ -640,30 +667,57 @@ def compare_test_runs(
         ],
     )
 
+    hide_source_data = mcp_source_data_protected()
+    value_redacted_types = TestType.value_redacted_types() if hide_source_data else frozenset()
+
     def _section(title: str, rows: list) -> None:
         if not rows:
             return
         doc.heading(2, title)
-        doc.table(
-            headers=[
-                "Test Type", "Table", "Column", "Baseline → Target",
-                "Measure Baseline", "Measure Target", "Threshold Baseline", "Threshold Target",
-            ],
-            rows=[
-                [
-                    row.test_name_short or row.test_type,
-                    row.table_name,
-                    row.column_names,
-                    f"{row.status_baseline.value if row.status_baseline else '—'} → "
-                    f"{row.status_target.value if row.status_target else '—'}",
-                    row.measure_baseline,
-                    row.measure_target,
-                    row.threshold_baseline,
-                    row.threshold_target,
-                ]
-                for row in rows
-            ],
-        )
+        if hide_source_data:
+            # A section mixes test types, so the measure columns are kept in the
+            # header and emptied on the rows whose type carries data values. The
+            # threshold columns are dropped outright: storage cannot distinguish a
+            # user-set threshold from a calibrated one.
+            doc.table(
+                headers=["Test Type", "Table", "Column", "Baseline → Target", "Measure Baseline", "Measure Target"],
+                rows=[
+                    [
+                        row.test_name_short or row.test_type,
+                        row.table_name,
+                        row.column_names,
+                        f"{row.status_baseline.value if row.status_baseline else '—'} → "
+                        f"{row.status_target.value if row.status_target else '—'}",
+                        *(
+                            (None, None)
+                            if row.test_type in value_redacted_types
+                            else (row.measure_baseline, row.measure_target)
+                        ),
+                    ]
+                    for row in rows
+                ],
+            )
+        else:
+            doc.table(
+                headers=[
+                    "Test Type", "Table", "Column", "Baseline → Target",
+                    "Measure Baseline", "Measure Target", "Threshold Baseline", "Threshold Target",
+                ],
+                rows=[
+                    [
+                        row.test_name_short or row.test_type,
+                        row.table_name,
+                        row.column_names,
+                        f"{row.status_baseline.value if row.status_baseline else '—'} → "
+                        f"{row.status_target.value if row.status_target else '—'}",
+                        row.measure_baseline,
+                        row.measure_target,
+                        row.threshold_baseline,
+                        row.threshold_target,
+                    ]
+                    for row in rows
+                ],
+            )
 
     _section("Regressions", diff.regressions)
     _section("Improvements", diff.improvements)

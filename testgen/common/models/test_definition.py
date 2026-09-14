@@ -477,6 +477,10 @@ class TestType(ParamFieldsMixin, Entity):
     usage_notes: str = Column(String)
     active: str = Column(String)
     uploaded_version: str | None = Column(String(20))
+    ai_redact_values: bool = Column(Boolean, default=False, nullable=False)
+    """Whether this type's ``result_measure`` can carry an actual source-data value
+    rather than a violation count or a normalized statistic. Surfaces that withhold
+    source data from an AI consumer drop the measure only for flagged types."""
 
     # Unmapped columns: generation_template, result_visualization, result_visualization_params, overrides
 
@@ -500,6 +504,27 @@ class TestType(ParamFieldsMixin, Entity):
     def is_public(cls):
         """WHERE clause restricting a test-type catalog to the types offered as regular tests."""
         return cls.test_type.notin_(NON_PUBLIC_TEST_TYPES)
+
+    @property
+    def redacts_values(self) -> bool:
+        """Whether this type's ``result_measure`` can carry a source-data value.
+
+        ``NULL`` reads as redacted, so the answer stays safe on a database where the
+        column was added without its backfill.
+        """
+        return self.ai_redact_values is not False
+
+    @classmethod
+    def value_redacted_types(cls, rows: Iterable["TestType"] | None = None) -> frozenset[str]:
+        """Test type codes whose ``result_measure`` can carry a source-data value.
+
+        Pass ``rows`` to classify test types already in hand; omit it to query. Rows
+        must cover every type, not just the active ones — a result outlives the
+        deactivation of its type, and its measure is classified the same either way.
+        """
+        return frozenset(
+            row.test_type for row in (cls.select_where() if rows is None else rows) if row.redacts_values
+        )
 
 
 def _required_fields_for(test_type: TestType) -> set[str]:

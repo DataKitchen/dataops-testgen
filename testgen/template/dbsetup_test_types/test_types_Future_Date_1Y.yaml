@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     Future Year looks for date values in the column that extend beyond one year after the test date. This would be appropriate for transactional dates where you would expect to find dates in the near future, but not beyond one year ahead.  Errors could indicate invalid entries or possibly dummy dates representing blank values.
   active: Y
+  ai_redact_values: false
   algorithm: Boundary check
   generation_sets:
     - Standard

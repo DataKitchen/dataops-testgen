@@ -37,6 +37,10 @@ from testgen.common.test_definition_export_import_service import (
 )
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import get_authorized_mcp_user, get_project_permissions, mcp_permission
+from testgen.mcp.services.source_data_protection import (
+    mcp_source_data_only,
+    mcp_source_data_protected,
+)
 from testgen.mcp.tools.common import (
     DocGroup,
     format_flavor_label,
@@ -179,7 +183,7 @@ def get_test(
         r = results[0]
         doc.field("Date", r.test_time)
         doc.field("Status", r.status.value if r.status else None)
-        if r.message:
+        if r.message and not mcp_source_data_protected():
             doc.field("Message", r.message)
     else:
         doc.text("_No results recorded for this test definition._")
@@ -400,6 +404,25 @@ def delete_test_note(
     return doc.render()
 
 
+# Threshold- and tolerance-shaped columns on TestDefinition that hold values
+# derived from source-data profiling. The storage layer does not distinguish
+# user-set from calibrated for these fields (a `threshold_value` can be a
+# regex the user typed OR a numeric threshold calibrated by profiling), so
+# under source-data protection they are dropped uniformly.
+_CALIBRATION_SHAPED_PARAM_COLUMNS: frozenset[str] = frozenset({
+    "baseline_ct",
+    "baseline_unique_ct",
+    "baseline_value",
+    "baseline_value_ct",
+    "threshold_value",
+    "baseline_sum",
+    "baseline_avg",
+    "baseline_sd",
+    "lower_tolerance",
+    "upper_tolerance",
+})
+
+
 def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
     """Build the editable parameters table from test type metadata.
 
@@ -409,10 +432,16 @@ def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
     if not td.param_fields:
         return
 
+    hide_source_data = mcp_source_data_protected()
     rows = []
     for column, prompt, _help in td.param_fields:
+        if hide_source_data and column in _CALIBRATION_SHAPED_PARAM_COLUMNS:
+            continue
         value = getattr(td, column, None)
         rows.append([prompt, column, str(value) if value is not None else None])
+
+    if not rows:
+        return
 
     doc.heading(2, "Parameters")
     doc.table(["Parameter", "Field", "Value"], rows, code=[1])
@@ -652,7 +681,19 @@ def update_test(
 
     doc = MdDoc()
     doc.heading(1, f"Test definition `{td.id}` updated")
-    rows = [[key, _format_diff(before[key]), _format_diff(fields[key])] for key in fields]
+    # The Before column reads back stored values, including the calibration fields the
+    # parameters section omits — writing one field would otherwise disclose its prior
+    # value. Blanked per field rather than dropping the column, so the caller can still
+    # see what changed for everything else.
+    hidden = _CALIBRATION_SHAPED_PARAM_COLUMNS if mcp_source_data_protected() else frozenset()
+    rows = [
+        [
+            key,
+            None if key in hidden else _format_diff(before[key]),
+            _format_diff(fields[key]),
+        ]
+        for key in fields
+    ]
     doc.table(["Field", "Before", "After"], rows, code=[0])
     doc.text(f"{len(fields)} field(s) changed.")
     return doc.render()
@@ -667,6 +708,7 @@ def _format_diff(value: object) -> str | None:
     return str(value)
 
 
+@mcp_source_data_only
 @with_database_session
 @mcp_permission("edit")
 def validate_custom_test(
@@ -877,7 +919,24 @@ def export_tests(
     if filters:
         doc.field("Filters", ", ".join(filters))
     doc.field("Tests Exported", len(export.definitions))
-    doc.code_block(export.model_dump_json(indent=2, exclude_defaults=True), language="json")
+
+    # The export schema's calibration block is the same set the parameters section
+    # omits, so exporting it would hand back per-test what `get_test` withholds.
+    # Flagged in the output because a round-trip through `import_tests` would
+    # otherwise silently clear these on the target.
+    exclude = None
+    if mcp_source_data_protected():
+        exclude = {"definitions": {"__all__": set(_CALIBRATION_SHAPED_PARAM_COLUMNS)}}
+        doc.field(
+            "Omitted Fields",
+            ", ".join(sorted(_CALIBRATION_SHAPED_PARAM_COLUMNS))
+            + " — re-importing this payload leaves them unchanged on the target.",
+        )
+
+    doc.code_block(
+        export.model_dump_json(indent=2, exclude_defaults=True, exclude=exclude),
+        language="json",
+    )
     return doc.render()
 
 

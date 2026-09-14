@@ -2032,3 +2032,47 @@ def test_generate_create_table_script_unknown_table(mock_tg_cls, _mock_build, db
     from testgen.mcp.tools.profiling import generate_create_table_script
     with pytest.raises(MCPResourceNotAccessible):
         generate_create_table_script(str(uuid4()), "missing")
+
+
+# ---------------------------------------------------------------------------
+# Source-data protection: numeric-block field omissions
+# ---------------------------------------------------------------------------
+
+
+def _numeric_payload() -> dict:
+    return {
+        "record_ct": 100,
+        "value_ct": 95,
+        "distinct_value_ct": 60,
+        "null_value_ct": 5,
+        "filled_value_ct": 0,
+        "zero_value_ct": 3,
+        "min_value": "1",
+        "min_value_over_0": "1",
+        "max_value": "9999",
+        "avg_value": "42.5",
+        "stdev_value": "12.3",
+        "percentile_25": "10",
+        "percentile_50": "40",
+        "percentile_75": "80",
+    }
+
+
+def test_render_numeric_block_drops_extrema_and_percentiles_when_source_data_protected():
+    from testgen.mcp.tools.markdown import MdDoc
+    from testgen.mcp.tools.profiling import _render_numeric_block
+
+    with patch("testgen.mcp.tools.profiling.mcp_source_data_protected", return_value=True):
+        doc = MdDoc()
+        _render_numeric_block(doc, _numeric_payload())
+        result = doc.render()
+
+    # Extrema + percentiles dropped.
+    assert "Minimum Value" not in result
+    assert "Maximum Value" not in result
+    assert "Percentiles" not in result
+    assert "9999" not in result
+    # Central tendency preserved.
+    assert "Average Value" in result
+    assert "42.5" in result
+    assert "Standard Deviation" in result

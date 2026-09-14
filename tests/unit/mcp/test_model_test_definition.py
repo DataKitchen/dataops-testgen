@@ -240,3 +240,82 @@ def test_other_monitor_types_stay_public():
 
     for monitor in (MonitorType.FRESHNESS, MonitorType.VOLUME, MonitorType.METRIC):
         assert monitor.value not in NON_PUBLIC_TEST_TYPES
+
+
+def _type_row(test_type: str, ai_redact_values):
+    from testgen.common.models.test_definition import TestType
+
+    return SimpleNamespace(
+        test_type=test_type,
+        ai_redact_values=ai_redact_values,
+        redacts_values=TestType.redacts_values.fget(
+            SimpleNamespace(ai_redact_values=ai_redact_values)
+        ),
+    )
+
+
+def test_value_redacted_types_reads_the_column_not_a_name_list():
+    """The classification comes from the flag, so editing a YAML is enough to change it."""
+    from testgen.common.models.test_definition import TestType
+
+    rows = [_type_row("Recency", True), _type_row("Required", False), _type_row("LOV_All", True)]
+    with patch.object(TestType, "select_where", return_value=rows):
+        assert TestType.value_redacted_types() == frozenset({"Recency", "LOV_All"})
+
+
+def test_value_redacted_types_accepts_rows_already_in_hand():
+    """Callers that already hold the catalog classify without a second query."""
+    from testgen.common.models.test_definition import TestType
+
+    rows = [_type_row("Recency", True), _type_row("Required", False)]
+    with patch.object(TestType, "select_where") as select_mock:
+        assert TestType.value_redacted_types(rows) == frozenset({"Recency"})
+    select_mock.assert_not_called()
+
+
+def test_null_flag_reads_as_redacted():
+    """A column added without its backfill must not read as safe."""
+    from testgen.common.models.test_definition import TestType
+
+    rows = [_type_row("Mystery", None)]
+    with patch.object(TestType, "select_where", return_value=rows):
+        assert TestType.value_redacted_types() == frozenset({"Mystery"})
+
+
+def test_value_redacted_types_is_empty_when_nothing_is_flagged():
+    from testgen.common.models.test_definition import TestType
+
+    with patch.object(TestType, "select_where", return_value=[]):
+        assert TestType.value_redacted_types() == frozenset()
+
+
+def test_packaged_flag_values_match_the_migration():
+    """The YAML flags and the migration UPDATE list must not drift apart."""
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    dirs = [
+        Path("testgen/testgen/template/dbsetup_test_types"),
+        Path("plugins/testgen_medical_pharma/testgen_medical_pharma/template/medical_pharma_test_types"),
+    ]
+    flagged_in_yaml = set()
+    for directory in dirs:
+        for path in directory.glob("test_types_*.yaml"):
+            parent = (yaml.safe_load(path.read_text()) or {}).get("test_types") or {}
+            assert isinstance(parent.get("ai_redact_values"), bool), f"{path.name} missing the flag"
+            if parent["ai_redact_values"]:
+                flagged_in_yaml.add(parent["test_type"])
+
+    migrations = [
+        path
+        for path in Path("testgen/testgen/template/dbupgrade").glob("*_incremental_upgrade.sql")
+        if "ai_redact_values" in path.read_text()
+    ]
+    assert len(migrations) == 1, f"expected one migration to seed the flag, found {migrations}"
+
+    update_clause = migrations[0].read_text().split("WHERE test_type IN", 1)[1]
+    flagged_in_migration = set(re.findall(r"'([A-Za-z0-9_]+)'", update_clause))
+
+    assert flagged_in_yaml == flagged_in_migration

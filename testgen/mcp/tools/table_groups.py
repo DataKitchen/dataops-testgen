@@ -29,6 +29,7 @@ from testgen.mcp.tools.common import (
     render_diff_table,
     resolve_connection,
     resolve_table_group,
+    target_db_error_text,
     validate_limit,
     validate_page,
 )
@@ -542,7 +543,10 @@ def preview_table_group(
             doc.text(preview["message"])
         else:
             doc.heading(1, f"Preview failed for table group `{name}`")
-            doc.text(preview.get("message") or "Preview failed for an unknown reason.")
+            doc.text(
+                target_db_error_text(preview.get("message"))
+                or "Preview failed for an unknown reason."
+            )
         return doc.render()
 
     doc.heading(1, f"Preview for table group `{name}`")

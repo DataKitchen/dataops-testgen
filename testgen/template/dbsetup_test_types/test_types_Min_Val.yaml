@@ -37,6 +37,7 @@ test_types:
   usage_notes: |-
     This test is appropriate for a cumulative dataset only, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable minimum value, or a heuristic that makes sense for valid data.
   active: Y
+  ai_redact_values: false
   algorithm: Boundary check
   generation_sets:
     - Standard

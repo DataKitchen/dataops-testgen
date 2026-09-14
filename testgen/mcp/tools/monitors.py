@@ -45,6 +45,7 @@ from testgen.common.monitor_forecast import (
 from testgen.common.monitor_service import disable_monitoring, enable_monitoring, update_monitoring
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
+from testgen.mcp.services.source_data_protection import mcp_source_data_protected
 from testgen.mcp.tools.common import (
     DocGroup,
     MonitorTableSort,
@@ -784,10 +785,16 @@ def list_monitor_events(
             doc.text(f"No events on page {page} (total: {total}).")
         else:
             doc.text("_No monitor events in the active lookback window._")
-        if include_predictions and page == 1:
+        if include_predictions and page == 1 and _forecast_visible(parsed_type):
             _render_forecast_section(doc, _compute_forecast(suite, table_name, parsed_type, monitor_def, events))
         return doc.render()
 
+    # Schema, freshness, and volume events carry no source-data values: schema
+    # changes are structural, freshness lateness is derived from TestGen's own
+    # monitor-run timestamps by fingerprint comparison, and a volume row count is
+    # a pure aggregate. Only a metric event's signal can be an actual cell value —
+    # the expression may be MAX(column), and storage cannot distinguish that from
+    # COUNT(*).
     if parsed_type == MonitorType.SCHEMA:
         doc.table(
             ["Time", "Status", "Table change", "Columns added", "Columns dropped", "Columns modified"],
@@ -812,19 +819,25 @@ def list_monitor_events(
             ],
         )
     elif parsed_type == MonitorType.METRIC:
-        doc.table(
-            ["Time", "Status", "Value", "Lower bound", "Upper bound"],
-            [
+        if mcp_source_data_protected():
+            doc.table(
+                ["Time", "Status"],
+                [[event.test_time, _event_status(event)] for event in events],
+            )
+        else:
+            doc.table(
+                ["Time", "Status", "Value", "Lower bound", "Upper bound"],
                 [
-                    event.test_time,
-                    _event_status(event),
-                    event.signal,
-                    event.lower_bound,
-                    event.upper_bound,
-                ]
-                for event in events
-            ],
-        )
+                    [
+                        event.test_time,
+                        _event_status(event),
+                        event.signal,
+                        event.lower_bound,
+                        event.upper_bound,
+                    ]
+                    for event in events
+                ],
+            )
     else:  # VOLUME
         doc.table(
             ["Time", "Status", "Row count", "Lower bound", "Upper bound"],
@@ -843,10 +856,23 @@ def list_monitor_events(
     if footer := format_page_footer(total, page, limit):
         doc.text(footer)
 
-    if include_predictions:
+    if include_predictions and _forecast_visible(parsed_type):
         _render_forecast_section(doc, _compute_forecast(suite, table_name, parsed_type, monitor_def, events))
 
     return doc.render()
+
+
+def _forecast_visible(parsed_type: MonitorType) -> bool:
+    """Return False when the forecast for this monitor type would render value-shaped
+    predictions and the source-data protection policy is active.
+
+    Freshness forecasts render a timestamp window and volume forecasts render
+    predicted row counts — both aggregate-shaped. A metric forecast predicts the
+    metric expression's own output, which may be an actual cell value.
+    """
+    if not mcp_source_data_protected():
+        return True
+    return parsed_type is not MonitorType.METRIC
 
 
 @dataclass
@@ -1043,6 +1069,10 @@ def list_monitors(
         doc.text("_No monitors configured for this table._")
         return doc.render()
 
+    # Bounds are suppressed per row rather than per table: a volume bound is a row
+    # count and a freshness bound a time window, but a metric bound is expressed in
+    # whatever the metric expression returns, which may be an actual cell value.
+    hide_metric_bounds = mcp_source_data_protected()
     doc.table(
         ["Monitor ID", "Type", "Metric name", "Threshold mode", "Lower", "Upper", "Metric expression"],
         [
@@ -1051,8 +1081,11 @@ def list_monitors(
                 _MONITOR_LABEL[MonitorType(c.test_type)],
                 c.metric_name,
                 c.threshold_mode,
-                c.threshold_lower,
-                c.threshold_upper,
+                *(
+                    (None, None)
+                    if hide_metric_bounds and MonitorType(c.test_type) is MonitorType.METRIC
+                    else (c.threshold_lower, c.threshold_upper)
+                ),
                 c.custom_query,
             ]
             for c in configs

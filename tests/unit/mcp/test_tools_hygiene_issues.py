@@ -369,6 +369,28 @@ def test_list_hygiene_issues_happy_path_renders_fields(
     assert "Dummy Values: 5" in result
 
 
+@patch("testgen.mcp.tools.hygiene_issues.mcp_source_data_protected", return_value=True)
+@patch("testgen.mcp.tools.hygiene_issues.resolve_table_group")
+@patch.object(ProfilingRun, "get_latest_complete_je_id_for_table_group")
+@patch.object(HygieneIssue, "list_for_run")
+def test_list_hygiene_issues_drops_detail_when_source_data_protected(
+    mock_list, mock_latest, mock_resolve_tg, _mock_flag, db_session_mock,
+):
+    from testgen.mcp.tools.hygiene_issues import list_hygiene_issues
+
+    mock_resolve_tg.return_value = _mock_table_group()
+    mock_latest.return_value = uuid4()
+    mock_list.return_value = ([_list_row(detail="Dummy: 5, offending value=SECRET")], 1)
+
+    result = list_hygiene_issues(table_group_id=str(uuid4()))
+
+    assert "**Detail:**" not in result
+    assert "SECRET" not in result
+    # Structural fields still render.
+    assert "Impact Dimension" in result
+    assert "Quality Dimension" in result
+
+
 @patch("testgen.mcp.tools.hygiene_issues.resolve_table_group")
 @patch.object(ProfilingRun, "get_latest_complete_je_id_for_table_group")
 @patch.object(HygieneIssue, "list_for_run")
