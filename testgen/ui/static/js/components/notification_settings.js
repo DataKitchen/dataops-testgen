@@ -5,9 +5,19 @@
  * @property {String?} total_score_threshold
  * @property {String?} cde_score_threshold
  * @property {string[]} recipients
+ * @property {String?} notification_destination_id
  * @property {string} trigger
  * @property {boolean} enabled
  * @property {string[]} duplicates
+ *
+ * @typedef Destination
+ * @type {object}
+ * @property {string} id
+ * @property {string} name
+ * @property {string} destination_type
+ * @property {string?} webhook_type Present only on webhook destinations; drives the
+ *   Slack / Microsoft Teams / Generic label. Recipient addresses are deliberately
+ *   NOT sent to this component -- see ``manage_notifications.build_data``.
  *
  * @typedef Subtitle
  * @type {object}
@@ -28,6 +38,9 @@
  * @property {Boolean} smtp_configured
  * @property {String} event
  * @property {NotificationItem[]} items
+ * @property {Destination[]} destinations
+ * @property {Boolean} can_manage_destinations
+ * @property {String?} project_settings_url
  * @property {Permissions} permissions
  * @property {String} scope_label
  * @property {import('/app/static/js/components/select.js').Option[]} scope_options
@@ -48,10 +61,29 @@ import { Textarea } from '/app/static/js/components/textarea.js';
 import { Icon } from '/app/static/js/components/icon.js';
 import { TruncatedText } from '/app/static/js/components/truncated_text.js';
 import { Input } from '/app/static/js/components/input.js';
-import { numberBetween } from '/app/static/js/form_validators.js';
+import { emailList, numberBetween, required } from '/app/static/js/form_validators.js';
 import { EmptyState, EMPTY_STATE_MESSAGE } from '/app/static/js/components/empty_state.js';
+import { Link } from '/app/static/js/components/link.js';
 
-const { div, span, b } = van.tags;
+const { div, span, b, a } = van.tags;
+
+const EMAIL_SERVER_DOCS_URL = 'https://docs.datakitchen.io/testgen/administer/configure-email-server/';
+
+// "Generic" is the type a user picks when creating a destination, but in a rule the
+// only useful distinction is which service receives it, so a generic one reads "Webhook".
+const WEBHOOK_TYPE_DISPLAY = {
+    slack: 'Slack',
+    microsoft_teams: 'Microsoft Teams',
+    generic: 'Webhook',
+};
+
+const destinationTypeLabel = (dest) => {
+    if (dest.destination_type === 'email') return 'Email';
+    if (dest.destination_type === 'webhook') {
+        return WEBHOOK_TYPE_DISPLAY[dest.webhook_type] ?? 'Webhook';
+    }
+    return dest.destination_type;
+};
 
 const NotificationSettings = (/** @type Properties */ props) => {
     const emit = props.emit;
@@ -79,6 +111,20 @@ const NotificationSettings = (/** @type Properties */ props) => {
   const triggerOptions = van.derive(() => getValue(props.trigger_options));
   const nsItems = van.derive(() => getValue(props.items));
   const subtitle = van.derive(() => getValue(props.subtitle));
+  const destinations = van.derive(() => getValue(props.destinations) ?? []);
+  const canManageDestinations = van.derive(() => !!getValue(props.can_manage_destinations));
+  const projectSettingsUrl = van.derive(() => getValue(props.project_settings_url));
+  const destinationsById = van.derive(() =>
+    Object.fromEntries(destinations.val.map((d) => [d.id, d]))
+  );
+  const notifyOptions = van.derive(() => {
+    const options = [{ value: '__inline__', label: 'Email addresses' }];
+    for (const dest of destinations.val) {
+      const typeLabel = destinationTypeLabel(dest);
+      options.push({ value: dest.id, label: `${dest.name} (${typeLabel})` });
+    }
+    return options;
+  });
 
   const scopeLabel = (scope) => {
     const match = scopeOptions.val?.find(([key]) => key === scope);
@@ -94,6 +140,8 @@ const NotificationSettings = (/** @type Properties */ props) => {
     id: van.state(null),
     scope: van.state(null),
     recipientsString: van.state(''),
+    recipientsValid: van.state(false),
+    notifyTarget: van.state('__inline__'),
     trigger: van.state(triggerOptions.val && triggerOptions.val.length > 0 ? triggerOptions.val[0][0] : null),
     totalScoreThreshold: van.state(0),
     cdeScoreThreshold: van.state(0),
@@ -104,6 +152,8 @@ const NotificationSettings = (/** @type Properties */ props) => {
     newNotificationItemForm.id.val = null;
     newNotificationItemForm.scope.val = null;
     newNotificationItemForm.recipientsString.val = '';
+    newNotificationItemForm.recipientsValid.val = false;
+    newNotificationItemForm.notifyTarget.val = '__inline__';
     newNotificationItemForm.trigger.val = triggerOptions.val && triggerOptions.val.length > 0 ? triggerOptions.val[0][0] : null;
     newNotificationItemForm.totalScoreThreshold.val = 0;
     newNotificationItemForm.cdeScoreThreshold.val = 0;
@@ -148,7 +198,22 @@ const NotificationSettings = (/** @type Properties */ props) => {
           ),
         div(
           { style: `flex: ${columns[1]}%` },
-          TruncatedText({ max: 6 }, ...item.recipients),
+          item.notification_destination_id
+            ? (() => {
+                const dest = destinationsById.val[item.notification_destination_id];
+                return dest
+                  ? div(
+                      { class: 'flex-column fx-gap-1' },
+                      span(dest.name),
+                      span({ class: 'text-caption' }, destinationTypeLabel(dest)),
+                    )
+                  : span({ class: 'text-caption text-warning' }, 'Destination not found');
+              })()
+            : div(
+                { class: 'flex-column fx-gap-1' },
+                TruncatedText({ max: 6 }, ...item.recipients),
+                span({ class: 'text-caption' }, 'Email'),
+              ),
         ),
         div(
           { class: 'flex-row fx-gap-2', style: `flex: ${columns[2]}%` },
@@ -184,6 +249,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
                     newNotificationItemForm.isEdit.val = true;
                     newNotificationItemForm.id.val = item.id;
                     newNotificationItemForm.recipientsString.val = item.recipients.join(', ');
+                    newNotificationItemForm.notifyTarget.val = item.notification_destination_id ?? '__inline__';
                     if (event.val === 'score_drop') {
                       newNotificationItemForm.totalScoreThreshold.val = item.total_score_threshold;
                       newNotificationItemForm.cdeScoreThreshold.val = item.cde_score_threshold;
@@ -291,49 +357,106 @@ const NotificationSettings = (/** @type Properties */ props) => {
         ),
         div(
           { style: 'flex: 60%; height: 100%' },
-          () => Textarea({
-            label: 'Recipients',
-            help: 'List of email addresses, separated by commas or newlines',
-            placeholder: 'Email addresses separated by commas or newlines',
-            height: 100,
-            value: newNotificationItemForm.recipientsString,
-            onChange: (value) => newNotificationItemForm.recipientsString.val = value,
-          }),
+          div(
+            { class: 'flex-column fx-gap-2' },
+            // Two separate reactive slots. Rebuilding the Select on every
+            // ``notifyTarget`` change caused a mount loop -- if ``options`` had
+            // no entry matching the current value (empty list on first render,
+            // or a stale destination id), the Select fired ``onChange(null)``,
+            // the ``?? '__inline__'`` fallback re-set ``notifyTarget``, and the
+            // outer binding rebuilt the Select again.
+            () => Select({
+              label: 'Notify',
+              options: notifyOptions.val,
+              value: newNotificationItemForm.notifyTarget,
+              onChange: (value) => {
+                // Preserve the user's choice; only fall back when the value is
+                // truly missing (no options yet).
+                if (value) {
+                  newNotificationItemForm.notifyTarget.val = value;
+                } else if (newNotificationItemForm.notifyTarget.rawVal !== '__inline__') {
+                  newNotificationItemForm.notifyTarget.val = '__inline__';
+                }
+              },
+              allowNull: false,
+              portalClass: 'short-select-portal',
+            }),
+            () => newNotificationItemForm.notifyTarget.val === '__inline__'
+              ? Textarea({
+                  label: 'Recipients',
+                  help: 'List of email addresses, separated by commas or newlines',
+                  placeholder: 'Email addresses separated by commas or newlines',
+                  height: 100,
+                  value: newNotificationItemForm.recipientsString,
+                  validators: [required, emailList],
+                  onChange: (value, validity) => {
+                    newNotificationItemForm.recipientsString.val = value;
+                    newNotificationItemForm.recipientsValid.val = validity.valid;
+                  },
+                })
+              : '',
+          ),
         ),
       ),
       div(
-        { class: 'flex-row fx-justify-content-flex-end fx-gap-2 mt-3' },
-        () => newNotificationItemForm.isEdit.val
-          ? Button({
-            type: 'stroked',
-            label: 'Cancel',
-            width: 'auto',
-            onclick: resetForm,
-          })
-          : '',
-        Button({
-          type: 'stroked',
-          label: van.derive(() => newNotificationItemForm.isEdit.val ? 'Save Changes' : 'Add Notification'),
-          width: 'auto',
-          onclick: () => emit(
-            newNotificationItemForm.isEdit.val ? 'UpdateNotification' : 'AddNotification',
-            {
-              payload: {
-                id: newNotificationItemForm.isEdit.val ? newNotificationItemForm.id.val : null,
-                scope: newNotificationItemForm.scope.val,
-                recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\n ]+/).filter(s => s.length > 0))],
-                ...(event.val === 'score_drop' ?
-                  {
-                    total_score_threshold: newNotificationItemForm.totalScoreThreshold.val,
-                    cde_score_threshold: newNotificationItemForm.cdeScoreThreshold.val,
-                  } : {
-                    trigger: newNotificationItemForm.trigger.val,
-                  }
+        { class: 'flex-row fx-justify-space-between fx-align-flex-center fx-gap-2 mt-3' },
+        () => div(
+          { class: 'flex-row fx-gap-1 fx-align-flex-center text-caption text-secondary' },
+          Icon({ size: 16, classes: 'text-secondary' }, 'info'),
+          canManageDestinations.val && projectSettingsUrl.val
+            ? span(
+                'Destinations can be reused across notification rules and are configured in ',
+                a(
+                  { href: projectSettingsUrl.val, target: '_blank', rel: 'noreferrer' },
+                  'Project Settings',
+                  Icon({ size: 12, classes: 'ml-1 notifications--link-icon' }, 'open_in_new'),
                 ),
+                '.',
+              )
+            : span('Destinations can be reused across notification rules and are configured by admins in Project Settings.'),
+        ),
+        div(
+          { class: 'flex-row fx-gap-2' },
+          () => newNotificationItemForm.isEdit.val
+            ? Button({
+              type: 'stroked',
+              label: 'Cancel',
+              width: 'auto',
+              onclick: resetForm,
+            })
+            : '',
+          Button({
+            type: 'stroked',
+            label: van.derive(() => newNotificationItemForm.isEdit.val ? 'Save Changes' : 'Add Notification'),
+            width: 'auto',
+            // Only the inline-email path can be invalid; a destination is picked from a list.
+            disabled: van.derive(() =>
+              newNotificationItemForm.notifyTarget.val === '__inline__'
+              && !newNotificationItemForm.recipientsValid.val
+            ),
+            onclick: () => emit(
+              newNotificationItemForm.isEdit.val ? 'UpdateNotification' : 'AddNotification',
+              {
+                payload: {
+                  id: newNotificationItemForm.isEdit.val ? newNotificationItemForm.id.val : null,
+                  scope: newNotificationItemForm.scope.val,
+                  ...(newNotificationItemForm.notifyTarget.val === '__inline__'
+                    ? { recipients: [...new Set(newNotificationItemForm.recipientsString.val.split(/[,;\s]+/).filter(s => s.length > 0))], notification_destination_id: null }
+                    : { recipients: [], notification_destination_id: newNotificationItemForm.notifyTarget.val }
+                  ),
+                  ...(event.val === 'score_drop' ?
+                    {
+                      total_score_threshold: newNotificationItemForm.totalScoreThreshold.val,
+                      cde_score_threshold: newNotificationItemForm.cdeScoreThreshold.val,
+                    } : {
+                      trigger: newNotificationItemForm.trigger.val,
+                    }
+                  ),
+                }
               }
-            }
-          ),
-        }),
+            ),
+          }),
+        ),
       ),
     ),
     () => {
@@ -359,7 +482,7 @@ const NotificationSettings = (/** @type Properties */ props) => {
         ),
         span(
           { style: `flex: ${columns[1]}%` },
-          'Recipients',
+          'Destination | Type',
         ),
         span(
           { style: `flex: ${columns[2]}%` },
@@ -379,20 +502,53 @@ const NotificationSettings = (/** @type Properties */ props) => {
   // and the items list would not update when the dialog is reopened.
   const mainContent = mainContentBuilder();
 
+  // A rule delivers to either an email recipient list or a destination, and only
+  // the email side needs SMTP. The empty state stands in for the form only when
+  // there is no destination to address either, since nothing can deliver then.
+  const noDeliveryPossible = van.derive(() => !smtpConfigured.val && destinations.val.length <= 0);
+
   const content = div(
-    div({ style: () => smtpConfigured.val ? '' : 'display: none' }, mainContent),
-    () => smtpConfigured.val
-      ? ''
-      : EmptyState({ emit, 
-        label: 'Email server not configured.',
+    div(
+      { style: () => noDeliveryPossible.val ? 'display: none' : '' },
+      () => smtpConfigured.val
+        ? ''
+        : Alert(
+          { type: 'warn', icon: 'warning', class: 'mb-2' },
+          div(
+            { class: 'flex-column fx-gap-1' },
+            span('Email notifications cannot be delivered until an email server is configured.'),
+            Link({
+              label: 'Configure an email server',
+              href: EMAIL_SERVER_DOCS_URL,
+              open_new: true,
+              right_icon: 'open_in_new',
+            }),
+          ),
+        ),
+      mainContent,
+    ),
+    () => noDeliveryPossible.val
+      ? EmptyState({ emit,
+        label: 'No delivery method configured.',
         message: EMPTY_STATE_MESSAGE.notifications,
         class: 'notifications--empty',
-        link: {
-          label: 'View documentation',
-          href: 'https://docs.datakitchen.io/articles/dataops-testgen-help/configure-email-server',
-          open_new: true,
-        },
-      }),
+        // A user who can manage destinations can act immediately; everyone else
+        // gets the documentation covering both delivery methods.
+        link: canManageDestinations.val && projectSettingsUrl.val
+          ? {
+            // Link prefixes internal routes with "/", so a leading slash here would
+            // produce a protocol-relative "//settings" and send the browser to a host.
+            label: 'Go to Project Settings',
+            href: projectSettingsUrl.val.replace(/^\//, ''),
+            open_new: true,
+          }
+          : {
+            label: 'View documentation',
+            href: 'https://docs.datakitchen.io/testgen/notifications/',
+            open_new: true,
+          },
+      })
+      : '',
   );
 
   if (dialogProp) {
@@ -420,6 +576,10 @@ stylesheet.replace(`
 }
 .notifications--editing {
     color: var(--purple);
+}
+.notifications--link-icon {
+    color: var(--link-color);
+    vertical-align: middle;
 }
 .short-select-portal {
     max-height: 250px !important;

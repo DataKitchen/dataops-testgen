@@ -659,6 +659,16 @@ SMTP_PASSWORD: str | None = getenv("TG_SMTP_PASSWORD")
 Email: SMTP password
 """
 
+WEBHOOK_ALLOWED_HOSTS: str | None = getenv("TG_WEBHOOK_ALLOWED_HOSTS")
+"""
+Webhook: comma-separated allow-list of hostnames or CIDR ranges permitted as
+webhook destination targets, in addition to the default public ranges.
+
+Empty by default. Entries take priority over the reserved-range refusal rules,
+so an internal chat server or a pipeline gate can be reached explicitly without
+opening the whole internal network.
+"""
+
 MCP_ENABLED: bool = getenv("TG_MCP_ENABLED", "yes").lower() in ("yes", "true")
 """
 Enable the MCP server when running `testgen run-app all`.

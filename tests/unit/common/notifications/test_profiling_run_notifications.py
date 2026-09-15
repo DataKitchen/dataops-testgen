@@ -152,6 +152,7 @@ def test_send_profiling_run_notification(
                         "issues_url": "http://tg-base-url/profiling-runs:hygiene?project_code=proj&run_id=pr-id&source=email",
                         "results_url": "http://tg-base-url/profiling-runs:results?project_code=proj&run_id=pr-id&source=email",
                         "start_time": None,
+                        "end_time": None,
                         # Nothing worked was recorded, so there is no duration to report.
                         "duration_seconds": None,
                         "status": profiling_run_status,

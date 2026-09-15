@@ -7,6 +7,10 @@ from uuid import UUID
 import streamlit as st
 
 from testgen.common.models import with_database_session
+from testgen.common.models.notification_destinations import (
+    NotificationDestination,
+    WebhookDestination,
+)
 from testgen.common.models.notification_settings import NotificationSettings, NotificationSettingsValidationError
 from testgen.common.models.settings import PersistedSetting
 from testgen.ui.session import session
@@ -18,7 +22,7 @@ RESULT_KEY = "notification_settings_dialog:result"
 
 class NotificationSettingsDialogBase:
 
-    title: str = "Manage Email Notifications"
+    title: str = "Manage Notifications"
 
     def __init__(self,
              ns_class: type[NotificationSettings],
@@ -77,11 +81,28 @@ class NotificationSettingsDialogBase:
     @event_handler(success_message="Notification added")
     def on_add_item(self, item):
         attrs = self._item_to_model_attrs(item)
-        self.ns_class.create(**self.ns_attrs, recipients=item["recipients"], **attrs)
+        addressing = self._addressing_kwargs(item)
+        self.ns_class.create(**self.ns_attrs, **addressing, **attrs)
 
     @event_handler(success_message="Notification updated")
     def on_update_item(self, item):
-        self._update_item(item["id"], {"recipients": item["recipients"], **self._item_to_model_attrs(item)})
+        addressing = self._addressing_kwargs(item)
+        # Both fields must be updated in the same save so validation sees a consistent
+        # addressing state — switching from destination to inline leaves recipients
+        # empty (or vice versa) briefly, and validation would reject that.
+        update = {
+            "recipients": addressing.get("recipients", []),
+            "notification_destination_id": addressing.get("notification_destination_id"),
+            **self._item_to_model_attrs(item),
+        }
+        self._update_item(item["id"], update)
+
+    def _addressing_kwargs(self, item: dict[str, Any]) -> dict[str, Any]:
+        """Return ``{"recipients": [...]}`` or ``{"notification_destination_id": UUID}`` from an item payload."""
+        destination_id = item.get("notification_destination_id")
+        if destination_id:
+            return {"notification_destination_id": UUID(destination_id) if isinstance(destination_id, str) else destination_id}
+        return {"recipients": item.get("recipients") or []}
 
     @event_handler()
     def on_pause_item(self, item):
@@ -94,26 +115,65 @@ class NotificationSettingsDialogBase:
     def _get_component_props(self) -> dict[str, Any]:
         raise NotImplementedError
 
-    def _mark_duplicates(self, ns_json_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Return a list of recipients that have duplicate rule (recipient + trigger + scope) combinations."""
-        rule_counts = {}
+    def _mark_duplicates(
+        self,
+        ns_json_list: list[dict[str, Any]],
+        destination_names: dict[str, str],
+    ) -> list[dict[str, Any]]:
+        """Mark rules that share ``(trigger, scope, target)``, where target is either
+        one recipient address or a destination id. A destination-based rule is a duplicate
+        of another rule pointing at the same destination for the same event/scope; an
+        inline rule is a duplicate of another inline rule sharing any recipient address.
+        A destination-based rule and an inline rule to the same recipients are NOT
+        duplicates — they address the same recipients through different mechanisms.
+        """
+        rule_counts: dict[tuple, int] = {}
         rule_items: dict[tuple, list[dict]] = {}
+        rule_labels: dict[tuple, str] = {}
         for item in ns_json_list:
-            for recipient in item["recipients"]:
-                rule = (recipient, item.get("trigger"), item.get("scope"))
+            trigger = item.get("trigger")
+            scope = item.get("scope")
+            destination_id = item.get("notification_destination_id")
+            if destination_id:
+                rule = ("destination", destination_id, trigger, scope)
                 rule_counts[rule] = rule_counts.get(rule, 0) + 1
                 rule_items.setdefault(rule, []).append(item)
-        for rule, ocurrence_count in rule_counts.items():
-            if ocurrence_count > 1:
-                items = rule_items[rule]
-                for item in items:
-                    item.setdefault("duplicates", []).append(rule[0])
+                rule_labels[rule] = destination_names.get(destination_id, destination_id)
+            else:
+                for recipient in item.get("recipients") or []:
+                    rule = ("inline", recipient, trigger, scope)
+                    rule_counts[rule] = rule_counts.get(rule, 0) + 1
+                    rule_items.setdefault(rule, []).append(item)
+                    rule_labels[rule] = recipient
+        for rule, occurrence_count in rule_counts.items():
+            if occurrence_count > 1:
+                for item in rule_items[rule]:
+                    item.setdefault("duplicates", []).append(rule_labels[rule])
         return ns_json_list
 
     @with_database_session
     def build_data(self) -> dict:
         user_can_edit = session.auth.user_has_permission("edit")
+        user_can_administer = session.auth.user_has_permission("administer")
         result = st.session_state.get(RESULT_KEY)
+
+        project_code = self.ns_attrs.get("project_code")
+        destinations = NotificationDestination.list_for_project(project_code) if project_code else []
+        destination_names = {str(d.id): d.name for d in destinations}
+        # Only the fields the notification-settings dialog reads: id, name,
+        # type, and (for webhooks) the sub-type so Slack/Teams render
+        # distinctly. Shipping every destination's address list to any user
+        # with ``edit`` would be an information leak.
+        destination_options = []
+        for d in destinations:
+            entry = {
+                "id": str(d.id),
+                "name": d.name,
+                "destination_type": d.destination_type,
+            }
+            if isinstance(d, WebhookDestination) and d.webhook_type_safe is not None:
+                entry["webhook_type"] = d.webhook_type_safe.value
+            destination_options.append(entry)
 
         ns_json_list = []
         select_col = [  # noqa: RUF015
@@ -126,6 +186,7 @@ class NotificationSettingsDialogBase:
                 "id": str(ns.id),
                 "enabled": ns.enabled,
                 "recipients": ns.recipients,
+                "notification_destination_id": str(ns.notification_destination_id) if ns.notification_destination_id else None,
                 **self._model_to_item_attrs(ns),
             }
             ns_json_list.append(ns_json)
@@ -136,7 +197,7 @@ class NotificationSettingsDialogBase:
         }
         scope_options_labels = dict(component_props.get("scope_options", []))
         ns_json_list = sorted(
-            self._mark_duplicates(ns_json_list),
+            self._mark_duplicates(ns_json_list, destination_names),
             key=lambda item: "0" if not item.get("scope") else scope_options_labels.get(item["scope"], "ZZZ"),
         )
 
@@ -144,6 +205,9 @@ class NotificationSettingsDialogBase:
             "title": self.title,
             "smtp_configured": PersistedSetting.get("SMTP_CONFIGURED"),
             "items": ns_json_list,
+            "destinations": destination_options,
+            "can_manage_destinations": user_can_administer,
+            "project_settings_url": f"/settings?project_code={project_code}" if project_code else None,
             "event": self.ns_class.__mapper_args__["polymorphic_identity"].value,
             "permissions": {"can_edit": user_can_edit},
             "result": result,

@@ -538,6 +538,8 @@ def _notif_mock(
     notif.enabled = enabled
     notif.project_code = project_code
     notif.recipients = list(recipients)
+    notif.notification_destination_id = None
+    notif.destination = None
     notif.test_suite_id = test_suite_id
     notif.table_group_id = table_group_id
     notif.score_definition_id = score_definition_id
@@ -814,6 +816,8 @@ def _make_saved_notif(
     notif.enabled = enabled
     notif.project_code = project_code
     notif.recipients = list(recipients)
+    notif.notification_destination_id = None
+    notif.destination = None
     notif.test_suite_id = test_suite_id
     notif.table_group_id = table_group_id
     notif.score_definition_id = score_definition_id

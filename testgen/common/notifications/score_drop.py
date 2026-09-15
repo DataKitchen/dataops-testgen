@@ -16,6 +16,54 @@ LOG = logging.getLogger("testgen")
 
 class ScoreDropEmailTemplate(BaseNotificationTemplate):
 
+    event_type = "score_drop"
+
+    def webhook_data(self, context) -> dict:
+        """Plain-value snapshot of a score-drop event for the webhook payload's ``data`` field.
+
+        The email context carries a live ORM ``ScoreDefinition``; only its name reaches
+        the webhook. Every diff entry ships primitive numeric values only.
+        """
+        ctx = context or {}
+        definition = ctx.get("definition")
+        categories = []
+        for row in ctx.get("diff") or []:
+            def _to_float(value):
+                try:
+                    return float(value) if value is not None else None
+                except (TypeError, ValueError):
+                    return None
+
+            def _as_percentage(value):
+                """Scores are stored as 0-1 fractions; thresholds are set as 0-100.
+
+                A receiver comparing ``current`` against ``threshold`` needs both on
+                one scale, so the scores are scaled to match the threshold -- the same
+                scale the email body shows.
+                """
+                scaled = _to_float(value)
+                return round(scaled * 100, 1) if scaled is not None else None
+
+            categories.append({
+                "label": row.get("label"),
+                "previous": _as_percentage(row.get("prev")),
+                "current": _as_percentage(row.get("current")),
+                "threshold": _to_float(row.get("threshold")),
+                "crossed": bool(row.get("notify")),
+            })
+        return {
+            "scorecard": getattr(definition, "name", None),
+            "project": ctx.get("project_name"),
+            "categories": categories,
+        }
+
+    def webhook_project_name(self, context) -> str | None:
+        return (context or {}).get("project_name")
+
+    def webhook_summary_url(self, context) -> str | None:
+        return (context or {}).get("scorecard_url")
+
+
     def score_color_helper(self, score: float) -> str:
         if score >= 0.96:
             return "green"
@@ -191,9 +239,12 @@ def send_score_drop_notifications(notification_data: list[tuple[ScoreDefinition,
             }
 
             try:
-                ScoreDropEmailTemplate().send(ns.recipients, context)
+                ns.delivery_target.deliver(context, template=ScoreDropEmailTemplate())
             except Exception:
-                LOG.exception("Failed sending test run email notifications")
+                LOG.exception(
+                    "Failed sending score drop notification (rule=%s, scorecard=%s, %s)",
+                    ns.id, ns.score_definition_id, ns.delivery_target_description,
+                )
 
 
 @log_and_swallow_exception

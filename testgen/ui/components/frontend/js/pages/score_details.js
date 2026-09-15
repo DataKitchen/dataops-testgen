@@ -56,6 +56,9 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
     const triggerOptions = van.derive(() => getValue(props.notifications_dialog)?.trigger_options ?? [])
     const cdeEnabled = van.derive(() => getValue(props.notifications_dialog)?.cde_enabled ?? false)
     const totalEnabled = van.derive(() => getValue(props.notifications_dialog)?.total_enabled ?? false)
+    const destinations = van.derive(() => getValue(props.notifications_dialog)?.destinations ?? [])
+    const canManageDestinations = van.derive(() => getValue(props.notifications_dialog)?.can_manage_destinations ?? false)
+    const projectSettingsUrl = van.derive(() => getValue(props.notifications_dialog)?.project_settings_url)
     const result = van.derive(() => getValue(props.notifications_dialog)?.result)
 
     van.derive(() => { if (getValue(props.notifications_dialog)?.open === true) notificationsDialogOpen.val = true; });
@@ -156,6 +159,9 @@ const ScoreDetails = (/** @type {Properties} */ props) => {
                 trigger_options: triggerOptions,
                 cde_enabled: cdeEnabled,
                 total_enabled: totalEnabled,
+                destinations: destinations,
+                can_manage_destinations: canManageDestinations,
+                project_settings_url: projectSettingsUrl,
                 result: result,
             }),
         ),

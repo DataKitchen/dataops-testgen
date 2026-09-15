@@ -39,6 +39,7 @@ from testgen.mcp.tools.common import (
     format_page_footer,
     format_page_info,
     match_enum,
+    resolve_destination,
     resolve_notification,
     resolve_scorecard,
     resolve_table_group,
@@ -142,10 +143,12 @@ def list_notifications(
 def get_notification(
     notification_id: Annotated[str, Field(description="UUID of the notification, e.g. from ``list_notifications``.")],
 ) -> str:
-    """Get full details of an email notification.
+    """Get full details of a notification rule.
 
     Includes the event type, trigger or thresholds, scope (project, test suite, table
-    group, or scorecard), and recipients.
+    group, or scorecard), and addressing — either a list of email recipients, or the
+    id + name of a notification destination the rule is bound to (an ``Email`` list,
+    a Slack incoming webhook, a Microsoft Teams webhook, or a generic HTTPS endpoint).
 
     Works on any notification, including ``Monitor Alert`` notifications — those are
     created through monitor setup rather than this tool, but can be viewed here.
@@ -165,7 +168,22 @@ def create_notification(
             "``update_notification`` can still modify them once they exist.",
         ),
     ],
-    recipients: Annotated[list[str], Field(description="One or more well-formed email addresses to notify.")],
+    recipients: Annotated[
+        list[str] | None,
+        Field(
+            description="One or more well-formed email addresses to notify. Supply this "
+            "OR ``destination_id``, never both.",
+        ),
+    ] = None,
+    destination_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of an existing notification destination in the same project "
+            "(from ``list_notification_destinations``). Can address an ``Email`` recipient list, "
+            "a Slack incoming webhook, a Microsoft Teams webhook, or a generic HTTPS endpoint. "
+            "Supply this OR ``recipients``, never both.",
+        ),
+    ] = None,
     test_suite_id: Annotated[
         str | None,
         Field(
@@ -211,10 +229,12 @@ def create_notification(
         ),
     ] = None,
 ) -> str:
-    """Create an email notification for a test-run, profiling-run, or score-drop event.
+    """Create a notification rule for a test-run, profiling-run, or score-drop event.
 
-    Every invalid input is surfaced in a single error so the call can be corrected
-    in one round-trip — no partial save occurs.
+    Addressing is either a list of email ``recipients`` OR a ``destination_id`` naming
+    a reusable delivery target on the project (email list, Slack, Microsoft Teams, or
+    a generic webhook). Every invalid input is surfaced in a single error so the call
+    can be corrected in one round-trip — no partial save occurs.
     """
     event = _parse_event_type(event_type)
 
@@ -226,13 +246,13 @@ def create_notification(
         )
         _reject_threshold_args(event_type, total_threshold, cde_threshold)
         suite = resolve_test_suite(test_suite_id)
-        clean_recipients = _validate_recipients(recipients)
+        addressing = _resolve_addressing(recipients, destination_id, suite.project_code)
         trigger = _parse_test_run_trigger(trigger_on)
         notif = TestRunNotificationSettings.create(
             project_code=suite.project_code,
             test_suite_id=suite.id,
-            recipients=clean_recipients,
             trigger=trigger,
+            **addressing,
         )
     elif event is NotificationEvent.profiling_run:
         _enforce_scope_shape(
@@ -242,13 +262,13 @@ def create_notification(
         )
         _reject_threshold_args(event_type, total_threshold, cde_threshold)
         tg = resolve_table_group(table_group_id)
-        clean_recipients = _validate_recipients(recipients)
+        addressing = _resolve_addressing(recipients, destination_id, tg.project_code)
         trigger = _parse_profiling_run_trigger(trigger_on)
         notif = ProfilingRunNotificationSettings.create(
             project_code=tg.project_code,
             table_group_id=tg.id,
-            recipients=clean_recipients,
             trigger=trigger,
+            **addressing,
         )
     else:
         # NotificationEvent.score_drop — _parse_event_type rejected anything else.
@@ -263,16 +283,47 @@ def create_notification(
             )
         scorecard = resolve_scorecard(scorecard_id)
         _validate_score_thresholds(total_threshold, cde_threshold)
-        clean_recipients = _validate_recipients(recipients)
+        addressing = _resolve_addressing(recipients, destination_id, scorecard.project_code)
         notif = ScoreDropNotificationSettings.create(
             project_code=scorecard.project_code,
             score_definition_id=scorecard.id,
-            recipients=clean_recipients,
             total_score_threshold=total_threshold,
             cde_score_threshold=cde_threshold,
+            **addressing,
         )
 
     return _render_created(notif)
+
+
+def _resolve_addressing(
+    recipients: list[str] | None,
+    destination_id: str | None,
+    project_code: str,
+) -> dict:
+    """Return the kwargs to pass to a rule's ``create`` call for its addressing.
+
+    Enforces the invariant that a rule addresses either a recipient list OR a
+    destination, never both. Missing both is a distinct error from supplying both.
+    """
+    if recipients is not None and destination_id is not None:
+        raise MCPUserError(
+            "Supply either `recipients` or `destination_id`, not both. A notification rule "
+            "addresses one delivery target."
+        )
+    if recipients is None and destination_id is None:
+        raise MCPUserError(
+            "Supply either `recipients` (one or more well-formed emails) or `destination_id` "
+            "(the UUID of an existing notification destination)."
+        )
+    if recipients is not None:
+        return {"recipients": _validate_recipients(recipients)}
+    resolved = resolve_destination(destination_id)
+    if resolved.project_code != project_code:
+        raise MCPUserError(
+            f"Destination `{destination_id}` belongs to a different project than the "
+            "rule's scope entity."
+        )
+    return {"notification_destination_id": resolved.id}
 
 
 # --- create_notification helpers ---
@@ -426,8 +477,18 @@ def update_notification(
     recipients: Annotated[
         list[str] | None,
         Field(
-            description="Replace the recipient list with the supplied addresses (one or more well-formed emails). Omit "
-            "to leave unchanged.",
+            description="Replace the recipient list with the supplied addresses (one or more well-formed emails). "
+            "Switches the rule to inline addressing; any linked destination is cleared. Omit to leave addressing "
+            "unchanged. Cannot be supplied together with ``destination_id``.",
+        ),
+    ] = None,
+    destination_id: Annotated[
+        str | None,
+        Field(
+            description="Point the rule at an existing notification destination in the same project (UUID from "
+            "``list_notification_destinations``). Can address an ``Email`` recipient list, a Slack incoming webhook, "
+            "a Microsoft Teams webhook, or a generic HTTPS endpoint. Switches the rule to destination addressing; "
+            "any inline recipient list is cleared. Cannot be supplied together with ``recipients``.",
         ),
     ] = None,
     trigger_on: Annotated[
@@ -482,10 +543,14 @@ def update_notification(
         ),
     ] = False,
 ) -> str:
-    """Update fields on an existing email notification. Pass only the fields to change.
+    """Update fields on an existing notification rule. Pass only the fields to change.
 
     Works on any notification, including ``Monitor Alert`` notifications — those are
     created through monitor setup rather than this tool, but can be updated here.
+
+    Addressing switch: supply ``recipients`` to point the rule at an inline email list,
+    or ``destination_id`` to bind it to a named delivery target (email list, Slack,
+    Microsoft Teams, or a generic webhook). The two are mutually exclusive.
 
     Every invalid input surfaces in a single error before any save — no partial save.
     The notification's event type and scope entity are immutable through this tool;
@@ -495,6 +560,7 @@ def update_notification(
     if (
         enabled is None
         and recipients is None
+        and destination_id is None
         and trigger_on is None
         and total_threshold is None
         and cde_threshold is None
@@ -504,6 +570,12 @@ def update_notification(
         and not clear_table_name
     ):
         raise MCPUserError("No fields supplied to update.")
+
+    if recipients is not None and destination_id is not None:
+        raise MCPUserError(
+            "Supply either `recipients` or `destination_id`, not both. A notification rule "
+            "addresses one delivery target."
+        )
 
     notif = resolve_notification(notification_id)
     event = notif.event
@@ -531,8 +603,15 @@ def update_notification(
     )
 
     clean_recipients: list[str] | None = None
+    resolved_destination = None
     if recipients is not None:
         clean_recipients = _validate_recipients(recipients)
+    if destination_id is not None:
+        resolved_destination = resolve_destination(destination_id)
+        if resolved_destination.project_code != notif.project_code:
+            raise MCPUserError(
+                f"Destination `{destination_id}` belongs to a different project than the rule's scope entity."
+            )
 
     parsed_trigger = None
     if trigger_on is not None:
@@ -557,6 +636,7 @@ def update_notification(
         notif,
         enabled=enabled,
         recipients=clean_recipients,
+        destination=resolved_destination,
         trigger=parsed_trigger,
         total_threshold=total_threshold,
         cde_threshold=cde_threshold,
@@ -577,9 +657,11 @@ def update_notification(
     before = {attr: _snapshot_attr(notif, attr) for attr in pending}
     for attr, value in pending.items():
         setattr(notif, attr, value)
-    after = {attr: _snapshot_attr(notif, attr) for attr in pending}
-
+    # Snapshot after the save. ``save()`` expires the ``destination`` relationship
+    # so it reloads against the FK just written; reading it first returns the
+    # destination the rule had on entry, which renders as the new one.
     notif.save()
+    after = {attr: _snapshot_attr(notif, attr) for attr in pending}
 
     rows = [[_DIFF_LABELS[attr], before[attr], after[attr]] for attr in pending]
     doc.table(["Field", "Before", "After"], rows)
@@ -592,6 +674,7 @@ def update_notification(
 _DIFF_LABELS: dict[str, str] = {
     "enabled": "Status",
     "recipients": "Recipients",
+    "notification_destination_id": "Destination",
     "trigger": "Trigger",
     "total_score_threshold": "Total Score Threshold",
     "cde_score_threshold": "CDE Score Threshold",
@@ -729,6 +812,7 @@ def _build_pending(
     *,
     enabled: bool | None,
     recipients: list[str] | None,
+    destination,
     trigger: object,
     total_threshold: float | None,
     cde_threshold: float | None,
@@ -743,8 +827,17 @@ def _build_pending(
     if enabled is not None and notif.enabled != enabled:
         pending["enabled"] = enabled
 
-    if recipients is not None and list(notif.recipients or []) != recipients:
-        pending["recipients"] = recipients
+    if recipients is not None:
+        current = list(notif.recipients or [])
+        if current != recipients:
+            pending["recipients"] = recipients
+        if notif.notification_destination_id is not None:
+            pending["notification_destination_id"] = None
+    elif destination is not None:
+        if notif.notification_destination_id != destination.id:
+            pending["notification_destination_id"] = destination.id
+        if list(notif.recipients or []):
+            pending["recipients"] = []
 
     if trigger is not None and notif.trigger != trigger:
         pending["trigger"] = trigger
@@ -773,6 +866,10 @@ def _snapshot_attr(notif: NotificationSettings, attr: str) -> object:
         return "Active" if notif.enabled else "Paused"
     if attr == "recipients":
         return ", ".join(notif.recipients or []) or None
+    if attr == "notification_destination_id":
+        if notif.notification_destination_id is None:
+            return None
+        return notif.destination.name if notif.destination else str(notif.notification_destination_id)
     if attr == "trigger":
         return _label_for_trigger(notif.event, notif.trigger)
     if attr == "total_score_threshold":
@@ -811,7 +908,7 @@ def _format_threshold(value: object) -> str | None:
 def delete_notification(
     notification_id: Annotated[str, Field(description="UUID of the notification, e.g. from ``list_notifications``.")],
 ) -> str:
-    """Delete an email notification.
+    """Delete a notification rule.
 
     Works on any notification, including ``Monitor Alert`` notifications — those are
     created through monitor setup rather than this tool, but can be deleted here.
@@ -869,11 +966,25 @@ def _render_notification_body(doc: MdDoc, notif: NotificationSettings) -> None:
     doc.field("Project", notif.project_code, code=True)
     _render_scope_fields(doc, notif)
 
-    doc.heading(2, "Recipients")
-    if notif.recipients:
-        doc.bullets(list(notif.recipients))
+    if notif.notification_destination_id is not None:
+        doc.heading(2, "Delivery target")
+        destination = notif.destination
+        if destination is not None:
+            doc.field("Destination", destination.name)
+            doc.field("Destination ID", destination.id, code=True)
+            # ``type_summary`` is what the destination list reports, so a rule names its
+            # delivery target with the same vocabulary and identifies the receiving service
+            # rather than reporting every webhook subtype as a bare "Webhook".
+            doc.field("Destination Type", destination.type_summary)
+        else:
+            doc.field("Destination ID", notif.notification_destination_id, code=True)
+            doc.text("_Destination not found._")
     else:
-        doc.text("_No recipients configured._")
+        doc.heading(2, "Recipients")
+        if notif.recipients:
+            doc.bullets(list(notif.recipients))
+        else:
+            doc.text("_No recipients configured._")
 
 
 class _ScopeEntityKind(StrEnum):
@@ -974,6 +1085,9 @@ def _render(
     suite_names = _batch_suite_names({r.test_suite_id for r in rows if r.test_suite_id})
     tg_names = _batch_table_group_names({r.table_group_id for r in rows if r.table_group_id})
     score_names = _batch_score_names({r.score_definition_id for r in rows if r.score_definition_id})
+    destination_names = _batch_destination_names(
+        {r.notification_destination_id for r in rows if r.notification_destination_id}
+    )
 
     for r in rows:
         status_word = "Active" if r.enabled else "Paused"
@@ -994,7 +1108,12 @@ def _render(
                 doc.field("Total Score Threshold", total_threshold)
             if cde_threshold is not None:
                 doc.field("CDE Score Threshold", cde_threshold)
-        doc.field("Recipients", ", ".join(r.recipients or []) or None)
+        if r.notification_destination_id is not None:
+            dest_name = destination_names.get(r.notification_destination_id, str(r.notification_destination_id))
+            doc.field("Destination", dest_name)
+            doc.field("Destination ID", r.notification_destination_id, code=True)
+        else:
+            doc.field("Recipients", ", ".join(r.recipients or []) or None)
 
     if footer := format_page_footer(total, page, limit):
         doc.text(footer)
@@ -1045,3 +1164,20 @@ def _batch_score_names(score_ids: set[UUID]) -> dict[UUID, str]:
     if not score_ids:
         return {}
     return ScoreDefinition.names_by_id(score_ids)
+
+
+def _batch_destination_names(destination_ids: set[UUID]) -> dict[UUID, str]:
+    if not destination_ids:
+        return {}
+    # Deferred import: notification_destinations imports from notification_settings,
+    # which this module transitively depends on; a top-level import risks a cycle.
+    from sqlalchemy import select as sa_select
+
+    from testgen.common.models import get_current_session
+    from testgen.common.models.notification_destinations import NotificationDestination
+    session = get_current_session()
+    rows = session.execute(
+        sa_select(NotificationDestination.id, NotificationDestination.name)
+        .where(NotificationDestination.id.in_(list(destination_ids)))
+    ).all()
+    return dict(rows)

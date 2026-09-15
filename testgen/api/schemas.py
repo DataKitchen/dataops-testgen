@@ -1,9 +1,10 @@
 """Pydantic request/response models for API v1 endpoints."""
 
 from datetime import datetime
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Discriminator, Field, RootModel, Tag
 
 from testgen.api.enums import (
     Disposition,
@@ -439,3 +440,303 @@ class MonitorSeriesResponse(BaseModel):
     is_training: bool
     current_bands: dict | None = None
     points: list[dict]
+
+
+# --- Notifications ---
+
+WebhookTypeLiteral = Literal["slack", "microsoft_teams", "generic"]
+
+# ``destination_type`` is the polymorphic discriminator on the row and only ever
+# holds ``email`` or ``webhook``; the three webhook subtypes live in
+# ``config["webhook_type"]``. Advertising the subtypes on the list-filter query
+# would let clients see them in the OpenAPI enum, but every such query would
+# then return zero rows.
+DestinationTypeFilter = Literal["email", "webhook"]
+
+TestRunTrigger = Literal["always", "on_failures", "on_warnings", "on_changes"]
+ProfilingRunTrigger = Literal["always", "on_changes"]
+MonitorRunTrigger = Literal["on_anomalies"]
+
+
+# ---------- Destination schemas ----------
+
+
+class _NamedDestination(BaseModel):
+    name: str = Field(description="Display name for the destination (unique per project, case-insensitive).")
+
+
+class EmailDestinationCreate(_NamedDestination):
+    type: Literal["email"]
+    recipients: list[str] = Field(min_length=1, description="One or more well-formed email addresses.")
+
+
+class WebhookDestinationCreate(_NamedDestination):
+    type: Literal["webhook"]
+    webhook_type: WebhookTypeLiteral = Field(description="Webhook sub-type: Slack, Microsoft Teams, or Generic.")
+    url: str = Field(description="HTTPS URL to POST to. Stored encrypted; never returned in full after save.")
+    auth_header_name: str | None = Field(
+        default=None,
+        description="Authorization header name (Generic webhooks only).",
+    )
+    auth_header_value: str | None = Field(
+        default=None,
+        description="Authorization header value (Generic webhooks only). Stored encrypted; never returned.",
+    )
+
+
+_DestinationCreatePayload = Annotated[
+    Annotated[EmailDestinationCreate, Tag("email")]
+    | Annotated[WebhookDestinationCreate, Tag("webhook")],
+    Discriminator("type"),
+]
+
+
+# FastAPI strips Annotated (and the Discriminator inside it) from a bare alias used
+# as a Body annotation, which drops the discriminator from the generated schema and
+# Pydantic's type-based routing. The RootModel wrapper keeps both; read the inner
+# instance via .root.
+class DestinationCreate(RootModel[_DestinationCreatePayload]):
+    """A destination is either an email recipient list or a webhook; `type` selects the shape."""
+
+
+class EmailDestinationUpdate(BaseModel):
+    type: Literal["email"] = Field(description="Must match the stored destination type.")
+    name: str | None = None
+    recipients: list[str] | None = Field(default=None, min_length=1)
+
+
+class WebhookDestinationUpdate(BaseModel):
+    type: Literal["webhook"] = Field(description="Must match the stored destination type.")
+    name: str | None = None
+    webhook_type: WebhookTypeLiteral | None = None
+    url: str | None = Field(default=None, description="Replace the stored URL.")
+    auth_header_name: str | None = None
+    auth_header_value: str | None = Field(
+        default=None,
+        description="Replace the stored auth header value. Empty string clears it.",
+    )
+
+
+_DestinationUpdatePayload = Annotated[
+    Annotated[EmailDestinationUpdate, Tag("email")]
+    | Annotated[WebhookDestinationUpdate, Tag("webhook")],
+    Discriminator("type"),
+]
+
+
+# Same RootModel wrapper rationale as DestinationCreate.
+class DestinationUpdate(RootModel[_DestinationUpdatePayload]):
+    """Fields to change on a destination; `type` must match the stored destination type."""
+
+
+class EmailDestinationResponse(BaseModel):
+    id: UUID
+    type: Literal["email"] = "email"
+    project_code: str
+    name: str
+    recipients: list[str]
+    rule_count: int
+
+
+class WebhookDestinationResponse(BaseModel):
+    id: UUID
+    type: Literal["webhook"] = "webhook"
+    project_code: str
+    name: str
+    webhook_type: WebhookTypeLiteral
+    url_masked: str
+    auth_header_name: str | None = None
+    has_auth_header: bool
+    rule_count: int
+
+
+DestinationResponse = Annotated[
+    Annotated[EmailDestinationResponse, Tag("email")]
+    | Annotated[WebhookDestinationResponse, Tag("webhook")],
+    Discriminator("type"),
+]
+
+
+class DestinationListResponse(BaseModel):
+    # Field order matches the ``items / page / limit / total`` shape every other
+    # list response in this file (``JobListResponse``, ``TestResultListResponse``,
+    # ``HygieneIssueListResponse``, etc.) so a paging client can iterate without
+    # branching on which endpoint it hit.
+    items: list[DestinationResponse]
+    page: int
+    limit: int
+    total: int
+
+
+class DestinationDeleteResponse(BaseModel):
+    id: UUID
+    deleted_rule_count: int
+
+
+# ---------- Rule schemas ----------
+
+
+class InlineAddressing(BaseModel):
+    kind: Literal["inline"]
+    recipients: list[str] = Field(min_length=1)
+
+
+class DestinationAddressing(BaseModel):
+    kind: Literal["destination"]
+    destination_id: UUID
+
+
+AddressingIn = Annotated[
+    Annotated[InlineAddressing, Tag("inline")]
+    | Annotated[DestinationAddressing, Tag("destination")],
+    Discriminator("kind"),
+]
+
+
+class InlineAddressingOut(BaseModel):
+    kind: Literal["inline"] = "inline"
+    recipients: list[str]
+
+
+class DestinationAddressingOut(BaseModel):
+    kind: Literal["destination"] = "destination"
+    destination_id: UUID
+    destination_name: str | None = None
+    destination_type: str | None = None
+
+
+AddressingOut = Annotated[
+    Annotated[InlineAddressingOut, Tag("inline")]
+    | Annotated[DestinationAddressingOut, Tag("destination")],
+    Discriminator("kind"),
+]
+
+
+class TestRunRuleCreate(BaseModel):
+    event: Literal["test_run"]
+    addressing: AddressingIn
+    test_suite_id: UUID | None = Field(default=None, description="Scope to a specific test suite; omit for project-wide.")
+    trigger: TestRunTrigger = "on_failures"
+
+
+class ProfilingRunRuleCreate(BaseModel):
+    event: Literal["profiling_run"]
+    addressing: AddressingIn
+    table_group_id: UUID | None = Field(default=None, description="Scope to a specific table group; omit for project-wide.")
+    trigger: ProfilingRunTrigger = "on_changes"
+
+
+# The table group is derived from the suite rather than accepted: the suite-to-table-group
+# link is 1:1, so a supplied value could only agree or conflict, and the delivery path
+# resolves the table group from the suite regardless.
+class MonitorRunRuleCreate(BaseModel):
+    """A monitor rule is scoped by its monitor suite; the table group is derived from it."""
+
+    event: Literal["monitor_run"]
+    addressing: AddressingIn
+    test_suite_id: UUID
+    table_name: str | None = None
+
+
+class ScoreDropRuleCreate(BaseModel):
+    event: Literal["score_drop"]
+    addressing: AddressingIn
+    score_definition_id: UUID
+    total_threshold: float | None = None
+    cde_threshold: float | None = None
+
+
+_RuleCreatePayload = Annotated[
+    Annotated[TestRunRuleCreate, Tag("test_run")]
+    | Annotated[ProfilingRunRuleCreate, Tag("profiling_run")]
+    | Annotated[MonitorRunRuleCreate, Tag("monitor_run")]
+    | Annotated[ScoreDropRuleCreate, Tag("score_drop")],
+    Discriminator("event"),
+]
+
+
+# Same RootModel wrapper rationale as DestinationCreate.
+class RuleCreate(RootModel[_RuleCreatePayload]):
+    """A notification rule; `event` selects which scope and trigger fields apply."""
+
+
+# JSON cannot distinguish an explicit null from an omitted field, hence the clear_* flags
+# rather than accepting null to mean "clear".
+class RuleUpdate(BaseModel):
+    """Change the fields you want to change. Event and scope entity are immutable.
+
+    Optional fields on score-drop and monitor-run rules are cleared with their
+    `clear_*` flag rather than by sending `null`.
+    """
+
+    enabled: bool | None = None
+    addressing: AddressingIn | None = None
+    trigger: str | None = None
+    total_threshold: float | None = None
+    cde_threshold: float | None = None
+    table_name: str | None = None
+    clear_total_threshold: bool = Field(
+        default=False,
+        description="Set to ``true`` to clear the total-score threshold on a "
+        "score-drop rule. At least one threshold must remain set after the call.",
+    )
+    clear_cde_threshold: bool = Field(
+        default=False,
+        description="Set to ``true`` to clear the CDE-score threshold on a "
+        "score-drop rule. At least one threshold must remain set after the call.",
+    )
+    clear_table_name: bool = Field(
+        default=False,
+        description="Set to ``true`` to drop the optional table filter from a "
+        "monitor-run rule (the rule then fires for any table in the table group).",
+    )
+
+
+class _RuleResponseBase(BaseModel):
+    id: UUID
+    project_code: str
+    enabled: bool
+    addressing: AddressingOut
+
+
+class TestRunRuleResponse(_RuleResponseBase):
+    event: Literal["test_run"] = "test_run"
+    test_suite_id: UUID | None = None
+    trigger: TestRunTrigger
+
+
+class ProfilingRunRuleResponse(_RuleResponseBase):
+    event: Literal["profiling_run"] = "profiling_run"
+    table_group_id: UUID | None = None
+    trigger: ProfilingRunTrigger
+
+
+class MonitorRunRuleResponse(_RuleResponseBase):
+    event: Literal["monitor_run"] = "monitor_run"
+    test_suite_id: UUID
+    table_group_id: UUID
+    trigger: MonitorRunTrigger = "on_anomalies"
+    table_name: str | None = None
+
+
+class ScoreDropRuleResponse(_RuleResponseBase):
+    event: Literal["score_drop"] = "score_drop"
+    score_definition_id: UUID  # score-drop rules always carry a scorecard id
+    total_threshold: float | None = None
+    cde_threshold: float | None = None
+
+
+RuleResponse = Annotated[
+    Annotated[TestRunRuleResponse, Tag("test_run")]
+    | Annotated[ProfilingRunRuleResponse, Tag("profiling_run")]
+    | Annotated[MonitorRunRuleResponse, Tag("monitor_run")]
+    | Annotated[ScoreDropRuleResponse, Tag("score_drop")],
+    Discriminator("event"),
+]
+
+
+class RuleListResponse(BaseModel):
+    items: list[RuleResponse]
+    page: int
+    limit: int
+    total: int

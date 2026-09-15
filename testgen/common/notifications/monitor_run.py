@@ -18,6 +18,40 @@ LOG = logging.getLogger("testgen")
 
 class MonitorEmailTemplate(BaseNotificationTemplate):
 
+    event_type = "monitor_run"
+
+    def webhook_data(self, context) -> dict:
+        """Plain-value snapshot of a monitor-run event for the webhook payload's ``data`` field."""
+        ctx = context or {}
+        summary = ctx.get("summary") or {}
+        anomalies = []
+        for a in ctx.get("anomalies") or []:
+            get = a.get if isinstance(a, dict) else lambda k: getattr(a, k, None)
+            anomalies.append({
+                "table": get("table_name"),
+                "monitor_type": get("type"),
+                "message": get("details"),
+            })
+
+        def _iso(value):
+            return value.isoformat() if value is not None else None
+
+        return {
+            "table_group": summary.get("table_groups_name"),
+            "table": summary.get("table_name"),
+            "test_endtime": _iso(summary.get("test_endtime")),
+            "anomaly_count": ctx.get("total_anomalies"),
+            "truncated": bool(ctx.get("truncated")),
+            "anomalies": anomalies,
+        }
+
+    def webhook_project_name(self, context) -> str | None:
+        summary = (context or {}).get("summary") or {}
+        return summary.get("project_name")
+
+    def webhook_summary_url(self, context) -> str | None:
+        return (context or {}).get("view_in_testgen_url")
+
     def get_subject_template(self) -> str:
         return (
             "[TestGen] Monitors Alert: {{summary.table_groups_name}}"
@@ -232,8 +266,7 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
             )
         )
         try:
-            MonitorEmailTemplate().send(
-                notification.recipients,
+            notification.delivery_target.deliver(
                 {
                     "summary": {
                         "test_endtime": test_run.job_execution.completed_at,
@@ -246,10 +279,15 @@ def send_monitor_notifications(test_run: TestRun, result_list_ct=20):
                     "anomalies": anomalies[:result_list_ct],
                     "truncated": max(len(anomalies) - result_list_ct, 0),
                     "view_in_testgen_url": view_in_testgen_url,
+                    "notification_trigger": notification.trigger.value,
                 },
+                template=MonitorEmailTemplate(),
             )
         except Exception:
-            LOG.exception("Failed sending monitor email notifications")
+            LOG.exception(
+                "Failed sending monitor notification (rule=%s, suite=%s, %s)",
+                notification.id, notification.test_suite_id, notification.delivery_target_description,
+            )
 
 
 _TEST_TYPE_LABELS = {

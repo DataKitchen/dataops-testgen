@@ -231,7 +231,7 @@ def refresh_data(*_) -> None:
 
 class TestRunNotificationSettingsDialog(NotificationSettingsDialogBase):
 
-    title = "Test Run Notifications"
+    title: str = "Test Run Notifications"
 
     def _item_to_model_attrs(self, item: dict[str, Any]) -> dict[str, Any]:
         return {

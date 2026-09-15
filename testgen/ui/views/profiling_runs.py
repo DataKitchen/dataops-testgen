@@ -250,7 +250,7 @@ class ProfilingScheduleDialog(ScheduleDialog):
 
 class ProfilingRunNotificationSettingsDialog(NotificationSettingsDialogBase):
 
-    title = "Profiling Notifications"
+    title: str = "Profiling Notifications"
 
     def _item_to_model_attrs(self, item: dict[str, typing.Any]) -> dict[str, typing.Any]:
         return {
