@@ -12,7 +12,7 @@ selected_tables AS (
   GROUP BY p.profile_run_id, schema_name, table_name
 )
 INSERT INTO test_definitions (
-  table_groups_id, test_suite_id, test_type,
+  table_groups_id, test_suite_id, version_id, test_type,
   schema_name, table_name,
   test_active, last_auto_gen_date, profiling_as_of_date, profile_run_id,
   groupby_names, skip_errors
@@ -20,6 +20,7 @@ INSERT INTO test_definitions (
 SELECT
   :TABLE_GROUPS_ID ::UUID AS table_groups_id,
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
+  :VERSION_ID ::UUID      AS version_id,
   'Dupe_Rows'             AS test_type,
   s.schema_name,
   s.table_name,

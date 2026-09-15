@@ -1,12 +1,13 @@
 -- Insert test for current schema
 INSERT INTO test_definitions (
-  table_groups_id, test_suite_id, test_type,
+  table_groups_id, test_suite_id, version_id, test_type,
   schema_name,
   test_active, last_auto_gen_date
 )
 SELECT
   :TABLE_GROUPS_ID ::UUID AS table_groups_id,
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
+  :VERSION_ID ::UUID      AS version_id,
   'Schema_Drift'          AS test_type,
   :DATA_SCHEMA            AS schema_name,
   'Y'                     AS test_active,

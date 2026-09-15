@@ -8,6 +8,7 @@ WITH filtered_defs AS (
     test_type
   FROM test_definitions
   WHERE test_suite_id = :TEST_SUITE_ID
+    AND version_id = :VERSION_ID
     AND test_active = 'Y'
     AND history_calculation = 'PREDICT'
 )

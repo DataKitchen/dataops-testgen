@@ -648,7 +648,7 @@ class TestDefinition(Entity):
     )
 
     @classmethod
-    def _version_clause(cls):
+    def version_clause(cls):
         """Narrow to the rows belonging to each row's resolved suite version."""
         return cls.version_id == SuiteVersion.resolved_for(cls.test_suite_id)
 
@@ -672,7 +672,7 @@ class TestDefinition(Entity):
             select_columns = [getattr(cls, col) if isinstance(col, str) else col for col in columns]
             query = select(*select_columns)
 
-        query = query.where(cls._version_clause(), *clauses)
+        query = query.where(cls.version_clause(), *clauses)
         if order_by is not None:
             query = query.order_by(*order_by)
         return query
@@ -792,7 +792,7 @@ class TestDefinition(Entity):
         session = get_current_session()
         return session.execute(
             select(cls)
-            .where(cls._version_clause())
+            .where(cls.version_clause())
             .where(cls.test_suite_id == test_suite_id)
             .where(cls.table_name == table_name)
             .where(cls.test_type == test_type)
@@ -941,7 +941,8 @@ class TestDefinition(Entity):
             {", test_definition_status = NULL" if status_type == "test_active" and value else ""}
         FROM test_definitions td
             INNER JOIN selected ON (td.id = selected.id::UUID)
-        WHERE td.id = test_definitions.id;
+        WHERE td.id = test_definitions.id
+            AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")};
         """
         params = {
             "test_definition_ids": test_definition_ids,
@@ -960,6 +961,15 @@ class TestDefinition(Entity):
         target_table_name: str | None = None,
         target_column_name: str | None = None,
     ) -> None:
+        db_session = get_current_session()
+        target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
+        scoped_ids = db_session.scalars(
+            select(cls.id).where(
+                cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]),
+                cls.version_clause(),
+            )
+        ).all()
+
         query = f"""
         WITH selected AS (
             SELECT UNNEST(ARRAY [:test_definition_ids]) AS id
@@ -969,20 +979,21 @@ class TestDefinition(Entity):
             {"table_name = :target_table_name," if target_table_name else ""}
             {"column_name = :target_column_name," if target_column_name else ""}
             table_groups_id = :target_table_group,
-            test_suite_id = :target_test_suite
+            test_suite_id = :target_test_suite,
+            version_id = :target_version
         FROM test_definitions td
             INNER JOIN selected ON (td.id = selected.id::UUID)
         WHERE td.id = test_definitions.id;
         """
         params = {
-            "test_definition_ids": test_definition_ids,
+            "test_definition_ids": scoped_ids,
             "target_table_group": target_table_group_id,
             "target_test_suite": target_test_suite_id,
+            "target_version": target_version,
             "target_table_name": target_table_name,
             "target_column_name": target_column_name,
         }
 
-        db_session = get_current_session()
         db_session.execute(text(query), params)
 
     @classmethod
@@ -994,7 +1005,18 @@ class TestDefinition(Entity):
         target_table_name: str | None = None,
         target_column_name: str | None = None,
     ) -> None:
-        modified_columns = [cls.id, cls.table_groups_id, cls.profile_run_id, cls.test_suite_id, cls.last_auto_gen_date]
+        db_session = get_current_session()
+        target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
+
+        modified_columns = [
+            cls.id,
+            cls.table_groups_id,
+            cls.profile_run_id,
+            cls.test_suite_id,
+            cls.last_auto_gen_date,
+            cls.version_id,
+            cls.contract_term_id,
+        ]
 
         select_columns = [
             func.gen_random_uuid().label("id"),
@@ -1005,6 +1027,8 @@ class TestDefinition(Entity):
             ).label("profile_run_id"),
             literal(target_test_suite_id).label("test_suite_id"),
             literal(None).label("last_auto_gen_date"),
+            literal(target_version).label("version_id"),
+            literal(None).label("contract_term_id"),
         ]
 
         if target_table_name:
@@ -1021,9 +1045,9 @@ class TestDefinition(Entity):
         select_columns.extend(other_columns)
 
         query = insert(cls).from_select(
-            [*modified_columns, *other_columns], select(*select_columns).where(cls.id.in_(test_definition_ids))
+            [*modified_columns, *other_columns],
+            select(*select_columns).where(cls.id.in_(test_definition_ids), cls.version_clause()),
         )
-        db_session = get_current_session()
         db_session.execute(query)
 
     @classmethod
@@ -1076,6 +1100,10 @@ class TestDefinition(Entity):
             db_session = get_current_session()
             db_session.execute(query)
         else:
+            if self.version_id is None:
+                self.version_id = get_current_session().scalar(
+                    select(SuiteVersion.resolved_for(self.test_suite_id))
+                )
             super().save()
 
 

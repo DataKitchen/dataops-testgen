@@ -1,4 +1,5 @@
 from testgen.common.models import with_database_session
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.ui.services.database_service import execute_db_query, fetch_all_from_db, fetch_one_from_db
 
 
@@ -10,13 +11,14 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> dict | None:
     de-selected generation set would delete.
     """
     totals = fetch_one_from_db(
-        """
+        f"""
         SELECT
             COUNT(*) AS test_ct,
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' THEN 1 ELSE 0 END) AS unlocked_test_ct,
             SUM(CASE WHEN COALESCE(td.lock_refresh, 'N') = 'N' AND td.last_manual_update IS NOT NULL THEN 1 ELSE 0 END) AS unlocked_edits_ct
         FROM test_definitions td
         WHERE td.test_suite_id = :test_suite_id
+            AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
             AND td.last_auto_gen_date IS NOT NULL;
         """,
         {"test_suite_id": test_suite_id},
@@ -26,10 +28,11 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> dict | None:
         return None
 
     per_type = fetch_all_from_db(
-        """
+        f"""
         SELECT td.test_type, COUNT(*) AS test_ct
         FROM test_definitions td
         WHERE td.test_suite_id = :test_suite_id
+            AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
             AND td.last_auto_gen_date IS NOT NULL
             AND COALESCE(td.lock_refresh, 'N') = 'N'
         GROUP BY td.test_type;
@@ -48,10 +51,11 @@ def get_test_suite_refresh_warning(test_suite_id: str) -> dict | None:
 @with_database_session
 def lock_edited_tests(test_suite_id: str) -> None:
     execute_db_query(
-        """
+        f"""
         UPDATE test_definitions
             SET lock_refresh = 'Y'
         WHERE test_suite_id = :test_suite_id
+            AND version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
             AND last_manual_update IS NOT NULL
             AND lock_refresh = 'N';
         """,

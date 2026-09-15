@@ -1,12 +1,25 @@
+import re
 from datetime import datetime
 from typing import Any, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, ColumnElement, ForeignKey, Integer, String, func, select, text
+from sqlalchemy import (
+    Column,
+    ColumnElement,
+    ForeignKey,
+    Integer,
+    String,
+    func,
+    literal_column,
+    select,
+    text,
+)
 from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity
+
+_QUALIFIED_COLUMN = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\.[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
 class SuiteVersion(Entity):
@@ -67,3 +80,31 @@ class SuiteVersion(Entity):
         )
         placeholder = select(cls.id).where(cls.test_suite_id.is_(None)).scalar_subquery()
         return func.coalesce(draft, latest_frozen, placeholder)
+
+    @classmethod
+    def resolved_for_sql(cls, suite_column: str) -> str:
+        """``resolved_for`` as SQL text, for hand-written queries that cannot hold an expression.
+
+        The result is a scalar expression, not a join: three correlated subqueries over
+        ``suite_versions`` wrapped in ``coalesce``, each comparing that table's own
+        ``test_suite_id`` to ``suite_column``. It goes on the right of ``version_id = ...``, and
+        ``suite_column`` is a free reference resolved in the surrounding query's scope.
+
+        The qualifier is required, and may not be ``suite_versions``. Either way the name would
+        bind to the subqueries' own table instead of the outer row, making the comparison a
+        tautology: every suite resolves to whichever draft the database happens to hold, and rows
+        belonging to other versions disappear with no error.
+        """
+        qualified = _QUALIFIED_COLUMN.match(suite_column or "")
+        if not qualified:
+            raise ValueError(f"not a table-qualified column reference: {suite_column!r}")
+        if qualified.group(1).lower() == cls.__tablename__:
+            raise ValueError(
+                f"{suite_column!r} is shadowed by the subqueries' own {cls.__tablename__}"
+            )
+
+        expression = cls.resolved_for(literal_column(suite_column))
+        compiled = expression.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+        return " ".join(str(compiled).split())

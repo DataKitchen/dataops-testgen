@@ -1,5 +1,6 @@
 """Tests for test definition export/import — service and endpoint logic."""
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
@@ -7,9 +8,11 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlalchemy.sql.dml import Delete
 
 from testgen.api.schemas import ImportRequest
 from testgen.common.enums import SuiteType
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.test_definition_export_import_service import (
     ExportDocument,
     ExportSource,
@@ -29,6 +32,7 @@ from testgen.common.test_definition_export_import_service import (
     Origin,
     TestDefinitionExport,
 )
+from testgen.testing.sql_assertions import scopes_to_a_version
 
 pytestmark = pytest.mark.unit
 
@@ -68,6 +72,19 @@ def _make_table_group(**overrides):
 
 
 _DEFAULT_AUTO_GEN_DATE = datetime(2024, 6, 1, tzinfo=UTC)
+
+
+@contextmanager
+def _patched_td_class():
+    """Intercept the definitions the service constructs, leaving its query building intact.
+
+    A bare MagicMock turns every column comparison into a Python bool, which SQLAlchemy accepts
+    as a constant, so a wrong clause would never fail a test.
+    """
+    with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+        for attribute in ("version_clause", "id", "test_suite_id", "last_auto_gen_date", "external_id"):
+            setattr(mock_td_cls, attribute, getattr(TestDefinition, attribute))
+        yield mock_td_cls
 
 
 def _make_existing_row(
@@ -705,7 +722,7 @@ class Test_import_strict_mode:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+            with _patched_td_class() as mock_td_cls:
                 mock_td_cls.return_value = MagicMock(id=uuid4())
                 result = import_definitions(ts, config, _make_payload(td))
 
@@ -737,7 +754,7 @@ class Test_import_create:
 
         before = datetime.now(UTC)
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+            with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
                 import_definitions(ts, config, _make_payload(td))
@@ -763,7 +780,7 @@ class Test_import_create:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+            with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
                 import_definitions(ts, config, _make_payload(td))
@@ -787,7 +804,7 @@ class Test_import_create:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+            with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
                 import_definitions(ts, config, _make_payload(td))
@@ -812,7 +829,7 @@ class Test_import_create:
 
         before = datetime.now(UTC)
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+            with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
                 import_definitions(ts, config, _make_payload(td))
@@ -1122,7 +1139,7 @@ def test_apply_with_skips_still_applies_valid_actions(mock_session_fn, mock_tg_c
     from testgen.common.test_definition_export_import_service import import_definitions
 
     with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-        with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+        with _patched_td_class() as mock_td_cls:
             mock_td_cls.return_value = MagicMock(id=uuid4())
             result = import_definitions(ts, config, _make_payload(good_td, bad_td))
 
@@ -1262,7 +1279,7 @@ class Test_click_through_fields:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
-            with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
+            with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
                 import_definitions(ts, config, _make_payload(td))
@@ -1270,3 +1287,114 @@ class Test_click_through_fields:
         assert created_td.external_url == "https://example.com/task"
         assert created_td.custom_metadata == {"node": "n1"}
 
+
+
+# --- Version scoping ---
+
+
+class Test_version_scoping:
+    """A suite holds one set of definitions per version; export and import see only one of them."""
+
+    @patch(f"{SERVICE_MODULE}.settings")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_export_reads_one_version(self, mock_session_fn, mock_tg_cls, mock_settings):
+        mock_settings.VERSION = "5.12.0"
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        session.scalars.return_value.all.return_value = []
+
+        from testgen.common.test_definition_export_import_service import export_definitions
+
+        export_definitions(_make_test_suite(), Origin.auto, None, None)
+
+        assert "suite_versions" in str(session.scalars.call_args[0][0])
+
+    @patch(f"{SERVICE_MODULE}.settings")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_external_id_assignment_stamps_one_version(self, mock_session_fn, mock_tg_cls, mock_settings):
+        mock_settings.VERSION = "5.12.0"
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        session.scalars.return_value.all.return_value = []
+
+        from testgen.common.test_definition_export_import_service import export_definitions
+
+        export_definitions(_make_test_suite(), Origin.manual, None, None)
+
+        assert "suite_versions" in str(session.execute.call_args[0][0])
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_import_matches_within_one_version(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+            import_definitions(_make_test_suite(), _make_config(), _make_payload(_make_import_td()))
+
+        assert "suite_versions" in str(session.execute.call_args[0][0])
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_import_creates_into_the_resolved_version(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        resolved = uuid4()
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+        session.scalar.return_value = resolved
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with (
+            patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}),
+            _patched_td_class() as mock_td_cls,
+        ):
+            created = MagicMock(id=uuid4())
+            mock_td_cls.return_value = created
+            import_definitions(
+                _make_test_suite(),
+                _make_config(mode=ImportMode.apply),
+                _make_payload(_make_import_td()),
+            )
+
+        assert created.version_id == resolved
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_absence_delete_is_confined_to_one_version(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = [_make_existing_row()]
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+            import_definitions(
+                _make_test_suite(),
+                _make_config(mode=ImportMode.apply, on_absence=OnAbsence.delete_all),
+                _make_payload(),
+            )
+
+        deletes = [
+            call.args[0]
+            for call in session.execute.call_args_list
+            if isinstance(call.args[0], Delete)
+        ]
+        assert deletes, "the import issued no delete"
+        assert all(scopes_to_a_version(statement) for statement in deletes)

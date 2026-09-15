@@ -84,3 +84,18 @@ def test_the_schema_scoped_upsert_takes_no_table_filter():
     schema_drift = TEMPLATE_ROOT / "gen_query_tests" / "gen_Schema_Drift.sql"
 
     assert "{TABLE_FILTER}" not in schema_drift.read_text()
+
+
+def test_every_upsert_writes_the_version_it_conflicts_on():
+    offenders = sorted(
+        str(path.relative_to(TEMPLATE_ROOT))
+        for path in _upserting_templates()
+        if "version_id" not in _inserted_columns(path.read_text())
+        or ":VERSION_ID" not in path.read_text()
+    )
+
+    assert offenders == [], (
+        "an upsert that conflicts on the version but never writes it lands every row on the "
+        "placeholder version, where neither the deletes nor the reads of the same generation "
+        "run can see it. Offenders: " + ", ".join(offenders)
+    )

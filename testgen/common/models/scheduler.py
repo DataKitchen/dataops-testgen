@@ -59,7 +59,7 @@ class JobSchedule(Base):
             select(cls.id)
             .join(TestSuite, TestSuite.id == cast(cls.kwargs["test_suite_id"].astext, postgresql.UUID))
             .join(TestDefinition, TestDefinition.test_suite_id == TestSuite.id)
-            .where(cls.key.in_(test_job_keys), cls.active == True)
+            .where(cls.key.in_(test_job_keys), cls.active == True, TestDefinition.version_clause())
             .group_by(cls.id, TestSuite.id)
             .having(func.count(TestDefinition.id) > 0)
             .subquery()

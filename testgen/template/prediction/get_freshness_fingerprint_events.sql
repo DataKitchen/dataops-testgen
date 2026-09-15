@@ -12,6 +12,7 @@ FROM test_results r
 JOIN test_definitions d ON d.id = r.test_definition_id
 WHERE r.test_suite_id = :TEST_SUITE_ID
   AND d.test_suite_id = :TEST_SUITE_ID
+  AND d.version_id = :VERSION_ID
   AND d.test_type = 'Freshness_Trend'
   AND d.test_active = 'Y'
   AND r.result_signal = '0'

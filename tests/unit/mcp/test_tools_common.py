@@ -52,6 +52,7 @@ from testgen.mcp.tools.common import (
     validate_limit,
     validate_page,
 )
+from testgen.testing.sql_assertions import scopes_to_a_version
 
 # --- parse_uuid ---
 
@@ -1428,3 +1429,60 @@ def test_a_paused_run_renders_a_duration_and_a_working_one_does_not():
     assert format_run_duration(90, JobStatus.PAUSED) == "1m 30s"
     assert format_run_duration(90, JobStatus.RUNNING) is None
     assert format_run_duration(None, JobStatus.COMPLETED) is None
+
+
+# --- Version scoping ---
+
+
+def _version_scoped_session() -> MagicMock:
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = None
+    return session
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_definition_scopes_to_a_version(mock_session_fn, mock_permissions):
+    session = _version_scoped_session()
+    mock_session_fn.return_value = session
+    mock_permissions.return_value.allowed_codes = ["demo"]
+
+    from testgen.mcp.tools.common import resolve_test_definition
+
+    with pytest.raises(MCPResourceNotAccessible):
+        resolve_test_definition(str(uuid4()))
+
+    query = session.scalars.call_args[0][0]
+    assert scopes_to_a_version(query), "the resolver reads every version of the suite"
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_monitor_scopes_to_a_version(mock_session_fn, mock_permissions):
+    session = _version_scoped_session()
+    mock_session_fn.return_value = session
+    mock_permissions.return_value.allowed_codes = ["demo"]
+
+    from testgen.mcp.tools.common import resolve_monitor
+
+    with pytest.raises(MCPResourceNotAccessible):
+        resolve_monitor(str(uuid4()))
+
+    query = session.scalars.call_args[0][0]
+    assert scopes_to_a_version(query), "the resolver reads every version of the suite"
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.get_current_session")
+def test_resolve_test_note_scopes_to_a_version(mock_session_fn, mock_permissions):
+    session = _version_scoped_session()
+    mock_session_fn.return_value = session
+    mock_permissions.return_value.allowed_codes = ["demo"]
+
+    from testgen.mcp.tools.common import resolve_test_note
+
+    with pytest.raises(MCPResourceNotAccessible):
+        resolve_test_note(str(uuid4()))
+
+    query = session.scalars.call_args[0][0]
+    assert scopes_to_a_version(query), "a note on a definition from another version still resolves"

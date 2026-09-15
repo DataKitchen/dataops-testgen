@@ -168,6 +168,7 @@ class TestThresholdsPrediction:
     ) -> tuple[str, dict]:
         params = {
             "TEST_SUITE_ID": self.test_suite.id,
+            "VERSION_ID": self.test_run.version_id,
             "TEST_RUN_ID": self.test_run.id,
         }
         query = read_template_sql_file(template_file_name, sub_directory)
