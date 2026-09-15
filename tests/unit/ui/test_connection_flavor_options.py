@@ -48,3 +48,15 @@ def test_flavors_without_deployment_specific_help_carry_none(monkeypatch):
     connections = load_connections(monkeypatch, "docker")
     postgresql = next(o for o in connections.FLAVOR_OPTIONS if o.value == "postgresql")
     assert postgresql.field_help == {}
+
+
+def test_duckdb_tells_the_form_its_thread_count_is_not_configurable(monkeypatch):
+    """The form hides the Max Threads control on this, so it has to travel with the option."""
+    connections = load_connections(monkeypatch, "pypi")
+    assert duckdb_option(connections).fixed_max_threads == 1
+
+
+def test_a_server_flavor_leaves_the_thread_count_to_the_form(monkeypatch):
+    connections = load_connections(monkeypatch, "pypi")
+    snowflake = next(o for o in connections.FLAVOR_OPTIONS if o.value == "snowflake")
+    assert snowflake.fixed_max_threads is None

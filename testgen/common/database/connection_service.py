@@ -27,6 +27,7 @@ from sqlalchemy.exc import DatabaseError, DBAPIError
 
 from testgen.common.database.database_service import empty_cache, get_flavor_service
 from testgen.common.database.flavor.flavor_service import FlavorConnectionError
+from testgen.common.flavors import fixed_max_threads
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.ui.services.database_service import fetch_from_target_db
 
@@ -125,11 +126,14 @@ def enforce_connection_rules(connection: Connection) -> None:
     Then clears the credential columns the chosen auth mode does not use, so flipping
     between modes leaves no stale opposite-mode values behind. Databricks OAuth stores
     the client secret in ``project_pw_encrypted`` despite ``connect_by_key=True``, so it
-    sticks with the password path.
+    sticks with the password path. Finally pins ``max_threads`` for a flavor that fixes it.
     """
     code = connection.sql_flavor_code
 
     get_flavor_service(connection.sql_flavor).validate_parameters(connection.parameters)
+
+    if (threads := fixed_max_threads(code)) is not None:
+        connection.max_threads = threads
 
     if connection.connect_with_identity and connection.connect_with_service_principal:
         raise ValueError(

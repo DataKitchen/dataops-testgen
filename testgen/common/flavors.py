@@ -98,3 +98,17 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
 
 # Stored ``sql_flavor`` values (the distinct families).
 FLAVOR_FAMILIES: frozenset[str] = frozenset(FLAVOR_CODE_TO_FAMILY.values())
+
+# Flavors that run their engine inside the TestGen process rather than on a server reachable
+# over the network. Fanning queries out across threads buys these nothing — every thread is
+# another engine instance over the same cores — while multiplying peak memory, and concurrent
+# instances crash outright when they spill to one directory, because the spill filenames carry
+# no instance identifier and collide. A single thread rules out both.
+FLAVOR_FIXED_MAX_THREADS: dict[str, int] = {
+    SqlFlavorCode.DUCKDB: 1,
+}
+
+
+def fixed_max_threads(sql_flavor_code: str | None) -> int | None:
+    """The thread count a flavor requires, or None when the connection's own setting applies."""
+    return FLAVOR_FIXED_MAX_THREADS.get(sql_flavor_code) if sql_flavor_code else None

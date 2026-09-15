@@ -16,6 +16,7 @@ from testgen.mcp.tools.common import (
     Req,
     apply_connection_params,
     infer_mode,
+    reject_fixed_max_threads,
     render_connection_body,
     resolve_mode,
     schema_for,
@@ -831,3 +832,18 @@ def test_infer_mode_databricks_pat():
 def test_infer_mode_salesforce_jwt():
     conn = _conn(sql_flavor_code="salesforce_data360", sql_flavor="salesforce_data360", connect_by_key=True)
     assert infer_mode(conn) is ConnectionMode.JWT_BEARER
+
+
+@pytest.mark.parametrize("supplied", [2, 4, 8])
+def test_reject_max_threads_a_flavor_does_not_let_the_caller_choose(supplied):
+    """``enforce_connection_rules`` pins the value before the field validators see it, so the
+    rejection has to read the caller's argument or it can never fire."""
+    with pytest.raises(MCPUserError, match="cannot be set for DuckDB"):
+        reject_fixed_max_threads("duckdb", supplied)
+
+
+@pytest.mark.parametrize(("code", "supplied"), [("duckdb", None), ("duckdb", 1), ("postgresql", 8)])
+def test_accept_max_threads_the_flavor_can_honor(code, supplied):
+    """Omitting it is fine, and so is the pinned value itself -- writing a connection back
+    unchanged must not be rejected."""
+    reject_fixed_max_threads(code, supplied)

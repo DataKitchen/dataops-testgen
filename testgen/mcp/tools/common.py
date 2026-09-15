@@ -24,7 +24,12 @@ from testgen.common.enums import (
     SuiteType,
     run_duration_seconds,
 )
-from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorLabel
+from testgen.common.flavors import (
+    FLAVOR_CODE_TO_FAMILY,
+    FLAVOR_CODE_TO_LABEL,
+    SqlFlavorLabel,
+    fixed_max_threads,
+)
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import (
@@ -1617,6 +1622,20 @@ _MAX_THREADS_MIN = 1
 _MAX_THREADS_MAX = 8
 _MAX_QUERY_CHARS_MIN = 500
 _MAX_QUERY_CHARS_MAX = 50000
+
+
+def reject_fixed_max_threads(sql_flavor_code: str, max_threads: int | None) -> None:
+    """Raise when ``max_threads`` is a value other than the one its flavor fixes.
+
+    ``None`` and the fixed value itself are both accepted.
+    """
+    fixed = fixed_max_threads(sql_flavor_code)
+    if max_threads is not None and fixed is not None and max_threads != fixed:
+        label = FLAVOR_CODE_TO_LABEL.get(sql_flavor_code, sql_flavor_code)
+        raise MCPUserError(
+            f"`max_threads` cannot be set for {label}. It runs inside TestGen rather than on a "
+            f"separate database server, so its thread count is fixed at {fixed}."
+        )
 
 
 def _missing(value: object) -> bool:

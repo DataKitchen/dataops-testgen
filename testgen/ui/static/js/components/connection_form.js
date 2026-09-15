@@ -342,6 +342,10 @@ const ConnectionForm = (props, saveButton) => {
         return authenticationForms[flavor.value]();
     });
 
+    const fixedMaxThreads = van.derive(
+        () => getValue(props.flavors).find(f => f.value === connectionFlavor.val)?.fixed_max_threads ?? null,
+    );
+
     van.derive(() => {
         const selectedFlavor = connectionFlavor.val;
         const flavorObject = getValue(props.flavors).find(f => f.value === selectedFlavor);
@@ -351,7 +355,7 @@ const ConnectionForm = (props, saveButton) => {
             sql_flavor: flavorObject.flavor,
             sql_flavor_code: flavorObject.value,
             connection_name: connectionName.val,
-            max_threads: connectionMaxThreads.val,
+            max_threads: flavorObject.fixed_max_threads ?? connectionMaxThreads.val,
             max_query_chars: connectionQueryChars.val,
         };
     });
@@ -396,14 +400,20 @@ const ConnectionForm = (props, saveButton) => {
             },
             div(
                 { class: 'flex-row fx-gap-3' },
-                Slider({
-                    label: 'Max Threads',
-                    hint: 'Maximum number of concurrent threads that run tests. Default values should be retained unless test queries are failing.',
-                    value: connectionMaxThreads.rawVal,
-                    min: 1,
-                    max: 8,
-                    onChange: (value) => connectionMaxThreads.val = value,
-                }),
+                // Kept mounted and hidden with CSS rather than swapped out: the slider's own
+                // reactive bindings do not survive being detached. `display: contents` leaves
+                // the slider itself as the flex child while it is shown.
+                div(
+                    { style: () => fixedMaxThreads.val ? 'display: none;' : 'display: contents;' },
+                    Slider({
+                        label: 'Max Threads',
+                        hint: 'Maximum number of concurrent threads that run tests. Default values should be retained unless test queries are failing.',
+                        value: connectionMaxThreads.rawVal,
+                        min: 1,
+                        max: 8,
+                        onChange: (value) => connectionMaxThreads.val = value,
+                    }),
+                ),
                 Slider({
                     label: 'Max Expression Length',
                     hint: 'Some tests are consolidated into queries for maximum performance. Default values should be retained unless test queries are failing.',

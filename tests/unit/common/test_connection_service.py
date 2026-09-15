@@ -337,6 +337,29 @@ def test_normalize_rejects_service_principal_with_connect_by_url():
 
 
 # ---------------------------------------------------------------------------
+# max_threads pinning
+# ---------------------------------------------------------------------------
+
+
+def test_duckdb_connection_is_pinned_to_one_thread():
+    """DuckDB runs in-process, so the connection's thread count is not the caller's to choose."""
+    conn = _conn(
+        sql_flavor="duckdb",
+        sql_flavor_code="duckdb",
+        max_threads=8,
+        parameters={"database_file": "/data/claims.duckdb"},
+    )
+    enforce_connection_rules(conn)
+    assert conn.max_threads == 1
+
+
+def test_server_flavor_keeps_its_configured_thread_count():
+    conn = _conn(max_threads=8)
+    enforce_connection_rules(conn)
+    assert conn.max_threads == 8
+
+
+# ---------------------------------------------------------------------------
 # apply_connection_defaults
 # ---------------------------------------------------------------------------
 
