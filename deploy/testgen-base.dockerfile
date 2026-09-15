@@ -31,6 +31,13 @@ RUN apk update && apk upgrade && apk add --no-cache \
         openssl \
         # glibc compatibility layer for packages that only ship manylinux wheels (e.g. hdbcli)
         gcompat \
+        # DuckDB has no musllinux wheel, so it is compiled from its sdist by the install below, and
+        # both it and its extensions link against libstdc++ at runtime. Naming it here keeps the
+        # apk del below from removing it along with g++
+        libstdc++ \
+        # Allocator preloaded over musl's at the end of this file. It is a runtime dependency, so
+        # it has to stay out of the apk del list below
+        mimalloc2 \
         # Additional libraries needed and their dev counterparts. We add both so that we can remove
         # the *-dev later, keeping the libraries
         openblas=0.3.30-r2 \
@@ -75,3 +82,30 @@ RUN apk update && apk upgrade && apk add --no-cache \
     # false-positive secret detection in security scanners (SECRET-3010)
     && rm -f /usr/bin/iusql /usr/bin/isql \
     && rm -rf /root/.cache/pip /tmp/dk/install_linuxodbc.sh
+
+# Loadable extensions are built per DuckDB version and refuse to load against any other, so
+# installing them against the engine installed above pins them to it. DuckDB otherwise fetches them
+# over the network on first use, which fails in a locked-down container and behind a proxy whose URL
+# carries credentials, since DuckDB's http_proxy parser rejects those. Keep this after the toolchain
+# removal above, so that the LOAD exercises the library set the image actually ships. DuckDB's
+# default extension directory sits under $HOME, which the runtime user does not reliably have.
+ENV TG_DUCKDB_EXTENSION_DIRECTORY=/dk/duckdb/extensions
+RUN set -e; \
+    for extension in httpfs azure aws; do \
+        PYTHONPATH=/dk/lib/python3.13/site-packages python3 -c \
+            "import duckdb, os, sys; \
+             directory = os.environ['TG_DUCKDB_EXTENSION_DIRECTORY']; \
+             connection = duckdb.connect(config={'extension_directory': directory}); \
+             connection.execute(f'INSTALL {sys.argv[1]}'); \
+             connection.execute(f'LOAD {sys.argv[1]}')" \
+            "$extension"; \
+    done; \
+    chmod -R a+rX "$TG_DUCKDB_EXTENSION_DIRECTORY"
+
+# Replaces musl's allocator for every process in the image. Under musl, concurrent allocation
+# serializes badly enough to invert DuckDB's parallel scaling: a profiling query gets slower as
+# DuckDB is given more threads, and since DuckDB sizes its thread pool from the detected CPU count,
+# a larger container is worse than a small one. Measured on one profiling statement over 100M rows
+# at 10 threads: 43.5s on musl against 0.7s here and 0.6s on glibc. Build steps deliberately run on
+# the stock allocator; this applies from here on. Removing mimalloc2 above breaks every process.
+ENV LD_PRELOAD=/usr/lib/libmimalloc.so.2
