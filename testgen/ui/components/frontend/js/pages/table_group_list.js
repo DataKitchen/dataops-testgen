@@ -276,7 +276,7 @@ const TableGroupList = (props) => {
                                             div(
                                                 { class: 'flex-column fx-flex' },
                                                 Caption({content: 'Min Profiling Age (Days)', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.profiling_delay_days || '--'),
+                                                span(tableGroup.profiling_delay_days ?? '--'),
                                             ),
                                         ),
                                         span({ class: 'fx-flex' }),

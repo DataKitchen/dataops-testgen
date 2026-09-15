@@ -52,7 +52,7 @@ import { getValue, isEqual, loadStylesheet } from '../utils.js';
 import { Input } from './input.js';
 import { Checkbox } from './checkbox.js';
 import { ExpansionPanel } from './expansion_panel.js';
-import { required } from '../form_validators.js';
+import { numberBetween, required } from '../form_validators.js';
 import { Select } from './select.js';
 import { Caption } from './caption.js';
 import { Textarea } from './textarea.js';
@@ -143,15 +143,15 @@ const TableGroupForm = (props) => {
             table_group_schema: tableGroupSchema.val,
             profile_id_column_mask: profileIdColumnMask.val,
             profile_sk_column_mask: profileSkColumnMask.val,
-            profiling_delay_days: profilingDelayDays.val,
+            profiling_delay_days: Number(profilingDelayDays.val),
             profile_flag_cdes: profileFlagCdes.val,
             profile_flag_pii: profileFlagPii.val,
             profile_exclude_xde: profileExcludeXde.val,
             include_in_dashboard: includeInDashboard.val,
             add_scorecard_definition: addScorecardDefinition.val,
             profile_use_sampling: profileUseSampling.val,
-            profile_sample_percent: profileSamplePercent.val,
-            profile_sample_min_count: profileSampleMinCount.val,
+            profile_sample_percent: Number(profileSamplePercent.val),
+            profile_sample_min_count: Number(profileSampleMinCount.val),
             description: description.val,
             data_source: dataSource.val,
             source_system: sourceSystem.val,
@@ -409,6 +409,7 @@ const SettingsForm = (
             label: 'Min Profiling Age (in days)',
             value: profilingDelayDays,
             class: 'tg-column-flex',
+            validators: [ numberBetween(0, 999, 0) ],
             help: 'Number of days to wait before new profiling will be available to generate tests',
             onChange: (value, state) => {
                 profilingDelayDays.val = value;
@@ -443,6 +444,7 @@ const SamplingForm = (
                     type: 'number',
                     label: 'Sample percent',
                     value: profileSamplePercent,
+                    validators: [ numberBetween(1, 100, 0) ],
                     help: 'Percent of records to include in the sample, unless the calculated count falls below the specified minimum',
                     onChange: (value, state) => {
                         profileSamplePercent.val = value;
@@ -455,6 +457,7 @@ const SamplingForm = (
                     type: 'number',
                     label: 'Min Sample Record Count',
                     value: profileSampleMinCount,
+                    validators: [ numberBetween(0, 999999999, 0) ],
                     help: 'Minimum number of records to be included in any sample (if available)',
                     onChange: (value, state) => {
                         profileSampleMinCount.val = value;

@@ -743,11 +743,11 @@ def _apply_args_to_table_group(
     if profile_use_sampling is not None:
         table_group.profile_use_sampling = profile_use_sampling
     if profile_sample_percent is not None:
-        table_group.profile_sample_percent = str(profile_sample_percent)
+        table_group.profile_sample_percent = profile_sample_percent
     if profile_sample_min_count is not None:
         table_group.profile_sample_min_count = profile_sample_min_count
     if profiling_delay_days is not None:
-        table_group.profiling_delay_days = str(profiling_delay_days)
+        table_group.profiling_delay_days = profiling_delay_days
     if profile_flag_cdes is not None:
         table_group.profile_flag_cdes = profile_flag_cdes
     if profile_flag_pii is not None:

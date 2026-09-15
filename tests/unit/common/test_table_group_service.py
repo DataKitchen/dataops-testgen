@@ -34,9 +34,9 @@ def _tg(**overrides) -> TableGroup:
         "table_groups_name": "Sample TG",
         "table_group_schema": "public",
         "profile_use_sampling": False,
-        "profile_sample_percent": "30",
+        "profile_sample_percent": 30,
         "profile_sample_min_count": 100000,
-        "profiling_delay_days": "0",
+        "profiling_delay_days": 0,
     }
     defaults.update(overrides)
     return TableGroup(**defaults)
@@ -105,7 +105,7 @@ def test_validate_blank_schema():
     assert "`schema` is required." in errors
 
 
-@pytest.mark.parametrize("bad_delay", ["-1", "-100"])
+@pytest.mark.parametrize("bad_delay", [-1, -100])
 def test_validate_delay_days_negative(bad_delay):
     errors = validate_table_group_fields(_tg(profiling_delay_days=bad_delay))
     assert "`profiling_delay_days` must be a non-negative integer." in errors
@@ -116,12 +116,11 @@ def test_validate_delay_days_non_integer():
     assert "`profiling_delay_days` must be a non-negative integer." in errors
 
 
-def test_validate_delay_days_int_input_accepted():
-    """Validator accepts int input as well — apply-args casts but validators should be tolerant."""
+def test_validate_delay_days_zero_accepted():
     assert validate_table_group_fields(_tg(profiling_delay_days=0)) == []
 
 
-@pytest.mark.parametrize("bad_pct", ["0", "101", "200", "-1"])
+@pytest.mark.parametrize("bad_pct", [0, 101, 200, -1])
 def test_validate_sample_percent_out_of_range(bad_pct):
     errors = validate_table_group_fields(_tg(profile_sample_percent=bad_pct))
     assert "`profile_sample_percent` must be between 1 and 100." in errors
@@ -132,7 +131,7 @@ def test_validate_sample_percent_non_integer():
     assert "`profile_sample_percent` must be between 1 and 100." in errors
 
 
-def test_validate_sample_percent_int_input_accepted():
+def test_validate_sample_percent_in_range_accepted():
     assert validate_table_group_fields(_tg(profile_sample_percent=50)) == []
 
 
@@ -146,8 +145,8 @@ def test_validate_aggregates_all_errors():
     errors = validate_table_group_fields(_tg(
         table_groups_name="",
         table_group_schema="",
-        profiling_delay_days="-1",
-        profile_sample_percent="200",
+        profiling_delay_days=-1,
+        profile_sample_percent=200,
         profile_sample_min_count=-5,
     ))
     joined = "\n".join(errors)

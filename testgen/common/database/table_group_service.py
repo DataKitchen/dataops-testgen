@@ -41,23 +41,9 @@ def _missing(value: object) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
 
 
-def _coerce_int(value: object) -> int | None:
-    """Return ``int(value)`` for ints / numeric strings, ``None`` otherwise.
-
-    The model stores ``profiling_delay_days`` and ``profile_sample_percent`` as
-    ``String`` columns; callers may pass either ints or numeric strings. Return
-    ``None`` to signal "not parseable" so the validator can emit the right error.
-    """
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, str):
-        try:
-            return int(value.strip())
-        except (ValueError, AttributeError):
-            return None
-    return None
+def _is_int(value: object) -> bool:
+    """``bool`` is an ``int`` subclass, so it needs excluding explicitly."""
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
 def validate_table_group_fields(table_group: TableGroup) -> list[str]:
@@ -78,16 +64,16 @@ def validate_table_group_fields(table_group: TableGroup) -> list[str]:
     if _missing(table_group.table_group_schema):
         errors.append("`schema` is required.")
 
-    delay = _coerce_int(table_group.profiling_delay_days)
-    if delay is None or delay < 0:
+    delay = table_group.profiling_delay_days
+    if not _is_int(delay) or delay < 0:
         errors.append("`profiling_delay_days` must be a non-negative integer.")
 
-    pct = _coerce_int(table_group.profile_sample_percent)
-    if pct is None or not (_SAMPLE_PCT_MIN <= pct <= _SAMPLE_PCT_MAX):
+    pct = table_group.profile_sample_percent
+    if not _is_int(pct) or not (_SAMPLE_PCT_MIN <= pct <= _SAMPLE_PCT_MAX):
         errors.append(f"`profile_sample_percent` must be between {_SAMPLE_PCT_MIN} and {_SAMPLE_PCT_MAX}.")
 
     min_count = table_group.profile_sample_min_count
-    if not isinstance(min_count, int) or isinstance(min_count, bool) or min_count < 0:
+    if not _is_int(min_count) or min_count < 0:
         errors.append("`profile_sample_min_count` must be a non-negative integer.")
 
     return errors
