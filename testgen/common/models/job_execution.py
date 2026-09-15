@@ -1,4 +1,5 @@
 import logging
+import signal
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
@@ -8,10 +9,39 @@ from sqlalchemy import Column, Float, String, Text, case, delete, func, literal,
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import ColumnElement
 
-from testgen.common.enums import PAUSABLE_JOB_KEYS, WORKING_STATUSES, JobSource, JobStatus
+from testgen.common.enums import PAUSABLE_JOB_KEYS, WORKING_STATUSES, JobKey, JobSource, JobStatus
 from testgen.common.models import Base, database_session, get_current_session
 
 LOG = logging.getLogger("testgen")
+
+# A run killed for memory records no error of its own, so these carry the whole explanation.
+_RESOURCE_REMEDY = "Raise the memory available to TestGen, or reduce how much data the run reads."
+_SAMPLING_REMEDY = (
+    "Raise the memory available to TestGen, or reduce how much data the run reads by turning on"
+    " sampling for the table group."
+)
+
+# What ``Popen.returncode`` reports for a process the kernel killed, which is how an out-of-memory
+# kill arrives. Windows has no SIGKILL and reports positive codes, so there the check never matches.
+_KILLED_EXIT_CODE = -getattr(signal, "SIGKILL", 9)
+
+
+def process_failure_message(pid: int, exit_code: int, job_key: str | None = None) -> str:
+    """Explain a job subprocess that exited non-zero, naming resource exhaustion when that is
+    what the exit code shows.
+
+    The pid and code stay in the text: they are what a support request needs, and nothing else
+    records them.
+    """
+    if exit_code != _KILLED_EXIT_CODE:
+        return f"Process {pid} exited with code {exit_code}."
+
+    remedy = _SAMPLING_REMEDY if job_key == JobKey.run_profile else _RESOURCE_REMEDY
+    return (
+        "The run was stopped by the operating system before it could finish, which usually means"
+        f" TestGen ran out of memory. {remedy}"
+        f" (Process {pid} exited with code {exit_code}.)"
+    )
 
 
 class JobExecution(Base):

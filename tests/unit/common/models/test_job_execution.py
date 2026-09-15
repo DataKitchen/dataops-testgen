@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 
-from testgen.common.models.job_execution import JobExecution, JobStatus
+from testgen.common.models.job_execution import JobExecution, JobStatus, process_failure_message
 
 pytestmark = pytest.mark.unit
 
@@ -736,3 +736,33 @@ def test_asking_to_interrupt_bills_nothing(mock_session):
     JobExecution.request_interrupt_bulk([uuid4()], ["run-profile"])
 
     assert "active_seconds=" not in str(mock_session.scalars.call_args[0][0]).split(" WHERE ")[0]
+
+
+# ---------------------------------------------------------------------------
+# Failure messages
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("job_key", ["run-profile", "run-tests", "run-monitors"])
+def test_a_killed_process_is_reported_as_running_out_of_resources(job_key):
+    """A run killed for memory records nothing of its own -- the exit code is the only evidence
+    it happened, so this message is the only place any surface can name the cause."""
+    message = process_failure_message(4321, -9, job_key)
+
+    assert "ran out of memory" in message
+    assert "Raise the memory available to TestGen" in message
+    assert "4321" in message and "-9" in message
+
+
+def test_only_profiling_is_told_to_sample():
+    """Test execution has no sampling equivalent, so suggesting it there would send the user
+    after a setting that cannot help them."""
+    assert "sampling" in process_failure_message(1, -9, "run-profile")
+    assert "sampling" not in process_failure_message(1, -9, "run-tests")
+
+
+@pytest.mark.parametrize("exit_code", [1, 2, -15])
+def test_an_ordinary_nonzero_exit_is_not_blamed_on_resources(exit_code):
+    message = process_failure_message(4321, exit_code, "run-profile")
+
+    assert message == f"Process 4321 exited with code {exit_code}."
