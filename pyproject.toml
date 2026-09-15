@@ -273,7 +273,6 @@ ignore = ["TRY003", "S608", "S404", "F841", "B023"]
 "testgen/__main__.py" = ["ARG001", "S603"]
 "tasks.py" = ["F403"]
 "tests*" = ["S101", "T201", "ARG001"]
-"testgen/testing/**" = ["S101"]  # test-support helpers; their assertions are the point
 "invocations/**" = ["ARG001", "T201"]
 "deploy/**" = ["T201"]
 "testgen/common/encrypt.py" = ["S413"]

@@ -5,7 +5,7 @@ import pytest
 
 from testgen.common.custom_test_validation import CustomQueryResult
 from testgen.mcp.exceptions import MCPUserError
-from testgen.testing.sql_assertions import emitted_statements, scopes_to_a_version
+from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
 
 # -- list_tests ---------------------------------------------------------------
 

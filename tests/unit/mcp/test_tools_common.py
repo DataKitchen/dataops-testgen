@@ -52,7 +52,7 @@ from testgen.mcp.tools.common import (
     validate_limit,
     validate_page,
 )
-from testgen.testing.sql_assertions import scopes_to_a_version
+from tests.unit.sql_assertions import scopes_to_a_version
 
 # --- parse_uuid ---
 

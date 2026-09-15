@@ -7,7 +7,7 @@ from testgen.common.models.scheduler import (
     DEFAULT_DATA_CLEANUP_CRON,
     JobSchedule,
 )
-from testgen.testing.sql_assertions import emitted_statements, scopes_to_a_version
+from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
 

@@ -32,7 +32,7 @@ from testgen.common.test_definition_export_import_service import (
     Origin,
     TestDefinitionExport,
 )
-from testgen.testing.sql_assertions import scopes_to_a_version
+from tests.unit.sql_assertions import scopes_to_a_version
 
 pytestmark = pytest.mark.unit
 
