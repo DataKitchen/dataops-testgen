@@ -173,14 +173,16 @@ readinessProbe:
   timeoutSeconds: 5
   failureThreshold: 3
 
-# Requests and limits for the application pod.
-resources: {}
-  # limits:
-  #   cpu: 100m
-  #   memory: 128Mi
-  # requests:
-  #   cpu: 100m
-  #   memory: 128Mi
+# Requests and limits for the application pod and the database setup and upgrade jobs, sized
+# for the 8 vCPU / 32 GB node in the install guide. Raise the memory limit to profile and test
+# larger tables. Without a limit, a run that exhausts memory takes down the node, not the pod.
+resources:
+  requests:
+    cpu: 1
+    memory: 4Gi
+  limits:
+    cpu: 6
+    memory: 24Gi
 
 
 nodeSelector: {}
