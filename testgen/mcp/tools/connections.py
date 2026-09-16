@@ -12,6 +12,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.connection_schema import validate_connection_fields
 from testgen.common.database.connection_service import (
     apply_connection_defaults,
     enforce_connection_rules,
@@ -32,7 +33,6 @@ from testgen.mcp.tools.common import (
     raise_validation_error,
     render_connection_body,
     resolve_connection,
-    validate_connection_fields,
     validate_limit,
     validate_page,
 )

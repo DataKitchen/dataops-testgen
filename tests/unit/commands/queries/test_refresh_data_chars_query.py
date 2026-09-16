@@ -242,3 +242,36 @@ def test_get_row_counts_handles_null_max_query_chars():
 
     assert result
     assert all(isinstance(query, str) and query for query, _ in result)
+
+
+@pytest.mark.parametrize("mask", (",", " , ", ",,"))
+def test_a_criterion_of_only_separators_applies_no_filter(mask):
+    """A mask of only commas is a truthy string with no parts. The guards branch on the
+    parts, so this applies no criterion rather than emitting an empty ``AND ( )``."""
+    connection = Connection(sql_flavor="postgresql")
+    table_group = TableGroup(
+        table_group_schema="test_schema",
+        profiling_table_set="",
+        profiling_include_mask=mask,
+        profiling_exclude_mask=mask,
+    )
+
+    criteria = RefreshDataCharsSQL(connection, table_group)._get_table_criteria()
+
+    assert criteria == ""
+
+
+def test_trailing_comma_does_not_emit_an_empty_pattern():
+    connection = Connection(sql_flavor="postgresql")
+    table_group = TableGroup(
+        table_group_schema="test_schema",
+        profiling_table_set="users,",
+        profiling_include_mask="important%,",
+        profiling_exclude_mask="",
+    )
+
+    criteria = RefreshDataCharsSQL(connection, table_group)._get_table_criteria()
+
+    assert "IN ('users')" in criteria
+    assert "LIKE ''" not in criteria
+    assert "''" not in criteria.replace("IN ('users')", "")

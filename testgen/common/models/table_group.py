@@ -62,6 +62,7 @@ class TableGroupListItem(EntityMinimal):
     table_groups_name: str
     table_group_schema: str
     project_code: str
+    connection_id: int
     connection_name: str | None
     table_count: int
     column_count: int | None
@@ -212,6 +213,22 @@ _ANOMALY_TYPE_TO_COLUMN: dict[str, str] = {
     MonitorType.SCHEMA.value: "schema_anomalies",
     MonitorType.METRIC.value: "metric_anomalies",
 }
+
+
+def split_criteria(value: str | None) -> list[str]:
+    """Split a stored table criterion into its parts.
+
+    The table set and the include/exclude masks are each stored as one string
+    holding a comma-separated list. There is no escape, so a part cannot itself
+    contain a comma. Parts are stripped of surrounding whitespace, and empty parts
+    are dropped — a stray or trailing comma carries no criterion.
+
+    Callers must branch on the returned list rather than on the stored string: a
+    value of ``","`` is truthy but yields no parts.
+    """
+    if not value:
+        return []
+    return [stripped for item in value.split(",") if (stripped := item.strip())]
 
 
 def _row_count_change_expr(baseline_column: str, state_column: str) -> str:
@@ -578,12 +595,34 @@ class TableGroup(Entity):
 
     @classmethod
     def list_for_project(
-        cls, project_code: str, *, page: int = 1, limit: int = 20
+        cls,
+        project_code: str,
+        *,
+        connection_id: int | None = None,
+        schema_name: str | None = None,
+        table_group_name: str | None = None,
+        page: int = 1,
+        limit: int = 20,
     ) -> tuple[list[TableGroupListItem], int]:
-        """Config-focused paginated listing for a project, with table count and activity timestamps."""
+        """Config-focused paginated listing for a project, with table count and activity timestamps.
+
+        The optional filters match exactly, not by pattern — schema and table group
+        names are case-sensitive on some flavors.
+        """
+        scope_sql = ["groups.project_code = :project_code"]
+        scope_params: dict = {"project_code": project_code}
+        for column, value in (
+            ("connection_id", connection_id),
+            ("table_group_schema", schema_name),
+            ("table_groups_name", table_group_name),
+        ):
+            if value is not None:
+                scope_sql.append(f"groups.{column} = :{column}")
+                scope_params[column] = value
+
         return cls._list_with_activity(
-            scope_sql="groups.project_code = :project_code",
-            scope_params={"project_code": project_code},
+            scope_sql=" AND ".join(scope_sql),
+            scope_params=scope_params,
             page=page,
             limit=limit,
         )
@@ -646,6 +685,7 @@ class TableGroup(Entity):
             groups.table_groups_name,
             groups.table_group_schema,
             groups.project_code,
+            groups.connection_id,
             connections.connection_name,
             COALESCE(stats.table_count, 0) AS table_count,
             stats.column_count,

@@ -9,18 +9,20 @@ The schema mirrors the per-flavor JS forms in
 
 import pytest
 
+from testgen.common.connection_schema import (
+    ConnectionMode,
+    Req,
+    infer_mode,
+    schema_for,
+    validate_connection_fields,
+)
 from testgen.common.models.connection import Connection
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.common import (
-    ConnectionMode,
-    Req,
     apply_connection_params,
-    infer_mode,
     reject_fixed_max_threads,
     render_connection_body,
     resolve_mode,
-    schema_for,
-    validate_connection_fields,
 )
 from testgen.mcp.tools.markdown import MdDoc
 

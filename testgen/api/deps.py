@@ -9,6 +9,7 @@ from sqlalchemy import select
 from testgen.common.auth import AuthError, authorize_token, decode_jwt_token
 from testgen.common.enums import PublicJobKey
 from testgen.common.models import Session, _current_session_wrapper, get_current_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.monitor import Monitor
 from testgen.common.models.notification_destinations import NotificationDestination
@@ -106,6 +107,13 @@ def resolve_project_code(permission: str):
         if has_project_permission(user, project_code, permission):
             return project_code
         raise _not_found
+    return Depends(dependency)
+
+
+def resolve_connection(permission: str):
+    """Resolve a Connection by ``connection_id`` path param and verify project permission."""
+    def dependency(connection_id: int, user: User = _require_user) -> Connection:
+        return _check_access(Connection.get(connection_id), user, permission)
     return Depends(dependency)
 
 

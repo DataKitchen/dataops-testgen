@@ -2,20 +2,22 @@ from typing import Annotated
 
 from pydantic import Field
 
+from testgen.common.connection_schema import (
+    FLAVOR_CONNECTION_SCHEMA,
+    ConnField,
+    FlavorMode,
+    FlavorSchema,
+    Req,
+    schema_for,
+)
 from testgen.common.generation_set_service import get_generation_set_members
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
 from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES, TestType
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.common import (
-    FLAVOR_CONNECTION_SCHEMA,
-    ConnField,
     DocGroup,
-    FlavorMode,
-    FlavorSchema,
-    Req,
     resolve_test_type,
-    schema_for,
 )
 from testgen.mcp.tools.markdown import MdDoc
 
