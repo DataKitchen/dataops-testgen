@@ -33,6 +33,7 @@ router = APIRouter(
 
 @router.get(
     "/test-suites/{test_suite_id}/test-definition-export",
+    summary="Export test definitions",
     response_model=ExportDocument,
     response_model_exclude_defaults=True,
 )
@@ -48,6 +49,7 @@ def export_test_definitions(
 
 @router.post(
     "/test-suites/{test_suite_id}/test-definition-import",
+    summary="Import test definitions",
     response_model=ImportResponse,
     responses={
         400: {

@@ -75,11 +75,12 @@ _error_responses = {
     404: {"model": ErrorResponse, "description": "Not found"},
 }
 
-router = APIRouter(tags=["runs"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Runs"], dependencies=[Depends(db_session)], responses=_error_responses)
 
 
 @router.get(
     "/test-runs/{job_id}",
+    summary="Read a test run",
     response_model=TestRunResponse,
 )
 def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_tests)):  # noqa: B008
@@ -171,6 +172,7 @@ def _to_item(row: TestRunResultRow) -> TestResultItem:
 
 @router.get(
     "/test-runs/{job_id}/results",
+    summary="List test results",
     response_model=TestResultListResponse,
     responses={400: {"model": ErrorResponse, "description": "Unknown test type"}},
 )
@@ -224,6 +226,7 @@ def list_test_run_results(
 
 @router.get(
     "/profiling-runs/{job_id}",
+    summary="Read a profiling run",
     response_model=ProfilingRunResponse,
 )
 def get_profiling_run(job: JobExecution = resolve_job("view", JobExecution.job_key == JobKey.run_profile)):  # noqa: B008
@@ -270,6 +273,7 @@ def _profiling_history_item(row: ProfilingRunHistoryRow, counts) -> ProfilingRun
 
 @router.get(
     "/table-groups/{table_group_id}/profiling-runs",
+    summary="List profiling runs",
     response_model=ProfilingRunHistoryResponse,
 )
 def list_profiling_runs(
@@ -391,6 +395,7 @@ def _to_pii_item(row: HygieneIssueListRow, can_view_pii: bool) -> PotentialPiiIt
 
 @router.get(
     "/profiling-runs/{job_id}/hygiene-issues",
+    summary="List hygiene issues",
     response_model=HygieneIssueListResponse,
     responses={400: {"model": ErrorResponse, "description": "Unknown issue type"}},
 )
@@ -437,6 +442,7 @@ def list_profiling_run_hygiene_issues(
 
 @router.get(
     "/profiling-runs/{job_id}/potential-pii",
+    summary="List Potential PII findings",
     response_model=PotentialPiiListResponse,
 )
 def list_profiling_run_potential_pii(
@@ -508,6 +514,7 @@ def _to_column_item(row: ColumnProfileRow) -> ProfilingColumnItem:
 # ``mask_profiling_pii``.
 @router.get(
     "/profiling-runs/{job_id}/columns",
+    summary="List column profiles",
     response_model=ProfilingColumnListResponse,
 )
 def list_profiling_run_columns(

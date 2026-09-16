@@ -73,7 +73,7 @@ _FILTER_VALUE_FORBIDDEN_CHARS = frozenset("'\";\\\x00")
 @router.get(
     "/projects/{project_code}/scores",
     response_model=ScoresResponse,
-    summary="Quality Score rollup for a project",
+    summary="Quality Score rollup",
     responses={400: {"model": ErrorResponse, "description": "Invalid filter value"}},
 )
 def get_project_scores(

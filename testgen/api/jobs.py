@@ -32,6 +32,7 @@ router = APIRouter(tags=["Jobs"], dependencies=[Depends(db_session)], responses=
 
 @router.post(
     "/table-groups/{table_group_id}/profiling-runs",
+    summary="Submit a profiling job",
     response_model=JobSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
@@ -48,6 +49,7 @@ def submit_profiling(table_group: TableGroup = resolve_table_group("edit")):  # 
 
 @router.post(
     "/test-suites/{test_suite_id}/test-runs",
+    summary="Submit a test run",
     response_model=JobSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
@@ -64,6 +66,7 @@ def submit_test_run(test_suite: TestSuite = resolve_test_suite("edit")):  # noqa
 
 @router.post(
     "/test-suites/{test_suite_id}/test-generation",
+    summary="Submit a test generation job",
     response_model=JobSubmittedResponse,
     status_code=status.HTTP_202_ACCEPTED,
     responses={400: {"model": ErrorResponse, "description": "Invalid generation set"}},
@@ -93,6 +96,7 @@ def submit_test_generation(
 
 @router.get(
     "/jobs/{job_id}",
+    summary="Poll a job's status",
     response_model=JobResponse,
 )
 def get_job_status(job: JobExecution = resolve_job("view")):  # noqa: B008
@@ -102,6 +106,7 @@ def get_job_status(job: JobExecution = resolve_job("view")):  # noqa: B008
 
 @router.post(
     "/jobs/{job_id}/cancel",
+    summary="Cancel a job",
     response_model=JobResponse,
     responses={409: {"model": ErrorResponse, "description": "Invalid status transition"}},
 )
@@ -114,6 +119,7 @@ def cancel_job(job: JobExecution = resolve_job("edit")):  # noqa: B008
 
 @router.get(
     "/projects/{project_code}/jobs",
+    summary="List jobs",
     response_model=JobListResponse,
 )
 def list_jobs(

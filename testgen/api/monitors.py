@@ -29,7 +29,7 @@ _ALL_MONITOR_TYPES = [m.value for m in DbMonitorType]
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
-router = APIRouter(tags=["monitors"], dependencies=[Depends(db_session)], responses=_error_responses)
+router = APIRouter(tags=["Monitors"], dependencies=[Depends(db_session)], responses=_error_responses)
 
 
 def _to_row(s: MonitorTableSummary) -> MonitorTableRow:
@@ -61,7 +61,11 @@ def _to_row(s: MonitorTableSummary) -> MonitorTableRow:
     )
 
 
-@router.get("/table-groups/{table_group_id}/monitors", response_model=MonitorSummaryListResponse)
+@router.get(
+    "/table-groups/{table_group_id}/monitors",
+    response_model=MonitorSummaryListResponse,
+    summary="List monitors",
+)
 def list_table_monitors(
     table_group: TableGroup = resolve_table_group("view"),  # noqa: B008
     table_name: str | None = Query(default=None),
@@ -104,7 +108,11 @@ def list_table_monitors(
     )
 
 
-@router.get("/monitors/{monitor_id}/series", response_model=MonitorSeriesResponse)
+@router.get(
+    "/monitors/{monitor_id}/series",
+    response_model=MonitorSeriesResponse,
+    summary="Read a monitor's time series",
+)
 def get_monitor_series(monitor: Monitor = resolve_monitor("view")):  # noqa: B008
     """A monitor's lookback time-series, type-discriminated, with a self-contained header.
 
