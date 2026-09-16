@@ -79,7 +79,7 @@ _error_responses: dict[int | str, dict] = {
 }
 
 router = APIRouter(
-    tags=["notifications"],
+    tags=["Notifications"],
     dependencies=[Depends(db_session)],
     responses=_error_responses,
 )
@@ -106,6 +106,7 @@ _BodyRequired = Body(...)
 
 @router.get(
     "/projects/{project_code}/notification-destinations",
+    summary="List destinations",
     response_model=DestinationListResponse,
 )
 def list_destinations(
@@ -134,6 +135,7 @@ def list_destinations(
 
 @router.post(
     "/projects/{project_code}/notification-destinations",
+    summary="Create a destination",
     response_model=DestinationResponse,
     status_code=201,
 )
@@ -166,6 +168,7 @@ def create_destination(
 
 @router.get(
     "/notification-destinations/{destination_id}",
+    summary="Read a destination",
     response_model=DestinationResponse,
 )
 def get_destination(
@@ -177,6 +180,7 @@ def get_destination(
 
 @router.patch(
     "/notification-destinations/{destination_id}",
+    summary="Update a destination",
     response_model=DestinationResponse,
 )
 def update_destination(
@@ -214,6 +218,7 @@ def update_destination(
 
 @router.delete(
     "/notification-destinations/{destination_id}",
+    summary="Delete a destination",
     response_model=DestinationDeleteResponse,
 )
 def delete_destination(
@@ -233,6 +238,7 @@ def delete_destination(
 
 @router.get(
     "/projects/{project_code}/notification-rules",
+    summary="List rules",
     response_model=RuleListResponse,
 )
 def list_rules(
@@ -265,6 +271,7 @@ def list_rules(
 
 @router.post(
     "/projects/{project_code}/notification-rules",
+    summary="Create a rule",
     response_model=RuleResponse,
     status_code=201,
 )
@@ -327,6 +334,7 @@ def create_rule(
 
 @router.get(
     "/notification-rules/{rule_id}",
+    summary="Read a rule",
     response_model=RuleResponse,
 )
 def get_rule(
@@ -338,6 +346,7 @@ def get_rule(
 
 @router.patch(
     "/notification-rules/{rule_id}",
+    summary="Update a rule",
     response_model=RuleResponse,
 )
 def update_rule(
@@ -405,7 +414,11 @@ def update_rule(
     return _rule_to_response(rule)
 
 
-@router.delete("/notification-rules/{rule_id}", status_code=204)
+@router.delete(
+    "/notification-rules/{rule_id}",
+    status_code=204,
+    summary="Delete a rule",
+)
 def delete_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
 ) -> None:
@@ -414,7 +427,11 @@ def delete_rule(
     return None
 
 
-@router.post("/notification-rules/{rule_id}/pause", response_model=RuleResponse)
+@router.post(
+    "/notification-rules/{rule_id}/pause",
+    response_model=RuleResponse,
+    summary="Pause a rule",
+)
 def pause_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
 ) -> RuleResponse:
@@ -422,7 +439,11 @@ def pause_rule(
     return _set_rule_enabled(rule, False)
 
 
-@router.post("/notification-rules/{rule_id}/resume", response_model=RuleResponse)
+@router.post(
+    "/notification-rules/{rule_id}/resume",
+    response_model=RuleResponse,
+    summary="Resume a rule",
+)
 def resume_rule(
     rule: NotificationSettings = resolve_notification_rule("edit"),  # noqa: B008
 ) -> RuleResponse:

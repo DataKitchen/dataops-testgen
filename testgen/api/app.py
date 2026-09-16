@@ -8,7 +8,7 @@ from testgen.common import version_service
 router = APIRouter(tags=["API"], dependencies=[Depends(db_session)])
 
 
-@router.get("/health")
+@router.get("/health", summary="Health check")
 def health():
     version = version_service.get_version()
     return {
