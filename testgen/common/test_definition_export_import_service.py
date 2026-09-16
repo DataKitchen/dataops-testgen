@@ -13,6 +13,7 @@ from sqlalchemy.engine import Row
 from testgen import settings
 from testgen.common.models import get_current_session
 from testgen.common.models.data_table import DataTable
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import (
     NON_PUBLIC_TEST_TYPES,
@@ -263,6 +264,7 @@ def export_definitions(
             update(TestDefinition)
             .where(
                 TestDefinition.test_suite_id == test_suite.id,
+                TestDefinition.version_clause(),
                 TestDefinition.last_auto_gen_date.is_(None),
                 TestDefinition.external_id.is_(None),
             )
@@ -270,7 +272,7 @@ def export_definitions(
         )
 
     # Build filter clauses
-    clauses = [TestDefinition.test_suite_id == test_suite.id]
+    clauses = [TestDefinition.test_suite_id == test_suite.id, TestDefinition.version_clause()]
     if origin == Origin.auto:
         clauses.append(TestDefinition.last_auto_gen_date.isnot(None))
     elif origin == Origin.manual:
@@ -319,7 +321,9 @@ def import_definitions(
     # --- Phase 2: Matching ---
     session = get_current_session()
     existing_rows = session.execute(
-        select(*_EXISTING_TD_COLUMNS).where(TestDefinition.test_suite_id == test_suite.id)
+        select(*_EXISTING_TD_COLUMNS).where(
+            TestDefinition.test_suite_id == test_suite.id, TestDefinition.version_clause()
+        )
     ).all()
 
     auto_index: dict[tuple[str, str | None, str | None], Row] = {}
@@ -472,11 +476,12 @@ def _apply_actions(
 ) -> None:
     session = get_current_session()
     now = datetime.now(UTC)
+    version_id = session.scalar(select(SuiteVersion.resolved_for(test_suite.id)))
 
     # Pass 1: build new TDs and register them in the session.
     for planned in actions:
         if planned.action == ImportAction.create and planned.td_import is not None:
-            td = _create_td(planned.td_import, test_suite, table_group, config, now)
+            td = _create_td(planned.td_import, test_suite, table_group, config, now, version_id)
             session.add(td)
             planned.target = td
 
@@ -492,7 +497,11 @@ def _apply_actions(
             ids_to_delete.append(planned.target.id)
 
     if ids_to_delete:
-        session.execute(delete(TestDefinition).where(TestDefinition.id.in_(ids_to_delete)))
+        session.execute(
+            delete(TestDefinition).where(
+                TestDefinition.id.in_(ids_to_delete), TestDefinition.version_clause()
+            )
+        )
 
 
 def _create_td(
@@ -501,6 +510,7 @@ def _create_td(
     table_group: TableGroup,
     config: ImportConfig,
     now: datetime,
+    version_id: UUID,
 ) -> TestDefinition:
     is_auto = td_import.last_auto_gen_date is not None
 
@@ -514,6 +524,7 @@ def _create_td(
 
     # Target context
     td.test_suite_id = test_suite.id
+    td.version_id = version_id
     td.table_groups_id = test_suite.table_groups_id
     td.schema_name = table_group.table_group_schema
 

@@ -7,6 +7,7 @@ from testgen.common.models.scheduler import (
     DEFAULT_DATA_CLEANUP_CRON,
     JobSchedule,
 )
+from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
 
@@ -135,3 +136,12 @@ def test_delete_for_retention_executes_scoped_delete(mock_session):
 def test_delete_for_retention_does_not_commit(mock_session):
     JobSchedule.delete_for_retention("proj")
     mock_session.commit.assert_not_called()
+
+
+def test_select_runnable_counts_only_the_resolved_version(mock_session):
+    """The gate is "does this suite have tests"; rows from other versions must not answer it."""
+    JobSchedule.select_runnable()
+
+    assert scopes_to_a_version(emitted_statements(mock_session)[0]), (
+        "a suite whose tests all belong to another version would still be dispatched"
+    )

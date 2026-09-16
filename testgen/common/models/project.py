@@ -9,6 +9,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.project_membership import ProjectMembership
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.user import User
 
 
@@ -48,7 +49,7 @@ class Project(Entity):
 
     @classmethod
     def get_summary(cls, project_code: str) -> ProjectSummary | None:
-        query = """
+        query = f"""
         SELECT
             (
                 SELECT COUNT(*) AS count FROM connections WHERE connections.project_code = :project_code
@@ -76,6 +77,7 @@ class Project(Entity):
                     LEFT JOIN test_suites ON test_definitions.test_suite_id = test_suites.id
                 WHERE test_suites.project_code = :project_code
                   AND test_suites.suite_type = 'regular'
+                  AND test_definitions.version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
             ) AS test_definition_count,
             (
                 SELECT COUNT(*)

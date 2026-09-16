@@ -46,4 +46,5 @@ FROM test_definitions td
         AND :SQL_FLAVOR = c.sql_flavor
     )
 WHERE td.test_suite_id = :TEST_SUITE_ID
+    AND td.version_id = :VERSION_ID
     AND td.test_active = 'Y';

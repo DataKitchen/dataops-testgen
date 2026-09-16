@@ -376,6 +376,7 @@ class TestExecutionSQL:
         params = {
             "TABLE_GROUPS_ID": self.table_group.id,
             "TEST_SUITE_ID": self.test_run.test_suite_id,
+            "VERSION_ID": self.test_run.version_id,
             "TEST_RUN_ID": self.test_run.id,
             "RUN_DATE": to_sql_timestamp(self.run_date),
             "SQL_FLAVOR": self.flavor,
