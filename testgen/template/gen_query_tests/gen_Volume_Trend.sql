@@ -1,6 +1,6 @@
 -- Insert tests for current tables
 INSERT INTO test_definitions (
-  table_groups_id, test_suite_id, test_type,
+  table_groups_id, test_suite_id, version_id, test_type,
   schema_name, table_name,
   test_active, last_auto_gen_date,
   history_calculation, history_lookback, subset_condition, custom_query
@@ -8,6 +8,7 @@ INSERT INTO test_definitions (
 SELECT
   :TABLE_GROUPS_ID ::UUID AS table_groups_id,
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
+  :VERSION_ID ::UUID      AS version_id,
   'Volume_Trend'          AS test_type,
   c.schema_name,
   c.table_name,
@@ -26,7 +27,7 @@ WHERE c.table_groups_id = :TABLE_GROUPS_ID ::UUID
   {TABLE_FILTER}
 
 -- Match "uix_td_autogen_table" unique index exactly
-ON CONFLICT (test_suite_id, test_type, schema_name, table_name) 
+ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name) 
 WHERE last_auto_gen_date IS NOT NULL 
   AND table_name IS NOT NULL 
   AND column_name IS NULL

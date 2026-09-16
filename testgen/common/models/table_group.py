@@ -19,6 +19,7 @@ from testgen.common.models.monitor import (
     parse_value_event,
 )
 from testgen.common.models.scores import ScoreDefinition
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_suite import TestSuite
 from testgen.utils import dict_from_kv, is_uuid4
 
@@ -937,6 +938,7 @@ class TableGroup(Entity):
             FROM test_definitions td
             INNER JOIN table_groups tg ON tg.monitor_test_suite_id = td.test_suite_id
             WHERE tg.id = :table_group_id
+                AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
         ),
         metric_defs AS (
             SELECT

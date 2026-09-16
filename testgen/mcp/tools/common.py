@@ -855,6 +855,7 @@ def resolve_test_definition(test_definition_id: str) -> TestDefinition:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinition.id == td_uuid,
+            TestDefinition.version_clause(),
             TestSuite.suite_type == SuiteType.REGULAR,
             TestSuite.project_code.in_(perms.allowed_codes),
         )
@@ -880,6 +881,7 @@ def resolve_monitor(monitor_id: str) -> TestDefinition:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinition.id == monitor_uuid,
+            TestDefinition.version_clause(),
             TestSuite.suite_type == SuiteType.MONITOR,
             TestSuite.project_code.in_(perms.allowed_codes),
         )
@@ -925,6 +927,7 @@ def resolve_test_note(test_note_id: str) -> TestDefinitionNote:
         .join(TestSuite, TestDefinition.test_suite_id == TestSuite.id)
         .where(
             TestDefinitionNote.id == note_uuid,
+            TestDefinition.version_clause(),
             TestSuite.suite_type == SuiteType.REGULAR,
             TestSuite.project_code.in_(perms.allowed_codes),
         )

@@ -12,6 +12,7 @@ from testgen.common.enums import SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.utils import is_uuid4
 
 
@@ -181,6 +182,7 @@ class TestSuite(Entity):
             SELECT test_suite_id,
                 COUNT(*) AS count
             FROM test_definitions
+            WHERE version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
             GROUP BY test_suite_id
         )
         SELECT
@@ -233,7 +235,7 @@ class TestSuite(Entity):
         ``test_types``, falling back to the raw ``test_type`` code when the lookup
         row is missing (defensive — every shipping test type has a short name).
         """
-        query = """
+        query = f"""
         SELECT
             COALESCE(tt.test_name_short, td.test_type) AS type_label,
             COUNT(*) AS total,
@@ -241,6 +243,7 @@ class TestSuite(Entity):
         FROM test_definitions td
             LEFT JOIN test_types tt ON tt.test_type = td.test_type
         WHERE td.test_suite_id = :test_suite_id
+            AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
         GROUP BY type_label
         ORDER BY type_label;
         """

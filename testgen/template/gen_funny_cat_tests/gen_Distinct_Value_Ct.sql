@@ -85,7 +85,7 @@ selected_columns AS (
     )
 )
 INSERT INTO test_definitions (
-  table_groups_id, test_suite_id, test_type,
+  table_groups_id, test_suite_id, version_id, test_type,
   schema_name, table_name, column_name,
   test_active, last_auto_gen_date, profiling_as_of_date, profile_run_id,
   baseline_value_ct, threshold_value, skip_errors
@@ -93,6 +93,7 @@ INSERT INTO test_definitions (
 SELECT 
   :TABLE_GROUPS_ID ::UUID AS table_groups_id,
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
+  :VERSION_ID ::UUID      AS version_id,
   'Distinct_Value_Ct'     AS test_type,
   r.schema_name,
   r.table_name,
@@ -113,9 +114,10 @@ INNER JOIN selected_columns c ON (
 )
   -- Only insert if test type is active
 WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Distinct_Value_Ct' AND active = 'Y')
+  {TABLE_FILTER}
 
 -- Match "uix_td_autogen_column" unique index exactly
-ON CONFLICT (test_suite_id, test_type, schema_name, table_name, column_name)
+ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name, column_name)
 WHERE last_auto_gen_date IS NOT NULL 
   AND table_name IS NOT NULL 
   AND column_name IS NOT NULL

@@ -1,6 +1,7 @@
 -- Deletes all monitors for dropped tables, including manual and locked ones
 DELETE FROM test_definitions td
 WHERE td.test_suite_id = :TEST_SUITE_ID ::UUID
+  AND td.version_id = :VERSION_ID ::UUID
   -- Filter by test types if specified (NULL = no filter)
   AND (:TEST_TYPES_FILTER IS NULL OR td.test_type = ANY(:TEST_TYPES_FILTER))
   AND EXISTS (

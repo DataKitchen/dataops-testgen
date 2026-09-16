@@ -1,8 +1,11 @@
 import dataclasses
 import logging
 from datetime import UTC, datetime, timedelta
+from functools import cached_property
 from typing import Literal
 from uuid import UUID
+
+from sqlalchemy import select
 
 from testgen.common.database.database_service import (
     execute_db_queries,
@@ -14,8 +17,10 @@ from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import MONITOR_GENERATION_SET, resolve_generation_sets
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
+from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import read_template_sql_file
@@ -198,6 +203,11 @@ class TestGeneration:
     
         return [*selection_queries, *template_queries]        
 
+    @cached_property
+    def version_id(self) -> UUID:
+        """The suite version this run's writes are scoped to."""
+        return get_current_session().scalar(select(SuiteVersion.resolved_for(self.test_suite.id)))
+
     def _get_params(self, test_type: TestTypeParams | None = None) -> dict:
         params = {}
         if test_type:
@@ -215,6 +225,7 @@ class TestGeneration:
         params.update({
             "TABLE_GROUPS_ID": self.table_group.id,
             "TEST_SUITE_ID": self.test_suite.id,
+            "VERSION_ID": self.version_id,
             "DATA_SCHEMA": self.table_group.table_group_schema,
             "GENERATION_SETS": self.generation_sets,
             "TEST_TYPES_FILTER": self.test_types_filter,

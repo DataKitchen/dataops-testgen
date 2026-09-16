@@ -6,6 +6,7 @@ from sqlalchemy.dialects import postgresql
 
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.utils import is_uuid4
 
@@ -97,3 +98,39 @@ def test_get_returns_none_without_querying_for_a_non_uuid(mock_session):
     assert SuiteVersion.get("not-a-uuid") is None
 
     mock_session.assert_not_called()
+
+
+def _compiled(expression) -> str:
+    return str(
+        expression.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    )
+
+
+def test_resolved_for_prefers_the_draft_then_the_highest_frozen_then_the_placeholder():
+    sql = _compiled(SuiteVersion.resolved_for(TestDefinition.test_suite_id))
+
+    assert sql.count("FROM suite_versions") == 3
+    assert "frozen_at IS NULL" in sql
+    assert "ORDER BY suite_versions.version DESC" in sql
+    assert "suite_versions.test_suite_id IS NULL" in sql
+    assert sql.index("frozen_at IS NULL") < sql.index("ORDER BY suite_versions.version DESC")
+
+
+def test_resolved_for_finds_the_placeholder_by_shape_not_by_id():
+    sql = _compiled(SuiteVersion.resolved_for(TestDefinition.test_suite_id))
+
+    assert NIL_UUID not in sql
+
+
+def test_resolved_for_correlates_on_the_given_suite_expression():
+    sql = _compiled(SuiteVersion.resolved_for(TestDefinition.test_suite_id))
+
+    assert "test_definitions.test_suite_id" in sql
+
+
+def test_resolved_for_accepts_a_literal_suite_id():
+    suite_id = uuid4()
+
+    sql = _compiled(SuiteVersion.resolved_for(suite_id))
+
+    assert str(suite_id) in sql

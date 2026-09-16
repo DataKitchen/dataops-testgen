@@ -800,7 +800,7 @@ def bulk_update_tests(
         # tests don't carry forward a stale "disabled because of X" marker.
         values["test_definition_status"] = None
 
-    where_clauses = [TestDefinition.test_suite_id == suite.id]
+    where_clauses = [TestDefinition.test_suite_id == suite.id, TestDefinition.version_clause()]
     if table_name:
         where_clauses.append(TestDefinition.table_name == table_name)
     if tt_code:

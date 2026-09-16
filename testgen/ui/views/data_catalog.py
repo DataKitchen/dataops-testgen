@@ -26,6 +26,7 @@ from testgen.common.models.data_column import DataColumnChars
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup, TableGroupMinimal
 from testgen.common.pii_masking import (
     get_pii_columns,
@@ -799,6 +800,7 @@ def get_related_test_suites(table_group_id: str, table_name: str, column_name: s
         )
     WHERE test_suites.table_groups_id = :table_group_id
         AND test_suites.suite_type = 'regular'
+        AND test_definitions.version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
         AND table_name = :table_name
         {"AND column_name = :column_name" if column_name else ""}
     GROUP BY test_suites.id

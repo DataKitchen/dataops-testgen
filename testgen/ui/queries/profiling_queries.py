@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 
 from testgen.common.data_catalog_service import TAG_FIELDS
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.ui.services.database_service import fetch_all_from_db, fetch_df_from_db, fetch_one_from_db
 from testgen.utils import is_uuid4
 
@@ -177,7 +178,7 @@ def get_tables_by_condition(
     include_active_tests: bool = False,
     include_scores: bool = False,
 ) -> list[dict]:
-    active_tests_cte = """
+    active_tests_cte = f"""
     WITH active_test_definitions AS (
         SELECT
             test_defs.table_groups_id,
@@ -193,6 +194,7 @@ def get_tables_by_condition(
             )
         WHERE test_active = 'Y'
             AND column_id IS NULL
+            AND test_defs.version_id = {SuiteVersion.resolved_for_sql("test_defs.test_suite_id")}
         GROUP BY test_defs.table_groups_id,
             test_defs.schema_name,
             test_defs.table_name
@@ -384,7 +386,7 @@ def get_columns_by_condition(
         ) AS has_test_runs,
     """ if include_has_test_runs else ""
 
-    active_tests_select = """
+    active_tests_select = f"""
         -- Test Definition Count
         (
             SELECT COUNT(*)
@@ -393,6 +395,7 @@ def get_columns_by_condition(
                 AND table_name = column_chars.table_name
                 AND column_name = column_chars.column_name
                 AND test_active = 'Y'
+                AND version_id = {SuiteVersion.resolved_for_sql("test_definitions.test_suite_id")}
         ) AS active_test_count,
     """ if include_active_tests else ""
 

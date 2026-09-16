@@ -5,6 +5,7 @@ import pytest
 
 from testgen.common.custom_test_validation import CustomQueryResult
 from testgen.mcp.exceptions import MCPUserError
+from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
 
 # -- list_tests ---------------------------------------------------------------
 
@@ -1677,3 +1678,23 @@ def test_update_test_rejects_non_public_test_type(mock_resolve_td, mock_tt_model
         update_test(str(uuid4()), fields={"test_active": False})
 
     td.save.assert_not_called()
+
+
+# -- version scoping ----------------------------------------------------------
+
+
+@patch("testgen.mcp.tools.test_definitions.get_current_session")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_bulk_update_tests_scopes_to_a_version(mock_resolve_suite, mock_session, db_session_mock):
+    mock_resolve_suite.return_value = _make_suite()
+    session = MagicMock()
+    session.execute.return_value.rowcount = 0
+    mock_session.return_value = session
+
+    from testgen.mcp.tools.test_definitions import bulk_update_tests
+
+    bulk_update_tests(test_suite_id=str(uuid4()), action="disable")
+
+    assert scopes_to_a_version(emitted_statements(session)[0]), (
+        "the bulk update writes every version of the suite, not the one it resolves to"
+    )

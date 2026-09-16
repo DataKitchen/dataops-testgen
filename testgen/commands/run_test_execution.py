@@ -5,6 +5,8 @@ from functools import partial
 from typing import Literal
 from uuid import UUID
 
+from sqlalchemy import select
+
 from testgen.commands.queries.execute_tests_query import TestExecutionDef, TestExecutionSQL
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.commands.test_thresholds_prediction import TestThresholdsPrediction
@@ -21,6 +23,7 @@ from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
@@ -54,6 +57,7 @@ def run_test_execution(
         id=job_context.get().job_id,
         test_suite_id=test_suite_id,
         test_starttime=datetime.now(UTC) + time_delta,
+        version_id=get_current_session().scalar(select(SuiteVersion.resolved_for(test_suite_id))),
     )
 
     # This runs in a subprocess — commit after every save so progress is visible
