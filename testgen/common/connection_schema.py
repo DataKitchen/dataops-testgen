@@ -45,21 +45,33 @@ class Req(StrEnum):
 @dataclass(frozen=True)
 class ConnField:
     label: str  # exact UI form field label; a stable key consumers match on, not cosmetic text
-    column: str  # Connection ORM attribute, or a key within ``parameters`` when in_parameters
+    column: str  # Connection ORM attribute, or a key within ``parameters`` / ``secrets``
     requirement: Req
     secret: bool = False
     in_parameters: bool = False  # stored under the generic ``parameters`` column
+    in_secrets: bool = False  # stored under the generic encrypted ``secrets`` column
+
+    def __post_init__(self) -> None:
+        # Read paths withhold a field on ``secret`` alone, so an unmarked field in the
+        # secrets column would render its decrypted value into tool output.
+        if self.in_secrets and not self.secret:
+            raise ValueError(f"Connection field {self.label!r} is stored in secrets and must set secret=True.")
 
 
 def read_conn_field(connection: Connection, fld: ConnField) -> object | None:
     if fld.in_parameters:
         return (connection.parameters or {}).get(fld.column)
+    if fld.in_secrets:
+        return (connection.secrets or {}).get(fld.column)
     return getattr(connection, fld.column, None)
 
 
 def write_conn_field(connection: Connection, fld: ConnField, value: object) -> None:
     if fld.in_parameters:
         connection.parameters = {**(connection.parameters or {}), fld.column: value}
+        return
+    if fld.in_secrets:
+        connection.secrets = {**(connection.secrets or {}), fld.column: value}
         return
     setattr(connection, fld.column, str(value) if fld.column == "project_port" and value is not None else value)
 

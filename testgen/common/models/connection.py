@@ -22,7 +22,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from testgen.common.database.flavor.flavor_service import SQLFlavor
 from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models import get_current_session
-from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson
+from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson, SafeEncryptedJson
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import is_uuid4
@@ -83,11 +83,19 @@ class Connection(Entity):
     connect_with_identity: bool = Column(Boolean, default=False)
     connect_with_service_principal: bool = Column(Boolean, default=False)
     parameters: JSON_TYPE = Column(postgresql.JSONB)
-    secrets: JSON_TYPE = Column(EncryptedJson)
+    # Hydrated in bulk list queries, so one unreadable row must not fail the whole query.
+    secrets: JSON_TYPE = Column(SafeEncryptedJson)
 
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)
     _minimal_columns = ConnectionMinimal.__annotations__.keys()
+
+    @classmethod
+    def encrypted_columns(cls) -> tuple[str, ...]:
+        """Names of the columns stored encrypted."""
+        return tuple(
+            column.name for column in cls.__table__.columns if isinstance(column.type, EncryptedBytea)
+        )
 
     @classmethod
     def get_minimal(cls, identifier: int) -> ConnectionMinimal | None:
