@@ -674,9 +674,13 @@ class TableGroup(Entity):
             GROUP BY pr.table_groups_id
         ),
         latest_test AS (
-            SELECT ts.table_groups_id, MAX(tr.test_starttime) AS test_starttime
+            -- Reads the start from job_executions, as the profiling side does.
+            -- ``test_runs.test_starttime`` is timestamp-without-zone, so taking it
+            -- directly would make this the one naive timestamp on the row.
+            SELECT ts.table_groups_id, MAX(je.started_at) AS started_at
             FROM test_runs tr
                 JOIN test_suites ts ON ts.id = tr.test_suite_id
+                LEFT JOIN job_executions je ON je.id = tr.id
             WHERE ts.suite_type = 'regular'
             GROUP BY ts.table_groups_id
         )
@@ -691,7 +695,7 @@ class TableGroup(Entity):
             stats.column_count,
             stats.row_count,
             latest_profile.started_at AS last_profiled_date,
-            latest_test.test_starttime AS last_tested_date,
+            latest_test.started_at AS last_tested_date,
             groups.dq_score_profiling AS profiling_score,
             groups.dq_score_testing AS testing_score,
             -- Mirrors utils.score: product when both exist, else the non-null one, else NULL.

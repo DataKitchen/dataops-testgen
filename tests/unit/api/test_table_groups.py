@@ -424,6 +424,17 @@ def _select_list() -> str:
     return source[start:end]
 
 
+def test_activity_timestamps_come_from_job_executions():
+    """``test_runs.test_starttime`` is timestamp-without-zone while the profiling side
+    reads the zone-aware ``job_executions.started_at``. Taking it directly would make
+    ``last_tested_at`` the only naive timestamp the API serves."""
+    select_list = _select_list()
+
+    assert "test_starttime" not in select_list
+    assert "latest_test.started_at AS last_tested_date" in select_list
+    assert "latest_profile.started_at AS last_profiled_date" in select_list
+
+
 def test_select_list_supplies_every_dataclass_field():
     """``_list_with_activity`` builds rows with ``TableGroupListItem(**row)``, so a column
     dropped from the SELECT raises TypeError at runtime. Every other test in this module
