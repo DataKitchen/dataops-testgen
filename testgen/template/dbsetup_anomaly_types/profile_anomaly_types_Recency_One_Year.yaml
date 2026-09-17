@@ -97,3 +97,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: created_in_ui
     error_type: Profile Anomaly
+  - id: '11117'
+    test_id: '1019'
+    test_type: Recency_One_Year
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      created_in_ui
+    error_type: Profile Anomaly

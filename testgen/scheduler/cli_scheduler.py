@@ -14,7 +14,7 @@ from testgen import settings
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
 from testgen.common.enums import PAUSABLE_JOB_KEYS, JobStatus
 from testgen.common.models import database_session, with_database_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import JobExecution, process_failure_message
 from testgen.common.models.scheduler import JobSchedule
 from testgen.scheduler.base import DelayedPolicy, Job, Scheduler
 
@@ -200,7 +200,7 @@ class CliScheduler(Scheduler):
             LOG.info("Job PID %d ended with code %d", proc.pid, ret_code)
             if ret_code != 0:
                 with database_session():
-                    if job_exec.mark_failed(f"Process {proc.pid} exited with code {ret_code}"):
+                    if job_exec.mark_failed(process_failure_message(proc.pid, ret_code, job_exec.job_key)):
                         run_final_callbacks(job_exec)
         except Exception:
             LOG.exception("Error monitoring job PID %d", proc.pid)

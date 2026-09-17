@@ -125,6 +125,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11043'
+    test_type: LOV_Match
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') NOT IN {BASELINE_VALUE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1377'
     test_id: '1019'
@@ -209,5 +217,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11044'
+    test_id: '1019'
+    test_type: LOV_Match
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT NULLIF("{COLUMN_NAME}", '') AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT IN {BASELINE_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

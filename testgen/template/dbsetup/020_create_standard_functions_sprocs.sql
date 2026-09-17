@@ -127,13 +127,18 @@ DECLARE
 BEGIN
     lower_case_sql_flavor := LOWER(sql_flavor);
 
-    IF lower_case_sql_flavor IN ('postgres', 'postgresql') THEN
+    -- Flavors are grouped by how their string literals escape, not by engine lineage.
+    --   QUOTE_LITERAL: doubles the quote and prefixes E'...' when a backslash is present.
+    --   Trimming that E suits flavors that reject the prefix but read a backslash literally.
+    --   Doubling alone suits flavors where a backslash carries no meaning in a literal.
+    --   Backslash-escaping suits flavors whose literals process escape sequences.
+    IF lower_case_sql_flavor IN ('postgres', 'postgresql', 'duckdb') THEN
         escaped_value := QUOTE_LITERAL(var_value);
     ELSIF lower_case_sql_flavor IN ('redshift', 'redshift_spectrum', 'snowflake') THEN
         escaped_value := TRIM(LEADING 'E' FROM QUOTE_LITERAL(var_value));
-    ELSIF lower_case_sql_flavor = 'mssql' THEN
+    ELSIF lower_case_sql_flavor IN ('mssql', 'oracle', 'sap_hana', 'salesforce_data360') THEN
         escaped_value := '''' || REPLACE(var_value, '''', '''''') || '''';
-    ELSIF lower_case_sql_flavor = 'databricks' THEN
+    ELSIF lower_case_sql_flavor IN ('databricks', 'bigquery') THEN
         escaped_value := '''' || REPLACE(REPLACE(var_value, '\', '\\'), '''', '\''') || '''';
     ELSE
         RAISE EXCEPTION 'Invalid sql_flavor name: %', sql_flavor;

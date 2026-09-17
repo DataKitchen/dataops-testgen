@@ -14,7 +14,7 @@ from pydantic import Field
 
 from testgen.common.database.connection_service import (
     apply_connection_defaults,
-    normalize_auth_fields,
+    enforce_connection_rules,
     test_connection_status,
 )
 from testgen.common.models import with_database_session
@@ -161,12 +161,12 @@ def test_connection(
         mode = connection_mode if inline else effective_mode(connection, connection_mode)
         apply_connection_params(connection, connection.sql_flavor_code, mode, connection_params or {})
 
-    # normalize_auth_fields raises ValueError on invalid combinations (e.g. both
-    # Entra ID auth flags set). MCP callers need MCPUserError for the message to
-    # reach the caller instead of collapsing to "unexpected error"; other callers
-    # (UI, CLI) see the raw ValueError, which is the shared-code convention.
+    # enforce_connection_rules raises ValueError on a broken rule (e.g. both Entra ID
+    # auth flags set). MCP callers need MCPUserError for the message to reach the
+    # caller instead of collapsing to "unexpected error"; other callers (UI, CLI) see
+    # the raw ValueError, which is the shared-code convention.
     try:
-        normalize_auth_fields(connection)
+        enforce_connection_rules(connection)
     except ValueError as e:
         raise MCPUserError(str(e)) from e
     # No-op for stored connections; keeps the inline-test contract identical to create.

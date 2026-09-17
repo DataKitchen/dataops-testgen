@@ -28,6 +28,7 @@ class SqlFlavorCode(StrEnum):
     AZURE_MSSQL = "azure_mssql"
     SYNAPSE_MSSQL = "synapse_mssql"
     DATABRICKS = "databricks"
+    DUCKDB = "duckdb"
     BIGQUERY = "bigquery"
     ONELAKE_MSSQL = "onelake_mssql"
     MSSQL = "mssql"
@@ -46,6 +47,7 @@ class SqlFlavorLabel(StrEnum):
     AZURE_MSSQL = "Azure SQL Database"
     SYNAPSE_MSSQL = "Azure Synapse Analytics"
     DATABRICKS = "Databricks"
+    DUCKDB = "DuckDB"
     BIGQUERY = "Google BigQuery"
     ONELAKE_MSSQL = "Microsoft OneLake"
     MSSQL = "Microsoft SQL Server"
@@ -64,6 +66,7 @@ FLAVOR_CODE_TO_LABEL: dict[SqlFlavorCode, SqlFlavorLabel] = {
     SqlFlavorCode.AZURE_MSSQL: SqlFlavorLabel.AZURE_MSSQL,
     SqlFlavorCode.SYNAPSE_MSSQL: SqlFlavorLabel.SYNAPSE_MSSQL,
     SqlFlavorCode.DATABRICKS: SqlFlavorLabel.DATABRICKS,
+    SqlFlavorCode.DUCKDB: SqlFlavorLabel.DUCKDB,
     SqlFlavorCode.BIGQUERY: SqlFlavorLabel.BIGQUERY,
     SqlFlavorCode.ONELAKE_MSSQL: SqlFlavorLabel.ONELAKE_MSSQL,
     SqlFlavorCode.MSSQL: SqlFlavorLabel.MSSQL,
@@ -82,6 +85,7 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
     "azure_mssql": "mssql",
     "synapse_mssql": "mssql",
     "databricks": "databricks",
+    "duckdb": "duckdb",
     "bigquery": "bigquery",
     "onelake_mssql": "mssql",
     "mssql": "mssql",
@@ -94,3 +98,19 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
 
 # Stored ``sql_flavor`` values (the distinct families).
 FLAVOR_FAMILIES: frozenset[str] = frozenset(FLAVOR_CODE_TO_FAMILY.values())
+
+# Flavors that run their engine inside the TestGen process rather than on a server reachable over
+# the network. ``max_threads`` sizes the pool TestGen fans per-column queries across, and every
+# checkout of an in-process engine is another engine instance over the same cores — several times
+# the peak memory for no additional throughput.
+#
+# The engine's own intra-query parallelism is a separate setting TestGen does not configure:
+# DuckDB sizes its thread pool from the detected CPU count whatever this value says.
+FLAVOR_FIXED_MAX_THREADS: dict[str, int] = {
+    SqlFlavorCode.DUCKDB: 1,
+}
+
+
+def fixed_max_threads(sql_flavor_code: str | None) -> int | None:
+    """The thread count a flavor requires, or None when the connection's own setting applies."""
+    return FLAVOR_FIXED_MAX_THREADS.get(sql_flavor_code) if sql_flavor_code else None

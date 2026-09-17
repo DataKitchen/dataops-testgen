@@ -1,15 +1,15 @@
 from abc import abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine as sqlalchemy_create_engine
-from sqlalchemy.engine.base import Engine
+from sqlalchemy.engine.base import Connection, Engine
 
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.encrypt import DecryptText
 
-SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
+SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "duckdb", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
 RowLimitingClause = Literal["limit", "top", "fetch"]
 
 
@@ -31,6 +31,16 @@ class ConnectionParams(TypedDict):
     connect_with_identity: bool
     connect_with_service_principal: bool
     sql_flavor_code: str
+    parameters: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class ConnectionParameter:
+    """One entry in a flavor's ``parameters`` shape."""
+
+    key: str
+    label: str
+    required: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +64,7 @@ class ResolvedConnectionParams:
     service_account_key: dict[str, Any] | None = None
     connect_with_identity: bool = False
     connect_with_service_principal: bool = False
+    parameters: dict[str, Any] = field(default_factory=dict)
 
 
 def _decrypt_if_needed(value: Any) -> str | None:
@@ -91,7 +102,15 @@ def resolve_connection_params(connection_params: ConnectionParams) -> ResolvedCo
         service_account_key=connection_params.get("service_account_key"),
         connect_with_identity=connection_params.get("connect_with_identity") or False,
         connect_with_service_principal=connection_params.get("connect_with_service_principal") or False,
+        parameters=connection_params.get("parameters") or {},
     )
+
+
+class FlavorConnectionError(Exception):
+    """A connection failure whose message is written for the user rather than the log.
+
+    ``test_connection_status`` shows it verbatim, so the text has to stand on its own.
+    """
 
 
 class FlavorService:
@@ -151,6 +170,33 @@ class FlavorService:
 
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
         return []
+
+    parameters_schema: tuple[ConnectionParameter, ...] = ()
+    """Shape of the flavor's ``connections.parameters`` entry. Empty means the flavor stores none."""
+
+    def validate_parameters(self, parameters: dict[str, Any] | None) -> None:
+        """Raise ``ValueError`` naming the offending field if ``parameters`` does not match the shape."""
+        declared = {parameter.key: parameter for parameter in self.parameters_schema}
+        supplied = parameters or {}
+
+        for key in supplied:
+            if key not in declared:
+                raise ValueError(f"'{key}' is not a connection parameter for this database type.")
+
+        for parameter in self.parameters_schema:
+            if not parameter.required:
+                continue
+            value = supplied.get(parameter.key)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                raise ValueError(f"{parameter.label} is required.")
+
+    def init(self, connection: Connection, params: ResolvedConnectionParams) -> None:
+        """Prepare a freshly opened connection for use.
+
+        Runs after the pre-connection queries. Unlike those, a failure here aborts the
+        connection instead of being logged and skipped, so it is the place for setup the
+        flavor cannot operate without.
+        """
 
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:  # noqa: ARG002
         return {"connect_timeout": 3600}

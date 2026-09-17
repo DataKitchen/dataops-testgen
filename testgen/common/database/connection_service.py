@@ -7,8 +7,8 @@ column / flag (no user-facing labels — those are presentation):
 
 * ``ConnectionStatus`` + ``test_connection_status`` — open an external connection
   and report success / failure with driver-text details.
-* ``normalize_auth_fields`` — pre-save scrub of mutually-exclusive credential
-  columns so flipping auth modes doesn't leave orphan values behind.
+* ``enforce_connection_rules`` — raise on a connection that cannot be saved as posted,
+  then scrub the credential columns its auth mode doesn't use.
 * ``apply_connection_defaults`` — pre-save fill of flavor-dependent defaults the
   caller didn't supply.
 
@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
 from testgen.common.database.database_service import empty_cache, get_flavor_service
+from testgen.common.database.flavor.flavor_service import FlavorConnectionError
+from testgen.common.flavors import fixed_max_threads
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.ui.services.database_service import fetch_from_target_db
 
@@ -76,7 +78,12 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
 
         if not connection_successful:
             return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
+
         return ConnectionStatus(message="The connection was successful.", successful=True)
+    except FlavorConnectionError as error:
+        # The flavor wrote this for the user, so it is shown instead of a generic failure.
+        LOG.info(f"Connection test failed: {error}")
+        return ConnectionStatus(message="Error attempting the connection.", details=str(error), successful=False)
     except KeyError:
         return ConnectionStatus(
             message="Error attempting the connection. ",
@@ -111,13 +118,22 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
 # ---------------------------------------------------------------------------
 
 
-def normalize_auth_fields(connection: Connection) -> None:
-    """Clear credential columns the active auth mode doesn't use so flipping
-    modes doesn't leave stale opposite-mode values behind. Databricks OAuth
-    stores the client secret in ``project_pw_encrypted`` despite
-    ``connect_by_key=True``, so it sticks with the password path.
+def enforce_connection_rules(connection: Connection) -> None:
+    """Enforce the rules a connection must satisfy to be saved or used.
+
+    Raises ``ValueError`` on the first rule a connection breaks: a flavor's ``parameters``
+    not matching its declared shape, or a combination of auth flags that cannot work.
+    Then clears the credential columns the chosen auth mode does not use, so flipping
+    between modes leaves no stale opposite-mode values behind. Databricks OAuth stores
+    the client secret in ``project_pw_encrypted`` despite ``connect_by_key=True``, so it
+    sticks with the password path. Finally pins ``max_threads`` for a flavor that fixes it.
     """
     code = connection.sql_flavor_code
+
+    get_flavor_service(connection.sql_flavor).validate_parameters(connection.parameters)
+
+    if (threads := fixed_max_threads(code)) is not None:
+        connection.max_threads = threads
 
     if connection.connect_with_identity and connection.connect_with_service_principal:
         raise ValueError(

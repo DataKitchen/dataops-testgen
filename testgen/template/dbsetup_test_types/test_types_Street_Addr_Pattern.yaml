@@ -123,6 +123,14 @@ test_types:
     test_operator: '<'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11070'
+    test_type: Street_Addr_Pattern
+    sql_flavor: duckdb
+    measure: |-
+      100.0*SUM(CASE WHEN {COLUMN_NAME} ~ '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$' THEN 1 ELSE 0 END)::FLOAT / NULLIF(COUNT({COLUMN_NAME}), 0)::FLOAT
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1389'
     test_id: '1033'
@@ -208,5 +216,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NOT REGEXP_LIKE("{COLUMN_NAME}", '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$') GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11071'
+    test_id: '1033'
+    test_type: Street_Addr_Pattern
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" !~ '^[0-9]{1,5}[a-zA-Z]?\s\w{1,5}\.?\s?\w*\s?\w*\s[a-zA-Z]{1,6}\.?\s?[0-9]{0,5}[A-Z]{0,1}$' GROUP BY "{COLUMN_NAME}" ORDER BY COUNT(*) DESC LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

@@ -142,6 +142,7 @@ const ConnectionForm = (props, saveButton) => {
         service_account_key: connection?.service_account_key ?? '',
         connect_with_identity: connection?.connect_with_identity ?? false,
         connect_with_service_principal: connection?.connect_with_service_principal ?? false,
+        parameters: connection?.parameters ?? {},
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
@@ -291,6 +292,14 @@ const ConnectionForm = (props, saveButton) => {
             connection,
             getValue(props.cachedServiceAccountKeyFile) ?? null
         ),
+        duckdb: () => DuckdbForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('duckdb_form', isValid);
+            },
+        ),
         salesforce_data360: () => SalesforceData360Form(
             updatedConnection,
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
@@ -325,12 +334,17 @@ const ConnectionForm = (props, saveButton) => {
                 ...updatedConnection.val,
                 connect_with_identity: false,
                 connect_with_service_principal: false,
+                parameters: {},
             };
         }
 
         const flavor = getValue(props.flavors).find(f => f.value === selectedFlavorCode);
         return authenticationForms[flavor.value]();
     });
+
+    const fixedMaxThreads = van.derive(
+        () => getValue(props.flavors).find(f => f.value === connectionFlavor.val)?.fixed_max_threads ?? null,
+    );
 
     van.derive(() => {
         const selectedFlavor = connectionFlavor.val;
@@ -341,7 +355,7 @@ const ConnectionForm = (props, saveButton) => {
             sql_flavor: flavorObject.flavor,
             sql_flavor_code: flavorObject.value,
             connection_name: connectionName.val,
-            max_threads: connectionMaxThreads.val,
+            max_threads: flavorObject.fixed_max_threads ?? connectionMaxThreads.val,
             max_query_chars: connectionQueryChars.val,
         };
     });
@@ -386,14 +400,20 @@ const ConnectionForm = (props, saveButton) => {
             },
             div(
                 { class: 'flex-row fx-gap-3' },
-                Slider({
-                    label: 'Max Threads',
-                    hint: 'Maximum number of concurrent threads that run tests. Default values should be retained unless test queries are failing.',
-                    value: connectionMaxThreads.rawVal,
-                    min: 1,
-                    max: 8,
-                    onChange: (value) => connectionMaxThreads.val = value,
-                }),
+                // Kept mounted and hidden with CSS rather than swapped out: the slider's own
+                // reactive bindings do not survive being detached. `display: contents` leaves
+                // the slider itself as the flex child while it is shown.
+                div(
+                    { style: () => fixedMaxThreads.val ? 'display: none;' : 'display: contents;' },
+                    Slider({
+                        label: 'Max Threads',
+                        hint: 'Maximum number of concurrent threads that run tests. Default values should be retained unless test queries are failing.',
+                        value: connectionMaxThreads.rawVal,
+                        min: 1,
+                        max: 8,
+                        onChange: (value) => connectionMaxThreads.val = value,
+                    }),
+                ),
                 Slider({
                     label: 'Max Expression Length',
                     hint: 'Some tests are consolidated into queries for maximum performance. Default values should be retained unless test queries are failing.',
@@ -1630,6 +1650,42 @@ const SalesforceData360Form = (
                 });
             },
         ),
+    );
+};
+
+/**
+ * @param {VanState<Connection>} connection
+ * @param {Flavor} flavor
+ * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
+ * @returns {HTMLElement}
+ */
+const DuckdbForm = (
+    connection,
+    flavor,
+    onChange,
+) => {
+    const isValid = van.state(false);
+    const databaseFile = van.state(connection.rawVal?.parameters?.database_file ?? '');
+    const validityPerField = {};
+
+    van.derive(() => {
+        onChange({ parameters: { database_file: databaseFile.val } }, isValid.val);
+    });
+
+    return div(
+        { class: 'flex-column fx-gap-3 fx-flex' },
+        Input({
+            name: 'database_file',
+            label: 'Database File',
+            help: flavor?.field_help?.database_file ?? 'Path to the DuckDB database file',
+            value: databaseFile,
+            onChange: (value, state) => {
+                databaseFile.val = value;
+                validityPerField['database_file'] = state.valid;
+                isValid.val = Object.values(validityPerField).every(v => v);
+            },
+            validators: [required],
+        }),
     );
 };
 

@@ -122,6 +122,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11059'
+    test_type: Pattern_Match
+    sql_flavor: duckdb
+    measure: |-
+      COUNT(NULLIF({COLUMN_NAME}, '')) - SUM(CASE WHEN NULLIF({COLUMN_NAME}, '') ~ '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1384'
     test_id: '1026'
@@ -206,5 +214,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE NOT REGEXP_LIKE(CAST(NULLIF("{COLUMN_NAME}", '') AS VARCHAR), '{BASELINE_VALUE}') GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11060'
+    test_id: '1026'
+    test_type: Pattern_Match
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT  "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE NULLIF("{COLUMN_NAME}", '') NOT SIMILAR TO '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

@@ -123,6 +123,14 @@ test_types:
     test_operator: '<'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11022'
+    test_type: Dec_Trunc
+    sql_flavor: duckdb
+    measure: |-
+      SUM(ROUND(ABS(({COLUMN_NAME} % 1)), 5))+1
+    test_operator: <
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1369'
     test_id: '1011'
@@ -211,5 +219,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT LENGTH(SPLIT_PART(CAST("{COLUMN_NAME}" AS TEXT), '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11023'
+    test_id: '1011'
+    test_type: Dec_Trunc
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT LENGTH(SPLIT_PART("{COLUMN_NAME}" :: TEXT, '.', 2)) AS decimal_scale, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" GROUP BY decimal_scale LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

@@ -115,3 +115,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: null
     error_type: Profile Anomaly
+  - id: '11108'
+    test_id: '1004'
+    test_type: Multiple_Types_Minor
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT column_name, columns.table_name, CASE WHEN data_type = 'timestamp without time zone' THEN 'timestamp' WHEN data_type = 'character varying' THEN 'varchar(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'character'  THEN 'char(' || CAST(character_maximum_length AS VARCHAR) || ')' WHEN data_type = 'numeric' THEN 'numeric(' || CAST(numeric_precision AS VARCHAR) || ',' ||  CAST(numeric_scale AS VARCHAR) || ')' ELSE data_type END AS data_type FROM information_schema.columns  JOIN information_schema.tables ON columns.table_name = tables.table_name AND columns.table_schema = tables.table_schema WHERE columns.table_schema = '{TARGET_SCHEMA}'  AND columns.column_name = '{COLUMN_NAME}' AND UPPER(tables.table_type) = 'BASE TABLE' ORDER BY data_type, table_name LIMIT {LIMIT};
+    error_type: Profile Anomaly

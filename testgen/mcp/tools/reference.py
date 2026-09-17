@@ -399,6 +399,10 @@ _FIELD_NOTES: dict[str, str] = {
     "Catalog": "Databricks catalog (the database/namespace).",
     "Service Name": "Oracle service name.",
     "Warehouse": "Snowflake warehouse name.",
+    "Database File": (
+        "Path to the DuckDB database file. The path is resolved inside the TestGen "
+        "container, so the file has to be on a mounted volume."
+    ),
     "URL": "Full connection URL. Provide instead of the host fields.",
 }
 

@@ -6,11 +6,15 @@ from dataclasses import asdict, dataclass
 import streamlit as st
 
 from testgen import settings
-from testgen.common.database.connection_service import ConnectionStatus, normalize_auth_fields, test_connection_status
+from testgen.common.database.connection_service import (
+    ConnectionStatus,
+    enforce_connection_rules,
+    test_connection_status,
+)
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.enums import JobSource
-from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL
+from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, fixed_max_threads
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.job_execution import JobExecution
@@ -183,7 +187,7 @@ class ConnectionsPage(Page):
         if should_save():
             success = True
             try:
-                normalize_auth_fields(connection)
+                enforce_connection_rules(connection)
                 connection.save()
                 select_connections_where.clear()
                 get_connection.clear()
@@ -255,7 +259,7 @@ class ConnectionsPage(Page):
 
     def test_connection(self, connection: Connection) -> ConnectionStatus:
         try:
-            normalize_auth_fields(connection)
+            enforce_connection_rules(connection)
         except ValueError as error:
             return ConnectionStatus(message=str(error), successful=False, details=None)
         return test_connection_status(connection)
@@ -486,6 +490,9 @@ class ConnectionsPage(Page):
 def format_connection(connection: Connection | ConnectionMinimal) -> dict:
     formatted_connection = connection.to_dict(json_safe=True)
 
+    # Decrypted on read, so it has to be dropped rather than masked.
+    formatted_connection.pop("secrets", None)
+
     if formatted_connection.get("project_pw_encrypted"):
         formatted_connection["project_pw_encrypted"] = "***"
     if formatted_connection.get("private_key"):
@@ -506,6 +513,8 @@ class ConnectionFlavor:
     label: str
     icon: str
     flavor: str
+    field_help: dict[str, str]
+    fixed_max_threads: int | None
 
 
 # Labels and families come from the shared source in ``common/flavors.py`` (the
@@ -516,6 +525,7 @@ _FLAVOR_ICONS: dict[str, str] = {
     "azure_mssql": "flavors/azure_sql.svg",
     "synapse_mssql": "flavors/azure_synapse_table.svg",
     "databricks": "flavors/databricks.svg",
+    "duckdb": "flavors/duckdb.svg",
     "bigquery": "flavors/bigquery.svg",
     "onelake_mssql": "flavors/onelake.svg",
     "mssql": "flavors/mssql.svg",
@@ -526,12 +536,24 @@ _FLAVOR_ICONS: dict[str, str] = {
     "snowflake": "flavors/snowflake.svg",
 }
 
+_RUNS_IN_CONTAINER = settings.CHECK_FOR_LATEST_VERSION == "docker"
+_CONTAINER_PATH_NOTE = ". It must be a path inside the TestGen container, so the file has to be on a mounted volume."
+
+_FLAVOR_FIELD_HELP: dict[str, dict[str, str]] = {
+    "duckdb": {
+        "database_file": "Path to the DuckDB database file"
+        + (_CONTAINER_PATH_NOTE if _RUNS_IN_CONTAINER else ""),
+    },
+}
+
 FLAVOR_OPTIONS = [
     ConnectionFlavor(
         value=code,
         label=str(FLAVOR_CODE_TO_LABEL[code]),
         flavor=FLAVOR_CODE_TO_FAMILY[code],
         icon=get_asset_data_url(icon),
+        field_help=_FLAVOR_FIELD_HELP.get(code, {}),
+        fixed_max_threads=fixed_max_threads(code),
     )
     for code, icon in _FLAVOR_ICONS.items()
 ]

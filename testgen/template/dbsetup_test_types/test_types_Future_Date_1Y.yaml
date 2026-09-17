@@ -122,6 +122,14 @@ test_types:
     test_operator: '>'
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11037'
+    test_type: Future_Date_1Y
+    sql_flavor: duckdb
+    measure: |-
+      SUM(GREATEST(0, SIGN({COLUMN_NAME}::DATE - ('{RUN_DATE}'::DATE+365))))
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1374'
     test_id: '1016'
@@ -206,5 +214,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE GREATEST(0, SIGN(CAST("{COLUMN_NAME}" AS DATE) - (CAST('{TEST_DATE}' AS DATE) + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11038'
+    test_id: '1016'
+    test_type: Future_Date_1Y
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE GREATEST(0, SIGN("{COLUMN_NAME}"::DATE - ('{TEST_DATE}'::DATE + 365))) > {THRESHOLD_VALUE} GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Test Results
   test_templates: []

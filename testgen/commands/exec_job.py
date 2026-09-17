@@ -12,6 +12,7 @@ import sys
 from uuid import UUID
 
 from testgen.commands.job_registry import JOB_DISPATCH, run_final_callbacks
+from testgen.common.database.flavor.duckdb_flavor_service import sweep_stale_spill_directories
 from testgen.common.job_context import JobContext, job_context
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
@@ -30,6 +31,10 @@ def exec_job(job_execution_id: UUID) -> None:
     or park when the handler stopped at a checkpoint.
     Only exits non-zero for truly unrecoverable failures (DB unreachable, record not found).
     """
+    # Every module shares one temp directory and one pid namespace, so collecting here reaches
+    # spill the UI and server processes left behind too. The walk stays off the paths they serve.
+    sweep_stale_spill_directories()
+
     try:
         with database_session():
             job_exec = JobExecution.get(job_execution_id)

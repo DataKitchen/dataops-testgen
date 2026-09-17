@@ -124,6 +124,14 @@ test_types:
     test_operator: '>='
     test_condition: |-
       {THRESHOLD_VALUE}
+  - id: '11039'
+    test_type: Incr_Avg_Shift
+    sql_flavor: duckdb
+    measure: |-
+      COALESCE(ABS( ({BASELINE_AVG} - (SUM({COLUMN_NAME}) - {BASELINE_SUM}) / NULLIF(COUNT({COLUMN_NAME})::FLOAT - {BASELINE_VALUE_CT}, 0)) / {BASELINE_SD} ), 0)
+    test_operator: '>='
+    test_condition: |-
+      {THRESHOLD_VALUE}
   target_data_lookups:
   - id: '1375'
     test_id: '1017'
@@ -207,5 +215,13 @@ test_types:
     lookup_type: null
     lookup_query: |-
       SELECT AVG(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_average, SUM(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_sum, NULLIF(CAST(COUNT("{COLUMN_NAME}" ) AS FLOAT), 0) as current_value_count FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11040'
+    test_id: '1017'
+    test_type: Incr_Avg_Shift
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT AVG("{COLUMN_NAME}" :: FLOAT) AS current_average, SUM("{COLUMN_NAME}" ::FLOAT) AS current_sum, NULLIF(COUNT("{COLUMN_NAME}" )::FLOAT, 0) as current_value_count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
     error_type: Test Results
   test_templates: []

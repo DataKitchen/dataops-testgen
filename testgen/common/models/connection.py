@@ -32,6 +32,9 @@ from testgen.utils import is_uuid4
 # default and the 0160 migration.
 DEFAULT_MAX_QUERY_CHARS = 20000
 
+# Concurrent query threads a connection uses when the caller names no value.
+DEFAULT_MAX_THREADS = 4
+
 
 @dataclass
 class ConnectionMinimal(EntityMinimal):
@@ -67,7 +70,7 @@ class Connection(Entity):
     project_db: str = Column(String)
     connection_name: str = Column(String)
     project_pw_encrypted: str = Column(EncryptedBytea)
-    max_threads: int = Column(Integer, default=4)
+    max_threads: int = Column(Integer, default=DEFAULT_MAX_THREADS)
     max_query_chars: int = Column(Integer)
     url: str = Column(String, default="")
     connect_by_url: bool = Column(Boolean, default=False)
@@ -79,6 +82,8 @@ class Connection(Entity):
     service_account_key: JSON_TYPE = Column(EncryptedJson)
     connect_with_identity: bool = Column(Boolean, default=False)
     connect_with_service_principal: bool = Column(Boolean, default=False)
+    parameters: JSON_TYPE = Column(postgresql.JSONB)
+    secrets: JSON_TYPE = Column(EncryptedJson)
 
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)
