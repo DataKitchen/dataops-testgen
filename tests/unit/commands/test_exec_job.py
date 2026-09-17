@@ -305,3 +305,17 @@ def test_only_handlers_built_on_the_engine_are_pausable():
             if isinstance(obj, type) and issubclass(obj, PausableJob) and obj is not PausableJob
         ]
         assert built_on_engine, f"{job_key} is pausable but {module.__name__} defines no PausableJob"
+
+
+def test_exec_job_sweeps_stale_spill_directories(mock_session):
+    """Orphaned spill is left by a killed job process, so a job process is where it is collected."""
+    job = _make_job_exec(job_key=JobKey.run_tests)
+    job.mark_running.return_value = True
+    with (
+        patch.object(JobExecution, "get", return_value=job),
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}),
+        patch("testgen.commands.exec_job.sweep_stale_spill_directories") as sweep,
+    ):
+        exec_job(job.id)
+
+    sweep.assert_called_once_with()

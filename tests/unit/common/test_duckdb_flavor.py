@@ -1,4 +1,9 @@
+import os
 import re
+import stat
+import subprocess
+import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import duckdb
@@ -8,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
+from testgen.common.database.flavor import duckdb_flavor_service
 from testgen.common.database.flavor.duckdb_flavor_service import (
     ATTACHED_CATALOG,
     AttachFailure,
@@ -48,6 +54,14 @@ def customer_database(tmp_path):
     """)
     connection.close()
     return path
+
+
+@pytest.fixture
+def dead_pid() -> int:
+    """A pid no process holds, so the sweep reads the directory as an orphan."""
+    process = subprocess.Popen([sys.executable, "-c", ""])  # noqa: S603
+    process.wait()
+    return process.pid
 
 
 def connection_params(database_file) -> dict:
@@ -817,3 +831,197 @@ def test_no_narrowing_type_cast_in_the_duckdb_templates():
             if narrowing.search(line):
                 offending.append(f"{path.name}:{line_number}")
     assert not offending, "Narrowing NUMERIC/FLOAT cast: " + "; ".join(offending)
+
+
+def _spill_directory_of(connection) -> str:
+    return connection.execute(text("SELECT current_setting('temp_directory')")).scalar()
+
+
+def _aged(path, age) -> None:
+    stamp = (datetime.now(UTC) - age - timedelta(minutes=1)).timestamp()
+    os.utime(path, (stamp, stamp))
+
+
+def test_each_connection_spills_to_a_directory_of_its_own(customer_database, spill_root):
+    """Spill filenames carry no instance identifier, so two instances sharing a directory
+    overwrite each other's files and the process segfaults."""
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as first, engine.connect() as second:
+            service.init(first, resolve_connection_params(params))
+            service.init(second, resolve_connection_params(params))
+            assert _spill_directory_of(first) != _spill_directory_of(second)
+            assert _spill_directory_of(first).startswith(str(spill_root))
+    finally:
+        engine.dispose()
+
+
+def test_a_connection_that_never_spills_leaves_no_directory_behind(customer_database, spill_root):
+    """DuckDB creates the directory only when a query spills, so nothing accumulates per run."""
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params))
+            connection.execute(text("SELECT count(*) FROM sales.orders")).scalar()
+    finally:
+        engine.dispose()
+
+    assert list(spill_root.iterdir()) == []
+
+
+def test_a_connection_that_spills_and_closes_cleanly_leaves_no_directory_behind(customer_database, spill_root):
+    """What decides whether the sweep is a backstop or the only collector. A DuckDB or
+    duckdb-engine upgrade that stopped removing the directory on close would turn every spilling
+    run into an orphan, and nothing else would notice."""
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params))
+            connection.execute(text("SET memory_limit = '150MB'"))
+            connection.execute(text("SET threads = 2"))
+            spilled_into = Path(_spill_directory_of(connection))
+            connection.execute(
+                text("CREATE TEMP TABLE spilled AS SELECT i, repeat(md5(i::VARCHAR), 40) AS pad"
+                     " FROM range(1500000) tbl(i)")
+            )
+            assert any(spilled_into.iterdir()), "the query did not spill, so the test proves nothing"
+    finally:
+        engine.dispose()
+
+    assert not spilled_into.exists()
+    assert list(spill_root.iterdir()) == []
+
+
+def test_the_spill_directory_survives_the_rollback_the_attach_retry_performs(customer_database, spill_root):
+    """``_set_spill_directory`` runs before ``_attach``, whose lock retry rolls back. DuckDB
+    settings are not transactional, which is what makes that ordering safe."""
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params))
+            assigned = _spill_directory_of(connection)
+            connection.rollback()
+            assert _spill_directory_of(connection) == assigned
+    finally:
+        engine.dispose()
+
+
+def test_the_sweep_removes_a_directory_a_killed_process_left_behind(spill_root, dead_pid):
+    """A clean close takes the directory with it; a SIGKILL does not, and it is never reopened."""
+    orphaned = spill_root / f"{dead_pid}-{'a' * 32}"
+    orphaned.mkdir(parents=True)
+    (orphaned / "duckdb_temp_storage_S32K-0.tmp").write_bytes(b"spill")
+    _aged(orphaned, duckdb_flavor_service._STALE_SPILL_AGE)
+
+    recent = spill_root / f"{dead_pid}-{'b' * 32}"
+    recent.mkdir()
+
+    duckdb_flavor_service.sweep_stale_spill_directories()
+
+    assert not orphaned.exists()
+    assert recent.exists()
+
+
+def test_the_sweep_spares_a_directory_whose_process_is_still_running(spill_root):
+    """DuckDB grows its spill files in place, so a directory's age says when a run first spilled,
+    not whether it is still writing. Collecting a live one costs the run its spill files."""
+    live = spill_root / f"{os.getpid()}-{'c' * 32}"
+    live.mkdir(parents=True)
+    _aged(live, duckdb_flavor_service._STALE_SPILL_AGE)
+
+    duckdb_flavor_service.sweep_stale_spill_directories()
+
+    assert live.exists()
+
+
+def test_the_sweep_ignores_directories_it_did_not_create(spill_root):
+    spill_root.mkdir(parents=True)
+    stranger = spill_root / "someone-elses-data"
+    stranger.mkdir()
+    _aged(stranger, duckdb_flavor_service._STALE_SPILL_AGE)
+
+    duckdb_flavor_service.sweep_stale_spill_directories()
+
+    assert stranger.exists()
+
+
+def test_the_sweep_refuses_to_follow_a_symlinked_root(tmp_path, monkeypatch, dead_pid):
+    """The path is predictable and its parent is world-writable on a standalone install."""
+    victim = tmp_path / "victim"
+    inside = victim / f"{dead_pid}-{'d' * 32}"
+    inside.mkdir(parents=True)
+    _aged(inside, duckdb_flavor_service._STALE_SPILL_AGE)
+    link = tmp_path / "link"
+    link.symlink_to(victim, target_is_directory=True)
+
+    monkeypatch.setattr(duckdb_flavor_service, "TEMP_DIRECTORY", link)
+    duckdb_flavor_service.sweep_stale_spill_directories()
+
+    assert inside.exists()
+
+
+def test_opening_a_connection_does_not_sweep(customer_database, spill_root, dead_pid):
+    """The sweep walks and deletes directories, so it stays off the path a request waits on."""
+    orphaned = spill_root / f"{dead_pid}-{'e' * 32}"
+    orphaned.mkdir(parents=True)
+    _aged(orphaned, duckdb_flavor_service._STALE_SPILL_AGE)
+
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params))
+    finally:
+        engine.dispose()
+
+    assert orphaned.exists()
+
+
+def test_a_directory_name_the_sweep_cannot_parse_stops_neither_it_nor_the_job(spill_root, dead_pid):
+    """The pid reaches os.kill, which raises OverflowError on a value too wide for a C int. A
+    cleanup that cannot handle one directory must still collect the rest and must not reach the
+    job it runs for."""
+    spill_root.mkdir(parents=True)
+    (spill_root / f"99999999999999-{'a' * 32}").mkdir()
+    collectable = spill_root / f"{dead_pid}-{'b' * 32}"
+    collectable.mkdir()
+    _aged(collectable, duckdb_flavor_service._STALE_SPILL_AGE)
+
+    duckdb_flavor_service.sweep_stale_spill_directories()
+
+    assert not collectable.exists()
+
+
+def test_the_sweep_matches_a_whole_directory_name(spill_root, dead_pid):
+    """A prefix match would reach beyond the names this module creates."""
+    spill_root.mkdir(parents=True)
+    near_miss = spill_root / f"{dead_pid}-{'c' * 32}-notours"
+    near_miss.mkdir()
+    _aged(near_miss, duckdb_flavor_service._STALE_SPILL_AGE)
+
+    duckdb_flavor_service.sweep_stale_spill_directories()
+
+    assert near_miss.exists()
+
+
+def test_the_spill_root_is_not_readable_by_other_accounts(customer_database, spill_root):
+    """Spill files are pages of the customer's own rows."""
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params))
+    finally:
+        engine.dispose()
+
+    assert stat.S_IMODE(spill_root.stat().st_mode) == 0o700

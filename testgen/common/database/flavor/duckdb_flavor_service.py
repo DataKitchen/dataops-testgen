@@ -1,9 +1,14 @@
 import logging
+import os
+import re
+import shutil
 import tempfile
 import time
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.engine.base import Connection
@@ -24,6 +29,18 @@ DATABASE_FILE_PARAMETER = "database_file"
 # Where DuckDB spills when a query exceeds its memory limit. Its own default is ".tmp" relative to
 # the working directory, which lands spill files wherever the UI or scheduler happened to start.
 TEMP_DIRECTORY = Path(tempfile.gettempdir()) / "testgen-duckdb"
+
+# Leaf directories are named <pid>-<hex>, so the sweep can tell an orphan from one a live process
+# is still writing to, and so it only ever considers directories this module created. Age alone
+# cannot tell them apart: DuckDB grows its spill files in place, so a long run's directory can go
+# untouched indefinitely. The pid run is bounded because it reaches os.kill, which rejects a value
+# too wide for a C int.
+_SPILL_DIRECTORY_PATTERN = re.compile(r"(\d{1,7})-[0-9a-f]{32}")
+
+# Reached only once the owning pid is gone, so within one pid namespace it guards little. It earns
+# its place where pids cannot be trusted to mean anything -- a spill root shared between containers
+# -- by keeping the sweep off anything recent enough to still be in use.
+_STALE_SPILL_AGE = timedelta(hours=1)
 
 # The customer's database is attached under a fixed alias and selected with USE, so that the
 # two-part schema.table references the templates emit resolve inside it.
@@ -99,6 +116,45 @@ def attach_error_message(failure: AttachFailure, error: Exception) -> str:
     return f"Could not open the DuckDB database. {getattr(error, 'orig', error)}"
 
 
+def _process_is_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        # Refused rather than undeliverable, which means there is a process there to refuse it.
+        return True
+    return True
+
+
+def sweep_stale_spill_directories() -> None:
+    """Remove spill directories orphaned by a process killed before it could clean up.
+
+    Best effort: it runs to make room for work, and no directory it cannot handle stops it or
+    reaches the caller.
+    """
+    try:
+        if TEMP_DIRECTORY.is_symlink():
+            # The path is predictable and its parent is world-writable on a standalone install, so
+            # following a link here would empty out whatever it was pointed at.
+            LOG.warning(f"The DuckDB spill directory {TEMP_DIRECTORY} is a symlink, so it is left alone")
+            return
+        entries = list(TEMP_DIRECTORY.iterdir())
+    except OSError:
+        return
+
+    cutoff = (datetime.now(UTC) - _STALE_SPILL_AGE).timestamp()
+    for entry in entries:
+        try:
+            owner = _SPILL_DIRECTORY_PATTERN.fullmatch(entry.name)
+            if not owner or entry.is_symlink() or _process_is_alive(int(owner.group(1))):
+                continue
+            if entry.is_dir() and entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry)
+        except Exception as error:
+            LOG.warning(f"Could not remove stale DuckDB spill directory {entry}: {error}")
+
+
 class DuckdbFlavorService(FlavorService):
 
     concat_operator = "||"
@@ -155,12 +211,31 @@ class DuckdbFlavorService(FlavorService):
         if not database_file:
             raise DuckdbConnectionError("This connection has no database file configured.")
 
+        self._set_spill_directory(connection)
         self._attach(connection, database_file)
         connection.execute(text(f'USE "{ATTACHED_CATALOG}"'))
         # ATTACH participates in the transaction, so without this any later rollback on this
         # connection drops the catalog and every subsequent query fails on a name that no longer
         # resolves rather than on whatever actually went wrong.
         connection.commit()
+
+    def _set_spill_directory(self, connection: Connection) -> None:
+        """Point this connection's spill at a directory no other connection writes to.
+
+        DuckDB creates the directory only if a query spills and removes it when the connection
+        closes; it does not create the parent.
+        """
+        try:
+            TEMP_DIRECTORY.mkdir(parents=True, exist_ok=True, mode=0o700)
+        except OSError as error:
+            # The engine-level temp_directory is this same path, so there is nothing else to set.
+            LOG.warning(f"Could not create the DuckDB spill directory {TEMP_DIRECTORY}: {error}")
+            return
+
+        # Spill filenames carry a size class and a counter but no instance identifier, so two
+        # instances sharing a directory overwrite each other's files and the process crashes.
+        spill_directory = str(TEMP_DIRECTORY / f"{os.getpid()}-{uuid4().hex}").replace("'", "''")
+        connection.execute(text(f"SET temp_directory = '{spill_directory}'"))
 
     def _attach(self, connection: Connection, database_file: str) -> None:
         # ATTACH takes the path as a literal, not a bind parameter, and the path arrives from a
