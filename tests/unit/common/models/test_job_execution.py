@@ -1,10 +1,18 @@
+import logging
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.sql.elements import Case
 
-from testgen.common.models.job_execution import JobExecution, JobStatus, process_failure_message
+from testgen.common.models.job_execution import (
+    JobExecution,
+    JobStatus,
+    OnlyWhenTransitioningTo,
+    process_failure_message,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -17,6 +25,15 @@ def _returning_row(job, **overrides):
     for col in JobExecution.__table__.columns:
         setattr(row, col.key, overrides.get(col.key, getattr(job, col.key, None)))
     return row
+
+
+def _assigned_value(mock_session, column_name: str):
+    """What the last UPDATE assigns to one column."""
+    statement = mock_session.execute.call_args[0][0]
+    for column, value in dict(statement._values).items():
+        if getattr(column, "key", None) == column_name:
+            return value
+    raise AssertionError(f"The statement assigns nothing to {column_name}")
 
 
 def _mock_claim_results(mock_session, *jobs):
@@ -189,6 +206,33 @@ def test_mark_failed_canceled(mock_session):
     job.mark_failed("Process exited with code -15")
 
     assert job.status == "canceled"
+
+
+def test_mark_failed_writes_the_message_only_where_the_status_lands_on_error(mock_session):
+    """A cancel that has to be escalated to SIGKILL reaches mark_failed and settles as CANCELED.
+
+    The message describes a kill the user asked for, so the row must not carry it.
+    """
+    job = JobExecution(id=uuid4(), status="running")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="error")
+
+    job.mark_failed("Ran out of memory")
+
+    written = _assigned_value(mock_session, "error_message")
+    assert isinstance(written, Case)
+    rendered = str(written.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    for source in JobStatus.sources_for(JobStatus.ERROR):
+        assert source.value in rendered
+    assert JobStatus.CANCEL_REQUESTED.value not in rendered
+
+
+def test_a_plain_transition_value_is_written_whichever_target_wins(mock_session):
+    job = JobExecution(id=uuid4(), status="cancel_requested")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="canceled")
+
+    job.mark_failed("Ran out of memory")
+
+    assert not isinstance(_assigned_value(mock_session, "completed_at"), Case)
 
 
 def test_request_cancel_pending_to_cancel_requested(mock_session):
@@ -766,3 +810,50 @@ def test_an_ordinary_nonzero_exit_is_not_blamed_on_resources(exit_code):
     message = process_failure_message(4321, exit_code, "run-profile")
 
     assert message == f"Process 4321 exited with code {exit_code}."
+
+
+def test_a_marker_bound_to_a_target_the_transition_does_not_offer_is_refused(mock_session):
+    """Silently writing NULL would be data loss at the chokepoint every job status moves through."""
+    job = JobExecution(id=uuid4(), status="running")
+
+    with pytest.raises(ValueError, match="canceled"):
+        job._transition(JobStatus.ERROR, error_message=OnlyWhenTransitioningTo(JobStatus.CANCELED, "boom"))
+
+
+def test_a_marker_bound_to_a_target_an_earlier_one_consumed_writes_null(mock_session):
+    """Every status that reaches COMPLETED also reaches ERROR, so an ERROR offered first leaves
+    COMPLETED nothing to be selected from and the value bound to it can never apply."""
+    job = JobExecution(id=uuid4(), status="running")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="error")
+
+    job._transition(
+        JobStatus.ERROR,
+        JobStatus.COMPLETED,
+        error_message=OnlyWhenTransitioningTo(JobStatus.COMPLETED, "boom"),
+    )
+
+    written = _assigned_value(mock_session, "error_message")
+    assert not isinstance(written, Case)
+    assert written.value is None
+
+
+def test_mark_failed_logs_a_message_the_cancel_branch_discards(mock_session, caplog):
+    """An out-of-memory kill and a cancel escalated to SIGKILL both arrive as exit -9, and the row
+    keeps no trace of which. Support has nothing else to read."""
+    job = JobExecution(id=uuid4(), status="cancel_requested")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="canceled")
+
+    with caplog.at_level(logging.INFO, logger="testgen"):
+        job.mark_failed("TestGen ran out of memory")
+
+    assert "TestGen ran out of memory" in caplog.text
+
+
+def test_mark_failed_does_not_log_a_message_the_row_keeps(mock_session, caplog):
+    job = JobExecution(id=uuid4(), status="running")
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job, status="error")
+
+    with caplog.at_level(logging.INFO, logger="testgen"):
+        job.mark_failed("TestGen ran out of memory")
+
+    assert "TestGen ran out of memory" not in caplog.text

@@ -1,6 +1,7 @@
 import logging
 import signal
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
@@ -42,6 +43,19 @@ def process_failure_message(pid: int, exit_code: int, job_key: str | None = None
         f" TestGen ran out of memory. {remedy}"
         f" (Process {pid} exited with code {exit_code}.)"
     )
+
+
+@dataclass(frozen=True)
+class OnlyWhenTransitioningTo:
+    """A column value that applies to one target of a multi-target transition.
+
+    ``_transition`` picks its target from the row's current status. Wrapping a value binds it to
+    the same condition that selects ``target``, writing NULL to the column, rather than leaving it
+    unchanged, when a different target wins.
+    """
+
+    target: JobStatus
+    value: Any
 
 
 class JobExecution(Base):
@@ -362,6 +376,9 @@ class JobExecution(Base):
         atomically picks the right one based on the current DB status.
         Earlier targets get first pick of source states (priority order).
 
+        A value wrapped in ``OnlyWhenTransitioningTo`` is written only if the row lands on that
+        target, and NULL otherwise. Plain values are written whichever target is selected.
+
         Returns True if the row was updated, False if the current status
         did not allow any of the transitions.
         """
@@ -370,21 +387,37 @@ class JobExecution(Base):
 
         cases = []
         all_valid_from = []
+        selected_by: dict[JobStatus, ColumnElement[bool]] = {}
         consumed: set[JobStatus] = set()
         billable: set[JobStatus] = set()
         for target in targets:
             valid_from = set(JobStatus.sources_for(target)) - consumed
             if valid_from:
-                cases.append((cls.status.in_([s.value for s in valid_from]), target.value))
+                selects_target = cls.status.in_([s.value for s in valid_from])
+                cases.append((selects_target, target.value))
+                selected_by[target] = selects_target
                 all_valid_from.extend(s.value for s in valid_from)
                 consumed |= valid_from
                 if target not in WORKING_STATUSES:
                     billable |= valid_from & WORKING_STATUSES
 
+        resolved: dict[str, Any] = {}
+        for key, value in values.items():
+            if not isinstance(value, OnlyWhenTransitioningTo):
+                resolved[key] = value
+            elif value.target not in targets:
+                raise ValueError(f"{key} is bound to {value.target}, which this transition does not offer")
+            elif value.target in selected_by:
+                resolved[key] = case((selected_by[value.target], value.value), else_=None)
+            else:
+                # An earlier target claimed every source state that could have reached this one,
+                # so no row can land on it.
+                resolved[key] = None
+
         row = session.execute(
             update(cls)
             .where(cls.id == self.id, cls.status.in_(all_valid_from))
-            .values(status=case(*cases), **cls._bill_worked_from(billable), **values)
+            .values(status=case(*cases), **cls._bill_worked_from(billable), **resolved)
             .returning(cls)
         ).scalar_one_or_none()
         if row is not None:
@@ -439,7 +472,18 @@ class JobExecution(Base):
         return self._transition(JobStatus.COMPLETED, completed_at=datetime.now(UTC))
 
     def mark_failed(self, error_message: str) -> bool:
-        """Mark as ERROR, or CANCELED if a cancellation was requested concurrently."""
-        return self._transition(
-            JobStatus.ERROR, JobStatus.CANCELED, completed_at=datetime.now(UTC), error_message=error_message
+        """Mark as ERROR, or CANCELED if a cancellation was requested concurrently.
+
+        The message is written only on the ERROR branch.
+        """
+        transitioned = self._transition(
+            JobStatus.ERROR,
+            JobStatus.CANCELED,
+            completed_at=datetime.now(UTC),
+            error_message=OnlyWhenTransitioningTo(JobStatus.ERROR, error_message),
         )
+        if transitioned and self.status == JobStatus.CANCELED:
+            # An out-of-memory kill and a cancel escalated to SIGKILL are the same exit code, so
+            # this is the only record of which one a support request is looking at.
+            LOG.info("Job %s settled as canceled, so it does not carry this failure: %s", self.id, error_message)
+        return transitioned
