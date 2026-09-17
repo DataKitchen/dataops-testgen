@@ -8,6 +8,7 @@ from pydantic import BaseModel, Discriminator, Field, RootModel, Tag
 
 from testgen.api.enums import (
     AuthenticationMethod,
+    DatabaseType,
     Disposition,
     GeneralType,
     HygieneDisposition,
@@ -21,7 +22,6 @@ from testgen.api.enums import (
     TableState,
 )
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
-from testgen.common.flavors import SqlFlavorLabel
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
 # --- Jobs ---
@@ -753,7 +753,7 @@ class ConnectionItem(BaseModel):
     connection_id: int
     connection_name: str
     project_code: str
-    database_type: SqlFlavorLabel = Field(description="The connection's database type.")
+    database_type: DatabaseType = Field(description="The connection's database type.")
     table_group_count: int
 
 
@@ -783,7 +783,7 @@ class ConnectionResponse(BaseModel):
     connection_id: int
     connection_name: str
     project_code: str
-    database_type: SqlFlavorLabel = Field(description="The connection's database type.")
+    database_type: DatabaseType = Field(description="The connection's database type.")
     authentication: AuthenticationMethod = Field(
         description="How the connection authenticates to its database."
     )

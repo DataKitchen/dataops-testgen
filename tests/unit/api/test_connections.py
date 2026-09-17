@@ -12,7 +12,6 @@ from testgen.api.connections import get_connection, list_connections, router
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.enums import AuthenticationMethod
 from testgen.common.connection_schema import FLAVOR_CONNECTION_SCHEMA, SECRET_COLUMNS
-from testgen.common.flavors import SqlFlavorLabel
 from testgen.common.models.connection import Connection
 from testgen.common.models.custom_types import EncryptedBytea, EncryptedJson
 
@@ -105,7 +104,7 @@ def test_list_connections_maps_flavor_code_to_display_label(mock_cls):
     result = list_connections(project_code="demo", page=1, limit=20)
 
     assert result.total == 1
-    assert result.items[0].database_type == SqlFlavorLabel.SNOWFLAKE
+    assert result.items[0].database_type == "Snowflake"
     assert result.items[0].table_group_count == 2
 
 
@@ -148,7 +147,7 @@ def test_get_connection_snowflake_key_pair():
 
     result = get_connection(connection)
 
-    assert result.database_type == SqlFlavorLabel.SNOWFLAKE
+    assert result.database_type == "Snowflake"
     assert result.authentication is AuthenticationMethod.key_pair
     assert result.settings == {
         "host": "acme.snowflakecomputing.com",
@@ -230,6 +229,9 @@ def test_get_connection_bigquery_reports_service_account_auth():
     result = get_connection(connection)
 
     assert result.authentication is AuthenticationMethod.service_account
+    # BigQuery's only schema field is the Service Account Key, which is secret and
+    # filtered out. Its Project ID (stored in project_db) is not in the field map, so
+    # settings is empty by construction — not a bug, but not the full story either.
     assert result.settings == {}
 
 

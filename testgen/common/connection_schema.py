@@ -9,8 +9,8 @@ catalog on Databricks and the username on Salesforce. This module is where that
 mapping lives, so a surface rendering a connection can label each value the way
 the target database names it.
 
-Field labels double as the MCP ``connection_params`` keys, and mirror the
-per-flavor JS forms in ``ui/static/js/components/connection_form.js``.
+Field labels are the human labels the per-flavor JS forms in
+``ui/static/js/components/connection_form.js`` give each field.
 
 ``ConnField.secret`` marks the four encrypted columns. Every consumer filters on
 it rather than maintaining its own denylist, so a credential cannot reach a
@@ -44,7 +44,7 @@ class Req(StrEnum):
 
 @dataclass(frozen=True)
 class ConnField:
-    label: str  # exact UI label == connection_params key
+    label: str  # exact UI form field label; a stable key consumers match on, not cosmetic text
     column: str  # Connection ORM attribute, or a key within ``parameters`` when in_parameters
     requirement: Req
     secret: bool = False

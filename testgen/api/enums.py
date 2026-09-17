@@ -16,6 +16,7 @@ from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
 from testgen.common.enums import MonitorType as DbMonitorType
 from testgen.common.enums import PiiRisk as DbPiiRisk
 from testgen.common.enums import QualityDimension as DbQualityDimension
+from testgen.common.flavors import SqlFlavorLabel
 from testgen.common.models.test_definition import ThresholdMode
 from testgen.common.models.test_result import TestResultStatus
 
@@ -342,3 +343,12 @@ AUTHENTICATION_FROM_MODE: dict[ConnectionMode, AuthenticationMethod] = {
     ConnectionMode.CLIENT_CREDENTIALS: AuthenticationMethod.client_credentials,
     ConnectionMode.SERVICE_ACCOUNT: AuthenticationMethod.service_account,
 }
+
+
+# A connection's database type, as shown to API consumers: the same values as the
+# internal SqlFlavorLabel, under a public class name so the exposed OpenAPI schema
+# carries "DatabaseType" rather than the internal "flavor" vocabulary. Derived from
+# the source so the two cannot drift. Built via the functional API — mypy can't read
+# the members of a comprehension-built enum, but nothing needs member access; the
+# values are the whole contract.
+DatabaseType = StrEnum("DatabaseType", {m.name: m.value for m in SqlFlavorLabel})  # type: ignore[misc]
