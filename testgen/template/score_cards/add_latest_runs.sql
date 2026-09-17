@@ -25,7 +25,11 @@ WITH ranked_test_runs
         ON (je.id = r.id)
       WHERE s.project_code = :project_code
         AND r.test_starttime <= :score_history_cutoff_time
-        AND je.status = 'completed')
+        AND je.status = 'completed'
+        AND (r.version_id IS NULL OR r.version_id = {ACTIVE_VERSION})
+        AND (r.version_id IS NULL OR EXISTS (SELECT 1 FROM suite_versions sv
+                     WHERE sv.id = r.version_id
+                       AND (sv.test_suite_id IS NULL OR r.test_starttime >= sv.frozen_at))))
 INSERT INTO score_history_latest_runs
        (definition_id, score_history_cutoff_time, test_suite_id, last_test_run_id)
 SELECT :definition_id as definition_id, :score_history_cutoff_time as score_history_cutoff_time, test_suite_id, test_run_id

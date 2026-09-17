@@ -32,7 +32,7 @@ from testgen.common.enums import MonitorCalculation, MonitorType, SuiteType
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
 from testgen.utils import is_uuid4
 
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
@@ -653,6 +653,96 @@ class TestDefinition(Entity):
         return cls.version_id == SuiteVersion.resolved_for(cls.test_suite_id)
 
     @classmethod
+    def _is_frozen_suite_version(cls, version_id: UUID | str) -> bool:
+        """Whether the version is a contract's frozen one.
+
+        Both halves of the predicate matter: the placeholder is stored frozen, so a check that
+        looked only at the freeze time would catch every write that is not version-scoped.
+        """
+        return get_current_session().scalar(
+            select(SuiteVersion.id).where(
+                SuiteVersion.id == version_id,
+                SuiteVersion.test_suite_id.is_not(None),
+                SuiteVersion.frozen_at.is_not(None),
+            )
+        ) is not None
+
+    @classmethod
+    def assert_version_writable(cls, version_id: UUID | str) -> None:
+        """Raise when the target version is a contract's frozen version."""
+        if cls._is_frozen_suite_version(version_id):
+            raise FrozenVersionError(version_id)
+
+    @classmethod
+    def copy_to_version(cls, source_version_id: UUID, target_version_id: UUID) -> dict[UUID, UUID]:
+        """Copy every term from one version to another, keeping each term's contract identity.
+
+        Returns a map from each copied term's previous id to its new one.
+        """
+        session = get_current_session()
+        id_map: dict[UUID, UUID] = {}
+        for term in session.scalars(
+            select(cls).where(cls.version_id == source_version_id)
+        ).all():
+            copied = cls()
+            for column in cls.__table__.columns:
+                if column.key != "id":
+                    setattr(copied, column.key, getattr(term, column.key, None))
+            copied.id = uuid4()
+            copied.version_id = target_version_id
+            session.add(copied)
+            id_map[term.id] = copied.id
+        session.flush()
+        return id_map
+
+    @classmethod
+    def resolve_write_target(cls, test_suite_id: UUID | str) -> tuple[UUID, dict[UUID, UUID]]:
+        """The version this suite's next write lands in, opening a draft when there is none.
+
+        Returns the version id and a map from each copied term's previous id to its new one.
+        The map is empty when a draft already existed.
+        """
+        draft = SuiteVersion.draft_for(test_suite_id)
+        if draft is not None:
+            return draft.id, {}
+
+        draft, source = SuiteVersion.open_draft(test_suite_id)
+        return draft.id, cls.copy_to_version(source.id, draft.id) if source else {}
+
+    def _route_to_writable_version(self) -> None:
+        """Move this write onto the contract's draft when the version it holds is frozen.
+
+        Where the contract has no draft, one is opened carrying a copy of every term and this
+        row becomes its own copy, so the edit lands on the draft and the frozen version keeps
+        what it had. A row that the draft did not copy is one the draft already supersedes,
+        and rewriting it would resurrect a superseded term.
+        """
+        if not self._is_frozen_suite_version(self.version_id):
+            return
+
+        version_id, copied_ids = self.resolve_write_target(self.test_suite_id)
+        if self.id is not None:
+            if self.id not in copied_ids:
+                raise FrozenVersionError(self.version_id)
+            self.id = copied_ids[self.id]
+        self.version_id = version_id
+
+    @classmethod
+    def _assert_batch_writable(cls, test_definition_ids: list[str | UUID]) -> None:
+        """Raise if any of the given rows belongs to a contract's frozen version.
+
+        A batch can span more than one suite, so every distinct version the ids resolve to is
+        checked — not just one row's.
+        """
+        versions = get_current_session().scalars(
+            select(SuiteVersion.resolved_for(cls.test_suite_id))
+            .where(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+            .distinct()
+        ).all()
+        for version_id in versions:
+            cls.assert_version_writable(version_id)
+
+    @classmethod
     def _scoped_select(
         cls,
         columns: list[str | InstrumentedAttribute],
@@ -932,6 +1022,8 @@ class TestDefinition(Entity):
         test_definition_ids: list[str | UUID],
         value: bool,
     ) -> None:
+        cls._assert_batch_writable(test_definition_ids)
+
         query = f"""
         WITH selected AS (
             SELECT UNNEST(ARRAY [:test_definition_ids]) AS id
@@ -963,6 +1055,7 @@ class TestDefinition(Entity):
     ) -> None:
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
+        cls.assert_version_writable(target_version)
         scoped_ids = db_session.scalars(
             select(cls.id).where(
                 cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]),
@@ -1007,6 +1100,7 @@ class TestDefinition(Entity):
     ) -> None:
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
+        cls.assert_version_writable(target_version)
 
         modified_columns = [
             cls.id,
@@ -1091,6 +1185,7 @@ class TestDefinition(Entity):
 
     def save(self) -> None:
         if self.id:
+            self._route_to_writable_version()
             values = {
                 column.key: getattr(self, column.key, None)
                 for column in self.__table__.columns
@@ -1104,6 +1199,7 @@ class TestDefinition(Entity):
                 self.version_id = get_current_session().scalar(
                     select(SuiteVersion.resolved_for(self.test_suite_id))
                 )
+            self._route_to_writable_version()
             super().save()
 
 

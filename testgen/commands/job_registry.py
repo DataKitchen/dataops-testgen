@@ -27,6 +27,7 @@ from testgen.common.enums import JobKey, JobSource, JobStatus
 from testgen.common.models import database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.monitor_run import send_monitor_notifications
 from testgen.common.notifications.profiling_run import send_profiling_run_notifications
@@ -94,6 +95,9 @@ def _notify_test_run(job_exec: JobExecution) -> None:
         test_run = session.scalars(select(TestRun).where(TestRun.id == job_exec.id)).first()
         if not test_run:
             LOG.warning("No test_run found for job %s; skipping notification", job_exec.id)
+            return
+        if SuiteVersion.is_draft(test_run.version_id):
+            LOG.info("Run %s verified a draft; no notification sent", job_exec.id)
             return
         send_test_run_notifications(test_run)
 

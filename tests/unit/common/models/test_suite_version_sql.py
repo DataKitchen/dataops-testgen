@@ -43,6 +43,18 @@ def test_the_rendering_names_no_placeholder_literal():
     assert "00000000-0000-0000-0000-000000000000" not in SuiteVersion.resolved_for_sql("td.test_suite_id")
 
 
+def test_active_for_sql_is_the_orm_expression():
+    column = "td.test_suite_id"
+
+    assert SuiteVersion.active_for_sql(column) == _compile(
+        SuiteVersion.active_for(literal_column(column))
+    )
+
+
+def test_active_for_sql_names_no_placeholder_literal():
+    assert "00000000-0000-0000-0000-000000000000" not in SuiteVersion.active_for_sql("td.test_suite_id")
+
+
 def test_a_predicate_built_from_the_rendering_matches_the_orm_one():
     ormsql = _compile(select(TestDefinition.id).where(TestDefinition.version_clause()))
     rendered = (

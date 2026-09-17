@@ -172,6 +172,43 @@ def parse_severity(value: str) -> Severity:
     return parse_enum(value, Severity, "severity")
 
 
+class SuiteTypeLabel(StrEnum):
+    """User-facing values accepted for the ``suite_type`` argument on test-suite creation."""
+
+    REGULAR = "Regular"
+    CONTRACT = "Contract"
+
+
+SUITE_TYPE_LABEL_TO_INTERNAL: dict[SuiteTypeLabel, SuiteType] = {
+    SuiteTypeLabel.REGULAR: SuiteType.REGULAR,
+    SuiteTypeLabel.CONTRACT: SuiteType.CONTRACT,
+}
+
+
+def parse_suite_type(value: str) -> SuiteType:
+    """Validate a ``suite_type`` value. Accepts ``Regular`` or ``Contract``.
+
+    Monitor suites are created through monitoring setup, not through this argument, so
+    ``Monitor`` is not a valid value here.
+    """
+    label = parse_enum(value, SuiteTypeLabel, "suite_type")
+    return SUITE_TYPE_LABEL_TO_INTERNAL[label]
+
+
+_SUITE_TYPE_INTERNAL_TO_LABEL: dict[SuiteType, SuiteTypeLabel] = {
+    v: k for k, v in SUITE_TYPE_LABEL_TO_INTERNAL.items()
+}
+
+
+def format_suite_type_label(suite_type: SuiteType | str) -> str:
+    """Map a stored ``suite_type`` to its user-facing display label.
+
+    Only ``regular`` and ``contract`` are mapped — monitor suites are created and managed
+    through a separate surface and never reach this function.
+    """
+    return _SUITE_TYPE_INTERNAL_TO_LABEL[SuiteType(suite_type)].value
+
+
 class ScoreGroupBy(StrEnum):
     """User-facing values accepted for the ``group_by`` argument on quality-score rollups."""
 

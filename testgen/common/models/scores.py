@@ -34,7 +34,9 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import aliased, attributes, joinedload, relationship
 
 from testgen.common import read_template_sql_file
+from testgen.common.database.database_service import replace_params
 from testgen.common.models import Base, database_session, get_current_session
+from testgen.common.models.suite_version import SuiteVersion
 from testgen.utils import is_uuid4
 
 SCORE_CATEGORIES = [
@@ -868,6 +870,7 @@ class ScoreDefinitionResultHistoryEntry(Base):
         add_latest_runs.sql
         """
         query = read_template_sql_file("add_latest_runs.sql", sub_directory="score_cards")
+        query = replace_params(query, {"ACTIVE_VERSION": SuiteVersion.active_for_sql("r.test_suite_id")})
         params = {
             "project_code": self.definition.project_code,
             "definition_id": self.definition_id,

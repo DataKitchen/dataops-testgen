@@ -9,6 +9,10 @@ WITH latest_run_per_suite
        INNER JOIN job_executions je
           ON je.id = run.id
         WHERE je.status = 'completed'
+          AND (run.version_id IS NULL OR run.version_id = {ACTIVE_VERSION})
+          AND (run.version_id IS NULL OR EXISTS (SELECT 1 FROM suite_versions sv
+                     WHERE sv.id = run.version_id
+                       AND (sv.test_suite_id IS NULL OR run.test_starttime >= sv.frozen_at)))
         ORDER BY run.test_suite_id, run.test_starttime DESC, run.id DESC),
 score_calc
   AS (SELECT ts.table_groups_id,

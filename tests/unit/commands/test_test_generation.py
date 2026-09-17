@@ -6,8 +6,20 @@ import pytest
 
 from testgen.commands.test_generation import TestGeneration, run_test_generation
 from testgen.common.enums import SuiteType
+from testgen.common.models.suite_version import FrozenVersionError
 
 MODULE = "testgen.commands.test_generation"
+
+
+@pytest.fixture(autouse=True)
+def writable_target_version(monkeypatch):
+    """Generation refuses a frozen target version, which costs it a query. Answer that query
+    with a writable version so every other test here exercises the path it is about.
+    """
+    monkeypatch.setattr(
+        "testgen.common.models.test_definition.get_current_session",
+        MagicMock(return_value=MagicMock(**{"scalar.return_value": None})),
+    )
 
 
 def _make_generation(generation_sets=None, profile_run_id=None) -> TestGeneration:
@@ -22,11 +34,18 @@ def _make_generation(generation_sets=None, profile_run_id=None) -> TestGeneratio
     tg.flavor_service = MagicMock(quote_character='"')
     tg.profile_run_id = profile_run_id or uuid4()
     tg.version_id = uuid4()
+    tg.table_names = None
+    return tg
+
+
+def _generation(table_names=None) -> TestGeneration:
+    tg = _make_generation()
+    tg.table_names = table_names
     return tg
 
 
 @patch(f"{MODULE}.execute_db_queries")
-@patch.object(TestGeneration, "_get_generation_queries", return_value=[])
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[("SELECT 1", {})])
 def test_run_appends_override_delete_after_stale_delete(_mock_gen, mock_exec):
     tg = _make_generation()
 
@@ -239,7 +258,7 @@ def test_generation_params_carry_the_resolved_version():
 
 
 @patch(f"{MODULE}.execute_db_queries")
-@patch.object(TestGeneration, "_get_generation_queries", return_value=[])
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[("SELECT 1", {})])
 def test_the_stale_delete_is_bound_to_a_version(_mock_gen, mock_exec):
     tg = _make_generation()
 
@@ -252,3 +271,97 @@ def test_the_stale_delete_is_bound_to_a_version(_mock_gen, mock_exec):
 
     assert "version_id = :VERSION_ID" in stale_query
     assert stale_params["VERSION_ID"] == tg.version_id
+
+
+@patch(f"{MODULE}.execute_db_queries")
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[])
+def test_run_is_a_no_op_when_no_generation_queries_resolve(_mock_gen, mock_exec):
+    """An empty generation set (a set name with no test types tagged to it, e.g. a contract
+    suite before its member test types are curated) must not run the stale-delete: with no
+    inserts, that delete would sweep every unlocked auto-generated test in the version."""
+    tg = _make_generation()
+
+    tg.run()
+
+    mock_exec.assert_not_called()
+
+
+# --- Table scope for contracts ---
+
+
+def test_generation_for_declared_tables_binds_the_list_rather_than_interpolating_it():
+    generation = _generation(table_names=["orders", "customers"])
+    params = generation._get_params()
+
+    assert params["TABLE_FILTER"] == "AND table_name = ANY(:TABLE_NAMES)"
+    assert params["TABLE_NAMES"] == ["orders", "customers"]
+
+
+def test_generation_without_declared_tables_applies_no_table_filter():
+    params = _generation(table_names=None)._get_params()
+
+    assert params["TABLE_FILTER"] == ""
+
+
+@patch(f"{MODULE}.execute_db_queries")
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[("SELECT 1", {})])
+def test_a_single_table_run_scopes_the_stale_delete_to_its_own_tables(_mock_gen, mock_exec):
+    """A run scoped to a contract's declared tables must not sweep another declared table's
+    terms: the stale-delete is not itself filtered by which tables this run generated, so
+    without this scoping, declaring a second table would delete the first one's terms."""
+    tg = _make_generation()
+    tg.table_names = ["orders"]
+
+    tg.run()
+
+    stale_query, stale_params = next(
+        (query, params) for query, params in mock_exec.call_args[0][0]
+        if "last_auto_gen_date < :RUN_DATE" in query
+    )
+
+    assert "AND table_name = ANY(:TABLE_NAMES)" in stale_query
+    assert stale_params["TABLE_NAMES"] == ["orders"]
+
+
+@patch(f"{MODULE}.execute_db_queries")
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[("SELECT 1", {})])
+def test_a_run_with_no_declared_tables_leaves_the_stale_delete_unscoped(_mock_gen, mock_exec):
+    tg = _make_generation()
+
+    tg.run()
+
+    stale_query, _ = next(
+        (query, params) for query, params in mock_exec.call_args[0][0]
+        if "last_auto_gen_date < :RUN_DATE" in query
+    )
+
+    assert "table_name = ANY" not in stale_query
+
+
+def test_a_contract_declaring_no_tables_generates_for_none_of_them():
+    """An empty declared-table list is a scope of nothing, not an absent scope. A contract
+    whose document declares no tables yet must generate no terms, rather than falling back
+    to every table in the group.
+    """
+    params = _generation(table_names=[])._get_params()
+
+    assert params["TABLE_FILTER"] == "AND table_name = ANY(:TABLE_NAMES)"
+    assert params["TABLE_NAMES"] == []
+
+
+@patch(f"{MODULE}.execute_db_queries")
+@patch.object(TestGeneration, "_get_generation_queries", return_value=[("SELECT 1", {})])
+def test_generation_refuses_to_write_a_frozen_contract_version(_mock_gen, _mock_exec):
+    """Generation writes test_definitions through raw SQL, so the model-level guard never
+    sees it. A contract whose only version is frozen must not have that version rewritten.
+    """
+    frozen_version_id = uuid4()
+    generation = _make_generation()
+    generation.version_id = frozen_version_id
+
+    with patch(
+        "testgen.common.models.test_definition.get_current_session",
+        return_value=MagicMock(**{"scalar.return_value": frozen_version_id}),
+    ):
+        with pytest.raises(FrozenVersionError):
+            generation.run()

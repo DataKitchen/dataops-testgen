@@ -39,6 +39,7 @@ def run_test_execution(
     test_suite_id: str | UUID,
     username: str | None = None,
     run_date: datetime | None = None,
+    version_id: str | UUID | None = None,
 ) -> UUID:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
@@ -52,12 +53,18 @@ def run_test_execution(
     connection = Connection.get(table_group.connection_id)
     set_target_db_params(connection.__dict__)
 
+    resolved_version_id = (
+        UUID(str(version_id))
+        if version_id
+        else get_current_session().scalar(select(SuiteVersion.for_run(test_suite_id)))
+    )
+
     LOG.info("Creating test run record")
     test_run = TestRun(
         id=job_context.get().job_id,
         test_suite_id=test_suite_id,
         test_starttime=datetime.now(UTC) + time_delta,
-        version_id=get_current_session().scalar(select(SuiteVersion.resolved_for(test_suite_id))),
+        version_id=resolved_version_id,
     )
 
     # This runs in a subprocess — commit after every save so progress is visible
@@ -141,10 +148,11 @@ def run_test_execution(
         raise
     else:
         end_time = datetime.now(UTC) + time_delta
-        LOG.info("Updating latest run for test suite")
-        test_suite.last_complete_test_run_id = test_run.id
-        test_suite.save()
-        session.commit()
+        if SuiteVersion.is_active(test_run.version_id, test_suite.id):
+            LOG.info("Updating latest run for test suite")
+            test_suite.last_complete_test_run_id = test_run.id
+            test_suite.save()
+            session.commit()
     finally:
         prediction_start = datetime.now(UTC) + time_delta
         try:
