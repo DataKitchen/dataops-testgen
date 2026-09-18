@@ -57,19 +57,12 @@ SELECT
   MIN(LEN("{COL_NAME}")) AS min_length,
   MAX(LEN("{COL_NAME}")) AS max_length,
   AVG(NULLIF(LEN("{COL_NAME}"), 0)::FLOAT) AS avg_length,
--- TG-ELSE
-  NULL AS min_length,
-  NULL AS max_length,
-  NULL AS avg_length,
 -- TG-ENDIF
 -- TG-IF is_type_A
   COUNT(CASE WHEN TRIM("{COL_NAME}") ~ '^0(\.0*)?$' THEN 1 END) AS zero_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_N
   SUM(1 - ABS(SIGN("{COL_NAME}")))::BIGINT AS zero_value_ct,
--- TG-ENDIF
--- TG-IF is_not_A_not_N
-  NULL AS zero_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_A
   COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) AS distinct_std_value_ct,
@@ -117,22 +110,6 @@ SELECT
                      AND LEFT("{COL_NAME}", 3) NOT BETWEEN '734' AND '749'
                      AND LEFT("{COL_NAME}", 3) <> '666' THEN 1 END)::FLOAT/COUNT("{COL_NAME}")::FLOAT > 0.9 THEN 'SSN'
   END AS std_pattern_match,
--- TG-ELSE
-  NULL AS distinct_std_value_ct,
-  NULL AS zero_length_ct,
-  NULL AS lead_space_ct,
-  NULL AS quoted_value_ct,
-  NULL AS includes_digit_ct,
-  NULL AS filled_value_ct,
-  NULL AS min_text,
-  NULL AS max_text,
-  NULL AS upper_case_ct,
-  NULL AS lower_case_ct,
-  NULL AS non_alpha_ct,
-  NULL AS non_printing_ct,
-  NULL AS numeric_ct,
-  NULL AS date_ct,
-  NULL AS std_pattern_match,
 -- TG-ENDIF
 -- TG-IF is_type_A
   MAX(pattern_slots.pattern_0) AS pattern_0,
@@ -155,20 +132,9 @@ SELECT
   MIN(pct_25) AS percentile_25,
   MIN(pct_50) AS percentile_50,
   MIN(pct_75) AS percentile_75,
--- TG-ELSE
-  NULL AS min_value,
-  NULL AS min_value_over_0,
-  NULL AS max_value,
-  NULL AS avg_value,
-  NULL AS stdev_value,
-  NULL AS percentile_25,
-  NULL AS percentile_50,
-  NULL AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
--- TG-ELSE
-  NULL AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE
@@ -187,25 +153,9 @@ SELECT
   COUNT(DISTINCT DATEDIFF(day, "{COL_NAME}"::DATE, '{RUN_DATE}' ) ) AS date_days_present,
   COUNT(DISTINCT <%DATEDIFF_WEEK;"{COL_NAME}";'{RUN_DATE}'%>) AS date_weeks_present,
   COUNT(DISTINCT DATEDIFF(month, "{COL_NAME}"::DATE, '{RUN_DATE}' ) ) AS date_months_present,
--- TG-ELSE
-  NULL AS min_date,
-  NULL AS max_date,
-  NULL AS before_1yr_date_ct,
-  NULL AS before_5yr_date_ct,
-  NULL AS before_20yr_date_ct,
-  NULL AS before_100yr_date_ct,
-  NULL AS within_1yr_date_ct,
-  NULL AS within_1mo_date_ct,
-  NULL AS future_date_ct,
-  NULL AS distant_future_date_ct,
-  NULL AS date_days_present,
-  NULL AS date_weeks_present,
-  NULL AS date_months_present,
 -- TG-ENDIF
 -- TG-IF is_type_B
   SUM(CAST("{COL_NAME}" AS INTEGER)) AS boolean_true_ct,
--- TG-ELSE
-  NULL AS boolean_true_ct,
 -- TG-ENDIF
 -- TG-IF is_type_A
   (SELECT COUNT(DISTINCT REGEXP_REPLACE( REGEXP_REPLACE( REGEXP_REPLACE(
@@ -217,10 +167,6 @@ SELECT
     WHERE "{COL_NAME}" > ' ' ) AS distinct_pattern_ct,
   SUM(SIGN(REGEXP_COUNT(TRIM("{COL_NAME}"), ' '))::BIGINT) AS embedded_space_ct,
   AVG(REGEXP_COUNT(TRIM("{COL_NAME}"), ' ')::FLOAT) AS avg_embedded_spaces,
--- TG-ELSE
-  NULL AS distinct_pattern_ct,
-  NULL AS embedded_space_ct,
-  NULL AS avg_embedded_spaces,
 -- TG-ENDIF
   '{PROFILE_RUN_ID}' AS profile_run_id
   FROM target_table

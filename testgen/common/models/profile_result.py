@@ -1,7 +1,8 @@
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
@@ -33,6 +34,15 @@ class ColumnSort(StrEnum):
 
     hygiene_severity = "hygiene_severity"
     table = "table"
+
+
+def _as_decimal(value: Any) -> Decimal | None:
+    # Target drivers return counts as int, Decimal or float; Databricks returns float('nan') for NULL.
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+    return number if number.is_finite() else None
 
 
 def _sanitize_write_value(value: Any) -> Any:
@@ -160,6 +170,45 @@ class ProfileResult(Entity):
             statement = statement.on_conflict_do_nothing(index_elements=list(cls._upsert_key))
         with database_session() as session, session.begin_nested():
             session.execute(statement)
+
+    # Counts a sampled run measures on the sample and lifts to the full-table scale. Distinct counts
+    # are left as measured: a random sample is taken to represent them already.
+    _sampled_estimate_columns = (
+        "record_ct",
+        "value_ct",
+        "null_value_ct",
+        "zero_value_ct",
+        "lead_space_ct",
+        "embedded_space_ct",
+        "includes_digit_ct",
+        "filled_value_ct",
+        "numeric_ct",
+        "date_ct",
+        "before_1yr_date_ct",
+        "before_5yr_date_ct",
+        "before_20yr_date_ct",
+        "within_1yr_date_ct",
+        "within_1mo_date_ct",
+        "future_date_ct",
+        "boolean_true_ct",
+    )
+
+    @classmethod
+    def scale_sampled_estimates(cls, row: MutableMapping[str, Any], sample_ratio: float) -> None:
+        """Lift a sampled row's counts to full-table estimates in place and record the ratio used.
+
+        Each count in ``_sampled_estimate_columns`` becomes ``count * sample_ratio`` rounded to the
+        nearest integer, ties away from zero. A count that is absent, NULL or not a number is left
+        as it is. ``sample_ratio`` is written onto the row.
+        """
+        with localcontext() as context:
+            context.prec = 60
+            ratio = Decimal(str(sample_ratio))
+            for column in cls._sampled_estimate_columns:
+                count = _as_decimal(row.get(column))
+                if count is not None:
+                    row[column] = int((count * ratio).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+        row["sample_ratio"] = sample_ratio
 
     @classmethod
     def delete_for_run(cls, profile_run_id: UUID) -> int:

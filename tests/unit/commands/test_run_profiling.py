@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import pytest
 
+from testgen.commands.queries.profiling_query import TableSampling
 from testgen.commands.run_profiling import (
     PROFILE_RESULT_SHAPE_VERSION,
     ProfilingJob,
@@ -45,7 +46,7 @@ def _no_job_row_session() -> MagicMock:
 
 # --- the column profiling step: outcome-handling branches --------------------------------
 
-def _run_columns(outcomes: dict[str, tuple[str, object]]):
+def _run_columns(outcomes: dict[str, tuple[str, object]], sampling_params: dict[str, TableSampling] | None = None):
     """Drive the column profiling step through the engine with a stubbed worker pool.
 
     ``outcomes`` maps column_name -> ("ok", result_list) | ("err", message). Returns
@@ -57,7 +58,7 @@ def _run_columns(outcomes: dict[str, tuple[str, object]]):
     PausableJob.__init__(job, job_id=uuid4())
     job.data_chars = data_chars
     job.table_record_counts = {"t": 10}
-    job.sampling_params = {}
+    job.sampling_params = sampling_params or {}
     job.sql_generator = MagicMock()
     job.sql_generator.run_column_profiling.return_value = ("SELECT 1", {})
     job.connection = MagicMock(max_threads=4)
@@ -121,6 +122,35 @@ def test_empty_result_is_skipped_without_error():
     assert _final_status(profiling_run) == "Completed"
     profile_result.upsert.assert_not_called()
     write_error.assert_not_called()
+
+
+SAMPLING = TableSampling(table_name="t", sample_count=3, sample_ratio=10 / 3, sample_percent=30.0)
+
+
+def test_a_sampled_tables_row_is_scaled_before_it_is_written():
+    _, profile_result, _ = _run_columns({"c1": ("ok", [{"record_ct": 3}])}, sampling_params={"t": SAMPLING})
+
+    profile_result.scale_sampled_estimates.assert_called_once_with({"record_ct": 3}, SAMPLING.sample_ratio)
+    profile_result.upsert.assert_called_once_with({"record_ct": 3})
+    names = [name for name, _args, _kwargs in profile_result.mock_calls]
+    assert names.index("scale_sampled_estimates") < names.index("upsert")
+
+
+def test_a_table_that_is_not_sampled_is_written_as_measured():
+    other_table = TableSampling(table_name="u", sample_count=3, sample_ratio=10 / 3, sample_percent=30.0)
+    _, profile_result, _ = _run_columns({"c1": ("ok", [{"record_ct": 3}])}, sampling_params={"u": other_table})
+
+    profile_result.scale_sampled_estimates.assert_not_called()
+    profile_result.upsert.assert_called_once_with({"record_ct": 3})
+
+
+def test_an_error_row_on_a_sampled_table_is_not_scaled():
+    # An error row carries the catalog's exact record count and nothing measured on the sample.
+    _, profile_result, write_error = _run_columns({"c1": ("err", "boom"), "c2": ("ok", [{"x": 1}])}, sampling_params={"t": SAMPLING})
+
+    profile_result.scale_sampled_estimates.assert_called_once_with({"x": 1}, SAMPLING.sample_ratio)
+    write_error.assert_called_once()
+    assert write_error.call_args.args[1:] == (_col("t", "c1"), "boom")
 
 
 # --- the frequency analysis step ---------------------------------------------------------
