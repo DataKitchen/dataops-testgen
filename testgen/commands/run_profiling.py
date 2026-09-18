@@ -35,7 +35,6 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.pausable_job import PausableJob, Step
 from testgen.common.profile_frequency import build_frequent_values, with_frequent_patterns
 from testgen.common.read_file import get_template_files
-from testgen.utils import get_exception_message
 
 LOG = logging.getLogger("testgen")
 
@@ -289,7 +288,10 @@ class ProfilingJob(PausableJob[ColumnChars]):
 
         def handle(outcome: WorkerOutcome[ColumnChars, list[dict]]) -> None:
             if outcome.result:
-                ProfileResult.upsert(with_frequent_patterns(outcome.result[0]))
+                row = with_frequent_patterns(outcome.result[0])
+                if table_sampling := self.sampling_params.get(outcome.key.table_name):
+                    ProfileResult.scale_sampled_estimates(row, table_sampling.sample_ratio)
+                ProfileResult.upsert(row)
 
         result = self.fan_out(
             columns,
@@ -304,22 +306,6 @@ class ProfilingJob(PausableJob[ColumnChars]):
             LOG.warning(f"Errors running column profiling queries: {result.errors}")
         if result.all_failed:
             raise RuntimeError(f"{result.errors} errors during column profiling. See details in results.")
-
-        # Scale sampled counts to full-table estimates. Idempotent -- the query only touches rows
-        # whose sample_ratio is still NULL and sets it -- so a resumed pass that redid some columns
-        # (leaving their sample_ratio NULL) rescales exactly those, and a pass that already ran it
-        # finds nothing to do.
-        if self.sampling_params:
-            try:
-                LOG.info("Updating sampled profiling results")
-                execute_db_queries(
-                    [
-                        self.sql_generator.update_sampled_profiling_results(table_sampling)
-                        for table_sampling in self.sampling_params.values()
-                    ]
-                )
-            except Exception as e:
-                raise RuntimeError(f"Error updating sampled profiling results. {get_exception_message(e)}") from e
 
     def _build_column_query(self, column: ColumnChars) -> tuple[str, dict]:
         # Built here, not in the worker, so the ORM session is only touched on this thread.
