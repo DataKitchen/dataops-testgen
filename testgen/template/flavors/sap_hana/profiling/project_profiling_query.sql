@@ -52,7 +52,6 @@ SELECT
   COUNT(*) AS record_ct,
 -- TG-IF is_type_X
   COUNT(CASE WHEN "{COL_NAME}" IS NOT NULL THEN 1 END) AS value_ct,
-  NULL AS distinct_value_ct,
 -- TG-ELSE
   COUNT("{COL_NAME}") AS value_ct,
   COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
@@ -62,10 +61,6 @@ SELECT
   MIN(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS min_length,
   MAX(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS max_length,
   AVG(NULLIF(LENGTH(TO_VARCHAR("{COL_NAME}")), 0)) AS avg_length,
--- TG-ELSE
-  NULL AS min_length,
-  NULL AS max_length,
-  NULL AS avg_length,
 -- TG-ENDIF
 -- TG-IF is_type_A
   SUM(CASE
@@ -74,9 +69,6 @@ SELECT
 -- TG-ENDIF
 -- TG-IF is_type_N
   SUM(1 - ABS(SIGN("{COL_NAME}"))) AS zero_value_ct,
--- TG-ENDIF
--- TG-IF is_not_A_not_N
-  NULL AS zero_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_A
   COUNT(DISTINCT UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COL_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', ''))) AS distinct_std_value_ct,
@@ -132,22 +124,6 @@ SELECT
                      AND SUBSTR("{COL_NAME}", 1, 3) NOT BETWEEN '734' AND '749'
                      AND SUBSTR("{COL_NAME}", 1, 3) <> '666' THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'SSN'
   END AS std_pattern_match,
--- TG-ELSE
-  NULL AS distinct_std_value_ct,
-  NULL AS zero_length_ct,
-  NULL AS lead_space_ct,
-  NULL AS quoted_value_ct,
-  NULL AS includes_digit_ct,
-  NULL AS filled_value_ct,
-  NULL AS min_text,
-  NULL AS max_text,
-  NULL AS upper_case_ct,
-  NULL AS lower_case_ct,
-  NULL AS non_alpha_ct,
-  NULL AS non_printing_ct,
-  NULL AS numeric_ct,
-  NULL AS date_ct,
-  NULL AS std_pattern_match,
 -- TG-ENDIF
 -- TG-IF is_type_A
   MAX(pattern_slots.pattern_0) AS pattern_0,
@@ -170,20 +146,9 @@ SELECT
   MIN(pct_25) AS percentile_25,
   MIN(pct_50) AS percentile_50,
   MIN(pct_75) AS percentile_75,
--- TG-ELSE
-  NULL AS min_value,
-  NULL AS min_value_over_0,
-  NULL AS max_value,
-  NULL AS avg_value,
-  NULL AS stdev_value,
-  NULL AS percentile_25,
-  NULL AS percentile_50,
-  NULL AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
--- TG-ELSE
-  NULL AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE
@@ -225,25 +190,9 @@ SELECT
   COUNT(DISTINCT <%DATEDIFF_DAY;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_days_present,
   COUNT(DISTINCT <%DATEDIFF_WEEK;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_weeks_present,
   COUNT(DISTINCT <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_months_present,
--- TG-ELSE
-  NULL AS min_date,
-  NULL AS max_date,
-  NULL AS before_1yr_date_ct,
-  NULL AS before_5yr_date_ct,
-  NULL AS before_20yr_date_ct,
-  NULL AS before_100yr_date_ct,
-  NULL AS within_1yr_date_ct,
-  NULL AS within_1mo_date_ct,
-  NULL AS future_date_ct,
-  NULL AS distant_future_date_ct,
-  NULL AS date_days_present,
-  NULL AS date_weeks_present,
-  NULL AS date_months_present,
 -- TG-ENDIF
 -- TG-IF is_type_B
   SUM(CAST("{COL_NAME}" AS INTEGER)) AS boolean_true_ct,
--- TG-ELSE
-  NULL AS boolean_true_ct,
 -- TG-ENDIF
 -- TG-IF is_type_A
   (SELECT COUNT(DISTINCT REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN
@@ -253,10 +202,6 @@ SELECT
     WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ') AS distinct_pattern_ct,
   SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', '')))) AS embedded_space_ct,
   AVG(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', ''))) AS avg_embedded_spaces,
--- TG-ELSE
-  NULL AS distinct_pattern_ct,
-  NULL AS embedded_space_ct,
-  NULL AS avg_embedded_spaces,
 -- TG-ENDIF
   '{PROFILE_RUN_ID}' AS profile_run_id
   FROM target_table

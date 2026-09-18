@@ -240,8 +240,6 @@ class ProfilingSQL:
             "is_N_decimal": general_type == "N" and column_chars.is_decimal,
             "is_N_sampling": general_type == "N" and do_sample,
             "is_N_no_sampling": general_type == "N" and not do_sample,
-            "is_not_A": general_type != "A",
-            "is_not_A_not_N": general_type not in ("A", "N"),
         }
 
         return self._get_query(
@@ -284,7 +282,3 @@ class ProfilingSQL:
             column_chars=column_chars,
             table_sampling=table_sampling,
         )
-
-    def update_sampled_profiling_results(self, table_sampling: TableSampling) -> tuple[str, dict]:
-        # Runs on App database
-        return self._get_query("project_update_profile_results_to_estimates.sql", table_sampling=table_sampling)
