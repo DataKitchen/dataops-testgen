@@ -18,6 +18,7 @@ from testgen.common import (
 )
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome, get_flavor_service
+from testgen.common.database.profiling_capabilities import ProfilingCapabilities, resolve_profiling_capabilities
 from testgen.common.enums import JobKey, JobSource, JobStatus, run_duration_seconds
 from testgen.common.job_context import job_context
 from testgen.common.mixpanel_service import MixpanelService
@@ -42,7 +43,7 @@ LOG = logging.getLogger("testgen")
 # measures, or a different meaning for an existing one. A parked run resuming under a build that
 # measures differently would file both readings under one profiling run; a bump discards its
 # checkpoint so the run starts over and is measured one way.
-PROFILE_RESULT_SHAPE_VERSION = 1
+PROFILE_RESULT_SHAPE_VERSION = 2
 
 
 @with_database_session
@@ -125,6 +126,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
         self.data_chars: list[ColumnChars] = []
         self.sampling_params: dict[str, TableSampling] = {}
         self.table_record_counts: dict[str, int] = {}
+        self.capabilities = ProfilingCapabilities()
 
     def canonical_key(self, key: ColumnChars) -> str:
         return f"{key.schema_name}\x1f{key.table_name}\x1f{key.column_name}"
@@ -234,6 +236,11 @@ class ProfilingJob(PausableJob[ColumnChars]):
         # file both readings under one profiling run. A mismatch discards the checkpoint instead.
         self.pin("result_shape", PROFILE_RESULT_SHAPE_VERSION)
         self.pin("profiling_templates", _profiling_template_digest(self.sql_generator.flavor))
+        # Resolved inside the step so an unreachable target fails this step like any other target
+        # error. Pinned because the probe can answer differently once the target is upgraded, which
+        # would file an exact and an approximate reading of the same measure under one run.
+        self.capabilities = resolve_profiling_capabilities(self.sql_generator.flavor_service)
+        self.pin("approx_percentile", self.capabilities.approx_percentile)
 
         if not self.once(self._refresh_catalog):
             LOG.info("Reading the data catalog recorded by the interrupted run")
@@ -309,7 +316,11 @@ class ProfilingJob(PausableJob[ColumnChars]):
 
     def _build_column_query(self, column: ColumnChars) -> tuple[str, dict]:
         # Built here, not in the worker, so the ORM session is only touched on this thread.
-        return self.sql_generator.run_column_profiling(column, self.sampling_params.get(column.table_name))
+        return self.sql_generator.run_column_profiling(
+            column,
+            self.sampling_params.get(column.table_name),
+            use_approx_percentile=self.capabilities.approx_percentile,
+        )
 
     def _freq_analysis(self) -> None:
         if not self.data_chars:

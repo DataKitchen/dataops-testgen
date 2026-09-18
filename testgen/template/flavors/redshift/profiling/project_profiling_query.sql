@@ -132,6 +132,7 @@ SELECT
   MIN(pct_25) AS percentile_25,
   MIN(pct_50) AS percentile_50,
   MIN(pct_75) AS percentile_75,
+  '{PERCENTILE_METHOD}' AS percentile_method,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
@@ -173,10 +174,17 @@ SELECT
 -- TG-IF is_type_A
   CROSS JOIN pattern_slots
 -- TG-ENDIF
--- TG-IF is_type_N
+-- TG-IF is_N_exact_pctile
   , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
+        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1) pctile
+-- TG-ENDIF
+-- TG-IF is_N_approx_pctile
+  , (SELECT
+             APPROXIMATE PERCENTILE_DISC(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
+             APPROXIMATE PERCENTILE_DISC(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
+             APPROXIMATE PERCENTILE_DISC(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
         FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1) pctile
 -- TG-ENDIF

@@ -151,9 +151,10 @@ SELECT
   MAX("{COL_NAME}") AS max_value,
   AVG(CAST("{COL_NAME}" AS DOUBLE)) AS avg_value,
   STDDEV(CAST("{COL_NAME}" AS DOUBLE)) AS stdev_value,
-  APPROX_PERCENTILE(CAST("{COL_NAME}" AS DOUBLE), 0.25) AS percentile_25,
-  APPROX_PERCENTILE(CAST("{COL_NAME}" AS DOUBLE), 0.50) AS percentile_50,
-  APPROX_PERCENTILE(CAST("{COL_NAME}" AS DOUBLE), 0.75) AS percentile_75,
+  MIN(pctile.pct_25) AS percentile_25,
+  MIN(pctile.pct_50) AS percentile_50,
+  MIN(pctile.pct_75) AS percentile_75,
+  'approximate' AS percentile_method,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(MOD(CAST("{COL_NAME}" AS DOUBLE), 1)), 5)) AS fractional_sum,
@@ -217,4 +218,10 @@ SELECT
   FROM target_table
 -- TG-IF is_type_A
   INNER JOIN pattern_slots ON 1 = 1
+-- TG-ENDIF
+-- TG-IF is_type_N
+  INNER JOIN (SELECT APPROX_PERCENTILE(CAST("{COL_NAME}" AS DOUBLE), 0.25) AS pct_25,
+                     APPROX_PERCENTILE(CAST("{COL_NAME}" AS DOUBLE), 0.50) AS pct_50,
+                     APPROX_PERCENTILE(CAST("{COL_NAME}" AS DOUBLE), 0.75) AS pct_75
+                FROM "{DATA_TABLE}") pctile ON 1 = 1
 -- TG-ENDIF

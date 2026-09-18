@@ -36,6 +36,11 @@ class ColumnSort(StrEnum):
     table = "table"
 
 
+class PercentileMethod(StrEnum):
+    EXACT = "exact"
+    APPROXIMATE = "approximate"
+
+
 def _as_decimal(value: Any) -> Decimal | None:
     # Target drivers return counts as int, Decimal or float; Databricks returns float('nan') for NULL.
     try:
@@ -121,6 +126,7 @@ class ProfileResult(Entity):
     percentile_25: float | None = Column(Float)
     percentile_50: float | None = Column(Float)
     percentile_75: float | None = Column(Float)
+    percentile_method: PercentileMethod | None = Column(String)
     fractional_sum: float | None = Column(Numeric(38, 6))
 
     # Date-specific

@@ -40,6 +40,10 @@ class SalesforceData360FlavorService(FlavorService):
     qualifies_table_refs_with_schema = False
     metadata_via_api = True
 
+    # The query surface has no exact percentile, so the template computes them approximately
+    # regardless of this flag; it records the fact rather than switching anything.
+    supports_approx_percentile = True
+
     def get_connection_string(self, _params: ResolvedConnectionParams) -> str:
         return "salesforce_data360://"
 

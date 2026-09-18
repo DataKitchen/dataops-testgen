@@ -5,6 +5,7 @@ from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, process_conditionals, replace_params
 from testgen.common.models.connection import Connection
+from testgen.common.models.profile_result import PercentileMethod
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.table_group import TableGroup
 from testgen.common.read_file import replace_templated_functions
@@ -92,6 +93,7 @@ class ProfilingSQL:
         self.profiling_run = profiling_run
         self.run_date = profiling_run.profiling_starttime
         self.flavor = connection.sql_flavor
+        self.flavor_service = get_flavor_service(self.flavor)
 
     def _get_params(self, column_chars: ColumnChars | None = None, table_sampling: TableSampling | None = None) -> dict:
         params = {
@@ -220,14 +222,21 @@ class ProfilingSQL:
         query = replace_params(query, params)
         return query, params
 
-    def run_column_profiling(self, column_chars: ColumnChars, table_sampling: TableSampling | None = None) -> tuple[str, dict]:
-        # Runs on Target database
+    def run_column_profiling(
+        self,
+        column_chars: ColumnChars,
+        table_sampling: TableSampling | None = None,
+        use_approx_percentile: bool = False,
+    ) -> tuple[str, dict]:
+        # Runs on Target database. Percentiles read the whole table whether or not the run
+        # samples: approximately where the target has the function, exactly otherwise.
         general_type = column_chars.general_type
         do_sample = bool(table_sampling)
-        table_hint = get_flavor_service(self.flavor).table_hint(self.connection.sql_flavor_code)
+        percentile_method = PercentileMethod.APPROXIMATE if use_approx_percentile else PercentileMethod.EXACT
 
         extra_params = {
-            "TABLE_HINT": table_hint,
+            "TABLE_HINT": self.flavor_service.table_hint(self.connection.sql_flavor_code),
+            "PERCENTILE_METHOD": percentile_method,
             "do_sample": do_sample,
             "is_type_A": general_type == "A",
             "is_type_N": general_type == "N",
@@ -238,8 +247,8 @@ class ProfilingSQL:
             "is_A_sampling": general_type == "A" and do_sample,
             "is_A_no_sampling": general_type == "A" and not do_sample,
             "is_N_decimal": general_type == "N" and column_chars.is_decimal,
-            "is_N_sampling": general_type == "N" and do_sample,
-            "is_N_no_sampling": general_type == "N" and not do_sample,
+            "is_N_approx_pctile": general_type == "N" and use_approx_percentile,
+            "is_N_exact_pctile": general_type == "N" and not use_approx_percentile,
         }
 
         return self._get_query(

@@ -10,6 +10,8 @@ class DatabricksFlavorService(FlavorService):
     varchar_type = "STRING"
     url_scheme = "databricks"
 
+    supports_approx_percentile = True
+
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:
         if params.dbname:
             return [(f"USE CATALOG `{params.dbname}`", None)]

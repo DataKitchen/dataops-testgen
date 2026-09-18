@@ -110,6 +110,7 @@ FROM (
     MIN(pct_25) AS percentile_25,
     MIN(pct_50) AS percentile_50,
     MIN(pct_75) AS percentile_75,
+    '{PERCENTILE_METHOD}' AS percentile_method,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
     SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
@@ -168,19 +169,19 @@ FROM (
 -- TG-ELSE
     FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-ENDIF
--- TG-IF is_N_sampling
+-- TG-IF is_N_approx_pctile
     , (SELECT
-               PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-               PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-               PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-          FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC}) WHERE ROWNUM <= 1000000) pctile
+               APPROX_PERCENTILE(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
+               APPROX_PERCENTILE(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
+               APPROX_PERCENTILE(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
+          FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
 -- TG-ENDIF
--- TG-IF is_N_no_sampling
+-- TG-IF is_N_exact_pctile
     , (SELECT
                PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
                PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
                PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-          FROM "{DATA_SCHEMA}"."{DATA_TABLE}" WHERE ROWNUM <= 1000000) pctile
+          FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
 -- TG-ENDIF
 ) main
 -- TG-IF is_A_sampling

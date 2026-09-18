@@ -14,6 +14,8 @@ class SnowflakeFlavorService(FlavorService):
     default_uppercase = True
     url_scheme = "snowflake"
 
+    supports_approx_percentile = True
+
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:
         if params.connect_by_key:
             # https://docs.snowflake.com/en/developer-guide/python-connector/sqlalchemy#key-pair-authentication-support

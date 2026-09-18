@@ -167,6 +167,9 @@ class DuckdbFlavorService(FlavorService):
     url_scheme = "duckdb"
     qualifies_table_refs_with_schema = True
 
+    # The engine ships inside the package, so the pinned version decides and nothing needs probing.
+    supports_approx_percentile = True
+
     parameters_schema = (
         ConnectionField(key=DATABASE_FILE_PARAMETER, label="Database File", required=True),
     )

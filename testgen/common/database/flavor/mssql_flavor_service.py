@@ -12,6 +12,10 @@ class MssqlFlavorService(FlavorService):
     row_limiting_clause = "top"
     url_scheme = "mssql+pyodbc"
 
+    # APPROX_PERCENTILE_CONT arrived in SQL Server 2022; older servers fail the probe and stay exact.
+    supports_approx_percentile = True
+    approx_percentile_probe = "SELECT APPROX_PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY n) FROM (SELECT 1 AS n) AS t"
+
     def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:
         # Fabric rejects TABLESAMPLE; SQL Server accepts it only on base tables.
         if sql_flavor_code == "onelake_mssql":

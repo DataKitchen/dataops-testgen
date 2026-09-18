@@ -20,6 +20,10 @@ class OracleFlavorService(FlavorService):
     test_query = "SELECT 1 FROM DUAL"
     url_scheme = "oracle"
 
+    # APPROX_PERCENTILE is version-gated (12c Release 2), so the probe decides; older instances stay exact.
+    supports_approx_percentile = True
+    approx_percentile_probe = "SELECT APPROX_PERCENTILE(0.5) WITHIN GROUP (ORDER BY n) FROM (SELECT 1 n FROM dual) t"
+
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         return f"{self.url_scheme}://{params.username}:{quote_plus(params.password)}@{params.host}:{params.port}?service_name={params.dbname}"
 

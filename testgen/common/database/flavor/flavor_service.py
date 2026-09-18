@@ -160,6 +160,12 @@ class FlavorService:
     qualifies_table_refs_with_schema = True
     metadata_via_api = False
 
+    # Whether the engine has an approximate percentile function profiling can use in place of
+    # an exact PERCENTILE_CONT. A flavor whose function is version-gated also gives a probe query,
+    # so the capability is confirmed against the target rather than assumed from the declaration.
+    supports_approx_percentile = False
+    approx_percentile_probe: str | None = None
+
     def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:  # noqa: ARG002
         """Object types that can be sampled with TABLESAMPLE.
 
