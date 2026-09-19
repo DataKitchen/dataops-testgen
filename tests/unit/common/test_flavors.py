@@ -1,5 +1,6 @@
 """Tests for the shared flavor-identity source of truth."""
 
+import pathlib
 import re
 
 import pytest
@@ -88,3 +89,39 @@ def test_the_two_quote_literal_escape_copies_group_the_flavors_identically():
         read_template_sql_file("0222_incremental_upgrade.sql", "dbupgrade")
     )
     assert setup == migration
+
+
+# --- Connection.effective_max_threads ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("flavor", "code", "stored", "expected"),
+    [
+        # The pin wins over a stored column that disagrees with it.
+        ("duckdb", "files", 4, 1),
+        ("duckdb", "duckdb", 8, 1),
+        ("postgresql", "postgresql", 6, 6),
+        ("postgresql", "postgresql", None, 4),
+    ],
+)
+def test_effective_max_threads_applies_the_flavor_pin(flavor, code, stored, expected):
+    from testgen.common.models.connection import Connection
+
+    connection = Connection(sql_flavor=flavor, sql_flavor_code=code, max_threads=stored)
+    assert connection.effective_max_threads == expected
+
+
+def test_every_target_fan_out_reads_the_pinned_thread_count():
+    """A pin only holds where the fan-out reads it, and the stored column can disagree with it.
+
+    A call site reverted to the column passes every other unit test: the pool of one absorbs the
+    extra workers by serializing them, until one waits past the timeout and the run fails.
+    """
+    commands = pathlib.Path(__file__).resolve().parents[3] / "testgen" / "commands"
+    offenders = [
+        f"{path.relative_to(commands)}:{number}: {line.strip()}"
+        for path in sorted(commands.rglob("*.py"))
+        for number, line in enumerate(path.read_text().splitlines(), start=1)
+        if re.search(r"\.max_threads\b", line) and "effective_max_threads" not in line
+    ]
+    assert not offenders, "Read Connection.effective_max_threads instead:\n" + "\n".join(offenders)

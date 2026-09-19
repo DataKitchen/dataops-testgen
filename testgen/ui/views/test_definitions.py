@@ -1397,6 +1397,6 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
             )
         FROM {table_ref};
         """
-        fetch_from_target_db(connection, query)
+        fetch_from_target_db(connection, query, table_group=table_group)
     else:
-        validate_custom_query(connection, schema, test_definition["custom_query"])
+        validate_custom_query(connection, schema, test_definition["custom_query"], table_group=table_group)

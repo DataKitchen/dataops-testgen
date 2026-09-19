@@ -51,7 +51,7 @@ def run_test_execution(
     test_suite = TestSuite.get(test_suite_id)
     table_group = TableGroup.get(test_suite.table_groups_id)
     connection = Connection.get(table_group.connection_id)
-    set_target_db_params(connection.__dict__)
+    set_target_db_params(connection.__dict__, table_group)
 
     resolved_version_id = (
         UUID(str(version_id))
@@ -243,7 +243,7 @@ def _run_tests(
     test_results, _, error_data = fetch_from_db_threaded(
         [sql_generator.run_query_test(td) for td in test_defs],
         use_target_db=run_type != "METADATA",
-        max_threads=sql_generator.connection.max_threads,
+        max_threads=sql_generator.connection.effective_max_threads,
         progress_callback=update_test_progress if save_progress else None,
     )
 
@@ -304,7 +304,7 @@ def _run_cat_tests(
     aggregate_results, _, aggregate_errors = fetch_from_db_threaded(
         aggregate_queries,
         use_target_db=True,
-        max_threads=sql_generator.connection.max_threads,
+        max_threads=sql_generator.connection.effective_max_threads,
         progress_callback=update_aggegate_progress if save_progress else None,
     )
 
@@ -346,7 +346,7 @@ def _run_cat_tests(
         single_results, _, single_errors = fetch_from_db_threaded(
             single_queries,
             use_target_db=True,
-            max_threads=sql_generator.connection.max_threads,
+            max_threads=sql_generator.connection.effective_max_threads,
             progress_callback=update_single_progress if save_progress else False,
         )
 
@@ -374,5 +374,3 @@ def _run_cat_tests(
         if error_count
         else None,
     )
-
-

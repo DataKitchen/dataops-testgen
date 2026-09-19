@@ -135,7 +135,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
         LOG.info(f"Starting profiling run for table group {self.table_group_id}")
         self.table_group = TableGroup.get(self.table_group_id)
         self.connection = Connection.get(self.table_group.connection_id)
-        set_target_db_params(self.connection.__dict__)
+        set_target_db_params(self.connection.__dict__, self.table_group)
 
         # Reuse the row when one is already there: a resumed run keeps its original start
         # time, which anchors the date-range measures, and the progress it already recorded.
@@ -306,7 +306,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
             _fetch_target,
             handle,
             on_error=lambda column, error: _write_column_error(self.sql_generator, column, error),
-            max_threads=self.connection.max_threads,
+            max_threads=self.connection.effective_max_threads,
         )
 
         if result.errors:
@@ -349,7 +349,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
             if outcome.result
             else None,
             on_error=lambda column, error: _write_frequency_error(self.sql_generator, column, error),
-            max_threads=self.connection.max_threads,
+            max_threads=self.connection.effective_max_threads,
         )
         if result.errors:
             LOG.warning(f"Errors running frequency analysis queries: {result.errors}")

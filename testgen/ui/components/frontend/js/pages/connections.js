@@ -1,15 +1,15 @@
 /**
  * @import { Connection, Flavor } from '/app/static/js/components/connection_form.js';
- * 
+ *
  * @typedef Results
  * @type {object}
  * @property {boolean} success
  * @property {string} message
- * 
+ *
  * @typedef Permissions
  * @type {object}
  * @property {boolean} is_admin
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {string} project_code
@@ -31,9 +31,9 @@ import { Alert } from '/app/static/js/components/alert.js';
 const { div, span } = van.tags;
 
 /**
- * 
- * @param {Properties} props 
- * @returns 
+ *
+ * @param {Properties} props
+ * @returns
  */
 const Connections = (props) => {
     const { emit } = props;
@@ -53,6 +53,7 @@ const Connections = (props) => {
     let wizardComponent;
     const buildWizard = () => TableGroupWizard({ emit,
         project_code: van.derive(() => getValue(props.setup_wizard)?.project_code),
+        connections: van.derive(() => getValue(props.setup_wizard)?.connections),
         table_group: van.derive(() => getValue(props.setup_wizard)?.table_group),
         table_group_preview: van.derive(() => getValue(props.setup_wizard)?.table_group_preview),
         steps: van.derive(() => getValue(props.setup_wizard)?.steps),
@@ -67,7 +68,7 @@ const Connections = (props) => {
         div(
             { class: 'flex-row fx-justify-content-flex-end' },
             () => getValue(props.has_table_groups)
-                ? Link({ emit, 
+                ? Link({ emit,
                     href: 'table-groups',
                     params: {'project_code': projectCode, "connection_id": connectionId},
                     label: 'Manage Table Groups',

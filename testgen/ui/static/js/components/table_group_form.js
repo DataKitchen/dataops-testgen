@@ -9,6 +9,7 @@
  * @property {string?} profiling_include_mask
  * @property {string?} profiling_exclude_mask
  * @property {string?} profiling_table_set
+ * @property {FileDeclaration[]?} file_declarations
  * @property {string?} table_group_schema
  * @property {string?} profile_id_column_mask
  * @property {string?} profile_sk_column_mask
@@ -31,6 +32,13 @@
  * @property {string?} data_product
  * @property {string?} data_classification
  *
+ * @typedef FileDeclaration
+ * @type {object}
+ * @property {string} name
+ * @property {string} uri
+ * @property {'csv' | 'parquet' | 'json'} format
+ * @property {object?} options
+ *
  * @typedef FormState
  * @type {object}
  * @property {boolean} dirty
@@ -44,6 +52,7 @@
  * @property {boolean?} disableConnectionSelector
  * @property {boolean?} disableSchemaField
  * @property {string?} sqlFlavor
+ * @property {string?} sqlFlavorCode
  * @property {boolean?} disablePiiFlag
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
@@ -57,9 +66,110 @@ import { Select } from './select.js';
 import { Caption } from './caption.js';
 import { Textarea } from './textarea.js';
 import { Icon } from './icon.js';
+import { Button } from './button.js';
+import { withTooltip } from './tooltip.js';
 
 // Flavors whose profiling sample clause cannot sample views — views are profiled in full.
 const SAMPLE_SKIPS_VIEWS_FLAVORS = ['mssql', 'postgresql'];
+
+// Flavor codes whose tables are declared file by file instead of matched from a schema. Branching
+// on the code rather than the family matters: the DuckDB database flavor shares a family with the
+// file one and keeps the schema-and-criteria form.
+const FILE_DECLARATION_FLAVOR_CODES = ['files'];
+const declaresFiles = (sqlFlavorCode) => FILE_DECLARATION_FLAVOR_CODES.includes(sqlFlavorCode);
+
+const FILE_FORMAT_OPTIONS = [
+    { label: 'CSV', value: 'csv' },
+    { label: 'Parquet', value: 'parquet' },
+    { label: 'JSON', value: 'json' },
+];
+
+const URI_HELP = 'Path relative to the connection base path. Name one file (sales/orders.csv), '
+    + 'or a pattern to read every file that matches it: sales/*.csv for the CSV files in a folder, '
+    + 'sales/**/*.csv to include its subfolders.';
+
+
+const HEADER_OPTIONS = [
+    { label: 'Auto detect', value: '' },
+    { label: 'Yes', value: 'true' },
+    { label: 'No', value: 'false' },
+];
+
+const DECLARATION_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+// Query-string keys that carry a signed URL. Credentials belong on the connection, where they are
+// stored encrypted, rather than in the path of a table.
+const CREDENTIAL_KEYS = ['sig', 'x-amz-signature', 'x-amz-credential', 'x-goog-signature', 'signature'];
+
+const hasEmbeddedCredentials = (value) => {
+    const query = String(value ?? '').split('?')[1];
+    if (!query) {
+        return false;
+    }
+    return query.split('&')
+        .map(pair => pair.split('=')[0].trim().toLowerCase())
+        .some(key => CREDENTIAL_KEYS.includes(key));
+};
+
+const declarationNameValidators = (rows, row) => [
+    (value) => (String(value ?? '').trim() ? null : 'Name is required.'),
+    (value) => (!value || DECLARATION_NAME_PATTERN.test(String(value).trim())
+        ? null
+        : 'Name must start with a letter or underscore and contain only letters, numbers and underscores.'),
+    (value) => {
+        const name = String(value ?? '').trim();
+        // DuckDB folds identifiers even when quoted, so names that differ only in case collide.
+        const key = name.toLowerCase();
+        const taken = rows.rawVal.some(
+            other => other !== row && String(other.name.rawVal ?? '').trim().toLowerCase() === key,
+        );
+        return name && taken ? 'Name is already used by another table in this table group.' : null;
+    },
+];
+
+const declarationUriValidators = [
+    (value) => (String(value ?? '').trim() ? null : 'File or Pattern is required.'),
+    (value) => (hasEmbeddedCredentials(value)
+        ? 'File or Pattern cannot contain credentials. Credentials are configured on the connection.'
+        : null),
+];
+
+let nextDeclarationId = 0;
+const declarationRow = (declaration) => ({
+    id: `declaration-${nextDeclarationId++}`,
+    name: van.state(declaration?.name ?? ''),
+    uri: van.state(declaration?.uri ?? ''),
+    format: van.state(declaration?.format ?? 'csv'),
+    delimiter: van.state(declaration?.options?.delimiter ?? ''),
+    header: van.state(declaration?.options?.header === undefined ? '' : String(declaration.options.header)),
+    quote: van.state(declaration?.options?.quote ?? ''),
+    escape: van.state(declaration?.options?.escape ?? ''),
+    expanded: van.state(false),
+});
+
+const declarationPayload = (row) => {
+    const options = {};
+    if (row.format.val === 'csv') {
+        if (row.delimiter.val) {
+            options.delimiter = row.delimiter.val;
+        }
+        if (row.header.val) {
+            options.header = row.header.val === 'true';
+        }
+        if (row.quote.val) {
+            options.quote = row.quote.val;
+        }
+        if (row.escape.val) {
+            options.escape = row.escape.val;
+        }
+    }
+    return {
+        name: String(row.name.val ?? '').trim(),
+        uri: String(row.uri.val ?? '').trim(),
+        format: row.format.val,
+        ...(Object.keys(options).length ? { options } : {}),
+    };
+};
 
 const { div, span } = van.tags;
 
@@ -84,6 +194,7 @@ const TableGroupForm = (props) => {
     const profilingIncludeMask = van.state(tableGroup.profiling_include_mask ?? '%');
     const profilingExcludeMask = van.state(tableGroup.profiling_exclude_mask ?? 'tmp%');
     const profilingTableSet = van.state(normalizeTableSet(tableGroup.profiling_table_set));
+    const declarationRows = van.state((tableGroup.file_declarations ?? []).map(declarationRow));
     const tableGroupSchema = van.state(tableGroup.table_group_schema);
     const profileIdColumnMask = van.state(tableGroup.profile_id_column_mask ?? '%_id');
     const profileSkColumnMask = van.state(tableGroup.profile_sk_column_mask ?? '%_sk');
@@ -125,6 +236,13 @@ const TableGroupForm = (props) => {
         return flavor === 'salesforce_data360';
     });
 
+    const flavorCode = van.derive(() => {
+        const connections = getValue(props.connections) ?? [];
+        const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
+        return selected?.sql_flavor_code ?? getValue(props.sqlFlavorCode);
+    });
+    const declaresFilesState = van.derive(() => declaresFiles(flavorCode.val));
+
     const sampleSkipsViews = van.derive(() => {
         const connections = getValue(props.connections) ?? [];
         const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
@@ -140,6 +258,7 @@ const TableGroupForm = (props) => {
             profiling_include_mask: profilingIncludeMask.val,
             profiling_exclude_mask: profilingExcludeMask.val,
             profiling_table_set: normalizeTableSet(profilingTableSet.val),
+            file_declarations: declarationRows.val.length ? declarationRows.val.map(declarationPayload) : null,
             table_group_schema: tableGroupSchema.val,
             profile_id_column_mask: profileIdColumnMask.val,
             profile_sk_column_mask: profileSkColumnMask.val,
@@ -171,15 +290,30 @@ const TableGroupForm = (props) => {
     }
 
     van.derive(() => {
-        const fieldsValidity = validityPerField.val;
-        const isValid = Object.keys(fieldsValidity).length > 0 &&
-            Object.values(fieldsValidity).every(v => v);
+        // The two ways of naming tables are mutually exclusive, so whichever one the flavor does
+        // not use has its fields left out rather than holding the form back while hidden.
+        const hidden = declaresFilesState.val ? SCHEMA_FIELDS : DECLARATION_FIELDS;
+        const entries = Object.entries(validityPerField.val).filter(([field]) => !hidden.includes(field));
+        const isValid = entries.length > 0 && entries.every(([, valid]) => valid);
         props.onChange?.(updatedTableGroup.val, { dirty: dirty.val, valid: isValid });
     });
 
     const setFieldValidity = (field, validity) => {
         validityPerField.val = {...validityPerField.rawVal, [field]: validity};
     }
+
+    const declarationsValid = van.derive(() => {
+        const rows = declarationRows.val;
+        const names = rows.map(row => String(row.name.val ?? '').trim());
+        const keys = names.map(name => name.toLowerCase());
+        return rows.length > 0 && rows.every((row, index) => {
+            const name = names[index];
+            const uri = String(row.uri.val ?? '').trim();
+            return name && DECLARATION_NAME_PATTERN.test(name) && keys.indexOf(keys[index]) === index
+                && uri && !hasEmbeddedCredentials(uri);
+        });
+    });
+    van.derive(() => setFieldValidity('file_declarations', declarationsValid.val));
 
     return div(
         { class: 'flex-column fx-gap-3' },
@@ -198,17 +332,27 @@ const TableGroupForm = (props) => {
             })
             : undefined,
         MainForm(
-            { disableSchemaField, isSalesforce, setValidity: setFieldValidity },
+            { disableSchemaField, isSalesforce, declaresFiles: declaresFilesState, setValidity: setFieldValidity },
             tableGroupsName,
             tableGroupSchema,
         ),
-        CriteriaForm(
-            { setValidity: setFieldValidity },
-            profilingIncludeMask,
-            profilingExcludeMask,
-            profilingTableSet,
-            profileIdColumnMask,
-            profileSkColumnMask,
+        // Both forms stay mounted and are hidden with CSS rather than swapped out. A reactive node
+        // that leaves the DOM loses its bindings for good, and the connection selector can put
+        // either one back on screen.
+        div(
+            { style: () => declaresFilesState.val ? 'display: none;' : '' },
+            CriteriaForm(
+                { setValidity: setFieldValidity },
+                profilingIncludeMask,
+                profilingExcludeMask,
+                profilingTableSet,
+                profileIdColumnMask,
+                profileSkColumnMask,
+            ),
+        ),
+        div(
+            { style: () => declaresFilesState.val ? '' : 'display: none;' },
+            TablesForm(declarationRows),
         ),
         SettingsForm(
             { editMode: !!tableGroup.id, disablePiiFlag: getValue(props.disablePiiFlag) ?? false, setValidity: setFieldValidity },
@@ -261,7 +405,7 @@ const MainForm = (
             },
             validators: [ required ],
         }),
-        () => Input({
+        () => getValue(options.declaresFiles) ? '' : Input({
             name: 'table_group_schema',
             label: getValue(options.isSalesforce) ? 'Data Space' : 'Schema',
             value: tableGroupSchema,
@@ -279,6 +423,134 @@ const MainForm = (
         }),
     );
 };
+
+const TablesForm = (declarationRows) => {
+    const addRow = () => {
+        declarationRows.val = [...declarationRows.rawVal, declarationRow()];
+    };
+    const removeRow = (id) => {
+        declarationRows.val = declarationRows.rawVal.filter(row => row.id !== id);
+    };
+
+    return div(
+        { class: 'flex-column fx-gap-3 border border-radius-1 p-3 mt-1', style: 'position: relative;' },
+        Caption({ content: 'Tables', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
+        div(
+            { class: 'tg-declarations' },
+            div(
+                { class: 'tg-declarations--row text-caption' },
+                span('Name'),
+                span(
+                    { class: 'flex-row fx-gap-1 fx-align-flex-center' },
+                    'File or Pattern',
+                    withTooltip(
+                        Icon({ size: 16, classes: 'text-disabled' }, 'help'),
+                        { text: URI_HELP, position: 'bottom-right', width: 260 },
+                    ),
+                ),
+                span('Format'),
+                span(),
+                span(),
+            ),
+            () => div(
+                { class: 'flex-column fx-gap-2' },
+                declarationRows.val.map(row => DeclarationRow(row, declarationRows, removeRow)),
+            ),
+            () => declarationRows.val.length
+                ? ''
+                : div(
+                    { class: 'flex-row fx-justify-center fx-gap-1 mt-6 mb-3 text-secondary text-caption' },
+                    'No tables declared yet.',
+                    span({ class: 'text-error' }, '*'),
+                ),
+        ),
+        div(
+            { class: 'flex-row' },
+            Button({ type: 'stroked', icon: 'add', label: 'Add Table', width: 'auto', onclick: addRow }),
+        ),
+    );
+};
+
+const DeclarationRow = (row, declarationRows, removeRow) => {
+    return div(
+        { class: 'tg-declarations--row' },
+        Input({
+            name: `declaration_name_${row.id}`,
+            value: row.name,
+            onChange: (value) => row.name.val = value,
+            validators: declarationNameValidators(declarationRows, row),
+        }),
+        Input({
+            name: `declaration_uri_${row.id}`,
+            value: row.uri,
+            onChange: (value) => row.uri.val = value,
+            validators: declarationUriValidators,
+        }),
+        Select({
+            name: `declaration_format_${row.id}`,
+            value: row.format,
+            options: FILE_FORMAT_OPTIONS,
+            onChange: (value) => row.format.val = value,
+        }),
+        () => row.format.val === 'csv'
+            ? Button({
+                type: 'icon',
+                icon: 'tune',
+                tooltip: 'CSV settings',
+                tooltipPosition: 'left',
+                onclick: () => row.expanded.val = !row.expanded.rawVal,
+            })
+            : span(),
+        Button({
+            type: 'icon',
+            icon: 'delete',
+            tooltip: 'Remove table',
+            tooltipPosition: 'left',
+            onclick: () => removeRow(row.id),
+        }),
+        () => row.format.val === 'csv' && row.expanded.val
+            ? div(
+                { class: 'tg-declarations--options flex-row fx-gap-3 fx-flex-wrap p-2 border-radius-1' },
+                Input({
+                    name: `declaration_delimiter_${row.id}`,
+                    label: 'Delimiter',
+                    value: row.delimiter,
+                    width: 120,
+                    placeholder: 'Auto detect',
+                    onChange: (value) => row.delimiter.val = value,
+                }),
+                Select({
+                    name: `declaration_header_${row.id}`,
+                    label: 'Has header',
+                    value: row.header,
+                    options: HEADER_OPTIONS,
+                    width: 140,
+                    onChange: (value) => row.header.val = value,
+                }),
+                Input({
+                    name: `declaration_quote_${row.id}`,
+                    label: 'Quote',
+                    value: row.quote,
+                    width: 100,
+                    placeholder: 'Auto detect',
+                    onChange: (value) => row.quote.val = value,
+                }),
+                Input({
+                    name: `declaration_escape_${row.id}`,
+                    label: 'Escape',
+                    value: row.escape,
+                    width: 100,
+                    placeholder: 'Auto detect',
+                    onChange: (value) => row.escape.val = value,
+                }),
+            )
+            : '',
+    );
+};
+
+// Validity keys that belong to only one way of naming a table group's tables.
+const SCHEMA_FIELDS = ['table_group_schema'];
+const DECLARATION_FIELDS = ['file_declarations'];
 
 const CriteriaForm = (
     options,
@@ -605,6 +877,31 @@ stylesheet.replace(`
 .tg-tagging-form-fields {
     height: 332px;
 }
+.tg-declarations {
+    overflow-x: auto;
+}
+.tg-declarations--row {
+    display: grid;
+    grid-template-columns: minmax(120px, 1fr) minmax(160px, 2fr) 130px 40px 40px;
+    gap: 12px;
+    align-items: start;
+    min-width: 560px;
+}
+/* The column headers name these fields once, so each control renders without its own label. The
+   empty label still occupies the wrapper's row gap, which is what pushes a select out of line
+   with the inputs beside it. */
+.tg-declarations--row > .tg-input--label > .text-caption:first-child,
+.tg-declarations--row > .tg-select--label > :first-child {
+    display: none;
+}
+.tg-declarations--options {
+    grid-column: 1 / -1;
+    background: var(--form-field-background-color, rgba(0, 0, 0, 0.04));
+}
+/* Selects carry a 200px floor, which in these columns overhangs the controls to their right. */
+.tg-declarations--row .tg-select--field {
+    min-width: 0;
+}
 `);
 
-export { TableGroupForm };
+export { TableGroupForm, declaresFiles };

@@ -16,6 +16,7 @@ from testgen.common.database.database_service import get_flavor_service, replace
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection, SQLFlavor
+from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import MISSING_TEST_DEFINITION_MESSAGE, TestDefinition
 from testgen.common.pii_masking import PII_REDACTED, get_pii_columns, mask_source_data_pii
 from testgen.common.read_file import replace_templated_functions
@@ -71,7 +72,9 @@ def fetch_test_result_source_data(
             return SourceDataResult("NA", "Source data lookup is not available for this test.", None, None)
 
         connection = Connection.get_by_table_group(issue_data["table_groups_id"])
-        results = fetch_from_target_db(connection, lookup_query)
+        results = fetch_from_target_db(
+            connection, lookup_query, table_group=TableGroup.get(issue_data["table_groups_id"])
+        )
 
         if results:
             df = to_dataframe(results)
@@ -155,7 +158,9 @@ def fetch_hygiene_source_data(
             return SourceDataResult("NA", "Source data lookup is not available for this hygiene issue.", None, None)
 
         connection = Connection.get_by_table_group(issue_data["table_groups_id"])
-        results = fetch_from_target_db(connection, lookup_query)
+        results = fetch_from_target_db(
+            connection, lookup_query, table_group=TableGroup.get(issue_data["table_groups_id"])
+        )
 
         if results:
             df = to_dataframe(results)

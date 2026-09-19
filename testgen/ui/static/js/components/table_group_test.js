@@ -1,26 +1,28 @@
 /**
  * @import { TableGroupStats } from './table_group_stats.js'
- * 
+ *
  * @typedef TablePreview
  * @type {object}
  * @property {number} column_ct
  * @property {number} approx_record_ct
  * @property {number} approx_data_point_ct
  * @property {boolean} can_access
- * 
+ * @property {{column_name: string, column_type: string}[]?} columns
+ * @property {string?} error
+ *
  * @typedef TableGroupPreview
  * @type {object}
  * @property {TableGroupStats} stats
  * @property {Record<string, TablePreview>?} tables
  * @property {boolean?} success
  * @property {string?} message
- * 
+ *
  * @typedef ComponentOptions
  * @type {object}
  * @property {(() => void)?} onVerifyAccess
  */
 import van from '../van.min.js';
-import { getValue } from '../utils.js';
+import { getValue, loadStylesheet } from '../utils.js';
 import { formatNumber } from '../display_utils.js';
 import { Alert } from '../components/alert.js';
 import { Icon } from '../components/icon.js';
@@ -36,6 +38,16 @@ const { div, span } = van.tags;
  * @returns {HTMLElement}
  */
 const TableGroupTest = (preview, options) => {
+    loadStylesheet('table-group-test', stylesheet);
+    // Held here rather than inside the rows so a preview refresh does not collapse what the user
+    // opened.
+    const expandedTables = van.state([]);
+    const toggleTable = (tableName) => {
+        const expanded = expandedTables.rawVal;
+        expandedTables.val = expanded.includes(tableName)
+            ? expanded.filter(name => name !== tableName)
+            : [...expanded, tableName];
+    };
     const verifyingAccess = van.state(false);
     van.derive(() => {
         const p = getValue(preview);
@@ -82,9 +94,10 @@ const TableGroupTest = (preview, options) => {
             const tables = tableGroupPreview?.tables ?? {};
             const hasTables = Object.keys(tables).length > 0;
             const verifiedAccess = Object.values(tables).some(({ can_access }) => can_access != null);
-            const tableAccessWarning = Object.values(tables).some(({ can_access }) => can_access != null && can_access === false)
-                ? tableGroupPreview.message
-                : '';
+            const anyTableUnreadable = Object.values(tables).some(
+                ({ can_access, error }) => error || (can_access != null && can_access === false),
+            );
+            const tableAccessWarning = anyTableUnreadable ? tableGroupPreview.message : '';
 
             const columns = ['50%', '14%', '14%', '14%', '8%'];
 
@@ -105,26 +118,42 @@ const TableGroupTest = (preview, options) => {
                     div(
                         { class: 'flex-column', style: 'max-height: 400px; overflow-y: auto;' },
                         hasTables
-                            ? Object.entries(tables).map(([ tableName, table ]) =>
-                                div(
-                                    { class: 'table-row flex-row fx-justify-space-between' },
-                                    span(
-                                        { style: `flex: 1 1 ${columns[0]}; max-width: ${columns[0]}; word-wrap: break-word;` },
-                                        tableName,
+                            ? Object.entries(tables).map(([ tableName, table ]) => {
+                                const hasDetail = !!table.error || !!table.columns;
+                                return div(
+                                    { class: 'flex-column' },
+                                    div(
+                                        {
+                                            class: `table-row flex-row fx-justify-space-between ${hasDetail ? 'clickable' : ''}`,
+                                            onclick: hasDetail ? () => toggleTable(tableName) : undefined,
+                                        },
+                                        span(
+                                            { class: 'flex-row fx-gap-1', style: `flex: 1 1 ${columns[0]}; max-width: ${columns[0]}; word-wrap: break-word;` },
+                                            hasDetail
+                                                ? () => Icon(
+                                                    { size: 18, classes: 'text-secondary' },
+                                                    expandedTables.val.includes(tableName) ? 'expand_more' : 'chevron_right',
+                                                )
+                                                : '',
+                                            span({ class: table.error ? 'text-error' : '' }, tableName),
+                                        ),
+                                        span({ style: `flex: 1 1 ${columns[1]};` }, formatNumber(table.column_ct)),
+                                        span({ style: `flex: 1 1 ${columns[2]};` }, formatNumber(table.approx_record_ct)),
+                                        span({ style: `flex: 1 1 ${columns[3]};` }, formatNumber(table.approx_data_point_ct)),
+                                        table.can_access != null
+                                            ? span(
+                                                {class: 'flex-row fx-justify-center', style: `flex: 1 1 ${columns[4]};`},
+                                                table.can_access
+                                                    ? Icon({classes: 'text-green', size: 20}, 'check_circle')
+                                                    : Icon({classes: 'text-error', size: 20}, 'dangerous'),
+                                            )
+                                            : '',
                                     ),
-                                    span({ style: `flex: 1 1 ${columns[1]};` }, formatNumber(table.column_ct)),
-                                    span({ style: `flex: 1 1 ${columns[2]};` }, formatNumber(table.approx_record_ct)),
-                                    span({ style: `flex: 1 1 ${columns[3]};` }, formatNumber(table.approx_data_point_ct)),
-                                    table.can_access != null
-                                        ? span(
-                                            {class: 'flex-row fx-justify-center', style: `flex: 1 1 ${columns[4]};`},
-                                            table.can_access
-                                                ? Icon({classes: 'text-green', size: 20}, 'check_circle')
-                                                : Icon({classes: 'text-error', size: 20}, 'dangerous'),
-                                        )
+                                    hasDetail
+                                        ? () => expandedTables.val.includes(tableName) ? TableDetail(table) : ''
                                         : '',
-                                ),
-                            )
+                                );
+                            })
                             : div(
                                 { class: 'flex-row fx-justify-center p-3', style: 'min-height: 50px; font-size: 14px;'},
                                 tableGroupPreview.message ?? 'No tables found.'
@@ -138,5 +167,41 @@ const TableGroupTest = (preview, options) => {
         },
     );
 };
+
+/**
+ * @param {TablePreview} table
+ * @returns {HTMLElement}
+ */
+const TableDetail = (table) => {
+    if (table.error) {
+        return div({ class: 'tg-table-detail text-error p-3' }, table.error);
+    }
+
+    const tableColumns = table.columns ?? [];
+    const gridStyle = `grid-template-columns: repeat(${Math.max(tableColumns.length, 1)}, minmax(90px, 1fr));`;
+
+    return div(
+        { class: 'tg-table-detail flex-column fx-gap-2 p-3' },
+        div(
+            { class: 'tg-table-detail--grid text-caption', style: gridStyle },
+            tableColumns.map(column => div(
+                { class: 'flex-column' },
+                span({ class: 'text-bold' }, column.column_name),
+                span({ class: 'text-secondary' }, column.column_type),
+            )),
+        ),
+    );
+};
+
+const stylesheet = new CSSStyleSheet();
+stylesheet.replace(`
+.tg-table-detail {
+    border-bottom: 1px solid var(--border-color);
+}
+.tg-table-detail--grid {
+    display: grid;
+    gap: 8px;
+    overflow-x: auto;
+}`);
 
 export { TableGroupTest };

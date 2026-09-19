@@ -14,6 +14,7 @@ rules are form-shaped per-flavor logic, not model invariants.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TypedDict
@@ -22,10 +23,20 @@ from uuid import UUID
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
 from testgen.commands.run_refresh_data_chars import write_data_chars
 from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.file_declarations import (
+    BASE_PATH_PARAMETER,
+    NO_FILES_MATCHED,
+    FileDeclaration,
+    parse_file_declarations,
+    validate_file_declarations,
+)
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.flavors import declares_files, fixed_table_group_schema
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
-from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.ui.services.database_service import target_db_session
+
+LOG = logging.getLogger("testgen")
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -46,12 +57,15 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def validate_table_group_fields(table_group: TableGroup) -> list[str]:
+def validate_table_group_fields(table_group: TableGroup, connection: Connection | None = None) -> list[str]:
     """Return every validation error (empty list = valid).
 
     Mirrors the per-field form validators on the UI ``Add Table Group`` wizard.
     The MCP tools call this and raise an ``MCPUserError`` containing the bullets
     — they never duplicate a rule themselves.
+
+    Pass the connection to have the file declarations checked, which needs the base path they
+    are relative to.
     """
     errors: list[str] = []
 
@@ -61,7 +75,9 @@ def validate_table_group_fields(table_group: TableGroup) -> list[str]:
     elif not (_NAME_MIN <= len(name.strip()) <= _NAME_MAX):
         errors.append(f"`table_group_name` must be between {_NAME_MIN} and {_NAME_MAX} characters.")
 
-    if _missing(table_group.table_group_schema):
+    if connection is not None and declares_files(connection.sql_flavor_code):
+        errors.extend(validate_file_declarations(table_group.file_declarations, _base_path(connection)))
+    elif _missing(table_group.table_group_schema):
         errors.append("`schema` is required.")
 
     delay = table_group.profiling_delay_days
@@ -79,6 +95,33 @@ def validate_table_group_fields(table_group: TableGroup) -> list[str]:
     return errors
 
 
+def _base_path(connection: Connection) -> str:
+    return ((connection.parameters or {}).get(BASE_PATH_PARAMETER) or "").strip()
+
+
+def apply_table_group_flavor_rules(table_group: TableGroup, connection: Connection | None) -> None:
+    """Settle the fields the connection's flavor decides rather than the user.
+
+    A flavor that fixes its schema has the value written here instead of collected from a form
+    that does not show the field. The two ways of naming tables are mutually exclusive, so
+    whichever one the flavor does not use is cleared — moving a table group to another connection
+    then leaves nothing stale behind to filter or declare with.
+    """
+    if connection is None:
+        return
+
+    schema = fixed_table_group_schema(connection.sql_flavor_code)
+    if schema is not None:
+        table_group.table_group_schema = schema
+
+    if declares_files(connection.sql_flavor_code):
+        table_group.profiling_table_set = None
+        table_group.profiling_include_mask = None
+        table_group.profiling_exclude_mask = None
+    else:
+        table_group.file_declarations = None
+
+
 # ---------------------------------------------------------------------------
 # Preview
 # ---------------------------------------------------------------------------
@@ -94,11 +137,19 @@ class StatsPreview(TypedDict, total=False):
     approx_data_point_ct: int | None
 
 
-class TablePreview(TypedDict):
+class PreviewColumn(TypedDict):
+    column_name: str
+    column_type: str
+
+
+class TablePreview(TypedDict, total=False):
     column_ct: int
     approx_record_ct: int | None
     approx_data_point_ct: int | None
     can_access: bool | None
+    # Filled in only for a flavor whose tables are declared as files.
+    columns: list[PreviewColumn]
+    error: str | None
 
 
 class TableGroupPreview(TypedDict):
@@ -114,6 +165,10 @@ _NO_TABLES_MESSAGE = (
     " or the database permissions."
 )
 _INACCESSIBLE_MESSAGE = "Some tables were not accessible. Please check the database permissions."
+_NO_DECLARATIONS_READ_MESSAGE = (
+    "None of the declared tables could be read. Check that the paths are correct and that the files"
+    " are readable by TestGen."
+)
 
 
 def preview_table_group(
@@ -156,17 +211,18 @@ def preview_table_group(
         preview, data_chars, sql_generator = _build_preview(table_group, connection)
 
         if verify_access and preview["success"]:
-            for table_name in list(preview["tables"]):
-                # The probe query completing is the access signal — an unreadable table
-                # raises. Its result set is empty for an empty table, so row count says
-                # nothing about access.
-                try:
-                    fetch_from_target_db(connection, *sql_generator.verify_access(table_name))
-                except Exception:
-                    preview["tables"][table_name]["can_access"] = False
-                else:
-                    preview["tables"][table_name]["can_access"] = True
-            if not all(t["can_access"] for t in preview["tables"].values()):
+            with target_db_session(connection, table_group) as run:
+                for table_name in list(preview["tables"]):
+                    # The probe query completing is the access signal — an unreadable table
+                    # raises. Its result set is empty for an empty table, so row count says
+                    # nothing about access.
+                    try:
+                        run(*sql_generator.verify_access(table_name))
+                    except Exception:
+                        preview["tables"][table_name]["can_access"] = False
+                    else:
+                        preview["tables"][table_name]["can_access"] = True
+            if not all(t["can_access"] for t in preview["tables"].values()) and not preview["message"]:
                 preview["message"] = _INACCESSIBLE_MESSAGE
     except Exception as error:
         preview["success"] = False
@@ -198,19 +254,27 @@ def _build_preview(
     connection: Connection,
 ) -> tuple[TableGroupPreview, list[ColumnChars], RefreshDataCharsSQL]:
     sql_generator = RefreshDataCharsSQL(connection, table_group)
+    declaration_failures: dict[str, str] = {}
     if sql_generator.flavor_service.metadata_via_api:
         params = resolve_connection_params(connection.__dict__)
         api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
         data_chars = sql_generator.filter_schema_columns(api_columns)
     else:
-        rows = fetch_from_target_db(connection, *sql_generator.get_schema_ddf())
-        data_chars = [ColumnChars(**column) for column in rows]
+        with target_db_session(connection, table_group) as run:
+            rows = run(*sql_generator.get_schema_ddf())
+            data_chars = [ColumnChars(**column) for column in rows]
+            if declares_files(connection.sql_flavor_code):
+                declaration_failures = run.declaration_failures
 
     preview: TableGroupPreview = {
         "stats": {
             "id": table_group.id,
             "table_groups_name": table_group.table_groups_name,
-            "table_group_schema": table_group.table_group_schema,
+            # A flavor that fixes the schema picked it rather than the user, so naming it in a
+            # summary says nothing about the table group.
+            "table_group_schema": (
+                None if declares_files(connection.sql_flavor_code) else table_group.table_group_schema
+            ),
             "table_ct": 0,
             "column_ct": 0,
             "approx_record_ct": None,
@@ -243,8 +307,67 @@ def _build_preview(
                 tables[column.table_name]["approx_data_point_ct"] or 0
             ) + column.approx_record_ct
 
-    if len(data_chars) <= 0:
+    if declares_files(connection.sql_flavor_code):
+        _add_declaration_detail(preview, sql_generator, data_chars, declaration_failures)
+    elif len(data_chars) <= 0:
         preview["success"] = False
         preview["message"] = _NO_TABLES_MESSAGE
 
     return preview, data_chars, sql_generator
+
+
+def _selected_declarations(sql_generator: RefreshDataCharsSQL) -> list[FileDeclaration]:
+    """The declarations the table group's criteria would keep.
+
+    A file table group saved through the product carries no criteria, so this is every
+    declaration. One narrowed by hand still reports only on the tables it asked for, rather than
+    calling the rest missing.
+    """
+    declarations = parse_file_declarations(sql_generator.table_group.file_declarations)
+    probes = [
+        ColumnChars(schema_name=sql_generator.table_group.table_group_schema, table_name=d.name, column_name="")
+        for d in declarations
+    ]
+    kept = {column.table_name for column in sql_generator.filter_schema_columns(probes)}
+    return [declaration for declaration in declarations if declaration.name in kept]
+
+
+def _add_declaration_detail(
+    preview: TableGroupPreview,
+    sql_generator: RefreshDataCharsSQL,
+    data_chars: list[ColumnChars],
+    declaration_failures: dict[str, str],
+) -> None:
+    """Report every declaration, including the ones with no files behind them.
+
+    A declaration whose files are missing has no view and therefore no columns, so it is absent
+    from the catalog read rather than present and empty.
+    """
+    tables = preview["tables"]
+    for column in data_chars:
+        table = tables[column.table_name]
+        table.setdefault("columns", []).append(
+            {"column_name": column.column_name, "column_type": column.column_type}
+        )
+        table.setdefault("error", None)
+
+    failed = 0
+    for declaration in _selected_declarations(sql_generator):
+        if declaration.name in tables:
+            continue
+        failed += 1
+        tables[declaration.name] = {
+            "column_ct": 0,
+            "approx_record_ct": None,
+            "approx_data_point_ct": None,
+            "can_access": None,
+            "columns": [],
+            "error": declaration_failures.get(declaration.name) or NO_FILES_MATCHED,
+        }
+
+    if not data_chars:
+        preview["success"] = False
+        preview["message"] = _NO_DECLARATIONS_READ_MESSAGE
+    elif failed:
+        noun = "table" if failed == 1 else "tables"
+        preview["message"] = f"{failed} {noun} could not be read. Check the highlighted paths."

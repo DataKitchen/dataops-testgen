@@ -10,11 +10,13 @@ from unittest.mock import patch
 import pytest
 
 from testgen.common.database.table_group_service import (
+    apply_table_group_flavor_rules,
     preview_table_group,
     validate_table_group_fields,
 )
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
+from testgen.ui.services.database_service import TargetQuery
 
 pytestmark = pytest.mark.unit
 
@@ -177,9 +179,18 @@ def _column_row(table_name: str, column_name: str, approx_record_ct: int | None 
     }
 
 
+def _session(mock_session, respond, declaration_failures=None):
+    """Point the patched ``target_db_session`` at a runner answering with ``respond(query)``."""
+    def run(query, _params=None):
+        return respond(query)
+    target = TargetQuery(run, declaration_failures or {})
+    mock_session.return_value.__enter__.return_value = target
+    return target
+
+
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_preview_returns_picklable_shape(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_returns_picklable_shape(mock_session, mock_sql_cls):
     """Contract: return ``(preview, data_chars, sql_generator)`` — three picklable values.
 
     A local ``save_data_chars`` closure as the second element would fail
@@ -192,7 +203,7 @@ def test_preview_returns_picklable_shape(mock_fetch, mock_sql_cls):
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
-    mock_fetch.return_value = [_column_row("customer", "id", approx_record_ct=100)]
+    _session(mock_session, lambda _query: [_column_row("customer", "id", approx_record_ct=100)])
 
     result = preview_table_group(_tg(), connection=_conn(), verify_access=False)
 
@@ -206,16 +217,16 @@ def test_preview_returns_picklable_shape(mock_fetch, mock_sql_cls):
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_preview_happy_path_aggregates_stats(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_happy_path_aggregates_stats(mock_session, mock_sql_cls):
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
-    mock_fetch.return_value = [
+    _session(mock_session, lambda _query: [
         _column_row("customer", "id", approx_record_ct=100),
         _column_row("customer", "email", approx_record_ct=100),
         _column_row("rental", "id", approx_record_ct=50),
-    ]
+    ])
 
     preview, data_chars, sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=False)
 
@@ -232,17 +243,16 @@ def test_preview_happy_path_aggregates_stats(mock_fetch, mock_sql_cls):
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_preview_verify_access_marks_all_accessible(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_verify_access_marks_all_accessible(mock_session, mock_sql_cls):
     """When verify_access=True and every table is reachable, no footer message is set."""
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
     sql_generator.verify_access.return_value = ("SELECT 1", None)
-    mock_fetch.side_effect = [
-        [_column_row("customer", "id", approx_record_ct=100)],  # initial DDF
-        [{"col": 1}],  # verify customer
-    ]
+    _session(mock_session, lambda query: (
+        [_column_row("customer", "id", approx_record_ct=100)] if "SELECT ..." in query else [{"col": 1}]
+    ))
 
     preview, _data_chars, _sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=True)
 
@@ -252,8 +262,8 @@ def test_preview_verify_access_marks_all_accessible(mock_fetch, mock_sql_cls):
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_preview_verify_access_empty_table_is_accessible(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_verify_access_empty_table_is_accessible(mock_session, mock_sql_cls):
     """An empty table is accessible. The probe is ``SELECT 1 FROM <table> LIMIT 1``, which
     returns zero rows on a zero-row table; a permission failure raises instead. Judging
     access by row count reports every empty table as inaccessible."""
@@ -261,10 +271,9 @@ def test_preview_verify_access_empty_table_is_accessible(mock_fetch, mock_sql_cl
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
     sql_generator.verify_access.return_value = ("SELECT 1", None)
-    mock_fetch.side_effect = [
-        [_column_row("customer", "id", approx_record_ct=0)],  # initial DDF
-        [],  # verify customer — empty table, query succeeded
-    ]
+    _session(mock_session, lambda query: (
+        [_column_row("customer", "id", approx_record_ct=0)] if "SELECT ..." in query else []
+    ))
 
     preview, _data_chars, _sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=True)
 
@@ -274,15 +283,15 @@ def test_preview_verify_access_empty_table_is_accessible(mock_fetch, mock_sql_cl
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_preview_verify_access_partial_failure_sets_footer(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_verify_access_partial_failure_sets_footer(mock_session, mock_sql_cls):
     """One inaccessible table → can_access=False AND the UI-verbatim footer message."""
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
     sql_generator.verify_access.side_effect = lambda name: (f"SELECT 1 FROM {name}", None)
 
-    def fetch_side_effect(_conn_arg, query, *_args, **_kwargs):
+    def respond(query):
         if "SELECT ..." in query:
             return [
                 _column_row("customer", "id", approx_record_ct=100),
@@ -294,7 +303,7 @@ def test_preview_verify_access_partial_failure_sets_footer(mock_fetch, mock_sql_
             raise RuntimeError("permission denied")
         raise AssertionError(f"unexpected query: {query}")
 
-    mock_fetch.side_effect = fetch_side_effect
+    _session(mock_session, respond)
 
     preview, _data_chars, _sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=True)
 
@@ -307,12 +316,13 @@ def test_preview_verify_access_partial_failure_sets_footer(mock_fetch, mock_sql_
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db", side_effect=RuntimeError("connection refused"))
-def test_preview_connection_failure_marks_unsuccessful(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_connection_failure_marks_unsuccessful(mock_session, mock_sql_cls):
     """When the DDF query blows up, preview comes back ``success=False`` carrying the driver text."""
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+    mock_session.return_value.__enter__.side_effect = RuntimeError("connection refused")
 
     preview, data_chars, sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=False)
 
@@ -323,12 +333,13 @@ def test_preview_connection_failure_marks_unsuccessful(mock_fetch, mock_sql_cls)
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db", return_value=[])
-def test_preview_empty_result_uses_ui_verbatim_message(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_empty_result_uses_ui_verbatim_message(mock_session, mock_sql_cls):
     """Zero matching tables → UI-verbatim "No tables found matching the criteria." message."""
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+    _session(mock_session, lambda _query: [])
 
     preview, _data_chars, _sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=False)
 
@@ -340,8 +351,8 @@ def test_preview_empty_result_uses_ui_verbatim_message(mock_fetch, mock_sql_cls)
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-@patch(f"{MODULE}.fetch_from_target_db", return_value=[])
-def test_preview_empty_result_still_returns_generator(mock_fetch, mock_sql_cls):
+@patch(f"{MODULE}.target_db_session")
+def test_preview_empty_result_still_returns_generator(mock_session, mock_sql_cls):
     """Zero matching tables is signalled by ``success``, not by ``None`` elements.
 
     Only the no-connection and exception branches blank the second and third
@@ -351,6 +362,7 @@ def test_preview_empty_result_still_returns_generator(mock_fetch, mock_sql_cls):
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+    _session(mock_session, lambda _query: [])
 
     preview, data_chars, sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=False)
 
@@ -369,3 +381,128 @@ def test_preview_no_connection_returns_failure_no_io():
     assert "connection" in preview["message"].lower()
     assert data_chars is None
     assert sql_gen is None
+
+
+# ---------------------------------------------------------------------------
+# apply_table_group_flavor_rules
+# ---------------------------------------------------------------------------
+
+
+def _files_conn(**overrides) -> Connection:
+    return _conn(sql_flavor="duckdb", sql_flavor_code="files",
+                 parameters={"base_path": "/data/claims"}, **overrides)
+
+
+def test_a_file_connection_pins_the_schema_the_form_does_not_show():
+    table_group = _tg(table_group_schema=None, file_declarations=[{"name": "claims", "uri": "c.csv", "format": "csv"}])
+
+    apply_table_group_flavor_rules(table_group, _files_conn())
+
+    assert table_group.table_group_schema == "main"
+
+
+def test_a_file_connection_clears_the_criteria_it_does_not_use():
+    table_group = _tg(
+        profiling_table_set="a, b",
+        profiling_include_mask="%",
+        profiling_exclude_mask="tmp%",
+        file_declarations=[{"name": "claims", "uri": "c.csv", "format": "csv"}],
+    )
+
+    apply_table_group_flavor_rules(table_group, _files_conn())
+
+    assert table_group.profiling_table_set is None
+    assert table_group.profiling_include_mask is None
+    assert table_group.profiling_exclude_mask is None
+
+
+def test_a_database_connection_clears_declarations_left_behind():
+    table_group = _tg(file_declarations=[{"name": "claims", "uri": "c.csv", "format": "csv"}])
+
+    apply_table_group_flavor_rules(table_group, _conn())
+
+    assert table_group.file_declarations is None
+    assert table_group.table_group_schema == "public"
+
+
+def test_no_connection_settles_nothing():
+    table_group = _tg(file_declarations=[{"name": "claims", "uri": "c.csv", "format": "csv"}])
+
+    apply_table_group_flavor_rules(table_group, None)
+
+    assert table_group.file_declarations == [{"name": "claims", "uri": "c.csv", "format": "csv"}]
+
+
+def test_a_file_table_group_needs_no_schema_but_needs_declarations():
+    errors = validate_table_group_fields(_tg(table_group_schema=None, file_declarations=[]), _files_conn())
+
+    assert "`schema` is required." not in errors
+    assert "Declare at least one table." in errors
+
+
+def test_a_file_table_group_reports_a_declaration_that_breaks_a_rule():
+    table_group = _tg(
+        table_group_schema=None,
+        file_declarations=[{"name": "9bad", "uri": "claims.csv", "format": "csv"}],
+    )
+
+    errors = validate_table_group_fields(table_group, _files_conn())
+
+    assert any("must start with a letter or underscore" in error for error in errors)
+
+
+# ---------------------------------------------------------------------------
+# Preview of a table group whose tables are declared as files
+# ---------------------------------------------------------------------------
+
+
+def _files_preview(mock_session, mock_sql_cls, *, rows, declarations, failures=None):
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.get_schema_ddf.return_value = ("SELECT ddf", {})
+    sql_generator.filter_schema_columns.side_effect = lambda columns: columns
+    table_group = _tg(table_group_schema="main", file_declarations=declarations)
+    sql_generator.table_group = table_group
+
+    _session(mock_session, lambda _query: rows, failures)
+    return table_group, sql_generator
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_a_declaration_that_failed_reports_why_it_failed(mock_session, mock_sql_cls):
+    """The reason is computed when the view is built; without it every cause reads the same."""
+    table_group, _ = _files_preview(
+        mock_session,
+        mock_sql_cls,
+        rows=[_column_row("claims", "id")],
+        declarations=[
+            {"name": "claims", "uri": "claims.csv", "format": "csv"},
+            {"name": "escapee", "uri": "../secret.csv", "format": "csv"},
+        ],
+        failures={"escapee": "This path is outside the connection base path."},
+    )
+
+    preview, _, _ = preview_table_group(table_group, connection=_files_conn(), verify_access=False)
+
+    assert preview["tables"]["escapee"]["error"] == "This path is outside the connection base path."
+    assert preview["tables"]["claims"]["error"] is None
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_a_declaration_with_no_reason_falls_back_to_no_files_matched(mock_session, mock_sql_cls):
+    table_group, _ = _files_preview(
+        mock_session,
+        mock_sql_cls,
+        rows=[_column_row("claims", "id")],
+        declarations=[
+            {"name": "claims", "uri": "claims.csv", "format": "csv"},
+            {"name": "missing", "uri": "absent.csv", "format": "csv"},
+        ],
+    )
+
+    preview, _, _ = preview_table_group(table_group, connection=_files_conn(), verify_access=False)
+
+    assert preview["tables"]["missing"]["error"] == "No files matched this path."
+    assert preview["message"] == "1 table could not be read. Check the highlighted paths."

@@ -126,7 +126,7 @@ def fetch_table_sample(
     query = f"SELECT DISTINCT {prefix} {columns_expr} FROM {table_ref} {suffix}".strip()
 
     try:
-        results = fetch_from_target_db(connection, query)
+        results = fetch_from_target_db(connection, query, table_group=TableGroup.get(table_group_id))
     except Exception:
         LOG.exception("Table sample fetch encountered an error.")
         return TableSampleResult("ERR", message="The sample data could not be loaded.")

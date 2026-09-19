@@ -33,7 +33,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.exc import DatabaseError, DBAPIError
 
 from testgen.common.database.database_service import empty_cache, get_flavor_service
-from testgen.common.database.flavor.flavor_service import FlavorConnectionError
+from testgen.common.database.flavor.flavor_service import FlavorConnectionError, resolve_connection_params
 from testgen.common.flavors import fixed_max_threads
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.ui.services.database_service import fetch_from_target_db
@@ -80,13 +80,17 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
     empty_cache()
     try:
         flavor_service = get_flavor_service(connection.sql_flavor)
-        results = fetch_from_target_db(connection, flavor_service.test_query)
+        results = fetch_from_target_db(connection, flavor_service.test_query, table_group=None)
         connection_successful = len(results) == 1 and next(iter(results[0].values())) == 1
 
         if not connection_successful:
             return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
 
-        return ConnectionStatus(message="The connection was successful.", successful=True)
+        return ConnectionStatus(
+            message="The connection was successful.",
+            details=flavor_service.test_connection_details(resolve_connection_params(connection.to_dict())),
+            successful=True,
+        )
     except FlavorConnectionError as error:
         # The flavor wrote this for the user, so it is shown instead of a generic failure.
         LOG.info(f"Connection test failed: {error}")
@@ -170,8 +174,8 @@ def enforce_connection_rules(connection: Connection) -> None:
     code = connection.sql_flavor_code
 
     flavor_service = get_flavor_service(connection.sql_flavor)
-    flavor_service.validate_parameters(connection.parameters)
-    flavor_service.validate_secrets(connection.secrets)
+    flavor_service.validate_parameters(connection.parameters, code)
+    flavor_service.validate_secrets(connection.secrets, code)
 
     if (threads := fixed_max_threads(code)) is not None:
         connection.max_threads = threads

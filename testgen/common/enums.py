@@ -301,6 +301,13 @@ class MonitorCalculation(StrEnum):
     EXPRESSION = "Expression"
 
 
+class FileFormat(StrEnum):
+    """``format`` values in a table group's ``file_declarations``."""
+    CSV = "csv"
+    PARQUET = "parquet"
+    JSON = "json"
+
+
 class SuiteType(StrEnum):
     """``test_suites.suite_type`` values — what kind of suite a test suite is.
 

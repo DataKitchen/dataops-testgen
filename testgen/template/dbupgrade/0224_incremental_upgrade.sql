@@ -1,0 +1,4 @@
+SET SEARCH_PATH TO {SCHEMA_NAME};
+
+ALTER TABLE table_groups
+    ADD COLUMN IF NOT EXISTS file_declarations JSONB;

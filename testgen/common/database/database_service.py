@@ -9,13 +9,14 @@ import threading
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, NotRequired, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, NotRequired, TypedDict, TypeVar, cast
 from urllib.parse import quote_plus
 
 import psycopg2.sql
 from sqlalchemy import Connection, Engine, Row, create_engine, text
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
+from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.pool import NullPool, PoolProxiedConnection
 
 from testgen import settings
@@ -28,9 +29,11 @@ from testgen.common.credentials import (
     get_tg_username,
 )
 from testgen.common.database import FilteredStringIO
+from testgen.common.database.file_declarations import FileDeclaration, parse_file_declarations
 from testgen.common.database.flavor.flavor_service import (
     ConnectionParams,
     FlavorService,
+    ResolvedConnectionParams,
     SQLFlavor,
     resolve_connection_params,
 )
@@ -38,6 +41,9 @@ from testgen.common.read_file import get_template_files
 from testgen.common.standalone_postgres import get_connection_string as get_standalone_connection_string
 from testgen.common.standalone_postgres import is_standalone_mode
 from testgen.utils import get_exception_message
+
+if TYPE_CHECKING:
+    from testgen.common.models.table_group import TableGroup
 
 LOG = logging.getLogger("testgen")
 
@@ -51,8 +57,15 @@ class EngineCache:
     app_db: Engine | None = field(default=None)
     target_db: Engine | None = field(default=None)
 
+
+@dataclass(frozen=True, slots=True)
+class TargetDbParams:
+    connection: ConnectionParams
+    declarations: list[FileDeclaration]
+
+
 # Initialize variables global to this script
-target_db_params: ConnectionParams | None = None
+target_db_params: TargetDbParams | None = None
 engine_cache = EngineCache()
 
 
@@ -85,9 +98,12 @@ def empty_cache() -> None:
     engine_cache.target_db = None
 
 
-def set_target_db_params(connection_params: ConnectionParams) -> None:
+def set_target_db_params(connection_params: ConnectionParams, table_group: "TableGroup | None") -> None:
     global target_db_params
-    target_db_params = dict(connection_params)
+    target_db_params = TargetDbParams(
+        connection_params.copy(),
+        parse_file_declarations(table_group.file_declarations) if table_group else [],
+    )
     # The cache holds one unkeyed slot, so a cached engine built for the previous parameters
     # would otherwise be handed out for these.
     if engine_cache.target_db is not None:
@@ -568,34 +584,78 @@ def _init_app_db_connection(
     return connection
 
 
+_FLAVOR_INITIALIZED_KEY = "flavor_initialized"
+
+
+def initialize_connection(
+    flavor_service: FlavorService,
+    connection: Connection,
+    params: ResolvedConnectionParams,
+    declarations: list[FileDeclaration],
+) -> None:
+    """Run the flavor's ``init`` the first time this physical connection is handed out.
+
+    ``Connection.info`` belongs to the pooled DBAPI connection rather than to the checkout, so a
+    pool that reuses one connection initializes it once. What ``init`` establishes is state on the
+    database, not on the session, and running it twice is not merely wasteful: DuckDB refuses any
+    ``SET`` once a configuration is locked, and that refusal aborts the transaction, leaving the
+    connection unusable for what follows.
+    """
+    if connection.info.get(_FLAVOR_INITIALIZED_KEY):
+        return
+    flavor_service.init(connection, params, declarations)
+    connection.info[_FLAVOR_INITIALIZED_KEY] = True
+
+
 def _init_target_db_connection() -> Connection:
     if not target_db_params:
         raise ValueError("Target database connection parameters were not set")
 
-    flavor_service = get_flavor_service(target_db_params["sql_flavor"])
-    params = resolve_connection_params(target_db_params)
+    connection_params = target_db_params.connection
+    flavor_service = get_flavor_service(connection_params["sql_flavor"])
+    params = resolve_connection_params(connection_params)
 
     engine = engine_cache.target_db
     if not engine:
         try:
-            engine: Engine = flavor_service.create_engine(target_db_params)
+            engine: Engine = flavor_service.create_engine(connection_params)
         except SQLAlchemyError as e:
             raise ValueError(f"Failed to create engine for Target database '{params.dbname}' (User type = normal)") from e
         else:
             engine_cache.target_db = engine
 
-    connection: Connection = engine.connect()
+    try:
+        connection: Connection = engine.connect()
+    except PoolTimeoutError as error:
+        # A flavor whose pool holds one connection expects no contention at all, so waiting for a
+        # turn means one was never returned. The pool's own message names the pool and not that.
+        raise ValueError(
+            "Timed out waiting for a connection to the target database. "
+            "A previous connection was not released."
+        ) from error
 
-    for query, query_params in flavor_service.get_pre_connection_queries(params):
-        try:
-            connection.execute(text(query), query_params)
-        except Exception:
-            LOG.warning(
-                f"Failed to execute preconnection query on Target database: {query}",
-                exc_info=settings.IS_DEBUG,
-                stack_info=settings.IS_DEBUG,
-            )
+    try:
+        for query, query_params in flavor_service.get_pre_connection_queries(params):
+            try:
+                connection.execute(text(query), query_params)
+            except Exception:
+                LOG.warning(
+                    f"Failed to execute preconnection query on Target database: {query}",
+                    exc_info=settings.IS_DEBUG,
+                    stack_info=settings.IS_DEBUG,
+                )
 
-    flavor_service.init(connection, params)
+        initialize_connection(flavor_service, connection, params, target_db_params.declarations)
+    except BaseException:
+        # Nothing has the connection yet, so failing here would strand it. A flavor whose pool
+        # holds a single connection has no second one to hand out, and the next caller waits for
+        # the pool timeout and then reports the pool rather than what actually went wrong.
+        #
+        # Invalidated rather than closed: a DuckDB SET is not transactional and outlives the
+        # rollback the pool performs on return, so a connection that reached
+        # `SET lock_configuration = true` before failing comes back out still locked, and every
+        # later attempt to initialize it fails on a configuration it cannot change.
+        connection.invalidate()
+        raise
 
     return connection

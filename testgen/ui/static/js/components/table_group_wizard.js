@@ -20,6 +20,8 @@
  * @property {string} project_code
  * @property {TableGroup} table_group
  * @property {Connection[]} connections
+ * @property {string?} sqlFlavor
+ * @property {string?} sqlFlavorCode
  * @property {string[]?} steps
  * @property {boolean?} is_in_use
  * @property {TableGroupPreview?} table_group_preview
@@ -147,6 +149,8 @@ const TableGroupWizard = (props) => {
     showConnectionSelector: step0Connections.length > 1,
     disableConnectionSelector: false,
     disableSchemaField: props.is_in_use ?? false,
+    sqlFlavor: props.sqlFlavor,
+    sqlFlavorCode: props.sqlFlavorCode,
     onChange: (updatedTableGroup, state) => {
       stepsState.tableGroup.val = updatedTableGroup;
       stepsValidity.tableGroup.val = state.valid;
@@ -333,7 +337,7 @@ const TableGroupWizard = (props) => {
                         style: 'flex: 1',
                         onChange: (value) => testSuiteScheduleTimezone.val = value,
                     }),
-                    CrontabInput({ emit, 
+                    CrontabInput({ emit,
                       name: 'tg_test_suite_schedule',
                       value: testSuiteCrontabEditorValue,
                       modes: ['x_hours', 'x_days'],
@@ -411,7 +415,7 @@ const TableGroupWizard = (props) => {
             onChange: (value) => generateMonitorTests.val = value,
           }),
           () => generateMonitorTests.val
-            ? MonitorSettingsForm({ emit, 
+            ? MonitorSettingsForm({ emit,
               schedule: {
                 active: true,
                 cron_expr: monitorSuiteSchedule.rawVal,
@@ -474,7 +478,11 @@ const TableGroupWizard = (props) => {
               div('Table group ', strong(tableGroup.table_groups_name), ' created.'),
               div(
                 { class: 'text-caption' },
-                `Schema: ${tableGroup.table_group_schema} | ${Object.keys(preview.tables).length} tables | ${preview.stats.column_ct} columns`,
+                [
+                  tableGroup.table_group_schema ? `Schema: ${tableGroup.table_group_schema}` : null,
+                  `${preview.stats.table_ct} tables`,
+                  `${preview.stats.column_ct} columns`,
+                ].filter(Boolean).join(' | '),
               ),
             ),
           ),
@@ -487,7 +495,7 @@ const TableGroupWizard = (props) => {
               ? div(
                 { class: 'flex-row fx-gap-1' },
                 div('Profiling run started.'),
-                Link({ emit, 
+                Link({ emit,
                   open_new: true,
                   label: 'View progress',
                   href: 'profiling-runs',
@@ -501,7 +509,7 @@ const TableGroupWizard = (props) => {
                 div(
                   { class: 'text-caption flex-row fx-gap-1' },
                   'Run profiling or configure a schedule on the ',
-                  Link({ emit, 
+                  Link({ emit,
                     open_new: true,
                     label: 'Table Groups',
                     href: 'table-groups',
@@ -527,7 +535,7 @@ const TableGroupWizard = (props) => {
                 results.generate_test_suite
                   ? 'Manage test suites and schedules on the '
                   : 'Create test suites, generate and run tests, and configure schedules on the ',
-                Link({ emit, 
+                Link({ emit,
                   open_new: true,
                   label: 'Test Suites',
                   href: 'test-suites',
@@ -555,7 +563,7 @@ const TableGroupWizard = (props) => {
                 results.generate_monitor_suite
                   ? 'Manage monitors and view anomalies on the '
                   : 'Configure freshness, volume, and schema monitors on the ',
-                Link({ emit, 
+                Link({ emit,
                   open_new: true,
                   label: 'Monitors',
                   href: 'monitors',

@@ -21,6 +21,12 @@ services:
     environment: *common-variables
     volumes:
       - testgen_data:/var/lib/testgen
+      # Data files TestGen reads in place, for a Files connection. Uncomment and point the left
+      # side at the directory on this machine that holds them; the right side is the Base Path to
+      # enter on the connection. Read-only, because TestGen never writes to target data. The files
+      # have to be readable by the container's user, which is the unprivileged `testgen` account
+      # rather than root -- `docker compose exec engine id` prints the uid to grant.
+      # - /data:/data:ro
     ports:
       - 8501:8501
     extra_hosts:

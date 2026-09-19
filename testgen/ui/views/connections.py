@@ -17,6 +17,7 @@ from testgen.common.database.connection_service import (
 )
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.database.table_group_service import apply_table_group_flavor_rules
 from testgen.common.enums import JobSource
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, fixed_max_threads
 from testgen.common.models import with_database_session
@@ -354,6 +355,8 @@ class ConnectionsPage(Page):
                 "connection_id": connection_id,
             },
         )
+        setup_connection = Connection.get(connection_id)
+        apply_table_group_flavor_rules(table_group, setup_connection)
 
         table_group_preview = None
         save_data_chars = None
@@ -471,6 +474,7 @@ class ConnectionsPage(Page):
         wizard_data = {
             "dialog": {"open": True, "title": "Data Configuration Setup"},
             "project_code": project_code,
+            "connections": [format_connection(setup_connection)] if setup_connection else [],
             "table_group": table_group.to_dict(json_safe=True),
             "permissions": {
                 "can_view_pii": session.auth.user_has_permission("view_pii"),
@@ -544,6 +548,7 @@ _FLAVOR_ICONS: dict[str, str] = {
     "databricks": "flavors/databricks.svg",
     "duckdb": "flavors/duckdb.svg",
     "bigquery": "flavors/bigquery.svg",
+    "files": "flavors/files.svg",
     "onelake_mssql": "flavors/onelake.svg",
     "mssql": "flavors/mssql.svg",
     "oracle": "flavors/oracle.svg",
@@ -554,12 +559,20 @@ _FLAVOR_ICONS: dict[str, str] = {
 }
 
 _RUNS_IN_CONTAINER = settings.CHECK_FOR_LATEST_VERSION == "docker"
-_CONTAINER_PATH_NOTE = ". It must be a path inside the TestGen container, so the file has to be on a mounted volume."
+
+
+def _container_path_note(noun: str) -> str:
+    if not _RUNS_IN_CONTAINER:
+        return ""
+    return f". It must be a path inside the TestGen container, so the {noun} has to be on a mounted volume."
+
 
 _FLAVOR_FIELD_HELP: dict[str, dict[str, str]] = {
     "duckdb": {
-        "database_file": "Path to the DuckDB database file"
-        + (_CONTAINER_PATH_NOTE if _RUNS_IN_CONTAINER else ""),
+        "database_file": "Path to the DuckDB database file" + _container_path_note("file"),
+    },
+    "files": {
+        "base_path": "Path to the directory containing the data files" + _container_path_note("directory"),
     },
 }
 

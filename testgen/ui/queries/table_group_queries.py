@@ -5,6 +5,7 @@ MCP tools and the CLI can reuse identical logic without a Streamlit runtime.
 This module wraps the service in ``@st.cache_data`` for the Streamlit pages.
 """
 
+import json
 from collections.abc import Callable
 from uuid import UUID
 
@@ -57,15 +58,24 @@ def reset_table_group_preview() -> None:
     _cached_preview.clear()
 
 
+def preview_cache_key(table_group: TableGroup) -> tuple:
+    """Every field that changes which tables the preview finds.
+
+    A field left out serves the previous preview back after it is edited.
+    """
+    return (
+        table_group.table_group_schema,
+        table_group.profiling_table_set,
+        table_group.profiling_include_mask,
+        table_group.profiling_exclude_mask,
+        json.dumps(table_group.file_declarations, sort_keys=True),
+    )
+
+
 @st.cache_data(
     show_spinner=False,
     hash_funcs={
-        TableGroup: lambda x: (
-            x.table_group_schema,
-            x.profiling_table_set,
-            x.profiling_include_mask,
-            x.profiling_exclude_mask,
-        ),
+        TableGroup: preview_cache_key,
         Connection: lambda x: x.to_dict(),
     },
 )
