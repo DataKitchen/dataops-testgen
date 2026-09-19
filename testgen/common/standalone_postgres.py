@@ -22,7 +22,10 @@ _server = None
 STANDALONE_MODE_ENV_VAR = "TG_STANDALONE_MODE"
 HOME_DIR_ENV_VAR = "TG_TESTGEN_HOME"
 STANDALONE_URI_ENV_VAR = "_TG_STANDALONE_URI"
-NEW_INSTALL_POSTGRES_VERSION = 18
+# pgserver also bundles PostgreSQL 18, but its Windows build links against libwinpthread-1.dll
+# without shipping it, so initdb cannot start postgres on a machine that has no MinGW toolchain.
+# Raise this once that build runs on a stock Windows box.
+NEW_INSTALL_POSTGRES_VERSION = 16
 
 # Stored as ``project_host`` in the demo-DB connection row so that the actual
 # host/port — which can change across sessions on Windows (pgserver picks a
