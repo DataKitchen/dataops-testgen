@@ -244,6 +244,7 @@ def validate_metric_expression(
             schema=tg.table_group_schema,
             custom_sql=wrapped_sql,
             preview_limit=1,
+            table_group=tg,
         )
     except Exception as err:
         doc.text(f"**SQL did not execute** against `{connection.connection_name}`.")

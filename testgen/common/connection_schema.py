@@ -134,6 +134,9 @@ _CONSUMER_SECRET = ConnField("Consumer Secret", "project_pw_encrypted", Req.REQU
 # DuckDB
 _DATABASE_FILE = ConnField("Database File", "database_file", Req.REQUIRED, in_parameters=True)
 
+# Files
+_BASE_PATH = ConnField("Base Path", "base_path", Req.REQUIRED, in_parameters=True)
+
 
 def _host_auth_schema(code: str, *, db_field: ConnField = _DATABASE) -> FlavorSchema:
     """Single-mode host/URL flavors (PostgreSQL, Redshift, MSSQL, Oracle, SAP HANA)."""
@@ -198,6 +201,12 @@ FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
         code="duckdb",
         label=FLAVOR_CODE_TO_LABEL["duckdb"],
         modes=(FlavorMode(mode=None, fields=(_DATABASE_FILE,), supports_url=False),),
+        url_field=None,
+    ),
+    "files": FlavorSchema(
+        code="files",
+        label=FLAVOR_CODE_TO_LABEL["files"],
+        modes=(FlavorMode(mode=None, fields=(_BASE_PATH,), supports_url=False),),
         url_field=None,
     ),
     "azure_mssql": _azure_schema("azure_mssql", include_service_principal=True),
@@ -484,16 +493,25 @@ def validate_connection_fields(connection: Connection) -> list[str]:
     return errors
 
 
-def authentication_method(connection: Connection) -> ConnectionMode:
+def authentication_method(connection: Connection) -> ConnectionMode | None:
     """The connection's auth method: the active connection mode for multi-mode
     flavors, else the implicit method (service account key, else password).
+
+    ``None`` for a flavor that declares no credential of any kind, where naming a method
+    would describe one the connection does not have.
     """
     mode = infer_mode(connection)
     if mode is not None:
         return mode
-    return ConnectionMode.SERVICE_ACCOUNT if connection.service_account_key else ConnectionMode.PASSWORD
+    if connection.service_account_key:
+        return ConnectionMode.SERVICE_ACCOUNT
+    schema = FLAVOR_CONNECTION_SCHEMA.get(connection.sql_flavor_code)
+    if schema and not any(fld.secret for flavor_mode in schema.modes for fld in flavor_mode.fields):
+        return None
+    return ConnectionMode.PASSWORD
 
 
-def authentication_label(connection: Connection) -> str:
-    """Display label for the connection's auth method."""
-    return str(authentication_method(connection))
+def authentication_label(connection: Connection) -> str | None:
+    """Display label for the connection's auth method, or ``None`` when it has none."""
+    method = authentication_method(connection)
+    return str(method) if method is not None else None

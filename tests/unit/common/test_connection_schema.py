@@ -849,3 +849,21 @@ def test_accept_max_threads_the_flavor_can_honor(code, supplied):
     """Omitting it is fine, and so is the pinned value itself -- writing a connection back
     unchanged must not be rejected."""
     reject_fixed_max_threads(code, supplied)
+
+
+# -- authentication_label ------------------------------------------------------
+
+
+@pytest.mark.parametrize("code", ["files", "duckdb"])
+def test_no_authentication_is_reported_for_a_flavor_that_takes_no_credential(code):
+    """Naming a method would describe one the connection does not have."""
+    from testgen.common.connection_schema import authentication_label
+
+    assert authentication_label(Connection(sql_flavor="duckdb", sql_flavor_code=code)) is None
+
+
+def test_password_is_reported_for_a_flavor_whose_schema_declares_a_secret():
+    from testgen.common.connection_schema import authentication_label
+
+    connection = Connection(sql_flavor="postgresql", sql_flavor_code="postgresql")
+    assert authentication_label(connection) == "Password"

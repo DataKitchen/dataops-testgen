@@ -51,7 +51,7 @@ def _format_part(value: object) -> str:
     return dt_str if (dt_str := _format_dt(value)) else str(value)
 
 
-def _format_boolean(value: object) -> str | None:
+def format_boolean(value: object) -> str | None:
     if isinstance(value, bool):
         return "Yes" if value else "No"
     return None
@@ -208,7 +208,7 @@ class MdDoc:
             return "\u2014"
         if dt_str := _format_dt(value):
             return MdDoc.code(dt_str) if code else dt_str
-        if bool_str := _format_boolean(value):
+        if bool_str := format_boolean(value):
             return MdDoc.code(bool_str) if code else bool_str
         s = str(value)
         return MdDoc.code(s) if code else s

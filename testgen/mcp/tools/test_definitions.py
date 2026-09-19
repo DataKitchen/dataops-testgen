@@ -737,7 +737,7 @@ def validate_custom_test(
 
     try:
         result = validate_custom_query(
-            connection, table_group.table_group_schema, custom_sql, preview_limit=1,
+            connection, table_group.table_group_schema, custom_sql, preview_limit=1, table_group=table_group,
         )
     except Exception as e:  # broad catch: the DB error message IS the user-facing signal
         doc.text(f"**SQL did not execute.** Query was not committed against `{connection.connection_name}`.")

@@ -784,8 +784,12 @@ class ConnectionResponse(BaseModel):
     connection_name: str
     project_code: str
     database_type: DatabaseType = Field(description="The connection's database type.")
-    authentication: AuthenticationMethod = Field(
-        description="How the connection authenticates to its database."
+    authentication: AuthenticationMethod | None = Field(
+        default=None,
+        description=(
+            "How the connection authenticates to its database. Null for a database type that "
+            "takes no credentials, such as a file path read from local storage."
+        ),
     )
     max_threads: int | None = None
     max_expression_length: int | None = Field(

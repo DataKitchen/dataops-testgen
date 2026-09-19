@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
@@ -49,6 +50,7 @@ def _mock_table_group(**overrides) -> MagicMock:
     tg.connection_id = overrides.get("connection_id", 42)
     tg.table_groups_name = overrides.get("table_groups_name", "Sample TG")
     tg.table_group_schema = overrides.get("table_group_schema", "public")
+    tg.file_declarations = overrides.get("file_declarations", None)
     tg.profiling_table_set = overrides.get("profiling_table_set", None)
     tg.profiling_include_mask = overrides.get("profiling_include_mask", None)
     tg.profiling_exclude_mask = overrides.get("profiling_exclude_mask", None)
@@ -879,6 +881,7 @@ def _list_item(**overrides):
         project_code=overrides.get("project_code", "demo"),
         connection_id=overrides.get("connection_id", 42),
         connection_name=overrides.get("connection_name", "warehouse_prod"),
+        sql_flavor_code=overrides.get("sql_flavor_code", "postgresql"),
         table_count=overrides.get("table_count", 12),
         column_count=overrides.get("column_count", 84),
         row_count=overrides.get("row_count", 100_000),
@@ -1091,3 +1094,350 @@ def test_get_table_group_raises_not_found_for_inaccessible(mock_tg_cls, db_sessi
 
     with pytest.raises(MCPResourceNotAccessible, match="Table group .* not found or not accessible"):
         get_table_group(str(uuid4()))
+
+
+# ---------------------------------------------------------------------------
+# Table groups on a connection whose tables are files
+# ---------------------------------------------------------------------------
+
+
+def _files_connection(**overrides) -> MagicMock:
+    return _mock_connection(sql_flavor="duckdb", sql_flavor_code="files", **overrides)
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_stores_the_declared_tables(mock_resolve, mock_tg_cls, db_session_mock):
+    mock_resolve.return_value = _files_connection()
+    instance = _mock_table_group(table_groups_name="Files TG")
+
+    # The constructor kwargs have to land on the instance: validation reads the declarations back
+    # off it, so a mock that swallows them would pass whatever it was given.
+    def construct(**kwargs):
+        for key, value in kwargs.items():
+            setattr(instance, key, value)
+        return instance
+
+    mock_tg_cls.side_effect = construct
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+
+    with _patch_perms():
+        create_table_group(
+            connection_id=42,
+            table_group_name="Files TG",
+            file_declarations=[
+                FileDeclaration(name="orders", uri="sales/orders_*.csv", format="csv", delimiter="|"),
+                FileDeclaration(name="products", uri="catalog/products.json", format="json"),
+            ],
+        )
+
+    declared = mock_tg_cls.call_args.kwargs["file_declarations"]
+    assert declared == [
+        {"name": "orders", "uri": "sales/orders_*.csv", "format": "csv", "options": {"delimiter": "|"}},
+        {"name": "products", "uri": "catalog/products.json", "format": "json", "options": {}},
+    ]
+    instance.save.assert_called_once()
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_on_a_files_connection_needs_declarations(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import create_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="file_declarations"):
+        create_table_group(connection_id=42, table_group_name="Files TG")
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_a_files_connection_has_no_schema_to_choose(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="no schema to choose"):
+        create_table_group(
+            connection_id=42,
+            table_group_name="Files TG",
+            schema="public",
+            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+        )
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_declarations_are_refused_on_a_database_connection(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _mock_connection()
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="only to a connection whose tables are files"):
+        create_table_group(
+            connection_id=42,
+            table_group_name="Sample TG",
+            schema="public",
+            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+        )
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_on_a_database_connection_still_needs_a_schema(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _mock_connection()
+
+    from testgen.mcp.tools.table_groups import create_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="`schema` is required"):
+        create_table_group(connection_id=42, table_group_name="Sample TG")
+
+
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_replaces_the_declared_tables(mock_resolve_tg, mock_conn_cls, db_session_mock):
+    table_group = _mock_table_group(table_groups_name="Files TG")
+    table_group.table_group_schema = "main"
+    table_group.file_declarations = [{"name": "old", "uri": "old.csv", "format": "csv", "options": {}}]
+    mock_resolve_tg.return_value = table_group
+    mock_conn_cls.get.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, update_table_group
+
+    with _patch_perms():
+        update_table_group(
+            table_group_id=str(table_group.id),
+            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+        )
+
+    assert table_group.file_declarations == [
+        {"name": "orders", "uri": "orders.csv", "format": "csv", "options": {}},
+    ]
+    # The declarations are the only thing that changed, so a diff that does not watch them reports
+    # "no fields changed" and returns before the save.
+    table_group.save.assert_called_once()
+
+
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_reports_the_declared_tables_as_changed(
+    mock_resolve_tg, mock_conn_cls, db_session_mock
+):
+    table_group = _mock_table_group(table_groups_name="Files TG")
+    table_group.table_group_schema = "main"
+    table_group.file_declarations = [{"name": "old", "uri": "old.csv", "format": "csv", "options": {}}]
+    mock_resolve_tg.return_value = table_group
+    mock_conn_cls.get.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, update_table_group
+
+    with _patch_perms():
+        output = update_table_group(
+            table_group_id=str(table_group.id),
+            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+        )
+
+    assert "No fields changed" not in output
+    assert "Declared tables" in output
+    assert "orders" in output
+
+
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_update_table_group_sees_a_path_change_on_the_same_table_names(
+    mock_resolve_tg, mock_conn_cls, db_session_mock
+):
+    """The summary carries every stored field, so two lists sharing a name still differ."""
+    table_group = _mock_table_group(table_groups_name="Files TG")
+    table_group.table_group_schema = "main"
+    table_group.file_declarations = [{"name": "orders", "uri": "old.csv", "format": "csv", "options": {}}]
+    mock_resolve_tg.return_value = table_group
+    mock_conn_cls.get.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, update_table_group
+
+    with _patch_perms():
+        output = update_table_group(
+            table_group_id=str(table_group.id),
+            file_declarations=[FileDeclaration(name="orders", uri="new.csv", format="csv")],
+        )
+
+    assert "No fields changed" not in output
+    table_group.save.assert_called_once()
+
+
+@patch(f"{MODULE}.resolve_connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_get_table_group_lists_the_declared_tables(mock_resolve_tg, mock_resolve_conn, db_session_mock):
+    """An update replaces the whole list, so the caller needs somewhere to read it first."""
+    table_group = _mock_table_group(table_groups_name="Files TG")
+    table_group.table_group_schema = "main"
+    table_group.file_declarations = [
+        {"name": "orders", "uri": "sales/orders_*.csv", "format": "csv", "options": {"delimiter": "|"}},
+    ]
+    mock_resolve_tg.return_value = table_group
+    mock_resolve_conn.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import get_table_group
+
+    with _patch_perms():
+        output = get_table_group(table_group_id=str(table_group.id))
+
+    assert "orders" in output
+    assert "sales/orders_*.csv" in output
+    assert "delimiter=|" in output
+
+
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_rejects_table_filters_on_a_files_connection(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+
+    with _patch_perms(), pytest.raises(MCPUserError, match="table_set"):
+        create_table_group(
+            connection_id="1",
+            table_group_name="Files TG",
+            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv")],
+            table_set=["orders"],
+        )
+
+
+def test_a_declaration_rejects_csv_settings_on_another_format():
+    """The fields are documented CSV-only, and a stored value for another format is dropped."""
+    from testgen.mcp.tools.table_groups import FileDeclaration
+
+    with pytest.raises(ValidationError, match="delimiter"):
+        FileDeclaration(name="orders", uri="orders.parquet", format="parquet", delimiter="|")
+
+
+def test_a_declaration_rejects_a_multi_character_quote():
+    """DuckDB caps quote and escape at one byte, and the view fails to build without saying why."""
+    from testgen.mcp.tools.table_groups import FileDeclaration
+
+    with pytest.raises(ValidationError):
+        FileDeclaration(name="orders", uri="orders.csv", format="csv", quote="ab")
+
+    FileDeclaration(name="orders", uri="orders.csv", format="csv", delimiter="||")
+
+
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_preview_names_a_declaration_it_could_not_read(
+    mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock
+):
+    """A run does not stop for an unreadable declaration, so the preview is where it is reported.
+
+    Without it the table is a row of zeroes, indistinguishable from one that is simply empty.
+    """
+    tg = _mock_table_group(table_groups_name="Files TG", table_group_schema="main")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _files_connection()
+    mock_preview_svc.return_value = (
+        {
+            "stats": {
+                "id": tg.id,
+                "table_groups_name": "Files TG",
+                "table_group_schema": "main",
+                "table_ct": 2,
+                "column_ct": 3,
+            },
+            "tables": {
+                "orders": {
+                    "column_ct": 3,
+                    "approx_record_ct": 100,
+                    "approx_data_point_ct": 300,
+                    "can_access": None,
+                    "error": None,
+                },
+                "claims": {
+                    "column_ct": 0,
+                    "approx_record_ct": None,
+                    "approx_data_point_ct": None,
+                    "can_access": None,
+                    "error": 'IO Error: No files found that match the pattern "claims_*.csv"',
+                },
+            },
+            "success": True,
+            "message": "1 table could not be read. Check the highlighted paths.",
+        },
+        None,
+        None,
+    )
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms():
+        # verify_access defaults to False, which is the path that reported nothing.
+        output = preview_table_group(table_group_id=str(tg.id))
+
+    assert "could not be read" in output
+    assert "claims" in output
+    assert "No files found" in output
+
+
+@patch(f"{MODULE}.TableGroup")
+def test_list_table_groups_shows_no_schema_for_a_files_connection(mock_tg_cls, db_session_mock):
+    """The stored value is the engine's own default schema, not one the user chose."""
+    mock_tg_cls.list_for_project.return_value = (
+        [_list_item(table_groups_name="files_tg", table_group_schema="main", sql_flavor_code="files")],
+        1,
+    )
+
+    from testgen.mcp.tools.table_groups import list_table_groups
+
+    with _patch_perms(permission="view"):
+        output = list_table_groups(project_code="demo")
+
+    assert "files_tg" in output
+    assert "main" not in output
+
+
+@patch(f"{MODULE}.resolve_connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_get_table_group_reports_no_schema_for_a_files_connection(
+    mock_resolve_tg, mock_resolve_conn, db_session_mock
+):
+    """The stored value is the engine's own default schema, not one the user chose."""
+    table_group = _mock_table_group(table_groups_name="Files TG")
+    table_group.table_group_schema = "main"
+    table_group.file_declarations = [{"name": "orders", "uri": "orders.csv", "format": "csv", "options": {}}]
+    mock_resolve_tg.return_value = table_group
+    mock_resolve_conn.return_value = _files_connection()
+
+    from testgen.mcp.tools.table_groups import get_table_group
+
+    with _patch_perms():
+        output = get_table_group(table_group_id=str(table_group.id))
+
+    assert "main" not in output
+    assert "Schema" not in output
+
+
+@patch(f"{MODULE}.TableGroup")
+@patch(f"{MODULE}.resolve_connection")
+def test_create_table_group_reports_the_declared_tables_not_a_schema(
+    mock_resolve, mock_tg_cls, db_session_mock
+):
+    mock_resolve.return_value = _files_connection()
+    instance = _mock_table_group(table_groups_name="Files TG")
+    instance.table_group_schema = "main"
+
+    def construct(**kwargs):
+        for key, value in kwargs.items():
+            setattr(instance, key, value)
+        return instance
+
+    mock_tg_cls.side_effect = construct
+
+    from testgen.mcp.tools.table_groups import FileDeclaration, create_table_group
+
+    with _patch_perms():
+        output = create_table_group(
+            connection_id="1",
+            table_group_name="Files TG",
+            file_declarations=[FileDeclaration(name="orders", uri="orders.csv", format="csv", header=True)],
+        )
+
+    assert "Declared tables" in output
+    assert "orders" in output
+    assert "header=Yes" in output
+    assert "main" not in output
