@@ -1,7 +1,7 @@
-"""Tests for the connection-parameter contract in ``mcp/tools/common.py``:
-the per-flavor schema (``schema_for`` / ``resolve_mode``), label-keyed param
-mapping (``apply_connection_params``), schema-driven validation
-(``validate_connection_fields``), and mode inference (``infer_mode``).
+"""Tests for the per-flavor connection schema in ``common/connection_schema.py``
+(``schema_for``, ``validate_connection_fields``, ``infer_mode``) and the MCP-side
+param mapping and rendering that consume it (``resolve_mode``,
+``apply_connection_params``, ``render_connection_body``).
 
 The schema mirrors the per-flavor JS forms in
 ``ui/static/js/components/connection_form.js`` — these tests encode that contract.
@@ -9,18 +9,20 @@ The schema mirrors the per-flavor JS forms in
 
 import pytest
 
+from testgen.common.connection_schema import (
+    ConnectionMode,
+    Req,
+    infer_mode,
+    schema_for,
+    validate_connection_fields,
+)
 from testgen.common.models.connection import Connection
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.common import (
-    ConnectionMode,
-    Req,
     apply_connection_params,
-    infer_mode,
     reject_fixed_max_threads,
     render_connection_body,
     resolve_mode,
-    schema_for,
-    validate_connection_fields,
 )
 from testgen.mcp.tools.markdown import MdDoc
 

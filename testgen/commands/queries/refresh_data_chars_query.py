@@ -7,7 +7,7 @@ from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
-from testgen.common.models.table_group import TableGroup
+from testgen.common.models.table_group import TableGroup, split_criteria
 from testgen.utils import chunk_queries, to_sql_timestamp
 
 
@@ -66,28 +66,20 @@ class RefreshDataCharsSQL:
         escaped_underscore = self.flavor_service.escaped_underscore
         escape_clause = self.flavor_service.escape_clause
 
-        if self.table_group.profiling_table_set:
-            quoted_table_names = ",".join(
-                [f"'{item.strip()}'" for item in self.table_group.profiling_table_set.split(",")]
-            )
+        if table_names := split_criteria(self.table_group.profiling_table_set):
+            quoted_table_names = ",".join([f"'{item}'" for item in table_names])
             table_criteria += f" AND c.{ddf_table_ref} IN ({quoted_table_names})"
 
-        if self.table_group.profiling_include_mask:
-            include_table_names = [
-                item.strip().replace("_", escaped_underscore)
-                for item in self.table_group.profiling_include_mask.split(",")
-            ]
+        if include_masks := split_criteria(self.table_group.profiling_include_mask):
+            include_table_names = [item.replace("_", escaped_underscore) for item in include_masks]
             table_criteria += f"""
             AND (
                 {" OR ".join([ f"(c.{ddf_table_ref} LIKE '{item}' {escape_clause})" for item in include_table_names ])}
             )
             """
 
-        if self.table_group.profiling_exclude_mask:
-            exclude_table_names = [
-                item.strip().replace("_", escaped_underscore)
-                for item in self.table_group.profiling_exclude_mask.split(",")
-            ]
+        if exclude_masks := split_criteria(self.table_group.profiling_exclude_mask):
+            exclude_table_names = [item.replace("_", escaped_underscore) for item in exclude_masks]
             table_criteria += f"""
             AND NOT (
                 {" OR ".join([ f"(c.{ddf_table_ref} LIKE '{item}' {escape_clause})" for item in exclude_table_names ])}
@@ -104,20 +96,15 @@ class RefreshDataCharsSQL:
         """
         result = columns
 
-        if self.table_group.profiling_table_set:
-            allowed = {item.strip() for item in self.table_group.profiling_table_set.split(",")}
+        if allowed := set(split_criteria(self.table_group.profiling_table_set)):
             result = [c for c in result if c.table_name in allowed]
 
-        if self.table_group.profiling_include_mask:
-            include_patterns = [
-                _like_to_regex(item) for item in self.table_group.profiling_include_mask.split(",")
-            ]
+        if include_masks := split_criteria(self.table_group.profiling_include_mask):
+            include_patterns = [_like_to_regex(item) for item in include_masks]
             result = [c for c in result if any(p.match(c.table_name) for p in include_patterns)]
 
-        if self.table_group.profiling_exclude_mask:
-            exclude_patterns = [
-                _like_to_regex(item) for item in self.table_group.profiling_exclude_mask.split(",")
-            ]
+        if exclude_masks := split_criteria(self.table_group.profiling_exclude_mask):
+            exclude_patterns = [_like_to_regex(item) for item in exclude_masks]
             result = [c for c in result if not any(p.match(c.table_name) for p in exclude_patterns)]
 
         return result

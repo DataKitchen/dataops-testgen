@@ -7,6 +7,8 @@ from uuid import UUID
 from pydantic import BaseModel, Discriminator, Field, RootModel, Tag
 
 from testgen.api.enums import (
+    AuthenticationMethod,
+    DatabaseType,
     Disposition,
     GeneralType,
     HygieneDisposition,
@@ -740,3 +742,142 @@ class RuleListResponse(BaseModel):
     page: int
     limit: int
     total: int
+
+
+# --- Connections ---
+
+
+class ConnectionItem(BaseModel):
+    """One connection in a project listing."""
+
+    connection_id: int
+    connection_name: str
+    project_code: str
+    database_type: DatabaseType = Field(description="The connection's database type.")
+    table_group_count: int
+
+
+class ConnectionListResponse(BaseModel):
+    """Paginated list of a project's connections."""
+
+    items: list[ConnectionItem]
+    page: int
+    limit: int
+    total: int
+
+
+class ConnectionResponse(BaseModel):
+    """A connection's configuration.
+
+    Connection parameters vary by database type, so they are grouped under
+    ``settings`` rather than given fixed top-level fields: a Snowflake connection
+    carries ``host`` / ``database`` / ``warehouse`` / ``username``, while a
+    Salesforce Data 360 connection carries ``login_url`` / ``username`` /
+    ``consumer_key``. Keys are stable per database type and authentication method,
+    and are named for what the target database calls each value.
+
+    Credentials are never included — no password, private key, token, or
+    service-account key.
+    """
+
+    connection_id: int
+    connection_name: str
+    project_code: str
+    database_type: DatabaseType = Field(description="The connection's database type.")
+    authentication: AuthenticationMethod = Field(
+        description="How the connection authenticates to its database."
+    )
+    max_threads: int | None = None
+    max_expression_length: int | None = Field(
+        default=None, description="Maximum character length of a generated query expression."
+    )
+    settings: dict[str, str] = Field(
+        description="Connection parameters for this database type, excluding credentials."
+    )
+
+
+# --- Table Groups ---
+
+
+class TableGroupItem(BaseModel):
+    """One table group in a project listing, with its size and latest activity."""
+
+    table_group_id: UUID
+    table_group_name: str
+    schema_name: str
+    project_code: str
+    connection_id: int
+    connection_name: str | None = None
+    table_count: int
+    column_count: int | None = None
+    row_count: int | None = None
+    last_profiled_at: datetime | None = None
+    last_tested_at: datetime | None = None
+    profiling_score: float | None = None
+    testing_score: float | None = None
+    quality_score: float | None = None
+
+
+class TableGroupListResponse(BaseModel):
+    """Paginated list of a project's table groups."""
+
+    items: list[TableGroupItem]
+    page: int
+    limit: int
+    total: int
+
+
+class CatalogTags(BaseModel):
+    """Labels for grouping and filtering the Quality Score breakdown.
+
+    They describe a dataset's origin and ownership and do not affect profiling or
+    test execution.
+    """
+
+    data_source: str | None = None
+    source_system: str | None = None
+    source_process: str | None = None
+    data_location: str | None = None
+    business_domain: str | None = None
+    stakeholder_group: str | None = None
+    transform_level: str | None = None
+    data_product: str | None = None
+    data_classification: str | None = None
+
+
+class TableGroupResponse(BaseModel):
+    """A table group's full configuration."""
+
+    table_group_id: UUID
+    table_group_name: str
+    schema_name: str
+    project_code: str
+    connection_id: int
+    default_test_suite_id: UUID | None = None
+    description: str | None = None
+
+    table_set: list[str] = Field(
+        default_factory=list,
+        description="Table names the group is restricted to. Empty when the group is defined by masks alone.",
+    )
+    include_masks: list[str] = Field(
+        default_factory=list, description="SQL LIKE patterns a table must match to be included."
+    )
+    exclude_masks: list[str] = Field(
+        default_factory=list, description="SQL LIKE patterns that exclude a matching table."
+    )
+    profile_id_column_mask: str | None = Field(default=None, description="SQL LIKE pattern marking ID columns.")
+    profile_sk_column_mask: str | None = Field(
+        default=None, description="SQL LIKE pattern marking surrogate key columns."
+    )
+
+    profile_use_sampling: bool
+    profile_sample_percent: int | None = None
+    profile_sample_min_count: int | None = None
+    profiling_delay_days: int | None = None
+    profile_flag_cdes: bool
+    profile_flag_pii: bool
+    profile_exclude_xde: bool
+    include_in_dashboard: bool
+
+    catalog_tags: CatalogTags

@@ -877,6 +877,7 @@ def _list_item(**overrides):
         table_groups_name=overrides.get("table_groups_name", "core_tables"),
         table_group_schema=overrides.get("table_group_schema", "public"),
         project_code=overrides.get("project_code", "demo"),
+        connection_id=overrides.get("connection_id", 42),
         connection_name=overrides.get("connection_name", "warehouse_prod"),
         table_count=overrides.get("table_count", 12),
         column_count=overrides.get("column_count", 84),

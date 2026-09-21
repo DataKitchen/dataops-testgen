@@ -10,8 +10,7 @@ This module is intentionally pure data (no I/O, no Streamlit, no SQLAlchemy) so 
 can be imported from the UI, the MCP layer, and common services without cycles.
 
 (The per-flavor *connection-parameter* field labels and requirement rules are a
-different, MCP-only concern and live in ``mcp/tools/common.py`` — they're hardcoded
-in the JS form, not sourced from Python.)
+different concern and live in ``common/connection_schema.py``.)
 """
 
 from __future__ import annotations

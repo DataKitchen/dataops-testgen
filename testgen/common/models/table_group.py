@@ -62,6 +62,7 @@ class TableGroupListItem(EntityMinimal):
     table_groups_name: str
     table_group_schema: str
     project_code: str
+    connection_id: int
     connection_name: str | None
     table_count: int
     column_count: int | None
@@ -212,6 +213,22 @@ _ANOMALY_TYPE_TO_COLUMN: dict[str, str] = {
     MonitorType.SCHEMA.value: "schema_anomalies",
     MonitorType.METRIC.value: "metric_anomalies",
 }
+
+
+def split_criteria(value: str | None) -> list[str]:
+    """Split a stored table criterion into its parts.
+
+    The table set and the include/exclude masks are each stored as one string
+    holding a comma-separated list. There is no escape, so a part cannot itself
+    contain a comma. Parts are stripped of surrounding whitespace, and empty parts
+    are dropped — a stray or trailing comma carries no criterion.
+
+    Callers must branch on the returned list rather than on the stored string: a
+    value of ``","`` is truthy but yields no parts.
+    """
+    if not value:
+        return []
+    return [stripped for item in value.split(",") if (stripped := item.strip())]
 
 
 def _row_count_change_expr(baseline_column: str, state_column: str) -> str:
@@ -578,12 +595,34 @@ class TableGroup(Entity):
 
     @classmethod
     def list_for_project(
-        cls, project_code: str, *, page: int = 1, limit: int = 20
+        cls,
+        project_code: str,
+        *,
+        connection_id: int | None = None,
+        schema_name: str | None = None,
+        table_group_name: str | None = None,
+        page: int = 1,
+        limit: int = 20,
     ) -> tuple[list[TableGroupListItem], int]:
-        """Config-focused paginated listing for a project, with table count and activity timestamps."""
+        """Config-focused paginated listing for a project, with table count and activity timestamps.
+
+        The optional filters match exactly, not by pattern — schema and table group
+        names are case-sensitive on some flavors.
+        """
+        scope_sql = ["groups.project_code = :project_code"]
+        scope_params: dict = {"project_code": project_code}
+        for column, value in (
+            ("connection_id", connection_id),
+            ("table_group_schema", schema_name),
+            ("table_groups_name", table_group_name),
+        ):
+            if value is not None:
+                scope_sql.append(f"groups.{column} = :{column}")
+                scope_params[column] = value
+
         return cls._list_with_activity(
-            scope_sql="groups.project_code = :project_code",
-            scope_params={"project_code": project_code},
+            scope_sql=" AND ".join(scope_sql),
+            scope_params=scope_params,
             page=page,
             limit=limit,
         )
@@ -635,9 +674,13 @@ class TableGroup(Entity):
             GROUP BY pr.table_groups_id
         ),
         latest_test AS (
-            SELECT ts.table_groups_id, MAX(tr.test_starttime) AS test_starttime
+            -- Reads the start from job_executions, as the profiling side does.
+            -- ``test_runs.test_starttime`` is timestamp-without-zone, so taking it
+            -- directly would make this the one naive timestamp on the row.
+            SELECT ts.table_groups_id, MAX(je.started_at) AS started_at
             FROM test_runs tr
                 JOIN test_suites ts ON ts.id = tr.test_suite_id
+                LEFT JOIN job_executions je ON je.id = tr.id
             WHERE ts.suite_type = 'regular'
             GROUP BY ts.table_groups_id
         )
@@ -646,12 +689,13 @@ class TableGroup(Entity):
             groups.table_groups_name,
             groups.table_group_schema,
             groups.project_code,
+            groups.connection_id,
             connections.connection_name,
             COALESCE(stats.table_count, 0) AS table_count,
             stats.column_count,
             stats.row_count,
             latest_profile.started_at AS last_profiled_date,
-            latest_test.test_starttime AS last_tested_date,
+            latest_test.started_at AS last_tested_date,
             groups.dq_score_profiling AS profiling_score,
             groups.dq_score_testing AS testing_score,
             -- Mirrors utils.score: product when both exist, else the non-null one, else NULL.
