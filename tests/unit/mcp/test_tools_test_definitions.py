@@ -2,9 +2,12 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
 
 from testgen.common.custom_test_validation import CustomQueryResult
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote
 from testgen.mcp.exceptions import MCPUserError
+from testgen.mcp.tools.test_definitions import _DELETED_LISTING_LIMIT
 from tests.unit.sql_assertions import emitted_statements, scopes_to_a_version
 
 # -- list_tests ---------------------------------------------------------------
@@ -1698,3 +1701,276 @@ def test_bulk_update_tests_scopes_to_a_version(mock_resolve_suite, mock_session,
     assert scopes_to_a_version(emitted_statements(session)[0]), (
         "the bulk update writes every version of the suite, not the one it resolves to"
     )
+
+
+# -- delete_tests -------------------------------------------------------------
+
+
+def _make_td_minimal(table_name="orders", column_name="email", test_id=None):
+    """Mock TestDefinitionMinimal as returned by TestDefinition.select_minimal_where()."""
+    td = MagicMock()
+    td.id = test_id or uuid4()
+    td.test_type = "Alpha_Trunc"
+    td.test_name_short = "Alpha Truncation"
+    td.table_name = table_name
+    td.column_name = column_name
+    return td
+
+
+def _deleted_ids(delete_where_mock) -> list:
+    """The IDs the tool passed to ``delete_where`` as an ``id IN (...)`` clause."""
+    (clause,) = delete_where_mock.call_args.args
+    return list(clause.right.value)
+
+
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinition, "get_for_project")
+def test_delete_tests_by_ids_reports_what_went(mock_get, _mock_notes, mock_delete, db_session_mock):
+    first, second = uuid4(), uuid4()
+    summaries = {
+        first: _make_td_summary(table_name="orders"),
+        second: _make_td_summary(table_name="customers", column_name=None),
+    }
+    for td_id, summary in summaries.items():
+        summary.id = td_id
+    mock_get.side_effect = lambda td_id, _codes: summaries[td_id]
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    result = delete_tests(test_definition_ids=[str(first), str(second)])
+
+    assert "Deleted 2 tests" in result
+    assert "named in the request" in result
+    assert "orders" in result and "customers" in result
+    assert str(first) in result and str(second) in result
+    assert sorted(_deleted_ids(mock_delete), key=str) == sorted([first, second], key=str)
+
+
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids")
+@patch.object(TestDefinition, "get_for_project")
+def test_delete_tests_reports_the_notes_that_went_with_them(
+    mock_get, mock_notes, _mock_delete, db_session_mock
+):
+    """Notes are the one thing that cascades, so the count saves a follow-up read."""
+    td_id = uuid4()
+    summary = _make_td_summary()
+    summary.id = td_id
+    mock_get.return_value = summary
+    mock_notes.return_value = {str(td_id): 3}
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    result = delete_tests(test_definition_ids=[str(td_id)])
+
+    assert "Notes deleted:** 3" in result
+
+
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinition, "get_for_project")
+def test_delete_tests_omits_the_note_count_when_there_were_none(
+    mock_get, _mock_notes, _mock_delete, db_session_mock
+):
+    mock_get.return_value = _make_td_summary()
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    assert "Notes deleted" not in delete_tests(test_definition_ids=[str(uuid4())])
+
+
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinition, "get_for_project")
+def test_delete_tests_by_ids_reports_every_unusable_entry_at_once(
+    mock_get, mock_delete, db_session_mock
+):
+    """One round-trip fixes the whole list, and nothing is deleted meanwhile."""
+    present, missing = uuid4(), uuid4()
+    summary = _make_td_summary()
+    summary.id = present
+    mock_get.side_effect = lambda td_id, _codes: summary if td_id == present else None
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError) as err:
+        delete_tests(test_definition_ids=[str(present), "garbage", str(missing)])
+
+    message = str(err.value)
+    assert "Nothing was deleted" in message
+    assert "not valid UUIDs: `garbage`" in message
+    assert f"not found or not accessible: `{missing}`" in message
+    assert str(present) not in message
+    mock_delete.assert_not_called()
+
+
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinition, "get_for_project", return_value=None)
+def test_delete_tests_by_ids_hides_whether_an_inaccessible_test_exists(
+    _mock_get, mock_delete, db_session_mock
+):
+    td_id = uuid4()
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError, match="not found or not accessible"):
+        delete_tests(test_definition_ids=[str(td_id)])
+
+    mock_delete.assert_not_called()
+
+
+@patch.object(TestDefinition, "get_for_project", return_value=None)
+def test_delete_tests_by_ids_scopes_the_lookup_to_allowed_projects(mock_get, db_session_mock):
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError):
+        delete_tests(test_definition_ids=[str(uuid4())])
+
+    assert mock_get.call_args.args[1] == ["demo"]
+
+
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinition, "get_for_project")
+def test_delete_tests_by_ids_counts_a_repeated_id_once(
+    mock_get, _mock_notes, mock_delete, db_session_mock
+):
+    td_id = uuid4()
+    summary = _make_td_summary()
+    summary.id = td_id
+    mock_get.return_value = summary
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    result = delete_tests(test_definition_ids=[str(td_id), str(td_id)])
+
+    assert "Deleted 1 tests" in result
+    assert _deleted_ids(mock_delete) == [td_id]
+    assert mock_get.call_count == 1
+
+
+def test_delete_tests_by_ids_rejects_an_empty_list(db_session_mock):
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError, match="must name at least one test definition"):
+        delete_tests(test_definition_ids=[])
+
+
+def test_delete_tests_rejects_filters_alongside_named_ids(db_session_mock):
+    """Silently ignoring them would delete a wider set than the caller described."""
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError, match="cannot be combined with `test_definition_ids`"):
+        delete_tests(test_definition_ids=[str(uuid4())], table_name="orders")
+
+
+def test_delete_tests_requires_a_selection(db_session_mock):
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError, match="Supply either"):
+        delete_tests()
+
+
+def test_delete_tests_rejects_both_selections(db_session_mock):
+    """The two shapes select the same thing, so honouring both would be a guess."""
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    with pytest.raises(MCPUserError, match="not both"):
+        delete_tests(test_definition_ids=[str(uuid4())], test_suite_id=str(uuid4()))
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinition, "select_minimal_where")
+def test_delete_tests_by_suite_names_the_whole_suite_as_its_scope(
+    mock_select, _mock_notes, mock_delete, mock_resolve_suite, db_session_mock
+):
+    """An unnarrowed filter is the one call whose blast radius the request does not show."""
+    mock_resolve_suite.return_value = _make_suite()
+    selected = [_make_td_minimal(table_name="orders"), _make_td_minimal(table_name="customers")]
+    mock_select.return_value = selected
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    result = delete_tests(test_suite_id=str(uuid4()))
+
+    assert "Deleted 2 tests" in result
+    assert "every test in suite `demo_suite`" in result
+    assert _deleted_ids(mock_delete) == [td.id for td in selected]
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type", return_value="Alpha_Trunc")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinition, "select_minimal_where")
+def test_delete_tests_by_suite_names_the_filters_it_applied(
+    mock_select, _mock_notes, _mock_delete, mock_resolve_suite, _mock_resolve_tt, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_select.return_value = [_make_td_minimal()]
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    result = delete_tests(
+        test_suite_id=str(uuid4()), table_name="orders", test_type="Alpha Truncation"
+    )
+
+    assert "table_name=`orders`" in result
+    assert "test_type=`Alpha Truncation`" in result
+    assert "every test in suite" not in result
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinition, "select_minimal_where", return_value=[])
+def test_delete_tests_by_suite_deletes_nothing_when_nothing_matched(
+    _mock_select, mock_delete, mock_resolve_suite, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    result = delete_tests(test_suite_id=str(uuid4()), table_name="absent")
+
+    assert "No tests matched" in result
+    assert "absent" in result
+    mock_delete.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinitionNote, "get_notes_count_by_ids", return_value={})
+@patch.object(TestDefinition, "select_minimal_where")
+def test_delete_tests_by_suite_accounts_for_a_listing_it_truncates(
+    mock_select, _mock_notes, _mock_delete, mock_resolve_suite, db_session_mock
+):
+    mock_resolve_suite.return_value = _make_suite()
+    mock_select.return_value = [_make_td_minimal() for _ in range(_DELETED_LISTING_LIMIT + 5)]
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    result = delete_tests(test_suite_id=str(uuid4()))
+
+    assert f"Deleted {_DELETED_LISTING_LIMIT + 5} tests" in result
+    assert f"Listing {_DELETED_LISTING_LIMIT} of the {_DELETED_LISTING_LIMIT + 5} tests deleted" in result
+
+
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+@patch.object(TestDefinition, "delete_where")
+@patch.object(TestDefinition, "select_minimal_where", return_value=[])
+def test_delete_tests_by_suite_scopes_to_a_version(
+    mock_select, _mock_delete, mock_resolve_suite, db_session_mock
+):
+    """Without the version clause the filter selects every version of the suite's tests."""
+    mock_resolve_suite.return_value = _make_suite()
+
+    from testgen.mcp.tools.test_definitions import delete_tests
+
+    delete_tests(test_suite_id=str(uuid4()))
+
+    # The clauses never reach a statement of their own — the model builds the select — so
+    # wrap them in one to reuse the shared assertion.
+    clauses = mock_select.call_args.args
+    assert scopes_to_a_version(select(TestDefinition.id).where(*clauses))

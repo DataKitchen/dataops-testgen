@@ -2,6 +2,7 @@ import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, NoReturn
+from uuid import UUID
 
 from pydantic import Field, ValidationError
 from sqlalchemy import update
@@ -15,6 +16,7 @@ from testgen.common.models.test_definition import (
     NON_PUBLIC_TEST_TYPES,
     InvalidTestDefinitionFields,
     TestDefinition,
+    TestDefinitionMinimal,
     TestDefinitionNote,
     TestDefinitionSummary,
     TestType,
@@ -829,6 +831,181 @@ def bulk_update_tests(
     doc.heading(1, f"{verb} {count} test(s) in suite `{suite.test_suite}`")
     doc.field("Filter", filter_str)
     return doc.render()
+
+
+# ---------------------------------------------------------------------------
+# Deletion
+# ---------------------------------------------------------------------------
+
+# A whole-suite delete can cover hundreds of tests; the listing names enough of them
+# to recognise what went and the footer accounts for the rest.
+_DELETED_LISTING_LIMIT = 50
+
+
+def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionSummary]:
+    """Resolve every supplied ID, reporting all unusable entries in one error.
+
+    Raises ``MCPUserError`` naming every entry that is not a valid UUID and every one that
+    is missing or inaccessible, so a caller fixes the whole list in one round-trip.
+    """
+    if not test_definition_ids:
+        raise MCPUserError("`test_definition_ids` must name at least one test definition.")
+
+    perms = get_project_permissions()
+    malformed: list[str] = []
+    unresolved: list[str] = []
+    resolved: list[TestDefinitionSummary] = []
+    seen: set[UUID] = set()
+
+    for raw_id in dict.fromkeys(test_definition_ids):
+        try:
+            td_uuid = parse_uuid(raw_id, "test_definition_ids")
+        except MCPUserError:
+            malformed.append(str(raw_id))
+            continue
+        if td_uuid in seen:
+            continue
+        seen.add(td_uuid)
+        summary = TestDefinition.get_for_project(td_uuid, perms.allowed_codes)
+        if summary is None:
+            unresolved.append(str(td_uuid))
+        else:
+            resolved.append(summary)
+
+    if malformed or unresolved:
+        problems = []
+        if malformed:
+            problems.append("not valid UUIDs: " + ", ".join(f"`{value}`" for value in malformed))
+        if unresolved:
+            problems.append(
+                "not found or not accessible: " + ", ".join(f"`{value}`" for value in unresolved)
+            )
+        raise MCPUserError(f"Nothing was deleted. Test definitions {'; '.join(problems)}.")
+
+    return resolved
+
+
+def _describe_filter_scope(suite_name: str, table_name: str | None, test_type: str | None) -> str:
+    """Name the set a suite filter selects, so a whole-suite delete never reads as a bare count."""
+    filters = []
+    if table_name:
+        filters.append(f"table_name=`{table_name}`")
+    if test_type:
+        filters.append(f"test_type=`{test_type}`")
+    if not filters:
+        return f"every test in suite `{suite_name}`"
+    return f"tests in suite `{suite_name}` matching {', '.join(filters)}"
+
+
+def _render_deleted(
+    scope: str,
+    deleted: list[TestDefinitionSummary] | list[TestDefinitionMinimal],
+    note_count: int,
+) -> str:
+    """Render the scope acted on, the count, and the deleted tests themselves."""
+    doc = MdDoc()
+    doc.heading(1, f"Deleted {len(deleted)} tests")
+    doc.field("Scope", scope)
+    if note_count:
+        doc.field("Notes deleted", note_count)
+
+    listed = deleted[:_DELETED_LISTING_LIMIT]
+    rows = [
+        [td.test_name_short or td.test_type, td.table_name, td.column_name or None, str(td.id)]
+        for td in listed
+    ]
+    doc.table(["Test Type", "Table", "Column", "ID"], rows, code=[1, 2, 3])
+    if len(deleted) > len(listed):
+        doc.text(f"_Listing {len(listed)} of the {len(deleted)} tests deleted._")
+    return doc.render()
+
+
+def _delete_resolved_tests(
+    scope: str,
+    selected: list[TestDefinitionSummary] | list[TestDefinitionMinimal],
+) -> str:
+    """Delete the already-resolved tests by ID and render what went.
+
+    Deleting by ID rather than by the selecting filter keeps the response exact: a row
+    inserted after the selection is not swept up in the delete unreported.
+    """
+    ids = [td.id for td in selected]
+    note_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in ids])
+    TestDefinition.delete_where(TestDefinition.id.in_(ids))
+    return _render_deleted(scope, selected, sum(note_counts.values()))
+
+
+@with_database_session
+@mcp_permission("edit")
+def delete_tests(
+    test_definition_ids: Annotated[
+        list[str] | None,
+        Field(
+            description="UUIDs of the tests to delete, e.g. from ``list_tests``. Supply this or "
+            "``test_suite_id``, not both.",
+        ),
+    ] = None,
+    test_suite_id: Annotated[
+        str | None,
+        Field(
+            description="UUID of the suite to delete tests from, e.g. from ``list_test_suites``. "
+            "Narrow with ``table_name`` and ``test_type``, or omit both to delete every test in it.",
+        ),
+    ] = None,
+    table_name: Annotated[
+        str | None,
+        Field(description="Optional table-name filter on ``test_suite_id``. Case-sensitive."),
+    ] = None,
+    test_type: Annotated[
+        str | None,
+        Field(description="Optional test type filter on ``test_suite_id`` (e.g. ``Alpha Truncation``)."),
+    ] = None,
+) -> str:
+    """Delete tests, either by ID or by suite filter.
+
+    Nothing is deleted unless every named test can be. Notes on a deleted test go with
+    it; past test results stay, though their source-data drill-down stops resolving. A
+    refresh lock does not block a delete. To stop a test running but keep it, disable it
+    with ``bulk_update_tests`` instead.
+    """
+    if test_definition_ids is not None and test_suite_id is not None:
+        raise MCPUserError(
+            "Supply `test_definition_ids` or `test_suite_id`, not both. Naming tests and "
+            "filtering a suite are two ways to select the same thing."
+        )
+    if test_definition_ids is None and test_suite_id is None:
+        raise MCPUserError(
+            "Supply either `test_definition_ids` (the tests to delete) or `test_suite_id` "
+            "(the suite to delete them from)."
+        )
+
+    if test_definition_ids is not None:
+        if table_name or test_type:
+            raise MCPUserError(
+                "`table_name` and `test_type` narrow `test_suite_id` and cannot be combined "
+                "with `test_definition_ids`."
+            )
+        return _delete_resolved_tests(
+            "the tests named in the request", _resolve_named_tests(test_definition_ids)
+        )
+
+    suite = resolve_test_suite(test_suite_id)
+    tt_code = resolve_test_type(test_type) if test_type else None
+    clauses = [TestDefinition.test_suite_id == suite.id, TestDefinition.version_clause()]
+    if table_name:
+        clauses.append(TestDefinition.table_name == table_name)
+    if tt_code:
+        clauses.append(TestDefinition.test_type == tt_code)
+
+    selected = list(TestDefinition.select_minimal_where(*clauses))
+    scope = _describe_filter_scope(suite.test_suite, table_name, test_type)
+    if not selected:
+        doc = MdDoc()
+        doc.heading(1, "No tests matched")
+        doc.text(f"No tests matched {scope}. Nothing was deleted.")
+        return doc.render()
+
+    return _delete_resolved_tests(scope, selected)
 
 
 # ---------------------------------------------------------------------------
