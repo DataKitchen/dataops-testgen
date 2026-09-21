@@ -1494,15 +1494,15 @@ def test_resolve_test_note_scopes_to_a_version(mock_session_fn, mock_permissions
 def test_every_flavor_code_has_a_connection_schema():
     """``schema_for`` indexes the dict directly, so a missing code surfaces as a bare KeyError on
     first MCP use rather than as a failure here."""
+    from testgen.common.connection_schema import FLAVOR_CONNECTION_SCHEMA
     from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
-    from testgen.mcp.tools.common import FLAVOR_CONNECTION_SCHEMA
 
     assert set(FLAVOR_CONNECTION_SCHEMA) == set(FLAVOR_CODE_TO_LABEL)
 
 
 def test_every_connection_schema_agrees_with_its_own_code_and_label():
+    from testgen.common.connection_schema import FLAVOR_CONNECTION_SCHEMA
     from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
-    from testgen.mcp.tools.common import FLAVOR_CONNECTION_SCHEMA
 
     for code, schema in FLAVOR_CONNECTION_SCHEMA.items():
         assert schema.code == code
@@ -1511,7 +1511,7 @@ def test_every_connection_schema_agrees_with_its_own_code_and_label():
 
 def test_duckdb_asks_only_for_a_database_file():
     """DuckDB is embedded, so there is no host, port, credential or URL alternative."""
-    from testgen.mcp.tools.common import FLAVOR_CONNECTION_SCHEMA
+    from testgen.common.connection_schema import FLAVOR_CONNECTION_SCHEMA
 
     schema = FLAVOR_CONNECTION_SCHEMA["duckdb"]
     assert schema.url_field is None
@@ -1524,8 +1524,8 @@ def test_duckdb_asks_only_for_a_database_file():
 
 
 def test_a_parameter_backed_field_round_trips_through_the_parameters_column():
+    from testgen.common.connection_schema import FLAVOR_CONNECTION_SCHEMA, read_conn_field, write_conn_field
     from testgen.common.models.connection import Connection
-    from testgen.mcp.tools.common import FLAVOR_CONNECTION_SCHEMA, read_conn_field, write_conn_field
 
     field = FLAVOR_CONNECTION_SCHEMA["duckdb"].modes[0].fields[0]
     connection = Connection(sql_flavor="duckdb", sql_flavor_code="duckdb")
@@ -1537,8 +1537,8 @@ def test_a_parameter_backed_field_round_trips_through_the_parameters_column():
 
 
 def test_writing_a_parameter_keeps_the_other_parameters():
+    from testgen.common.connection_schema import ConnField, Req, write_conn_field
     from testgen.common.models.connection import Connection
-    from testgen.mcp.tools.common import ConnField, Req, write_conn_field
 
     connection = Connection(sql_flavor="duckdb", sql_flavor_code="duckdb")
     connection.parameters = {"kept": "yes"}

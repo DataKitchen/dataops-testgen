@@ -8,6 +8,7 @@ single seam that normalizes them to the API surface — the DB is never changed.
 
 from enum import StrEnum
 
+from testgen.common.connection_schema import ConnectionMode
 from testgen.common.enums import PII_FLAG_PREFIX_TO_LABEL
 from testgen.common.enums import Disposition as DbDisposition
 from testgen.common.enums import ImpactDimension as DbImpactDimension
@@ -15,6 +16,7 @@ from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
 from testgen.common.enums import MonitorType as DbMonitorType
 from testgen.common.enums import PiiRisk as DbPiiRisk
 from testgen.common.enums import QualityDimension as DbQualityDimension
+from testgen.common.flavors import SqlFlavorLabel
 from testgen.common.models.test_definition import ThresholdMode
 from testgen.common.models.test_result import TestResultStatus
 
@@ -314,3 +316,39 @@ def pii_flag_from_db(value: str | None) -> PiiFlag | None:
     if value.startswith("MANUAL"):
         return PiiFlag.manual
     return _PII_FLAG_PREFIX_MAP.get(value[:1])
+
+
+class AuthenticationMethod(StrEnum):
+    """How a connection authenticates to its database."""
+
+    password = "password"  # noqa: S105 — auth-method name, not a credential
+    key_pair = "key_pair"
+    managed_identity = "managed_identity"
+    access_token = "access_token"  # noqa: S105 — auth-method name, not a credential
+    service_principal = "service_principal"
+    jwt_bearer = "jwt_bearer"
+    client_credentials = "client_credentials"
+    service_account = "service_account"
+
+
+# ``ConnectionMode`` members are the display labels the connection form uses
+# ("Key-Pair", "Service Principal (OAuth)"); the API exposes snake_case tokens.
+AUTHENTICATION_FROM_MODE: dict[ConnectionMode, AuthenticationMethod] = {
+    ConnectionMode.PASSWORD: AuthenticationMethod.password,
+    ConnectionMode.KEY_PAIR: AuthenticationMethod.key_pair,
+    ConnectionMode.MANAGED_IDENTITY: AuthenticationMethod.managed_identity,
+    ConnectionMode.ACCESS_TOKEN: AuthenticationMethod.access_token,
+    ConnectionMode.SERVICE_PRINCIPAL: AuthenticationMethod.service_principal,
+    ConnectionMode.JWT_BEARER: AuthenticationMethod.jwt_bearer,
+    ConnectionMode.CLIENT_CREDENTIALS: AuthenticationMethod.client_credentials,
+    ConnectionMode.SERVICE_ACCOUNT: AuthenticationMethod.service_account,
+}
+
+
+# A connection's database type, as shown to API consumers: the same values as the
+# internal SqlFlavorLabel, under a public class name so the exposed OpenAPI schema
+# carries "DatabaseType" rather than the internal "flavor" vocabulary. Derived from
+# the source so the two cannot drift. Built via the functional API — mypy can't read
+# the members of a comprehension-built enum, but nothing needs member access; the
+# values are the whole contract.
+DatabaseType = StrEnum("DatabaseType", {m.name: m.value for m in SqlFlavorLabel})  # type: ignore[misc]

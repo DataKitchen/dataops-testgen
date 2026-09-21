@@ -3,6 +3,7 @@
 import pytest
 
 from testgen.api.enums import (
+    AUTHENTICATION_FROM_MODE,
     MONITOR_TYPE_FROM_DB,
     MONITOR_TYPE_TO_DB,
     MonitorSortField,
@@ -13,6 +14,7 @@ from testgen.api.enums import (
     monitor_sort_to_model,
     threshold_mode_from_db,
 )
+from testgen.common.connection_schema import ConnectionMode
 from testgen.common.models.test_definition import ThresholdMode
 
 pytestmark = pytest.mark.unit
@@ -76,3 +78,10 @@ def test_monitor_sort_fields_match_dashboard_allowed_set():
         "table_name", "freshness_anomalies", "volume_anomalies", "schema_anomalies",
         "metric_anomalies", "latest_update", "row_count",
     }
+
+
+def test_every_connection_mode_maps_to_an_authentication_method():
+    """``AUTHENTICATION_FROM_MODE`` is subscripted bare in ``get_connection``, so a
+    ``ConnectionMode`` added without a mapping would 500 every connection whose inferred
+    mode is the unmapped one. This fails the moment the two sets diverge."""
+    assert set(AUTHENTICATION_FROM_MODE) == set(ConnectionMode)
