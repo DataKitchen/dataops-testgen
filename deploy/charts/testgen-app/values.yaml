@@ -47,6 +47,11 @@ testgen:
       # How the connection is secured: ssl (TLS from the first byte, port 465),
       # starttls (plaintext upgraded in place, port 587 or 25), or none.
       security:
+      # Paths to a TLS client certificate and key for a relay that authorizes the
+      # sender by certificate. Mount them with extraVolumes and extraVolumeMounts.
+      clientCertFile:
+      clientKeyFile:
+      clientKeyPassword:
   # Externally reachable URL of the UI
   uiBaseUrl:
   # Externally reachable URL of the API and MCP server

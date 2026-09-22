@@ -47,7 +47,19 @@ def def_settings():
         mock.SMTP_PASSWORD = "smtp-pass"  # noqa: S105
         # settings.py reads this through getenv, so it is a plain string, not SMTPSecurity.
         mock.SMTP_SECURITY = "ssl"
+        mock.SMTP_CLIENT_CERT_FILE = ""
+        mock.SMTP_CLIENT_KEY_FILE = ""
+        mock.SMTP_CLIENT_KEY_PASSWORD = ""
         yield mock
+
+
+@pytest.fixture
+def client_certificate(tmp_path):
+    """A certificate and key on disk, as the settings name them by path."""
+    cert, key = tmp_path / "client.crt", tmp_path / "client.key"
+    cert.write_text("-----BEGIN CERTIFICATE-----\n")
+    key.write_text("-----BEGIN PRIVATE KEY-----\n")
+    return str(cert), str(key)
 
 
 @pytest.fixture
@@ -303,3 +315,74 @@ def test_all_problems_are_reported_together(template, def_settings, send_args, c
     assert "TG_SMTP_ENDPOINT" in caplog.text
     assert "TG_SMTP_SECURITY is set to 'tls'" in caplog.text
     assert "only one of TG_SMTP_USERNAME and TG_SMTP_PASSWORD is set" in caplog.text
+
+
+def test_client_certificate_is_presented(smtp_mock, template, send_args, def_settings, client_certificate):
+    cert, key = client_certificate
+    def_settings.SMTP_CLIENT_CERT_FILE = cert
+    def_settings.SMTP_CLIENT_KEY_FILE = key
+    def_settings.SMTP_CLIENT_KEY_PASSWORD = "secret"  # noqa: S105
+
+    with patch.object(ssl.SSLContext, "load_cert_chain") as load:
+        template.send(*send_args)
+
+    load.assert_called_once_with(cert, key, "secret")
+
+
+def test_no_client_certificate_loads_nothing(smtp_mock, template, send_args, def_settings):
+    with patch.object(ssl.SSLContext, "load_cert_chain") as load:
+        template.send(*send_args)
+
+    load.assert_not_called()
+
+
+def test_client_certificate_without_passphrase_passes_none(
+    smtp_mock, template, send_args, def_settings, client_certificate
+):
+    cert, key = client_certificate
+    def_settings.SMTP_CLIENT_CERT_FILE = cert
+    def_settings.SMTP_CLIENT_KEY_FILE = key
+
+    with patch.object(ssl.SSLContext, "load_cert_chain") as load:
+        template.send(*send_args)
+
+    load.assert_called_once_with(cert, key, None)
+
+
+@pytest.mark.parametrize("present", ("SMTP_CLIENT_CERT_FILE", "SMTP_CLIENT_KEY_FILE"))
+def test_half_configured_client_certificate_is_rejected(
+    present, template, def_settings, send_args, caplog, client_certificate
+):
+    for name, value in zip(("SMTP_CLIENT_CERT_FILE", "SMTP_CLIENT_KEY_FILE"), client_certificate, strict=True):
+        setattr(def_settings, name, value if name == present else "")
+
+    with pytest.raises(EmailTemplateException, match="Invalid or insufficient email/SMTP settings"):
+        template.send(*send_args)
+
+    assert "only one of TG_SMTP_CLIENT_CERT_FILE and TG_SMTP_CLIENT_KEY_FILE is set" in caplog.text
+    assert smtp_configured() is False
+
+
+def test_missing_client_certificate_file_is_rejected(template, def_settings, send_args, caplog, tmp_path):
+    def_settings.SMTP_CLIENT_CERT_FILE = str(tmp_path / "absent.crt")
+    def_settings.SMTP_CLIENT_KEY_FILE = str(tmp_path / "absent.key")
+
+    with pytest.raises(EmailTemplateException, match="Invalid or insufficient email/SMTP settings"):
+        template.send(*send_args)
+
+    assert "client certificate files do not exist" in caplog.text
+    assert "absent.crt" in caplog.text
+    assert "absent.key" in caplog.text
+
+
+def test_client_certificate_without_tls_is_rejected(
+    template, def_settings, send_args, caplog, client_certificate
+):
+    def_settings.SMTP_CLIENT_CERT_FILE, def_settings.SMTP_CLIENT_KEY_FILE = client_certificate
+    def_settings.SMTP_SECURITY = "none"
+
+    with pytest.raises(EmailTemplateException, match="Invalid or insufficient email/SMTP settings"):
+        template.send(*send_args)
+
+    assert "opens no TLS connection to present it on" in caplog.text
+    assert smtp_configured() is False

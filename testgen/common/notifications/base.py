@@ -2,6 +2,7 @@ import functools
 import inspect
 import logging
 import operator
+import os
 import re
 import smtplib
 import ssl
@@ -58,6 +59,23 @@ def smtp_settings_problems() -> list[str]:
             "only one of TG_SMTP_USERNAME and TG_SMTP_PASSWORD is set. Set both to authenticate,"
             " or neither to send without authenticating"
         )
+
+    client_certificate = [settings.SMTP_CLIENT_CERT_FILE, settings.SMTP_CLIENT_KEY_FILE]
+    if any(client_certificate) and not all(client_certificate):
+        problems.append(
+            "only one of TG_SMTP_CLIENT_CERT_FILE and TG_SMTP_CLIENT_KEY_FILE is set. Set both to"
+            " present a client certificate, or neither"
+        )
+    elif all(client_certificate):
+        unreadable = [path for path in client_certificate if not os.path.isfile(path)]
+        if unreadable:
+            problems.append(f"these client certificate files do not exist: {', '.join(unreadable)}")
+
+        if settings.SMTP_SECURITY == SMTPSecurity.NONE:
+            problems.append(
+                "a client certificate is configured but TG_SMTP_SECURITY is 'none', which opens no TLS"
+                " connection to present it on"
+            )
 
     return problems
 
@@ -176,9 +194,22 @@ class BaseEmailTemplate:
         message.attach(MIMEText(body, "html"))
         return message
 
+    def ssl_context(self) -> ssl.SSLContext:
+        """Build the TLS context, presenting a client certificate when one is configured."""
+        context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+
+        if settings.SMTP_CLIENT_CERT_FILE and settings.SMTP_CLIENT_KEY_FILE:
+            context.load_cert_chain(
+                settings.SMTP_CLIENT_CERT_FILE,
+                settings.SMTP_CLIENT_KEY_FILE,
+                settings.SMTP_CLIENT_KEY_PASSWORD or None,
+            )
+
+        return context
+
     def connect(self) -> smtplib.SMTP:
         """Open the SMTP connection described by `TG_SMTP_SECURITY`."""
-        ssl_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        ssl_context = self.ssl_context()
 
         if settings.SMTP_SECURITY == SMTPSecurity.SSL:
             return smtplib.SMTP_SSL(

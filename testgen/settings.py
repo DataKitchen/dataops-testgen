@@ -685,6 +685,27 @@ from env variable: `TG_SMTP_SECURITY`
 defaults to: `ssl`
 """
 
+SMTP_CLIENT_CERT_FILE: str = getenv("TG_SMTP_CLIENT_CERT_FILE", "")
+SMTP_CLIENT_KEY_FILE: str = getenv("TG_SMTP_CLIENT_KEY_FILE", "")
+"""
+Email: file paths for the TLS client certificate and private key presented to the
+SMTP server, for a relay that authorizes the sender by certificate rather than by
+username and password. Both files must be provided.
+
+from env variables: `TG_SMTP_CLIENT_CERT_FILE`, `TG_SMTP_CLIENT_KEY_FILE`
+defaults to: unset
+"""
+
+SMTP_CLIENT_KEY_PASSWORD: str = getenv("TG_SMTP_CLIENT_KEY_PASSWORD", "")
+"""
+Email: passphrase for `TG_SMTP_CLIENT_KEY_FILE`, when the key is encrypted. An
+encrypted key with no passphrase set makes OpenSSL prompt for one, which has no
+terminal to read from in the scheduler.
+
+from env variable: `TG_SMTP_CLIENT_KEY_PASSWORD`
+defaults to: unset
+"""
+
 WEBHOOK_ALLOWED_HOSTS: str | None = getenv("TG_WEBHOOK_ALLOWED_HOSTS")
 """
 Webhook: comma-separated allow-list of hostnames or CIDR ranges permitted as
