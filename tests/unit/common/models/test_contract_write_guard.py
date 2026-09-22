@@ -5,13 +5,29 @@ import pytest
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import BinaryExpression
 
-from testgen.common.models.suite_version import FrozenVersionError
+from testgen.common.models import test_definition as test_definition_module
+from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
 from tests.unit.sql_assertions import conjuncts, is_not_null_conjunct, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
 
 NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+@pytest.fixture(autouse=True)
+def _one_session_for_both_modules():
+    """Point ``suite_version``'s session at whatever this module's tests patched.
+
+    The frozen-version predicate lives on ``SuiteVersion`` so there is one copy of it, and it
+    reads its own module's session while these tests patch ``test_definition``'s.
+    """
+    with patch(
+        "testgen.common.models.suite_version.get_current_session",
+        side_effect=lambda: test_definition_module.get_current_session(),
+    ):
+        yield
+
 
 
 def _session_returning(value):
@@ -122,6 +138,7 @@ def test_save_of_a_term_the_draft_did_not_copy_is_refused():
             "testgen.common.models.test_definition.get_current_session",
             return_value=_session_returning(frozen_version_id),
         ),
+        patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
         patch.object(
             TestDefinition, "resolve_write_target",
             return_value=(uuid4(), {}),
@@ -141,6 +158,7 @@ def test_a_new_term_on_a_frozen_only_contract_is_inserted_into_the_draft():
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch("testgen.common.models.entity.get_current_session", return_value=session),
+        patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
         patch.object(
             TestDefinition, "resolve_write_target",
             return_value=(draft_version_id, {}),
@@ -193,6 +211,7 @@ def test_editing_a_term_on_a_frozen_only_contract_lands_in_a_draft():
             "testgen.common.models.test_definition.get_current_session",
             return_value=_session_returning(frozen_version_id),
         ),
+        patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
         patch.object(
             TestDefinition, "resolve_write_target",
             return_value=(draft_version_id, {definition.id: copied_id}),
@@ -244,6 +263,7 @@ def test_an_update_whose_instance_carries_no_version_is_guarded_by_the_persisted
     )
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
         patch.object(TestDefinition, "resolve_write_target", return_value=(uuid4(), {})),
     ):
         with pytest.raises(FrozenVersionError):
@@ -308,3 +328,51 @@ def test_the_batch_guard_reads_the_rows_own_versions_not_the_suites():
     selected = statement.selected_columns[0]
     assert selected.name == "version_id"
     assert selected.table.name == "test_definitions"
+
+
+def test_refusing_a_superseded_version_write_opens_no_draft_and_copies_nothing():
+    """The refusal has to be decided before the write target is resolved. Resolving it first
+    opens a draft and copies the whole agreement into it, and the exception that follows is
+    caught nowhere -- the router's blanket handler commits in its finally, so the phantom
+    draft is durable and every later read of the contract resolves to it.
+    """
+    superseded_version_id = uuid4()
+    definition = TestDefinition()
+    definition.id = uuid4()
+    definition.test_suite_id = uuid4()
+    definition.version_id = superseded_version_id
+
+    session = _session_routing_version_lookups(
+        persisted_version=superseded_version_id, frozen_versions=(superseded_version_id,)
+    )
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=uuid4())),
+        patch.object(TestDefinition, "resolve_write_target") as resolve,
+    ):
+        with pytest.raises(FrozenVersionError):
+            definition.save()
+
+    resolve.assert_not_called()
+    session.execute.assert_not_called()
+
+
+def test_a_contract_with_no_version_in_force_refuses_a_frozen_row_outright():
+    frozen_version_id = uuid4()
+    definition = TestDefinition()
+    definition.id = uuid4()
+    definition.test_suite_id = uuid4()
+    definition.version_id = frozen_version_id
+
+    session = _session_routing_version_lookups(
+        persisted_version=frozen_version_id, frozen_versions=(frozen_version_id,)
+    )
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(SuiteVersion, "in_force_for", return_value=None),
+        patch.object(TestDefinition, "resolve_write_target") as resolve,
+    ):
+        with pytest.raises(FrozenVersionError):
+            definition.save()
+
+    resolve.assert_not_called()

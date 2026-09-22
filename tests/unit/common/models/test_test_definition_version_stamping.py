@@ -10,10 +10,26 @@ from uuid import UUID, uuid4
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models import test_definition as test_definition_module
+from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote
 from tests.unit.sql_assertions import conjuncts, equality_conjunct, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def _one_session_for_both_modules():
+    """Point ``suite_version``'s session at whatever this module's tests patched.
+
+    The frozen-version predicate lives on ``SuiteVersion`` so there is one copy of it, and it
+    reads its own module's session while these tests patch ``test_definition``'s.
+    """
+    with patch(
+        "testgen.common.models.suite_version.get_current_session",
+        side_effect=lambda: test_definition_module.get_current_session(),
+    ):
+        yield
+
 
 
 def _session_mock(resolved_version=None, persisted_version=None) -> MagicMock:
@@ -40,8 +56,8 @@ def _session_mock(resolved_version=None, persisted_version=None) -> MagicMock:
     return session
 
 
-def _session_returning_terms(terms) -> MagicMock:
-    """A session whose term query yields `terms` and whose note query yields nothing.
+def _session_returning_terms(terms, notes=()) -> MagicMock:
+    """A session whose term query yields `terms` and whose note query yields `notes`.
 
     One blanket `scalars` return value hands the note copy the test definitions back, which
     fails on the first attribute a note does not have.
@@ -52,7 +68,7 @@ def _session_returning_terms(terms) -> MagicMock:
         froms = statement.get_final_froms()
         result = MagicMock()
         name = getattr(froms[0], "name", None) if froms else None
-        result.all.return_value = terms if name == "test_definitions" else []
+        result.all.return_value = terms if name == "test_definitions" else list(notes)
         return result
 
     session.scalars.side_effect = _scalars
@@ -267,3 +283,48 @@ def test_an_existing_draft_receives_the_write_and_nothing_is_copied():
 
     assert version_id == draft.id
     assert id_map == {}
+
+
+def test_copy_to_version_carries_each_terms_notes_onto_its_copy():
+    """A note is bound to one definition by a cascading foreign key, so a copy that left the
+    notes behind would strand every annotation on the version being superseded.
+    """
+    source_id, target_id = uuid4(), uuid4()
+    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=source_id)
+    note = TestDefinitionNote(
+        id=uuid4(), test_definition_id=term.id, detail="checked with the data steward",
+        created_by="tester",
+    )
+    session = _session_returning_terms([term], notes=[note])
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        id_map = TestDefinition.copy_to_version(source_id, target_id)
+
+    added = [call.args[0] for call in session.add.call_args_list]
+    copied_notes = [obj for obj in added if isinstance(obj, TestDefinitionNote)]
+    assert len(copied_notes) == 1
+    assert copied_notes[0].test_definition_id == id_map[term.id]
+    assert copied_notes[0].detail == "checked with the data steward"
+    assert copied_notes[0].created_by == "tester"
+    assert copied_notes[0] is not note
+
+
+def test_copy_to_version_reads_notes_of_exactly_the_terms_it_copied():
+    source_id, target_id = uuid4(), uuid4()
+    term = TestDefinition(id=uuid4(), test_suite_id=uuid4(), version_id=source_id)
+    session = _session_returning_terms([term])
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        TestDefinition.copy_to_version(source_id, target_id)
+
+    note_query = session.scalars.call_args_list[-1].args[0]
+    assert note_query.get_final_froms()[0].name == "test_definition_notes"
+
+
+def test_a_version_with_no_terms_issues_no_note_query():
+    session = _session_returning_terms([])
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        TestDefinition.copy_to_version(uuid4(), uuid4())
+
+    queried = [
+        call.args[0].get_final_froms()[0].name for call in session.scalars.call_args_list
+    ]
+    assert "test_definition_notes" not in queried

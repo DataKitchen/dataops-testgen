@@ -653,24 +653,9 @@ class TestDefinition(Entity):
         return cls.version_id == SuiteVersion.resolved_for(cls.test_suite_id)
 
     @classmethod
-    def _is_frozen_suite_version(cls, version_id: UUID | str) -> bool:
-        """Whether the version is a contract's frozen one.
-
-        Both halves of the predicate matter: the placeholder is stored frozen, so a check that
-        looked only at the freeze time would catch every write that is not version-scoped.
-        """
-        return get_current_session().scalar(
-            select(SuiteVersion.id).where(
-                SuiteVersion.id == version_id,
-                SuiteVersion.test_suite_id.is_not(None),
-                SuiteVersion.frozen_at.is_not(None),
-            )
-        ) is not None
-
-    @classmethod
     def assert_version_writable(cls, version_id: UUID | str) -> None:
         """Raise when the target version is a contract's frozen version."""
-        if cls._is_frozen_suite_version(version_id):
+        if SuiteVersion.is_frozen_agreement(version_id):
             raise FrozenVersionError(version_id)
 
     @classmethod
@@ -742,6 +727,9 @@ class TestDefinition(Entity):
         what it had. A row that the draft did not copy is one the draft already supersedes,
         and rewriting it would resurrect a superseded term.
 
+        A row belonging to a version the agreement in force already supersedes is refused
+        before anything is written, so the refusal leaves no draft behind.
+
         Raises ``ValueError`` when the row being updated no longer exists, since nothing can
         then establish which version the write would land on.
         """
@@ -755,8 +743,14 @@ class TestDefinition(Entity):
             if version_id is None:
                 raise ValueError(f"Test definition {self.id} no longer exists.")
 
-        if not self._is_frozen_suite_version(version_id):
+        if not SuiteVersion.is_frozen_agreement(version_id):
             return
+
+        in_force = SuiteVersion.in_force_for(self.test_suite_id)
+        if in_force is None or version_id != in_force.id:
+            # Decided before the write target is resolved: resolving it would open a draft and
+            # copy the whole agreement into it, and that draft outlives the refusal.
+            raise FrozenVersionError(version_id)
 
         target_version_id, copied_ids = self.resolve_write_target(self.test_suite_id)
         if self.id is not None:

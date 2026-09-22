@@ -309,16 +309,22 @@ def _generate_for_tables(suite: TestSuite, table_names: list[str], version_id: U
 
 
 def _stamp_term_ids(version_id: UUID) -> None:
-    """Give every term in the version that has no contract identity yet its natural-key one.
+    """Give every generated term in the version that has no contract identity yet its own.
 
     Generation inserts through a SQL template, which cannot reach the slug rule, so the terms
     it writes arrive without the identity that has to survive a freeze.
+
+    Generated terms only. The natural-key indexes are partial on ``last_auto_gen_date``, so a
+    manual term is deduped against nothing and one sharing a generated term's key would slug
+    identically and fail ``uix_td_contract_term``. A term with no identity is outside that
+    index; a term with a colliding one wedges the contract.
     """
     session = get_current_session()
     for term in session.scalars(
         select(TestDefinition).where(
             TestDefinition.version_id == version_id,
             TestDefinition.contract_term_id.is_(None),
+            TestDefinition.last_auto_gen_date.is_not(None),
         )
     ).all():
         term.contract_term_id = slugify_term_id(

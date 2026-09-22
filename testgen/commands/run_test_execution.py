@@ -86,9 +86,15 @@ def run_test_execution(
         if test_suite.suite_type == SuiteType.MONITOR:
             _sync_monitor_definitions(sql_generator)
 
-        # Update the thresholds before retrieving the test definitions in the next steps
-        LOG.info("Updating test thresholds based on history calculations")
-        execute_db_queries([sql_generator.update_history_calc_thresholds()])
+        # Both writeback steps below narrow by the run's version, which for a contract is the
+        # frozen agreement. Running an agreement does not rewrite it, or the terms in force
+        # stop being the terms that were frozen and the version stops being reproducible.
+        writes_definitions = not SuiteVersion.is_frozen_agreement(test_run.version_id)
+
+        if writes_definitions:
+            # Update the thresholds before retrieving the test definitions in the next steps
+            LOG.info("Updating test thresholds based on history calculations")
+            execute_db_queries([sql_generator.update_history_calc_thresholds()])
 
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
@@ -156,7 +162,8 @@ def run_test_execution(
     finally:
         prediction_start = datetime.now(UTC) + time_delta
         try:
-            TestThresholdsPrediction(test_suite, test_run).run()
+            if writes_definitions:
+                TestThresholdsPrediction(test_suite, test_run).run()
         except Exception:
             LOG.exception("Error predicting test thresholds")
 

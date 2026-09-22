@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import case, literal, select
+from sqlalchemy import case, literal, or_, select
 
 from testgen import settings
 from testgen.common.enums import JobStatus, run_duration_seconds
@@ -305,8 +305,13 @@ def send_test_run_notifications(test_run: TestRun, result_list_ct=20, result_sta
 
     changed_td_id_list = []
     # A run of another version verified another term set, so diffing across versions reports
-    # every term either version alone holds as a change.
-    if previous_run := test_run.get_previous(TestRun.version_id == test_run.version_id):
+    # every term either version alone holds as a change. Runs written before versioning carry
+    # no version and stay comparable, as they do in the score rollups.
+    baseline_version = or_(
+        TestRun.version_id == test_run.version_id,
+        TestRun.version_id.is_(None),
+    )
+    if previous_run := test_run.get_previous(baseline_version):
         for _, status, td_id_list in TestResult.diff(previous_run.id, test_run.id):
             if status in (TestResultStatus.Failed, TestResultStatus.Warning, TestResultStatus.Error):
                 changed_td_id_list.extend(td_id_list)

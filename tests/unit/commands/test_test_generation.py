@@ -17,7 +17,7 @@ def writable_target_version(monkeypatch):
     with a writable version so every other test here exercises the path it is about.
     """
     monkeypatch.setattr(
-        "testgen.common.models.test_definition.get_current_session",
+        "testgen.common.models.suite_version.get_current_session",
         MagicMock(return_value=MagicMock(**{"scalar.return_value": None})),
     )
 
@@ -360,7 +360,7 @@ def test_generation_refuses_to_write_a_frozen_contract_version(_mock_gen, _mock_
     generation.version_id = frozen_version_id
 
     with patch(
-        "testgen.common.models.test_definition.get_current_session",
+        "testgen.common.models.suite_version.get_current_session",
         return_value=MagicMock(**{"scalar.return_value": frozen_version_id}),
     ):
         with pytest.raises(FrozenVersionError):

@@ -10,7 +10,7 @@ from testgen.common import contract_service
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.odcs_server import ODCS_API_VERSION, ODCS_KIND
-from tests.unit.sql_assertions import equality_conjunct
+from tests.unit.sql_assertions import equality_conjunct, is_not_null_conjunct, is_null_conjunct
 
 pytestmark = pytest.mark.unit
 
@@ -726,3 +726,18 @@ def test_generated_terms_are_stamped_with_a_term_identity():
         contract_service._stamp_term_ids(uuid4())
 
     assert term.contract_term_id == "Row_Ct-public-orders-order_id"
+
+
+def test_only_generated_terms_are_stamped_with_an_identity():
+    """A manual term is deduped by nothing -- the natural-key indexes are partial on
+    ``last_auto_gen_date`` -- so one sharing a generated term's key would slug identically and
+    fail the unique index the identity lives in. It keeps no identity instead.
+    """
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    with patch("testgen.common.contract_service.get_current_session", return_value=session):
+        contract_service._stamp_term_ids(uuid4())
+
+    terms = _conjuncts(session.scalars.call_args.args[0].whereclause)
+    assert any(is_not_null_conjunct(term, "last_auto_gen_date", "test_definitions") for term in terms)
+    assert any(is_null_conjunct(term, "contract_term_id", "test_definitions") for term in terms)

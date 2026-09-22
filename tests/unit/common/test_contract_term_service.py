@@ -75,3 +75,28 @@ def test_an_input_that_slugs_to_nothing_raises():
 def test_no_parts_at_all_raises():
     with pytest.raises(ValueError):
         slugify_term_id()
+
+
+def test_two_keys_that_differ_only_past_the_cut_slug_differently():
+    """The slug is the term's identity in a unique index, so a truncation that collapses two
+    natural keys into one string makes the second term's stamp fail the index.
+    """
+    schema, table = "analytics_prod", "customer_subscription_billing_events"
+    net = slugify_term_id("Value_Match", schema, table, "monthly_recurring_revenue_usd_amount_net")
+    gross = slugify_term_id("Value_Match", schema, table, "monthly_recurring_revenue_usd_amount_gross")
+
+    assert net != gross
+    assert len(net) <= TERM_ID_MAX_LENGTH
+    assert len(gross) <= TERM_ID_MAX_LENGTH
+    assert re.match(TERM_ID_PATTERN, net)
+    assert re.match(TERM_ID_PATTERN, gross)
+
+
+def test_a_truncated_slug_is_still_a_pure_function_of_the_key():
+    # The identity has to survive a freeze, so the same key must slug the same way every time.
+    parts = ("Value_Match", "analytics_prod", "customer_subscription_billing_events", "c" * 80)
+    assert slugify_term_id(*parts) == slugify_term_id(*parts)
+
+
+def test_a_key_that_fits_is_not_given_a_digest():
+    assert slugify_term_id("Row_Ct", "public", "orders", "order_id") == "Row_Ct-public-orders-order_id"

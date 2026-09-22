@@ -45,14 +45,21 @@ ENDPOINT_MODULE = "testgen.api.test_definitions"
 @pytest.fixture(autouse=True)
 def _route_the_write_guards_session_through_the_mocked_one():
     """``assert_version_writable`` resolves its own session through ``test_definition.py``'s
-    own import of ``get_current_session``, a different name than the one these tests patch on
-    the service module. Forward it at call time so both resolve to whatever session a given
-    test has mocked, without every test needing to patch both names itself.
+    own import of ``get_current_session``, and the frozen-version predicate it delegates to
+    through ``suite_version.py``'s -- different names than the one these tests patch on the
+    service module. Forward both at call time so they resolve to whatever session a given
+    test has mocked, without every test needing to patch all three names itself.
     """
     service = importlib.import_module(SERVICE_MODULE)
-    with patch(
-        "testgen.common.models.test_definition.get_current_session",
-        new=lambda: service.get_current_session(),
+    with (
+        patch(
+            "testgen.common.models.test_definition.get_current_session",
+            new=lambda: service.get_current_session(),
+        ),
+        patch(
+            "testgen.common.models.suite_version.get_current_session",
+            new=lambda: service.get_current_session(),
+        ),
     ):
         yield
 

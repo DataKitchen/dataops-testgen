@@ -164,6 +164,23 @@ class SuiteVersion(Entity):
         ) is not None
 
     @classmethod
+    def is_frozen_agreement(cls, version_id: UUID | str | None) -> bool:
+        """Whether the id names a frozen version a suite owns.
+
+        False for the placeholder, which is stored frozen but belongs to no suite, so a suite
+        that keeps no versions never reads as holding a frozen agreement.
+        """
+        if version_id is None:
+            return False
+        return get_current_session().scalar(
+            select(cls.id).where(
+                cls.id == version_id,
+                cls.test_suite_id.is_not(None),
+                cls.frozen_at.is_not(None),
+            )
+        ) is not None
+
+    @classmethod
     def is_active(cls, version_id: UUID | str | None, suite_id: UUID | str) -> bool:
         """Whether the id names the suite's agreement in force."""
         return version_id == get_current_session().scalar(select(cls.active_for(suite_id)))

@@ -38,6 +38,11 @@ def mocked_collaborators(monkeypatch):
     monkeypatch.setattr(run_test_execution, "TestThresholdsPrediction", MagicMock())
     monkeypatch.setattr(run_test_execution, "MixpanelService", MagicMock())
     monkeypatch.setattr(run_test_execution, "TestRun", test_run_cls)
+    # A regular suite's placeholder version is frozen but owned by no suite, so the default
+    # here is the answer every non-contract run gets.
+    monkeypatch.setattr(
+        run_test_execution.SuiteVersion, "is_frozen_agreement", MagicMock(return_value=False)
+    )
 
     return {
         "test_suite": test_suite,
@@ -131,3 +136,43 @@ def test_a_contract_with_no_frozen_version_stamps_its_run_with_the_draft(monkeyp
 
     stamped = mocked_collaborators["test_run_cls"].call_args.kwargs["version_id"]
     assert stamped == draft_version_id
+
+
+@pytest.mark.parametrize(
+    "is_frozen_agreement, expect_writeback",
+    [(True, False), (False, True)],
+)
+def test_a_run_of_a_frozen_agreement_rewrites_none_of_its_terms(
+    monkeypatch, mocked_collaborators, is_frozen_agreement, expect_writeback
+):
+    """Both writeback steps bind the run's version, which for a contract is the frozen
+    agreement. Rewriting tolerances or predictions there means the terms in force are no
+    longer the terms that were frozen, and re-running the version stops being reproducible.
+    """
+    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
+    monkeypatch.setattr(
+        run_test_execution.SuiteVersion,
+        "is_frozen_agreement",
+        MagicMock(return_value=is_frozen_agreement),
+    )
+    prediction = MagicMock()
+    monkeypatch.setattr(run_test_execution, "TestThresholdsPrediction", prediction)
+    sql_generator = run_test_execution.TestExecutionSQL.return_value
+
+    run_test_execution.run_test_execution(uuid4())
+
+    assert sql_generator.update_history_calc_thresholds.called is expect_writeback
+    assert prediction.called is expect_writeback
+
+
+def test_the_writeback_gate_asks_about_the_runs_own_version(monkeypatch, mocked_collaborators):
+    # Asking about the suite instead would gate a draft preview the same way as the frozen
+    # agreement, and a preview's terms are exactly the ones that should still be refreshed.
+    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
+    is_frozen = MagicMock(return_value=False)
+    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_frozen_agreement", is_frozen)
+    test_run = mocked_collaborators["test_run"]
+
+    run_test_execution.run_test_execution(uuid4())
+
+    assert is_frozen.call_args.args[0] == test_run.version_id
