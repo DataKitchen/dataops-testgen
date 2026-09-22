@@ -44,6 +44,9 @@ testgen:
       port:
       username:
       password:
+      # How the connection is secured: ssl (TLS from the first byte, port 465),
+      # starttls (plaintext upgraded in place, port 587 or 25), or none.
+      security:
   # Externally reachable URL of the UI
   uiBaseUrl:
   # Externally reachable URL of the API and MCP server

@@ -1,5 +1,6 @@
 import os
 import typing
+from enum import StrEnum
 from pathlib import Path
 
 
@@ -657,6 +658,31 @@ Email: SMTP username
 SMTP_PASSWORD: str | None = getenv("TG_SMTP_PASSWORD")
 """
 Email: SMTP password
+"""
+
+
+class SMTPSecurity(StrEnum):
+    """How the SMTP connection that sends notification emails is secured."""
+    SSL = "ssl"
+    STARTTLS = "starttls"
+    NONE = "none"
+
+
+SMTP_SECURITY: str = getenv("TG_SMTP_SECURITY", SMTPSecurity.SSL).lower()
+"""
+Email: how the SMTP connection is secured.
+
+`ssl` wraps the connection in TLS from the first byte, which servers on port 465
+expect. `starttls` opens the connection in plaintext and issues the STARTTLS
+command to upgrade it, which servers on port 587 or 25 expect. `none` leaves the
+connection unencrypted.
+
+Typed as `str` rather than `SMTPSecurity` so that an unrecognized value is
+reported when email is sent, naming the values that are accepted, instead of
+raising on import and failing every `testgen` command.
+
+from env variable: `TG_SMTP_SECURITY`
+defaults to: `ssl`
 """
 
 WEBHOOK_ALLOWED_HOSTS: str | None = getenv("TG_WEBHOOK_ALLOWED_HOSTS")

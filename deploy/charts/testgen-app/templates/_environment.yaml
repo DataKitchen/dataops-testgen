@@ -64,6 +64,10 @@
 - name: TG_SMTP_PASSWORD
   value: {{ .smtp.password | quote }}
 {{- end }}
+{{- if .smtp.security }}
+- name: TG_SMTP_SECURITY
+  value: {{ .smtp.security | quote }}
+{{- end }}
 {{- if .fromAddress }}
 - name: TG_EMAIL_FROM_ADDRESS
   value: {{ .fromAddress | quote }}
