@@ -3,8 +3,16 @@
 from enum import StrEnum
 from typing import Any
 
+from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
+
+# The ODCS release the documents this module writes are authored against. Pinned rather than
+# tracking latest: upstream republishes schema files in place, and some of those edits change
+# what validates.
+ODCS_API_VERSION = "v3.2.0"
+
+ODCS_KIND = "DataContract"
 
 
 class ServerType(StrEnum):
@@ -62,23 +70,31 @@ class ServerType(StrEnum):
     CUSTOM = "custom"
 
 
-# code -> ODCS server type. Confidently mapped flavors only: a flavor left out raises in
-# ``build_server_block`` rather than writing a guessed type. ``redshift_spectrum`` (its
-# tables are S3-backed, not a Redshift-native store), ``onelake_mssql`` (Microsoft Fabric
-# storage, not a member of the ODCS server-type enum) and ``salesforce_data360`` (no ODCS
-# server type corresponds to it) are deliberately absent.
-FLAVOR_TO_SERVER_TYPE: dict[str, ServerType] = {
-    "redshift": ServerType.REDSHIFT,
-    "azure_mssql": ServerType.SQLSERVER,
-    "synapse_mssql": ServerType.SYNAPSE,
-    "databricks": ServerType.DATABRICKS,
-    "bigquery": ServerType.BIGQUERY,
-    "mssql": ServerType.SQLSERVER,
-    "oracle": ServerType.ORACLE,
-    "postgresql": ServerType.POSTGRES,
-    "sap_hana": ServerType.HANA,
-    "snowflake": ServerType.SNOWFLAKE,
+# Flavor -> ODCS server type. Confidently mapped flavors only: a flavor in neither this map
+# nor ``UNMAPPABLE_FLAVORS`` fails the completeness test rather than silently refusing at
+# runtime.
+FLAVOR_TO_SERVER_TYPE: dict[SqlFlavorCode, ServerType] = {
+    SqlFlavorCode.REDSHIFT: ServerType.REDSHIFT,
+    SqlFlavorCode.AZURE_MSSQL: ServerType.SQLSERVER,
+    SqlFlavorCode.SYNAPSE_MSSQL: ServerType.SYNAPSE,
+    SqlFlavorCode.DATABRICKS: ServerType.DATABRICKS,
+    SqlFlavorCode.DUCKDB: ServerType.DUCKDB,
+    SqlFlavorCode.BIGQUERY: ServerType.BIGQUERY,
+    SqlFlavorCode.MSSQL: ServerType.SQLSERVER,
+    SqlFlavorCode.ORACLE: ServerType.ORACLE,
+    SqlFlavorCode.POSTGRESQL: ServerType.POSTGRES,
+    SqlFlavorCode.SAP_HANA: ServerType.HANA,
+    SqlFlavorCode.SNOWFLAKE: ServerType.SNOWFLAKE,
 }
+
+# Flavors with no faithful ODCS server type. ``redshift_spectrum`` reads S3-backed external
+# tables rather than a Redshift-native store, ``onelake_mssql`` is Microsoft Fabric storage,
+# and ``salesforce_data360`` has no counterpart in the enum at all.
+UNMAPPABLE_FLAVORS: frozenset[SqlFlavorCode] = frozenset({
+    SqlFlavorCode.REDSHIFT_SPECTRUM,
+    SqlFlavorCode.ONELAKE_MSSQL,
+    SqlFlavorCode.SALESFORCE_DATA360,
+})
 
 # Every server carries ``server``; these are the fields each type requires beyond it.
 REQUIRED_FIELDS: dict[ServerType, tuple[str, ...]] = {
@@ -91,6 +107,7 @@ REQUIRED_FIELDS: dict[ServerType, tuple[str, ...]] = {
     ServerType.ORACLE: ("host", "port", "serviceName"),
     ServerType.HANA: ("host",),
     ServerType.REDSHIFT: ("database", "schema"),
+    ServerType.DUCKDB: ("database", "schema"),
 }
 
 OPTIONAL_FIELDS: dict[ServerType, tuple[str, ...]] = {
@@ -111,7 +128,7 @@ def build_server_block(connection: Connection, table_group: TableGroup) -> dict[
     ``ValueError`` naming every required field the connection does not supply, rather than
     emitting a block the schema will reject.
     """
-    server_type = FLAVOR_TO_SERVER_TYPE.get(connection.sql_flavor_code)
+    server_type = FLAVOR_TO_SERVER_TYPE.get(SqlFlavorCode(connection.sql_flavor_code))
     if server_type is None:
         raise UnmappedFlavorError(f"No server type for flavor {connection.sql_flavor_code!r}.")
 
@@ -136,10 +153,16 @@ def _fields_for(server_type: ServerType, connection: Connection, table_group: Ta
     if server_type is ServerType.BIGQUERY and connection.service_account_key:
         project_id = connection.service_account_key.get("project_id")
 
+    database = connection.project_db
+    if server_type is ServerType.DUCKDB:
+        # A DuckDB connection names a file rather than a server-side database, and that path
+        # is the only thing identifying which store the contract covers.
+        database = ((connection.parameters or {}).get("database_file") or "").strip() or None
+
     return {
         "host": connection.project_host,
         "port": int(connection.project_port) if connection.project_port else None,
-        "database": connection.project_db,
+        "database": database,
         "catalog": connection.project_db,
         "project": project_id,
         "dataset": schema,

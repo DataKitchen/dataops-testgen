@@ -112,11 +112,21 @@ def _notify_monitor_run(job_exec: JobExecution) -> None:
 
 
 def _enqueue_score_update(job_exec: JobExecution) -> None:
-    """Enqueue a score rollup for the just-completed run."""
+    """Enqueue a score rollup for the just-completed run.
+
+    A run that verified a draft is skipped: the rollup writes a score-history entry per
+    definition per category timestamped at that run and drives the score-drop notifications,
+    neither of which a preview of an agreement not yet in force should cause.
+    """
     if job_exec.status != JobStatus.COMPLETED:
         return
 
-    with database_session():
+    with database_session() as session:
+        if job_exec.job_key == JobKey.run_tests:
+            test_run = session.scalars(select(TestRun).where(TestRun.id == job_exec.id)).first()
+            if test_run and SuiteVersion.is_draft(test_run.version_id):
+                LOG.info("Run %s verified a draft; no score rollup enqueued", job_exec.id)
+                return
         JobExecution.submit(
             job_key=JobKey.run_score_update,
             kwargs={

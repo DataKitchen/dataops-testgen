@@ -148,11 +148,6 @@ class SuiteVersion(Entity):
         return cls._compile_for_sql(cls.resolved_for(literal_column(suite_column)), suite_column)
 
     @classmethod
-    def active_for_sql(cls, suite_column: str) -> str:
-        """``active_for`` as SQL text, under the same rules as ``resolved_for_sql``."""
-        return cls._compile_for_sql(cls.active_for(literal_column(suite_column)), suite_column)
-
-    @classmethod
     def is_draft(cls, version_id: UUID | str | None) -> bool:
         """Whether the id names a suite's open draft.
 
@@ -184,6 +179,11 @@ class SuiteVersion(Entity):
         version = cls.get(active_id) if active_id else None
         return version if version and version.test_suite_id else None
 
+    @staticmethod
+    def document_version(version: int) -> str:
+        """A version number as the semantic version string ODCS wants in ``version``."""
+        return f"{version}.0.0"
+
     @classmethod
     def open_draft(cls, suite_id) -> tuple[Self, Self | None]:
         """Open a draft on the suite, carrying the version in force forward.
@@ -192,11 +192,15 @@ class SuiteVersion(Entity):
         when the suite had no frozen version to carry forward.
         """
         source = cls.in_force_for(suite_id)
+        version = cls.next_version_for(suite_id)
+        document = copy.deepcopy(source.metadata_document) if source else None
+        if document and "version" in document:
+            document["version"] = cls.document_version(version)
         draft = cls(
             id=uuid4(),
             test_suite_id=suite_id,
-            version=cls.next_version_for(suite_id),
-            metadata_document=copy.deepcopy(source.metadata_document) if source else None,
+            version=version,
+            metadata_document=document,
             odcs_api_version=source.odcs_api_version if source else None,
         )
         session = get_current_session()

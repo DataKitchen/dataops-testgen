@@ -16,22 +16,46 @@ from tests.unit.sql_assertions import conjuncts, equality_conjunct, scopes_to_a_
 pytestmark = pytest.mark.unit
 
 
-def _session_mock(resolved_version=None) -> MagicMock:
+def _session_mock(resolved_version=None, persisted_version=None) -> MagicMock:
     """A session whose `scalar` resolves a version, except for the write guard's own check.
 
-    The resolution query is a `coalesce` over the draft/frozen/placeholder branches; the guard's
-    query has no `coalesce` and always reports the version unfrozen here so tests can focus on
-    stamping behavior.
+    The resolution query is a `coalesce` over the draft/frozen/placeholder branches; a query
+    over `test_definitions` is the update guard reading the persisted row's own version; the
+    guard's frozen check is neither, and always reports the version unfrozen here so tests can
+    focus on stamping behavior.
     """
     resolved = resolved_version or uuid4()
+    persisted = persisted_version or uuid4()
     session = MagicMock()
 
     def _scalar(statement, *args, **kwargs):
         if "coalesce" in str(statement).lower():
             return resolved
+        froms = getattr(statement, "get_final_froms", list)()
+        if froms and getattr(froms[0], "name", None) == "test_definitions":
+            return persisted
         return None
 
     session.scalar.side_effect = _scalar
+    return session
+
+
+def _session_returning_terms(terms) -> MagicMock:
+    """A session whose term query yields `terms` and whose note query yields nothing.
+
+    One blanket `scalars` return value hands the note copy the test definitions back, which
+    fails on the first attribute a note does not have.
+    """
+    session = _session_mock()
+
+    def _scalars(statement, *args, **kwargs):
+        froms = statement.get_final_froms()
+        result = MagicMock()
+        name = getattr(froms[0], "name", None) if froms else None
+        result.all.return_value = terms if name == "test_definitions" else []
+        return result
+
+    session.scalars.side_effect = _scalars
     return session
 
 
@@ -144,7 +168,10 @@ def test_updating_an_existing_definition_does_not_restamp_the_version():
     with entity_patch, model_patch:
         definition.save()
 
-    assert "version_id" not in _emitted_sql(session)
+    # The UPDATE narrows by the row's version, so version_id appears in its WHERE clause; what
+    # must not happen is the SET clause restamping it, which the compiled text cannot tell apart.
+    statement = session.execute.call_args.args[0]
+    assert "version_id" not in {column.key for column in statement._values}
     resolutions = [call for call in session.scalar.call_args_list if "coalesce" in str(call.args[0]).lower()]
     assert resolutions == [], "updating an existing definition should not resolve a new version"
 
@@ -170,12 +197,11 @@ def test_copy_to_version_gives_each_copy_a_fresh_id_and_keeps_contract_identity(
         id=uuid4(), test_suite_id=uuid4(), version_id=source_id,
         contract_term_id="clause-1", test_type="Completeness",
     )
-    session = MagicMock()
-    session.scalars.return_value.all.return_value = [term]
+    session = _session_returning_terms([term])
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         id_map = TestDefinition.copy_to_version(source_id, target_id)
 
-    statement = session.scalars.call_args.args[0]
+    statement = session.scalars.call_args_list[0].args[0]
     assert any(
         equality_conjunct(t, "version_id", "test_definitions", source_id)
         for t in conjuncts(statement.whereclause)
@@ -200,12 +226,11 @@ def test_copy_to_version_copies_every_term_under_the_source_version():
         id=uuid4(), test_suite_id=uuid4(), version_id=source_id,
         contract_term_id="clause-2", test_type="Uniqueness",
     )
-    session = MagicMock()
-    session.scalars.return_value.all.return_value = [first, second]
+    session = _session_returning_terms([first, second])
     with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
         id_map = TestDefinition.copy_to_version(source_id, target_id)
 
-    statement = session.scalars.call_args.args[0]
+    statement = session.scalars.call_args_list[0].args[0]
     assert any(
         equality_conjunct(t, "version_id", "test_definitions", source_id)
         for t in conjuncts(statement.whereclause)

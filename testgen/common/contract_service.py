@@ -12,6 +12,7 @@ from sqlalchemy import asc, delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from testgen.commands.test_generation import run_test_generation
+from testgen.common.contract_term_service import slugify_term_id
 from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET
 from testgen.common.models import get_current_session
@@ -21,7 +22,7 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.odcs_server import build_server_block
+from testgen.common.odcs_server import ODCS_API_VERSION, ODCS_KIND, build_server_block
 
 
 def resolve_write_target(suite: TestSuite) -> tuple[UUID, dict[UUID, UUID]]:
@@ -94,16 +95,23 @@ def initialize_contract(
     suite: TestSuite, table_group: TableGroup, connection: Connection, username: str | None = None
 ) -> SuiteVersion:
     """Give a newly created contract its first draft, generation set and prefilled document."""
+    _assert_contract(suite)
     session = get_current_session()
+    version = SuiteVersion.next_version_for(suite.id)
     draft = SuiteVersion(
         id=uuid4(),
         test_suite_id=suite.id,
-        version=SuiteVersion.next_version_for(suite.id),
+        version=version,
         metadata_document={
+            "apiVersion": ODCS_API_VERSION,
+            "kind": ODCS_KIND,
+            "id": str(suite.id),
+            "version": SuiteVersion.document_version(version),
             "name": suite.test_suite,
             "servers": [build_server_block(connection, table_group)],
             "schema": [],
         },
+        odcs_api_version=ODCS_API_VERSION,
         created_by=username,
     )
     session.add(draft)
@@ -228,7 +236,7 @@ def add_table(suite: TestSuite, table_name: str) -> dict:
     flag_modified(draft, "metadata_document")
     get_current_session().flush()
 
-    _generate_for_tables(suite, [table_name])
+    _generate_for_tables(suite, [table_name], version_id)
 
     report: dict = {"declared": [table_name]}
     if not columns:
@@ -268,7 +276,7 @@ def generate_terms(suite: TestSuite) -> dict:
     version_id, _ = resolve_write_target(suite)
     draft = SuiteVersion.get(version_id)
     table_names = declared_tables(draft.metadata_document)
-    _generate_for_tables(suite, table_names)
+    _generate_for_tables(suite, table_names, version_id)
     return {"declared": table_names}
 
 
@@ -286,6 +294,34 @@ def _profiled_columns(suite: TestSuite, table_name: str) -> list[DataColumnChars
     ).all()
 
 
-def _generate_for_tables(suite: TestSuite, table_names: list[str]) -> None:
-    """Run test generation for a contract, filtered to the given declared tables."""
+def _generate_for_tables(suite: TestSuite, table_names: list[str], version_id: UUID) -> None:
+    """Run test generation for a contract, filtered to the given declared tables.
+
+    Generation reaches the database on its own connection and commits each statement itself,
+    so the draft and the document change it is generating against have to be committed first:
+    a merely flushed draft is invisible there, and the terms generation inserts fail the
+    version foreign key.
+    """
+    session = get_current_session()
+    session.commit()
     run_test_generation(suite.id, table_names=table_names)
+    _stamp_term_ids(version_id)
+
+
+def _stamp_term_ids(version_id: UUID) -> None:
+    """Give every term in the version that has no contract identity yet its natural-key one.
+
+    Generation inserts through a SQL template, which cannot reach the slug rule, so the terms
+    it writes arrive without the identity that has to survive a freeze.
+    """
+    session = get_current_session()
+    for term in session.scalars(
+        select(TestDefinition).where(
+            TestDefinition.version_id == version_id,
+            TestDefinition.contract_term_id.is_(None),
+        )
+    ).all():
+        term.contract_term_id = slugify_term_id(
+            term.test_type, term.schema_name, term.table_name, term.column_name
+        )
+    session.flush()

@@ -2,10 +2,12 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.sql import operators
+from sqlalchemy.sql.elements import BinaryExpression
 
 from testgen.common.models.suite_version import FrozenVersionError
 from testgen.common.models.test_definition import TestDefinition
-from tests.unit.sql_assertions import conjuncts, is_not_null_conjunct
+from tests.unit.sql_assertions import conjuncts, is_not_null_conjunct, scopes_to_a_version
 
 pytestmark = pytest.mark.unit
 
@@ -200,3 +202,109 @@ def test_editing_a_term_on_a_frozen_only_contract_lands_in_a_draft():
 
     assert definition.version_id == draft_version_id
     assert definition.id == copied_id
+
+
+def _session_routing_version_lookups(*, persisted_version, frozen_versions=()):
+    """A session answering the persisted-row lookup and the frozen check by what each asks.
+
+    Answering both from one queue lets a guard that never issued the persisted-row lookup
+    read as guarded anyway, because the frozen check would consume the row's version.
+    """
+    def scalar(statement):
+        froms = statement.get_final_froms()
+        if getattr(froms[0], "name", None) == "test_definitions":
+            return persisted_version
+        for term in conjuncts(statement.whereclause):
+            if not isinstance(term, BinaryExpression) or term.operator is not operators.eq:
+                continue
+            left = term.left
+            if getattr(left, "key", None) == "id" and getattr(left.table, "name", None) == "suite_versions":
+                value = getattr(term.right, "value", None)
+                return value if value in frozen_versions else None
+        return None
+
+    session = MagicMock()
+    session.scalar.side_effect = scalar
+    return session
+
+
+def test_an_update_whose_instance_carries_no_version_is_guarded_by_the_persisted_row():
+    """The product's edit dialog rebuilds a definition from a summary payload, which carries
+    no ``version_id``, so the instance holding one is not something the guard can assume. A
+    guard that reads the instance passes every such edit, frozen term or not.
+    """
+    frozen_version_id = uuid4()
+    definition = TestDefinition()
+    definition.id = uuid4()
+    definition.test_suite_id = uuid4()
+    definition.version_id = None
+
+    session = _session_routing_version_lookups(
+        persisted_version=frozen_version_id, frozen_versions=(frozen_version_id,)
+    )
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "resolve_write_target", return_value=(uuid4(), {})),
+    ):
+        with pytest.raises(FrozenVersionError):
+            definition.save()
+
+
+def test_an_update_whose_persisted_row_is_on_a_draft_proceeds():
+    draft_version_id = uuid4()
+    definition = TestDefinition()
+    definition.id = uuid4()
+    definition.test_suite_id = uuid4()
+    definition.version_id = None
+
+    session = _session_routing_version_lookups(persisted_version=draft_version_id)
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        definition.save()
+
+    session.execute.assert_called_once()
+
+
+def test_an_update_of_a_row_that_no_longer_exists_is_refused():
+    definition = TestDefinition()
+    definition.id = uuid4()
+    definition.test_suite_id = uuid4()
+    definition.version_id = None
+
+    session = _session_routing_version_lookups(persisted_version=None)
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        with pytest.raises(ValueError, match="no longer exists"):
+            definition.save()
+
+    session.execute.assert_not_called()
+
+
+def test_the_update_narrows_by_the_rows_resolved_version():
+    definition = TestDefinition()
+    definition.id = uuid4()
+    definition.test_suite_id = uuid4()
+    definition.version_id = uuid4()
+
+    session = MagicMock()
+    session.scalar.return_value = None
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        definition.save()
+
+    statement = session.execute.call_args.args[0]
+    assert scopes_to_a_version(statement)
+
+
+def test_the_batch_guard_reads_the_rows_own_versions_not_the_suites():
+    """The suite's resolved version is where its next write would land, which for a contract
+    with an open draft is the draft — writable — no matter which version the ids belong to.
+    Checking that instead of the rows' own version passes a batch aimed at frozen terms, and
+    the UPDATE beneath it then matches nothing and reports success.
+    """
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+        TestDefinition.set_status_attribute("flagged", [str(uuid4())], True)
+
+    statement = session.scalars.call_args.args[0]
+    selected = statement.selected_columns[0]
+    assert selected.name == "version_id"
+    assert selected.table.name == "test_definitions"

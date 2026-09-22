@@ -26,7 +26,8 @@ WITH ranked_test_runs
       WHERE s.project_code = :project_code
         AND r.test_starttime <= :score_history_cutoff_time
         AND je.status = 'completed'
-        AND (r.version_id IS NULL OR r.version_id = {ACTIVE_VERSION})
+        -- A run counts once the version it verified was in force when it ran. See the same
+        -- predicate in rollup_scores_test_table_group.sql.
         AND (r.version_id IS NULL OR EXISTS (SELECT 1 FROM suite_versions sv
                      WHERE sv.id = r.version_id
                        AND (sv.test_suite_id IS NULL OR r.test_starttime >= sv.frozen_at))))

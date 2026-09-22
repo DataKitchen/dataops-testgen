@@ -162,18 +162,17 @@ def test_both_resolvers_fall_back_to_the_placeholder():
 
 def test_the_published_sql_form_rejects_an_unqualified_column():
     with pytest.raises(ValueError, match="not a table-qualified column reference"):
-        SuiteVersion.active_for_sql("test_suite_id")
+        SuiteVersion.resolved_for_sql("test_suite_id")
 
 
 def test_the_published_sql_form_rejects_its_own_table_as_the_qualifier():
     with pytest.raises(ValueError, match="shadowed"):
-        SuiteVersion.active_for_sql("suite_versions.test_suite_id")
+        SuiteVersion.resolved_for_sql("suite_versions.test_suite_id")
 
 
 def test_the_published_sql_form_reads_the_outer_row():
-    sql = SuiteVersion.active_for_sql("run.test_suite_id")
+    sql = SuiteVersion.resolved_for_sql("run.test_suite_id")
     assert "run.test_suite_id" in sql
-    assert "frozen_at IS NULL" not in sql
 
 
 def test_only_a_suite_owned_unfrozen_version_reads_as_a_draft():
@@ -277,3 +276,38 @@ def test_open_draft_copies_the_document_forward_without_sharing_it():
     assert draft.odcs_api_version == "v3.0.0"
     assert draft.frozen_at is None
     assert session.add.call_args.args[0] is draft
+
+
+def test_open_draft_restates_the_carried_document_version_as_the_new_ones():
+    # The document's own `version` is what a reader of the exported contract sees. Deep-copying
+    # it forward unchanged would leave every version of the contract claiming to be the first.
+    suite_id = uuid4()
+    frozen = SuiteVersion(
+        id=uuid4(), test_suite_id=suite_id, version=1,
+        frozen_at=datetime.now(UTC), metadata_document={"version": "1.0.0", "schema": []},
+    )
+    with (
+        patch.object(SuiteVersion, "in_force_for", return_value=frozen),
+        patch.object(SuiteVersion, "next_version_for", return_value=2),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=MagicMock()),
+    ):
+        draft, _ = SuiteVersion.open_draft(suite_id)
+
+    assert draft.metadata_document["version"] == "2.0.0"
+    assert frozen.metadata_document["version"] == "1.0.0"
+
+
+def test_open_draft_does_not_invent_a_version_field_in_a_document_that_has_none():
+    suite_id = uuid4()
+    frozen = SuiteVersion(
+        id=uuid4(), test_suite_id=suite_id, version=1,
+        frozen_at=datetime.now(UTC), metadata_document={"schema": []},
+    )
+    with (
+        patch.object(SuiteVersion, "in_force_for", return_value=frozen),
+        patch.object(SuiteVersion, "next_version_for", return_value=2),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=MagicMock()),
+    ):
+        draft, _ = SuiteVersion.open_draft(suite_id)
+
+    assert "version" not in draft.metadata_document

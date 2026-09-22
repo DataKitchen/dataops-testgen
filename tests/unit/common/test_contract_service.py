@@ -9,6 +9,7 @@ from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 from testgen.common import contract_service
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.odcs_server import ODCS_API_VERSION, ODCS_KIND
 from tests.unit.sql_assertions import equality_conjunct
 
 pytestmark = pytest.mark.unit
@@ -597,7 +598,7 @@ def test_generating_terms_resolves_a_write_target_and_generates_for_every_declar
         report = contract_service.generate_terms(suite)
 
     resolve.assert_called_once_with(suite)
-    generate.assert_called_once_with(suite, ["orders", "customers"])
+    generate.assert_called_once_with(suite, ["orders", "customers"], draft.id)
     assert report["declared"] == ["orders", "customers"]
 
 
@@ -634,3 +635,94 @@ def test_adding_a_table_to_a_draft_that_carries_no_document_declares_it():
         contract_service.add_table(suite, "orders")
 
     assert contract_service.declared_tables(draft.metadata_document) == ["orders"]
+
+
+def test_initializing_a_contract_refuses_a_suite_that_keeps_no_versions():
+    suite = _suite()
+    suite.suite_type = SuiteType.REGULAR
+    with (
+        patch.object(SuiteVersion, "next_version_for", return_value=1),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.contract_service.build_server_block", return_value={}),
+    ):
+        with pytest.raises(ValueError):
+            contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
+
+
+def test_the_prefilled_document_carries_every_field_odcs_requires():
+    suite = _suite()
+    suite.test_suite = "Orders contract"
+    session = MagicMock()
+    with (
+        patch.object(SuiteVersion, "next_version_for", return_value=1),
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
+        patch("testgen.common.contract_service.build_server_block", return_value={"type": "postgres"}),
+    ):
+        contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
+
+    document = session.add.call_args.args[0].metadata_document
+    # Top-level required properties of the ODCS schema, which also sets additionalProperties
+    # and unevaluatedProperties to false -- a document missing any of them is rejected whole.
+    assert document["apiVersion"] == ODCS_API_VERSION
+    assert document["kind"] == ODCS_KIND
+    assert document["id"] == str(suite.id)
+    assert document["version"] == "1.0.0"
+
+
+def test_the_prefilled_document_records_the_api_version_it_was_authored_against():
+    suite = _suite()
+    suite.test_suite = "Orders contract"
+    session = MagicMock()
+    with (
+        patch.object(SuiteVersion, "next_version_for", return_value=1),
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
+        patch("testgen.common.contract_service.build_server_block", return_value={}),
+    ):
+        contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
+
+    assert session.add.call_args.args[0].odcs_api_version == ODCS_API_VERSION
+
+
+def test_the_documents_contract_version_tracks_the_suite_version():
+    suite = _suite()
+    suite.test_suite = "Orders contract"
+    session = MagicMock()
+    with (
+        patch.object(SuiteVersion, "next_version_for", return_value=4),
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
+        patch("testgen.common.contract_service.build_server_block", return_value={}),
+    ):
+        contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
+
+    assert session.add.call_args.args[0].metadata_document["version"] == "4.0.0"
+
+
+def test_generation_runs_only_after_the_draft_is_committed():
+    """Generation reaches the database on its own connection, so a draft that is merely
+    flushed is invisible to it and the terms it inserts violate the version foreign key.
+    """
+    suite = _suite()
+    session = MagicMock()
+    calls = []
+    session.commit.side_effect = lambda: calls.append("commit")
+    with (
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
+        patch("testgen.common.contract_service.run_test_generation", side_effect=lambda *_args, **_kwargs: calls.append("generate")),
+        patch.object(contract_service, "_stamp_term_ids"),
+    ):
+        contract_service._generate_for_tables(suite, ["orders"], uuid4())
+
+    assert calls.index("commit") < calls.index("generate")
+
+
+def test_generated_terms_are_stamped_with_a_term_identity():
+    suite = _suite()
+    term = MagicMock(
+        test_type="Row_Ct", schema_name="public", table_name="orders", column_name="order_id"
+    )
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = [term]
+    with patch("testgen.common.contract_service.get_current_session", return_value=session):
+        contract_service._stamp_term_ids(uuid4())
+
+    assert term.contract_term_id == "Row_Ct-public-orders-order_id"

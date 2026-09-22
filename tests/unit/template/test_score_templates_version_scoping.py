@@ -1,13 +1,8 @@
-from datetime import datetime
-from unittest.mock import MagicMock, patch
-from uuid import uuid4
+import re
 
 import pytest
 
 from testgen.commands.queries.rollup_scores_query import RollupScoresSQL
-from testgen.common.database.database_service import replace_params
-from testgen.common.models.scores import ScoreDefinitionResultHistoryEntry
-from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.read_file import read_template_sql_file
 
 pytestmark = pytest.mark.unit
@@ -37,108 +32,51 @@ def _ranked_test_runs_cte(sql: str) -> str:
     )
 
 
-def test_the_table_group_rollup_counts_only_runs_of_the_active_version():
+def _table_group_rollup() -> str:
     queries = RollupScoresSQL("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
     query, _ = queries.rollup_test_scores(update_table_group=True)[-1]
-    cte = _latest_run_per_suite_cte(query)
-
-    assert "AND (run.version_id IS NULL OR run.version_id =" in cte
-    # Proves the rendering came from active_for_sql, not resolved_for_sql: the latter's draft
-    # branch would inject "frozen_at IS NULL" into this same CTE.
-    assert "frozen_at IS NULL" not in cte
+    return _latest_run_per_suite_cte(query)
 
 
-def test_score_history_pins_only_runs_of_the_active_version():
-    sql = replace_params(
-        read_template_sql_file("add_latest_runs.sql", "score_cards"),
-        {"ACTIVE_VERSION": SuiteVersion.active_for_sql("r.test_suite_id")},
-    )
-    cte = _ranked_test_runs_cte(sql)
-
-    assert "AND (r.version_id IS NULL OR r.version_id =" in cte
+def _score_history_cte() -> str:
+    return _ranked_test_runs_cte(read_template_sql_file("add_latest_runs.sql", "score_cards"))
 
 
-def test_score_history_keeps_runs_that_predate_the_placeholders_freeze_time():
-    # The placeholder's freeze time is the install-or-upgrade timestamp, so a preview guard
-    # written without the suite-owned qualifier drops every historical regular-suite run.
-    sql = read_template_sql_file("add_latest_runs.sql", "score_cards")
-    cte = _ranked_test_runs_cte(sql)
-
-    assert "AND (sv.test_suite_id IS NULL OR r.test_starttime >= sv.frozen_at" in cte
-
-
-def test_the_table_group_rollup_counts_runs_written_before_versioning_existed():
-    # test_runs.version_id is nullable with no backfill: every run written before this work
-    # has version_id NULL, and NULL = anything is NULL, not true, so the active-version equality
-    # alone would silently drop every pre-upgrade run out of its table group's score.
-    queries = RollupScoresSQL("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
-    query, _ = queries.rollup_test_scores(update_table_group=True)[-1]
-    cte = _latest_run_per_suite_cte(query)
-
-    assert "run.version_id IS NULL OR run.version_id =" in cte
+@pytest.mark.parametrize("cte", [_table_group_rollup, _score_history_cte])
+def test_a_freeze_does_not_take_the_suite_out_of_the_score(cte):
+    # freeze_version freezes a version no run carries yet, so pinning the scored run to the
+    # version in force would drop the suite out of every score between the freeze and the
+    # first run of the new version, with no data change behind the move.
+    assert not re.search(r"version_id\s*=\s*\(?\s*coalesce", cte(), re.IGNORECASE)
 
 
-def test_score_history_pins_runs_written_before_versioning_existed():
-    sql = replace_params(
-        read_template_sql_file("add_latest_runs.sql", "score_cards"),
-        {"ACTIVE_VERSION": SuiteVersion.active_for_sql("r.test_suite_id")},
-    )
-    cte = _ranked_test_runs_cte(sql)
-
-    assert "r.version_id IS NULL OR r.version_id =" in cte
+@pytest.mark.parametrize("cte", [_table_group_rollup, _score_history_cte])
+def test_only_a_run_of_a_version_that_was_in_force_when_it_ran_is_scored(cte):
+    # A draft has no freeze time, so >= is NULL rather than true: the same predicate that
+    # admits a superseded version's run excludes every draft preview, including one made
+    # while the version it previewed was still a draft.
+    assert "run.test_starttime >= sv.frozen_at" in cte() or "r.test_starttime >= sv.frozen_at" in cte()
 
 
-def test_score_history_preview_guard_admits_runs_written_before_versioning_existed():
-    # sv.id = r.version_id in the EXISTS carve-out matches nothing when r.version_id is NULL, so
-    # the preview guard itself needs the same NULL tolerance, not only the equality above it.
-    sql = read_template_sql_file("add_latest_runs.sql", "score_cards")
-    cte = _ranked_test_runs_cte(sql)
-
-    assert "AND (r.version_id IS NULL OR EXISTS" in cte
+@pytest.mark.parametrize("cte", [_table_group_rollup, _score_history_cte])
+def test_the_placeholder_is_exempt_from_the_freeze_time_check(cte):
+    # The placeholder's freeze time is the install-or-upgrade timestamp, so a guard written
+    # without the suite-owned carve-out drops every historical regular-suite run.
+    assert "sv.test_suite_id IS NULL OR" in cte()
 
 
-def test_the_table_group_rollup_excludes_a_preview_run_of_a_freshly_frozen_version():
-    # freeze_version freezes the same suite_versions.id a draft already had, so every preview run
-    # made while that version was a draft carries the exact id that becomes ACTIVE_VERSION at the
-    # instant of freezing. Without this guard, DISTINCT ON ... ORDER BY test_starttime DESC would
-    # surface that preview run as the suite's scored run the moment the version freezes.
-    queries = RollupScoresSQL("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
-    query, _ = queries.rollup_test_scores(update_table_group=True)[-1]
-    cte = _latest_run_per_suite_cte(query)
-
-    assert "AND (sv.test_suite_id IS NULL OR run.test_starttime >= sv.frozen_at" in cte
+@pytest.mark.parametrize("cte", [_table_group_rollup, _score_history_cte])
+def test_runs_written_before_versioning_existed_are_scored(cte):
+    # test_runs.version_id is nullable with no backfill, and sv.id = <NULL> in the carve-out
+    # matches nothing, so the guard needs its own NULL tolerance.
+    assert re.search(r"\(\s*r(un)?\.version_id IS NULL OR EXISTS", cte())
 
 
-def test_the_table_group_rollup_preview_guard_admits_runs_written_before_versioning_existed():
-    # sv.id = run.version_id in the EXISTS carve-out matches nothing when run.version_id is NULL,
-    # so the preview guard itself needs the same NULL tolerance as the equality above it.
-    queries = RollupScoresSQL("11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222")
-    query, _ = queries.rollup_test_scores(update_table_group=True)[-1]
-    cte = _latest_run_per_suite_cte(query)
-
-    assert "AND (run.version_id IS NULL OR EXISTS" in cte
-
-
-def test_add_as_cutoff_hands_postgres_the_resolved_query_not_the_raw_placeholder():
-    # The three tests above build their SQL by calling active_for_sql directly, so none of them
-    # goes through add_as_cutoff itself. A dropped replace_params call there would leave
-    # "{ACTIVE_VERSION}" in the text handed to Postgres and break score-history refresh at
-    # runtime while every one of those tests stayed green.
-    entry = ScoreDefinitionResultHistoryEntry(
-        definition_id=uuid4(),
-        category="dq_dimension",
-        last_run_time=datetime(2024, 1, 1),
-    )
-    entry.definition = MagicMock(project_code="demo")
-
-    session = MagicMock()
-    with patch("testgen.common.models.scores.get_current_session", return_value=session):
-        entry.add_as_cutoff()
-
-    executed_sql = str(session.execute.call_args.args[0])
-
-    assert "{ACTIVE_VERSION}" not in executed_sql
-    assert "r.version_id =" in executed_sql
-    # Proves the rendering came from active_for_sql, not resolved_for_sql: the latter's draft
-    # branch would inject "frozen_at IS NULL" into this same query.
-    assert "frozen_at IS NULL" not in executed_sql
+@pytest.mark.parametrize("sql", [
+    lambda: RollupScoresSQL("1", "2").rollup_test_scores(update_table_group=True)[-1][0],
+    lambda: read_template_sql_file("add_latest_runs.sql", "score_cards"),
+])
+def test_no_unresolved_placeholder_reaches_postgres(sql):
+    # These templates carry {...} placeholders resolved by replace_params before execution; one
+    # left behind is a syntax error at runtime that no assertion on a rendered CTE would catch.
+    assert not re.search(r"\{[A-Z_]+\}", sql())

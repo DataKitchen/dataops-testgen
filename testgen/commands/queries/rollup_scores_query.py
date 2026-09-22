@@ -2,7 +2,6 @@ from uuid import UUID
 
 from testgen.common import read_template_sql_file
 from testgen.common.database.database_service import replace_params
-from testgen.common.models.suite_version import SuiteVersion
 
 
 class RollupScoresSQL:
@@ -23,7 +22,6 @@ class RollupScoresSQL:
         params = {
             "RUN_ID": self.run_id,
             "TABLE_GROUPS_ID": self.table_group_id or "",
-            "ACTIVE_VERSION": SuiteVersion.active_for_sql("run.test_suite_id"),
         }
         query = replace_params(query, params)
         return query, None if no_bind else params

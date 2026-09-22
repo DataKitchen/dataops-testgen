@@ -2,7 +2,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from testgen.common.odcs_server import ServerType, build_server_block
+from testgen.common.flavors import SqlFlavorCode
+from testgen.common.odcs_server import (
+    FLAVOR_TO_SERVER_TYPE,
+    ODCS_API_VERSION,
+    UNMAPPABLE_FLAVORS,
+    ServerType,
+    build_server_block,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -153,3 +160,37 @@ def test_an_unmapped_flavor_is_refused():
     connection = _connection("redshift_spectrum", project_host="rs.example", project_db="analytics")
     with pytest.raises(ValueError, match="redshift_spectrum"):
         build_server_block(connection, table_group=MagicMock(table_group_schema="public"))
+
+
+def test_every_flavor_is_either_mapped_or_named_unmappable():
+    # A flavor added without a decision here would fall through build_server_block's
+    # UnmappedFlavorError and read to the user as "contracts are not supported", with no
+    # sign that the omission was an oversight rather than a choice.
+    assert set(FLAVOR_TO_SERVER_TYPE) | UNMAPPABLE_FLAVORS == set(SqlFlavorCode)
+
+
+def test_no_flavor_is_both_mapped_and_named_unmappable():
+    assert not set(FLAVOR_TO_SERVER_TYPE) & UNMAPPABLE_FLAVORS
+
+
+def test_the_flavor_map_is_keyed_by_the_flavor_enum():
+    assert all(isinstance(code, SqlFlavorCode) for code in FLAVOR_TO_SERVER_TYPE)
+
+
+def test_duckdb_carries_its_database_file_as_the_database():
+    connection = _connection(SqlFlavorCode.DUCKDB, parameters={"database_file": " /data/sales.duckdb "})
+    block = build_server_block(connection, table_group=MagicMock(table_group_schema="main"))
+
+    assert block["type"] == ServerType.DUCKDB
+    assert block["database"] == "/data/sales.duckdb"
+    assert block["schema"] == "main"
+
+
+def test_a_duckdb_connection_with_no_database_file_is_refused():
+    connection = _connection(SqlFlavorCode.DUCKDB, parameters={})
+    with pytest.raises(ValueError, match="database"):
+        build_server_block(connection, table_group=MagicMock(table_group_schema="main"))
+
+
+def test_the_pinned_api_version_is_a_member_of_the_schemas_enum():
+    assert ODCS_API_VERSION == "v3.2.0"
