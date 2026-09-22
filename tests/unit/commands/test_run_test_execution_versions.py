@@ -176,3 +176,21 @@ def test_the_writeback_gate_asks_about_the_runs_own_version(monkeypatch, mocked_
     run_test_execution.run_test_execution(uuid4())
 
     assert is_frozen.call_args.args[0] == test_run.version_id
+
+
+def test_a_run_that_fails_early_still_attempts_its_prediction(monkeypatch, mocked_collaborators):
+    """The prediction runs from a ``finally`` so that a failed run still gets one. Deciding the
+    writeback gate inside the ``try`` would leave the name unbound for exactly those runs, and
+    the ``UnboundLocalError`` would be swallowed and logged as a prediction failure.
+    """
+    monkeypatch.setattr(run_test_execution.SuiteVersion, "is_active", MagicMock(return_value=True))
+    monkeypatch.setattr(
+        run_test_execution, "run_data_chars_refresh", MagicMock(side_effect=RuntimeError("target is down"))
+    )
+    prediction = MagicMock()
+    monkeypatch.setattr(run_test_execution, "TestThresholdsPrediction", prediction)
+
+    with pytest.raises(RuntimeError, match="target is down"):
+        run_test_execution.run_test_execution(uuid4())
+
+    prediction.assert_called_once()

@@ -76,6 +76,12 @@ def run_test_execution(
     test_run.save()
     session.commit()
 
+    # Both writeback steps narrow by the run's version, which for a contract is the frozen
+    # agreement. Running an agreement does not rewrite it, or the terms in force stop being the
+    # terms that were frozen and the version stops being reproducible. Decided out here because
+    # the prediction below reads it from a finally that a run failing at its first step reaches.
+    writes_definitions = not SuiteVersion.is_frozen_agreement(test_run.version_id)
+
     try:
         LOG.info(f"Test run: {test_run.id}, Test suite: {test_suite.test_suite}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
         data_chars = run_data_chars_refresh(connection, table_group, test_run.test_starttime)
@@ -85,11 +91,6 @@ def run_test_execution(
 
         if test_suite.suite_type == SuiteType.MONITOR:
             _sync_monitor_definitions(sql_generator)
-
-        # Both writeback steps below narrow by the run's version, which for a contract is the
-        # frozen agreement. Running an agreement does not rewrite it, or the terms in force
-        # stop being the terms that were frozen and the version stops being reproducible.
-        writes_definitions = not SuiteVersion.is_frozen_agreement(test_run.version_id)
 
         if writes_definitions:
             # Update the thresholds before retrieving the test definitions in the next steps
