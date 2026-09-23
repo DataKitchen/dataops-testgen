@@ -113,4 +113,5 @@ SET baseline_value = h.last_fingerprint,
   baseline_sum = h.change_time::VARCHAR
 FROM fingerprint_history h
 WHERE test_definitions.id = h.test_definition_id
+  AND test_definitions.version_id = :VERSION_ID
   AND h.rn = 1;

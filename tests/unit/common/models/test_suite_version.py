@@ -1,4 +1,5 @@
-from unittest.mock import patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -9,6 +10,7 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.utils import is_uuid4
+from tests.unit.sql_assertions import conjuncts, is_not_null_conjunct, is_null_conjunct
 
 pytestmark = pytest.mark.unit
 
@@ -101,8 +103,8 @@ def test_get_returns_none_without_querying_for_a_non_uuid(mock_session):
 
 
 def _compiled(expression) -> str:
-    return str(
-        expression.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    return " ".join(
+        str(expression.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})).split()
     )
 
 
@@ -134,3 +136,178 @@ def test_resolved_for_accepts_a_literal_suite_id():
     sql = _compiled(SuiteVersion.resolved_for(suite_id))
 
     assert str(suite_id) in sql
+
+
+def test_the_working_copy_resolver_prefers_the_draft():
+    sql = _compiled(SuiteVersion.resolved_for(uuid4()))
+    assert sql.count("SELECT") == 3
+    assert "frozen_at IS NULL" in sql
+
+
+def test_the_published_resolver_ignores_the_draft():
+    sql = _compiled(SuiteVersion.active_for(uuid4()))
+    assert "frozen_at IS NULL" not in sql
+    assert sql.count("SELECT") == 2
+
+
+def test_both_resolvers_require_the_highest_version_to_be_frozen():
+    for expression in (SuiteVersion.resolved_for(uuid4()), SuiteVersion.active_for(uuid4())):
+        assert "frozen_at IS NOT NULL" in _compiled(expression)
+
+
+def test_both_resolvers_fall_back_to_the_placeholder():
+    for expression in (SuiteVersion.resolved_for(uuid4()), SuiteVersion.active_for(uuid4())):
+        assert "test_suite_id IS NULL" in _compiled(expression)
+
+
+def test_the_published_sql_form_rejects_an_unqualified_column():
+    with pytest.raises(ValueError, match="not a table-qualified column reference"):
+        SuiteVersion.resolved_for_sql("test_suite_id")
+
+
+def test_the_published_sql_form_rejects_its_own_table_as_the_qualifier():
+    with pytest.raises(ValueError, match="shadowed"):
+        SuiteVersion.resolved_for_sql("suite_versions.test_suite_id")
+
+
+def test_the_published_sql_form_reads_the_outer_row():
+    sql = SuiteVersion.resolved_for_sql("run.test_suite_id")
+    assert "run.test_suite_id" in sql
+
+
+def test_only_a_suite_owned_unfrozen_version_reads_as_a_draft():
+    session = MagicMock()
+    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
+        session.scalar.return_value = uuid4()
+        assert SuiteVersion.is_draft(uuid4()) is True
+
+        session.scalar.return_value = None
+        assert SuiteVersion.is_draft(uuid4()) is False
+
+
+def test_a_run_with_no_version_does_not_read_as_a_draft():
+    assert SuiteVersion.is_draft(None) is False
+
+
+def _checks_suite_owned_and_unfrozen(statement) -> bool:
+    """Whether the statement ANDs a suite-owned check with an unfrozen check, as separate terms.
+
+    An OR-ed predicate, or one missing either half, does not qualify — each half must appear as
+    its own conjunct so neither can be satisfied by the other.
+    """
+    terms = conjuncts(statement.whereclause)
+    return any(is_not_null_conjunct(term, "test_suite_id", "suite_versions") for term in terms) and any(
+        is_null_conjunct(term, "frozen_at", "suite_versions") for term in terms
+    )
+
+
+def test_the_draft_check_requires_both_halves_of_the_predicate():
+    session = MagicMock()
+    session.scalar.return_value = None
+    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
+        SuiteVersion.is_draft(uuid4())
+
+    statement = session.scalar.call_args.args[0]
+    assert _checks_suite_owned_and_unfrozen(statement)
+
+
+def _lacks_draft_branch(statement) -> bool:
+    """Whether the coalesce's branches include none selecting an unfrozen (draft) version.
+
+    ``resolved_for`` has one such branch; ``active_for`` must not. A mocked session's return
+    value can't tell the two resolvers apart, since both compile to a scalar subquery and
+    either one can be told to return whatever id the test wants -- only the statement's own
+    shape says which resolver built it.
+    """
+    coalesce_fn = statement.selected_columns[0]
+    for branch in coalesce_fn.clauses:
+        inner_where = branch.element.whereclause
+        if any(is_null_conjunct(term, "frozen_at", "suite_versions") for term in conjuncts(inner_where)):
+            return False
+    return True
+
+
+def test_is_active_compares_the_id_to_the_suite_agreement_in_force():
+    session = MagicMock()
+    suite_id = uuid4()
+    version_id = uuid4()
+    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
+        session.scalar.return_value = version_id
+        assert SuiteVersion.is_active(version_id, suite_id) is True
+
+        session.scalar.return_value = uuid4()
+        assert SuiteVersion.is_active(version_id, suite_id) is False
+
+    statement = session.scalar.call_args.args[0]
+    assert _lacks_draft_branch(statement)
+
+
+def test_in_force_for_excludes_the_placeholder():
+    placeholder = SuiteVersion(
+        id=uuid4(), test_suite_id=None, version=1, frozen_at=datetime.now(UTC)
+    )
+    session = MagicMock()
+    session.scalar.return_value = placeholder.id
+    with (
+        patch.object(SuiteVersion, "get", return_value=placeholder),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=session),
+    ):
+        assert SuiteVersion.in_force_for(uuid4()) is None
+
+
+def test_open_draft_copies_the_document_forward_without_sharing_it():
+    suite_id = uuid4()
+    document = {"schema": [{"name": "orders"}]}
+    frozen = SuiteVersion(
+        id=uuid4(), test_suite_id=suite_id, version=1,
+        frozen_at=datetime.now(UTC), metadata_document=document, odcs_api_version="v3.0.0",
+    )
+    session = MagicMock()
+    with (
+        patch.object(SuiteVersion, "in_force_for", return_value=frozen),
+        patch.object(SuiteVersion, "next_version_for", return_value=2),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=session),
+    ):
+        draft, source = SuiteVersion.open_draft(suite_id)
+
+    assert source is frozen
+    assert draft.metadata_document == document
+    assert draft.metadata_document is not document
+    assert draft.odcs_api_version == "v3.0.0"
+    assert draft.frozen_at is None
+    assert session.add.call_args.args[0] is draft
+
+
+def test_open_draft_restates_the_carried_document_version_as_the_new_ones():
+    # The document's own `version` is what a reader of the exported contract sees. Deep-copying
+    # it forward unchanged would leave every version of the contract claiming to be the first.
+    suite_id = uuid4()
+    frozen = SuiteVersion(
+        id=uuid4(), test_suite_id=suite_id, version=1,
+        frozen_at=datetime.now(UTC), metadata_document={"version": "1.0.0", "schema": []},
+    )
+    with (
+        patch.object(SuiteVersion, "in_force_for", return_value=frozen),
+        patch.object(SuiteVersion, "next_version_for", return_value=2),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=MagicMock()),
+    ):
+        draft, _ = SuiteVersion.open_draft(suite_id)
+
+    assert draft.metadata_document["version"] == "2.0.0"
+    assert frozen.metadata_document["version"] == "1.0.0"
+
+
+def test_open_draft_does_not_invent_a_version_field_in_a_document_that_has_none():
+    suite_id = uuid4()
+    frozen = SuiteVersion(
+        id=uuid4(), test_suite_id=suite_id, version=1,
+        frozen_at=datetime.now(UTC), metadata_document={"schema": []},
+    )
+    with (
+        patch.object(SuiteVersion, "in_force_for", return_value=frozen),
+        patch.object(SuiteVersion, "next_version_for", return_value=2),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=MagicMock()),
+    ):
+        draft, _ = SuiteVersion.open_draft(suite_id)
+
+    assert "version" not in draft.metadata_document

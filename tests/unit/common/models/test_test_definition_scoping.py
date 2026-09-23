@@ -29,6 +29,15 @@ READ_METHOD_ARGS = {
 }
 
 EXEMPT_METHODS = {
+    "copy_to_version": (
+        "reads the version its caller names rather than the one the suite resolves to; that "
+        "predicate is asserted in test_test_definition_version_stamping.py"
+    ),
+    "resolve_write_target": (
+        "a write — opens the draft a write lands on; it reads suite_versions, and the term "
+        "copy it performs is exercised as copy_to_version"
+    ),
+    "assert_version_writable": "a guard — its own predicate is covered by test_contract_write_guard.py",
     "copy": "a write — version stamping is covered by test_test_definition_version_stamping.py",
     "move": "a write — version stamping is covered by test_test_definition_version_stamping.py",
     "save": "a write — version stamping is covered by test_test_definition_version_stamping.py",

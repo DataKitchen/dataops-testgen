@@ -32,7 +32,7 @@ from testgen.common.enums import MonitorCalculation, MonitorType, SuiteType
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
-from testgen.common.models.suite_version import SuiteVersion
+from testgen.common.models.suite_version import FrozenVersionError, SuiteVersion
 from testgen.utils import is_uuid4
 
 TestRunStatus = Literal["Running", "Complete", "Error", "Cancelled"]
@@ -653,6 +653,133 @@ class TestDefinition(Entity):
         return cls.version_id == SuiteVersion.resolved_for(cls.test_suite_id)
 
     @classmethod
+    def assert_version_writable(cls, version_id: UUID | str) -> None:
+        """Raise when the target version is a contract's frozen version."""
+        if SuiteVersion.is_frozen_agreement(version_id):
+            raise FrozenVersionError(version_id)
+
+    @classmethod
+    def copy_to_version(cls, source_version_id: UUID, target_version_id: UUID) -> dict[UUID, UUID]:
+        """Copy every term from one version to another, keeping each term's contract identity.
+
+        Returns a map from each copied term's previous id to its new one.
+        """
+        session = get_current_session()
+        id_map: dict[UUID, UUID] = {}
+        for term in session.scalars(
+            select(cls).where(cls.version_id == source_version_id)
+        ).all():
+            copied = cls()
+            for column in cls.__table__.columns:
+                if column.key != "id":
+                    setattr(copied, column.key, getattr(term, column.key))
+            copied.id = uuid4()
+            copied.version_id = target_version_id
+            session.add(copied)
+            id_map[term.id] = copied.id
+        session.flush()
+        cls._copy_notes_to_version(id_map)
+        return id_map
+
+    @staticmethod
+    def _copy_notes_to_version(id_map: dict[UUID, UUID]) -> None:
+        """Give each copied term its own copy of the notes the term it came from carries.
+
+        A note belongs to one test definition by a cascading foreign key, so a copy that left
+        the notes behind would strand every annotation on the version being superseded.
+        """
+        if not id_map:
+            return
+        session = get_current_session()
+        for note in session.scalars(
+            select(TestDefinitionNote).where(TestDefinitionNote.test_definition_id.in_(id_map))
+        ).all():
+            session.add(
+                TestDefinitionNote(
+                    test_definition_id=id_map[note.test_definition_id],
+                    detail=note.detail,
+                    created_by=note.created_by,
+                    created_at=note.created_at,
+                    updated_at=note.updated_at,
+                )
+            )
+        session.flush()
+
+    @classmethod
+    def resolve_write_target(cls, test_suite_id: UUID | str) -> tuple[UUID, dict[UUID, UUID]]:
+        """The version this suite's next write lands in, opening a draft when there is none.
+
+        Returns the version id and a map from each copied term's previous id to its new one.
+        The map is empty when a draft already existed.
+        """
+        draft = SuiteVersion.draft_for(test_suite_id)
+        if draft is not None:
+            return draft.id, {}
+
+        draft, source = SuiteVersion.open_draft(test_suite_id)
+        return draft.id, cls.copy_to_version(source.id, draft.id) if source else {}
+
+    def _route_to_writable_version(self) -> None:
+        """Move this write onto the contract's draft when the version it holds is frozen.
+
+        Where the contract has no draft, one is opened carrying a copy of every term and this
+        row becomes its own copy, so the edit lands on the draft and the frozen version keeps
+        what it had. A row that the draft did not copy is one the draft already supersedes,
+        and rewriting it would resurrect a superseded term.
+
+        A row belonging to a version the agreement in force already supersedes is refused
+        before anything is written, so the refusal leaves no draft behind.
+
+        Raises ``ValueError`` when the row being updated no longer exists, since nothing can
+        then establish which version the write would land on.
+        """
+        # Both ids are compared against ones the ORM hands back, never only passed to the
+        # database, and a dialog payload delivers them as strings.
+        row_id = UUID(str(self.id)) if self.id else None
+        version_id = UUID(str(self.version_id)) if self.version_id else None
+        if version_id is None and row_id is not None:
+            # An edit dialog rebuilds a definition from a summary payload, which carries no
+            # version, so the persisted row is the only thing that can say which one to guard.
+            version_id = get_current_session().scalar(
+                select(TestDefinition.version_id).where(TestDefinition.id == row_id)
+            )
+            if version_id is None:
+                raise ValueError(f"Test definition {self.id} no longer exists.")
+
+        if not SuiteVersion.is_frozen_agreement(version_id):
+            return
+
+        in_force = SuiteVersion.in_force_for(self.test_suite_id)
+        if in_force is None or version_id != in_force.id:
+            # Decided before the write target is resolved: resolving it would open a draft and
+            # copy the whole agreement into it, and that draft outlives the refusal.
+            raise FrozenVersionError(version_id)
+
+        target_version_id, copied_ids = self.resolve_write_target(self.test_suite_id)
+        if row_id is not None:
+            if row_id not in copied_ids:
+                raise FrozenVersionError(version_id)
+            self.id = copied_ids[row_id]
+        self.version_id = target_version_id
+
+    @classmethod
+    def _assert_batch_writable(cls, test_definition_ids: list[str | UUID]) -> None:
+        """Raise if any of the given rows belongs to a contract's frozen version.
+
+        A batch can span more than one suite and more than one version, so every distinct
+        version the rows themselves carry is checked — not the version their suites would
+        resolve a fresh write to, which for a contract with an open draft is writable
+        whichever version the rows belong to.
+        """
+        versions = get_current_session().scalars(
+            select(cls.version_id)
+            .where(cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]))
+            .distinct()
+        ).all()
+        for version_id in versions:
+            cls.assert_version_writable(version_id)
+
+    @classmethod
     def _scoped_select(
         cls,
         columns: list[str | InstrumentedAttribute],
@@ -963,6 +1090,8 @@ class TestDefinition(Entity):
         test_definition_ids: list[str | UUID],
         value: bool,
     ) -> None:
+        cls._assert_batch_writable(test_definition_ids)
+
         query = f"""
         WITH selected AS (
             SELECT UNNEST(ARRAY [:test_definition_ids]) AS id
@@ -994,6 +1123,7 @@ class TestDefinition(Entity):
     ) -> None:
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
+        cls.assert_version_writable(target_version)
         scoped_ids = db_session.scalars(
             select(cls.id).where(
                 cls.id.in_([UUID(str(identifier)) for identifier in test_definition_ids]),
@@ -1038,6 +1168,7 @@ class TestDefinition(Entity):
     ) -> None:
         db_session = get_current_session()
         target_version = db_session.scalar(select(SuiteVersion.resolved_for(target_test_suite_id)))
+        cls.assert_version_writable(target_version)
 
         modified_columns = [
             cls.id,
@@ -1122,12 +1253,17 @@ class TestDefinition(Entity):
 
     def save(self) -> None:
         if self.id:
+            self._route_to_writable_version()
             values = {
                 column.key: getattr(self, column.key, None)
                 for column in self.__table__.columns
                 if column not in self._update_exclude_columns
             }
-            query = update(TestDefinition).where(TestDefinition.id == self.id).values(**values)
+            query = (
+                update(TestDefinition)
+                .where(TestDefinition.id == self.id, TestDefinition.version_clause())
+                .values(**values)
+            )
             db_session = get_current_session()
             db_session.execute(query)
         else:
@@ -1135,6 +1271,7 @@ class TestDefinition(Entity):
                 self.version_id = get_current_session().scalar(
                     select(SuiteVersion.resolved_for(self.test_suite_id))
                 )
+            self._route_to_writable_version()
             super().save()
 
 

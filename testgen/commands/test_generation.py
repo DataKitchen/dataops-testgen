@@ -22,6 +22,7 @@ from testgen.common.models.connection import Connection
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import read_template_sql_file
 from testgen.utils import to_sql_timestamp
@@ -47,6 +48,7 @@ def run_test_generation(
     generation_sets: list[str] | None = None,
     test_types: list[str] | None = None,
     profile_run_id: UUID | None = None,
+    table_names: list[str] | None = None,
 ) -> None:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
@@ -67,7 +69,8 @@ def run_test_generation(
     success = False
     try:
         TestGeneration(
-            connection, table_group, test_suite, resolved_sets, test_types, profile_run_id
+            connection, table_group, test_suite, resolved_sets, test_types, profile_run_id,
+            table_names=table_names,
         ).run()
         success = True
     except Exception:
@@ -123,12 +126,14 @@ class TestGeneration:
         generation_sets: list[str],
         test_types_filter: list[MonitorTestType] | None = None,
         profile_run_id: UUID | None = None,
+        table_names: list[str] | None = None,
     ):
         self.connection = connection
         self.table_group = table_group
         self.test_suite = test_suite
         self.generation_sets = generation_sets
         self.test_types_filter = test_types_filter
+        self.table_names = table_names
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
 
@@ -153,9 +158,19 @@ class TestGeneration:
             )
 
     def run(self) -> None:
+        TestDefinition.assert_version_writable(self.version_id)
+
+        generation_queries = self._get_generation_queries()
+        if not generation_queries:
+            LOG.warning(
+                "No active test types in the selected generation sets; nothing generated and "
+                "nothing removed."
+            )
+            return
+
         LOG.info("Running test generation queries")
         execute_db_queries([
-            *self._get_generation_queries(),
+            *generation_queries,
             self._get_query("delete_stale_autogen_tests.sql"),
             self._get_query("delete_overridden_autogen_tests.sql"),
         ])
@@ -235,7 +250,8 @@ class TestGeneration:
             "SQL_FLAVOR": self.flavor,
             "QUOTE": self.flavor_service.quote_character,
             "INSERT_ONLY": False,
-            "TABLE_FILTER": "",
+            "TABLE_NAMES": self.table_names,
+            "TABLE_FILTER": "AND table_name = ANY(:TABLE_NAMES)" if self.table_names is not None else "",
         })
         return params
     
