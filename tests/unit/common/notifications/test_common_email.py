@@ -9,6 +9,7 @@ from testgen.common.notifications.base import (
     SMTP_TIMEOUT_SECONDS,
     BaseEmailTemplate,
     EmailTemplateException,
+    log_smtp_configuration_problems,
     smtp_configured,
 )
 from testgen.settings import SMTPSecurity
@@ -336,9 +337,10 @@ def test_no_client_certificate_loads_nothing(smtp_mock, template, send_args, def
     load.assert_not_called()
 
 
-def test_client_certificate_without_passphrase_passes_none(
+def test_client_certificate_passphrase_is_passed_as_configured(
     smtp_mock, template, send_args, def_settings, client_certificate
 ):
+    """An empty passphrase must reach OpenSSL as "", not None: None makes it prompt on the terminal."""
     cert, key = client_certificate
     def_settings.SMTP_CLIENT_CERT_FILE = cert
     def_settings.SMTP_CLIENT_KEY_FILE = key
@@ -346,7 +348,7 @@ def test_client_certificate_without_passphrase_passes_none(
     with patch.object(ssl.SSLContext, "load_cert_chain") as load:
         template.send(*send_args)
 
-    load.assert_called_once_with(cert, key, None)
+    load.assert_called_once_with(cert, key, "")
 
 
 @pytest.mark.parametrize("present", ("SMTP_CLIENT_CERT_FILE", "SMTP_CLIENT_KEY_FILE"))
@@ -386,3 +388,75 @@ def test_client_certificate_without_tls_is_rejected(
 
     assert "opens no TLS connection to present it on" in caplog.text
     assert smtp_configured() is False
+
+
+def test_certificate_load_failure_names_the_certificate_settings(
+    smtp_mock, template, send_args, def_settings, client_certificate, caplog
+):
+    """load_cert_chain runs before any socket opens, so its SSLError is not a handshake failure."""
+    cert, key = client_certificate
+    def_settings.SMTP_CLIENT_CERT_FILE = cert
+    def_settings.SMTP_CLIENT_KEY_FILE = key
+
+    with (
+        patch.object(ssl.SSLContext, "load_cert_chain", side_effect=ssl.SSLError("PEM lib")),
+        pytest.raises(EmailTemplateException, match="Failed sending email notifications"),
+    ):
+        template.send(*send_args)
+
+    assert "could not be loaded as a certificate and a matching key" in caplog.text
+    assert "TG_SMTP_CLIENT_KEY_PASSWORD" in caplog.text
+    assert "did not complete a TLS handshake" not in caplog.text
+    assert "TG_SMTP_SECURITY=starttls" not in caplog.text
+    smtp_mock.assert_not_called()
+
+
+def test_disconnect_after_starttls_gets_no_transport_hint(
+    smtp_plain_mock, template, send_args, def_settings, caplog
+):
+    """A mid-session disconnect is not the server refusing a plaintext connection."""
+    def_settings.SMTP_SECURITY = "starttls"
+    connection = smtp_plain_mock.return_value.__enter__.return_value
+    connection.sendmail.side_effect = smtplib.SMTPServerDisconnected(
+        "Connection unexpectedly closed: [SSL: TLSV1_ALERT_UNKNOWN_CA]"
+    )
+
+    with pytest.raises(EmailTemplateException, match="Failed sending email notifications"):
+        template.send(*send_args)
+
+    assert "TLSV1_ALERT_UNKNOWN_CA" in caplog.text
+    assert "did not accept a plaintext connection" not in caplog.text
+    assert "TG_SMTP_SECURITY=ssl" not in caplog.text
+
+
+def test_disconnect_during_login_gets_no_transport_hint(
+    smtp_plain_mock, template, send_args, def_settings, caplog
+):
+    def_settings.SMTP_SECURITY = "starttls"
+    connection = smtp_plain_mock.return_value.__enter__.return_value
+    connection.login.side_effect = smtplib.SMTPServerDisconnected("Connection unexpectedly closed")
+
+    with pytest.raises(EmailTemplateException, match="Failed sending email notifications"):
+        template.send(*send_args)
+
+    assert "did not accept a plaintext connection" not in caplog.text
+
+
+def test_partly_configured_settings_are_logged_at_startup(def_settings, caplog):
+    def_settings.SMTP_SECURITY = "tls"
+
+    log_smtp_configuration_problems()
+
+    assert "Email notifications are unavailable because" in caplog.text
+    assert "TG_SMTP_SECURITY is set to 'tls'" in caplog.text
+
+
+def test_unconfigured_settings_log_nothing_at_startup(def_settings, caplog):
+    for setting_name in ("EMAIL_FROM_ADDRESS", "SMTP_ENDPOINT", "SMTP_PORT"):
+        setattr(def_settings, setting_name, None)
+    for setting_name in ("SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_CLIENT_CERT_FILE", "SMTP_CLIENT_KEY_FILE"):
+        setattr(def_settings, setting_name, None)
+
+    log_smtp_configuration_problems()
+
+    assert caplog.text == ""

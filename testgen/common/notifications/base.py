@@ -30,6 +30,16 @@ CREDENTIAL_SETTINGS = (
 """Optional as a pair. A relay that authorizes by source address or client certificate
 offers no AUTH command, and authenticating against one fails the send."""
 
+CLIENT_CERTIFICATE_SETTINGS = (
+    "SMTP_CLIENT_CERT_FILE",
+    "SMTP_CLIENT_KEY_FILE",
+)
+"""Optional as a pair, for a relay that authorizes the sender by client certificate."""
+
+CONFIGURABLE_SETTINGS = (*MANDATORY_SETTINGS, *CREDENTIAL_SETTINGS, *CLIENT_CERTIFICATE_SETTINGS)
+"""Settings whose presence means email was meant to be configured. `SMTP_SECURITY` is absent
+because it always holds a value, so it says nothing about intent."""
+
 SMTP_TIMEOUT_SECONDS = 30
 """Bounds every read on the SMTP connection. Without it a server that accepts the
 connection and then stops responding holds the sending job open indefinitely."""
@@ -84,8 +94,30 @@ def smtp_configured() -> bool:
     return not smtp_settings_problems()
 
 
+def log_smtp_configuration_problems() -> None:
+    """Log why email cannot be sent, for settings that are partly configured."""
+    if not any(getattr(settings, setting_name) for setting_name in CONFIGURABLE_SETTINGS):
+        return
+
+    for problem in smtp_settings_problems():
+        LOG.warning("Email notifications are unavailable because %s", problem)
+
+
 class EmailTemplateException(Exception):
     pass
+
+
+class _SendStageError(Exception):
+    """Wraps a failure with a hint naming the setting that most likely explains it.
+
+    Raised where the failure happens, because the exception types overlap between
+    stages: loading a certificate and a rejected handshake both raise `ssl.SSLError`,
+    and a missing STARTTLS and a missing AUTH both raise `SMTPNotSupportedError`.
+    """
+
+    def __init__(self, hint: str) -> None:
+        super().__init__(hint)
+        self.hint = hint
 
 
 class BaseEmailTemplate:
@@ -199,84 +231,92 @@ class BaseEmailTemplate:
         context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
 
         if settings.SMTP_CLIENT_CERT_FILE and settings.SMTP_CLIENT_KEY_FILE:
-            context.load_cert_chain(
-                settings.SMTP_CLIENT_CERT_FILE,
-                settings.SMTP_CLIENT_KEY_FILE,
-                settings.SMTP_CLIENT_KEY_PASSWORD or None,
-            )
+            try:
+                context.load_cert_chain(
+                    settings.SMTP_CLIENT_CERT_FILE,
+                    settings.SMTP_CLIENT_KEY_FILE,
+                    settings.SMTP_CLIENT_KEY_PASSWORD,
+                )
+            except OSError as error:
+                raise _SendStageError(
+                    f"{settings.SMTP_CLIENT_CERT_FILE} and {settings.SMTP_CLIENT_KEY_FILE} could not be"
+                    " loaded as a certificate and a matching key. An encrypted key needs"
+                    " TG_SMTP_CLIENT_KEY_PASSWORD."
+                ) from error
 
         return context
 
     def connect(self) -> smtplib.SMTP:
         """Open the SMTP connection described by `TG_SMTP_SECURITY`."""
         ssl_context = self.ssl_context()
+        endpoint = f"{settings.SMTP_ENDPOINT}:{settings.SMTP_PORT}"
 
         if settings.SMTP_SECURITY == SMTPSecurity.SSL:
-            return smtplib.SMTP_SSL(
-                settings.SMTP_ENDPOINT,
-                settings.SMTP_PORT,
-                context=ssl_context,
-                timeout=SMTP_TIMEOUT_SECONDS,
-            )
+            try:
+                return smtplib.SMTP_SSL(
+                    settings.SMTP_ENDPOINT,
+                    settings.SMTP_PORT,
+                    context=ssl_context,
+                    timeout=SMTP_TIMEOUT_SECONDS,
+                )
+            except ssl.SSLError as error:
+                raise _SendStageError(
+                    f"{endpoint} did not complete a TLS handshake. If it upgrades the connection"
+                    f" instead, set TG_SMTP_SECURITY={SMTPSecurity.STARTTLS}."
+                ) from error
 
-        smtp_server = smtplib.SMTP(settings.SMTP_ENDPOINT, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS)
+        try:
+            smtp_server = smtplib.SMTP(settings.SMTP_ENDPOINT, settings.SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS)
+        except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError) as error:
+            raise _SendStageError(
+                f"{endpoint} did not accept a plaintext connection. If it expects TLS from the first"
+                f" byte, set TG_SMTP_SECURITY={SMTPSecurity.SSL}."
+            ) from error
+
         if settings.SMTP_SECURITY == SMTPSecurity.STARTTLS:
             try:
                 smtp_server.starttls(context=ssl_context)
+            except smtplib.SMTPNotSupportedError as error:
+                smtp_server.close()
+                raise _SendStageError(
+                    f"{endpoint} does not offer STARTTLS. Use a port that does, or set"
+                    f" TG_SMTP_SECURITY={SMTPSecurity.NONE} to send over an unencrypted connection."
+                ) from error
             except Exception:
                 smtp_server.close()
                 raise
 
         return smtp_server
 
-    def describe_connection_failure(self, error: Exception) -> str:
-        """Suggest the transport security the server appears to want, or return an empty string."""
-        endpoint = f"{settings.SMTP_ENDPOINT}:{settings.SMTP_PORT}"
+    def authenticate(self, smtp_server: smtplib.SMTP) -> None:
+        """Authenticate the connection when both credential settings are set."""
+        if not (settings.SMTP_USERNAME and settings.SMTP_PASSWORD):
+            return
 
-        if isinstance(error, ssl.SSLError) and settings.SMTP_SECURITY == SMTPSecurity.SSL:
-            return (
-                f" -- {endpoint} did not complete a TLS handshake."
-                f" If it upgrades the connection instead, set TG_SMTP_SECURITY={SMTPSecurity.STARTTLS}."
-            )
-
-        if (
-            isinstance(error, smtplib.SMTPServerDisconnected | smtplib.SMTPConnectError)
-            and settings.SMTP_SECURITY != SMTPSecurity.SSL
-        ):
-            return (
-                f" -- {endpoint} did not accept a plaintext connection."
-                f" If it expects TLS from the first byte, set TG_SMTP_SECURITY={SMTPSecurity.SSL}."
-            )
-
-        if isinstance(error, smtplib.SMTPNotSupportedError):
-            if "AUTH" in str(error):
-                return (
-                    f" -- {endpoint} offers no AUTH command. Clear TG_SMTP_USERNAME and TG_SMTP_PASSWORD"
-                    " to send without authenticating, which is how a relay that authorizes by source"
-                    " address or client certificate expects to be used."
-                )
-
-            if settings.SMTP_SECURITY == SMTPSecurity.STARTTLS:
-                return (
-                    f" -- {endpoint} does not offer STARTTLS. Use a port that does, or set"
-                    f" TG_SMTP_SECURITY={SMTPSecurity.NONE} to send over an unencrypted connection."
-                )
-
-        return ""
+        try:
+            smtp_server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+        except smtplib.SMTPNotSupportedError as error:
+            raise _SendStageError(
+                f"{settings.SMTP_ENDPOINT}:{settings.SMTP_PORT} offers no AUTH command. Clear"
+                " TG_SMTP_USERNAME and TG_SMTP_PASSWORD to send without authenticating, which is how a"
+                " relay that authorizes by source address or client certificate expects to be used."
+            ) from error
 
     def send_mime_message(self, recipients: list[str], message: MIMEMultipart) -> dict:
         try:
             with self.connect() as smtp_server:
-                if settings.SMTP_USERNAME and settings.SMTP_PASSWORD:
-                    smtp_server.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+                self.authenticate(smtp_server)
                 response = smtp_server.sendmail(settings.EMAIL_FROM_ADDRESS, recipients, message.as_string())
-        except Exception as e:
+        except _SendStageError as e:
             LOG.error( # noqa: TRY400
-                "Template '%s' failed to send email with: %s%s",
+                "Template '%s' failed to send email with: %s -- %s",
                 self.__class__.__name__,
-                e,
-                self.describe_connection_failure(e),
+                e.__cause__,
+                e.hint,
             )
+            raise EmailTemplateException("Failed sending email notifications") from e.__cause__
+        except Exception as e:
+            LOG.error("Template '%s' failed to send email with: %s", self.__class__.__name__, e) # noqa: TRY400
             raise EmailTemplateException("Failed sending email notifications") from e
         else:
             return response

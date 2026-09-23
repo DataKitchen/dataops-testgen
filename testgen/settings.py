@@ -698,9 +698,11 @@ defaults to: unset
 
 SMTP_CLIENT_KEY_PASSWORD: str = getenv("TG_SMTP_CLIENT_KEY_PASSWORD", "")
 """
-Email: passphrase for `TG_SMTP_CLIENT_KEY_FILE`, when the key is encrypted. An
-encrypted key with no passphrase set makes OpenSSL prompt for one, which has no
-terminal to read from in the scheduler.
+Email: passphrase for `TG_SMTP_CLIENT_KEY_FILE`, when the key is encrypted.
+
+Passed to OpenSSL exactly as set. An empty value must not be turned into `None`,
+which makes OpenSSL prompt for a passphrase on the terminal and block the send.
+An unencrypted key ignores the value; an encrypted key with none set fails to load.
 
 from env variable: `TG_SMTP_CLIENT_KEY_PASSWORD`
 defaults to: unset
