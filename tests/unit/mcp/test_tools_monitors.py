@@ -2302,13 +2302,13 @@ def test_list_monitors_suppresses_bounds_per_row_when_protected(
     tg = _mock_table_group()
     mock_resolve.return_value = (tg, _mock_monitor_suite())
     mock_td_cls.list_monitor_configs_for_table.return_value = [
-        _monitor_config(test_type="Volume_Trend", threshold_lower="900", threshold_upper="1100"),
+        _monitor_config(test_type="Volume_Trend", threshold_lower="900.5", threshold_upper="1100.5"),
         _monitor_config(
             test_type="Metric_Trend",
             metric_name="total_amount",
             custom_query="SUM(total_amount)",
-            threshold_lower="7777",
-            threshold_upper="8888",
+            threshold_lower="7777.25",
+            threshold_upper="8888.75",
         ),
     ]
 
@@ -2320,8 +2320,8 @@ def test_list_monitors_suppresses_bounds_per_row_when_protected(
     # Columns stay in the header; only the metric row's cells are emptied.
     assert "| Lower |" in out
     assert "| Upper |" in out
-    assert "900" in out and "1100" in out
-    assert "7777" not in out and "8888" not in out
+    assert "900.5" in out and "1100.5" in out
+    assert "7777.25" not in out and "8888.75" not in out
 
 
 @patch(f"{MODULE}.mcp_source_data_protected", return_value=True)
