@@ -842,7 +842,7 @@ def bulk_update_tests(
 _DELETED_LISTING_LIMIT = 50
 
 
-def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionSummary]:
+def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionMinimal]:
     """Resolve every supplied ID, reporting all unusable entries in one error.
 
     Raises ``MCPUserError`` naming every entry that is not a valid UUID and every one that
@@ -851,26 +851,23 @@ def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionS
     if not test_definition_ids:
         raise MCPUserError("`test_definition_ids` must name at least one test definition.")
 
-    perms = get_project_permissions()
     malformed: list[str] = []
-    unresolved: list[str] = []
-    resolved: list[TestDefinitionSummary] = []
+    parsed: list[UUID] = []
     seen: set[UUID] = set()
-
     for raw_id in dict.fromkeys(test_definition_ids):
         try:
             td_uuid = parse_uuid(raw_id, "test_definition_ids")
         except MCPUserError:
             malformed.append(str(raw_id))
             continue
-        if td_uuid in seen:
-            continue
-        seen.add(td_uuid)
-        summary = TestDefinition.get_for_project(td_uuid, perms.allowed_codes)
-        if summary is None:
-            unresolved.append(str(td_uuid))
-        else:
-            resolved.append(summary)
+        if td_uuid not in seen:
+            seen.add(td_uuid)
+            parsed.append(td_uuid)
+
+    perms = get_project_permissions()
+    resolved = TestDefinition.list_for_ids(parsed, perms.allowed_codes)
+    found = {td.id for td in resolved}
+    unresolved = [str(td_uuid) for td_uuid in parsed if td_uuid not in found]
 
     if malformed or unresolved:
         problems = []
@@ -885,23 +882,24 @@ def _resolve_named_tests(test_definition_ids: list[str]) -> list[TestDefinitionS
     return resolved
 
 
-def _describe_filter_scope(suite_name: str, table_name: str | None, test_type: str | None) -> str:
-    """Name the set a suite filter selects, so a whole-suite delete never reads as a bare count."""
+def _describe_filters(table_name: str | None, test_type: str | None) -> str:
+    """The supplied filter terms as a phrase, or ``no filter`` when neither is set."""
     filters = []
     if table_name:
         filters.append(f"table_name=`{table_name}`")
     if test_type:
         filters.append(f"test_type=`{test_type}`")
-    if not filters:
+    return ", ".join(filters) if filters else "no filter"
+
+
+def _describe_filter_scope(suite_name: str, table_name: str | None, test_type: str | None) -> str:
+    """Name the set a suite filter selects, so a whole-suite delete never reads as a bare count."""
+    if not table_name and not test_type:
         return f"every test in suite `{suite_name}`"
-    return f"tests in suite `{suite_name}` matching {', '.join(filters)}"
+    return f"tests in suite `{suite_name}` matching {_describe_filters(table_name, test_type)}"
 
 
-def _render_deleted(
-    scope: str,
-    deleted: list[TestDefinitionSummary] | list[TestDefinitionMinimal],
-    note_count: int,
-) -> str:
+def _render_deleted(scope: str, deleted: list[TestDefinitionMinimal], note_count: int) -> str:
     """Render the scope acted on, the count, and the deleted tests themselves."""
     doc = MdDoc()
     doc.heading(1, f"Deleted {len(deleted)} tests")
@@ -920,10 +918,7 @@ def _render_deleted(
     return doc.render()
 
 
-def _delete_resolved_tests(
-    scope: str,
-    selected: list[TestDefinitionSummary] | list[TestDefinitionMinimal],
-) -> str:
+def _delete_resolved_tests(scope: str, selected: list[TestDefinitionMinimal]) -> str:
     """Delete the already-resolved tests by ID and render what went.
 
     Deleting by ID rather than by the selecting filter keeps the response exact: a row
@@ -931,7 +926,7 @@ def _delete_resolved_tests(
     """
     ids = [td.id for td in selected]
     note_counts = TestDefinitionNote.get_notes_count_by_ids([str(td_id) for td_id in ids])
-    TestDefinition.delete_where(TestDefinition.id.in_(ids))
+    TestDefinition.delete_where(TestDefinition.id.in_(ids), TestDefinition.version_clause())
     return _render_deleted(scope, selected, sum(note_counts.values()))
 
 
@@ -991,21 +986,25 @@ def delete_tests(
 
     suite = resolve_test_suite(test_suite_id)
     tt_code = resolve_test_type(test_type) if test_type else None
-    clauses = [TestDefinition.test_suite_id == suite.id, TestDefinition.version_clause()]
+    clauses = [TestDefinition.test_suite_id == suite.id]
     if table_name:
         clauses.append(TestDefinition.table_name == table_name)
     if tt_code:
         clauses.append(TestDefinition.test_type == tt_code)
 
     selected = list(TestDefinition.select_minimal_where(*clauses))
-    scope = _describe_filter_scope(suite.test_suite, table_name, test_type)
     if not selected:
         doc = MdDoc()
         doc.heading(1, "No tests matched")
-        doc.text(f"No tests matched {scope}. Nothing was deleted.")
+        doc.text(
+            f"No tests in suite `{suite.test_suite}` matched the filter "
+            f"({_describe_filters(table_name, test_type)}). Nothing was deleted."
+        )
         return doc.render()
 
-    return _delete_resolved_tests(scope, selected)
+    return _delete_resolved_tests(
+        _describe_filter_scope(suite.test_suite, table_name, test_type), selected
+    )
 
 
 # ---------------------------------------------------------------------------

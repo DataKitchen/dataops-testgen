@@ -778,6 +778,37 @@ class TestDefinition(Entity):
         return cls._paginate(query, page=page, limit=limit, data_class=TestDefinitionSummary)
 
     @classmethod
+    def list_for_ids(
+        cls,
+        test_definition_ids: Iterable[UUID],
+        project_codes: list[str] | None = None,
+    ) -> list[TestDefinitionMinimal]:
+        """Test definitions for the given ids, in one statement.
+
+        Monitor suites are always filtered out. Project-level access is enforced when
+        ``project_codes`` is set. An id matching nothing is absent from the result rather
+        than raising, so a caller can report the difference itself.
+        """
+        from testgen.common.models.test_suite import TestSuite
+
+        ids = list(test_definition_ids)
+        if not ids:
+            return []
+
+        query = cls._scoped_select(
+            cls._minimal_columns,
+            cls.id.in_(ids),
+            TestSuite.suite_type == SuiteType.REGULAR,
+            join_target=TestType,
+            join_clause=cls.test_type == TestType.test_type,
+        ).join(TestSuite, cls.test_suite_id == TestSuite.id)
+        if project_codes is not None:
+            query = query.where(TestSuite.project_code.in_(project_codes))
+        query = query.order_by(*cls._default_order_by)
+        results = get_current_session().execute(query).mappings().all()
+        return [TestDefinitionMinimal(**row) for row in results]
+
+    @classmethod
     def get_singleton_monitor(
         cls,
         test_suite_id: str | UUID,
