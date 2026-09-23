@@ -1,3 +1,4 @@
+import copy
 import re
 from datetime import datetime
 from typing import Any, Self
@@ -16,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects import postgresql
 
+from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString
 from testgen.common.models.entity import Entity
 
@@ -58,34 +60,82 @@ class SuiteVersion(Entity):
         return super().get(identifier, *clauses)
 
     @classmethod
+    def _draft_branch(cls, suite_id):
+        return (
+            select(cls.id)
+            .where(cls.test_suite_id == suite_id, cls.frozen_at.is_(None))
+            .scalar_subquery()
+        )
+
+    @classmethod
+    def _frozen_branch(cls, suite_id):
+        return (
+            select(cls.id)
+            .where(cls.test_suite_id == suite_id, cls.frozen_at.is_not(None))
+            .order_by(cls.version.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
+
+    @classmethod
+    def _placeholder_branch(cls):
+        return select(cls.id).where(cls.test_suite_id.is_(None)).scalar_subquery()
+
+    @classmethod
     def resolved_for(cls, suite_id) -> ColumnElement[UUID]:
-        """The version a read of the given suite's rows scopes to.
+        """The version a read or write of the given suite's terms scopes to.
 
         The suite's draft where one exists, otherwise its highest frozen version, otherwise the
         placeholder. Accepts a literal id or a column expression and returns a correlated scalar
         subquery, so a caller that does not know the suite until the query runs can still scope
         by it.
         """
-        draft = (
-            select(cls.id)
-            .where(cls.test_suite_id == suite_id, cls.frozen_at.is_(None))
-            .scalar_subquery()
+        return func.coalesce(
+            cls._draft_branch(suite_id), cls._frozen_branch(suite_id), cls._placeholder_branch()
         )
-        latest_frozen = (
-            select(cls.id)
-            .where(cls.test_suite_id == suite_id)
-            .order_by(cls.version.desc())
-            .limit(1)
-            .scalar_subquery()
+
+    @classmethod
+    def active_for(cls, suite_id) -> ColumnElement[UUID]:
+        """The agreement in force for the given suite: its highest frozen version.
+
+        A suite with no frozen version resolves to the placeholder, which is what a suite that
+        keeps no versions is stamped with.
+        """
+        return func.coalesce(cls._frozen_branch(suite_id), cls._placeholder_branch())
+
+    @classmethod
+    def for_run(cls, suite_id) -> ColumnElement[UUID]:
+        """The version a run of the given suite is stamped with.
+
+        The agreement in force where there is one, otherwise the draft the run previews,
+        otherwise the placeholder. A suite with no frozen version has nothing in force, and
+        stamping the placeholder there would execute none of the draft's terms while still
+        reading as a run of the agreement.
+        """
+        return func.coalesce(
+            cls._frozen_branch(suite_id), cls._draft_branch(suite_id), cls._placeholder_branch()
         )
-        placeholder = select(cls.id).where(cls.test_suite_id.is_(None)).scalar_subquery()
-        return func.coalesce(draft, latest_frozen, placeholder)
+
+    @classmethod
+    def _compile_for_sql(cls, expression, suite_column: str) -> str:
+        qualified = _QUALIFIED_COLUMN.match(suite_column or "")
+        if not qualified:
+            raise ValueError(f"not a table-qualified column reference: {suite_column!r}")
+        if qualified.group(1).lower() == cls.__tablename__:
+            raise ValueError(
+                f"{suite_column!r} is shadowed by the subqueries' own {cls.__tablename__}"
+            )
+
+        compiled = expression.compile(
+            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+        )
+        return " ".join(str(compiled).split())
 
     @classmethod
     def resolved_for_sql(cls, suite_column: str) -> str:
         """``resolved_for`` as SQL text, for hand-written queries that cannot hold an expression.
 
-        The result is a scalar expression, not a join: three correlated subqueries over
+        The result is a scalar expression, not a join: correlated subqueries over
         ``suite_versions`` wrapped in ``coalesce``, each comparing that table's own
         ``test_suite_id`` to ``suite_column``. It goes on the right of ``version_id = ...``, and
         ``suite_column`` is a free reference resolved in the surrounding query's scope.
@@ -95,16 +145,109 @@ class SuiteVersion(Entity):
         tautology: every suite resolves to whichever draft the database happens to hold, and rows
         belonging to other versions disappear with no error.
         """
-        qualified = _QUALIFIED_COLUMN.match(suite_column or "")
-        if not qualified:
-            raise ValueError(f"not a table-qualified column reference: {suite_column!r}")
-        if qualified.group(1).lower() == cls.__tablename__:
-            raise ValueError(
-                f"{suite_column!r} is shadowed by the subqueries' own {cls.__tablename__}"
-            )
+        return cls._compile_for_sql(cls.resolved_for(literal_column(suite_column)), suite_column)
 
-        expression = cls.resolved_for(literal_column(suite_column))
-        compiled = expression.compile(
-            dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}
+    @classmethod
+    def is_draft(cls, version_id: UUID | str | None) -> bool:
+        """Whether the id names a suite's open draft.
+
+        False for the placeholder, for a version that no longer exists, and for no id at all.
+        """
+        if version_id is None:
+            return False
+        return get_current_session().scalar(
+            select(cls.id).where(
+                cls.id == version_id,
+                cls.test_suite_id.is_not(None),
+                cls.frozen_at.is_(None),
+            )
+        ) is not None
+
+    @classmethod
+    def is_frozen_agreement(cls, version_id: UUID | str | None) -> bool:
+        """Whether the id names a frozen version a suite owns.
+
+        False for the placeholder, which is stored frozen but belongs to no suite, so a suite
+        that keeps no versions never reads as holding a frozen agreement.
+        """
+        if version_id is None:
+            return False
+        return get_current_session().scalar(
+            select(cls.id).where(
+                cls.id == version_id,
+                cls.test_suite_id.is_not(None),
+                cls.frozen_at.is_not(None),
+            )
+        ) is not None
+
+    @classmethod
+    def is_active(cls, version_id: UUID | str | None, suite_id: UUID | str) -> bool:
+        """Whether the id names the suite's agreement in force."""
+        if version_id is None:
+            return False
+        # Compared in Python against an id the database hands back, unlike the predicates
+        # above, which hand theirs to it.
+        return UUID(str(version_id)) == get_current_session().scalar(select(cls.active_for(suite_id)))
+
+    @classmethod
+    def in_force_for(cls, suite_id) -> Self | None:
+        """The suite's highest frozen version, or None when it has none.
+
+        The placeholder is not a version in force: it is what a suite that keeps no versions
+        resolves to, and it belongs to no suite.
+        """
+        active_id = get_current_session().scalar(select(cls.active_for(suite_id)))
+        version = cls.get(active_id) if active_id else None
+        return version if version and version.test_suite_id else None
+
+    @staticmethod
+    def document_version(version: int) -> str:
+        """A version number as the semantic version string ODCS wants in ``version``."""
+        return f"{version}.0.0"
+
+    @classmethod
+    def open_draft(cls, suite_id) -> tuple[Self, Self | None]:
+        """Open a draft on the suite, carrying the version in force forward.
+
+        Returns the new draft and the version its document was copied from, which is None
+        when the suite had no frozen version to carry forward.
+        """
+        source = cls.in_force_for(suite_id)
+        version = cls.next_version_for(suite_id)
+        document = copy.deepcopy(source.metadata_document) if source else None
+        if document and "version" in document:
+            document["version"] = cls.document_version(version)
+        draft = cls(
+            id=uuid4(),
+            test_suite_id=suite_id,
+            version=version,
+            metadata_document=document,
+            odcs_api_version=source.odcs_api_version if source else None,
         )
-        return " ".join(str(compiled).split())
+        session = get_current_session()
+        session.add(draft)
+        session.flush()
+        return draft, source
+
+    @classmethod
+    def draft_for(cls, suite_id) -> Self | None:
+        """The suite's open draft, if it has one."""
+        return get_current_session().scalars(
+            select(cls).where(cls.test_suite_id == suite_id, cls.frozen_at.is_(None))
+        ).first()
+
+    @classmethod
+    def next_version_for(cls, suite_id) -> int:
+        """One past the suite's highest version number, or 1 when it has none."""
+        highest = get_current_session().scalar(
+            select(func.max(cls.version)).where(cls.test_suite_id == suite_id)
+        )
+        return (highest or 0) + 1
+
+
+class FrozenVersionError(Exception):
+    """Raised when a write targets a frozen version of a contract."""
+
+    def __init__(self, version_id) -> None:
+        super().__init__(f"Version {version_id} is frozen and cannot be written.")
+        self.version_id = version_id

@@ -1,5 +1,6 @@
 import os
 import typing
+from enum import StrEnum
 from pathlib import Path
 
 
@@ -657,6 +658,54 @@ Email: SMTP username
 SMTP_PASSWORD: str | None = getenv("TG_SMTP_PASSWORD")
 """
 Email: SMTP password
+"""
+
+
+class SMTPSecurity(StrEnum):
+    """How the SMTP connection that sends notification emails is secured."""
+    SSL = "ssl"
+    STARTTLS = "starttls"
+    NONE = "none"
+
+
+SMTP_SECURITY: str = getenv("TG_SMTP_SECURITY", SMTPSecurity.SSL).lower()
+"""
+Email: how the SMTP connection is secured.
+
+`ssl` wraps the connection in TLS from the first byte, which servers on port 465
+expect. `starttls` opens the connection in plaintext and issues the STARTTLS
+command to upgrade it, which servers on port 587 or 25 expect. `none` leaves the
+connection unencrypted.
+
+Typed as `str` rather than `SMTPSecurity` so that an unrecognized value is
+reported when email is sent, naming the values that are accepted, instead of
+raising on import and failing every `testgen` command.
+
+from env variable: `TG_SMTP_SECURITY`
+defaults to: `ssl`
+"""
+
+SMTP_CLIENT_CERT_FILE: str = getenv("TG_SMTP_CLIENT_CERT_FILE", "")
+SMTP_CLIENT_KEY_FILE: str = getenv("TG_SMTP_CLIENT_KEY_FILE", "")
+"""
+Email: file paths for the TLS client certificate and private key presented to the
+SMTP server, for a relay that authorizes the sender by certificate rather than by
+username and password. Both files must be provided.
+
+from env variables: `TG_SMTP_CLIENT_CERT_FILE`, `TG_SMTP_CLIENT_KEY_FILE`
+defaults to: unset
+"""
+
+SMTP_CLIENT_KEY_PASSWORD: str = getenv("TG_SMTP_CLIENT_KEY_PASSWORD", "")
+"""
+Email: passphrase for `TG_SMTP_CLIENT_KEY_FILE`, when the key is encrypted.
+
+Passed to OpenSSL exactly as set. An empty value must not be turned into `None`,
+which makes OpenSSL prompt for a passphrase on the terminal and block the send.
+An unencrypted key ignores the value; an encrypted key with none set fails to load.
+
+from env variable: `TG_SMTP_CLIENT_KEY_PASSWORD`
+defaults to: unset
 """
 
 WEBHOOK_ALLOWED_HOSTS: str | None = getenv("TG_WEBHOOK_ALLOWED_HOSTS")

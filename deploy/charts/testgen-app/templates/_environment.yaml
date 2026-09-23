@@ -64,6 +64,22 @@
 - name: TG_SMTP_PASSWORD
   value: {{ .smtp.password | quote }}
 {{- end }}
+{{- if .smtp.security }}
+- name: TG_SMTP_SECURITY
+  value: {{ .smtp.security | quote }}
+{{- end }}
+{{- if .smtp.clientCertFile }}
+- name: TG_SMTP_CLIENT_CERT_FILE
+  value: {{ .smtp.clientCertFile | quote }}
+{{- end }}
+{{- if .smtp.clientKeyFile }}
+- name: TG_SMTP_CLIENT_KEY_FILE
+  value: {{ .smtp.clientKeyFile | quote }}
+{{- end }}
+{{- if .smtp.clientKeyPassword }}
+- name: TG_SMTP_CLIENT_KEY_PASSWORD
+  value: {{ .smtp.clientKeyPassword | quote }}
+{{- end }}
 {{- if .fromAddress }}
 - name: TG_EMAIL_FROM_ADDRESS
   value: {{ .fromAddress | quote }}

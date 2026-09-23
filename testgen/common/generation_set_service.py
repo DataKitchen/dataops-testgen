@@ -7,27 +7,35 @@ own user-facing errors.
 
 Set names are read from the ``generation_sets`` table at runtime and never enumerated
 here: plugins contribute their own sets, and their names must not appear in this
-package. ``Standard`` and ``Monitor`` are the two names this package owns.
+package. ``Standard``, ``Monitor``, and ``Contract`` are the three names this package owns.
 """
 
 from sqlalchemy import text
 
+from testgen.common.enums import SuiteType
 from testgen.common.models import get_current_session
 from testgen.common.models.test_suite import TestSuite
 
 MONITOR_GENERATION_SET = "Monitor"
+CONTRACT_GENERATION_SET = "Contract"
 DEFAULT_GENERATION_SET = "Standard"
 
 
 def list_generation_sets(*, include_monitor: bool = False) -> list[str]:
-    """Every generation set defined in the database, alphabetically."""
+    """Every generation set defined in the database, alphabetically.
+
+    ``Contract`` is permanently excluded, the same way ``Monitor`` is: it reaches no picker,
+    endpoint or tool, whether or not it happens to hold rows. Curating its member test types
+    is a separate change; today it has no rows in ``generation_sets`` either way.
+    """
     rows = get_current_session().execute(
         text("SELECT DISTINCT generation_set FROM generation_sets ORDER BY generation_set")
     ).all()
     names = [row[0] for row in rows]
-    if include_monitor:
-        return names
-    return [name for name in names if name != MONITOR_GENERATION_SET]
+    excluded = {CONTRACT_GENERATION_SET}
+    if not include_monitor:
+        excluded.add(MONITOR_GENERATION_SET)
+    return [name for name in names if name not in excluded]
 
 
 def get_generation_set_members() -> dict[str, list[str]]:
@@ -35,10 +43,10 @@ def get_generation_set_members() -> dict[str, list[str]]:
     rows = get_current_session().execute(
         text(
             "SELECT generation_set, test_type FROM generation_sets "
-            "WHERE generation_set <> :monitor "
+            "WHERE generation_set NOT IN (:monitor, :contract) "
             "ORDER BY generation_set, test_type"
         ),
-        {"monitor": MONITOR_GENERATION_SET},
+        {"monitor": MONITOR_GENERATION_SET, "contract": CONTRACT_GENERATION_SET},
     ).all()
 
     members: dict[str, list[str]] = {}
@@ -75,7 +83,12 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
     and then to ``Standard``. An empty list means the caller asked for nothing, which
     is an error: an unmatched set generates no test types, and the stale-delete would
     then remove every unlocked auto-generated test in the suite.
+
+    A contract suite always resolves to ``Contract`` alone, whether or not that set has
+    any member test types yet, and refuses any other request. A non-contract suite
+    refuses to be given the ``Contract`` set.
     """
+    is_contract = test_suite.suite_type == SuiteType.CONTRACT
     available = list_generation_sets()
 
     if requested is not None:
@@ -84,6 +97,16 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
 
         if not requested:
             raise ValueError("At least one generation set is required.")
+
+        if is_contract:
+            if requested != [CONTRACT_GENERATION_SET]:
+                raise ValueError(
+                    f"Contract test suites can only use the '{CONTRACT_GENERATION_SET}' generation set."
+                )
+            return [CONTRACT_GENERATION_SET]
+
+        if CONTRACT_GENERATION_SET in requested:
+            raise ValueError(f"'{CONTRACT_GENERATION_SET}' cannot be used for a non-contract test suite.")
 
         if MONITOR_GENERATION_SET in requested:
             raise ValueError(
@@ -98,6 +121,9 @@ def resolve_generation_sets(test_suite: TestSuite, requested: list[str] | None) 
             )
 
         return list(dict.fromkeys(requested))
+
+    if is_contract:
+        return [CONTRACT_GENERATION_SET]
 
     stored = [name for name in (test_suite.generation_sets or []) if name in available]
     return stored or [DEFAULT_GENERATION_SET]
