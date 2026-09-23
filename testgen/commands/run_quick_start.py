@@ -28,7 +28,7 @@ from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scores import ScoreDefinition
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
-from testgen.common.notifications.base import smtp_configured
+from testgen.common.notifications.base import log_smtp_configuration_problems, smtp_configured
 from testgen.common.read_file import read_template_sql_file
 from testgen.common.standalone_postgres import EMBEDDED_HOST_SENTINEL, is_standalone_mode
 from testgen.utils import get_exception_message
@@ -359,6 +359,7 @@ def run_quick_start(delete_target_db: bool) -> None:
 
 
 def _setup_initial_config():
+    log_smtp_configuration_problems()
     PersistedSetting.set("SMTP_CONFIGURED", smtp_configured())
 
 
