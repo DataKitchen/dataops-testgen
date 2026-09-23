@@ -95,7 +95,7 @@ from testgen.common.models import database_session, with_database_session
 from testgen.common.models.settings import PersistedSetting
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.notifications.base import smtp_configured
+from testgen.common.notifications.base import log_smtp_configuration_problems, smtp_configured
 from testgen.common.standalone_postgres import (
     STANDALONE_URI_ENV_VAR,
     ensure_standalone_setup,
@@ -999,6 +999,7 @@ def run_ui():
 
     @with_database_session
     def init_ui():
+        log_smtp_configuration_problems()
         PersistedSetting.set("SMTP_CONFIGURED", smtp_configured())
 
     init_ui()
