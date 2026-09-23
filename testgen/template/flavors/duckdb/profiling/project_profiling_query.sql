@@ -228,11 +228,11 @@ SELECT
   CROSS JOIN pattern_slots
 -- TG-ENDIF
 -- TG-IF is_N_approx_pctile
-  , (SELECT
-             approx_quantile("{COL_NAME}", 0.25) AS pct_25,
-             approx_quantile("{COL_NAME}", 0.50) AS pct_50,
-             approx_quantile("{COL_NAME}", 0.75) AS pct_75
-        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1) pctile
+  , (SELECT pcts[1] AS pct_25,
+            pcts[2] AS pct_50,
+            pcts[3] AS pct_75
+       FROM (SELECT approx_quantile("{COL_NAME}", [0.25, 0.50, 0.75]) AS pcts
+               FROM "{DATA_SCHEMA}"."{DATA_TABLE}")) pctile
 -- TG-ENDIF
 -- TG-IF is_N_exact_pctile
   , (SELECT
