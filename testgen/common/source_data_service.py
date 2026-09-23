@@ -31,6 +31,7 @@ DEFAULT_LIMIT = 500
 class LookupData:
     lookup_query: str
     sql_flavor: SQLFlavor | None = None
+    sql_flavor_code: str | None = None
     lookup_redactable_columns: str | None = None
 
 
@@ -116,7 +117,11 @@ def build_hygiene_query(issue_data: dict, limit: int = DEFAULT_LIMIT) -> str | N
 
     lookup_query = (
         _generate_recency_lookup_query(
-            issue_data["anomaly_id"], issue_data["detail"], issue_data["column_name"], lookup_data.sql_flavor,
+            issue_data["anomaly_id"],
+            issue_data["detail"],
+            issue_data["column_name"],
+            lookup_data.sql_flavor,
+            lookup_data.sql_flavor_code,
         )
         if lookup_data.lookup_query == "created_in_ui"
         else lookup_data.lookup_query
@@ -262,7 +267,7 @@ def _build_query_custom(issue_data: dict) -> str | None:
 
 
 def _generate_recency_lookup_query(
-    test_id: str, detail_exp: str, column_names: str, sql_flavor: SQLFlavor,
+    test_id: str, detail_exp: str, column_names: str, sql_flavor: SQLFlavor, sql_flavor_code: str,
 ) -> str:
     """Build lookup SQL for hygiene anomalies 1019/1020 (recency checks)."""
     if test_id not in {"1019", "1020"}:
@@ -278,7 +283,7 @@ def _generate_recency_lookup_query(
 
     flavor_service = get_flavor_service(sql_flavor)
     quote = flavor_service.quote_character
-    table_ref = flavor_service.get_table_ref("{TARGET_SCHEMA}", "{TABLE_NAME}")
+    table_ref = flavor_service.get_table_ref("{TARGET_SCHEMA}", "{TABLE_NAME}", sql_flavor_code)
     queries = [
         f"""
         SELECT
@@ -306,6 +311,7 @@ def _get_lookup_data(
             SELECT
                 t.lookup_query,
                 c.sql_flavor,
+                c.sql_flavor_code,
                 t.lookup_redactable_columns
             FROM target_data_lookups t
             INNER JOIN table_groups tg

@@ -599,11 +599,14 @@ class TestExecutionSQL:
         aggregate_queries: list[tuple[str, None]] = []
         aggregate_test_defs: list[list[TestExecutionDef]] = []
         for group in groups:
+            table_ref = self.flavor_service.get_table_ref(
+                group[0].schema_name, group[0].table_name, self.connection.sql_flavor_code
+            )
             query = (
                 f"SELECT {len(aggregate_queries)} AS query_index, "
                 f"{concat_operator.join([td.measure_expression for td in group])} AS result_measures, "
                 f"{concat_operator.join([td.condition_expression for td in group])} AS result_codes "
-                f"FROM {self.flavor_service.get_table_ref(group[0].schema_name, group[0].table_name)}"
+                f"FROM {table_ref}"
             )
             query = query.replace(":", "\\:")
 

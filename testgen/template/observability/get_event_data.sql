@@ -2,6 +2,7 @@ Select
 	   c.sql_flavor as sql_flavor,
 	   COALESCE(ts.component_key, tg.id::VARCHAR) as dataset_key,
 	   COALESCE(ts.component_name, tg.table_groups_name) as dataset_name,
+	   c.sql_flavor_code as sql_flavor_code,
 	   tg.table_group_schema as schema,
 	   c.connection_name as connection_name,
 	   COALESCE(NULLIF(c.project_db, ''), c.connection_name) as project_db,

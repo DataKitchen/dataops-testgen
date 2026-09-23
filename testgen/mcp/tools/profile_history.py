@@ -18,6 +18,7 @@ from uuid import UUID
 from pydantic import Field
 from sqlalchemy import func
 
+from testgen.common.database.table_group_service import table_group_qualifies_table_refs
 from testgen.common.enums import Disposition, JobStatus
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.data_column import GENERAL_TYPE_CODE_TO_LABEL, ProfileMetric
@@ -800,13 +801,17 @@ def get_schema_history(
     rows = ProfileResult.select_for_runs(run_ids=run_ids)
     snapshots = _build_run_snapshots(rows)
 
-    return _render_schema_history(tg.table_groups_name, runs, snapshots)
+    return _render_schema_history(
+        tg.table_groups_name, runs, snapshots, qualify_tables=table_group_qualifies_table_refs(tg.id)
+    )
 
 
 def _render_schema_history(
     tg_name: str,
     runs: list[ProfilingRun],
     snapshots: dict[UUID, dict[tuple[str, str], _TableSnapshot]],
+    *,
+    qualify_tables: bool,
 ) -> str:
     doc = MdDoc()
     doc.heading(1, f"Schema history for `{tg_name}`")
@@ -820,6 +825,7 @@ def _render_schema_history(
         section_lines = _format_schema_delta(
             target_snap=snapshots.get(target.id, {}),
             baseline_snap=snapshots.get(baseline.id, {}),
+            qualify_tables=qualify_tables,
         )
         doc.heading(2, f"Run started {_format_run_label(target)}")
         doc.field("Profiling Run", target.id, code=True)
@@ -837,14 +843,16 @@ def _format_run_label(run: ProfilingRun) -> str:
     return run.profiling_starttime.strftime("%Y-%m-%d %H:%M")
 
 
-def _format_table_key(key: tuple[str, str]) -> str:
+def _format_table_key(key: tuple[str, str], qualify: bool) -> str:
     schema, table = key
-    return f"`{schema}.{table}`" if schema else f"`{table}`"
+    return f"`{schema}.{table}`" if qualify and schema else f"`{table}`"
 
 
 def _format_schema_delta(
     target_snap: dict[tuple[str, str], _TableSnapshot],
     baseline_snap: dict[tuple[str, str], _TableSnapshot],
+    *,
+    qualify_tables: bool,
 ) -> list[str]:
     lines: list[str] = []
     target_tables = set(target_snap)
@@ -853,12 +861,12 @@ def _format_schema_delta(
     added_tables = sorted(target_tables - baseline_tables)
     for key in added_tables:
         col_ct = len(target_snap[key].columns)
-        lines.append(f"Table added: {_format_table_key(key)} ({col_ct} columns)")
+        lines.append(f"Table added: {_format_table_key(key, qualify_tables)} ({col_ct} columns)")
 
     dropped_tables = sorted(baseline_tables - target_tables)
     for key in dropped_tables:
         col_ct = len(baseline_snap[key].columns)
-        lines.append(f"Table dropped: {_format_table_key(key)} ({col_ct} columns)")
+        lines.append(f"Table dropped: {_format_table_key(key, qualify_tables)} ({col_ct} columns)")
 
     for key in sorted(target_tables & baseline_tables):
         target_table = target_snap[key]
@@ -866,9 +874,9 @@ def _format_schema_delta(
         column_changes = _format_column_delta(target_table.columns, baseline_table.columns)
         record_delta = _format_record_delta(target_table.record_ct, baseline_table.record_ct)
         for change in column_changes:
-            lines.append(f"{_format_table_key(key)}: {change}")
+            lines.append(f"{_format_table_key(key, qualify_tables)}: {change}")
         if record_delta is not None:
-            lines.append(f"{_format_table_key(key)}: Record count {record_delta}")
+            lines.append(f"{_format_table_key(key, qualify_tables)}: Record count {record_delta}")
     return lines
 
 

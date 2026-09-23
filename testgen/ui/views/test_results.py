@@ -8,7 +8,14 @@ import streamlit as st
 
 from testgen.commands.run_rollup_scores import run_test_rollup_scoring_queries
 from testgen.common import date_service
+from testgen.common.database.database_service import get_flavor_service
+from testgen.common.database.table_group_service import (
+    apply_test_definition_flavor_rules,
+    schema_label_for_table_group,
+    table_group_qualifies_table_refs,
+)
 from testgen.common.enums import SuiteType
+from testgen.common.flavors import table_group_schema_label
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.test_definition import (
@@ -43,6 +50,7 @@ from testgen.ui.queries.source_data_queries import (
 )
 from testgen.ui.services.database_service import fetch_df_from_db, fetch_one_from_db
 from testgen.ui.services.query_cache import (
+    get_connection,
     get_table_group_minimal,
     get_test_definition,
     get_test_run_minimal,
@@ -428,7 +436,14 @@ class TestResultsPage(Page):
         def on_edit_test_saved(test_def: dict) -> None:
             valid_columns = {c.key for c in TestDefinition.__table__.columns}
             filtered = {k: v for k, v in test_def.items() if k in valid_columns}
-            TestDefinition(**filtered).save()
+            definition = TestDefinition(**filtered)
+            if table_group := get_table_group_minimal(test_suite.table_groups_id):
+                apply_test_definition_flavor_rules(
+                    definition,
+                    table_group,
+                    qualifies_table_refs=table_group_qualifies_table_refs(table_group.id),
+                )
+            definition.save()
             st.session_state.pop(EDIT_TEST_KEY, None)
             st.session_state.pop(VALIDATE_RESULT_KEY, None)
             st.cache_data.clear()
@@ -600,6 +615,7 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
         "export_to_observability": bool(full_test_suite.export_to_observability),
     }
 
+    connection = get_connection(table_group.connection_id)
     return {
         "open": True,
         "test_definition": make_json_safe(test_def_dict),
@@ -607,6 +623,12 @@ def _build_edit_test_dialog_data(test_definition_id: str | None, test_suite_mini
         "table_columns": table_columns,
         "table_group_schema": table_group.table_group_schema,
         "test_suite": test_suite_info,
+        "qualifies_table_refs_with_schema": (
+            get_flavor_service(connection.sql_flavor).qualifies_table_refs_with_schema(connection.sql_flavor_code)
+            if connection
+            else True
+        ),
+        "schema_label": table_group_schema_label(connection.sql_flavor_code if connection else None),
     }
 
 
@@ -729,11 +751,16 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
     for field_name in dynamic_attributes_fields[len(dynamic_attributes_labels):]:
         dynamic_attributes_labels.append(snake_case_to_title_case(field_name))
 
+    # The reference table's schema is settled by the flavor rather than chosen where table references
+    # go unqualified, so it is not shown there.
+    qualifies_table_refs = table_group_qualifies_table_refs(test_suite.table_groups_id)
+
     dynamic_attributes_help_raw = test_definition.default_parm_help or ""
     dynamic_attributes_help = dynamic_attributes_help_raw.split("|") if dynamic_attributes_help_raw else []
 
     return {
         "schema": test_definition.schema_name,
+        "schema_label": schema_label_for_table_group(test_suite.table_groups_id),
         "test_suite_name": test_suite.test_suite,
         "table_name": test_definition.table_name,
         "test_focus": test_definition.column_name,
@@ -748,20 +775,19 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
         "usage_notes": test_definition.usage_notes,
         "external_url": test_definition.external_url,
         "custom_metadata": test_definition.custom_metadata,
-        "last_manual_update": (
-            test_definition.last_manual_update.isoformat() if test_definition.last_manual_update else None
-        ),
+        "last_manual_update": make_json_safe(test_definition.last_manual_update),
         "custom_query": (
             test_definition.custom_query if "custom_query" in dynamic_attributes_fields else None
         ),
         "attributes": [
             {"label": label, "value": value, "help": help_}
-            for label, value, help_ in zip_longest(
+            for field, label, value, help_ in zip_longest(
+                dynamic_attributes_fields,
                 dynamic_attributes_labels,
                 dynamic_attributes_values,
                 dynamic_attributes_help,
             )
-            if label and value
+            if label and value and (qualifies_table_refs or field != "match_schema_name")
         ],
     }
 
@@ -794,7 +820,14 @@ def _handle_export(export_filters: dict, run_id: str, run_date: str, test_suite:
     download_dialog(
         dialog_title="Download Excel Report",
         file_content_func=get_excel_report_data,
-        args=(test_suite.test_suite, table_group.table_group_schema, run_date, run_id, export_df),
+        args=(
+            test_suite.test_suite,
+            table_group.table_group_schema,
+            schema_label_for_table_group(test_suite.table_groups_id),
+            run_date,
+            run_id,
+            export_df,
+        ),
     )
 
 
@@ -894,6 +927,7 @@ def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: str,
     schema: str,
+    schema_label: str | None,
     run_date: str,
     run_id: str,
     data: pd.DataFrame | None = None,
@@ -921,7 +955,11 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Test Results",
-        details={"Test suite": test_suite, "Schema": schema, "Test run date": run_date},
+        details={
+            "Test suite": test_suite,
+            **({schema_label: schema} if schema_label else {}),
+            "Test run date": run_date,
+        },
         columns=columns,
         update_progress=update_progress,
     )

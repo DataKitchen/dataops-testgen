@@ -4,6 +4,7 @@
  * @property {string} id
  * @property {string} table_groups_name
  * @property {string} table_group_schema
+ * @property {string?} schema_label
  * @property {number} table_ct
  * @property {number} column_ct
  * @property {number} approx_record_ct
@@ -37,9 +38,9 @@ const TableGroupStats = (props, stats) => {
 
     return div(
         { class: `flex-column fx-gap-1 p-3 border border-radius-2 ${props.class ?? ''}` },
-        stats.table_group_schema
+        stats.schema_label && stats.table_group_schema
             ? span(
-                span({ class: 'text-secondary' }, 'Schema: '),
+                span({ class: 'text-secondary' }, `${stats.schema_label}: `),
                 stats.table_group_schema,
             )
             : '',

@@ -1,5 +1,5 @@
 # Importing the fixture registers the autouse authenticated-MCP-user setup for these tests.
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -22,3 +22,23 @@ def source_data_protection_off():
         return_value=None,
     ):
         yield
+
+
+@pytest.fixture(autouse=True)
+def target_connection():
+    """Read the table group's connection as PostgreSQL unless a test says otherwise.
+
+    ``db_session_mock`` patches the session factory, so an unstubbed
+    ``Connection.get_by_table_group`` returns a ``MagicMock``. Resolving a flavor service from
+    one imports a module named after the mock and raises. Tests that want a particular database
+    type patch ``Connection.get_by_table_group`` in ``table_group_service`` themselves, which
+    wins over this.
+    """
+    connection = MagicMock()
+    connection.sql_flavor = "postgresql"
+    connection.sql_flavor_code = "postgresql"
+    with patch(
+        "testgen.common.database.table_group_service.Connection.get_by_table_group",
+        return_value=connection,
+    ):
+        yield connection

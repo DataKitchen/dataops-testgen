@@ -6,6 +6,7 @@ from sqlalchemy import and_, or_
 from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.sql.functions import func
 
+from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.enums import Disposition, IssueLikelihood, PiiRisk
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue, HygieneIssueType
@@ -269,6 +270,8 @@ def get_hygiene_issue(
     if detail is None:
         raise MCPResourceNotAccessible("Hygiene issue", issue_id)
 
+    schema_label = schema_label_for_table_group(detail.table_groups_id)
+
     location = (
         f"`{detail.column_name}` in `{detail.table_name}`" if detail.column_name else f"`{detail.table_name}`"
     )
@@ -277,7 +280,8 @@ def get_hygiene_issue(
     doc.heading(1, f"[{detail.priority or 'Unknown'}] {detail.issue_type_name} on {location}")
     doc.field("Issue ID", detail.id, code=True)
     doc.field("Issue Type", detail.issue_type_name)
-    doc.field("Schema", detail.schema_name)
+    if schema_label:
+        doc.field(schema_label, detail.schema_name)
     doc.field("Table", detail.table_name)
     if detail.column_name:
         doc.field("Column", detail.column_name)

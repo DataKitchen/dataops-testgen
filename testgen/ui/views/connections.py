@@ -19,7 +19,12 @@ from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.database.table_group_service import apply_table_group_flavor_rules
 from testgen.common.enums import JobSource
-from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, fixed_max_threads
+from testgen.common.flavors import (
+    FLAVOR_CODE_TO_FAMILY,
+    FLAVOR_CODE_TO_LABEL,
+    fixed_max_threads,
+    table_group_schema_label,
+)
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.job_execution import JobExecution
@@ -536,6 +541,7 @@ class ConnectionFlavor:
     flavor: str
     field_help: dict[str, str]
     fixed_max_threads: int | None
+    schema_label: str | None
 
 
 # Labels and families come from the shared source in ``common/flavors.py`` (the
@@ -584,6 +590,7 @@ FLAVOR_OPTIONS = [
         icon=get_asset_data_url(icon),
         field_help=_FLAVOR_FIELD_HELP.get(code, {}),
         fixed_max_threads=fixed_max_threads(code),
+        schema_label=table_group_schema_label(code),
     )
     for code, icon in _FLAVOR_ICONS.items()
 ]

@@ -4,7 +4,7 @@
  * @property {string} label
  * @property {string} value
  * @property {string?} help
- * 
+ *
  * @typedef TestDefinition
  * @type {object}
  * @property {string} schema
@@ -15,7 +15,7 @@
  * @property {string} active
  * @property {string} locked
  * @property {string} export_to_observability
- * @property {string?} last_manual_update
+ * @property {number?} last_manual_update
  * @property {string?} usage_notes
  * @property {string?} external_url
  * @property {object?} custom_metadata
@@ -30,6 +30,7 @@ import { createEmitter, getValue, isEqual, isHttpUrl, loadStylesheet } from '/ap
 import { Alert } from '/app/static/js/components/alert.js';
 import { Attribute } from '/app/static/js/components/attribute.js';
 import { Link } from '/app/static/js/components/link.js';
+import { formatTimestamp } from '/app/static/js/display_utils.js';
 
 const { div, strong } = van.tags;
 
@@ -37,8 +38,8 @@ const metadataDisplayValue = (value) =>
     (value !== null && typeof value === 'object') ? JSON.stringify(value) : value;
 
 /**
- * @param {Properties} props 
- * @returns 
+ * @param {Properties} props
+ * @returns
  */
 const TestDefinitionSummary = (props) => {
     const { emit } = props;
@@ -58,18 +59,20 @@ const TestDefinitionSummary = (props) => {
                     { class: 'flex-row fx-gap-1 fx-align-flex-start' },
                     div(
                         { class: 'flex-column fx-flex fx-gap-4 test-definition-attributes'},
+                        testDefinition.schema_label
+                            ? Attribute({
+                                label: testDefinition.schema_label,
+                                value: testDefinition.schema,
+                                class: 'fx-flex'
+                            })
+                            : '',
                         Attribute({
-                            label: 'Schema Name',
-                            value: testDefinition.schema,
-                            class: 'fx-flex'
-                        }),
-                        Attribute({
-                            label: 'Test Suite Name',
+                            label: 'Test Suite',
                             value: testDefinition.test_suite_name,
                             class: 'fx-flex'
                         }),
                         Attribute({
-                            label: 'Table Name',
+                            label: 'Table',
                             value: testDefinition.table_name,
                             class: 'fx-flex'
                         }),
@@ -90,9 +93,7 @@ const TestDefinitionSummary = (props) => {
                         }),
                         Attribute({
                             label: 'Last Manual Update',
-                            value: testDefinition.last_manual_update
-                                ? Intl.DateTimeFormat("en-US", {dateStyle: 'long', timeStyle: 'long'}).format(Date.parse(testDefinition.last_manual_update))
-                                : undefined,
+                            value: formatTimestamp(testDefinition.last_manual_update, true),
                             class: 'fx-flex'
                         }),
                     ),

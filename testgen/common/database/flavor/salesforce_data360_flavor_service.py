@@ -37,12 +37,16 @@ class SalesforceData360FlavorService(FlavorService):
     default_uppercase = False
     test_query = "SELECT 1"
     url_scheme = "salesforce_data360"
-    qualifies_table_refs_with_schema = False
     metadata_via_api = True
 
     # The query surface has no exact percentile, so the template computes them approximately
     # regardless of this flag; it records the fact rather than switching anything.
     supports_approx_percentile = True
+
+    def qualifies_table_refs_with_schema(self, sql_flavor_code: str) -> bool:  # noqa: ARG002
+        # The stored schema is a Data Space, which scopes the connection rather than naming a
+        # container inside it. Data 360 has nothing to qualify a table with.
+        return False
 
     def get_connection_string(self, _params: ResolvedConnectionParams) -> str:
         return "salesforce_data360://"

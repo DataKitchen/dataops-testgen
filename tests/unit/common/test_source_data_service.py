@@ -196,7 +196,7 @@ class Test_generate_recency_lookup_query:
     def test_generates_union_for_1019(self, mock_flavor):
         mock_flavor.return_value = MagicMock(quote_character='"')
         result = _generate_recency_lookup_query(
-            "1019", "Columns: col_a, col_b", "col_a,col_b", "postgresql",
+            "1019", "Columns: col_a, col_b", "col_a,col_b", "postgresql", "postgresql",
         )
         assert "col_a" in result
         assert "col_b" in result
@@ -207,7 +207,7 @@ class Test_generate_recency_lookup_query:
     def test_extracts_columns_from_detail(self, mock_flavor):
         mock_flavor.return_value = MagicMock(quote_character='"')
         result = _generate_recency_lookup_query(
-            "1020", "Columns: date_col", "fallback_col", "postgresql",
+            "1020", "Columns: date_col", "fallback_col", "postgresql", "postgresql",
         )
         assert "date_col" in result
         assert "fallback_col" not in result
@@ -216,12 +216,12 @@ class Test_generate_recency_lookup_query:
     def test_falls_back_to_column_names_when_no_columns_prefix(self, mock_flavor):
         mock_flavor.return_value = MagicMock(quote_character='"')
         result = _generate_recency_lookup_query(
-            "1019", "no columns prefix here", "fallback_col", "postgresql",
+            "1019", "no columns prefix here", "fallback_col", "postgresql", "postgresql",
         )
         assert "fallback_col" in result
 
     def test_returns_empty_for_non_recency_anomaly(self):
-        assert _generate_recency_lookup_query("1001", "detail", "col", "postgresql") == ""
+        assert _generate_recency_lookup_query("1001", "detail", "col", "postgresql", "postgresql") == ""
 
 
 # ---------------------------------------------------------------------------

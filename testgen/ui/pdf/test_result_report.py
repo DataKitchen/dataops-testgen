@@ -11,6 +11,7 @@ from reportlab.platypus import (
 )
 
 from testgen import settings
+from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import TABLE_STYLE_DATA, DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -49,6 +50,7 @@ RESULT_STATUS_COLORS = {
 
 def build_summary_table(document, tr_data):
     status_color = RESULT_STATUS_COLORS.get(tr_data["result_status"], COLOR_GRAY_BG)
+    schema_label = schema_label_for_table_group(tr_data["table_groups_id"])
     summary_table_style = TableStyle(
         (
             # All-table styles
@@ -125,7 +127,12 @@ def build_summary_table(document, tr_data):
         ("Threshold Value", tr_data["threshold_value"], tr_data["threshold_description"]),
 
         ("Test Run Date", test_timestamp, None, "Test Suite", tr_data["test_suite"]),
-        ("Database/Schema", tr_data["schema_name"], None, "Table Group", tr_data["table_groups_name"]),
+        (
+            *((schema_label, tr_data["schema_name"]) if schema_label else (None, None)),
+            None,
+            "Table Group",
+            tr_data["table_groups_name"],
+        ),
         ("Table", tr_data["table_name"], None, "Impact Dimension", tr_data["impact_dimension"]),
         ("Column", tr_data["column_names"], None, "Quality Dimension", tr_data["dq_dimension"]),
         ("Action", tr_data["disposition"] or "No Decision", None, None),

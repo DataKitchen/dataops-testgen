@@ -64,6 +64,7 @@ def _detail_row(**overrides):
     base = {
         "id": uuid4(),
         "project_code": "demo",
+        "table_groups_id": uuid4(),
         "issue_type_name": "Non-Standard Blank Values",
         "type_description": "Description body.",
         "suggested_action": "Suggested action body.",
@@ -714,6 +715,44 @@ def test_get_hygiene_issue_skips_null_rate_when_record_ct_zero(mock_get, db_sess
     mock_get.return_value = _detail_row(column_record_ct=0, column_null_value_ct=0)
     result = get_hygiene_issue(issue_id=str(uuid4()))
     assert "Null Rate" not in result
+
+
+def _patch_table_group_flavor(sql_flavor_code):
+    """Report the table group's connection as this database type to the schema-label lookup."""
+    connection = MagicMock()
+    connection.sql_flavor_code = sql_flavor_code
+    return patch(
+        "testgen.common.database.table_group_service.Connection.get_by_table_group",
+        return_value=connection,
+    )
+
+
+@patch.object(HygieneIssue, "get_with_context")
+def test_get_hygiene_issue_reports_no_schema_on_a_files_connection(mock_get, db_session_mock):
+    """The stored value is the engine's own default schema, not one the user chose."""
+    from testgen.mcp.tools.hygiene_issues import get_hygiene_issue
+
+    mock_get.return_value = _detail_row(schema_name="main")
+
+    with _patch_table_group_flavor("files"):
+        result = get_hygiene_issue(issue_id=str(uuid4()))
+
+    assert "Schema" not in result
+    assert "`main`" not in result
+    assert "**Table:** orders" in result
+
+
+@patch.object(HygieneIssue, "get_with_context")
+def test_get_hygiene_issue_names_the_data_space_on_a_data_360_connection(mock_get, db_session_mock):
+    from testgen.mcp.tools.hygiene_issues import get_hygiene_issue
+
+    mock_get.return_value = _detail_row(schema_name="sales")
+
+    with _patch_table_group_flavor("salesforce_data360"):
+        result = get_hygiene_issue(issue_id=str(uuid4()))
+
+    assert "**Data Space:** sales" in result
+    assert "Schema" not in result
 
 
 # ---------------------------------------------------------------------------

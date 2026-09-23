@@ -1,5 +1,7 @@
 """API v1 — test run and profiling run retrieval."""
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_, select
 
@@ -53,6 +55,7 @@ from testgen.api.schemas import (
     TestRunResponse,
     TestRunResult,
 )
+from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.enums import Disposition as DbDisposition
 from testgen.common.enums import ImpactDimension as DbImpactDimension
 from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
@@ -76,6 +79,29 @@ _error_responses = {
 }
 
 router = APIRouter(tags=["Runs"], dependencies=[Depends(db_session)], responses=_error_responses)
+
+
+def _schema_is_reported(table_group_id: UUID | None) -> bool:
+    """Whether a table group's database type has a schema worth returning."""
+    return table_group_id is None or schema_label_for_table_group(table_group_id) is not None
+
+
+def _test_run_schema_is_reported(job_id: UUID) -> bool:
+    """Whether the results of the test run this job started carry a schema."""
+    table_group_id = get_current_session().scalar(
+        select(TestSuite.table_groups_id)
+        .join(TestRun, TestRun.test_suite_id == TestSuite.id)
+        .where(TestRun.id == job_id)
+    )
+    return _schema_is_reported(table_group_id)
+
+
+def _profiling_run_schema_is_reported(job_id: UUID) -> bool:
+    """Whether the results of the profiling run this job started carry a schema."""
+    table_group_id = get_current_session().scalar(
+        select(ProfilingRun.table_groups_id).where(ProfilingRun.id == job_id)
+    )
+    return _schema_is_reported(table_group_id)
 
 
 @router.get(
@@ -152,13 +178,13 @@ def _validate_issue_type(issue_type: str) -> None:
         )
 
 
-def _to_item(row: TestRunResultRow) -> TestResultItem:
+def _to_item(row: TestRunResultRow, schema_is_reported: bool) -> TestResultItem:
     """Map a DB-valued result row to the API item, normalizing enum casing."""
     return TestResultItem(
         test_definition_id=row.test_definition_id,
         test_type=row.test_type,
         test_type_name=row.test_type_name,
-        schema_name=row.schema_name,
+        schema_name=row.schema_name if schema_is_reported else None,
         table_name=row.table_name,
         column_names=row.column_names,
         result_status=RESULT_STATUS_FROM_DB.get(row.status),
@@ -216,8 +242,9 @@ def list_test_run_results(
         clauses.append(TestResult.disposition == DISPOSITION_TO_DB[disposition].value)
 
     items, total = TestResult.list_for_run(job.id, *clauses, page=page, limit=limit)
+    schema_is_reported = _test_run_schema_is_reported(job.id)
     return TestResultListResponse(
-        items=[_to_item(row) for row in items],
+        items=[_to_item(row, schema_is_reported) for row in items],
         page=page,
         limit=limit,
         total=total,
@@ -364,12 +391,12 @@ def _redact_detail(row: HygieneIssueListRow, can_view_pii: bool) -> str:
     return row.detail
 
 
-def _to_hygiene_item(row: HygieneIssueListRow, can_view_pii: bool) -> HygieneIssueItem:
+def _to_hygiene_item(row: HygieneIssueListRow, can_view_pii: bool, schema_is_reported: bool) -> HygieneIssueItem:
     return HygieneIssueItem(
         id=row.id,
         issue_type=row.issue_type_code,
         issue_type_name=row.issue_type_name,
-        schema_name=row.schema_name,
+        schema_name=row.schema_name if schema_is_reported else None,
         table_name=row.table_name,
         column_name=row.column_name,
         likelihood=_likelihood_from_db(row.priority),
@@ -379,12 +406,12 @@ def _to_hygiene_item(row: HygieneIssueListRow, can_view_pii: bool) -> HygieneIss
     )
 
 
-def _to_pii_item(row: HygieneIssueListRow, can_view_pii: bool) -> PotentialPiiItem:
+def _to_pii_item(row: HygieneIssueListRow, can_view_pii: bool, schema_is_reported: bool) -> PotentialPiiItem:
     return PotentialPiiItem(
         id=row.id,
         issue_type=row.issue_type_code,
         issue_type_name=row.issue_type_name,
-        schema_name=row.schema_name,
+        schema_name=row.schema_name if schema_is_reported else None,
         table_name=row.table_name,
         column_name=row.column_name,
         pii_risk=_pii_risk_from_db(row.priority),
@@ -432,8 +459,9 @@ def list_profiling_run_hygiene_issues(
 
     rows, total = HygieneIssue.list_for_run(job.id, *clauses, page=page, limit=limit)
     can_view_pii = has_project_permission(user, job.project_code, "view_pii")
+    schema_is_reported = _profiling_run_schema_is_reported(job.id)
     return HygieneIssueListResponse(
-        items=[_to_hygiene_item(row, can_view_pii) for row in rows],
+        items=[_to_hygiene_item(row, can_view_pii, schema_is_reported) for row in rows],
         page=page,
         limit=limit,
         total=total,
@@ -467,17 +495,18 @@ def list_profiling_run_potential_pii(
 
     rows, total = HygieneIssue.list_for_run(job.id, *clauses, page=page, limit=limit)
     can_view_pii = has_project_permission(user, job.project_code, "view_pii")
+    schema_is_reported = _profiling_run_schema_is_reported(job.id)
     return PotentialPiiListResponse(
-        items=[_to_pii_item(row, can_view_pii) for row in rows],
+        items=[_to_pii_item(row, can_view_pii, schema_is_reported) for row in rows],
         page=page,
         limit=limit,
         total=total,
     )
 
 
-def _to_column_item(row: ColumnProfileRow) -> ProfilingColumnItem:
+def _to_column_item(row: ColumnProfileRow, schema_is_reported: bool) -> ProfilingColumnItem:
     return ProfilingColumnItem(
-        schema_name=row.schema_name,
+        schema_name=row.schema_name if schema_is_reported else None,
         table_name=row.table_name,
         column_name=row.column_name,
         general_type=GENERAL_TYPE_FROM_DB.get(row.general_type) if row.general_type else None,
@@ -548,8 +577,9 @@ def list_profiling_run_columns(
         page=page,
         limit=limit,
     )
+    schema_is_reported = _profiling_run_schema_is_reported(job.id)
     return ProfilingColumnListResponse(
-        items=[_to_column_item(row) for row in rows],
+        items=[_to_column_item(row, schema_is_reported) for row in rows],
         page=page,
         limit=limit,
         total=total,

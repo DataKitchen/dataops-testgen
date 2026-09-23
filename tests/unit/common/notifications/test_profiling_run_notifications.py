@@ -11,7 +11,10 @@ from testgen.common.models.notification_settings import (
     ProfilingRunNotificationTrigger,
 )
 from testgen.common.models.profiling_run import ProfilingRun
-from testgen.common.notifications.profiling_run import send_profiling_run_notifications
+from testgen.common.notifications.profiling_run import (
+    ProfilingRunEmailTemplate,
+    send_profiling_run_notifications,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -133,6 +136,7 @@ def test_send_profiling_run_notification(
         "project_name": "proj-name",
         "table_groups_name": "t-group-name",
         "table_group_schema": "t-group-schema",
+        "sql_flavor_code": "postgresql",
     }
 
     send_profiling_run_notifications(profiling_run)
@@ -167,6 +171,7 @@ def test_send_profiling_run_notification(
                     "project_name": "proj-name",
                     "table_groups_name": "t-group-name",
                     "table_group_schema": "t-group-schema",
+                    "schema_label": "Schema",
                 },
             )
             for trigger in expected_triggers
@@ -203,3 +208,102 @@ def test_send_profiling_run_notification(
         assert all(issue["is_new"] is True for issue in all_issues)
     elif new_issue_count == 0:
         assert all(issue["is_new"] is False for issue in all_issues)
+
+
+# --- schema reporting per database type ---
+
+
+def _webhook_context(schema_label):
+    return {
+        "profiling_run": {"status_label": "Completed"},
+        "table_groups_name": "t-group-name",
+        "table_group_schema": "main",
+        "schema_label": schema_label,
+        "issue_count": 0,
+        "hygiene_issues_summary": [],
+    }
+
+
+def _email_context(schema_label):
+    return {
+        **_webhook_context(schema_label),
+        "project_name": "proj-name",
+        "notification_trigger": "always",
+        "profiling_run": {
+            "status": "completed",
+            "status_label": "Completed",
+            "table_ct": 1,
+            "column_ct": 2,
+            "start_time": None,
+            "duration_seconds": None,
+            "results_url": "http://tg/results",
+            "issues_url": "http://tg/issues",
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    ("sql_flavor_code", "expected_label"),
+    (
+        ("postgresql", "Schema"),
+        ("salesforce_data360", "Data Space"),
+        ("files", None),
+    ),
+)
+def test_context_names_the_schema_the_way_the_database_type_does(
+    sql_flavor_code,
+    expected_label,
+    db_session_mock,
+    ns_select_patched,
+    get_prev_mock,
+    hi_select_mock,
+    hi_count_mock,
+    send_mock,
+):
+    profiling_run = ProfilingRun(id="pr-id", table_groups_id="tg-id", project_code="proj")
+    profiling_run.job_execution = make_job_execution(JobStatus.COMPLETED)
+    get_prev_mock.return_value = ProfilingRun(id="pr-prev-id")
+    hi_select_mock.return_value = []
+    hi_count_mock.return_value = {
+        priority: IssueCount() for priority in ("Definite", "Likely", "Possible", "High", "Moderate")
+    }
+    db_session_mock.execute().mappings().one.return_value = {
+        "project_name": "proj-name",
+        "table_groups_name": "t-group-name",
+        "table_group_schema": "main",
+        "sql_flavor_code": sql_flavor_code,
+    }
+
+    send_profiling_run_notifications(profiling_run)
+
+    context = send_mock.call_args.args[1]
+    assert context["schema_label"] == expected_label
+    assert context["table_group_schema"] == "main"
+
+
+def test_email_omits_the_schema_row_when_the_database_type_names_none():
+    body = str(ProfilingRunEmailTemplate().compiled_body(_email_context(None)))
+
+    assert "Schema" not in body
+    assert "main" not in body
+
+
+def test_email_labels_the_schema_row_the_way_the_database_type_does():
+    body = str(ProfilingRunEmailTemplate().compiled_body(_email_context("Data Space")))
+
+    assert "Data Space" in body
+    assert "main" in body
+
+
+def test_webhook_payload_nulls_the_schema_when_the_database_type_names_none():
+    """The key stays put, as every other value the payload may not have does."""
+    payload = ProfilingRunEmailTemplate().webhook_data(_webhook_context(None))
+
+    assert "schema" in payload
+    assert payload["schema"] is None
+
+
+def test_webhook_payload_carries_the_schema_when_the_database_type_names_one():
+    payload = ProfilingRunEmailTemplate().webhook_data(_webhook_context("Data Space"))
+
+    assert payload["schema"] == "main"

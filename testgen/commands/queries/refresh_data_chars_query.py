@@ -124,8 +124,10 @@ class RefreshDataCharsSQL:
     def get_row_counts(self, table_names: Iterable[str]) -> list[tuple[str, None]]:
         # Runs on Target database
         schema = self.table_group.table_group_schema
+        flavor_code = self.connection.sql_flavor_code
         count_queries = [
-            f"SELECT '{table}' AS table_name, COUNT(*) AS row_count FROM {self.flavor_service.get_table_ref(schema, table)}"
+            f"SELECT '{table}' AS table_name, COUNT(*) AS row_count "
+            f"FROM {self.flavor_service.get_table_ref(schema, table, flavor_code)}"
             for table in table_names
         ]
         max_query_chars = self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS
@@ -147,7 +149,7 @@ class RefreshDataCharsSQL:
     def verify_access(self, table_name: str) -> tuple[str, None]:
         # Runs on Target database
         schema = self.table_group.table_group_schema
-        table_ref = self.flavor_service.get_table_ref(schema, table_name)
+        table_ref = self.flavor_service.get_table_ref(schema, table_name, self.connection.sql_flavor_code)
         prefix, suffix = self.flavor_service.row_limit_clauses(1)
         query = f"SELECT {prefix} 1 FROM {table_ref} {suffix}".strip()
         return (query, None)

@@ -45,6 +45,13 @@ const { div, h4, span, b } = van.tags;
 
 const tableGroupDeclaresFiles = (tableGroup) => declaresFiles(tableGroup.connection?.flavor?.value);
 
+// A null label means the database type has no schema to name, which a ?? fallback would turn back
+// into 'Schema'.
+const schemaCaption = (tableGroup) => {
+    const flavor = tableGroup.connection?.flavor;
+    return flavor && 'schema_label' in flavor ? flavor.schema_label : 'Schema';
+};
+
 /**
  * @param {Properties} props
  * @returns {HTMLElement}
@@ -256,7 +263,7 @@ const TableGroupList = (props) => {
                                                 { class: 'flex-column fx-flex fx-gap-4' },
                                                 div(
                                                     { class: 'flex-column fx-flex' },
-                                                    Caption({content: tableGroup.connection.flavor.flavor === 'salesforce_data360' ? 'Data Space' : 'Schema', style: 'margin-bottom: 4px;'}),
+                                                    Caption({content: schemaCaption(tableGroup), style: 'margin-bottom: 4px;'}),
                                                     span(tableGroup.table_group_schema || '--'),
                                                 ),
                                                 div(
@@ -364,7 +371,9 @@ const TableGroupList = (props) => {
                     span('Are you sure you want to delete the table group ', b(tableGroup.table_groups_name), '?'),
                     Attribute({ label: 'ID', value: tableGroup.id }),
                     Attribute({ label: 'Name', value: tableGroup.table_groups_name }),
-                    Attribute({ label: 'Schema', value: tableGroup.table_group_schema }),
+                    tableGroup.schema_label
+                        ? Attribute({ label: tableGroup.schema_label, value: tableGroup.table_group_schema })
+                        : '',
                     !canBeDeleted
                         ? div(
                             { class: 'flex-column fx-gap-4 mt-4' },

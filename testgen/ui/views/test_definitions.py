@@ -13,7 +13,9 @@ from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 from testgen.common import date_service
 from testgen.common.custom_test_validation import validate_custom_query
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.database.table_group_service import apply_test_definition_flavor_rules
 from testgen.common.enums import JobSource, SuiteType
+from testgen.common.flavors import TableGroupSchemaLabel, table_group_schema_label
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.project import Project
@@ -216,10 +218,12 @@ class TestDefinitionsPage(Page):
         validate_result = st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
 
         qualifies_table_refs_with_schema = True
-        if st.session_state.get(TD_ADD_DIALOG_KEY) or st.session_state.get(TD_EDIT_DIALOG_KEY):
-            connection = get_connection(table_group.connection_id)
-            if connection:
-                qualifies_table_refs_with_schema = get_flavor_service(connection.sql_flavor).qualifies_table_refs_with_schema
+        schema_label = str(TableGroupSchemaLabel.SCHEMA)
+        if connection := get_connection(table_group.connection_id):
+            qualifies_table_refs_with_schema = get_flavor_service(
+                connection.sql_flavor
+            ).qualifies_table_refs_with_schema(connection.sql_flavor_code)
+            schema_label = table_group_schema_label(connection.sql_flavor_code)
 
         add_dialog = None
         if st.session_state.get(TD_ADD_DIALOG_KEY):
@@ -240,6 +244,7 @@ class TestDefinitionsPage(Page):
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
                 "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
+                "schema_label": schema_label,
                 "prefill_column": prefill_column,
             }
 
@@ -253,6 +258,7 @@ class TestDefinitionsPage(Page):
                 "table_group_schema": table_group.table_group_schema,
                 "test_suite": test_suite_info,
                 "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
+                "schema_label": schema_label,
             }
 
         delete_dialog = None
@@ -392,29 +398,18 @@ class TestDefinitionsPage(Page):
             st.session_state.pop(TD_COPY_MOVE_COLLISION_KEY, None)
             st.session_state.pop(TD_COPY_MOVE_OVERWRITE_KEY, None)
 
-        match_schema_test_types = {
-            tt["test_type"]
-            for tt in test_types
-            if "match_schema_name" in (tt.get("default_parm_columns") or "").split(",")
-        }
-
-        def _default_match_schema(test_def: dict) -> None:
-            # The Match Schema field is hidden in the UI for flavors whose SQL doesn't
-            # qualify table refs with a schema, but downstream SQL/Python still expects
-            # match_schema_name populated for tests that support it. Default to the
-            # test's schema (or table-group schema) when the test type accepts
-            # match_schema_name and match_table_name is set.
-            if test_def.get("test_type") not in match_schema_test_types:
-                return
-            if test_def.get("match_table_name") and not test_def.get("match_schema_name"):
-                test_def["match_schema_name"] = test_def.get("schema_name") or table_group.table_group_schema
+        def _save_test_definition(test_def: dict) -> None:
+            td_columns = set(TestDefinition.__table__.columns.keys())
+            definition = TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns})
+            apply_test_definition_flavor_rules(
+                definition, table_group, qualifies_table_refs=qualifies_table_refs_with_schema
+            )
+            definition.save()
 
         @with_database_session
         def on_add_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
-            _default_match_schema(test_def)
-            td_columns = set(TestDefinition.__table__.columns.keys())
-            TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
+            _save_test_definition(test_def)
             st.cache_data.clear()
             st.session_state.pop(TD_ADD_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
@@ -422,9 +417,7 @@ class TestDefinitionsPage(Page):
         @with_database_session
         def on_edit_test_saved(test_def: dict) -> None:
             test_def["last_manual_update"] = datetime.now(UTC)
-            _default_match_schema(test_def)
-            td_columns = set(TestDefinition.__table__.columns.keys())
-            TestDefinition(**{k: v for k, v in test_def.items() if k in td_columns}).save()
+            _save_test_definition(test_def)
             st.cache_data.clear()
             st.session_state.pop(TD_EDIT_DIALOG_KEY, None)
             st.session_state.pop(TD_VALIDATE_RESULT_KEY, None)
@@ -622,7 +615,7 @@ class TestDefinitionsPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(test_suite, table_group.table_group_schema),
+                args=(test_suite, table_group.table_group_schema, schema_label),
             )
 
         def on_export_filtered(payload: dict) -> None:
@@ -630,7 +623,7 @@ class TestDefinitionsPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(test_suite, table_group.table_group_schema, pd.DataFrame(records)),
+                args=(test_suite, table_group.table_group_schema, schema_label, pd.DataFrame(records)),
             )
 
         @with_database_session
@@ -642,7 +635,7 @@ class TestDefinitionsPage(Page):
                 download_dialog(
                     dialog_title="Download Excel Report",
                     file_content_func=get_excel_report_data,
-                    args=(test_suite, table_group.table_group_schema, data),
+                    args=(test_suite, table_group.table_group_schema, schema_label, data),
                 )
 
         def _import_targets_this_suite() -> bool:
@@ -774,6 +767,8 @@ class TestDefinitionsPage(Page):
                     "project_code": project_code,
                 },
                 "test_definitions": dataframe_to_json_records(df),
+                "schema_label": schema_label,
+                "qualifies_table_refs_with_schema": qualifies_table_refs_with_schema,
                 "filter_options": {
                     "tables": table_options,
                     "columns": columns_raw,
@@ -886,6 +881,7 @@ def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     test_suite: TestSuite,
     schema: str,
+    schema_label: str | None,
     data: pd.DataFrame | None = None,
 ) -> FILE_DATA_TYPE:
     from datetime import datetime
@@ -922,7 +918,10 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Test Definitions",
-        details={"Test suite": test_suite.test_suite, "Schema": schema},
+        details={
+            "Test suite": test_suite.test_suite,
+            **({schema_label: schema} if schema_label else {}),
+        },
         columns=columns,
         update_progress=update_progress,
     )
@@ -1383,7 +1382,7 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
         condition = test_definition["custom_query"]
         flavor_service = get_flavor_service(connection.sql_flavor)
         concat_operator = flavor_service.concat_operator
-        table_ref = flavor_service.get_table_ref(schema, table_name)
+        table_ref = flavor_service.get_table_ref(schema, table_name, connection.sql_flavor_code)
         query = f"""
         SELECT
             COALESCE(

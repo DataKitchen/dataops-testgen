@@ -22,9 +22,10 @@ from testgen.api.schemas import (
 from testgen.common.database.table_group_service import (
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
+    schema_label_for_table_group,
     validate_table_group_fields,
 )
-from testgen.common.flavors import declares_files
+from testgen.common.flavors import declares_files, reports_table_group_schema
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, split_criteria, table_group_defaults
@@ -72,7 +73,7 @@ def list_table_groups(
             TableGroupItem(
                 table_group_id=row.id,
                 table_group_name=row.table_groups_name,
-                schema_name=row.table_group_schema,
+                schema_name=row.table_group_schema if reports_table_group_schema(row.sql_flavor_code) else None,
                 project_code=row.project_code,
                 connection_id=row.connection_id,
                 connection_name=row.connection_name,
@@ -179,7 +180,11 @@ def _to_response(table_group: TableGroup) -> TableGroupResponse:
     return TableGroupResponse(
         table_group_id=table_group.id,
         table_group_name=table_group.table_groups_name,
-        schema_name=table_group.table_group_schema,
+        schema_name=(
+            table_group.table_group_schema
+            if schema_label_for_table_group(table_group.id)
+            else None
+        ),
         project_code=table_group.project_code,
         connection_id=table_group.connection_id,
         default_test_suite_id=table_group.default_test_suite_id,

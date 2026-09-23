@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import and_, select
 
 from testgen.common.enums import SuiteType
+from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.project import Project
@@ -41,6 +42,7 @@ def get_inventory(
             Project.project_name,
             Connection.connection_id,
             Connection.connection_name,
+            Connection.sql_flavor_code,
             TableGroup.id.label("table_group_id"),
             TableGroup.table_groups_name,
             TableGroup.table_group_schema,
@@ -88,6 +90,7 @@ def get_inventory(
         group = conn["groups"].setdefault(row.table_group_id, {
             "name": row.table_groups_name,
             "schema": row.table_group_schema,
+            "schema_label": table_group_schema_label(row.sql_flavor_code),
             "suites": [],
         })
         if row.test_suite_id is not None:
@@ -153,9 +156,12 @@ def get_inventory(
                     by_tg, _ = scorecards_by_project[project_code]
                     tg_scorecards = by_tg.get(group["name"], [])
 
+                schema_label = group["schema_label"]
+                schema_part = f", {schema_label.lower()}: `{group['schema']}`" if schema_label else ""
+
                 if compact_groups or not can_view:
                     line = (
-                        f"- **{group['name']}**: id: `{group_id}`, schema: `{group['schema']}`, "
+                        f"- **{group['name']}**: id: `{group_id}`{schema_part}, "
                         f"test suites: {len(group['suites'])}"
                     )
                     if summary:
@@ -165,9 +171,7 @@ def get_inventory(
                     lines.append(line)
                     continue
 
-                lines.append(
-                    f"#### Table Group: {group['name']} (id: `{group_id}`, schema: `{group['schema']}`)\n"
-                )
+                lines.append(f"#### Table Group: {group['name']} (id: `{group_id}`{schema_part})\n")
 
                 if summary:
                     lines.append(f"_{_profiling_summary_fragment(summary)}_\n")

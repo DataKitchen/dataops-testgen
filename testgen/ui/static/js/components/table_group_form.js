@@ -53,6 +53,7 @@
  * @property {boolean?} disableSchemaField
  * @property {string?} sqlFlavor
  * @property {string?} sqlFlavorCode
+ * @property {string?} schemaLabel
  * @property {boolean?} disablePiiFlag
  * @property {(tg: TableGroup, state: FormState) => void} onChange
  */
@@ -229,11 +230,16 @@ const TableGroupForm = (props) => {
     const showConnectionSelector = getValue(props.showConnectionSelector) ?? false;
     const disableSchemaField = van.derive(() => getValue(props.disableSchemaField) ?? false)
 
-    const isSalesforce = van.derive(() => {
+    // A null label means the database type has no schema to name. Only an absent value falls back,
+    // so the checks below test for presence rather than using ??, which would treat the two alike.
+    const schemaLabel = van.derive(() => {
         const connections = getValue(props.connections) ?? [];
         const selected = connections.find(c => c.connection_id === tableGroupConnectionId.val);
-        const flavor = selected?.sql_flavor ?? getValue(props.sqlFlavor);
-        return flavor === 'salesforce_data360';
+        if (selected?.flavor && 'schema_label' in selected.flavor) {
+            return selected.flavor.schema_label;
+        }
+        const fromProps = getValue(props.schemaLabel);
+        return fromProps === undefined ? 'Schema' : fromProps;
     });
 
     const flavorCode = van.derive(() => {
@@ -332,7 +338,7 @@ const TableGroupForm = (props) => {
             })
             : undefined,
         MainForm(
-            { disableSchemaField, isSalesforce, declaresFiles: declaresFilesState, setValidity: setFieldValidity },
+            { disableSchemaField, schemaLabel, declaresFiles: declaresFilesState, setValidity: setFieldValidity },
             tableGroupsName,
             tableGroupSchema,
         ),
@@ -407,12 +413,10 @@ const MainForm = (
         }),
         () => getValue(options.declaresFiles) ? '' : Input({
             name: 'table_group_schema',
-            label: getValue(options.isSalesforce) ? 'Data Space' : 'Schema',
+            label: getValue(options.schemaLabel),
             value: tableGroupSchema,
             class: 'tg-column-flex',
-            help: getValue(options.isSalesforce)
-                ? 'Salesforce data space containing the tables for the Table Group'
-                : 'Database schema containing the tables for the Table Group',
+            help: `${getValue(options.schemaLabel)} containing the tables for the Table Group`,
             helpPlacement: 'bottom-left',
             disabled: options.disableSchemaField,
             onChange: (value, state) => {

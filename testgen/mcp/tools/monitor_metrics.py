@@ -199,8 +199,8 @@ def validate_metric_expression(
     """Dry-run a metric expression against the table group's connection without saving.
 
     Wraps the expression the same way monitor evaluation does — ``SELECT ({expr}) AS
-    metric_value FROM {schema.table}`` — so parse-and-run parity with runtime is
-    automatic. Use this to iterate on SQL before calling ``create_metric_monitor``
+    metric_value FROM {table}`` — so parse-and-run parity with runtime is automatic.
+    Use this to iterate on SQL before calling ``create_metric_monitor``
     or ``update_metric_monitor``. On success, surfaces the column names and the
     first returned row. On failure, surfaces the driver's error message verbatim so
     the expression can be corrected. Individual columns marked as PII in the
@@ -225,7 +225,7 @@ def validate_metric_expression(
         raise MCPUserError("The table group's connection is no longer configured.")
 
     flavor_service = get_flavor_service(connection.sql_flavor)
-    table_ref = flavor_service.get_table_ref(tg.table_group_schema, table_name)
+    table_ref = flavor_service.get_table_ref(tg.table_group_schema, table_name, connection.sql_flavor_code)
     wrapped_sql = f"SELECT ({clean_expr}) AS metric_value FROM {table_ref}"
 
     can_view_pii = get_project_permissions().has_permission("view_pii", tg.project_code)

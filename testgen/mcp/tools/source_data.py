@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import Field
 
 from testgen.common.data_catalog_service import fetch_table_sample
+from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
@@ -90,7 +91,9 @@ def _render_header_fields(doc: MdDoc, context: dict) -> None:
     """Render the entity-neutral location fields shared by both tools."""
     if context.get("test_name_short"):
         doc.field("Test type", context.get("test_name_short"))
-    doc.field("Table", f"{context.get('schema_name')}.{context.get('table_name')}", code=True)
+    if schema_label := schema_label_for_table_group(context["table_groups_id"]):
+        doc.field(schema_label, context.get("schema_name"), code=True)
+    doc.field("Table", context.get("table_name"), code=True)
     column = context.get("column_names") or context.get("column_name")
     if column:
         doc.field("Column", column, code=True)

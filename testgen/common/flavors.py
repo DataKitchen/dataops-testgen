@@ -141,3 +141,32 @@ def fixed_table_group_schema(sql_flavor_code: str | None) -> str | None:
 def declares_files(sql_flavor_code: str | None) -> bool:
     """Whether a flavor's tables are declared as files rather than discovered from a catalog."""
     return sql_flavor_code in FLAVOR_DECLARES_FILES if sql_flavor_code else False
+
+
+class TableGroupSchemaLabel(StrEnum):
+    """User-facing names for the value a table group stores in ``table_group_schema``."""
+
+    SCHEMA = "Schema"
+    DATA_SPACE = "Data Space"
+
+
+# What a flavor code calls the value its table groups store in ``table_group_schema``. A code
+# absent from this map calls it "Schema". A code mapped to None has no schema a user can name, so
+# nothing is reported for it -- the stored value is still needed to reach the target.
+FLAVOR_TABLE_GROUP_SCHEMA_LABEL: dict[str, TableGroupSchemaLabel | None] = {
+    SqlFlavorCode.FILES: None,
+    SqlFlavorCode.SALESFORCE_DATA360: TableGroupSchemaLabel.DATA_SPACE,
+}
+
+
+def table_group_schema_label(sql_flavor_code: str | None) -> str | None:
+    """The user-facing name for a table group's schema, or None when the flavor reports none."""
+    if sql_flavor_code in FLAVOR_TABLE_GROUP_SCHEMA_LABEL:
+        label = FLAVOR_TABLE_GROUP_SCHEMA_LABEL[sql_flavor_code]
+        return str(label) if label is not None else None
+    return str(TableGroupSchemaLabel.SCHEMA)
+
+
+def reports_table_group_schema(sql_flavor_code: str | None) -> bool:
+    """Whether a flavor's table group has a schema worth reporting to the user."""
+    return table_group_schema_label(sql_flavor_code) is not None

@@ -22,6 +22,7 @@
  * @property {Connection[]} connections
  * @property {string?} sqlFlavor
  * @property {string?} sqlFlavorCode
+ * @property {string?} schemaLabel
  * @property {string[]?} steps
  * @property {boolean?} is_in_use
  * @property {TableGroupPreview?} table_group_preview
@@ -151,6 +152,7 @@ const TableGroupWizard = (props) => {
     disableSchemaField: props.is_in_use ?? false,
     sqlFlavor: props.sqlFlavor,
     sqlFlavorCode: props.sqlFlavorCode,
+    schemaLabel: props.schemaLabel,
     onChange: (updatedTableGroup, state) => {
       stepsState.tableGroup.val = updatedTableGroup;
       stepsValidity.tableGroup.val = state.valid;
@@ -479,7 +481,9 @@ const TableGroupWizard = (props) => {
               div(
                 { class: 'text-caption' },
                 [
-                  tableGroup.table_group_schema ? `Schema: ${tableGroup.table_group_schema}` : null,
+                  preview.stats.schema_label && tableGroup.table_group_schema
+                    ? `${preview.stats.schema_label}: ${tableGroup.table_group_schema}`
+                    : null,
                   `${preview.stats.table_ct} tables`,
                   `${preview.stats.column_ct} columns`,
                 ].filter(Boolean).join(' | '),

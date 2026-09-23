@@ -5,7 +5,9 @@ from sqlalchemy import select
 
 from testgen import settings
 from testgen.common.enums import JOB_STATUS_LABEL, JobStatus, run_duration_seconds
+from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import get_current_session, with_database_session
+from testgen.common.models.connection import Connection
 from testgen.common.models.hygiene_issue import HygieneIssue
 from testgen.common.models.notification_settings import (
     ProfilingRunNotificationSettings,
@@ -47,10 +49,10 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                     "is_new": bool(issue.get("is_new")),
                 })
 
-        return {
+        payload = {
             "status": pr.get("status_label") or pr.get("status"),
             "table_group": ctx.get("table_groups_name"),
-            "schema": ctx.get("table_group_schema"),
+            "schema": ctx.get("table_group_schema") if ctx.get("schema_label") else None,
             "started_at": _iso(pr.get("start_time")),
             "completed_at": _iso(pr.get("end_time")),
             "table_count": pr.get("table_ct"),
@@ -58,6 +60,7 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
             "issue_count": ctx.get("issue_count"),
             "hygiene_issues": issues,
         }
+        return payload
 
     def webhook_project_name(self, context) -> str | None:
         return (context or {}).get("project_name")
@@ -94,8 +97,10 @@ class ProfilingRunEmailTemplate(BaseNotificationTemplate):
                 <tr>
                   <td class="summary__label">Project</td>
                   <td class="summary__value">{{project_name}}</td>
-                  <td class="summary__label">Schema</td>
+                  {{#if schema_label}}
+                  <td class="summary__label">{{schema_label}}</td>
                   <td class="summary__value">{{table_group_schema}}</td>
+                  {{/if}}
                 </tr>
                 <tr>
                   <td class="summary__label">Table Group</td>
@@ -349,11 +354,18 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
         )
 
     labels_query = (
-        select(Project.project_name, TableGroup.table_groups_name, TableGroup.table_group_schema)
+        select(
+            Project.project_name,
+            TableGroup.table_groups_name,
+            TableGroup.table_group_schema,
+            Connection.sql_flavor_code,
+        )
         .select_from(TableGroup)
         .join(Project)
+        .join(Connection)
         .where(TableGroup.id == profiling_run.table_groups_id)
     )
+    labels = get_current_session().execute(labels_query).mappings().one()
     context = {
         "profiling_run": {
             "id": str(profiling_run.id),
@@ -384,7 +396,10 @@ def send_profiling_run_notifications(profiling_run: ProfilingRun, result_list_ct
         },
         "issue_count": sum(c.total for c in counts.values()),
         "hygiene_issues_summary": hygiene_issues_summary,
-        **get_current_session().execute(labels_query).mappings().one(),
+        "project_name": labels["project_name"],
+        "table_groups_name": labels["table_groups_name"],
+        "table_group_schema": labels["table_group_schema"],
+        "schema_label": table_group_schema_label(labels["sql_flavor_code"]),
     }
 
     for ns in notifications:

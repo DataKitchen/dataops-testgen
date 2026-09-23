@@ -6,7 +6,10 @@ from dataclasses import asdict
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.database.table_group_service import apply_table_group_flavor_rules
+from testgen.common.database.table_group_service import (
+    apply_table_group_flavor_rules,
+    schema_label_for_table_group,
+)
 from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -629,7 +632,10 @@ class TableGroupsPage(Page):
         can_be_deleted = not TableGroup.is_in_use([table_group_id])
         st.session_state["tg_delete_dialog"] = {
             "open": True,
-            "table_group": table_group.to_dict(json_safe=True),
+            "table_group": {
+                **table_group.to_dict(json_safe=True),
+                "schema_label": schema_label_for_table_group(table_group_id),
+            },
             "can_be_deleted": can_be_deleted,
         }
 
