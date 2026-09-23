@@ -1705,17 +1705,14 @@ const BigqueryForm = (
     originalConnection,
     cachedFile,
 ) => {
-    const isValid = van.state(false);
     const serviceAccountKey = van.state(connection.rawVal.service_account_key ?? null);
-    const projectId = van.state("");
+    // A stored key arrives masked, so the Project ID comes from the server. Only a freshly
+    // uploaded key carries one to read, and the upload handler sets it.
+    const projectId = van.state(connection.rawVal.project_db ?? '');
+    const isValid = van.state(!!projectId.rawVal);
     const serviceAccountKeyFileRaw = van.state(cachedFile);
 
     const validityPerField = {};
-
-    van.derive(() => {
-        projectId.val = serviceAccountKey.val?.project_id ?? '';
-        isValid.val = !!projectId.val;
-    });
 
     van.derive(() => {
         onChange({ service_account_key: serviceAccountKey.val, project_db: projectId.val }, serviceAccountKeyFileRaw.val, isValid.val);
@@ -1741,7 +1738,9 @@ const BigqueryForm = (
                             let isFieldValid = state.valid;
                             try {
                                 if (value?.content) {
-                                    serviceAccountKey.val = JSON.parse(atob(value.content.split(',')?.[1] ?? ''));
+                                    const parsed = JSON.parse(atob(value.content.split(',')?.[1] ?? ''));
+                                    serviceAccountKey.val = parsed;
+                                    projectId.val = parsed.project_id ?? '';
                                 }
                             } catch (err) {
                                 console.error(err);
@@ -1749,7 +1748,10 @@ const BigqueryForm = (
                             }
                             serviceAccountKeyFileRaw.val = value;
                             validityPerField['service_account_key'] = isFieldValid;
-                            isValid.val = Object.values(validityPerField).every(v => v);
+                            // Deriving this from projectId instead would skip the case where a
+                            // key with no Project ID is uploaded over an already-empty one: van
+                            // drops a set whose value is unchanged, so the derive never re-runs.
+                            isValid.val = Object.values(validityPerField).every(v => v) && !!projectId.rawVal;
                         },
                         validators: [
                             requiredIf(() => !originalConnection?.connection_id || !originalConnection?.service_account_key),

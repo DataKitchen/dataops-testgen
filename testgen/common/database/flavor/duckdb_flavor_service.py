@@ -16,7 +16,7 @@ from sqlalchemy.pool import NullPool
 
 from testgen import settings
 from testgen.common.database.flavor.flavor_service import (
-    ConnectionParameter,
+    ConnectionField,
     FlavorConnectionError,
     FlavorService,
     ResolvedConnectionParams,
@@ -168,7 +168,7 @@ class DuckdbFlavorService(FlavorService):
     qualifies_table_refs_with_schema = True
 
     parameters_schema = (
-        ConnectionParameter(key=DATABASE_FILE_PARAMETER, label="Database File", required=True),
+        ConnectionField(key=DATABASE_FILE_PARAMETER, label="Database File", required=True),
     )
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:  # noqa: ARG002
