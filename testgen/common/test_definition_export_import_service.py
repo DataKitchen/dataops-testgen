@@ -477,6 +477,7 @@ def _apply_actions(
     session = get_current_session()
     now = datetime.now(UTC)
     version_id = session.scalar(select(SuiteVersion.resolved_for(test_suite.id)))
+    TestDefinition.assert_version_writable(version_id)
 
     # Pass 1: build new TDs and register them in the session.
     for planned in actions:

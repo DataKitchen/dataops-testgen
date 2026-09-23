@@ -3,12 +3,15 @@ from datetime import UTC, datetime
 from unittest.mock import ANY, Mock, call, patch
 
 import pytest
+from sqlalchemy.sql import operators
+from sqlalchemy.sql.elements import BooleanClauseList
 
 from testgen.common.enums import JobStatus
 from testgen.common.models.notification_settings import TestRunNotificationSettings, TestRunNotificationTrigger
 from testgen.common.models.test_result import TestResultStatus
 from testgen.common.models.test_run import TestRun
 from testgen.common.notifications.test_run import send_test_run_notifications
+from tests.unit.sql_assertions import equality_conjunct, is_null_conjunct
 
 pytestmark = pytest.mark.unit
 
@@ -224,3 +227,44 @@ def test_send_test_run_notification(
             assert result_list["total"] == total
             assert len(result_list["result_list"]) == expected
     assert not test_result_summary
+
+
+def test_the_change_diff_is_taken_against_a_run_of_the_same_version(
+    get_prev_mock, diff_mock, ns_select_patched, db_session_mock, send_mock
+):
+    """A contract's draft preview runs a different term set than the agreement in force. Left
+    unscoped, the preview becomes the baseline the next run's change list is computed against.
+    """
+    version_id = uuid.uuid4()
+    test_run = TestRun(id="tr-id", test_suite_id="ts-id", version_id=version_id)
+    test_run.job_execution = make_job_execution(JobStatus.COMPLETED)
+    get_prev_mock.return_value = None
+    diff_mock.return_value = []
+
+    with patch("testgen.common.notifications.test_run.TestRun.select_summary", return_value=([Mock()], 1)):
+        send_test_run_notifications(test_run)
+
+    clause = get_prev_mock.call_args.args[0]
+    branches = clause.clauses if isinstance(clause, BooleanClauseList) else [clause]
+    assert any(equality_conjunct(branch, "version_id", "test_runs", version_id) for branch in branches)
+
+
+def test_the_change_diff_still_finds_runs_written_before_versioning_existed(
+    get_prev_mock, diff_mock, ns_select_patched, db_session_mock, send_mock
+):
+    """test_runs.version_id was added nullable with no backfill, and a new run is always
+    stamped, so a bare equality matches none of an install's historical runs -- every suite
+    would silently lose its change diff on the first run after the upgrade.
+    """
+    test_run = TestRun(id="tr-id", test_suite_id="ts-id", version_id=uuid.uuid4())
+    test_run.job_execution = make_job_execution(JobStatus.COMPLETED)
+    get_prev_mock.return_value = None
+    diff_mock.return_value = []
+
+    with patch("testgen.common.notifications.test_run.TestRun.select_summary", return_value=([Mock()], 1)):
+        send_test_run_notifications(test_run)
+
+    clause = get_prev_mock.call_args.args[0]
+    branches = clause.clauses if isinstance(clause, BooleanClauseList) else [clause]
+    assert clause.operator is operators.or_
+    assert any(is_null_conjunct(branch, "version_id", "test_runs") for branch in branches)

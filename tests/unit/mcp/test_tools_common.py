@@ -131,6 +131,46 @@ def test_parse_severity_accepts_any_casing(supplied):
     assert parse_severity(supplied) is Severity.FAIL
 
 
+# --- parse_suite_type ---
+
+
+def test_parse_suite_type_valid():
+    from testgen.mcp.tools.common import parse_suite_type
+
+    assert parse_suite_type("Regular") == SuiteType.REGULAR
+    assert parse_suite_type("Contract") == SuiteType.CONTRACT
+
+
+@pytest.mark.parametrize("supplied", ["contract", "CONTRACT", "  contract  "])
+def test_parse_suite_type_accepts_any_casing(supplied):
+    from testgen.mcp.tools.common import parse_suite_type
+
+    assert parse_suite_type(supplied) == SuiteType.CONTRACT
+
+
+def test_parse_suite_type_invalid_names_value():
+    from testgen.mcp.tools.common import parse_suite_type
+
+    with pytest.raises(MCPUserError, match="Invalid suite_type `Bogus`"):
+        parse_suite_type("Bogus")
+
+
+def test_parse_suite_type_invalid_lists_only_regular_and_contract():
+    from testgen.mcp.tools.common import parse_suite_type
+
+    with pytest.raises(MCPUserError, match="Valid values: Regular, Contract") as exc_info:
+        parse_suite_type("nope")
+    assert "Monitor" not in str(exc_info.value)
+
+
+def test_parse_suite_type_rejects_monitor():
+    """Monitor suites are created through monitoring setup, not this path."""
+    from testgen.mcp.tools.common import parse_suite_type
+
+    with pytest.raises(MCPUserError, match="Valid values: Regular, Contract"):
+        parse_suite_type("Monitor")
+
+
 # --- validate_page ---
 
 

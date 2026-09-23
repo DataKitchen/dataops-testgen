@@ -2,6 +2,9 @@
 -- One run per suite via DISTINCT ON, tie-broken by id, then summed across the suites. A
 -- timestamp equality join back to test_runs would match every run of a suite sharing that
 -- timestamp and double-count their data points.
+-- A run counts once the version it verified was in force when it ran, which leaves a
+-- contract scored by its previous version until its newly frozen one has been run, and
+-- excludes a draft preview for free: a draft has no freeze time, so the comparison is NULL.
 WITH latest_run_per_suite
    AS (SELECT DISTINCT ON (run.test_suite_id)
               run.test_suite_id, run.dq_affected_data_points, run.dq_total_data_points
@@ -9,6 +12,9 @@ WITH latest_run_per_suite
        INNER JOIN job_executions je
           ON je.id = run.id
         WHERE je.status = 'completed'
+          AND (run.version_id IS NULL OR EXISTS (SELECT 1 FROM suite_versions sv
+                     WHERE sv.id = run.version_id
+                       AND (sv.test_suite_id IS NULL OR run.test_starttime >= sv.frozen_at)))
         ORDER BY run.test_suite_id, run.test_starttime DESC, run.id DESC),
 score_calc
   AS (SELECT ts.table_groups_id,
