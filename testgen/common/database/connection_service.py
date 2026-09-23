@@ -1,9 +1,8 @@
-"""Shared connection domain helpers — moved out of the Streamlit connections page
-so MCP and any future caller can reuse identical test/normalize logic without
-forking SQL templates or per-flavor rules.
+"""Shared connection domain helpers, reusable from the connections pages and from MCP
+without forking SQL templates or per-flavor rules.
 
-Two pieces live here, both flavor-aware and both operating on a ``Connection`` by
-column / flag (no user-facing labels — those are presentation):
+Flavor-aware helpers operating on a ``Connection`` by column / flag (no user-facing
+labels — those are presentation):
 
 * ``ConnectionStatus`` + ``test_connection_status`` — open an external connection
   and report success / failure with driver-text details.
@@ -11,6 +10,14 @@ column / flag (no user-facing labels — those are presentation):
   then scrub the credential columns its auth mode doesn't use.
 * ``apply_connection_defaults`` — pre-save fill of flavor-dependent defaults the
   caller didn't supply.
+
+Wire-protocol helpers operating on a posted payload before it reaches a ``Connection``.
+A credential field reaches the browser as ``MASKED_VALUE`` and comes back either
+untouched, typed over, or carrying ``CLEAR_SENTINEL`` to empty what is stored:
+
+* ``is_pristine`` — whether a posted credential field came back untouched.
+* ``merge_posted_secrets`` — fold a posted ``secrets`` set over the stored one, so a
+  payload carrying only the keys someone typed does not drop the rest.
 
 The MCP-facing connection-parameter contract (field labels, modes, requirement
 rules, validation) is presentation/input vocabulary and lives in
@@ -118,19 +125,53 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
 # ---------------------------------------------------------------------------
 
 
+CLEAR_SENTINEL = "<clear>"
+"""Posted in a credential field to mean "empty the stored value", as distinct from leaving it alone."""
+
+MASKED_VALUE = "***"
+"""Stands in for a stored credential in any payload sent to the browser."""
+
+
+def is_pristine(value: object) -> bool:
+    """True when a posted credential field was left as delivered rather than typed into."""
+    return value in ("", MASKED_VALUE)
+
+
+def merge_posted_secrets(posted: dict, stored: Connection | None = None) -> None:
+    """Fold a posted ``secrets`` entry into ``stored``'s, rewriting ``posted`` in place.
+
+    An untouched value -- blank, the mask, or ``None`` -- keeps the stored secret,
+    ``CLEAR_SENTINEL`` drops it, anything else replaces it. A payload carrying no
+    ``secrets`` entry is left alone.
+    """
+    if "secrets" not in posted:
+        return
+
+    merged = dict((stored.secrets if stored else None) or {})
+    for key, raw in (posted["secrets"] or {}).items():
+        value = raw.strip() if isinstance(raw, str) else raw
+        if value == CLEAR_SENTINEL:
+            merged.pop(key, None)
+        elif value is not None and not is_pristine(value):
+            merged[key] = value
+    posted["secrets"] = merged or None
+
+
 def enforce_connection_rules(connection: Connection) -> None:
     """Enforce the rules a connection must satisfy to be saved or used.
 
     Raises ``ValueError`` on the first rule a connection breaks: a flavor's ``parameters``
-    not matching its declared shape, or a combination of auth flags that cannot work.
-    Then clears the credential columns the chosen auth mode does not use, so flipping
-    between modes leaves no stale opposite-mode values behind. Databricks OAuth stores
-    the client secret in ``project_pw_encrypted`` despite ``connect_by_key=True``, so it
-    sticks with the password path. Finally pins ``max_threads`` for a flavor that fixes it.
+    or ``secrets`` not matching its declared shape, or a combination of auth flags that
+    cannot work. Then clears the credential columns the chosen auth mode does not use, so
+    flipping between modes leaves no stale opposite-mode values behind. Databricks OAuth
+    stores the client secret in ``project_pw_encrypted`` despite ``connect_by_key=True``, so
+    it sticks with the password path. Finally pins ``max_threads`` for a flavor that fixes it.
     """
     code = connection.sql_flavor_code
 
-    get_flavor_service(connection.sql_flavor).validate_parameters(connection.parameters)
+    flavor_service = get_flavor_service(connection.sql_flavor)
+    flavor_service.validate_parameters(connection.parameters)
+    flavor_service.validate_secrets(connection.secrets)
 
     if (threads := fixed_max_threads(code)) is not None:
         connection.max_threads = threads

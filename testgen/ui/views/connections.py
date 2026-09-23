@@ -7,8 +7,12 @@ import streamlit as st
 
 from testgen import settings
 from testgen.common.database.connection_service import (
+    CLEAR_SENTINEL,
+    MASKED_VALUE,
     ConnectionStatus,
     enforce_connection_rules,
+    is_pristine,
+    merge_posted_secrets,
     test_connection_status,
 )
 from testgen.common.database.database_service import get_flavor_service
@@ -37,7 +41,6 @@ from testgen.ui.utils import get_cron_sample_handler
 
 LOG = logging.getLogger("testgen")
 PAGE_TITLE = "Connection"
-CLEAR_SENTINEL = "<clear>"
 
 
 class ConnectionsPage(Page):
@@ -101,7 +104,9 @@ class ConnectionsPage(Page):
             set_updated_connection(self._sanitize_connection_input(connection))
 
         def on_save_connection_clicked(updated_connection):
-            is_pristine = lambda value: value in ["", "***"]
+            # Assigning the mask back would overwrite the stored key.
+            if is_pristine(updated_connection.get("service_account_key")):
+                del updated_connection["service_account_key"]
 
             if updated_connection.get("connect_by_url", False):
                 url_parts = updated_connection.get("url", "").split("@")
@@ -147,7 +152,9 @@ class ConnectionsPage(Page):
             password = updated_connection.get("project_pw_encrypted")
             private_key = updated_connection.get("private_key")
             private_key_passphrase = updated_connection.get("private_key_passphrase")
-            is_pristine = lambda value: value in ["", "***"]
+
+            if is_pristine(updated_connection.get("service_account_key")):
+                del updated_connection["service_account_key"]
 
             if is_pristine(password):
                 del updated_connection["project_pw_encrypted"]
@@ -176,7 +183,9 @@ class ConnectionsPage(Page):
             st.session_state["connections:setup_dialog"] = connection.connection_id
 
         results = None
-        for key, value in get_updated_connection().items():
+        updated_connection = get_updated_connection()
+        merge_posted_secrets(updated_connection, connection)
+        for key, value in updated_connection.items():
             setattr(connection, key, value)
 
         connection_string: str | None = None
@@ -244,10 +253,11 @@ class ConnectionsPage(Page):
         sanitized_connection_input = {}
         for key, value in connection.items():
             sanitized_value = value
-            if isinstance(value, str) and key in self.trim_fields:
+            # Strip before the pristine test, so a whitespace-only credential reads as untouched.
+            if isinstance(value, str) and (key in self.trim_fields or key in self.encrypted_fields):
                 sanitized_value = value.strip()
-            if isinstance(value, str) and key in self.encrypted_fields:
-                sanitized_value = value if value != "" else None
+            if isinstance(sanitized_value, str) and key in self.encrypted_fields:
+                sanitized_value = None if is_pristine(sanitized_value) else sanitized_value
             sanitized_connection_input[key] = sanitized_value
         return sanitized_connection_input
 
@@ -490,15 +500,22 @@ class ConnectionsPage(Page):
 def format_connection(connection: Connection | ConnectionMinimal) -> dict:
     formatted_connection = connection.to_dict(json_safe=True)
 
-    # Decrypted on read, so it has to be dropped rather than masked.
+    # BigQuery keeps the Project ID in project_db, but a connection created anywhere other
+    # than this form has it only inside the service account key. Read it across while the key
+    # is still decrypted, so the form has it without parsing a credential in the browser.
+    if not formatted_connection.get("project_db") and isinstance(
+        formatted_connection.get("service_account_key"), dict
+    ):
+        formatted_connection["project_db"] = formatted_connection["service_account_key"].get("project_id") or ""
+
+    # Dropped rather than masked: no form reads it back.
     formatted_connection.pop("secrets", None)
 
-    if formatted_connection.get("project_pw_encrypted"):
-        formatted_connection["project_pw_encrypted"] = "***"
-    if formatted_connection.get("private_key"):
-        formatted_connection["private_key"] = "***"  # S105
-    if formatted_connection.get("private_key_passphrase"):
-        formatted_connection["private_key_passphrase"] = "***"  # noqa S105
+    # Masked rather than dropped because the forms test this for truthiness to tell that a
+    # credential is already stored.
+    for column in Connection.encrypted_columns():
+        if formatted_connection.get(column):
+            formatted_connection[column] = MASKED_VALUE
 
     flavors = [f for f in FLAVOR_OPTIONS if f.value == formatted_connection["sql_flavor_code"]]
     if flavors and (flavor := flavors[0]):
