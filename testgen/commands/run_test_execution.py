@@ -39,6 +39,7 @@ def run_test_execution(
     test_suite_id: str | UUID,
     username: str | None = None,
     run_date: datetime | None = None,
+    version_id: str | UUID | None = None,
 ) -> UUID:
     if test_suite_id is None:
         raise ValueError("Test Suite ID was not specified")
@@ -52,12 +53,18 @@ def run_test_execution(
     connection = Connection.get(table_group.connection_id)
     set_target_db_params(connection.__dict__)
 
+    resolved_version_id = (
+        UUID(str(version_id))
+        if version_id
+        else get_current_session().scalar(select(SuiteVersion.for_run(test_suite_id)))
+    )
+
     LOG.info("Creating test run record")
     test_run = TestRun(
         id=job_context.get().job_id,
         test_suite_id=test_suite_id,
         test_starttime=datetime.now(UTC) + time_delta,
-        version_id=get_current_session().scalar(select(SuiteVersion.resolved_for(test_suite_id))),
+        version_id=resolved_version_id,
     )
 
     # This runs in a subprocess — commit after every save so progress is visible
@@ -69,6 +76,12 @@ def run_test_execution(
     test_run.save()
     session.commit()
 
+    # Both writeback steps narrow by the run's version, which for a contract is the frozen
+    # agreement. Running an agreement does not rewrite it, or the terms in force stop being the
+    # terms that were frozen and the version stops being reproducible. Decided out here because
+    # the prediction below reads it from a finally that a run failing at its first step reaches.
+    writes_definitions = not SuiteVersion.is_frozen_agreement(test_run.version_id)
+
     try:
         LOG.info(f"Test run: {test_run.id}, Test suite: {test_suite.test_suite}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
         data_chars = run_data_chars_refresh(connection, table_group, test_run.test_starttime)
@@ -79,9 +92,10 @@ def run_test_execution(
         if test_suite.suite_type == SuiteType.MONITOR:
             _sync_monitor_definitions(sql_generator)
 
-        # Update the thresholds before retrieving the test definitions in the next steps
-        LOG.info("Updating test thresholds based on history calculations")
-        execute_db_queries([sql_generator.update_history_calc_thresholds()])
+        if writes_definitions:
+            # Update the thresholds before retrieving the test definitions in the next steps
+            LOG.info("Updating test thresholds based on history calculations")
+            execute_db_queries([sql_generator.update_history_calc_thresholds()])
 
         LOG.info("Retrieving active test definitions in test suite")
         test_defs = fetch_dict_from_db(*sql_generator.get_active_test_definitions())
@@ -141,14 +155,16 @@ def run_test_execution(
         raise
     else:
         end_time = datetime.now(UTC) + time_delta
-        LOG.info("Updating latest run for test suite")
-        test_suite.last_complete_test_run_id = test_run.id
-        test_suite.save()
-        session.commit()
+        if SuiteVersion.is_active(test_run.version_id, test_suite.id):
+            LOG.info("Updating latest run for test suite")
+            test_suite.last_complete_test_run_id = test_run.id
+            test_suite.save()
+            session.commit()
     finally:
         prediction_start = datetime.now(UTC) + time_delta
         try:
-            TestThresholdsPrediction(test_suite, test_run).run()
+            if writes_definitions:
+                TestThresholdsPrediction(test_suite, test_run).run()
         except Exception:
             LOG.exception("Error predicting test thresholds")
 

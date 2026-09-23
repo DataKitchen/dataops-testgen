@@ -1,5 +1,6 @@
 """Tests for test definition export/import — service and endpoint logic."""
 
+import importlib
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -12,6 +13,7 @@ from sqlalchemy.sql.dml import Delete
 
 from testgen.api.schemas import ImportRequest
 from testgen.common.enums import SuiteType
+from testgen.common.models.suite_version import FrozenVersionError
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.test_definition_export_import_service import (
     ExportDocument,
@@ -38,6 +40,28 @@ pytestmark = pytest.mark.unit
 
 SERVICE_MODULE = "testgen.common.test_definition_export_import_service"
 ENDPOINT_MODULE = "testgen.api.test_definitions"
+
+
+@pytest.fixture(autouse=True)
+def _route_the_write_guards_session_through_the_mocked_one():
+    """``assert_version_writable`` resolves its own session through ``test_definition.py``'s
+    own import of ``get_current_session``, and the frozen-version predicate it delegates to
+    through ``suite_version.py``'s -- different names than the one these tests patch on the
+    service module. Forward both at call time so they resolve to whatever session a given
+    test has mocked, without every test needing to patch all three names itself.
+    """
+    service = importlib.import_module(SERVICE_MODULE)
+    with (
+        patch(
+            "testgen.common.models.test_definition.get_current_session",
+            new=lambda: service.get_current_session(),
+        ),
+        patch(
+            "testgen.common.models.suite_version.get_current_session",
+            new=lambda: service.get_current_session(),
+        ),
+    ):
+        yield
 
 
 # --- Fixtures ---
@@ -82,7 +106,10 @@ def _patched_td_class():
     as a constant, so a wrong clause would never fail a test.
     """
     with patch(f"{SERVICE_MODULE}.TestDefinition") as mock_td_cls:
-        for attribute in ("version_clause", "id", "test_suite_id", "last_auto_gen_date", "external_id"):
+        for attribute in (
+            "version_clause", "id", "test_suite_id", "last_auto_gen_date", "external_id",
+            "assert_version_writable",
+        ):
             setattr(mock_td_cls, attribute, getattr(TestDefinition, attribute))
         yield mock_td_cls
 
@@ -714,6 +741,7 @@ class Test_import_strict_mode:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
+        session.scalar.return_value = None
 
         ts = _make_test_suite()
         td = _make_import_td(test_type="Alpha", table_name="t1")
@@ -745,6 +773,7 @@ class Test_import_create:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
+        session.scalar.return_value = None
 
         ts = _make_test_suite()
         td = _make_import_td(test_type="Alpha", table_name="t1", last_auto_gen_date=datetime(2024, 1, 1, tzinfo=UTC))
@@ -771,6 +800,7 @@ class Test_import_create:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
+        session.scalar.return_value = None
 
         ts = _make_test_suite()
         ext_id = uuid4()
@@ -796,6 +826,7 @@ class Test_import_create:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
+        session.scalar.return_value = None
 
         ts = _make_test_suite()
         td = _make_import_td(test_type="Alpha", table_name="t1", lock_refresh=False)
@@ -820,6 +851,7 @@ class Test_import_create:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
+        session.scalar.return_value = None
 
         ts = _make_test_suite()
         td = _make_import_td(test_type="Alpha", table_name="t1")
@@ -850,6 +882,7 @@ class Test_import_update:
         mock_session_fn.return_value = session
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.scalar.return_value = None
 
         target_id = uuid4()
         existing = _make_existing_row(id_=target_id, lock_refresh=False)
@@ -882,6 +915,7 @@ class Test_import_update:
         mock_session_fn.return_value = session
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.scalar.return_value = None
 
         # Auto-gen target with no external_id
         target_id = uuid4()
@@ -921,6 +955,7 @@ class Test_import_update:
         mock_session_fn.return_value = session
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.scalar.return_value = None
 
         existing = _make_existing_row(id_=uuid4(), lock_refresh=False)
         session.execute.return_value.all.return_value = [existing]
@@ -1130,6 +1165,7 @@ def test_apply_with_skips_still_applies_valid_actions(mock_session_fn, mock_tg_c
     mock_tg_cls.get.return_value = _make_table_group()
     mock_dt_cls.select_table_names.return_value = ["t1"]
     session.execute.return_value.all.return_value = []
+    session.scalar.return_value = None
 
     ts = _make_test_suite()
     good_td = _make_import_td(test_type="Alpha", table_name="t1")
@@ -1266,6 +1302,7 @@ class Test_click_through_fields:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
+        session.scalar.return_value = None
 
         ts = _make_test_suite()
         td = _make_import_td(
@@ -1354,7 +1391,9 @@ class Test_version_scoping:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = []
-        session.scalar.return_value = resolved
+        # First scalar call resolves the version; the second is the write guard's own
+        # frozen-and-suite-owned check, which must find nothing for this write to proceed.
+        session.scalar.side_effect = [resolved, None]
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
@@ -1381,6 +1420,7 @@ class Test_version_scoping:
         mock_tg_cls.get.return_value = _make_table_group()
         mock_dt_cls.select_table_names.return_value = ["t1"]
         session.execute.return_value.all.return_value = [_make_existing_row()]
+        session.scalar.return_value = None
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
@@ -1398,3 +1438,31 @@ class Test_version_scoping:
         ]
         assert deletes, "the import issued no delete"
         assert all(scopes_to_a_version(statement) for statement in deletes)
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_import_refuses_to_write_into_a_frozen_version(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
+        """A fifth write path into test_definitions; the guard must fire here before any
+        INSERT, UPDATE or DELETE is emitted, exactly as it does on save/move/copy."""
+        resolved = uuid4()
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+        # First scalar call resolves the version; the second is assert_version_writable's own
+        # frozen-and-suite-owned check, which finds a matching row and must raise.
+        session.scalar.side_effect = [resolved, resolved]
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+            with pytest.raises(FrozenVersionError):
+                import_definitions(
+                    _make_test_suite(),
+                    _make_config(mode=ImportMode.apply),
+                    _make_payload(_make_import_td()),
+                )
+
+        session.add.assert_not_called()
