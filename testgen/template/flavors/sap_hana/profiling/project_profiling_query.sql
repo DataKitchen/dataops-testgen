@@ -146,6 +146,7 @@ SELECT
   MIN(pct_25) AS percentile_25,
   MIN(pct_50) AS percentile_50,
   MIN(pct_75) AS percentile_75,
+  '{PERCENTILE_METHOD}' AS percentile_method,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
@@ -208,17 +209,10 @@ SELECT
 -- TG-IF is_type_A
   CROSS JOIN pattern_slots
 -- TG-ENDIF
--- TG-IF is_N_sampling
+-- TG-IF is_N_exact_pctile
   , (SELECT
              PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
              PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
              PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI({SAMPLE_PERCENT_CALC}) LIMIT 1000000) pctile
--- TG-ENDIF
--- TG-IF is_N_no_sampling
-  , (SELECT
-             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1000000) pctile
+        FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
 -- TG-ENDIF

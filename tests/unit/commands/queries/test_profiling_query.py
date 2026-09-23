@@ -1,10 +1,11 @@
 import re
+from dataclasses import replace as dataclasses_replace
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from testgen.commands.queries.profiling_query import ProfilingSQL, calculate_sampling_params
+from testgen.commands.queries.profiling_query import ProfilingSQL, TableSampling, calculate_sampling_params
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.read_file import read_template_sql_file
 
@@ -17,8 +18,10 @@ RUN_STARTTIME = datetime(2026, 7, 14, 21, 22, 26, 227897, tzinfo=UTC)
 # --- ProfilingSQL.update_profiling_results ---
 
 
-def _make_profiling_sql(profile_flag_pii=False, profile_flag_cdes=False, profiling_starttime=RUN_STARTTIME):
-    connection = MagicMock()
+def _make_profiling_sql(
+    profile_flag_pii=False, profile_flag_cdes=False, profiling_starttime=RUN_STARTTIME, flavor="snowflake"
+):
+    connection = MagicMock(sql_flavor=flavor, sql_flavor_code=flavor)
     table_group = MagicMock()
     table_group.profile_flag_pii = profile_flag_pii
     table_group.profile_flag_cdes = profile_flag_cdes
@@ -259,3 +262,60 @@ def test_tabletype_update_selects_its_staged_rows_by_run_id():
 
     assert "s.profile_run_id = :PROFILE_RUN_ID" in sql
     assert "s.run_date" not in sql
+
+
+# --- ProfilingSQL.run_column_profiling: percentiles ---
+
+
+def _numeric_column() -> ColumnChars:
+    return ColumnChars(
+        schema_name="public",
+        table_name="orders",
+        column_name="amount",
+        ordinal_position=1,
+        general_type="N",
+        column_type="numeric",
+        db_data_type="numeric",
+        record_ct=100000,
+        is_decimal=True,
+    )
+
+
+SAMPLING = TableSampling(table_name="orders", sample_count=30000, sample_ratio=100000 / 30000, sample_percent=30.0)
+
+
+def _percentile_subquery(query: str) -> str:
+    match = re.search(r"\(SELECT(?:(?!\(SELECT).)*?\)\s*pctile", query, re.DOTALL)
+    assert match, "no percentile subquery rendered"
+    return match.group(0)
+
+
+def test_exact_percentiles_read_the_whole_table_on_a_sampled_run():
+    sql = _make_profiling_sql()
+    query, _ = sql.run_column_profiling(_numeric_column(), SAMPLING, use_approx_percentile=False)
+
+    pctile = _percentile_subquery(query)
+    assert "PERCENTILE_CONT" in pctile
+    assert "SAMPLE" not in pctile.upper()
+    assert "'exact' AS percentile_method" in query
+    # The rest of the query still reads the sample.
+    assert "SAMPLE (30000 rows)" in query
+
+
+def test_approximate_percentiles_use_the_engine_function_and_say_so():
+    sql = _make_profiling_sql()
+    query, _ = sql.run_column_profiling(_numeric_column(), SAMPLING, use_approx_percentile=True)
+
+    pctile = _percentile_subquery(query)
+    assert "APPROX_PERCENTILE" in pctile
+    assert "PERCENTILE_CONT" not in pctile
+    assert "SAMPLE" not in pctile.upper()
+    assert "'approximate' AS percentile_method" in query
+    assert "'exact'" not in query
+
+
+def test_a_non_numeric_column_carries_no_percentile_method():
+    sql = _make_profiling_sql()
+    column = dataclasses_replace(_numeric_column(), general_type="A")
+    query, _ = sql.run_column_profiling(column, None, use_approx_percentile=True)
+    assert "percentile" not in query.lower()

@@ -342,6 +342,7 @@ CREATE TABLE profile_results (
    percentile_25         DOUBLE PRECISION,
    percentile_50         DOUBLE PRECISION,
    percentile_75         DOUBLE PRECISION,
+   percentile_method     VARCHAR(20),
    fractional_sum        NUMERIC(38, 6),
    min_date              TIMESTAMP,
    max_date              TIMESTAMP,

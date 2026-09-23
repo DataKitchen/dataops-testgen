@@ -10,6 +10,9 @@ class BigqueryFlavorService(FlavorService):
     varchar_type = "STRING"
     url_scheme = "bigquery"
 
+    # A managed, versionless engine: no instance can lack APPROX_QUANTILES, so nothing to probe.
+    supports_approx_percentile = True
+
     def get_connection_string_head(self, params: ResolvedConnectionParams) -> str:  # noqa: ARG002
         return f"{self.url_scheme}://"
 

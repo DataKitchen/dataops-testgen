@@ -376,6 +376,27 @@ def fetch_dict_from_db(
         return result.mappings().all()
 
 
+def probe_target_capability(query: str, capability: str, connectivity_query: str) -> bool:
+    """Run a capability probe against the target database and report whether the function exists.
+
+    A failed probe is evidence of an absent function only if the target was reachable, so a
+    failure is retested with ``connectivity_query``: if that fails too, the target is unreachable
+    and the original error is raised. ``capability`` names the function in the log lines.
+    """
+    try:
+        fetch_dict_from_db(query, {}, use_target_db=True)
+    except Exception as probe_error:
+        try:
+            fetch_dict_from_db(connectivity_query, {}, use_target_db=True)
+        except Exception:
+            LOG.warning(f"Target unreachable while probing for {capability}.")
+            raise probe_error from None
+        LOG.warning(f"Capability probe failed ({capability}); using the exact function. {probe_error}")
+        return False
+    LOG.info(f"Capability probe succeeded ({capability}).")
+    return True
+
+
 def write_to_app_db(data: list[Row], column_names: Iterable[str], table_name: str) -> None:
     LOG.debug("DB operation: write_to_app_db on App database (User type = normal)")
 

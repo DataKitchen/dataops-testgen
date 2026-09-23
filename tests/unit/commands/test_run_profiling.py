@@ -18,6 +18,7 @@ from testgen.commands.run_profiling import (
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import WorkerOutcome
 from testgen.common.database.flavor.flavor_service import SQLFlavor
+from testgen.common.database.profiling_capabilities import ProfilingCapabilities
 from testgen.common.enums import JobKey, JobStatus
 from testgen.common.models import get_current_session
 from testgen.common.models.hygiene_issue import HygieneIssue
@@ -59,6 +60,7 @@ def _run_columns(outcomes: dict[str, tuple[str, object]], sampling_params: dict[
     job.data_chars = data_chars
     job.table_record_counts = {"t": 10}
     job.sampling_params = sampling_params or {}
+    job.capabilities = ProfilingCapabilities()
     job.sql_generator = MagicMock()
     job.sql_generator.run_column_profiling.return_value = ("SELECT 1", {})
     job.connection = MagicMock(max_threads=4)
@@ -572,12 +574,35 @@ def test_data_chars_pins_the_result_shape_and_the_templates():
     with (
         patch.object(ProfilingJob, "once", return_value=False),
         patch(f"{MODULE}.DataTable") as data_table,
+        # Capability resolution probes the target database.
+        patch(
+            f"{MODULE}.resolve_profiling_capabilities", return_value=ProfilingCapabilities(approx_percentile=True)
+        ) as resolve,
     ):
         data_table.list_column_chars.return_value = []
         job._data_chars()
 
+    resolve.assert_called_once_with(job.sql_generator.flavor_service)
+    assert job.capabilities == ProfilingCapabilities(approx_percentile=True)
     assert job._pins["result_shape"] == PROFILE_RESULT_SHAPE_VERSION
     assert job._pins["profiling_templates"] == _profiling_template_digest("snowflake")
+    # A probe that answers differently after a pause would file two readings of one measure.
+    assert job._pins["approx_percentile"] is True
+
+
+@pytest.mark.parametrize("approx_percentile", [False, True])
+def test_the_column_query_is_built_with_the_resolved_percentile_method(approx_percentile):
+    job = ProfilingJob.__new__(ProfilingJob)
+    PausableJob.__init__(job, job_id=uuid4())
+    job.sampling_params = {}
+    job.capabilities = ProfilingCapabilities(approx_percentile=approx_percentile)
+    job.sql_generator = MagicMock()
+
+    job._build_column_query(_col("t", "c"))
+
+    job.sql_generator.run_column_profiling.assert_called_once_with(
+        _col("t", "c"), None, use_approx_percentile=approx_percentile
+    )
 
 
 def test_a_checkpoint_from_a_build_that_measured_differently_is_discarded():
