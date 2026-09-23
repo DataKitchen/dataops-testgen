@@ -308,6 +308,27 @@ def test_a_column_whose_general_type_has_no_odcs_logical_type_carries_none():
     }
 
 
+def test_a_time_column_carries_the_odcs_time_logical_type():
+    """ODCS v3.2.0 lists ``time`` among its logical types, so a profiled Time column has a
+    faithful one and does not have to go without. ``Other`` is the only code that has none.
+    """
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
+    columns = [MagicMock(column_name="shift_start", general_type="T", functional_data_type=None, column_type="time")]
+    with (
+        patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch.object(contract_service, "_profiled_columns", return_value=columns),
+        patch.object(contract_service, "_generate_for_tables"),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        contract_service.add_table(suite, "shifts")
+
+    descriptor, = draft.metadata_document["schema"]
+    property_, = descriptor["properties"]
+    assert property_ == {"name": "shift_start", "physicalType": "time", "logicalType": "time"}
+
+
 def test_a_column_with_no_functional_data_type_carries_no_custom_properties():
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})

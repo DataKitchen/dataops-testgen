@@ -183,7 +183,11 @@ class SuiteVersion(Entity):
     @classmethod
     def is_active(cls, version_id: UUID | str | None, suite_id: UUID | str) -> bool:
         """Whether the id names the suite's agreement in force."""
-        return version_id == get_current_session().scalar(select(cls.active_for(suite_id)))
+        if version_id is None:
+            return False
+        # Compared in Python against an id the database hands back, unlike the predicates
+        # above, which hand theirs to it.
+        return UUID(str(version_id)) == get_current_session().scalar(select(cls.active_for(suite_id)))
 
     @classmethod
     def in_force_for(cls, suite_id) -> Self | None:

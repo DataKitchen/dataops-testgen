@@ -21,7 +21,15 @@ def mocked_collaborators(monkeypatch):
     connection = MagicMock()
     session = MagicMock()
     test_run = MagicMock()
-    test_run_cls = MagicMock(return_value=test_run)
+
+    def _stamped_test_run(**kwargs):
+        # The run carries the version it was stamped with, as the real constructor leaves it:
+        # the pointer and writeback gates both read it back off the run rather than off the
+        # local, so a mock that left it unset would compare as a MagicMock and never match.
+        test_run.version_id = kwargs.get("version_id")
+        return test_run
+
+    test_run_cls = MagicMock(side_effect=_stamped_test_run)
 
     sql_generator = MagicMock()
     sql_generator.get_active_test_definitions.return_value = ()

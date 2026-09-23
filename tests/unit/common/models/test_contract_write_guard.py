@@ -223,6 +223,40 @@ def test_editing_a_term_on_a_frozen_only_contract_lands_in_a_draft():
     assert definition.id == copied_id
 
 
+def test_a_payload_carrying_string_ids_routes_onto_the_draft_like_any_other():
+    """An edit dialog rebuilds a definition from a JSON payload, where every id is a string.
+
+    Both comparisons the router makes are against ids the ORM hands back as ``UUID`` -- the
+    version in force, and the keys of the copy map. A string loses each of them, so a row the
+    draft does hold is refused, and refused after the draft exists, which is the one outcome
+    the refusal path is built to avoid.
+    """
+    frozen_version_id = uuid4()
+    definition_id = uuid4()
+    definition = TestDefinition()
+    definition.id = str(definition_id)
+    definition.test_suite_id = str(uuid4())
+    definition.version_id = str(frozen_version_id)
+
+    draft_version_id = uuid4()
+    copied_id = uuid4()
+    with (
+        patch(
+            "testgen.common.models.test_definition.get_current_session",
+            return_value=_session_returning(frozen_version_id),
+        ),
+        patch.object(SuiteVersion, "in_force_for", return_value=MagicMock(id=frozen_version_id)),
+        patch.object(
+            TestDefinition, "resolve_write_target",
+            return_value=(draft_version_id, {definition_id: copied_id}),
+        ),
+    ):
+        definition.save()
+
+    assert definition.version_id == draft_version_id
+    assert definition.id == copied_id
+
+
 def _session_routing_version_lookups(*, persisted_version, frozen_versions=()):
     """A session answering the persisted-row lookup and the frozen check by what each asks.
 

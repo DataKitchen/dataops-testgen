@@ -120,14 +120,17 @@ def initialize_contract(
     return draft
 
 
-# ODCS SchemaBaseProperty.logicalType is one of: string, date, number, integer, object,
-# array, boolean. Only these four profiled general_type codes have a faithful match -- a
-# "Time" or "Other" column carries no logicalType at all rather than a guessed one.
+# ODCS SchemaBaseProperty.logicalType is one of: string, date, timestamp, time, number,
+# integer, object, array, boolean, map, vector. "Other" is the one profiled general_type code
+# with no faithful match, and such a column carries no logicalType at all rather than a
+# guessed one. "Datetime" takes date rather than timestamp because profiling does not tell
+# the two apart, and a stamped descriptor is not recomputed.
 _LOGICAL_TYPE_FROM_GENERAL_TYPE: dict[str, str] = {
     "A": "string",
     "N": "number",
     "D": "date",
     "B": "boolean",
+    "T": "time",
 }
 
 
@@ -301,6 +304,12 @@ def _generate_for_tables(suite: TestSuite, table_names: list[str], version_id: U
     so the draft and the document change it is generating against have to be committed first:
     a merely flushed draft is invisible there, and the terms generation inserts fail the
     version foreign key.
+
+    The cost is that the caller stops being one unit of work. The declaration is durable
+    before the terms are, so generation failing past this point leaves the tables declared
+    with nothing generated for them, and no rollback in the caller can take that back.
+    Running the operation again resolves it: the document merge keeps what is already
+    declared, and generation replaces its own stale terms.
     """
     session = get_current_session()
     session.commit()

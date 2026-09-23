@@ -733,12 +733,15 @@ class TestDefinition(Entity):
         Raises ``ValueError`` when the row being updated no longer exists, since nothing can
         then establish which version the write would land on.
         """
-        version_id = self.version_id
-        if version_id is None and self.id is not None:
+        # Both ids are compared against ones the ORM hands back, never only passed to the
+        # database, and a dialog payload delivers them as strings.
+        row_id = UUID(str(self.id)) if self.id else None
+        version_id = UUID(str(self.version_id)) if self.version_id else None
+        if version_id is None and row_id is not None:
             # An edit dialog rebuilds a definition from a summary payload, which carries no
             # version, so the persisted row is the only thing that can say which one to guard.
             version_id = get_current_session().scalar(
-                select(TestDefinition.version_id).where(TestDefinition.id == self.id)
+                select(TestDefinition.version_id).where(TestDefinition.id == row_id)
             )
             if version_id is None:
                 raise ValueError(f"Test definition {self.id} no longer exists.")
@@ -753,10 +756,10 @@ class TestDefinition(Entity):
             raise FrozenVersionError(version_id)
 
         target_version_id, copied_ids = self.resolve_write_target(self.test_suite_id)
-        if self.id is not None:
-            if self.id not in copied_ids:
+        if row_id is not None:
+            if row_id not in copied_ids:
                 raise FrozenVersionError(version_id)
-            self.id = copied_ids[self.id]
+            self.id = copied_ids[row_id]
         self.version_id = target_version_id
 
     @classmethod
