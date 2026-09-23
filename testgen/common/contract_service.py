@@ -123,15 +123,28 @@ def initialize_contract(
 # ODCS SchemaBaseProperty.logicalType is one of: string, date, timestamp, time, number,
 # integer, object, array, boolean, map, vector. "Other" is the one profiled general_type code
 # with no faithful match, and such a column carries no logicalType at all rather than a
-# guessed one. "Datetime" takes date rather than timestamp because profiling does not tell
-# the two apart, and a stamped descriptor is not recomputed.
+# guessed one. "Datetime" is absent because it needs the column's type name as well.
 _LOGICAL_TYPE_FROM_GENERAL_TYPE: dict[str, str] = {
     "A": "string",
     "N": "number",
-    "D": "date",
     "B": "boolean",
     "T": "time",
 }
+
+
+def _logical_type(column: DataColumnChars) -> str | None:
+    """A profiled column's ODCS logical type, or None where none of them is faithful.
+
+    A "D" column is a date or a datetime, which ODCS separates and ``general_type`` does not,
+    so the type name decides: every flavor spells a datetime with "time" in it -- ``datetime``,
+    ``smalldatetime``, ``datetimeoffset``, ``timestamp`` and its suffixed and qualified forms
+    -- while a plain date is spelled ``date``. An Oracle ``DATE`` carries a time component and
+    still reads as a date here, which leaves it agreeing with its own physical type rather
+    than contradicting it.
+    """
+    if column.general_type == "D":
+        return "timestamp" if "time" in (column.column_type or "").lower() else "date"
+    return _LOGICAL_TYPE_FROM_GENERAL_TYPE.get(column.general_type)
 
 
 def declared_tables(document: dict | None) -> list[str]:
@@ -152,7 +165,7 @@ def _column_descriptor(column: DataColumnChars) -> dict:
     descriptor: dict = {"name": column.column_name}
     if column.column_type:
         descriptor["physicalType"] = column.column_type
-    if logical_type := _LOGICAL_TYPE_FROM_GENERAL_TYPE.get(column.general_type):
+    if logical_type := _logical_type(column):
         descriptor["logicalType"] = logical_type
     if column.functional_data_type:
         descriptor["customProperties"] = [{"property": "functionalDataType", "value": column.functional_data_type}]
@@ -181,7 +194,7 @@ def _merge_column_descriptor(existing: dict, column: DataColumnChars) -> dict:
     merged = dict(existing)
     if column.column_type:
         merged["physicalType"] = column.column_type
-    if logical_type := _LOGICAL_TYPE_FROM_GENERAL_TYPE.get(column.general_type):
+    if logical_type := _logical_type(column):
         merged["logicalType"] = logical_type
     if column.functional_data_type:
         merged["customProperties"] = _merge_functional_data_type(

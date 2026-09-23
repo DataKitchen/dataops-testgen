@@ -329,6 +329,47 @@ def test_a_time_column_carries_the_odcs_time_logical_type():
     assert property_ == {"name": "shift_start", "physicalType": "time", "logicalType": "time"}
 
 
+@pytest.mark.parametrize(
+    ("column_type", "expected"),
+    [
+        # Every spelling a "D" column takes across the flavors, from the functional baselines.
+        ("date", "date"),
+        ("timestamp", "timestamp"),
+        ("timestamp with time zone", "timestamp"),
+        ("timestamp_ntz", "timestamp"),
+        ("timestamp_ltz", "timestamp"),
+        ("timestamp_tz", "timestamp"),
+        ("timestamp_ms", "timestamp"),
+        ("timestamp_ns", "timestamp"),
+        ("timestamp_s", "timestamp"),
+        ("datetime", "timestamp"),
+        ("smalldatetime", "timestamp"),
+        ("datetimeoffset", "timestamp"),
+    ],
+)
+def test_a_datetime_column_is_not_declared_a_date(column_type, expected):
+    """``general_type`` collapses date and datetime into one code, so the descriptor would
+    otherwise declare ``logicalType: date`` on a column it declares ``physicalType:
+    timestamp`` in the same breath, and a downstream consumer reading the logical type would
+    drop the time component the contract is supposed to be about.
+    """
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
+    columns = [MagicMock(column_name="seen_at", general_type="D", functional_data_type=None, column_type=column_type)]
+    with (
+        patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch.object(contract_service, "_profiled_columns", return_value=columns),
+        patch.object(contract_service, "_generate_for_tables"),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        contract_service.add_table(suite, "events")
+
+    descriptor, = draft.metadata_document["schema"]
+    property_, = descriptor["properties"]
+    assert property_ == {"name": "seen_at", "physicalType": column_type, "logicalType": expected}
+
+
 def test_a_column_with_no_functional_data_type_carries_no_custom_properties():
     suite = _suite()
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, metadata_document={"schema": []})
