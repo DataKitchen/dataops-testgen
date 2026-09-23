@@ -344,6 +344,7 @@ def build_mcp_server(
         create_test,
         create_test_note,
         delete_test_note,
+        delete_tests,
         export_tests,
         get_test,
         import_tests,
@@ -467,6 +468,7 @@ def build_mcp_server(
     if not env_hides_source_only_tools:
         tool_wrapper(validate_custom_test)
     tool_wrapper(bulk_update_tests)
+    tool_wrapper(delete_tests)
     tool_wrapper(export_tests)
     tool_wrapper(import_tests)
     tool_wrapper(create_test_note)
