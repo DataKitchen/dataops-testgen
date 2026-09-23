@@ -21,6 +21,7 @@ READ_METHOD_ARGS = {
     "select_where": (),
     "select_minimal_where": (),
     "list_for_suite": (uuid4(),),
+    "list_for_ids": ([uuid4()],),
     "select_page": (),
     "get_singleton_monitor": (uuid4(), "a_table", "Volume_Trend"),
     "list_monitor_configs_for_table": (uuid4(), "a_table"),
