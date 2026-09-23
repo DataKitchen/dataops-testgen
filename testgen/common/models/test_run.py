@@ -168,7 +168,8 @@ class TestRun(Entity):
             return LatestTestRun(str(result["id"]), result["run_time"])
         return None
 
-    def get_previous(self) -> Self | None:
+    def get_previous(self, *clauses) -> Self | None:
+        """The suite's most recent completed run before this one, narrowed by ``clauses``."""
         query = (
             select(TestRun)
             .join(JobExecution, TestRun.id == JobExecution.id)
@@ -176,6 +177,7 @@ class TestRun(Entity):
                 TestRun.test_suite_id == self.test_suite_id,
                 JobExecution.status == JobStatus.COMPLETED,
                 TestRun.test_starttime < self.test_starttime,
+                *clauses,
             )
             .order_by(desc(TestRun.test_starttime))
             .limit(1)

@@ -2,12 +2,29 @@ from unittest.mock import MagicMock, Mock, call, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.sql import operators
+from sqlalchemy.sql.elements import BinaryExpression
 
 from testgen.commands.run_recalculate_project_scores import run_recalculate_project_scores
+from testgen.common.enums import SuiteType
+from tests.unit.sql_assertions import conjuncts
 
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.commands.run_recalculate_project_scores"
+
+
+def _admits_exactly(term, column_key: str, table_name: str, expected_values: set) -> bool:
+    """Whether ``term`` is an ``IN`` check on the given table's column admitting exactly
+    ``expected_values`` — no more, no fewer."""
+    if not isinstance(term, BinaryExpression) or term.operator is not operators.in_op:
+        return False
+    left = term.left
+    if getattr(left, "key", None) != column_key or getattr(left.table, "name", None) != table_name:
+        return False
+    right = term.right
+    values = getattr(right, "value", None)
+    return values is not None and set(values) == expected_values
 
 
 def _make_db_ctx(scalars_result):
@@ -140,3 +157,25 @@ def test_refresh_always_called_at_end():
         run_recalculate_project_scores("proj")
 
     mock_refresh.assert_called_once_with(project_code="proj")
+
+
+def test_test_suite_query_admits_regular_and_contract_suite_types():
+    tg = _make_table_group()
+    test_suite_ctx = _make_db_ctx([])
+
+    with (
+        patch(f"{MODULE}.database_session", side_effect=[_make_db_ctx([tg]), test_suite_ctx]),
+        patch(f"{MODULE}.execute_db_queries"),
+        patch(f"{MODULE}.RollupScoresSQL"),
+        patch(f"{MODULE}.run_refresh_score_cards_results"),
+    ):
+        run_recalculate_project_scores("proj")
+
+    session = test_suite_ctx.__enter__.return_value
+    statement = session.scalars.call_args.args[0]
+    terms = conjuncts(statement.whereclause)
+
+    assert any(
+        _admits_exactly(term, "suite_type", "test_suites", {SuiteType.REGULAR.value, SuiteType.CONTRACT.value})
+        for term in terms
+    )

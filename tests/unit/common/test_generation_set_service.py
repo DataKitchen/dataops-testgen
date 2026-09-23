@@ -2,7 +2,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import (
+    CONTRACT_GENERATION_SET,
     DEFAULT_GENERATION_SET,
     MONITOR_GENERATION_SET,
     get_generation_set_members,
@@ -188,3 +190,42 @@ def test_resolve_rejects_unknown_set_and_lists_available(_sets):
 def test_resolve_lists_every_unknown_set_sorted(_sets):
     with pytest.raises(ValueError, match="Aaa, Zzz"):
         resolve_generation_sets(_suite(), ["Zzz", "Standard", "Aaa"])
+
+
+# --- resolve_generation_sets: contract suites ---
+
+
+def test_a_contract_suite_resolves_to_the_contract_set_before_the_set_exists():
+    suite = MagicMock(suite_type=SuiteType.CONTRACT, generation_sets=["Contract"])
+    with patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Standard"]):
+        assert resolve_generation_sets(suite, None) == [CONTRACT_GENERATION_SET]
+
+
+def test_a_contract_suite_refuses_another_set():
+    suite = MagicMock(suite_type=SuiteType.CONTRACT, generation_sets=["Contract"])
+    with patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Standard"]):
+        with pytest.raises(ValueError, match="Contract"):
+            resolve_generation_sets(suite, ["Standard"])
+
+
+def test_a_regular_suite_refuses_the_contract_set():
+    suite = MagicMock(suite_type=SuiteType.REGULAR, generation_sets=["Standard"])
+    with patch("testgen.common.generation_set_service.list_generation_sets", return_value=["Standard"]):
+        with pytest.raises(ValueError, match="Contract"):
+            resolve_generation_sets(suite, ["Contract"])
+
+
+def test_the_contract_set_is_not_listed():
+    with patch("testgen.common.generation_set_service.get_current_session") as session:
+        session.return_value.execute.return_value.all.return_value = [("Standard",), ("Contract",)]
+        assert list_generation_sets() == ["Standard"]
+
+
+def test_get_generation_set_members_excludes_contract_and_monitor_in_the_query():
+    with patch("testgen.common.generation_set_service.get_current_session") as session:
+        session.return_value.execute.return_value.all.return_value = []
+        get_generation_set_members()
+
+    query, params = session.return_value.execute.call_args[0]
+    assert "generation_set NOT IN" in str(query)
+    assert params == {"monitor": MONITOR_GENERATION_SET, "contract": CONTRACT_GENERATION_SET}

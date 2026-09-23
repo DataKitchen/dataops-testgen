@@ -8,4 +8,5 @@ WHERE test_suite_id = :TEST_SUITE_ID ::UUID
   -- Ignore locked tests
   AND lock_refresh = 'N'
   -- Filter by test types if specified (NULL = no filter)
-  AND (:TEST_TYPES_FILTER IS NULL OR test_type = ANY(:TEST_TYPES_FILTER));
+  AND (:TEST_TYPES_FILTER IS NULL OR test_type = ANY(:TEST_TYPES_FILTER))
+  {TABLE_FILTER};
