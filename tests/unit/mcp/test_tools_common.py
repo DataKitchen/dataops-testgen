@@ -1584,3 +1584,22 @@ def test_writing_a_parameter_keeps_the_other_parameters():
     connection.parameters = {"kept": "yes"}
     write_conn_field(connection, ConnField("Database File", "database_file", Req.REQUIRED, in_parameters=True), "/x.duckdb")
     assert connection.parameters == {"kept": "yes", "database_file": "/x.duckdb"}
+
+
+def test_writing_a_secret_keeps_the_other_secrets():
+    from testgen.common.connection_schema import ConnField, Req, write_conn_field
+    from testgen.common.models.connection import Connection
+
+    connection = Connection(sql_flavor="duckdb", sql_flavor_code="duckdb")
+    connection.secrets = {"kept": "yes"}
+    field = ConnField("Secret Access Key", "secret_access_key", Req.REQUIRED, secret=True, in_secrets=True)
+    write_conn_field(connection, field, "AKIA")
+    assert connection.secrets == {"kept": "yes", "secret_access_key": "AKIA"}
+
+
+def test_a_secrets_backed_field_must_be_marked_secret():
+    """Read paths withhold on ``secret`` alone, so the two cannot be declared apart."""
+    from testgen.common.connection_schema import ConnField, Req
+
+    with pytest.raises(ValueError, match="must set secret=True"):
+        ConnField("Secret Access Key", "secret_access_key", Req.REQUIRED, in_secrets=True)

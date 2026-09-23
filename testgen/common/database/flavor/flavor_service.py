@@ -32,15 +32,34 @@ class ConnectionParams(TypedDict):
     connect_with_service_principal: bool
     sql_flavor_code: str
     parameters: dict[str, Any]
+    secrets: dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
-class ConnectionParameter:
-    """One entry in a flavor's ``parameters`` shape."""
+class ConnectionField:
+    """One entry in a flavor's ``parameters`` or ``secrets`` shape."""
 
     key: str
     label: str
     required: bool = False
+
+
+def _validate_declared_fields(
+    schema: tuple[ConnectionField, ...], supplied: dict[str, Any] | None, noun: str
+) -> None:
+    """Raise ``ValueError`` naming the offending field if ``supplied`` does not match ``schema``."""
+    declared = {entry.key: entry for entry in schema}
+    values = supplied or {}
+
+    for key in values:
+        if key not in declared:
+            raise ValueError(f"'{key}' is not a connection {noun} for this database type.")
+
+    for entry in schema:
+        if entry.required:
+            value = values.get(entry.key)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                raise ValueError(f"{entry.label} is required.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +84,7 @@ class ResolvedConnectionParams:
     connect_with_identity: bool = False
     connect_with_service_principal: bool = False
     parameters: dict[str, Any] = field(default_factory=dict)
+    secrets: dict[str, Any] = field(default_factory=dict)
 
 
 def _decrypt_if_needed(value: Any) -> str | None:
@@ -103,6 +123,7 @@ def resolve_connection_params(connection_params: ConnectionParams) -> ResolvedCo
         connect_with_identity=connection_params.get("connect_with_identity") or False,
         connect_with_service_principal=connection_params.get("connect_with_service_principal") or False,
         parameters=connection_params.get("parameters") or {},
+        secrets=connection_params.get("secrets") or {},
     )
 
 
@@ -171,24 +192,19 @@ class FlavorService:
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
         return []
 
-    parameters_schema: tuple[ConnectionParameter, ...] = ()
+    parameters_schema: tuple[ConnectionField, ...] = ()
     """Shape of the flavor's ``connections.parameters`` entry. Empty means the flavor stores none."""
+
+    secrets_schema: tuple[ConnectionField, ...] = ()
+    """Shape of the flavor's ``connections.secrets`` entry. Empty means the flavor stores none."""
 
     def validate_parameters(self, parameters: dict[str, Any] | None) -> None:
         """Raise ``ValueError`` naming the offending field if ``parameters`` does not match the shape."""
-        declared = {parameter.key: parameter for parameter in self.parameters_schema}
-        supplied = parameters or {}
+        _validate_declared_fields(self.parameters_schema, parameters, "parameter")
 
-        for key in supplied:
-            if key not in declared:
-                raise ValueError(f"'{key}' is not a connection parameter for this database type.")
-
-        for parameter in self.parameters_schema:
-            if not parameter.required:
-                continue
-            value = supplied.get(parameter.key)
-            if value is None or (isinstance(value, str) and not value.strip()):
-                raise ValueError(f"{parameter.label} is required.")
+    def validate_secrets(self, secrets: dict[str, Any] | None) -> None:
+        """Raise ``ValueError`` naming the offending field if ``secrets`` does not match the shape."""
+        _validate_declared_fields(self.secrets_schema, secrets, "secret")
 
     def init(self, connection: Connection, params: ResolvedConnectionParams) -> None:
         """Prepare a freshly opened connection for use.
