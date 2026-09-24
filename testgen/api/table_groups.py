@@ -1,20 +1,42 @@
-"""API v1 — table group reads."""
+"""API v1 — table groups."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Body, Depends, Query
+from sqlalchemy.exc import IntegrityError
 
-from testgen.api.deps import db_session, resolve_project_code, resolve_table_group
+from testgen.api.deps import (
+    api_error,
+    api_errors,
+    db_session,
+    resolve_connection,
+    resolve_project_code,
+    resolve_table_group,
+)
 from testgen.api.schemas import (
     CatalogTags,
     ErrorResponse,
+    TableGroupCreate,
     TableGroupItem,
     TableGroupListResponse,
     TableGroupResponse,
 )
+from testgen.common.database.table_group_service import (
+    is_duplicate_name_error,
+    table_group_defaults,
+    validate_table_group_fields,
+)
+from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, split_criteria
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
 router = APIRouter(tags=["Table Groups"], dependencies=[Depends(db_session)], responses=_error_responses)
+
+_FIELD_NAMES = {"table_groups_name": "table_group_name", "table_group_schema": "schema_name"}
+_LIST_COLUMNS = {
+    "table_set": "profiling_table_set",
+    "include_masks": "profiling_include_mask",
+    "exclude_masks": "profiling_exclude_mask",
+}
 
 
 @router.get(
@@ -79,6 +101,64 @@ def get_table_group(table_group: TableGroup = resolve_table_group("view")):  # n
     """A table group's full configuration: which tables it covers, how profiling treats
     them, and the catalog tags the Quality Score can be sliced by.
     """
+    return _to_response(table_group)
+
+
+@router.post(
+    "/connections/{connection_id}/table-groups",
+    response_model=TableGroupResponse,
+    status_code=201,
+    summary="Create a table group",
+    responses={
+        400: {"model": ErrorResponse, "description": "One entry per field that failed validation"},
+        409: {"model": ErrorResponse, "description": "A table group with this name already exists in the project"},
+    },
+)
+def create_table_group(
+    connection: Connection = resolve_connection("edit"),  # noqa: B008
+    body: TableGroupCreate = Body(...),  # noqa: B008
+) -> TableGroupResponse:
+    """Create a table group on a connection. It belongs to the connection's project.
+
+    The response carries the new ``table_group_id``, which profiling, test generation
+    and test runs take as input.
+    """
+    table_group = TableGroup(
+        project_code=connection.project_code,
+        connection_id=connection.connection_id,
+        table_groups_name=body.table_group_name,
+        table_group_schema=body.schema_name,
+        **table_group_defaults(),
+    )
+    fields = body.model_dump(
+        exclude_none=True,
+        exclude={"table_group_name", "schema_name", "catalog_tags", "add_scorecard"},
+    )
+    for name, value in fields.items():
+        if name in _LIST_COLUMNS:
+            setattr(table_group, _LIST_COLUMNS[name], ",".join(value))
+        else:
+            setattr(table_group, name, value)
+    if body.catalog_tags:
+        for name, value in body.catalog_tags.model_dump(exclude_none=True).items():
+            setattr(table_group, name, value)
+
+    if errors := validate_table_group_fields(table_group, _FIELD_NAMES):
+        raise api_errors(400, "invalid_table_group", errors)
+
+    try:
+        table_group.save(add_scorecard_definition=body.add_scorecard)
+    except IntegrityError as err:
+        if is_duplicate_name_error(err):
+            raise api_error(
+                409, "duplicate_table_group_name", "A table group with this name already exists in the project."
+            ) from err
+        raise
+
+    return _to_response(table_group)
+
+
+def _to_response(table_group: TableGroup) -> TableGroupResponse:
     return TableGroupResponse(
         table_group_id=table_group.id,
         table_group_name=table_group.table_groups_name,

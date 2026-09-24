@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Discriminator, Field, RootModel, Tag
+from pydantic import BaseModel, ConfigDict, Discriminator, Field, RootModel, StrictBool, StrictInt, Tag
 
 from testgen.api.enums import (
     AuthenticationMethod,
@@ -21,6 +21,7 @@ from testgen.api.enums import (
     ResultStatus,
     TableState,
 )
+from testgen.common.database.table_group_service import table_group_defaults
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
@@ -885,3 +886,76 @@ class TableGroupResponse(BaseModel):
     include_in_dashboard: bool
 
     catalog_tags: CatalogTags
+
+
+_TABLE_GROUP_DEFAULTS = table_group_defaults()
+
+
+class TableGroupCreate(BaseModel):
+    """A table group to create on a connection.
+
+    Omitted optional fields, and fields sent as ``null``, take the default shown.
+    Unknown fields are rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    table_group_name: str = Field(description="Unique within the project; 3 to 40 characters.")
+    schema_name: str = Field(description="The schema on the connection that holds the tables.")
+    description: str | None = None
+
+    table_set: list[str] | None = Field(
+        default=None,
+        description="Table names to restrict the group to. Omit to define the group by masks alone.",
+    )
+    include_masks: list[str] | None = Field(
+        default=None, description="SQL LIKE patterns a table must match to be included."
+    )
+    exclude_masks: list[str] | None = Field(
+        default=None, description="SQL LIKE patterns that exclude a matching table."
+    )
+    profile_id_column_mask: str | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_id_column_mask"], description="SQL LIKE pattern marking ID columns."
+    )
+    profile_sk_column_mask: str | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_sk_column_mask"],
+        description="SQL LIKE pattern marking surrogate key columns.",
+    )
+
+    profile_use_sampling: StrictBool | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_use_sampling"],
+        description="Profile a sample of each table's rows instead of all of them.",
+    )
+    profile_sample_percent: StrictInt | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_sample_percent"],
+        description="Percent of rows to sample, from 1 to 100, unless that falls below the sample minimum.",
+    )
+    profile_sample_min_count: StrictInt | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_sample_min_count"],
+        description="Minimum number of rows in any sample, when the table has that many.",
+    )
+    profiling_delay_days: StrictInt | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profiling_delay_days"],
+        description="Days to wait before new profiling results are used to generate tests.",
+    )
+    profile_flag_cdes: StrictBool | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_flag_cdes"],
+        description="Flag likely critical data elements during profiling.",
+    )
+    profile_flag_pii: StrictBool | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_flag_pii"],
+        description="Flag columns that likely hold personally identifiable information during profiling.",
+    )
+    profile_exclude_xde: StrictBool | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["profile_exclude_xde"],
+        description="Skip columns marked as excluded data elements when profiling.",
+    )
+    include_in_dashboard: StrictBool | None = Field(
+        default=_TABLE_GROUP_DEFAULTS["include_in_dashboard"],
+        description="Show the table group on the project dashboard.",
+    )
+
+    catalog_tags: CatalogTags | None = None
+    add_scorecard: StrictBool = Field(
+        default=True, description="Also add a scorecard for the table group to the Quality Dashboard."
+    )

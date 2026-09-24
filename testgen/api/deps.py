@@ -71,6 +71,14 @@ def api_error(status_code: int, code: str, detail: str) -> HTTPException:
     return HTTPException(status_code=status_code, detail={"errors": [{"code": code, "detail": detail}]})
 
 
+def api_errors(status_code: int, code: str, details: list[str]) -> HTTPException:
+    """Build an HTTPException in the standardized error format with one entry per detail, all sharing ``code``."""
+    return HTTPException(
+        status_code=status_code,
+        detail={"errors": [{"code": code, "detail": detail} for detail in details]},
+    )
+
+
 def has_project_permission(user: User, project_code: str, permission: str) -> bool:
     """Check if the user's role in the project includes the required permission."""
     role = ProjectMembership.get_user_role_in_project(user.id, project_code)
