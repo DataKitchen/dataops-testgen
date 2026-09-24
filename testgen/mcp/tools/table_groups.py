@@ -14,6 +14,8 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
     apply_table_group_flavor_rules,
+    is_duplicate_name_error,
+    table_group_defaults,
     validate_table_group_fields,
 )
 from testgen.common.database.table_group_service import (
@@ -44,6 +46,7 @@ from testgen.utils import friendly_score
 _DOC_GROUP = DocGroup.MANAGE
 
 _DUPLICATE_NAME_MESSAGE = "A Table Group with the same name already exists."
+_FIELD_NAMES = {"table_groups_name": "table_group_name", "table_group_schema": "schema"}
 _PII_FLAG_DENIED_MESSAGE = (
     "Changing PII detection requires permission to view PII. "
     "Leave this setting unchanged or contact your administrator."
@@ -467,7 +470,7 @@ def create_table_group(
         table_groups_name=table_group_name,
         table_group_schema=schema,
         file_declarations=_declaration_payloads(file_declarations) if file_declarations else None,
-        **_model_defaults(),
+        **table_group_defaults(),
     )
     _apply_args_to_table_group(
         table_group,
@@ -497,7 +500,7 @@ def create_table_group(
     )
 
     apply_table_group_flavor_rules(table_group, connection)
-    errors = validate_table_group_fields(table_group, connection)
+    errors = validate_table_group_fields(table_group, connection, field_names=_FIELD_NAMES)
     if errors:
         _raise_validation_error(errors, "Table group creation rejected. No changes saved.")
 
@@ -674,7 +677,7 @@ def update_table_group(
     _apply_args_to_table_group(table_group, **supplied)
 
     apply_table_group_flavor_rules(table_group, connection)
-    errors = validate_table_group_fields(table_group, connection)
+    errors = validate_table_group_fields(table_group, connection, field_names=_FIELD_NAMES)
     if errors:
         _raise_validation_error(errors, "Update rejected. No changes saved.")
 
@@ -860,39 +863,6 @@ _CATALOG_ATTRS: tuple[str, ...] = (
 )
 
 
-# Mirror SQLAlchemy ``Column(default=...)`` values into the constructor kwargs.
-# Column defaults only fire at flush time, but ``validate_table_group_fields``
-# runs *before* flush. Without seeding these, every create call that omits
-# e.g. ``profile_sample_percent`` would fail validation. Computing once at
-# import time keeps the values in sync with the model and survives tests that
-# patch the ``TableGroup`` class itself.
-#
-# ``YNString`` columns store raw "Y"/"N" strings as their default but expose
-# the attribute as ``bool``; normalize so the in-memory render path doesn't
-# treat "N" as truthy before the row is reloaded.
-def _normalize_default(column, raw: Any) -> Any:
-    from testgen.common.models.custom_types import YNString
-
-    if isinstance(column.type, YNString) and isinstance(raw, str):
-        return raw == "Y"
-    return raw
-
-
-_MODEL_DEFAULTS: dict[str, Any] = {
-    column.name: _normalize_default(column, column.default.arg)
-    for column in TableGroup.__table__.columns
-    if (
-        column.default is not None
-        and not column.primary_key
-        and getattr(column.default, "is_scalar", False)
-    )
-}
-
-
-def _model_defaults() -> dict[str, Any]:
-    return dict(_MODEL_DEFAULTS)
-
-
 def _apply_args_to_table_group(
     table_group: TableGroup,
     *,
@@ -988,7 +958,7 @@ def _raise_validation_error(errors: list[str], header: str) -> None:
 
 
 def _maybe_raise_duplicate_name(err: IntegrityError) -> None:
-    if "table_groups_name_unique" in str(err.orig):
+    if is_duplicate_name_error(err):
         raise MCPUserError(_DUPLICATE_NAME_MESSAGE) from err
 
 

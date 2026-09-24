@@ -116,7 +116,7 @@ def test_model_defaults_normalize_ynstring_columns_to_python_bool():
     normalization a ``"N"`` default would render as truthy (non-empty string)
     in the create-tool output until the row is reloaded from the DB.
     """
-    from testgen.mcp.tools.table_groups import _MODEL_DEFAULTS
+    from testgen.common.database.table_group_service import _MODEL_DEFAULTS
 
     assert _MODEL_DEFAULTS["profile_use_sampling"] is False
 

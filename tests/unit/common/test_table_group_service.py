@@ -1,6 +1,7 @@
 """Tests for the table_group_service common-layer module.
 
-Covers ``validate_table_group_fields`` and ``preview_table_group`` (happy path,
+Covers ``table_group_defaults``, ``validate_table_group_fields``,
+``is_duplicate_name_error`` and ``preview_table_group`` (happy path,
 verify-access flag, partial-inaccessible footer, no-connection branch,
 connection failure, empty result).
 """
@@ -8,11 +9,14 @@ connection failure, empty result).
 from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.column_chars import ObjectType
 from testgen.common.database.table_group_service import (
     apply_table_group_flavor_rules,
+    is_duplicate_name_error,
     preview_table_group,
+    table_group_defaults,
     validate_table_group_fields,
 )
 from testgen.common.models.connection import Connection
@@ -72,22 +76,22 @@ def test_validate_passes_baseline():
 
 def test_validate_missing_name():
     errors = validate_table_group_fields(_tg(table_groups_name=None))
-    assert "`table_group_name` is required." in errors
+    assert "`table_groups_name` is required." in errors
 
 
 def test_validate_blank_name():
     errors = validate_table_group_fields(_tg(table_groups_name="   "))
-    assert "`table_group_name` is required." in errors
+    assert "`table_groups_name` is required." in errors
 
 
 def test_validate_name_too_short():
     errors = validate_table_group_fields(_tg(table_groups_name="ab"))
-    assert "`table_group_name` must be between 3 and 40 characters." in errors
+    assert "`table_groups_name` must be between 3 and 40 characters." in errors
 
 
 def test_validate_name_too_long():
     errors = validate_table_group_fields(_tg(table_groups_name="a" * 41))
-    assert "`table_group_name` must be between 3 and 40 characters." in errors
+    assert "`table_groups_name` must be between 3 and 40 characters." in errors
 
 
 def test_validate_name_at_lower_bound_passes():
@@ -100,12 +104,12 @@ def test_validate_name_at_upper_bound_passes():
 
 def test_validate_missing_schema():
     errors = validate_table_group_fields(_tg(table_group_schema=None))
-    assert "`schema` is required." in errors
+    assert "`table_group_schema` is required." in errors
 
 
 def test_validate_blank_schema():
     errors = validate_table_group_fields(_tg(table_group_schema="   "))
-    assert "`schema` is required." in errors
+    assert "`table_group_schema` is required." in errors
 
 
 @pytest.mark.parametrize("bad_delay", [-1, -100])
@@ -153,11 +157,71 @@ def test_validate_aggregates_all_errors():
         profile_sample_min_count=-5,
     ))
     joined = "\n".join(errors)
-    assert "`table_group_name` is required." in joined
-    assert "`schema` is required." in joined
+    assert "`table_groups_name` is required." in joined
+    assert "`table_group_schema` is required." in joined
     assert "`profiling_delay_days` must be a non-negative integer." in joined
     assert "`profile_sample_percent` must be between 1 and 100." in joined
     assert "`profile_sample_min_count` must be a non-negative integer." in joined
+
+
+def test_validate_names_fields_by_the_supplied_mapping():
+    errors = validate_table_group_fields(
+        _tg(table_groups_name="", table_group_schema="", profile_sample_percent=0),
+        field_names={"table_groups_name": "name", "table_group_schema": "schema_name"},
+    )
+
+    assert errors == [
+        "`name` is required.",
+        "`schema_name` is required.",
+        "`profile_sample_percent` must be between 1 and 100.",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# table_group_defaults
+# ---------------------------------------------------------------------------
+
+
+def test_defaults_let_a_named_table_group_pass_validation():
+    table_group = TableGroup(table_groups_name="Sample TG", table_group_schema="public", **table_group_defaults())
+
+    assert validate_table_group_fields(table_group) == []
+
+
+def test_defaults_mirror_the_model_column_defaults():
+    defaults = table_group_defaults()
+
+    assert defaults["profile_sample_percent"] == 30
+    assert defaults["profile_sample_min_count"] == 100000
+    assert defaults["profile_id_column_mask"] == "%id"
+    assert "id" not in defaults
+
+
+def test_defaults_are_a_fresh_copy():
+    table_group_defaults()["profile_sample_percent"] = 99
+
+    assert table_group_defaults()["profile_sample_percent"] == 30
+
+
+# ---------------------------------------------------------------------------
+# is_duplicate_name_error
+# ---------------------------------------------------------------------------
+
+
+def _integrity_error(message: str) -> IntegrityError:
+    return IntegrityError("stmt", {}, Exception(message))
+
+
+def test_is_duplicate_name_error_matches_the_name_index():
+    err = _integrity_error('duplicate key value violates unique constraint "table_groups_name_unique"')
+
+    assert is_duplicate_name_error(err)
+
+
+def test_is_duplicate_name_error_ignores_other_violations():
+    err = _integrity_error('insert or update on table "table_groups" violates foreign key constraint')
+
+    assert not is_duplicate_name_error(err)
 
 
 # ---------------------------------------------------------------------------

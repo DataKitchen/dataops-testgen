@@ -1,8 +1,11 @@
 """Shared table-group helpers — common-layer logic shared by MCP, the UI, and
-any future caller. Two pieces live here, both flavor-aware:
+any future caller:
 
+* ``table_group_defaults`` — the model's scalar column defaults, for seeding a
+  table group that is validated before it is flushed.
 * ``validate_table_group_fields`` — required-field + format checks. Callers
   surface the returned bullets verbatim.
+* ``is_duplicate_name_error`` — recognizes the name-uniqueness violation.
 * ``preview_table_group`` — schema-introspection preview. Returns
   ``(preview, data_chars, sql_generator)``; the ``save_data_chars`` callback
   is built by callers via ``make_save_data_chars``.
@@ -15,10 +18,13 @@ rules are form-shaped per-flavor logic, not model invariants.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import TypedDict
+from typing import Any, TypedDict
 from uuid import UUID
+
+from sqlalchemy import Column
+from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
 from testgen.commands.run_refresh_data_chars import write_data_chars
@@ -33,10 +39,47 @@ from testgen.common.database.file_declarations import (
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.flavors import declares_files, fixed_table_group_schema
 from testgen.common.models.connection import Connection
+from testgen.common.models.custom_types import YNString
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import target_db_session
 
 LOG = logging.getLogger("testgen")
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+
+
+# ``YNString`` columns store raw "Y"/"N" strings as their default but expose
+# the attribute as ``bool``; normalize so an unflushed table group doesn't
+# treat "N" as truthy before the row is reloaded.
+def _normalize_default(column: Column, raw: Any) -> Any:
+    if isinstance(column.type, YNString) and isinstance(raw, str):
+        return raw == "Y"
+    return raw
+
+
+# Computed once at import time so the values stay in sync with the model and
+# survive tests that patch the ``TableGroup`` class itself.
+_MODEL_DEFAULTS: dict[str, Any] = {
+    column.name: _normalize_default(column, column.default.arg)
+    for column in TableGroup.__table__.columns
+    if (
+        column.default is not None
+        and not column.primary_key
+        and getattr(column.default, "is_scalar", False)
+    )
+}
+
+
+def table_group_defaults() -> dict[str, Any]:
+    """Return the model's scalar ``Column(default=...)`` values, keyed by attribute.
+
+    Column defaults only fire at flush time, so a table group validated before
+    it is saved has to be constructed with these to pass validation.
+    """
+    return dict(_MODEL_DEFAULTS)
+
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -57,40 +100,52 @@ def _is_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def validate_table_group_fields(table_group: TableGroup, connection: Connection | None = None) -> list[str]:
+def validate_table_group_fields(
+    table_group: TableGroup,
+    connection: Connection | None = None,
+    *,
+    field_names: Mapping[str, str] | None = None,
+) -> list[str]:
     """Return every validation error (empty list = valid).
 
     Mirrors the per-field form validators on the UI ``Add Table Group`` wizard.
-    The MCP tools call this and raise an ``MCPUserError`` containing the bullets
-    — they never duplicate a rule themselves.
 
-    Pass the connection to have the file declarations checked, which needs the base path they
-    are relative to.
+    Args:
+        table_group: The table group to check.
+        connection: The table group's connection. Pass it to have the file declarations
+            checked, which needs the base path they are relative to.
+        field_names: Name to show for a model attribute in the messages, keyed by
+            attribute. Attributes not in the mapping are shown by their own name.
     """
+    names = field_names or {}
+
+    def field(attr: str) -> str:
+        return f"`{names.get(attr, attr)}`"
+
     errors: list[str] = []
 
     name = table_group.table_groups_name
     if _missing(name):
-        errors.append("`table_group_name` is required.")
+        errors.append(f"{field('table_groups_name')} is required.")
     elif not (_NAME_MIN <= len(name.strip()) <= _NAME_MAX):
-        errors.append(f"`table_group_name` must be between {_NAME_MIN} and {_NAME_MAX} characters.")
+        errors.append(f"{field('table_groups_name')} must be between {_NAME_MIN} and {_NAME_MAX} characters.")
 
     if connection is not None and declares_files(connection.sql_flavor_code):
         errors.extend(validate_file_declarations(table_group.file_declarations, _base_path(connection)))
     elif _missing(table_group.table_group_schema):
-        errors.append("`schema` is required.")
+        errors.append(f"{field('table_group_schema')} is required.")
 
     delay = table_group.profiling_delay_days
     if not _is_int(delay) or delay < 0:
-        errors.append("`profiling_delay_days` must be a non-negative integer.")
+        errors.append(f"{field('profiling_delay_days')} must be a non-negative integer.")
 
     pct = table_group.profile_sample_percent
     if not _is_int(pct) or not (_SAMPLE_PCT_MIN <= pct <= _SAMPLE_PCT_MAX):
-        errors.append(f"`profile_sample_percent` must be between {_SAMPLE_PCT_MIN} and {_SAMPLE_PCT_MAX}.")
+        errors.append(f"{field('profile_sample_percent')} must be between {_SAMPLE_PCT_MIN} and {_SAMPLE_PCT_MAX}.")
 
     min_count = table_group.profile_sample_min_count
     if not _is_int(min_count) or min_count < 0:
-        errors.append("`profile_sample_min_count` must be a non-negative integer.")
+        errors.append(f"{field('profile_sample_min_count')} must be a non-negative integer.")
 
     return errors
 
@@ -120,6 +175,11 @@ def apply_table_group_flavor_rules(table_group: TableGroup, connection: Connecti
         table_group.profiling_exclude_mask = None
     else:
         table_group.file_declarations = None
+
+
+def is_duplicate_name_error(err: IntegrityError) -> bool:
+    """Whether ``err`` is a violation of the table group name's per-project uniqueness."""
+    return "table_groups_name_unique" in str(err.orig)
 
 
 # ---------------------------------------------------------------------------
