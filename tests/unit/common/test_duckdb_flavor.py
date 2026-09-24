@@ -1519,3 +1519,54 @@ def test_a_failed_init_leaves_the_pool_usable(tmp_path, monkeypatch):
             database_service._init_target_db_connection()
 
     assert database_service.engine_cache.target_db.pool.checkedout() == 0
+
+
+def file_counts(service, connection, params, declarations) -> dict[str, int]:
+    queries = service.file_count_queries(resolve_connection_params(params), parse_file_declarations(declarations))
+    rows = connection.execute(text(" UNION ALL ".join(queries))).mappings()
+    return {row["table_name"]: row["file_ct"] for row in rows}
+
+
+def test_each_file_table_counts_the_files_it_reads(data_directory):
+    service = DuckdbFlavorService()
+    params = files_params(data_directory)
+    declarations = [
+        {"name": "single", "uri": "claims_2024.csv", "format": "csv"},
+        {"name": "pattern", "uri": "claims_*.csv", "format": "csv"},
+        {"name": "tree", "uri": "**/*.csv", "format": "csv"},
+    ]
+    engine, connection = open_files_connection(service, params, declarations)
+    try:
+        # The recursive pattern reads the nested file too, and not the parquet or json files.
+        assert file_counts(service, connection, params, declarations) == {"single": 1, "pattern": 2, "tree": 4}
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_declaration_with_no_view_is_left_out_of_the_file_counts(data_directory):
+    service = DuckdbFlavorService()
+    outside = data_directory.parent / "outside" / "secret.csv"
+    params = files_params(data_directory)
+    declarations = [
+        {"name": "escape", "uri": str(outside), "format": "csv"},
+        {"name": "bad name", "uri": "claims_2024.csv", "format": "csv"},
+        {"name": "folder", "uri": "nested", "format": "csv"},
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+    ]
+    engine, connection = open_files_connection(service, params, declarations)
+    try:
+        assert file_counts(service, connection, params, declarations) == {"claims": 2}
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_database_file_connection_has_no_file_counts(customer_database):
+    params = resolve_connection_params({
+        "sql_flavor": "duckdb",
+        "sql_flavor_code": "duckdb",
+        "parameters": {"database_file": str(customer_database)},
+    })
+    declarations = parse_file_declarations([{"name": "claims", "uri": "claims.csv", "format": "csv"}])
+    assert DuckdbFlavorService().file_count_queries(params, declarations) == []

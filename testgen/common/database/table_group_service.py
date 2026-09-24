@@ -22,7 +22,7 @@ from uuid import UUID
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
 from testgen.commands.run_refresh_data_chars import write_data_chars
-from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.file_declarations import (
     BASE_PATH_PARAMETER,
     NO_FILES_MATCHED,
@@ -148,6 +148,7 @@ class TablePreview(TypedDict, total=False):
     approx_data_point_ct: int | None
     can_access: bool | None
     # Filled in only for a flavor whose tables are declared as files.
+    file_ct: int | None
     columns: list[PreviewColumn]
     error: str | None
 
@@ -265,6 +266,14 @@ def _build_preview(
             data_chars = [ColumnChars(**column) for column in rows]
             if declares_files(connection.sql_flavor_code):
                 declaration_failures = run.declaration_failures
+                file_count_map = {
+                    row["table_name"]: row["file_ct"]
+                    for query, params in sql_generator.get_file_counts()
+                    for row in run(query, params)
+                }
+                for column in data_chars:
+                    column.object_type = ObjectType.FILES
+                    column.file_ct = file_count_map.get(column.table_name)
 
     preview: TableGroupPreview = {
         "stats": {
@@ -294,6 +303,7 @@ def _build_preview(
                 "approx_record_ct": column.approx_record_ct,
                 "approx_data_point_ct": None,
                 "can_access": None,
+                "file_ct": column.file_ct,
             }
             stats["table_ct"] += 1
             if column.approx_record_ct is not None:

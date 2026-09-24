@@ -9,7 +9,9 @@ from uuid import UUID
 
 import pytest
 
-from testgen.commands.run_refresh_data_chars import write_data_chars
+from testgen.commands.run_refresh_data_chars import run_data_chars_refresh, write_data_chars
+from testgen.common.database.column_chars import ObjectType
+from testgen.common.flavors import SqlFlavorCode
 from testgen.common.read_file import read_template_sql_file
 
 pytestmark = pytest.mark.unit
@@ -119,3 +121,78 @@ def test_prediction_templates_key_staging_on_the_test_run(template_name):
 
     assert "test_run_id = :TEST_RUN_ID" in sql
     assert "run_date = :RUN_DATE" not in sql
+
+
+# --- A refresh on a Files connection ---
+
+
+def _file_refresh_generator() -> MagicMock:
+    sql_generator = MagicMock()
+    sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.get_schema_ddf.return_value = ("schema query", {})
+    sql_generator.get_file_counts.return_value = [("file counts query", None)]
+    sql_generator.get_row_counts.return_value = []
+    return sql_generator
+
+
+def _connection(sql_flavor_code: SqlFlavorCode = SqlFlavorCode.FILES) -> MagicMock:
+    return MagicMock(effective_max_threads=1, sql_flavor_code=sql_flavor_code)
+
+
+SCHEMA_ROWS = [
+    {"schema_name": "main", "table_name": "claims", "column_name": "id"},
+    {"schema_name": "main", "table_name": "claims", "column_name": "amount"},
+    {"schema_name": "main", "table_name": "orders", "column_name": "id"},
+]
+
+
+ROW_COUNTS = ([], [], {})
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch(f"{MODULE}.fetch_from_db_threaded")
+@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_refresh_records_each_file_table(mock_sql, _fetch, mock_threaded, mock_write):
+    mock_sql.return_value = _file_refresh_generator()
+    file_counts = [{"table_name": "claims", "file_ct": 3}, {"table_name": "orders", "file_ct": 1}]
+    mock_threaded.side_effect = [ROW_COUNTS, (file_counts, [], {})]
+
+    data_chars = run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+
+    assert [(c.table_name, c.object_type, c.file_ct) for c in data_chars] == [
+        ("claims", ObjectType.FILES, 3),
+        ("claims", ObjectType.FILES, 3),
+        ("orders", ObjectType.FILES, 1),
+    ]
+    mock_write.assert_called_once()
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch(f"{MODULE}.fetch_from_db_threaded")
+@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_failed_file_count_does_not_stop_the_refresh(mock_sql, _fetch, mock_threaded, mock_write, caplog):
+    mock_sql.return_value = _file_refresh_generator()
+    mock_threaded.side_effect = [ROW_COUNTS, ([], [], {0: "glob failed"})]
+
+    data_chars = run_data_chars_refresh(_connection(), MagicMock(), datetime.now(UTC))
+
+    # The object type does not depend on the count, so it is still recorded.
+    assert {(c.object_type, c.file_ct) for c in data_chars} == {(ObjectType.FILES, None)}
+    mock_write.assert_called_once()
+    assert "Could not count files for table group. glob failed" in caplog.text
+
+
+@patch(f"{MODULE}.write_data_chars")
+@patch(f"{MODULE}.fetch_from_db_threaded", return_value=ROW_COUNTS)
+@patch(f"{MODULE}.fetch_dict_from_db", return_value=SCHEMA_ROWS)
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+def test_a_catalog_refresh_records_no_file_counts(mock_sql, _fetch, mock_threaded, mock_write):
+    mock_sql.return_value = sql_generator = _file_refresh_generator()
+
+    data_chars = run_data_chars_refresh(_connection(SqlFlavorCode.POSTGRESQL), MagicMock(), datetime.now(UTC))
+
+    assert {(c.object_type, c.file_ct) for c in data_chars} == {(None, None)}
+    sql_generator.get_file_counts.assert_not_called()
+    mock_threaded.assert_called_once()

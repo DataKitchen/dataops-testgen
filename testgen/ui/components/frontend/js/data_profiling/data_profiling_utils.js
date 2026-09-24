@@ -158,6 +158,7 @@
  * @property {number} approx_record_ct
  * @property {number} record_ct
  * @property {number} column_ct
+ * @property {number?} file_ct
  * @property {number} add_date
  * @property {number} last_refresh_date
  * @property {number} drop_date

@@ -1374,6 +1374,42 @@ def test_preview_names_a_declaration_it_could_not_read(
     assert "No files found" in output
 
 
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_preview_reports_the_files_each_table_reads(mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock):
+    tg = _mock_table_group(table_groups_name="Files TG", table_group_schema="main")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _files_connection()
+    mock_preview_svc.return_value = (
+        {
+            "stats": {"id": tg.id, "table_groups_name": "Files TG", "table_ct": 1, "column_ct": 2},
+            "tables": {
+                "claims": {
+                    "column_ct": 2,
+                    "approx_record_ct": None,
+                    "approx_data_point_ct": None,
+                    "can_access": None,
+                    "file_ct": 3,
+                    "error": None,
+                },
+            },
+            "success": True,
+            "message": None,
+        },
+        None,
+        None,
+    )
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms():
+        output = preview_table_group(table_group_id=str(tg.id))
+
+    assert "| Table | Files | Columns | Approx Rows | Approx Data Points |" in output
+    assert "| `claims` | 3 | 2 |" in output
+
+
 @patch(f"{MODULE}.TableGroup")
 def test_list_table_groups_shows_no_schema_for_a_files_connection(mock_tg_cls, db_session_mock):
     """The stored value is the engine's own default schema, not one the user chose."""

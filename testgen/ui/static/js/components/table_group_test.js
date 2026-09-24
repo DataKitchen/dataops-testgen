@@ -7,6 +7,7 @@
  * @property {number} approx_record_ct
  * @property {number} approx_data_point_ct
  * @property {boolean} can_access
+ * @property {number?} file_ct
  * @property {{column_name: string, column_type: string}[]?} columns
  * @property {string?} error
  *
@@ -99,7 +100,9 @@ const TableGroupTest = (preview, options) => {
             );
             const tableAccessWarning = anyTableUnreadable ? tableGroupPreview.message : '';
 
-            const columns = ['50%', '14%', '14%', '14%', '8%'];
+            const showFiles = Object.values(tables).some(({ file_ct }) => file_ct != null);
+            const columns = [showFiles ? '40%' : '50%', '14%', '14%', '14%', '8%'];
+            const filesColumn = '10%';
 
             return div(
                 {class: 'flex-column fx-gap-2'},
@@ -108,6 +111,7 @@ const TableGroupTest = (preview, options) => {
                     div(
                         { class: 'table-header flex-row' },
                         span({ style: `flex: 1 1 ${columns[0]}; max-width: ${columns[0]};` }, 'Tables'),
+                        showFiles ? span({ style: `flex: 1 1 ${filesColumn};` }, 'Files') : '',
                         span({ style: `flex: 1 1 ${columns[1]};` }, 'Columns'),
                         span({ style: `flex: 1 1 ${columns[2]};` }, 'Rows *'),
                         span({ style: `flex: 1 1 ${columns[3]};` }, 'Data Points *'),
@@ -137,6 +141,9 @@ const TableGroupTest = (preview, options) => {
                                                 : '',
                                             span({ class: table.error ? 'text-error' : '' }, tableName),
                                         ),
+                                        showFiles
+                                            ? span({ style: `flex: 1 1 ${filesColumn};` }, formatNumber(table.file_ct))
+                                            : '',
                                         span({ style: `flex: 1 1 ${columns[1]};` }, formatNumber(table.column_ct)),
                                         span({ style: `flex: 1 1 ${columns[2]};` }, formatNumber(table.approx_record_ct)),
                                         span({ style: `flex: 1 1 ${columns[3]};` }, formatNumber(table.approx_data_point_ct)),

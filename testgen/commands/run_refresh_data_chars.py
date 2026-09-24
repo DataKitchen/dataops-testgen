@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
-from testgen.common.database.column_chars import ColumnChars
+from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.database_service import (
     execute_db_queries,
     fetch_dict_from_db,
@@ -11,6 +11,7 @@ from testgen.common.database.database_service import (
     write_to_app_db,
 )
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.flavors import declares_files
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
 from testgen.utils import get_exception_message
@@ -50,6 +51,23 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
         count_map = {row["table_name"]: row["row_count"] for row in count_results}
         for column in data_chars:
             column.record_ct = count_map.get(column.table_name)
+
+        if declares_files(connection.sql_flavor_code):
+            file_count_map = {}
+            if file_count_queries := sql_generator.get_file_counts():
+                LOG.info("Getting file counts for table group")
+                file_count_results, _, file_count_error_data = fetch_from_db_threaded(
+                    file_count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
+                )
+                if file_count_error_data:
+                    LOG.warning(
+                        f"Could not count files for table group. {next(iter(file_count_error_data.values()))}"
+                    )
+                file_count_map = {row["table_name"]: row["file_ct"] for row in file_count_results}
+
+            for column in data_chars:
+                column.object_type = ObjectType.FILES
+                column.file_ct = file_count_map.get(column.table_name)
 
         write_data_chars(data_chars, sql_generator, run_date)
 
