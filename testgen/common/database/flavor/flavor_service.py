@@ -7,6 +7,7 @@ from sqlalchemy import create_engine as sqlalchemy_create_engine
 from sqlalchemy.engine.base import Connection, Engine
 
 from testgen.common.database.column_chars import ColumnChars, ObjectType
+from testgen.common.database.file_declarations import FileDeclaration
 from testgen.common.encrypt import DecryptText
 
 SQLFlavor = Literal["redshift", "redshift_spectrum", "snowflake", "mssql", "postgresql", "databricks", "duckdb", "bigquery", "oracle", "sap_hana", "salesforce_data360"]
@@ -198,27 +199,47 @@ class FlavorService:
     def get_pre_connection_queries(self, params: ResolvedConnectionParams) -> list[tuple[str, dict | None]]:  # noqa: ARG002
         return []
 
-    parameters_schema: tuple[ConnectionField, ...] = ()
-    """Shape of the flavor's ``connections.parameters`` entry. Empty means the flavor stores none."""
+    def parameters_schema(self, sql_flavor_code: str) -> tuple[ConnectionField, ...]:  # noqa: ARG002
+        """Shape of the flavor's ``connections.parameters`` entry. Empty means the flavor stores none."""
+        return ()
 
-    secrets_schema: tuple[ConnectionField, ...] = ()
-    """Shape of the flavor's ``connections.secrets`` entry. Empty means the flavor stores none."""
+    def secrets_schema(self, sql_flavor_code: str) -> tuple[ConnectionField, ...]:  # noqa: ARG002
+        """Shape of the flavor's ``connections.secrets`` entry. Empty means the flavor stores none."""
+        return ()
 
-    def validate_parameters(self, parameters: dict[str, Any] | None) -> None:
+    def validate_parameters(self, parameters: dict[str, Any] | None, sql_flavor_code: str) -> None:
         """Raise ``ValueError`` naming the offending field if ``parameters`` does not match the shape."""
-        _validate_declared_fields(self.parameters_schema, parameters, "parameter")
+        _validate_declared_fields(self.parameters_schema(sql_flavor_code), parameters, "parameter")
 
-    def validate_secrets(self, secrets: dict[str, Any] | None) -> None:
+    def validate_secrets(self, secrets: dict[str, Any] | None, sql_flavor_code: str) -> None:
         """Raise ``ValueError`` naming the offending field if ``secrets`` does not match the shape."""
-        _validate_declared_fields(self.secrets_schema, secrets, "secret")
+        _validate_declared_fields(self.secrets_schema(sql_flavor_code), secrets, "secret")
 
-    def init(self, connection: Connection, params: ResolvedConnectionParams) -> None:
-        """Prepare a freshly opened connection for use.
+    def test_connection_details(self, params: ResolvedConnectionParams) -> str | None:  # noqa: ARG002
+        """Text shown beneath a successful connection test, or None when there is nothing to add."""
+        return None
 
-        Runs after the pre-connection queries. Unlike those, a failure here aborts the
-        connection instead of being logged and skipped, so it is the place for setup the
-        flavor cannot operate without.
+    def init(
+        self,
+        connection: Connection,
+        params: ResolvedConnectionParams,
+        declarations: list[FileDeclaration],
+    ) -> None:
+        """Prepare a physical connection for use.
+
+        Runs after the pre-connection queries, once per DBAPI connection rather than once per
+        checkout, so it is the place for setup that belongs to the database instead of to the
+        session. Unlike the pre-connection queries, a failure here aborts the connection instead
+        of being logged and skipped, so it is also the place for setup the flavor cannot operate
+        without.
+
+        ``declarations`` are the table group's file declarations, empty when the connection is
+        opened without a table group.
         """
+
+    def declaration_failures(self, connection: Connection) -> dict[str, str]:  # noqa: ARG002
+        """Name and reason for each file declaration ``init`` could not make queryable."""
+        return {}
 
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:  # noqa: ARG002
         return {"connect_timeout": 3600}

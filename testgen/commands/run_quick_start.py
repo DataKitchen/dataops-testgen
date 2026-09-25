@@ -219,7 +219,7 @@ def _prepare_connection_to_target_database(params_mapping):
         "table_group_schema": params_mapping["PROJECT_SCHEMA"],
         "project_pw_encrypted": params_mapping["TESTGEN_ADMIN_PASSWORD"],
     }
-    set_target_db_params(connection_params)
+    set_target_db_params(connection_params, None)
 
 
 def _get_settings_params_mapping() -> dict:

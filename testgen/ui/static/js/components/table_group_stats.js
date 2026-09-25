@@ -10,7 +10,7 @@
  * @property {number?} record_ct
  * @property {number} approx_data_point_ct
  * @property {number?} data_point_ct
- * 
+ *
  * @typedef Properties
  * @type {object}
  * @property {boolean?} hideApproxCaption
@@ -37,10 +37,12 @@ const TableGroupStats = (props, stats) => {
 
     return div(
         { class: `flex-column fx-gap-1 p-3 border border-radius-2 ${props.class ?? ''}` },
-        span(
-            span({ class: 'text-secondary' }, 'Schema: '),
-            stats.table_group_schema,
-        ),
+        stats.table_group_schema
+            ? span(
+                span({ class: 'text-secondary' }, 'Schema: '),
+                stats.table_group_schema,
+            )
+            : '',
         div(
             { class: 'flex-row' },
             div(

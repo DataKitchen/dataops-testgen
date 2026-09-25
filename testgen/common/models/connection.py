@@ -20,7 +20,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.database.flavor.flavor_service import SQLFlavor
-from testgen.common.flavors import SqlFlavorCode
+from testgen.common.flavors import SqlFlavorCode, fixed_max_threads
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import JSON_TYPE, EncryptedBytea, EncryptedJson, SafeEncryptedJson
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -89,6 +89,21 @@ class Connection(Entity):
     _get_by = "connection_id"
     _default_order_by = (asc(func.lower(connection_name)),)
     _minimal_columns = ConnectionMinimal.__annotations__.keys()
+
+    @property
+    def effective_max_threads(self) -> int:
+        """Threads a run may fan out across for this connection.
+
+        A flavor that runs inside the TestGen process fixes its own count, and that wins over the
+        stored column: the column is pinned when a connection is saved, but a row written any
+        other way keeps whatever it was given.
+        """
+        # The code falls back to the family the way connection resolution does, so a row with no
+        # code stored still gets the pin its engine needs.
+        pinned = fixed_max_threads(self.sql_flavor_code or self.sql_flavor)
+        if pinned is not None:
+            return pinned
+        return DEFAULT_MAX_THREADS if self.max_threads is None else self.max_threads
 
     @classmethod
     def encrypted_columns(cls) -> tuple[str, ...]:

@@ -104,6 +104,7 @@ CREATE TABLE table_groups
     monitor_test_suite_id    UUID DEFAULT NULL,
     table_groups_name        VARCHAR(100),
     table_group_schema       VARCHAR(100),
+    file_declarations        JSONB,
     profiling_table_set      VARCHAR(2000),
     profiling_include_mask   VARCHAR(2000),
     profiling_exclude_mask   VARCHAR(2000),

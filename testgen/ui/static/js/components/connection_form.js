@@ -300,6 +300,14 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('duckdb_form', isValid);
             },
         ),
+        files: () => FilesForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('files_form', isValid);
+            },
+        ),
         salesforce_data360: () => SalesforceData360Form(
             updatedConnection,
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
@@ -1682,6 +1690,42 @@ const DuckdbForm = (
             onChange: (value, state) => {
                 databaseFile.val = value;
                 validityPerField['database_file'] = state.valid;
+                isValid.val = Object.values(validityPerField).every(v => v);
+            },
+            validators: [required],
+        }),
+    );
+};
+
+/**
+ * @param {VanState<Connection>} connection
+ * @param {Flavor} flavor
+ * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
+ * @returns {HTMLElement}
+ */
+const FilesForm = (
+    connection,
+    flavor,
+    onChange,
+) => {
+    const isValid = van.state(false);
+    const basePath = van.state(connection.rawVal?.parameters?.base_path ?? '');
+    const validityPerField = {};
+
+    van.derive(() => {
+        onChange({ parameters: { base_path: basePath.val } }, isValid.val);
+    });
+
+    return div(
+        { class: 'flex-column fx-gap-3 fx-flex' },
+        Input({
+            name: 'base_path',
+            label: 'Base Path',
+            help: flavor?.field_help?.base_path ?? 'Path to the directory containing the data files',
+            value: basePath,
+            onChange: (value, state) => {
+                basePath.val = value;
+                validityPerField['base_path'] = state.valid;
                 isValid.val = Object.values(validityPerField).every(v => v);
             },
             validators: [required],

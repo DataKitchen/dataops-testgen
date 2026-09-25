@@ -44,7 +44,7 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
 
         LOG.info("Getting row counts for table group")
         count_results, _, error_data = fetch_from_db_threaded(
-            count_queries, use_target_db=True, max_threads=connection.max_threads,
+            count_queries, use_target_db=True, max_threads=connection.effective_max_threads,
         )
 
         count_map = {row["table_name"]: row["row_count"] for row in count_results}

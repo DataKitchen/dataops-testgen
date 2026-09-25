@@ -405,6 +405,11 @@ _FIELD_NOTES: dict[str, str] = {
         "Path to the DuckDB database file. The path is resolved inside the TestGen "
         "container, so the file has to be on a mounted volume."
     ),
+    "Base Path": (
+        "Path to the directory holding the data files. The path is resolved inside the TestGen "
+        "container, so the directory has to be on a mounted volume. Every table in a table group "
+        "on this connection names a path relative to it."
+    ),
     "URL": "Full connection URL. Provide instead of the host fields.",
 }
 

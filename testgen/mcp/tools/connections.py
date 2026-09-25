@@ -48,7 +48,7 @@ def list_connections(
     page: Annotated[int, Field(description="Page number starting at 1 (default 1).")] = 1,
     limit: Annotated[int, Field(description="Page size (default 20, max 100).")] = 20,
 ) -> str:
-    """List database connections in a project.
+    """List connections in a project.
     Each connection carries its database type and table-group counts.
     Use this before changing or referencing a connection to confirm its ID, name, and host.
     Credentials are never returned.

@@ -15,6 +15,7 @@ from sqlalchemy.engine import RowMapping
 
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
+from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import fetch_from_target_db
 
 
@@ -31,6 +32,7 @@ def validate_custom_query(
     schema: str,
     custom_sql: str,
     preview_limit: int = 0,
+    table_group: TableGroup | None = None,
 ) -> CustomQueryResult:
     """Wrap and execute a custom-test SQL query against the target DB.
 
@@ -39,6 +41,8 @@ def validate_custom_query(
         schema: Schema name for ``{DATA_SCHEMA}`` substitution in the user's SQL.
         custom_sql: User-supplied query. Should return rows matching the test failure criteria.
         preview_limit: When > 0, also fetch up to N rows for preview (only when row_count > 0).
+        table_group: Table group whose tables the query reads, when the flavor needs it to open
+            the connection.
 
     Returns the failure-criteria row count and (optionally) the preview rows. DB errors
     propagate as-is — the caller decides how to surface them.
@@ -47,13 +51,13 @@ def validate_custom_query(
     flavor_service = get_flavor_service(connection.sql_flavor)
 
     count_sql = f"SELECT COUNT(*) AS row_count FROM ({sql_with_schema}) ERR_TABLE"
-    count_rows = fetch_from_target_db(connection, count_sql)
+    count_rows = fetch_from_target_db(connection, count_sql, table_group=table_group)
     row_count = int(count_rows[0]["row_count"]) if count_rows else 0
 
     preview_rows: list[RowMapping] = []
     if preview_limit > 0 and row_count > 0:
         prefix, suffix = flavor_service.row_limit_clauses(preview_limit)
         preview_sql = f"SELECT {prefix} * FROM ({sql_with_schema}) ERR_TABLE {suffix}".strip()
-        preview_rows = fetch_from_target_db(connection, preview_sql)
+        preview_rows = fetch_from_target_db(connection, preview_sql, table_group=table_group)
 
     return CustomQueryResult(row_count=row_count, preview_rows=preview_rows)

@@ -1,7 +1,7 @@
 import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import get_args
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -393,7 +393,7 @@ def _started_job(existing_run=None):
 def test_on_start_derives_the_entities_and_creates_a_fresh_run():
     job, table_group, profiling_run_cls, sql_generator_cls, set_params = _started_job(existing_run=None)
     table_group.get.assert_called_once_with("tg-id")
-    set_params.assert_called_once()
+    set_params.assert_called_once_with(ANY, table_group.get.return_value)
     assert job.profiling_run is profiling_run_cls.return_value  # constructed, since get returned None
     assert job.sql_generator is sql_generator_cls.return_value
 

@@ -72,7 +72,9 @@ def get_connection(connection: Connection = resolve_connection("view")):  # noqa
         connection_name=connection.connection_name,
         project_code=connection.project_code,
         database_type=FLAVOR_CODE_TO_LABEL[connection.sql_flavor_code],
-        authentication=AUTHENTICATION_FROM_MODE[authentication_method(connection)],
+        authentication=(
+            AUTHENTICATION_FROM_MODE[mode] if (mode := authentication_method(connection)) is not None else None
+        ),
         max_threads=connection.max_threads,
         max_expression_length=connection.max_query_chars,
         settings={

@@ -12,19 +12,39 @@ from uuid import uuid4
 
 from sqlalchemy import text
 from sqlalchemy.engine.base import Connection
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, QueuePool
 
 from testgen import settings
+from testgen.common.database.file_declarations import (
+    BASE_PATH_PARAMETER,
+    NAME_INVALID,
+    NAME_PATTERN,
+    URI_IS_FOLDER,
+    FileDeclaration,
+    create_view_statement,
+    is_inside_base_path,
+    names_folder,
+)
 from testgen.common.database.flavor.flavor_service import (
     ConnectionField,
     FlavorConnectionError,
     FlavorService,
     ResolvedConnectionParams,
 )
+from testgen.common.flavors import SqlFlavorCode, fixed_table_group_schema
 
 LOG = logging.getLogger("testgen")
 
 DATABASE_FILE_PARAMETER = "database_file"
+
+# Where view-creation failures are left for the caller. The connection is the only thing shared
+# between building the views and running the queries that then cannot find them.
+_DECLARATION_FAILURES_KEY = "file_declaration_failures"
+
+# How many files Test Connection counts before it stops walking and reports a floor instead. A
+# mounted data directory can hold far more than anyone wants counted to answer "is the mount wired
+# up?".
+_FILE_COUNT_LIMIT = 10_000
 
 # Where DuckDB spills when a query exceeds its memory limit. Its own default is ".tmp" relative to
 # the working directory, which lands spill files wherever the UI or scheduler happened to start.
@@ -94,6 +114,41 @@ def classify_attach_error(error: Exception) -> AttachFailure:
     return AttachFailure.UNKNOWN
 
 
+def expand_path(value: str | None) -> str:
+    """The path with surrounding whitespace dropped and a leading ``~`` expanded.
+
+    DuckDB expands ``~`` itself, so a path only TestGen inspects has to be expanded the same way
+    or the two disagree about which file a connection names.
+    """
+    text_value = (value or "").strip()
+    return str(Path(text_value).expanduser()) if text_value.startswith("~") else text_value
+
+
+# A URL DuckDB opens through an extension rather than from the filesystem, so the rule below
+# does not apply to it.
+_REMOTE_URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+
+
+def _require_absolute_path(value: str | None, label: str) -> None:
+    """Raise ``ValueError`` unless ``value`` names an absolute path once ``~`` is expanded.
+
+    A relative path resolves against whatever directory the process was started in, which is the
+    repository root in development and ``/dk`` in the container, so the same connection reads a
+    different place depending on who opened it. A remote URL is left alone.
+    """
+    path = expand_path(value)
+    if _REMOTE_URL.match(path):
+        return
+    if not Path(path).is_absolute():
+        raise ValueError(f"{label} must be an absolute path.")
+
+
+def container_path_note() -> str:
+    if settings.CHECK_FOR_LATEST_VERSION != "docker":
+        return ""
+    return " The path is read inside the TestGen container, not on the host."
+
+
 def attach_error_message(failure: AttachFailure, error: Exception) -> str:
     if failure is AttachFailure.LOCKED:
         # DuckDB names the holding process's executable path, PID and username. That is somebody
@@ -106,10 +161,7 @@ def attach_error_message(failure: AttachFailure, error: Exception) -> str:
         # Both of DuckDB's wordings name the versions involved, which the detail carries through.
         return f"This database was written by a newer version of DuckDB than TestGen supports. {error}"
     if failure is AttachFailure.FILE_MISSING:
-        message = "The database file was not found at this path."
-        if settings.CHECK_FOR_LATEST_VERSION == "docker":
-            message += " The path is read inside the TestGen container, not on the host."
-        return message
+        return "The database file was not found at this path." + container_path_note()
     if failure is AttachFailure.INVALID_FILE:
         return "This file is not a DuckDB database."
     # The driver's own text, without the SQLAlchemy wrapper and the statement it appends.
@@ -170,9 +222,10 @@ class DuckdbFlavorService(FlavorService):
     # The engine ships inside the package, so the pinned version decides and nothing needs probing.
     supports_approx_percentile = True
 
-    parameters_schema = (
-        ConnectionField(key=DATABASE_FILE_PARAMETER, label="Database File", required=True),
-    )
+    def parameters_schema(self, sql_flavor_code: str) -> tuple[ConnectionField, ...]:
+        if sql_flavor_code == SqlFlavorCode.FILES:
+            return (ConnectionField(key=BASE_PATH_PARAMETER, label="Base Path", required=True),)
+        return (ConnectionField(key=DATABASE_FILE_PARAMETER, label="Database File", required=True),)
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:  # noqa: ARG002
         # TestGen always opens its own in-memory database and attaches the customer's file to it,
@@ -183,7 +236,27 @@ class DuckdbFlavorService(FlavorService):
         # DuckDB offers no URL-mode connection, so a stored url is ignored rather than honored.
         return self.get_connection_string_from_fields(params)
 
-    def get_engine_args(self, params: ResolvedConnectionParams) -> dict[str, Any]:  # noqa: ARG002
+    def get_engine_args(self, params: ResolvedConnectionParams) -> dict[str, Any]:
+        if params.sql_flavor_code == SqlFlavorCode.FILES:
+            # One database for the engine's lifetime, so the declaration views are built once
+            # rather than on every checkout. Building them reads the head of every file the
+            # declaration matches, which on a remote filesystem is a request per file, and a run
+            # opens a connection per column. ``set_target_db_params`` disposes the engine whenever
+            # the target changes, so the views never outlive the declarations they came from.
+            #
+            # A pool of one rather than StaticPool: StaticPool hands the same connection to every
+            # caller at once, and two checkouts each opening a transaction on it fail with
+            # "cannot start a transaction within a transaction". A pool lends it exclusively.
+            #
+            # The timeout is the wait for a turn. A run fans out across
+            # ``Connection.effective_max_threads``, which is 1 here, so nothing should ever queue
+            # and a wait means a connection was leaked or a caller is holding two at once. Short
+            # enough to say so while the cause is still findable.
+            return {"poolclass": QueuePool, "pool_size": 1, "max_overflow": 0, "pool_timeout": 30}
+        # A read-only ATTACH held for the engine's lifetime locks the customer's file against
+        # their own writer for the whole run, where attaching per checkout leaves gaps between
+        # queries.
+        #
         # duckdb-engine defaults to SingletonThreadPool, under which ":memory:" is not shared
         # across checkouts and two concurrent connections collide on one DBAPI connection.
         # NullPool gives every checkout its own database, and with it a freshly read catalog.
@@ -196,25 +269,65 @@ class DuckdbFlavorService(FlavorService):
             config["extension_directory"] = settings.DUCKDB_EXTENSION_DIRECTORY
         return {"config": config}
 
-    def validate_parameters(self, parameters: dict[str, Any] | None) -> None:
-        super().validate_parameters(parameters)
-        database_file = ((parameters or {}).get(DATABASE_FILE_PARAMETER) or "").strip()
+    def validate_parameters(self, parameters: dict[str, Any] | None, sql_flavor_code: str) -> None:
+        super().validate_parameters(parameters, sql_flavor_code)
+        values = parameters or {}
+
+        if sql_flavor_code == SqlFlavorCode.FILES:
+            _require_absolute_path(values.get(BASE_PATH_PARAMETER), "Base Path")
+            return
+
+        database_file = (values.get(DATABASE_FILE_PARAMETER) or "").strip()
         if database_file.lower().startswith(UNSUPPORTED_PATH_PREFIXES):
             raise ValueError(
                 "MotherDuck databases are not supported. Enter the path of a DuckDB database file."
             )
+        _require_absolute_path(database_file, "Database File")
 
     def get_database_file(self, params: ResolvedConnectionParams) -> str:
         # Trimmed here because a pasted path routinely carries whitespace, and the failure it
         # produces otherwise is an unhelpful "file was not found".
-        return ((params.parameters or {}).get(DATABASE_FILE_PARAMETER) or "").strip()
+        return expand_path((params.parameters or {}).get(DATABASE_FILE_PARAMETER))
 
-    def init(self, connection: Connection, params: ResolvedConnectionParams) -> None:
+    def get_base_path(self, params: ResolvedConnectionParams) -> str:
+        return expand_path((params.parameters or {}).get(BASE_PATH_PARAMETER))
+
+    def test_connection_details(self, params: ResolvedConnectionParams) -> str | None:
+        if params.sql_flavor_code != SqlFlavorCode.FILES:
+            return None
+        count, capped = self._count_files(Path(self.get_base_path(params)))
+        if capped:
+            return f"More than {_FILE_COUNT_LIMIT:,} files found under the base path."
+        if not count:
+            return "No files found under the base path."
+        noun = "file" if count == 1 else "files"
+        return f"{count:,} {noun} found under the base path."
+
+    @staticmethod
+    def _count_files(base_path: Path) -> tuple[int, bool]:
+        count = 0
+        for _, _, filenames in os.walk(base_path):
+            count += len(filenames)
+            if count > _FILE_COUNT_LIMIT:
+                return _FILE_COUNT_LIMIT, True
+        return count, False
+
+    def init(
+        self, connection: Connection, params: ResolvedConnectionParams, declarations: list[FileDeclaration]
+    ) -> None:
+        # Ahead of either branch: the files branch locks the configuration, and no SET is
+        # accepted after that.
+        self._set_spill_directory(connection)
+        if params.sql_flavor_code == SqlFlavorCode.FILES:
+            self._init_files(connection, params, declarations)
+        else:
+            self._init_attached_database(connection, params)
+
+    def _init_attached_database(self, connection: Connection, params: ResolvedConnectionParams) -> None:
         database_file = self.get_database_file(params)
         if not database_file:
             raise DuckdbConnectionError("This connection has no database file configured.")
 
-        self._set_spill_directory(connection)
         self._attach(connection, database_file)
         connection.execute(text(f'USE "{ATTACHED_CATALOG}"'))
         # ATTACH participates in the transaction, so without this any later rollback on this
@@ -239,6 +352,84 @@ class DuckdbFlavorService(FlavorService):
         # instances sharing a directory overwrite each other's files and the process crashes.
         spill_directory = str(TEMP_DIRECTORY / f"{os.getpid()}-{uuid4().hex}").replace("'", "''")
         connection.execute(text(f"SET temp_directory = '{spill_directory}'"))
+
+    def _init_files(
+        self, connection: Connection, params: ResolvedConnectionParams, declarations: list[FileDeclaration]
+    ) -> None:
+        base_path = self.get_base_path(params)
+        if not base_path:
+            raise DuckdbConnectionError("This connection has no base path configured.")
+        if not Path(base_path).is_dir():
+            raise DuckdbConnectionError("The base path was not found." + container_path_note())
+
+        self._confine_reads(connection, base_path)
+        connection.info[_DECLARATION_FAILURES_KEY] = self.build_declaration_views(
+            connection,
+            base_path,
+            declarations,
+            fixed_table_group_schema(params.sql_flavor_code),
+        )
+
+    def declaration_failures(self, connection: Connection) -> dict[str, str]:
+        return connection.info.get(_DECLARATION_FAILURES_KEY, {})
+
+    def _confine_reads(self, connection: Connection, base_path: str) -> None:
+        """Restrict this connection to reading inside the base path.
+
+        The order is the whole mechanism. The allow-list cannot be set once external access is
+        closed, and on its own it enforces nothing at all -- a read outside it still succeeds.
+        Locking the configuration afterwards stops anything later widening either one.
+        """
+        quoted_base_path = base_path.replace("'", "''")
+        for statement in (
+            f"SET allowed_directories = ['{quoted_base_path}']",
+            "SET enable_external_access = false",
+            "SET lock_configuration = true",
+        ):
+            connection.execute(text(statement))
+        connection.commit()
+
+    def build_declaration_views(
+        self,
+        connection: Connection,
+        base_path: str,
+        declarations: list[FileDeclaration],
+        schema: str,
+    ) -> dict[str, str]:
+        """Create one view per declaration. Returns the message for each one that failed.
+
+        A declaration naming a file that is not there fails when its view is created rather than
+        when it is queried, so each is committed on its own and a failure rolled back -- DuckDB
+        aborts the transaction, and without the rollback every later declaration reports that
+        abort instead of its own outcome.
+        """
+        failures: dict[str, str] = {}
+        for declaration in declarations:
+            if not NAME_PATTERN.match(declaration.name):
+                failures[declaration.name] = NAME_INVALID
+                LOG.error(f"Declaration {declaration.name!r} is not a usable table name; skipping it")
+                continue
+            if not is_inside_base_path(base_path, declaration.uri):
+                # The allow-list refuses the read as well. This keeps the path out of the SQL
+                # text in the first place, and is the only guard where there is no allow-list.
+                failures[declaration.name] = "This path is outside the connection base path."
+                LOG.error(f"Declaration {declaration.name} points outside the base path; skipping it")
+                continue
+            if names_folder(base_path, declaration.uri):
+                failures[declaration.name] = URI_IS_FOLDER
+                LOG.error(f"Declaration {declaration.name} names a folder; skipping it")
+                continue
+            try:
+                connection.execute(text(create_view_statement(base_path, declaration, schema)))
+                connection.commit()
+            except Exception as error:
+                connection.rollback()
+                message = str(getattr(error, "orig", error)).splitlines()[0]
+                failures[declaration.name] = message
+                LOG.error(  # noqa: TRY400 -- the driver's text is already in the message
+                    f"Declaration {declaration.name} could not be read: {message}"
+                )
+        return failures
 
     def _attach(self, connection: Connection, database_file: str) -> None:
         # ATTACH takes the path as a literal, not a bind parameter, and the path arrives from a

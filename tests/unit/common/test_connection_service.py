@@ -80,6 +80,7 @@ def test_connection_status_random_field_breaks_equality():
 @patch(f"{MODULE}.get_flavor_service")
 def test_connection_status_success(mock_flavor, mock_fetch, mock_empty_cache):
     mock_flavor.return_value.test_query = "SELECT 1"
+    mock_flavor.return_value.test_connection_details.return_value = None
 
     status = run_connection_test(_conn())
 

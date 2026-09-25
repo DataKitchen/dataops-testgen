@@ -31,6 +31,7 @@ class TableGroupMinimal(EntityMinimal):
     connection_id: int
     table_groups_name: str
     table_group_schema: str
+    file_declarations: list[dict] | None
     profiling_table_set: str
     profiling_include_mask: str
     profiling_exclude_mask: str
@@ -64,6 +65,7 @@ class TableGroupListItem(EntityMinimal):
     project_code: str
     connection_id: int
     connection_name: str | None
+    sql_flavor_code: str | None
     table_count: int
     column_count: int | None
     row_count: int | None
@@ -306,6 +308,7 @@ class TableGroup(Entity):
     )
     table_groups_name: str = Column(String)
     table_group_schema: str = Column(String)
+    file_declarations: list[dict] | None = Column(postgresql.JSONB)
     profiling_table_set: str = Column(NullIfEmptyString)
     profiling_include_mask: str = Column(NullIfEmptyString)
     profiling_exclude_mask: str = Column(NullIfEmptyString)
@@ -691,6 +694,7 @@ class TableGroup(Entity):
             groups.project_code,
             groups.connection_id,
             connections.connection_name,
+            connections.sql_flavor_code,
             COALESCE(stats.table_count, 0) AS table_count,
             stats.column_count,
             stats.row_count,

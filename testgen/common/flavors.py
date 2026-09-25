@@ -28,6 +28,7 @@ class SqlFlavorCode(StrEnum):
     SYNAPSE_MSSQL = "synapse_mssql"
     DATABRICKS = "databricks"
     DUCKDB = "duckdb"
+    FILES = "files"
     BIGQUERY = "bigquery"
     ONELAKE_MSSQL = "onelake_mssql"
     MSSQL = "mssql"
@@ -47,6 +48,7 @@ class SqlFlavorLabel(StrEnum):
     SYNAPSE_MSSQL = "Azure Synapse Analytics"
     DATABRICKS = "Databricks"
     DUCKDB = "DuckDB"
+    FILES = "Local Files"
     BIGQUERY = "Google BigQuery"
     ONELAKE_MSSQL = "Microsoft OneLake"
     MSSQL = "Microsoft SQL Server"
@@ -66,6 +68,7 @@ FLAVOR_CODE_TO_LABEL: dict[SqlFlavorCode, SqlFlavorLabel] = {
     SqlFlavorCode.SYNAPSE_MSSQL: SqlFlavorLabel.SYNAPSE_MSSQL,
     SqlFlavorCode.DATABRICKS: SqlFlavorLabel.DATABRICKS,
     SqlFlavorCode.DUCKDB: SqlFlavorLabel.DUCKDB,
+    SqlFlavorCode.FILES: SqlFlavorLabel.FILES,
     SqlFlavorCode.BIGQUERY: SqlFlavorLabel.BIGQUERY,
     SqlFlavorCode.ONELAKE_MSSQL: SqlFlavorLabel.ONELAKE_MSSQL,
     SqlFlavorCode.MSSQL: SqlFlavorLabel.MSSQL,
@@ -85,6 +88,7 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
     "synapse_mssql": "mssql",
     "databricks": "databricks",
     "duckdb": "duckdb",
+    "files": "duckdb",
     "bigquery": "bigquery",
     "onelake_mssql": "mssql",
     "mssql": "mssql",
@@ -107,9 +111,33 @@ FLAVOR_FAMILIES: frozenset[str] = frozenset(FLAVOR_CODE_TO_FAMILY.values())
 # DuckDB sizes its thread pool from the detected CPU count whatever this value says.
 FLAVOR_FIXED_MAX_THREADS: dict[str, int] = {
     SqlFlavorCode.DUCKDB: 1,
+    SqlFlavorCode.FILES: 1,
 }
 
 
 def fixed_max_threads(sql_flavor_code: str | None) -> int | None:
     """The thread count a flavor requires, or None when the connection's own setting applies."""
     return FLAVOR_FIXED_MAX_THREADS.get(sql_flavor_code) if sql_flavor_code else None
+
+
+# The schema every table group on a flavor code stores, where the user does not pick one. Every
+# declaration on the files code becomes a view in DuckDB's default schema, so the form does not
+# show the field and the value is written here instead.
+FLAVOR_FIXED_TABLE_GROUP_SCHEMA: dict[str, str] = {
+    SqlFlavorCode.FILES: "main",
+}
+
+# Flavors whose table group lists its tables as files instead of having them discovered from a
+# catalog. Separate from the fixed-schema registry above: a flavor can pin a schema and still read
+# a real catalog.
+FLAVOR_DECLARES_FILES: frozenset[str] = frozenset({SqlFlavorCode.FILES})
+
+
+def fixed_table_group_schema(sql_flavor_code: str | None) -> str | None:
+    """The schema a flavor fixes for every table group on it, or None when the user picks one."""
+    return FLAVOR_FIXED_TABLE_GROUP_SCHEMA.get(sql_flavor_code) if sql_flavor_code else None
+
+
+def declares_files(sql_flavor_code: str | None) -> bool:
+    """Whether a flavor's tables are declared as files rather than discovered from a catalog."""
+    return sql_flavor_code in FLAVOR_DECLARES_FILES if sql_flavor_code else False

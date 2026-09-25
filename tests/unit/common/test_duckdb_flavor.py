@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
+from testgen.common.database.file_declarations import NAME_INVALID, URI_IS_FOLDER, parse_file_declarations
 from testgen.common.database.flavor import duckdb_flavor_service
 from testgen.common.database.flavor.duckdb_flavor_service import (
     ATTACHED_CATALOG,
@@ -23,7 +24,13 @@ from testgen.common.database.flavor.duckdb_flavor_service import (
     classify_attach_error,
 )
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, FLAVOR_CODE_TO_LABEL, SqlFlavorCode
+from testgen.common.flavors import (
+    FLAVOR_CODE_TO_FAMILY,
+    FLAVOR_CODE_TO_LABEL,
+    SqlFlavorCode,
+    declares_files,
+    fixed_table_group_schema,
+)
 
 
 @pytest.fixture
@@ -102,7 +109,7 @@ def test_attaching_exposes_the_customer_schemas_to_two_part_references(customer_
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             assert connection.execute(text("SELECT count(*) FROM sales.orders")).scalar() == 1
             assert connection.execute(text("SELECT current_database()")).scalar() == ATTACHED_CATALOG
     finally:
@@ -115,7 +122,7 @@ def test_the_attached_database_cannot_be_written(customer_database):
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             with pytest.raises(Exception, match="read-only"):
                 connection.execute(text("CREATE TABLE sales.written (x INT)"))
     finally:
@@ -131,7 +138,7 @@ def test_a_quote_in_the_path_cannot_end_the_attach_literal(tmp_path):
     try:
         with engine.connect() as connection:
             with pytest.raises(DuckdbConnectionError) as caught:
-                service.init(connection, resolve_connection_params(params))
+                service.init(connection, resolve_connection_params(params), [])
             # The path is treated as one filename, so it fails as a missing file rather than parsing.
             assert caught.value.failure is AttachFailure.FILE_MISSING
     finally:
@@ -145,7 +152,7 @@ def test_a_connection_with_no_database_file_fails_before_it_attaches():
     try:
         with engine.connect() as connection:
             with pytest.raises(DuckdbConnectionError, match="no database file configured"):
-                service.init(connection, resolve_connection_params(params))
+                service.init(connection, resolve_connection_params(params), [])
     finally:
         engine.dispose()
 
@@ -157,7 +164,7 @@ def test_a_missing_file_is_reported_as_missing(tmp_path):
     try:
         with engine.connect() as connection:
             with pytest.raises(DuckdbConnectionError) as caught:
-                service.init(connection, resolve_connection_params(params))
+                service.init(connection, resolve_connection_params(params), [])
             assert caught.value.failure is AttachFailure.FILE_MISSING
             assert str(caught.value) == "The database file was not found at this path."
     finally:
@@ -223,35 +230,35 @@ def test_a_version_mismatch_message_names_the_versions():
 def test_a_duckdb_connection_requires_a_database_file():
     service = DuckdbFlavorService()
     with pytest.raises(ValueError, match="Database File is required."):
-        service.validate_parameters({})
+        service.validate_parameters({}, "duckdb")
     with pytest.raises(ValueError, match="Database File is required."):
-        service.validate_parameters({"database_file": "   "})
+        service.validate_parameters({"database_file": "   "}, "duckdb")
     with pytest.raises(ValueError, match="Database File is required."):
-        service.validate_parameters(None)
+        service.validate_parameters(None, "duckdb")
 
 
 def test_an_undeclared_parameter_is_rejected_by_name():
     service = DuckdbFlavorService()
     with pytest.raises(ValueError, match="'memory_limit' is not a connection parameter"):
-        service.validate_parameters({"database_file": "/data/c.duckdb", "memory_limit": "4GB"})
+        service.validate_parameters({"database_file": "/data/c.duckdb", "memory_limit": "4GB"}, "duckdb")
 
 
 def test_a_well_formed_duckdb_parameter_set_validates():
-    DuckdbFlavorService().validate_parameters({"database_file": "/data/c.duckdb"})
+    DuckdbFlavorService().validate_parameters({"database_file": "/data/c.duckdb"}, "duckdb")
 
 
 def test_a_flavor_that_declares_no_parameters_accepts_none():
     from testgen.common.database.flavor.postgresql_flavor_service import PostgresqlFlavorService
 
-    PostgresqlFlavorService().validate_parameters(None)
-    PostgresqlFlavorService().validate_parameters({})
+    PostgresqlFlavorService().validate_parameters(None, "postgresql")
+    PostgresqlFlavorService().validate_parameters({}, "postgresql")
 
 
 def test_a_flavor_that_declares_no_parameters_still_rejects_stray_keys():
     from testgen.common.database.flavor.postgresql_flavor_service import PostgresqlFlavorService
 
     with pytest.raises(ValueError, match="'database_file' is not a connection parameter"):
-        PostgresqlFlavorService().validate_parameters({"database_file": "/data/c.duckdb"})
+        PostgresqlFlavorService().validate_parameters({"database_file": "/data/c.duckdb"}, "postgresql")
 
 
 # Every DuckDB type and every alias its documentation lists, with the general_type the schema
@@ -351,7 +358,7 @@ def read_schema_ddf(database_file) -> dict:
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             return {
                 (row.table_name, row.column_name): row
                 for row in connection.execute(text(sql)).mappings().all()
@@ -383,7 +390,7 @@ def test_schema_discovery_reports_only_the_attached_database(typed_database):
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             connection.execute(text("CREATE SCHEMA IF NOT EXISTS memory.demo"))
             connection.execute(text("CREATE TABLE memory.demo.everything (intruder VARCHAR)"))
             columns = {row.column_name for row in connection.execute(text(sql)).mappings().all()}
@@ -441,7 +448,7 @@ def test_the_attachment_survives_a_rollback(customer_database):
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             with pytest.raises(SQLAlchemyError):
                 connection.execute(text("SELECT * FROM no_such_table"))
             connection.rollback()
@@ -486,7 +493,7 @@ def run_profiling_sql(database_file, sql):
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             return connection.execute(text(sql)).mappings().all()
     finally:
         engine.dispose()
@@ -616,17 +623,49 @@ def test_a_motherduck_path_is_rejected_before_it_can_open_a_browser(tmp_path):
     service = DuckdbFlavorService()
     for path in ("md:analytics", "MD:analytics", "motherduck:analytics"):
         with pytest.raises(ValueError, match="MotherDuck"):
-            service.validate_parameters({"database_file": path})
+            service.validate_parameters({"database_file": path}, "duckdb")
 
 
 def test_a_local_path_is_accepted():
-    DuckdbFlavorService().validate_parameters({"database_file": "/data/warehouse.duckdb"})
+    DuckdbFlavorService().validate_parameters({"database_file": "/data/warehouse.duckdb"}, "duckdb")
 
 
 @pytest.mark.parametrize("path", ["s3://bucket/warehouse.duckdb", "https://host/warehouse.duckdb"])
 def test_a_remote_path_is_accepted(path):
     """DuckDB attaches these read-only through its bundled extensions."""
-    DuckdbFlavorService().validate_parameters({"database_file": path})
+    DuckdbFlavorService().validate_parameters({"database_file": path}, "duckdb")
+
+
+@pytest.mark.parametrize(
+    ("sql_flavor_code", "key"),
+    [("duckdb", "database_file"), ("files", "base_path")],
+)
+def test_both_duckdb_codes_accept_the_same_kinds_of_path(sql_flavor_code, key):
+    """One flavor accepting a path the other rejects would be a difference with no reason
+    behind it, since the same engine opens both."""
+    service = DuckdbFlavorService()
+    service.validate_parameters({key: "/data/target"}, sql_flavor_code)
+    service.validate_parameters({key: "~/data/target"}, sql_flavor_code)
+    with pytest.raises(ValueError, match="must be an absolute path"):
+        service.validate_parameters({key: "data/target"}, sql_flavor_code)
+
+
+@pytest.mark.parametrize(
+    ("sql_flavor_code", "key", "getter"),
+    [
+        ("duckdb", "database_file", DuckdbFlavorService.get_database_file),
+        ("files", "base_path", DuckdbFlavorService.get_base_path),
+    ],
+)
+def test_a_leading_tilde_is_expanded_before_the_path_is_used(sql_flavor_code, key, getter):
+    """DuckDB expands ~ itself, so anything TestGen checks against the path has to see the same
+    place the engine opens."""
+    params = resolve_connection_params(
+        {"sql_flavor": "duckdb", "sql_flavor_code": sql_flavor_code, "parameters": {key: "~/data/target"}}
+    )
+    resolved = getter(DuckdbFlavorService(), params)
+    assert resolved == str(Path.home() / "data/target")
+    assert "~" not in resolved
 
 
 def test_surrounding_whitespace_is_trimmed_from_the_path(customer_database):
@@ -850,8 +889,8 @@ def test_each_connection_spills_to_a_directory_of_its_own(customer_database, spi
     engine = service.create_engine(params)
     try:
         with engine.connect() as first, engine.connect() as second:
-            service.init(first, resolve_connection_params(params))
-            service.init(second, resolve_connection_params(params))
+            service.init(first, resolve_connection_params(params), [])
+            service.init(second, resolve_connection_params(params), [])
             assert _spill_directory_of(first) != _spill_directory_of(second)
             assert _spill_directory_of(first).startswith(str(spill_root))
     finally:
@@ -865,7 +904,7 @@ def test_a_connection_that_never_spills_leaves_no_directory_behind(customer_data
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             connection.execute(text("SELECT count(*) FROM sales.orders")).scalar()
     finally:
         engine.dispose()
@@ -882,7 +921,7 @@ def test_a_connection_that_spills_and_closes_cleanly_leaves_no_directory_behind(
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             connection.execute(text("SET memory_limit = '150MB'"))
             connection.execute(text("SET threads = 2"))
             spilled_into = Path(_spill_directory_of(connection))
@@ -906,7 +945,7 @@ def test_the_spill_directory_survives_the_rollback_the_attach_retry_performs(cus
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
             assigned = _spill_directory_of(connection)
             connection.rollback()
             assert _spill_directory_of(connection) == assigned
@@ -979,7 +1018,7 @@ def test_opening_a_connection_does_not_sweep(customer_database, spill_root, dead
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
     finally:
         engine.dispose()
 
@@ -1020,8 +1059,463 @@ def test_the_spill_root_is_not_readable_by_other_accounts(customer_database, spi
     engine = service.create_engine(params)
     try:
         with engine.connect() as connection:
-            service.init(connection, resolve_connection_params(params))
+            service.init(connection, resolve_connection_params(params), [])
     finally:
         engine.dispose()
 
     assert stat.S_IMODE(spill_root.stat().st_mode) == 0o700
+
+
+# ---------------------------------------------------------------------------
+# Files — a connection whose tables are declared file by file
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def data_directory(tmp_path):
+    root = tmp_path / "data"
+    (root / "nested").mkdir(parents=True)
+    (root / "claims_2024.csv").write_text("claim_id,amount\n1,10.5\n2,20.25\n")
+    (root / "claims_2025.csv").write_text("claim_id,amount,plan\n3,30.0,gold\n")
+    (root / "nested" / "extra.csv").write_text("claim_id,amount\n4,40.0\n")
+    (root / "piped.csv").write_text("claim_id|amount\n5|50.0\n")
+    duckdb.connect().execute(f"COPY (SELECT 1 AS id, 'x' AS label) TO '{root}/dim.parquet' (FORMAT PARQUET)")
+    (root / "notes.json").write_text('{"id": 1, "note": "first"}\n{"id": 2, "note": "second"}\n')
+    (tmp_path / "outside").mkdir()
+    (tmp_path / "outside" / "secret.csv").write_text("a\n1\n")
+    return root
+
+
+def files_params(base_path) -> dict:
+    return {
+        "sql_flavor": "duckdb",
+        "sql_flavor_code": "files",
+        "parameters": {"base_path": str(base_path)},
+    }
+
+
+def open_files_connection(service, params, declarations=()):
+    """Open a target connection the way TestGen opens one, declarations and all."""
+    engine = service.create_engine(params)
+    connection = engine.connect()
+    service.init(connection, resolve_connection_params(params), parse_file_declarations(list(declarations)))
+    return engine, connection
+
+
+def test_the_files_code_shares_the_duckdb_family():
+    assert FLAVOR_CODE_TO_FAMILY[SqlFlavorCode.FILES] == "duckdb"
+    assert str(FLAVOR_CODE_TO_LABEL[SqlFlavorCode.FILES]) == "Local Files"
+
+
+def test_only_the_files_code_declares_its_tables():
+    """Pinning a schema and declaring tables as files are separate facts; a flavor can do the
+    first without the second."""
+    assert declares_files(SqlFlavorCode.FILES)
+    assert fixed_table_group_schema(SqlFlavorCode.FILES) == "main"
+    assert not declares_files(SqlFlavorCode.DUCKDB)
+    assert fixed_table_group_schema(SqlFlavorCode.DUCKDB) is None
+    assert not declares_files(None)
+
+
+def test_each_duckdb_code_declares_its_own_connection_parameter():
+    service = DuckdbFlavorService()
+    assert [field.key for field in service.parameters_schema("duckdb")] == ["database_file"]
+    assert [field.key for field in service.parameters_schema("files")] == ["base_path"]
+
+
+def test_a_files_connection_requires_a_base_path():
+    with pytest.raises(ValueError, match="Base Path is required."):
+        DuckdbFlavorService().validate_parameters({}, "files")
+
+
+def test_a_relative_base_path_is_rejected():
+    """It would resolve against the working directory, which differs between the UI and scheduler."""
+    with pytest.raises(ValueError, match="Base Path must be an absolute path."):
+        DuckdbFlavorService().validate_parameters({"base_path": "data/claims"}, "files")
+
+
+def test_an_absolute_base_path_is_accepted():
+    DuckdbFlavorService().validate_parameters({"base_path": "/data/claims"}, "files")
+
+
+def test_a_missing_base_path_is_reported(tmp_path):
+    service = DuckdbFlavorService()
+    params = files_params(tmp_path / "absent")
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            with pytest.raises(DuckdbConnectionError, match="The base path was not found."):
+                service.init(connection, resolve_connection_params(params), [])
+    finally:
+        engine.dispose()
+
+
+def test_reads_are_confined_to_the_base_path(data_directory):
+    """The allow-list has to be applied before external access is closed, and enforces nothing
+    on its own. Either half missing lets this read succeed."""
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory))
+    outside = data_directory.parent / "outside" / "secret.csv"
+    try:
+        with pytest.raises(SQLAlchemyError, match="Permission Error"):
+            connection.execute(text(f"SELECT * FROM read_csv('{outside}')")).fetchall()
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_the_allow_list_is_set_before_external_access_is_closed():
+    class Recorder:
+        def __init__(self):
+            self.statements = []
+
+        def execute(self, clause):
+            self.statements.append(str(clause))
+
+        def commit(self):
+            pass
+
+    recorder = Recorder()
+    DuckdbFlavorService()._confine_reads(recorder, "/data/claims")
+
+    assert recorder.statements == [
+        "SET allowed_directories = ['/data/claims']",
+        "SET enable_external_access = false",
+        "SET lock_configuration = true",
+    ]
+
+
+def test_a_quote_in_the_base_path_cannot_end_the_allow_list_literal():
+    class Recorder:
+        def __init__(self):
+            self.statements = []
+
+        def execute(self, clause):
+            self.statements.append(str(clause))
+
+        def commit(self):
+            pass
+
+    recorder = Recorder()
+    DuckdbFlavorService()._confine_reads(recorder, "/da'ta")
+    assert recorder.statements[0] == "SET allowed_directories = ['/da''ta']"
+
+
+def test_every_declared_format_becomes_a_table(data_directory):
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+        {"name": "dim", "uri": "dim.parquet", "format": "parquet"},
+        {"name": "notes", "uri": "notes.json", "format": "json"},
+    ])
+    try:
+        assert connection.execute(text('SELECT COUNT(*) FROM "main"."claims"')).scalar() == 3
+        assert connection.execute(text('SELECT COUNT(*) FROM "main"."dim"')).scalar() == 1
+        assert connection.execute(text('SELECT COUNT(*) FROM "main"."notes"')).scalar() == 2
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_glob_is_one_table_spanning_every_matching_file(data_directory):
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+    ])
+    try:
+        assert connection.execute(text('SELECT COUNT(*) FROM "main"."claims"')).scalar() == 3
+        # The column only the later file carries survives the union.
+        assert connection.execute(text('SELECT COUNT(plan) FROM "main"."claims"')).scalar() == 1
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_recursive_pattern_is_one_table_spanning_the_files_beneath_it(data_directory):
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "everything", "uri": "**/*.csv", "format": "csv"},
+    ])
+    try:
+        # Three claims rows, one nested row, one piped row read as a single column.
+        assert connection.execute(text('SELECT COUNT(*) FROM "main"."everything"')).scalar() == 5
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_stored_folder_declaration_reports_why_it_is_not_read(data_directory):
+    """A declaration saved another way can still name a folder, which DuckDB would refuse with a
+    permission error that says nothing about what to do instead."""
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "nested", "uri": "nested", "format": "csv"},
+    ])
+    try:
+        assert service.declaration_failures(connection) == {"nested": URI_IS_FOLDER}
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_declared_csv_settings_are_applied(data_directory):
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "piped", "uri": "piped.csv", "format": "csv", "options": {"delimiter": "|"}},
+    ])
+    try:
+        columns = connection.execute(text(
+            "SELECT column_name FROM information_schema.columns"
+            " WHERE table_name = 'piped' ORDER BY ordinal_position"
+        )).scalars().all()
+        assert columns == ["claim_id", "amount"]
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_one_unreadable_declaration_does_not_take_the_others_with_it(data_directory):
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "missing", "uri": "absent_*.csv", "format": "csv"},
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+        {"name": "dim", "uri": "dim.parquet", "format": "parquet"},
+    ])
+    try:
+        built = connection.execute(text(
+            "SELECT table_name FROM information_schema.tables"
+            " WHERE table_catalog = current_database() AND table_schema = 'main' ORDER BY table_name"
+        )).scalars().all()
+        assert built == ["claims", "dim"]
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_failure_reports_the_declaration_it_belongs_to(data_directory):
+    service = DuckdbFlavorService()
+    params = files_params(data_directory)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params), [])
+            failures = service.build_declaration_views(
+                connection,
+                str(data_directory),
+                parse_file_declarations([
+                    {"name": "missing", "uri": "absent_*.csv", "format": "csv"},
+                    {"name": "escape", "uri": "../outside/secret.csv", "format": "csv"},
+                    {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+                ]),
+                "main",
+            )
+    finally:
+        engine.dispose()
+
+    assert set(failures) == {"missing", "escape"}
+    assert "outside the connection base path" in failures["escape"]
+
+
+def test_a_name_differing_only_in_case_fails_rather_than_replacing(data_directory):
+    """DuckDB folds identifiers even when quoted, so ``Claims`` and ``claims`` are one view."""
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+        {"name": "Claims", "uri": "dim.parquet", "format": "parquet"},
+    ])
+    try:
+        assert set(service.declaration_failures(connection)) == {"Claims"}
+        assert connection.execute(text("SELECT count(*) FROM claims")).scalar() == 3
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_name_carrying_sql_never_runs_it(data_directory):
+    """The declaration name reaches DDL as an identifier, and duckdb-engine runs every statement
+    in one call, so a quote in the name would otherwise be arbitrary SQL against the target."""
+    target = data_directory / "claims_2024.csv"
+    before = target.read_text()
+    injected = (
+        f"claims\" AS SELECT 1; COPY (SELECT 99 AS id) TO '{target}' (FORMAT CSV); CREATE VIEW \"junk"
+    )
+
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": injected, "uri": "claims_*.csv", "format": "csv"},
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+    ])
+    try:
+        built = connection.execute(text(
+            "SELECT table_name FROM information_schema.tables"
+            " WHERE table_catalog = current_database() AND table_schema = 'main' ORDER BY table_name"
+        )).scalars().all()
+        assert built == ["claims"]
+        assert service.declaration_failures(connection)[injected] == NAME_INVALID
+    finally:
+        connection.close()
+        engine.dispose()
+
+    assert target.read_text() == before
+
+
+def test_a_run_opens_a_connection_whose_declarations_did_not_all_build(data_directory, monkeypatch):
+    """A declaration that did not build is simply absent from the catalog, which is what a table
+    dropped at the source looks like on every other flavor."""
+    from testgen.common.database import database_service
+
+    target = database_service.TargetDbParams(files_params(data_directory), parse_file_declarations([
+        {"name": "missing", "uri": "absent_*.csv", "format": "csv"},
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+    ]))
+    monkeypatch.setattr(database_service, "target_db_params", target)
+    monkeypatch.setattr(database_service.engine_cache, "target_db", None, raising=False)
+
+    connection = database_service._init_target_db_connection()
+    try:
+        built = connection.execute(text(
+            "SELECT table_name FROM information_schema.tables"
+            " WHERE table_catalog = current_database() AND table_schema = 'main'"
+        )).scalars().all()
+        assert built == ["claims"]
+    finally:
+        connection.close()
+
+
+def test_the_failures_stay_on_the_connection_for_the_caller(data_directory):
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "missing", "uri": "absent_*.csv", "format": "csv"},
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+    ])
+    try:
+        assert set(service.declaration_failures(connection)) == {"missing"}
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_declaration_outside_the_base_path_never_reaches_sql(data_directory):
+    """The allow-list refuses the read too; this keeps the path out of the view's SQL as well,
+    and covers the flavors that have no allow-list."""
+    service = DuckdbFlavorService()
+    outside = data_directory.parent / "outside" / "secret.csv"
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "escape", "uri": str(outside), "format": "csv"},
+    ])
+    try:
+        built = connection.execute(text(
+            "SELECT COUNT(*) FROM information_schema.tables"
+            " WHERE table_catalog = current_database() AND table_schema = 'main'"
+        )).scalar()
+        assert built == 0
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_a_files_connection_reports_what_it_found(data_directory):
+    details = DuckdbFlavorService().test_connection_details(
+        resolve_connection_params(files_params(data_directory))
+    )
+    assert details == "6 files found under the base path."
+
+
+def test_an_empty_directory_reports_no_count(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    details = DuckdbFlavorService().test_connection_details(resolve_connection_params(files_params(empty)))
+    assert details == "No files found under the base path."
+
+
+def test_a_single_file_is_reported_in_the_singular(tmp_path):
+    root = tmp_path / "one"
+    root.mkdir()
+    (root / "only.csv").write_text("a\n1\n")
+    details = DuckdbFlavorService().test_connection_details(resolve_connection_params(files_params(root)))
+    assert details == "1 file found under the base path."
+
+
+def test_a_database_connection_reports_no_file_count(customer_database):
+    assert DuckdbFlavorService().test_connection_details(
+        resolve_connection_params(connection_params(customer_database))
+    ) is None
+
+
+# -- one database per engine on the files code --------------------------------
+
+
+def test_the_files_code_keeps_one_database_for_the_engine():
+    from sqlalchemy.pool import NullPool, QueuePool
+
+    service = DuckdbFlavorService()
+    files = service.get_engine_args(resolve_connection_params(files_params("/data")))
+    attached = service.get_engine_args(
+        resolve_connection_params({"sql_flavor": "duckdb", "sql_flavor_code": "duckdb",
+                                   "parameters": {"database_file": "/data/x.duckdb"}})
+    )
+    assert files["poolclass"] is QueuePool
+    assert (files["pool_size"], files["max_overflow"]) == (1, 0)
+    # A read-only ATTACH held for the engine's lifetime locks the file against the customer's
+    # own writer, so the attached-file path takes a database per checkout instead.
+    assert attached["poolclass"] is NullPool
+
+
+def test_the_declaration_views_outlive_the_checkout(data_directory):
+    """The engine hands out one database, so a later checkout finds the views already built."""
+    from testgen.common.database.database_service import initialize_connection
+
+    service = DuckdbFlavorService()
+    params = files_params(data_directory)
+    declarations = parse_file_declarations([{"name": "claims", "uri": "claims_*.csv", "format": "csv"}])
+    resolved = resolve_connection_params(params)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as first:
+            initialize_connection(service, first, resolved, declarations)
+            assert first.execute(text('SELECT COUNT(*) FROM main."claims"')).scalar()
+
+        with engine.connect() as second:
+            # Re-running init would raise: the configuration is locked on this database and
+            # `SET allowed_directories` is refused once it is.
+            initialize_connection(service, second, resolved, declarations)
+            assert second.execute(text('SELECT COUNT(*) FROM main."claims"')).scalar()
+            assert service.declaration_failures(second) == {}
+    finally:
+        engine.dispose()
+
+
+def test_the_attached_database_is_initialized_on_every_checkout(customer_database):
+    """Each checkout is its own database on the attached-file path, so each one attaches."""
+    from testgen.common.database.database_service import initialize_connection
+
+    service = DuckdbFlavorService()
+    params = {"sql_flavor": "duckdb", "sql_flavor_code": "duckdb",
+              "parameters": {"database_file": str(customer_database)}}
+    resolved = resolve_connection_params(params)
+    engine = service.create_engine(params)
+    try:
+        for _ in range(2):
+            with engine.connect() as connection:
+                initialize_connection(service, connection, resolved, [])
+                assert connection.execute(text("SELECT 1")).scalar() == 1
+    finally:
+        engine.dispose()
+
+
+def test_a_failed_init_leaves_the_pool_usable(tmp_path, monkeypatch):
+    """The files code pools one connection, so one dropped here would be the whole engine.
+
+    The second attempt has to report what actually went wrong rather than waiting out the pool.
+    """
+    from testgen.common.database import database_service
+
+    target = database_service.TargetDbParams(files_params(tmp_path / "absent"), [])
+    monkeypatch.setattr(database_service, "target_db_params", target)
+    monkeypatch.setattr(database_service.engine_cache, "target_db", None, raising=False)
+
+    for _ in range(2):
+        with pytest.raises(DuckdbConnectionError, match="base path was not found"):
+            database_service._init_target_db_connection()
+
+    assert database_service.engine_cache.target_db.pool.checkedout() == 0

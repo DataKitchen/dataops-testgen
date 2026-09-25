@@ -6,6 +6,7 @@ from dataclasses import asdict
 import streamlit as st
 from sqlalchemy.exc import IntegrityError
 
+from testgen.common.database.table_group_service import apply_table_group_flavor_rules
 from testgen.common.enums import JobSource
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -368,6 +369,8 @@ class TableGroupsPage(Page):
                 if int(conn["connection_id"]) == int(table_group.connection_id)
             ]
 
+        apply_table_group_flavor_rules(table_group, Connection.get(table_group.connection_id))
+
         if should_preview():
             table_group_preview, save_data_chars = table_group_queries.get_table_group_preview(
                 table_group,
@@ -544,6 +547,8 @@ class TableGroupsPage(Page):
                 c for c in connections
                 if int(c["connection_id"]) == int(table_group.connection_id)
             ]
+
+        apply_table_group_flavor_rules(table_group, Connection.get(table_group.connection_id))
 
         table_group_preview = None
         save_data_chars = None

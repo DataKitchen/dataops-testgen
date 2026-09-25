@@ -9,13 +9,18 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from pydantic import Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
+    apply_table_group_flavor_rules,
+    validate_table_group_fields,
+)
+from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
 )
-from testgen.common.database.table_group_service import validate_table_group_fields
+from testgen.common.enums import FileFormat
+from testgen.common.flavors import declares_files
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup
@@ -33,7 +38,7 @@ from testgen.mcp.tools.common import (
     validate_limit,
     validate_page,
 )
-from testgen.mcp.tools.markdown import MdDoc
+from testgen.mcp.tools.markdown import MdDoc, format_boolean
 from testgen.utils import friendly_score
 
 _DOC_GROUP = DocGroup.MANAGE
@@ -47,6 +52,141 @@ _SCHEMA_LOCKED_MESSAGE = (
     "Schema cannot be changed once the table group has been used. "
     "Delete and recreate the table group to use a different schema."
 )
+_DECLARATIONS_REQUIRED_MESSAGE = (
+    "Tables on this connection are declared one file or pattern at a time. Supply `file_declarations`."
+)
+_DECLARATIONS_UNSUPPORTED_MESSAGE = (
+    "`file_declarations` applies only to a connection whose tables are files. Use `schema` and the "
+    "table filters instead."
+)
+_SCHEMA_UNSUPPORTED_MESSAGE = "Tables on this connection are files, so it has no schema to choose."
+# Only on create. Telling an update to supply the declarations invites it to send a partial list,
+# and the field replaces the whole one.
+_SCHEMA_UNSUPPORTED_ON_CREATE_MESSAGE = f"{_SCHEMA_UNSUPPORTED_MESSAGE} Supply `file_declarations`."
+_SCHEMA_REQUIRED_MESSAGE = "`schema` is required for this connection."
+_CRITERIA_UNSUPPORTED_MESSAGE = (
+    "Tables on this connection are files, so `table_set`, `include_mask` and `exclude_mask` do not "
+    "apply. Name the tables to read with `file_declarations`."
+)
+
+
+class FileDeclaration(BaseModel):
+    """One table on a file connection, named by the path its rows come from."""
+
+    name: Annotated[
+        str,
+        Field(
+            description="Name for this table in TestGen. Must start with a letter or underscore and contain only "
+            "letters, numbers and underscores. Unique within the table group.",
+        ),
+    ]
+    uri: Annotated[
+        str,
+        Field(
+            description="Path to the data, relative to the connection base path. Name one file "
+            "(``sales/orders.csv``) or a glob pattern (``sales/*.csv``, or ``sales/**/*.csv`` to include "
+            "subfolders). A pattern is one table whose rows span every file it matches. A bare folder is rejected.",
+        ),
+    ]
+    format: Annotated[FileFormat, Field(description="Format TestGen reads the files as.")]
+    delimiter: Annotated[
+        str | None,
+        Field(description="CSV only. Character between fields, e.g. ``,`` or ``|``. Autodetected when omitted."),
+    ] = None
+    header: Annotated[
+        bool | None,
+        Field(description="CSV only. Whether the first row holds column names. Autodetected when omitted."),
+    ] = None
+    quote: Annotated[
+        str | None,
+        Field(
+            description="CSV only. Character wrapping a field that contains the delimiter or a line break, e.g. "
+            '``"``. Autodetected when omitted.',
+            max_length=1,
+        ),
+    ] = None
+    escape: Annotated[
+        str | None,
+        Field(
+            description="CSV only. Character that escapes a quote inside a quoted field, e.g. ``\\`` or a second "
+            '``"``. Autodetected when omitted.',
+            max_length=1,
+        ),
+    ] = None
+
+    @model_validator(mode="after")
+    def _reject_settings_for_another_format(self) -> FileDeclaration:
+        if self.format is FileFormat.CSV:
+            return self
+        supplied = [
+            name
+            for name, value in (
+                ("delimiter", self.delimiter),
+                ("header", self.header),
+                ("quote", self.quote),
+                ("escape", self.escape),
+            )
+            if value is not None
+        ]
+        if supplied:
+            raise ValueError(
+                f"{', '.join(supplied)} applies to a CSV file. "
+                f"Table {self.name!r} is declared as {self.format}."
+            )
+        return self
+
+
+def _verify_table_naming(
+    connection: Connection,
+    *,
+    schema: str | None,
+    file_declarations: list[FileDeclaration] | None,
+    criteria: tuple[object, ...] = (),
+    require: bool = True,
+) -> None:
+    """Raise ``MCPUserError`` when the arguments name tables in a way this connection does not use.
+
+    A connection's tables are either files, declared one at a time, or a schema the target
+    database already holds. ``require`` additionally rejects supplying neither.
+    """
+    if declares_files(connection.sql_flavor_code):
+        if schema is not None:
+            raise MCPUserError(
+                _SCHEMA_UNSUPPORTED_ON_CREATE_MESSAGE if require else _SCHEMA_UNSUPPORTED_MESSAGE
+            )
+        if any(value is not None for value in criteria):
+            raise MCPUserError(_CRITERIA_UNSUPPORTED_MESSAGE)
+        if require and not file_declarations:
+            raise MCPUserError(_DECLARATIONS_REQUIRED_MESSAGE)
+        return
+
+    if file_declarations is not None:
+        raise MCPUserError(_DECLARATIONS_UNSUPPORTED_MESSAGE)
+    if require and not schema:
+        raise MCPUserError(_SCHEMA_REQUIRED_MESSAGE)
+
+
+def _declaration_payloads(declarations: list[FileDeclaration]) -> list[dict[str, Any]]:
+    """The stored JSONB shape for each declaration, with the CSV settings gathered into options."""
+    payloads = []
+    for declaration in declarations:
+        options = {
+            key: value
+            for key, value in (
+                ("delimiter", declaration.delimiter),
+                ("header", declaration.header),
+                ("quote", declaration.quote),
+                ("escape", declaration.escape),
+            )
+            if value is not None
+        }
+        payloads.append({
+            "name": declaration.name,
+            "uri": declaration.uri,
+            "format": str(declaration.format),
+            "options": options if declaration.format is FileFormat.CSV else {},
+        })
+    return payloads
 
 
 @with_database_session
@@ -92,7 +232,9 @@ def list_table_groups(
                 str(row.id),
                 row.table_groups_name,
                 row.connection_name,
-                row.table_group_schema,
+                # A flavor that declares its tables as files has no schema the user chose; the
+                # stored value is the one its engine reads from.
+                None if declares_files(row.sql_flavor_code) else row.table_group_schema,
                 row.table_count,
                 row.column_count,
                 row.row_count,
@@ -136,9 +278,15 @@ def get_table_group(
             "Connection",
             f"{connection.connection_name} (`{connection.connection_id}`, {format_flavor_label(connection.sql_flavor_code)})",
         )
-    doc.field("Schema", table_group.table_group_schema, code=True)
+    declares_its_files = connection is not None and declares_files(connection.sql_flavor_code)
+    if not declares_its_files:
+        doc.field("Schema", table_group.table_group_schema, code=True)
     if table_group.description:
         doc.field("Description", table_group.description)
+
+    if declares_its_files:
+        doc.heading(2, "Declared tables")
+        _render_declared_tables(doc, table_group)
 
     doc.heading(2, "Criteria")
     if table_group.profiling_table_set:
@@ -191,13 +339,20 @@ def create_table_group(
         Field(description="3-40 character display name. Must be unique within the project."),
     ],
     schema: Annotated[
-        str,
+        str | None,
         Field(
             description="Schema name on the target database, e.g. ``public``. For Salesforce Data 360 connections, use "
-            "the data space name.",
+            "the data space name. Omit on a connection whose tables are files, which has no schema to choose.",
         ),
-    ],
+    ] = None,
     *,
+    file_declarations: Annotated[
+        list[FileDeclaration] | None,
+        Field(
+            description="One entry per table. Required on a file connection, where the tables are named here "
+            "instead of read from a schema. Rejected on every other connection.",
+        ),
+    ] = None,
     description: Annotated[str | None, Field(description="Optional free-text description.")] = None,
     table_set: Annotated[
         list[str] | None,
@@ -291,19 +446,27 @@ def create_table_group(
         ),
     ] = None,
 ) -> str:
-    """Create a table group on an existing connection.
+    """Create a table group on an existing connection, by schema or by file path.
 
     The table group inherits its project from the connection. ``include_mask``
     and ``exclude_mask`` are SQL ``LIKE`` patterns (e.g. ``fact_%,dim_%``);
-    ``table_set`` is an explicit list. All filters compose with ``AND``.
+    ``table_set`` is an explicit list. All filters compose with ``AND``. A file connection takes
+    ``file_declarations`` instead of any of those, and no ``schema``.
     """
     connection = resolve_connection(connection_id)
+    _verify_table_naming(
+        connection,
+        schema=schema,
+        file_declarations=file_declarations,
+        criteria=(table_set, include_mask, exclude_mask),
+    )
 
     table_group = TableGroup(
         project_code=connection.project_code,
         connection_id=connection.connection_id,
         table_groups_name=table_group_name,
         table_group_schema=schema,
+        file_declarations=_declaration_payloads(file_declarations) if file_declarations else None,
         **_model_defaults(),
     )
     _apply_args_to_table_group(
@@ -333,7 +496,8 @@ def create_table_group(
         data_classification=data_classification,
     )
 
-    errors = validate_table_group_fields(table_group)
+    apply_table_group_flavor_rules(table_group, connection)
+    errors = validate_table_group_fields(table_group, connection)
     if errors:
         _raise_validation_error(errors, "Table group creation rejected. No changes saved.")
 
@@ -358,6 +522,13 @@ def update_table_group(
     schema: Annotated[
         str | None,
         Field(description="New target-DB schema. Rejected if the table group has been used."),
+    ] = None,
+    file_declarations: Annotated[
+        list[FileDeclaration] | None,
+        Field(
+            description="File connections only. Replaces the table group's whole list of tables, so send every "
+            "table to keep, not just the ones that changed.",
+        ),
     ] = None,
     description: Annotated[str | None, Field(description="Free-text description.")] = None,
     table_set: Annotated[
@@ -438,11 +609,13 @@ def update_table_group(
     Connection and project are immutable — delete and recreate the table group
     to re-parent it. ``schema`` is also immutable once the table group has been
     used (profiled or has test suites); supply a different ``schema`` only on
-    unused table groups.
+    unused table groups. On a file connection, ``file_declarations`` replaces the whole table
+    list — read the current one with ``get_table_group`` first.
     """
     supplied = {
         "table_group_name": table_group_name,
         "schema": schema,
+        "file_declarations": file_declarations,
         "description": description,
         "table_set": table_set,
         "include_mask": include_mask,
@@ -471,6 +644,17 @@ def update_table_group(
         raise MCPUserError("No fields supplied to update.")
 
     table_group = resolve_table_group(table_group_id)
+    connection = Connection.get(table_group.connection_id)
+    if connection is not None:
+        # An update settles one field at a time, so how this table group names its tables is
+        # already decided; only a change that contradicts it is worth refusing.
+        _verify_table_naming(
+            connection,
+            schema=schema,
+            file_declarations=file_declarations,
+            criteria=(table_set, include_mask, exclude_mask),
+            require=False,
+        )
 
     if (
         schema is not None
@@ -489,7 +673,8 @@ def update_table_group(
     before = _snapshot(table_group)
     _apply_args_to_table_group(table_group, **supplied)
 
-    errors = validate_table_group_fields(table_group)
+    apply_table_group_flavor_rules(table_group, connection)
+    errors = validate_table_group_fields(table_group, connection)
     if errors:
         _raise_validation_error(errors, "Update rejected. No changes saved.")
 
@@ -551,7 +736,8 @@ def preview_table_group(
 
     doc.heading(1, f"Preview for table group `{name}`")
     doc.field("Table Group ID", str(table_group.id), code=True)
-    doc.field("Schema", stats.get("table_group_schema"), code=True)
+    if not declares_files(connection.sql_flavor_code):
+        doc.field("Schema", stats.get("table_group_schema"), code=True)
     doc.field("Tables matched", stats.get("table_ct") or 0)
     doc.field("Total columns", stats.get("column_ct") or 0)
     if stats.get("approx_record_ct") is not None:
@@ -577,7 +763,17 @@ def preview_table_group(
         rows.append(row)
     doc.table(headers, rows, code=[0])
 
-    if verify_access and preview.get("message"):
+    # A declaration that cannot be read is a row of zeroes above, indistinguishable from an empty
+    # table, and a run does not stop for one. Naming it here is the only place it is reported.
+    if failures := {
+        table_name: info["error"]
+        for table_name, info in preview["tables"].items()
+        if info.get("error")
+    }:
+        doc.heading(2, "Tables that could not be read")
+        for table_name, reason in sorted(failures.items()):
+            doc.field(table_name, reason)
+    elif preview.get("message"):
         doc.text(preview["message"])
 
     return doc.render()
@@ -591,6 +787,7 @@ def preview_table_group(
 _DIFF_ATTRS: tuple[str, ...] = (
     "table_groups_name",
     "table_group_schema",
+    "file_declarations",
     "profiling_table_set",
     "profiling_include_mask",
     "profiling_exclude_mask",
@@ -619,6 +816,7 @@ _DIFF_ATTRS: tuple[str, ...] = (
 _DIFF_LABELS: dict[str, str] = {
     "table_groups_name": "Name",
     "table_group_schema": "Schema",
+    "file_declarations": "Declared tables",
     "profiling_table_set": "Table set",
     "profiling_include_mask": "Include mask",
     "profiling_exclude_mask": "Exclude mask",
@@ -695,6 +893,7 @@ def _apply_args_to_table_group(
     *,
     table_group_name: str | None = None,
     schema: str | None = None,
+    file_declarations: list[FileDeclaration] | None = None,
     description: str | None = None,
     table_set: list[str] | None = None,
     include_mask: str | None = None,
@@ -728,6 +927,8 @@ def _apply_args_to_table_group(
         table_group.table_groups_name = table_group_name
     if schema is not None:
         table_group.table_group_schema = schema
+    if file_declarations is not None:
+        table_group.file_declarations = _declaration_payloads(file_declarations)
     if description is not None:
         table_group.description = description
     if table_set is not None:
@@ -787,7 +988,40 @@ def _maybe_raise_duplicate_name(err: IntegrityError) -> None:
 
 
 def _snapshot(table_group: TableGroup) -> dict[str, Any]:
-    return {attr: getattr(table_group, attr, None) for attr in _DIFF_ATTRS}
+    values = {attr: getattr(table_group, attr, None) for attr in _DIFF_ATTRS}
+    values["file_declarations"] = _declaration_summary(values["file_declarations"])
+    return values
+
+
+def _render_declared_tables(doc: MdDoc, table_group: TableGroup) -> None:
+    """One line per declared table, naming the path it reads and how it is read."""
+    for declaration in table_group.file_declarations or []:
+        options = declaration.get("options") or {}
+        settings = "".join(f", {key}={_render_option(value)}" for key, value in sorted(options.items()))
+        doc.field(
+            str(declaration.get("name")),
+            f"`{declaration.get('uri')}` ({declaration.get('format')}{settings})",
+        )
+
+
+def _render_option(value: object) -> str:
+    return format_boolean(value) or str(value)
+
+
+def _declaration_summary(declarations: list[dict[str, Any]] | None) -> str | None:
+    """One line naming every declared table with its path, format and settings.
+
+    Carries every stored field, so two lists that differ anywhere compare unequal.
+    """
+    if not declarations:
+        return None
+    lines = []
+    for declaration in declarations:
+        line = f"{declaration.get('name')} \u2192 {declaration.get('uri')} ({declaration.get('format')})"
+        if options := declaration.get("options"):
+            line += " " + ", ".join(f"{key}={_render_option(value)}" for key, value in sorted(options.items()))
+        lines.append(line)
+    return "; ".join(lines)
 
 
 def _render_created_table_group(table_group: TableGroup, connection: Connection) -> str:
@@ -799,7 +1033,11 @@ def _render_created_table_group(table_group: TableGroup, connection: Connection)
         "Connection",
         f"{connection.connection_name} (`{connection.connection_id}`)",
     )
-    doc.field("Schema", table_group.table_group_schema, code=True)
+    if declares_files(connection.sql_flavor_code):
+        doc.heading(2, "Declared tables")
+        _render_declared_tables(doc, table_group)
+    else:
+        doc.field("Schema", table_group.table_group_schema, code=True)
     if table_group.description:
         doc.field("Description", table_group.description)
 

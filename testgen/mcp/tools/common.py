@@ -1369,9 +1369,13 @@ def render_connection_body(doc: MdDoc, connection: Connection) -> None:
     for fld, value in connection_display_values(connection):
         doc.field(fld.label, value, code=fld.column != "project_port")
 
-    doc.field("Authentication", authentication_label(connection))
+    if (authentication := authentication_label(connection)) is not None:
+        doc.field("Authentication", authentication)
     if connection.max_threads is not None:
-        doc.field("Max Threads", connection.max_threads)
+        # The pinned value, not the stored column: a flavor that fixes its thread count runs at
+        # that count whatever the column says, and reporting the column sends an operator looking
+        # for a parallelism they never had.
+        doc.field("Max Threads", connection.effective_max_threads)
     if connection.max_query_chars is not None:
         doc.field("Max Expression Length", connection.max_query_chars)
 

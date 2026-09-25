@@ -42,10 +42,11 @@ def _conn(**overrides) -> Connection:
 class _SecretiveFlavor(FlavorService):
     """Flavor declaring a secrets shape, which no shipping flavor does."""
 
-    secrets_schema = (
-        ConnectionField(key="access_key_id", label="Access Key ID", required=True),
-        ConnectionField(key="session_token", label="Session Token"),
-    )
+    def secrets_schema(self, sql_flavor_code: str) -> tuple[ConnectionField, ...]:  # noqa: ARG002
+        return (
+            ConnectionField(key="access_key_id", label="Access Key ID", required=True),
+            ConnectionField(key="session_token", label="Session Token"),
+        )
 
     def get_connection_string(self, params: ResolvedConnectionParams) -> str:  # noqa: ARG002
         return ""
@@ -57,38 +58,38 @@ class _SecretiveFlavor(FlavorService):
 
 
 def test_validate_secrets_accepts_a_complete_shape():
-    _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA", "session_token": "tok"})
+    _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA", "session_token": "tok"}, "postgresql")
 
 
 def test_validate_secrets_accepts_only_the_required_entry():
-    _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA"})
+    _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA"}, "postgresql")
 
 
 def test_validate_secrets_rejects_an_undeclared_key_by_name():
     with pytest.raises(ValueError, match="'nope' is not a connection secret"):
-        _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA", "nope": "x"})
+        _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA", "nope": "x"}, "postgresql")
 
 
 @pytest.mark.parametrize("value", [None, "", "   "])
 def test_validate_secrets_rejects_a_blank_required_entry_by_label(value):
     with pytest.raises(ValueError, match="Access Key ID is required."):
-        _SecretiveFlavor().validate_secrets({"access_key_id": value})
+        _SecretiveFlavor().validate_secrets({"access_key_id": value}, "postgresql")
 
 
 def test_validate_secrets_rejects_a_missing_required_entry_by_label():
     with pytest.raises(ValueError, match="Access Key ID is required."):
-        _SecretiveFlavor().validate_secrets({})
+        _SecretiveFlavor().validate_secrets({}, "postgresql")
 
 
 @pytest.mark.parametrize("secrets", [None, {}])
 def test_validate_secrets_accepts_nothing_for_a_flavor_declaring_none(secrets):
     """Every flavor shipping today declares no secrets, so both shapes have to pass."""
-    FlavorService().validate_secrets(secrets)
+    FlavorService().validate_secrets(secrets, "postgresql")
 
 
 def test_validate_secrets_rejects_a_stray_key_for_a_flavor_declaring_none():
     with pytest.raises(ValueError, match="'anything' is not a connection secret"):
-        FlavorService().validate_secrets({"anything": "x"})
+        FlavorService().validate_secrets({"anything": "x"}, "postgresql")
 
 
 # ---------------------------------------------------------------------------
@@ -188,8 +189,8 @@ def test_enforce_connection_rules_validates_secrets():
         connection = _conn(parameters={"a": 1}, secrets={"b": 2})
         connection_service.enforce_connection_rules(connection)
 
-    flavor_service.validate_parameters.assert_called_once_with({"a": 1})
-    flavor_service.validate_secrets.assert_called_once_with({"b": 2})
+    flavor_service.validate_parameters.assert_called_once_with({"a": 1}, "postgresql")
+    flavor_service.validate_secrets.assert_called_once_with({"b": 2}, "postgresql")
 
 
 def test_enforce_connection_rules_surfaces_a_secrets_failure():

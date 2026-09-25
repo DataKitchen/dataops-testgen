@@ -39,8 +39,11 @@ import { ScheduleList } from '/app/static/js/components/schedule_list.js';
 import { NotificationSettings } from '/app/static/js/components/notification_settings.js';
 import { TableGroupWizard } from '/app/static/js/components/table_group_wizard.js';
 import { TableGroupEditDialog } from '/app/static/js/components/table_group_edit_dialog.js';
+import { declaresFiles } from '/app/static/js/components/table_group_form.js';
 
 const { div, h4, span, b } = van.tags;
+
+const tableGroupDeclaresFiles = (tableGroup) => declaresFiles(tableGroup.connection?.flavor?.value);
 
 /**
  * @param {Properties} props
@@ -235,31 +238,47 @@ const TableGroupList = (props) => {
                                     }),
                                     div(
                                         { class: 'flex-row fx-flex fx-gap-3' },
+                                        tableGroupDeclaresFiles(tableGroup)
+                                            ? div(
+                                                { class: 'flex-column fx-flex fx-gap-4' },
+                                                div(
+                                                    { class: 'flex-column fx-flex' },
+                                                    Caption({content: 'Tables', style: 'margin-bottom: 4px;'}),
+                                                    (tableGroup.file_declarations ?? []).length
+                                                        ? TruncatedText(
+                                                            {max: 3, tooltipPosition: 'top-right'},
+                                                            ...tableGroup.file_declarations.map(declaration => declaration.name)
+                                                        )
+                                                        : '--',
+                                                ),
+                                            )
+                                            : div(
+                                                { class: 'flex-column fx-flex fx-gap-4' },
+                                                div(
+                                                    { class: 'flex-column fx-flex' },
+                                                    Caption({content: tableGroup.connection.flavor.flavor === 'salesforce_data360' ? 'Data Space' : 'Schema', style: 'margin-bottom: 4px;'}),
+                                                    span(tableGroup.table_group_schema || '--'),
+                                                ),
+                                                div(
+                                                    { class: 'flex-column fx-flex' },
+                                                    Caption({content: 'Explicit Table List', style: 'margin-bottom: 4px;'}),
+                                                    tableGroup.profiling_table_set
+                                                        ? TruncatedText(
+                                                            {max: 3, tooltipPosition: 'top-right'},
+                                                            ...tableGroup.profiling_table_set.split(',').map(t => t.trim())
+                                                        )
+                                                        : '--',
+                                                ),
+                                            ),
                                         div(
                                             { class: 'flex-column fx-flex fx-gap-4' },
-                                            div(
-                                                { class: 'flex-column fx-flex' },
-                                                Caption({content: tableGroup.connection.flavor.flavor === 'salesforce_data360' ? 'Data Space' : 'Schema', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.table_group_schema || '--'),
-                                            ),
-                                            div(
-                                                { class: 'flex-column fx-flex' },
-                                                Caption({content: 'Explicit Table List', style: 'margin-bottom: 4px;'}),
-                                                tableGroup.profiling_table_set
-                                                    ? TruncatedText(
-                                                        {max: 3, tooltipPosition: 'top-right'},
-                                                        ...tableGroup.profiling_table_set.split(',').map(t => t.trim())
-                                                    )
-                                                    : '--',
-                                            ),
-                                        ),
-                                        div(
-                                            { class: 'flex-column fx-flex fx-gap-4' },
-                                            div(
-                                                { class: 'flex-column fx-flex' },
-                                                Caption({content: 'Tables to Include Mask', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.profiling_include_mask || '--'),
-                                            ),
+                                            tableGroupDeclaresFiles(tableGroup)
+                                                ? ''
+                                                : div(
+                                                    { class: 'flex-column fx-flex' },
+                                                    Caption({content: 'Tables to Include Mask', style: 'margin-bottom: 4px;'}),
+                                                    span(tableGroup.profiling_include_mask || '--'),
+                                                ),
                                             div(
                                                 { class: 'flex-column fx-flex' },
                                                 Caption({content: 'Uses Record Sampling', style: 'margin-bottom: 4px;'}),
@@ -268,11 +287,13 @@ const TableGroupList = (props) => {
                                         ),
                                         div(
                                             { class: 'flex-column fx-flex fx-gap-4' },
-                                            div(
-                                                { class: 'flex-column fx-flex' },
-                                                Caption({content: 'Tables to Exclude Mask', style: 'margin-bottom: 4px;'}),
-                                                span(tableGroup.profiling_exclude_mask || '--'),
-                                            ),
+                                            tableGroupDeclaresFiles(tableGroup)
+                                                ? ''
+                                                : div(
+                                                    { class: 'flex-column fx-flex' },
+                                                    Caption({content: 'Tables to Exclude Mask', style: 'margin-bottom: 4px;'}),
+                                                    span(tableGroup.profiling_exclude_mask || '--'),
+                                                ),
                                             div(
                                                 { class: 'flex-column fx-flex' },
                                                 Caption({content: 'Min Profiling Age (Days)', style: 'margin-bottom: 4px;'}),
