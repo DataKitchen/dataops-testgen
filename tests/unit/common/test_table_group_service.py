@@ -1,6 +1,6 @@
 """Tests for the table_group_service common-layer module.
 
-Covers ``table_group_defaults``, ``validate_table_group_fields``,
+Covers ``validate_table_group_fields``, ``table_group_defaults``,
 ``is_duplicate_name_error`` and ``preview_table_group`` (happy path,
 verify-access flag, partial-inaccessible footer, no-connection branch,
 connection failure, empty result).
@@ -16,11 +16,10 @@ from testgen.common.database.table_group_service import (
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
     preview_table_group,
-    table_group_defaults,
     validate_table_group_fields,
 )
 from testgen.common.models.connection import Connection
-from testgen.common.models.table_group import TableGroup
+from testgen.common.models.table_group import TableGroup, table_group_defaults
 from testgen.ui.services.database_service import TargetQuery
 
 pytestmark = pytest.mark.unit
@@ -76,22 +75,22 @@ def test_validate_passes_baseline():
 
 def test_validate_missing_name():
     errors = validate_table_group_fields(_tg(table_groups_name=None))
-    assert "`table_groups_name` is required." in errors
+    assert "`table_group_name` is required." in errors
 
 
 def test_validate_blank_name():
     errors = validate_table_group_fields(_tg(table_groups_name="   "))
-    assert "`table_groups_name` is required." in errors
+    assert "`table_group_name` is required." in errors
 
 
 def test_validate_name_too_short():
     errors = validate_table_group_fields(_tg(table_groups_name="ab"))
-    assert "`table_groups_name` must be between 3 and 40 characters." in errors
+    assert "`table_group_name` must be between 3 and 40 characters." in errors
 
 
 def test_validate_name_too_long():
     errors = validate_table_group_fields(_tg(table_groups_name="a" * 41))
-    assert "`table_groups_name` must be between 3 and 40 characters." in errors
+    assert "`table_group_name` must be between 3 and 40 characters." in errors
 
 
 def test_validate_name_at_lower_bound_passes():
@@ -104,12 +103,12 @@ def test_validate_name_at_upper_bound_passes():
 
 def test_validate_missing_schema():
     errors = validate_table_group_fields(_tg(table_group_schema=None))
-    assert "`table_group_schema` is required." in errors
+    assert "`schema_name` is required." in errors
 
 
 def test_validate_blank_schema():
     errors = validate_table_group_fields(_tg(table_group_schema="   "))
-    assert "`table_group_schema` is required." in errors
+    assert "`schema_name` is required." in errors
 
 
 @pytest.mark.parametrize("bad_delay", [-1, -100])
@@ -157,24 +156,94 @@ def test_validate_aggregates_all_errors():
         profile_sample_min_count=-5,
     ))
     joined = "\n".join(errors)
-    assert "`table_groups_name` is required." in joined
-    assert "`table_group_schema` is required." in joined
+    assert "`table_group_name` is required." in joined
+    assert "`schema_name` is required." in joined
     assert "`profiling_delay_days` must be a non-negative integer." in joined
     assert "`profile_sample_percent` must be between 1 and 100." in joined
     assert "`profile_sample_min_count` must be a non-negative integer." in joined
 
 
+def test_validate_names_fields_by_their_public_names_by_default():
+    errors = validate_table_group_fields(_tg(
+        table_groups_name="",
+        table_group_schema="",
+        profiling_include_mask="x" * 2001,
+    ))
+
+    assert errors == [
+        "`table_group_name` is required.",
+        "`schema_name` is required.",
+        "`include_masks` must be at most 2000 characters in total, counting a comma between entries.",
+    ]
+
+
 def test_validate_names_fields_by_the_supplied_mapping():
     errors = validate_table_group_fields(
         _tg(table_groups_name="", table_group_schema="", profile_sample_percent=0),
-        field_names={"table_groups_name": "name", "table_group_schema": "schema_name"},
+        field_names={"table_group_schema": "schema"},
     )
 
     assert errors == [
-        "`name` is required.",
-        "`schema_name` is required.",
+        "`table_group_name` is required.",
+        "`schema` is required.",
         "`profile_sample_percent` must be between 1 and 100.",
     ]
+
+
+def test_validate_name_length_counts_the_padding_it_is_stored_with():
+    errors = validate_table_group_fields(_tg(table_groups_name=" " * 30 + "Sample TG" + " " * 30))
+
+    assert errors == ["`table_group_name` must be between 3 and 40 characters."]
+
+
+@pytest.mark.parametrize(
+    ("attr", "max_length", "message_name"),
+    [
+        ("table_group_schema", 100, "schema_name"),
+        ("profile_id_column_mask", 2000, "profile_id_column_mask"),
+        ("profile_sk_column_mask", 150, "profile_sk_column_mask"),
+        ("description", 1000, "description"),
+        ("data_source", 40, "data_source"),
+        ("data_classification", 40, "data_classification"),
+    ],
+)
+def test_validate_rejects_a_value_wider_than_its_column(attr, max_length, message_name):
+    assert validate_table_group_fields(_tg(**{attr: "x" * max_length})) == []
+    assert validate_table_group_fields(_tg(**{attr: "x" * (max_length + 1)})) == [
+        f"`{message_name}` must be at most {max_length} characters.",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("attr", "message_name"),
+    [
+        ("profiling_table_set", "table_set"),
+        ("profiling_include_mask", "include_masks"),
+        ("profiling_exclude_mask", "exclude_masks"),
+    ],
+)
+def test_validate_measures_a_list_column_as_stored(attr, message_name):
+    """The list columns hold their entries comma-joined, so the width counts the commas."""
+    tables = [f"client_table_{i:03d}" for i in range(120)]
+
+    errors = validate_table_group_fields(_tg(**{attr: ",".join(tables)}))
+
+    assert errors == [
+        f"`{message_name}` must be at most 2000 characters in total, counting a comma between entries.",
+    ]
+
+
+def test_validate_rejects_integers_beyond_their_columns():
+    errors = validate_table_group_fields(_tg(profiling_delay_days=2**31, profile_sample_min_count=2**63))
+
+    assert errors == [
+        f"`profiling_delay_days` must be at most {2**31 - 1}.",
+        f"`profile_sample_min_count` must be at most {2**63 - 1}.",
+    ]
+
+
+def test_validate_accepts_integers_at_their_column_limits():
+    assert validate_table_group_fields(_tg(profiling_delay_days=2**31 - 1, profile_sample_min_count=2**63 - 1)) == []
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +570,7 @@ def test_no_connection_settles_nothing():
 def test_a_file_table_group_needs_no_schema_but_needs_declarations():
     errors = validate_table_group_fields(_tg(table_group_schema=None, file_declarations=[]), _files_conn())
 
-    assert "`schema` is required." not in errors
+    assert "`schema_name` is required." not in errors
     assert "Declare at least one table." in errors
 
 

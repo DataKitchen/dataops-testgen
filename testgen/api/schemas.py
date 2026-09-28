@@ -21,8 +21,8 @@ from testgen.api.enums import (
     ResultStatus,
     TableState,
 )
-from testgen.common.database.table_group_service import table_group_defaults
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
+from testgen.common.models.table_group import table_group_defaults
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
 # --- Jobs ---

@@ -1,8 +1,6 @@
 """Shared table-group helpers — common-layer logic shared by MCP, the UI, and
 any future caller:
 
-* ``table_group_defaults`` — the model's scalar column defaults, for seeding a
-  table group that is validated before it is flushed.
 * ``validate_table_group_fields`` — required-field + format checks. Callers
   surface the returned bullets verbatim.
 * ``is_duplicate_name_error`` — recognizes the name-uniqueness violation.
@@ -20,10 +18,9 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Any, TypedDict
+from typing import TypedDict
 from uuid import UUID
 
-from sqlalchemy import Column
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
@@ -39,47 +36,10 @@ from testgen.common.database.file_declarations import (
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.flavors import declares_files, fixed_table_group_schema
 from testgen.common.models.connection import Connection
-from testgen.common.models.custom_types import YNString
 from testgen.common.models.table_group import TableGroup
 from testgen.ui.services.database_service import target_db_session
 
 LOG = logging.getLogger("testgen")
-
-# ---------------------------------------------------------------------------
-# Defaults
-# ---------------------------------------------------------------------------
-
-
-# ``YNString`` columns store raw "Y"/"N" strings as their default but expose
-# the attribute as ``bool``; normalize so an unflushed table group doesn't
-# treat "N" as truthy before the row is reloaded.
-def _normalize_default(column: Column, raw: Any) -> Any:
-    if isinstance(column.type, YNString) and isinstance(raw, str):
-        return raw == "Y"
-    return raw
-
-
-# Computed once at import time so the values stay in sync with the model and
-# survive tests that patch the ``TableGroup`` class itself.
-_MODEL_DEFAULTS: dict[str, Any] = {
-    column.name: _normalize_default(column, column.default.arg)
-    for column in TableGroup.__table__.columns
-    if (
-        column.default is not None
-        and not column.primary_key
-        and getattr(column.default, "is_scalar", False)
-    )
-}
-
-
-def table_group_defaults() -> dict[str, Any]:
-    """Return the model's scalar ``Column(default=...)`` values, keyed by attribute.
-
-    Column defaults only fire at flush time, so a table group validated before
-    it is saved has to be constructed with these to pass validation.
-    """
-    return dict(_MODEL_DEFAULTS)
-
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -89,6 +49,37 @@ _NAME_MIN = 3
 _NAME_MAX = 40
 _SAMPLE_PCT_MIN = 1
 _SAMPLE_PCT_MAX = 100
+_INTEGER_MAX = 2**31 - 1
+_BIGINT_MAX = 2**63 - 1
+
+# Widths of the ``table_groups`` VARCHAR columns (030_initialize_new_schema_structure.sql).
+_MAX_LENGTHS: dict[str, int] = {
+    "table_group_schema": 100,
+    "profiling_table_set": 2000,
+    "profiling_include_mask": 2000,
+    "profiling_exclude_mask": 2000,
+    "profile_id_column_mask": 2000,
+    "profile_sk_column_mask": 150,
+    "description": 1000,
+    "data_source": 40,
+    "source_system": 40,
+    "source_process": 40,
+    "data_location": 40,
+    "business_domain": 40,
+    "stakeholder_group": 40,
+    "transform_level": 40,
+    "data_product": 40,
+    "data_classification": 40,
+}
+_LIST_COLUMNS = frozenset({"profiling_table_set", "profiling_include_mask", "profiling_exclude_mask"})
+
+_PUBLIC_FIELD_NAMES: dict[str, str] = {
+    "table_groups_name": "table_group_name",
+    "table_group_schema": "schema_name",
+    "profiling_table_set": "table_set",
+    "profiling_include_mask": "include_masks",
+    "profiling_exclude_mask": "exclude_masks",
+}
 
 
 def _missing(value: object) -> bool:
@@ -115,9 +106,10 @@ def validate_table_group_fields(
         connection: The table group's connection. Pass it to have the file declarations
             checked, which needs the base path they are relative to.
         field_names: Name to show for a model attribute in the messages, keyed by
-            attribute. Attributes not in the mapping are shown by their own name.
+            attribute. Overrides the public field names, which the messages use by
+            default; an attribute with no public name is shown by its own name.
     """
-    names = field_names or {}
+    names = {**_PUBLIC_FIELD_NAMES, **(field_names or {})}
 
     def field(attr: str) -> str:
         return f"`{names.get(attr, attr)}`"
@@ -127,7 +119,7 @@ def validate_table_group_fields(
     name = table_group.table_groups_name
     if _missing(name):
         errors.append(f"{field('table_groups_name')} is required.")
-    elif not (_NAME_MIN <= len(name.strip()) <= _NAME_MAX):
+    elif not (_NAME_MIN <= len(name.strip()) and len(name) <= _NAME_MAX):
         errors.append(f"{field('table_groups_name')} must be between {_NAME_MIN} and {_NAME_MAX} characters.")
 
     if connection is not None and declares_files(connection.sql_flavor_code):
@@ -135,9 +127,22 @@ def validate_table_group_fields(
     elif _missing(table_group.table_group_schema):
         errors.append(f"{field('table_group_schema')} is required.")
 
+    for attr, max_length in _MAX_LENGTHS.items():
+        value = getattr(table_group, attr)
+        if isinstance(value, str) and len(value) > max_length:
+            if attr in _LIST_COLUMNS:
+                errors.append(
+                    f"{field(attr)} must be at most {max_length} characters in total,"
+                    " counting a comma between entries."
+                )
+            else:
+                errors.append(f"{field(attr)} must be at most {max_length} characters.")
+
     delay = table_group.profiling_delay_days
     if not _is_int(delay) or delay < 0:
         errors.append(f"{field('profiling_delay_days')} must be a non-negative integer.")
+    elif delay > _INTEGER_MAX:
+        errors.append(f"{field('profiling_delay_days')} must be at most {_INTEGER_MAX}.")
 
     pct = table_group.profile_sample_percent
     if not _is_int(pct) or not (_SAMPLE_PCT_MIN <= pct <= _SAMPLE_PCT_MAX):
@@ -146,6 +151,8 @@ def validate_table_group_fields(
     min_count = table_group.profile_sample_min_count
     if not _is_int(min_count) or min_count < 0:
         errors.append(f"{field('profile_sample_min_count')} must be a non-negative integer.")
+    elif min_count > _BIGINT_MAX:
+        errors.append(f"{field('profile_sample_min_count')} must be at most {_BIGINT_MAX}.")
 
     return errors
 

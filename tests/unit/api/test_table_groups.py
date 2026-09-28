@@ -457,7 +457,7 @@ def test_select_list_supplies_every_dataclass_field():
 # create
 # ---------------------------------------------------------------------------
 
-CONNECTION = MagicMock(project_code="demo", connection_id=3)
+CONNECTION = MagicMock(project_code="demo", connection_id=3, sql_flavor_code="postgresql")
 CREATE_URL = "/api/v1/connections/3/table-groups"
 
 
@@ -465,13 +465,15 @@ def _assign_id(table_group, **_kwargs):
     table_group.id = TG_ID
 
 
-def _post(body: dict, *, permitted: bool = True, connection=CONNECTION):
+def _post(body: dict, *, permitted: bool = True, connection=CONNECTION, refresh=None):
     with (
         patch("testgen.api.deps.Connection") as mock_conn_cls,
         patch("testgen.api.deps.has_project_permission", return_value=permitted) as mock_perm,
         patch.object(TableGroup, "save", autospec=True, side_effect=_assign_id) as mock_save,
+        patch(f"{MODULE}.get_current_session") as mock_session,
     ):
         mock_conn_cls.get.return_value = connection
+        mock_session.return_value.refresh.side_effect = refresh
         resp = _client().post(CREATE_URL, json=body)
     return resp, mock_save, mock_perm
 
@@ -596,6 +598,56 @@ def test_create_table_group_reports_every_validation_failure():
     mock_save.assert_not_called()
 
 
+def test_create_table_group_responds_with_the_row_as_stored():
+    """The 201 body is built after the saved row is reloaded, so it matches a later GET:
+    the column type stores an empty string as NULL."""
+    def reload_as_stored(table_group):
+        table_group.description = None
+        table_group.data_source = None
+
+    resp, _, _ = _post(
+        {
+            "table_group_name": "client_42",
+            "schema_name": "client_42",
+            "description": "",
+            "catalog_tags": {"data_source": ""},
+        },
+        refresh=reload_as_stored,
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["description"] is None
+    assert resp.json()["catalog_tags"]["data_source"] is None
+
+
+def test_create_table_group_rejects_values_wider_than_their_columns():
+    resp, mock_save, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "table_set": [f"client_table_{i:03d}" for i in range(120)],
+        "catalog_tags": {"business_domain": "x" * 41},
+        "profiling_delay_days": 3_000_000_000,
+    })
+
+    assert resp.status_code == 400
+    assert [entry["detail"] for entry in _error_entries(resp)] == [
+        "`table_set` must be at most 2000 characters in total, counting a comma between entries.",
+        "`business_domain` must be at most 40 characters.",
+        f"`profiling_delay_days` must be at most {2**31 - 1}.",
+    ]
+    mock_save.assert_not_called()
+
+
+def test_create_table_group_rejects_a_files_connection():
+    files_connection = MagicMock(project_code="demo", connection_id=3, sql_flavor_code="files")
+
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "main"}, connection=files_connection)
+
+    assert resp.status_code == 400
+    assert _error_entries(resp)[0]["code"] == "unsupported_connection"
+    mock_save.assert_not_called()
+
+
 def _integrity_error(message: str) -> IntegrityError:
     return IntegrityError("stmt", {}, Exception(message))
 
@@ -606,6 +658,7 @@ def test_create_table_group_returns_409_on_a_duplicate_name():
         patch("testgen.api.deps.Connection") as mock_conn_cls,
         patch("testgen.api.deps.has_project_permission", return_value=True),
         patch.object(TableGroup, "save", side_effect=duplicate),
+        patch(f"{MODULE}.get_current_session"),
     ):
         mock_conn_cls.get.return_value = CONNECTION
         resp = _client().post(CREATE_URL, json={"table_group_name": "client_42", "schema_name": "client_42"})
@@ -620,6 +673,7 @@ def test_create_table_group_does_not_mask_other_integrity_errors():
         patch("testgen.api.deps.Connection") as mock_conn_cls,
         patch("testgen.api.deps.has_project_permission", return_value=True),
         patch.object(TableGroup, "save", side_effect=other),
+        patch(f"{MODULE}.get_current_session"),
         pytest.raises(IntegrityError),
     ):
         mock_conn_cls.get.return_value = CONNECTION

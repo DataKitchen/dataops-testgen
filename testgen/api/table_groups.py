@@ -20,18 +20,19 @@ from testgen.api.schemas import (
     TableGroupResponse,
 )
 from testgen.common.database.table_group_service import (
+    apply_table_group_flavor_rules,
     is_duplicate_name_error,
-    table_group_defaults,
     validate_table_group_fields,
 )
+from testgen.common.flavors import declares_files
+from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.table_group import TableGroup, split_criteria
+from testgen.common.models.table_group import TableGroup, split_criteria, table_group_defaults
 
 _error_responses = {404: {"model": ErrorResponse, "description": "Not found"}}
 
 router = APIRouter(tags=["Table Groups"], dependencies=[Depends(db_session)], responses=_error_responses)
 
-_FIELD_NAMES = {"table_groups_name": "table_group_name", "table_group_schema": "schema_name"}
 _LIST_COLUMNS = {
     "table_set": "profiling_table_set",
     "include_masks": "profiling_include_mask",
@@ -110,7 +111,10 @@ def get_table_group(table_group: TableGroup = resolve_table_group("view")):  # n
     status_code=201,
     summary="Create a table group",
     responses={
-        400: {"model": ErrorResponse, "description": "One entry per field that failed validation"},
+        400: {
+            "model": ErrorResponse,
+            "description": "One entry per field that failed validation, or a connection whose tables are files",
+        },
         409: {"model": ErrorResponse, "description": "A table group with this name already exists in the project"},
     },
 )
@@ -122,7 +126,18 @@ def create_table_group(
 
     The response carries the new ``table_group_id``, which profiling, test generation
     and test runs take as input.
+
+    A connection whose tables are files is not supported: its tables are declared
+    file by file rather than found in a schema.
     """
+    if declares_files(connection.sql_flavor_code):
+        raise api_error(
+            400,
+            "unsupported_connection",
+            "Table groups on a Files connection declare their tables file by file, which this endpoint"
+            " does not accept. Create the table group in the TestGen UI.",
+        )
+
     table_group = TableGroup(
         project_code=connection.project_code,
         connection_id=connection.connection_id,
@@ -143,7 +158,8 @@ def create_table_group(
         for name, value in body.catalog_tags.model_dump(exclude_none=True).items():
             setattr(table_group, name, value)
 
-    if errors := validate_table_group_fields(table_group, _FIELD_NAMES):
+    apply_table_group_flavor_rules(table_group, connection)
+    if errors := validate_table_group_fields(table_group, connection):
         raise api_errors(400, "invalid_table_group", errors)
 
     try:
@@ -155,6 +171,7 @@ def create_table_group(
             ) from err
         raise
 
+    get_current_session().refresh(table_group)
     return _to_response(table_group)
 
 

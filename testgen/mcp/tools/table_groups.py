@@ -15,7 +15,6 @@ from sqlalchemy.exc import IntegrityError
 from testgen.common.database.table_group_service import (
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
-    table_group_defaults,
     validate_table_group_fields,
 )
 from testgen.common.database.table_group_service import (
@@ -25,7 +24,7 @@ from testgen.common.enums import FileFormat
 from testgen.common.flavors import declares_files
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
-from testgen.common.models.table_group import TableGroup
+from testgen.common.models.table_group import TableGroup, table_group_defaults
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -46,7 +45,11 @@ from testgen.utils import friendly_score
 _DOC_GROUP = DocGroup.MANAGE
 
 _DUPLICATE_NAME_MESSAGE = "A Table Group with the same name already exists."
-_FIELD_NAMES = {"table_groups_name": "table_group_name", "table_group_schema": "schema"}
+_FIELD_NAMES = {
+    "table_group_schema": "schema",
+    "profiling_include_mask": "include_mask",
+    "profiling_exclude_mask": "exclude_mask",
+}
 _PII_FLAG_DENIED_MESSAGE = (
     "Changing PII detection requires permission to view PII. "
     "Leave this setting unchanged or contact your administrator."
