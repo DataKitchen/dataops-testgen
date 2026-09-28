@@ -1,6 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Boolean, Column, Float, ForeignKey, Integer, String, asc, func, text, update
@@ -1266,3 +1267,34 @@ class TableGroup(Entity):
             super().save()
             if add_scorecard_definition:
                 ScoreDefinition.from_table_group(self).save()
+
+
+# ``YNString`` columns store raw "Y"/"N" strings as their default but expose
+# the attribute as ``bool``; normalize so an unflushed table group doesn't
+# treat "N" as truthy before the row is reloaded.
+def _normalize_default(column: Column, raw: Any) -> Any:
+    if isinstance(column.type, YNString) and isinstance(raw, str):
+        return raw == "Y"
+    return raw
+
+
+# Computed once at import time so the values survive tests that patch the
+# ``TableGroup`` class itself.
+_MODEL_DEFAULTS: dict[str, Any] = {
+    column.name: _normalize_default(column, column.default.arg)
+    for column in TableGroup.__table__.columns
+    if (
+        column.default is not None
+        and not column.primary_key
+        and getattr(column.default, "is_scalar", False)
+    )
+}
+
+
+def table_group_defaults() -> dict[str, Any]:
+    """Return the scalar ``Column(default=...)`` values of ``TableGroup``, keyed by attribute.
+
+    Column defaults only fire at flush time, so a table group validated before
+    it is saved has to be constructed with these to pass validation.
+    """
+    return dict(_MODEL_DEFAULTS)

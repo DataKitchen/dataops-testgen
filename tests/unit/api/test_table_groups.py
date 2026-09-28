@@ -1,4 +1,4 @@
-"""Tests for testgen.api.table_groups — table group reads."""
+"""Tests for testgen.api.table_groups."""
 
 import re
 from datetime import UTC, datetime
@@ -8,10 +8,12 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import IntegrityError
 
 from testgen.api.deps import db_session, get_authorized_user
-from testgen.api.schemas import CatalogTags
+from testgen.api.schemas import CatalogTags, TableGroupCreate
 from testgen.api.table_groups import get_table_group, list_table_groups, router
+from testgen.common.models.table_group import TableGroup
 
 pytestmark = pytest.mark.unit
 
@@ -449,3 +451,286 @@ def test_select_list_supplies_every_dataclass_field():
     ]
 
     assert not missing, f"selected by the query but not: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# create
+# ---------------------------------------------------------------------------
+
+CONNECTION = MagicMock(project_code="demo", connection_id=3, sql_flavor_code="postgresql")
+CREATE_URL = "/api/v1/connections/3/table-groups"
+
+
+def _assign_id(table_group, **_kwargs):
+    table_group.id = TG_ID
+
+
+def _post(body: dict, *, permitted: bool = True, connection=CONNECTION, refresh=None):
+    with (
+        patch("testgen.api.deps.Connection") as mock_conn_cls,
+        patch("testgen.api.deps.has_project_permission", return_value=permitted) as mock_perm,
+        patch.object(TableGroup, "save", autospec=True, side_effect=_assign_id) as mock_save,
+        patch(f"{MODULE}.get_current_session") as mock_session,
+    ):
+        mock_conn_cls.get.return_value = connection
+        mock_session.return_value.refresh.side_effect = refresh
+        resp = _client().post(CREATE_URL, json=body)
+    return resp, mock_save, mock_perm
+
+
+def _saved(mock_save) -> TableGroup:
+    return mock_save.call_args.args[0]
+
+
+def _error_entries(resp) -> list[dict]:
+    return resp.json()["detail"]["errors"]
+
+
+def test_create_table_group_returns_201_with_the_server_assigned_id():
+    resp, _, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
+
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["table_group_id"] == str(TG_ID)
+    assert body["table_group_name"] == "client_42"
+    assert body["schema_name"] == "client_42"
+    assert body["project_code"] == "demo"
+    assert body["connection_id"] == 3
+
+
+def test_create_table_group_applies_model_defaults_to_omitted_fields():
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"})
+
+    body = resp.json()
+    assert body["profile_id_column_mask"] == "%id"
+    assert body["profile_sk_column_mask"] == "%_sk"
+    assert body["profile_use_sampling"] is False
+    assert body["profile_sample_percent"] == 30
+    assert body["profile_sample_min_count"] == 100000
+    assert body["profiling_delay_days"] == 0
+    assert body["profile_flag_cdes"] is True
+    assert body["profile_flag_pii"] is True
+    assert body["profile_exclude_xde"] is True
+    assert body["include_in_dashboard"] is True
+    assert body["include_masks"] == []
+    assert mock_save.call_args.kwargs == {"add_scorecard_definition": True}
+
+
+def test_create_table_group_treats_null_as_omitted():
+    resp, _, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "profile_sample_percent": None,
+        "profile_flag_pii": None,
+    })
+
+    assert resp.status_code == 201
+    assert resp.json()["profile_sample_percent"] == 30
+    assert resp.json()["profile_flag_pii"] is True
+
+
+def test_create_table_group_applies_every_supplied_field():
+    resp, mock_save, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "description": "Client 42 onboarding",
+        "table_set": ["orders", "customers"],
+        "include_masks": ["fact_%", "dim_%"],
+        "exclude_masks": ["tmp%"],
+        "profile_id_column_mask": "%_id",
+        "profile_sk_column_mask": "%_key",
+        "profile_use_sampling": True,
+        "profile_sample_percent": 10,
+        "profile_sample_min_count": 5000,
+        "profiling_delay_days": 2,
+        "profile_flag_cdes": False,
+        "profile_flag_pii": False,
+        "profile_exclude_xde": False,
+        "include_in_dashboard": False,
+        "catalog_tags": {"data_source": "Snowflake", "business_domain": "Claims"},
+        "add_scorecard": False,
+    })
+
+    assert resp.status_code == 201
+    saved = _saved(mock_save)
+    assert saved.profiling_table_set == "orders,customers"
+    assert saved.profiling_include_mask == "fact_%,dim_%"
+    assert saved.profiling_exclude_mask == "tmp%"
+    assert saved.data_source == "Snowflake"
+    assert saved.business_domain == "Claims"
+    assert saved.source_system is None
+    assert mock_save.call_args.kwargs == {"add_scorecard_definition": False}
+
+    body = resp.json()
+    assert body["description"] == "Client 42 onboarding"
+    assert body["table_set"] == ["orders", "customers"]
+    assert body["include_masks"] == ["fact_%", "dim_%"]
+    assert body["exclude_masks"] == ["tmp%"]
+    assert body["profile_id_column_mask"] == "%_id"
+    assert body["profile_sk_column_mask"] == "%_key"
+    assert body["profile_use_sampling"] is True
+    assert body["profile_sample_percent"] == 10
+    assert body["profile_sample_min_count"] == 5000
+    assert body["profiling_delay_days"] == 2
+    assert body["profile_flag_cdes"] is False
+    assert body["profile_flag_pii"] is False
+    assert body["profile_exclude_xde"] is False
+    assert body["include_in_dashboard"] is False
+    assert body["catalog_tags"]["data_source"] == "Snowflake"
+    assert body["catalog_tags"]["business_domain"] == "Claims"
+
+
+def test_create_table_group_reports_every_validation_failure():
+    resp, mock_save, _ = _post({
+        "table_group_name": "ab",
+        "schema_name": " ",
+        "profile_sample_percent": 0,
+        "profiling_delay_days": -1,
+    })
+
+    assert resp.status_code == 400
+    assert _error_entries(resp) == [
+        {"code": "invalid_table_group", "detail": "`table_group_name` must be between 3 and 40 characters."},
+        {"code": "invalid_table_group", "detail": "`schema_name` is required."},
+        {"code": "invalid_table_group", "detail": "`profiling_delay_days` must be a non-negative integer."},
+        {"code": "invalid_table_group", "detail": "`profile_sample_percent` must be between 1 and 100."},
+    ]
+    mock_save.assert_not_called()
+
+
+def test_create_table_group_responds_with_the_row_as_stored():
+    """The 201 body is built after the saved row is reloaded, so it matches a later GET:
+    the column type stores an empty string as NULL."""
+    def reload_as_stored(table_group):
+        table_group.description = None
+        table_group.data_source = None
+
+    resp, _, _ = _post(
+        {
+            "table_group_name": "client_42",
+            "schema_name": "client_42",
+            "description": "",
+            "catalog_tags": {"data_source": ""},
+        },
+        refresh=reload_as_stored,
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["description"] is None
+    assert resp.json()["catalog_tags"]["data_source"] is None
+
+
+def test_create_table_group_rejects_values_wider_than_their_columns():
+    resp, mock_save, _ = _post({
+        "table_group_name": "client_42",
+        "schema_name": "client_42",
+        "table_set": [f"client_table_{i:03d}" for i in range(120)],
+        "catalog_tags": {"business_domain": "x" * 41},
+        "profiling_delay_days": 3_000_000_000,
+    })
+
+    assert resp.status_code == 400
+    assert [entry["detail"] for entry in _error_entries(resp)] == [
+        "`table_set` must be at most 2000 characters in total, counting a comma between entries.",
+        "`business_domain` must be at most 40 characters.",
+        f"`profiling_delay_days` must be at most {2**31 - 1}.",
+    ]
+    mock_save.assert_not_called()
+
+
+def test_create_table_group_rejects_a_files_connection():
+    files_connection = MagicMock(project_code="demo", connection_id=3, sql_flavor_code="files")
+
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "main"}, connection=files_connection)
+
+    assert resp.status_code == 400
+    assert _error_entries(resp)[0]["code"] == "unsupported_connection"
+    mock_save.assert_not_called()
+
+
+def _integrity_error(message: str) -> IntegrityError:
+    return IntegrityError("stmt", {}, Exception(message))
+
+
+def test_create_table_group_returns_409_on_a_duplicate_name():
+    duplicate = _integrity_error('duplicate key value violates unique constraint "table_groups_name_unique"')
+    with (
+        patch("testgen.api.deps.Connection") as mock_conn_cls,
+        patch("testgen.api.deps.has_project_permission", return_value=True),
+        patch.object(TableGroup, "save", side_effect=duplicate),
+        patch(f"{MODULE}.get_current_session"),
+    ):
+        mock_conn_cls.get.return_value = CONNECTION
+        resp = _client().post(CREATE_URL, json={"table_group_name": "client_42", "schema_name": "client_42"})
+
+    assert resp.status_code == 409
+    assert _error_entries(resp)[0]["code"] == "duplicate_table_group_name"
+
+
+def test_create_table_group_does_not_mask_other_integrity_errors():
+    other = _integrity_error('violates foreign key constraint "table_groups_connections_fk"')
+    with (
+        patch("testgen.api.deps.Connection") as mock_conn_cls,
+        patch("testgen.api.deps.has_project_permission", return_value=True),
+        patch.object(TableGroup, "save", side_effect=other),
+        patch(f"{MODULE}.get_current_session"),
+        pytest.raises(IntegrityError),
+    ):
+        mock_conn_cls.get.return_value = CONNECTION
+        _client().post(CREATE_URL, json={"table_group_name": "client_42", "schema_name": "client_42"})
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"table_group_name": "client_42"},
+        {"schema_name": "client_42"},
+        {"table_group_name": "client_42", "schema_name": "client_42", "table_group_id": str(uuid4())},
+        {"table_group_name": "client_42", "schema_name": "client_42", "project_code": "other"},
+        {"table_group_name": "client_42", "schema_name": "client_42", "profile_sample_percnt": 10},
+        {"table_group_name": "client_42", "schema_name": "client_42", "profile_sample_percent": True},
+        {"table_group_name": "client_42", "schema_name": "client_42", "profile_sample_percent": "10"},
+        {"table_group_name": "client_42", "schema_name": "client_42", "profile_use_sampling": "yes"},
+        {"table_group_name": "client_42", "schema_name": "client_42", "include_masks": "fact_%"},
+    ],
+    ids=[
+        "no-schema", "no-name", "caller-id", "caller-project", "unknown-field",
+        "bool-as-int", "string-as-int", "string-as-bool", "mask-not-a-list",
+    ],
+)
+def test_create_table_group_rejects_a_malformed_body(body):
+    resp, mock_save, _ = _post(body)
+
+    assert resp.status_code == 422
+    mock_save.assert_not_called()
+
+
+def test_create_table_group_asks_for_edit_permission():
+    _, _, mock_perm = _post({"table_group_name": "client_42", "schema_name": "client_42"})
+
+    assert mock_perm.call_args.args[1:] == ("demo", "edit")
+
+
+def test_create_table_group_404_without_edit_permission():
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"}, permitted=False)
+
+    assert resp.status_code == 404
+    mock_save.assert_not_called()
+
+
+def test_create_table_group_404_for_an_unknown_connection():
+    resp, mock_save, _ = _post({"table_group_name": "client_42", "schema_name": "client_42"}, connection=None)
+
+    assert resp.status_code == 404
+    mock_save.assert_not_called()
+
+
+def test_every_create_field_names_a_table_group_column_or_is_handled_by_the_endpoint():
+    """The endpoint sets body fields onto the model by name, so a field added to the
+    schema without a matching column would be set as a plain attribute and never saved."""
+    from testgen.api.table_groups import _LIST_COLUMNS
+
+    handled = {"table_group_name", "schema_name", "catalog_tags", "add_scorecard", *_LIST_COLUMNS}
+    columns = set(TableGroup.__table__.columns.keys())
+
+    assert set(TableGroupCreate.model_fields) - handled <= columns
