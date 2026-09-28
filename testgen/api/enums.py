@@ -19,6 +19,7 @@ from testgen.common.enums import QualityDimension as DbQualityDimension
 from testgen.common.flavors import SqlFlavorLabel
 from testgen.common.models.test_definition import ThresholdMode
 from testgen.common.models.test_result import TestResultStatus
+from testgen.common.models.test_suite import SuiteSeverity
 
 
 class ResultStatus(StrEnum):
@@ -358,3 +359,27 @@ AUTHENTICATION_FROM_MODE: dict[ConnectionMode, AuthenticationMethod] = {
 # the members of a comprehension-built enum, but nothing needs member access; the
 # values are the whole contract.
 ConnectionType = StrEnum("ConnectionType", {m.name: m.value for m in SqlFlavorLabel})  # type: ignore[misc]
+
+
+class DefaultSeverity(StrEnum):
+    """Severity a test suite gives its tests that set none of their own. ``log`` records a
+    failure without failing; it is set only from the TestGen UI."""
+
+    fail = "fail"
+    warning = "warning"
+    log = "log"
+
+
+class DefaultSeverityInput(StrEnum):
+    """Default severity accepted when creating a test suite."""
+
+    fail = "fail"
+    warning = "warning"
+
+
+DEFAULT_SEVERITY_TO_DB: dict[DefaultSeverity, SuiteSeverity] = {
+    DefaultSeverity.fail: SuiteSeverity.FAIL,
+    DefaultSeverity.warning: SuiteSeverity.WARNING,
+    DefaultSeverity.log: SuiteSeverity.LOG,
+}
+DEFAULT_SEVERITY_FROM_DB: dict[SuiteSeverity, DefaultSeverity] = {v: k for k, v in DEFAULT_SEVERITY_TO_DB.items()}

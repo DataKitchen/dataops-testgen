@@ -73,6 +73,27 @@ class TestSuiteSummary(EntityMinimal):
     last_run_dismissed_ct: int
     generation_sets: list[str] | None
 
+@dataclass
+class TestSuiteListItem:
+    id: UUID
+    test_suite: str
+    project_code: str
+    connection_id: int
+    table_groups_id: UUID
+    table_groups_name: str | None
+    test_suite_description: str | None
+    test_count: int
+    latest_run_id: UUID | None
+    latest_run_started_at: datetime | None
+    latest_run_test_count: int | None
+    latest_run_passed_count: int | None
+    latest_run_failed_count: int | None
+    latest_run_warning_count: int | None
+    latest_run_error_count: int | None
+    latest_run_log_count: int | None
+    latest_run_dismissed_count: int | None
+
+
 class TestSuite(Entity):
     __tablename__ = "test_suites"
 
@@ -235,6 +256,111 @@ class TestSuite(Entity):
         db_session = get_current_session()
         results = db_session.execute(text(query), params).mappings().all()
         return [TestSuiteSummary(**row) for row in results]
+
+    @classmethod
+    def list_for_project(
+        cls,
+        project_code: str,
+        *,
+        table_group_id: UUID | None = None,
+        test_suite_name: str | None = None,
+        page: int = 1,
+        limit: int = 20,
+    ) -> tuple[list[TestSuiteListItem], int]:
+        """Paginated regular test suites of a project, each with its test count and last completed run.
+
+        The optional filters match exactly. Returns the page of items and the total across pages.
+        """
+        scope_sql = ["suites.project_code = :project_code", "suites.suite_type = 'regular'"]
+        params: dict = {"project_code": project_code}
+        if table_group_id is not None:
+            scope_sql.append("suites.table_groups_id = :table_group_id")
+            params["table_group_id"] = str(table_group_id)
+        if test_suite_name is not None:
+            scope_sql.append("suites.test_suite = :test_suite_name")
+            params["test_suite_name"] = test_suite_name
+        scope = " AND ".join(scope_sql)
+
+        session = get_current_session()
+        # Separate COUNT(*) query keeps `total` correct on out-of-range pages.
+        total = session.execute(text(f"SELECT COUNT(*) FROM test_suites AS suites WHERE {scope};"), params).scalar()
+        if not total:
+            return [], 0
+
+        query = f"""
+        WITH page AS (
+            SELECT suites.*
+            FROM test_suites AS suites
+            WHERE {scope}
+            ORDER BY LOWER(suites.test_suite), suites.id
+            LIMIT :limit OFFSET :offset
+        ),
+        test_defs AS (
+            SELECT td.test_suite_id, COUNT(*) AS test_count
+            FROM test_definitions AS td
+                JOIN page ON page.id = td.test_suite_id
+            WHERE td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
+            GROUP BY td.test_suite_id
+        ),
+        last_run AS (
+            -- The start comes from job_executions: ``test_runs.test_starttime`` is
+            -- timestamp-without-zone.
+            SELECT page.id AS test_suite_id,
+                runs.id AS run_id,
+                jobs.started_at,
+                runs.test_ct,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Passed'
+                ) AS passed_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Failed'
+                ) AS failed_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Warning'
+                ) AS warning_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Error'
+                ) AS error_count,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Log'
+                ) AS log_count,
+                COUNT(*) FILTER (
+                    WHERE results.disposition IN ('Dismissed', 'Inactive')
+                ) AS dismissed_count
+            FROM page
+                JOIN test_runs AS runs ON runs.id = page.last_complete_test_run_id
+                LEFT JOIN job_executions AS jobs ON jobs.id = runs.id
+                LEFT JOIN test_results AS results ON results.test_run_id = runs.id
+            GROUP BY page.id, runs.id, jobs.started_at, runs.test_ct
+        )
+        SELECT
+            page.id,
+            page.test_suite,
+            page.project_code,
+            page.connection_id,
+            page.table_groups_id,
+            groups.table_groups_name,
+            page.test_suite_description,
+            COALESCE(test_defs.test_count, 0) AS test_count,
+            last_run.run_id AS latest_run_id,
+            last_run.started_at AS latest_run_started_at,
+            last_run.test_ct AS latest_run_test_count,
+            last_run.passed_count AS latest_run_passed_count,
+            last_run.failed_count AS latest_run_failed_count,
+            last_run.warning_count AS latest_run_warning_count,
+            last_run.error_count AS latest_run_error_count,
+            last_run.log_count AS latest_run_log_count,
+            last_run.dismissed_count AS latest_run_dismissed_count
+        FROM page
+            LEFT JOIN table_groups AS groups ON groups.id = page.table_groups_id
+            LEFT JOIN test_defs ON test_defs.test_suite_id = page.id
+            LEFT JOIN last_run ON last_run.test_suite_id = page.id
+        ORDER BY LOWER(page.test_suite), page.id;
+        """
+        rows = session.execute(
+            text(query), {**params, "limit": limit, "offset": (page - 1) * limit}
+        ).mappings().all()
+        return [TestSuiteListItem(**row) for row in rows], total
 
     @classmethod
     def test_definition_stats(cls, test_suite_id: str | UUID) -> "TestDefinitionStats":
