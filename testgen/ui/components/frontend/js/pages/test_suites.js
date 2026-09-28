@@ -358,7 +358,7 @@ const TestSuites = (/** @type Properties */ props) => {
             const severityOptions = [
                 { value: null, label: 'Inherit' },
                 { value: 'Log', label: 'Log' },
-                { value: 'Failed', label: 'Failed' },
+                { value: 'Fail', label: 'Failed' },
                 { value: 'Warning', label: 'Warning' },
             ];
             const formResult = info.result;
