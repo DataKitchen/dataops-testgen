@@ -2,6 +2,7 @@ import enum
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, select, text
@@ -14,6 +15,14 @@ from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
 from testgen.common.models.suite_version import SuiteVersion
 from testgen.utils import is_uuid4
+
+
+class SuiteSeverity(StrEnum):
+    """A test suite's default severity: the values test execution recognizes."""
+
+    FAIL = "Fail"
+    WARNING = "Warning"
+    LOG = "Log"
 
 
 class PredictSensitivity(enum.Enum):
