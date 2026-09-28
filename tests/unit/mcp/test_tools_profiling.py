@@ -119,6 +119,32 @@ def test_get_table_happy_path(mock_tg_cls, mock_dt_cls, db_session_mock):
 
 @patch("testgen.mcp.tools.profiling.DataTable")
 @patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_reports_what_a_file_table_is_made_of(mock_tg_cls, mock_dt_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dt_cls.get_profiling_overview.return_value = _mock_overview(object_type="FILES", file_ct=3)
+
+    from testgen.mcp.tools.profiling import get_table
+    result = get_table(str(uuid4()), "orders")
+
+    assert "- **Object type:** Files" in result
+    assert "- **File count:** 3" in result
+
+
+@patch("testgen.mcp.tools.profiling.DataTable")
+@patch("testgen.mcp.tools.common.TableGroup")
+def test_get_table_reports_no_object_type_for_a_database_table(mock_tg_cls, mock_dt_cls, db_session_mock):
+    mock_tg_cls.get.return_value = _mock_table_group()
+    mock_dt_cls.get_profiling_overview.return_value = _mock_overview(object_type="VIEW", file_ct=None)
+
+    from testgen.mcp.tools.profiling import get_table
+    result = get_table(str(uuid4()), "orders")
+
+    assert "Object type" not in result
+    assert "File count" not in result
+
+
+@patch("testgen.mcp.tools.profiling.DataTable")
+@patch("testgen.mcp.tools.common.TableGroup")
 def test_get_table_does_not_surface_internal_table_id(mock_tg_cls, mock_dt_cls, db_session_mock):
     """`Table ID` (data_table_chars.id) is an internal PK no MCP tool consumes — must not appear."""
     overview = _mock_overview()

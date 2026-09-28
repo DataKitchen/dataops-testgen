@@ -7,6 +7,7 @@ class ObjectType(StrEnum):
     VIEW = "VIEW"
     MATERIALIZED_VIEW = "MATERIALIZED_VIEW"
     EXTERNAL = "EXTERNAL"
+    FILES = "FILES"
     OTHER = "OTHER"
 
 
@@ -25,3 +26,4 @@ class ColumnChars:
     # This should not default to 0 since we don't always retrieve actual row counts
     # UI relies on the null value to know that the approx_record_ct should be displayed instead
     record_ct: int | None = None
+    file_ct: int | None = None

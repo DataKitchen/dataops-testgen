@@ -17,6 +17,7 @@ const TableSizeCard = (/** @type Properties */ _props, /** @type Table */ item) 
     const useApprox = item.record_ct === null;
     const rowCount = useApprox ? item.approx_record_ct : item.record_ct;
     const attributes = [
+        ...(item.file_ct != null ? [{ label: 'File Count', value: item.file_ct }] : []),
         { label: 'Column Count', value: item.column_ct },
         { label: `Row Count${useApprox ? ' †': ''}`, value: rowCount },
         {

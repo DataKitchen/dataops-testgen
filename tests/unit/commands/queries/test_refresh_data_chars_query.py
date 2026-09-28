@@ -1,3 +1,6 @@
+from datetime import UTC, datetime
+from uuid import uuid4
+
 import pytest
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
@@ -275,3 +278,38 @@ def test_trailing_comma_does_not_emit_an_empty_pattern():
     assert "IN ('users')" in criteria
     assert "LIKE ''" not in criteria
     assert "''" not in criteria.replace("IN ('users')", "")
+
+
+def test_staging_rows_carry_the_file_count():
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="duckdb"), TableGroup(table_group_schema="main"))
+    column = ColumnChars(schema_name="main", table_name="claims", column_name="id", file_ct=3)
+
+    [row] = sql_generator.get_staging_data_chars([column], datetime.now(UTC), uuid4())
+
+    assert len(row) == len(sql_generator.staging_columns)
+    assert row[sql_generator.staging_columns.index("file_ct")] == 3
+
+
+def test_a_database_flavor_has_no_file_counts():
+    sql_generator = RefreshDataCharsSQL(Connection(sql_flavor="postgresql"), TableGroup(table_group_schema="public"))
+
+    assert sql_generator.get_file_counts() == []
+
+
+def test_the_files_of_a_table_group_are_counted_in_one_query(tmp_path):
+    connection = Connection(sql_flavor="duckdb", sql_flavor_code="files", parameters={"base_path": str(tmp_path)})
+    table_group = TableGroup(
+        table_group_schema="main",
+        file_declarations=[
+            {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+            {"name": "orders", "uri": "orders.csv", "format": "csv"},
+        ],
+    )
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
+
+    [(query, params)] = sql_generator.get_file_counts()
+
+    assert params is None
+    assert query.count(" UNION ALL ") == 1
+    assert "'claims' AS table_name" in query
+    assert "'orders' AS table_name" in query

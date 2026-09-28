@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
+from testgen.common.database.column_chars import ObjectType
 from testgen.common.database.table_group_service import (
     apply_table_group_flavor_rules,
     preview_table_group,
@@ -461,6 +462,7 @@ def _files_preview(mock_session, mock_sql_cls, *, rows, declarations, failures=N
     sql_generator.flavor_service.metadata_via_api = False
     sql_generator.get_schema_ddf.return_value = ("SELECT ddf", {})
     sql_generator.filter_schema_columns.side_effect = lambda columns: columns
+    sql_generator.get_file_counts.return_value = []
     table_group = _tg(table_group_schema="main", file_declarations=declarations)
     sql_generator.table_group = table_group
 
@@ -506,3 +508,26 @@ def test_a_declaration_with_no_reason_falls_back_to_no_files_matched(mock_sessio
 
     assert preview["tables"]["missing"]["error"] == "No files matched this path."
     assert preview["message"] == "1 table could not be read. Check the highlighted paths."
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_each_file_table_reports_the_files_it_reads(mock_session, mock_sql_cls):
+    table_group, sql_generator = _files_preview(
+        mock_session,
+        mock_sql_cls,
+        rows=[],
+        declarations=[{"name": "claims", "uri": "claims_*.csv", "format": "csv"}],
+    )
+    sql_generator.get_file_counts.return_value = [("SELECT file counts", None)]
+    _session(mock_session, lambda query: (
+        [{"table_name": "claims", "file_ct": 3}]
+        if query == "SELECT file counts"
+        else [_column_row("claims", "id"), _column_row("claims", "amount")]
+    ))
+
+    preview, data_chars, _ = preview_table_group(table_group, connection=_files_conn(), verify_access=False)
+
+    assert preview["tables"]["claims"]["file_ct"] == 3
+    # The columns saved from the preview carry it too, so the catalog written from it is complete.
+    assert {(column.object_type, column.file_ct) for column in data_chars} == {(ObjectType.FILES, 3)}

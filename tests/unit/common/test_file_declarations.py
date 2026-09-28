@@ -11,6 +11,7 @@ from testgen.common.database.file_declarations import (
     NAME_INVALID,
     NAME_REQUIRED,
     NO_DECLARATIONS,
+    PATH_OUTSIDE_BASE_PATH,
     URI_HAS_CREDENTIALS,
     URI_IS_FOLDER,
     URI_OUTSIDE_BASE_PATH,
@@ -23,6 +24,7 @@ from testgen.common.database.file_declarations import (
     parse_file_declarations,
     read_pattern,
     resolve_uri,
+    skip_reason,
     validate_file_declarations,
 )
 from testgen.common.enums import FileFormat
@@ -336,3 +338,16 @@ def test_no_table_group_carries_no_declarations(monkeypatch):
     set_target_db_params({"sql_flavor": "postgresql"}, None)
 
     assert database_service.target_db_params.declarations == []
+
+
+@pytest.mark.parametrize(
+    "name,uri,expected",
+    [
+        ("claims", "claims_2024.csv", None),
+        ("claims", "claims_*.csv", None),
+        ("bad name", "claims_2024.csv", NAME_INVALID),
+        ("escape", "../outside/secret.csv", PATH_OUTSIDE_BASE_PATH),
+    ],
+)
+def test_skip_reason_names_why_a_declaration_cannot_be_read(base_path, name, uri, expected):
+    assert skip_reason(str(base_path), FileDeclaration(name=name, uri=uri, format=FileFormat.CSV)) == expected

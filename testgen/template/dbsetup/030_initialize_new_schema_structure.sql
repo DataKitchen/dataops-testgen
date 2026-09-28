@@ -30,7 +30,8 @@ CREATE TABLE stg_data_chars_updates (
    is_decimal            BOOLEAN,
    object_type           VARCHAR(20),
    approx_record_ct      BIGINT,
-   record_ct             BIGINT
+   record_ct             BIGINT,
+   file_ct               INTEGER
 );
 
 CREATE TABLE stg_test_definition_updates (
@@ -452,6 +453,7 @@ CREATE TABLE data_table_chars (
    approx_record_ct      BIGINT,
    record_ct             BIGINT,
    column_ct             BIGINT,
+   file_ct               INTEGER,
    last_complete_profile_run_id UUID,
    last_profile_record_ct       BIGINT,
    dq_score_profiling    FLOAT,

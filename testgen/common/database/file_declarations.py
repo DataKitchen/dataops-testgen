@@ -34,6 +34,7 @@ URI_OUTSIDE_BASE_PATH = "File or Pattern must be inside the connection base path
 URI_IS_FOLDER = "File or Pattern names a folder. Use a pattern to read the files in it, such as sales/*.csv."
 NO_DECLARATIONS = "Declare at least one table."
 NO_FILES_MATCHED = "No files matched this path."
+PATH_OUTSIDE_BASE_PATH = "This path is outside the connection base path."
 
 # Query-string keys that carry a signed URL. Credentials belong on the connection, where they are
 # stored encrypted, rather than in the SQL text of a view.
@@ -180,6 +181,21 @@ def _lexical_resolve(path: Path) -> Path:
     return path.expanduser().resolve()
 
 
+def skip_reason(base_path: str, declaration: FileDeclaration) -> str | None:
+    """Why a declaration cannot be read at all, or ``None`` when it can be."""
+    # A path outside the base path is refused by the allow-list as well; checking it here keeps it
+    # out of the SQL text, and is the only guard where there is no allow-list.
+    if not NAME_PATTERN.match(declaration.name):
+        return NAME_INVALID
+    if not is_inside_base_path(base_path, declaration.uri):
+        return PATH_OUTSIDE_BASE_PATH
+    # Only a declaration saved some other way gets this far naming a folder. DuckDB would refuse
+    # it with a permission error that says nothing about what to write instead.
+    if names_folder(base_path, declaration.uri):
+        return URI_IS_FOLDER
+    return None
+
+
 def is_multi_file(declaration: FileDeclaration) -> bool:
     """Whether a declaration can match more than one file, and so needs its columns unioned."""
     return any(character in declaration.uri for character in _GLOB_CHARACTERS)
@@ -195,6 +211,17 @@ def names_folder(base_path: str, uri: str) -> bool:
 def read_pattern(base_path: str, declaration: FileDeclaration) -> str:
     """The path the reader is pointed at."""
     return str(resolve_uri(base_path, declaration.uri))
+
+
+def file_count_query(base_path: str, declaration: FileDeclaration) -> str:
+    """A query returning the declaration's ``table_name`` and ``file_ct``.
+
+    Counts the files matched by ``read_pattern``, the same glob the view reads.
+    """
+    return (
+        f"SELECT {_sql_literal(declaration.name)} AS table_name, COUNT(*) AS file_ct"
+        f" FROM glob({_sql_literal(read_pattern(base_path, declaration))})"
+    )
 
 
 def create_view_statement(base_path: str, declaration: FileDeclaration, schema: str) -> str:

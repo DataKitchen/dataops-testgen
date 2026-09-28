@@ -241,6 +241,17 @@ class FlavorService:
         """Name and reason for each file declaration ``init`` could not make queryable."""
         return {}
 
+    def file_count_queries(
+        self,
+        params: ResolvedConnectionParams,  # noqa: ARG002
+        declarations: list[FileDeclaration],  # noqa: ARG002
+    ) -> list[str]:
+        """One query per readable file declaration, each returning ``table_name`` and ``file_ct``.
+
+        Empty for a flavor whose tables are not declared as files.
+        """
+        return []
+
     def get_connect_args(self, params: ResolvedConnectionParams) -> dict:  # noqa: ARG002
         return {"connect_timeout": 3600}
 

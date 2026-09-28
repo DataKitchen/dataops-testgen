@@ -17,13 +17,10 @@ from sqlalchemy.pool import NullPool, QueuePool
 from testgen import settings
 from testgen.common.database.file_declarations import (
     BASE_PATH_PARAMETER,
-    NAME_INVALID,
-    NAME_PATTERN,
-    URI_IS_FOLDER,
     FileDeclaration,
     create_view_statement,
-    is_inside_base_path,
-    names_folder,
+    file_count_query,
+    skip_reason,
 )
 from testgen.common.database.flavor.flavor_service import (
     ConnectionField,
@@ -31,7 +28,7 @@ from testgen.common.database.flavor.flavor_service import (
     FlavorService,
     ResolvedConnectionParams,
 )
-from testgen.common.flavors import SqlFlavorCode, fixed_table_group_schema
+from testgen.common.flavors import SqlFlavorCode, declares_files, fixed_table_group_schema
 
 LOG = logging.getLogger("testgen")
 
@@ -373,6 +370,18 @@ class DuckdbFlavorService(FlavorService):
     def declaration_failures(self, connection: Connection) -> dict[str, str]:
         return connection.info.get(_DECLARATION_FAILURES_KEY, {})
 
+    def file_count_queries(self, params: ResolvedConnectionParams, declarations: list[FileDeclaration]) -> list[str]:
+        if not declares_files(params.sql_flavor_code):
+            return []
+        base_path = self.get_base_path(params)
+        # The counts are unioned, and one unreadable declaration would fail every count in its query,
+        # so a declaration that cannot be read stays out.
+        return [
+            file_count_query(base_path, declaration)
+            for declaration in declarations
+            if skip_reason(base_path, declaration) is None
+        ]
+
     def _confine_reads(self, connection: Connection, base_path: str) -> None:
         """Restrict this connection to reading inside the base path.
 
@@ -405,19 +414,9 @@ class DuckdbFlavorService(FlavorService):
         """
         failures: dict[str, str] = {}
         for declaration in declarations:
-            if not NAME_PATTERN.match(declaration.name):
-                failures[declaration.name] = NAME_INVALID
-                LOG.error(f"Declaration {declaration.name!r} is not a usable table name; skipping it")
-                continue
-            if not is_inside_base_path(base_path, declaration.uri):
-                # The allow-list refuses the read as well. This keeps the path out of the SQL
-                # text in the first place, and is the only guard where there is no allow-list.
-                failures[declaration.name] = "This path is outside the connection base path."
-                LOG.error(f"Declaration {declaration.name} points outside the base path; skipping it")
-                continue
-            if names_folder(base_path, declaration.uri):
-                failures[declaration.name] = URI_IS_FOLDER
-                LOG.error(f"Declaration {declaration.name} names a folder; skipping it")
+            if reason := skip_reason(base_path, declaration):
+                failures[declaration.name] = reason
+                LOG.error(f"Declaration {declaration.name!r} skipped: {reason}")
                 continue
             try:
                 connection.execute(text(create_view_statement(base_path, declaration, schema)))

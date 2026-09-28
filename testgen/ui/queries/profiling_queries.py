@@ -253,6 +253,7 @@ def get_tables_by_condition(
         approx_record_ct,
         table_chars.record_ct,
         table_chars.column_ct,
+        table_chars.file_ct,
         add_date,
         last_refresh_date,
         drop_date,

@@ -6,6 +6,7 @@ from pydantic import Field
 from sqlalchemy import func, or_
 
 from testgen.common.data_catalog_service import build_create_table_script
+from testgen.common.database.column_chars import ObjectType
 from testgen.common.enums import JOB_STATUS_LABEL, PII_FLAG_PREFIX_TO_LABEL, JobKey, JobStatus
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
@@ -75,6 +76,9 @@ def get_table(
 
     doc = MdDoc()
     doc.heading(1, f"Table: {fq_name}")
+    if overview.object_type == ObjectType.FILES:
+        doc.field("Object type", overview.object_type.title())
+        doc.field("File count", overview.file_ct)
     doc.field("Record count", overview.record_ct)
     doc.field("Column count", overview.column_ct)
     doc.field("Critical data elements", overview.cde_count)

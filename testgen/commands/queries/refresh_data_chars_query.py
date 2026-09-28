@@ -6,6 +6,9 @@ from uuid import UUID
 from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.database.file_declarations import parse_file_declarations
+from testgen.common.database.flavor.flavor_service import resolve_connection_params
+from testgen.common.flavors import declares_files
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.common.models.table_group import TableGroup, split_criteria
 from testgen.utils import chunk_queries, to_sql_timestamp
@@ -36,6 +39,7 @@ class RefreshDataCharsSQL:
         "object_type",
         "approx_record_ct",
         "record_ct",
+        "file_ct",
     )
 
     def __init__(self, connection: Connection, table_group: TableGroup):
@@ -128,6 +132,18 @@ class RefreshDataCharsSQL:
         chunked_queries = chunk_queries(count_queries, " UNION ALL ", max_query_chars)
         return [ (query, None) for query in chunked_queries ]
 
+    def get_file_counts(self) -> list[tuple[str, None]]:
+        # Runs on Target database
+        if not declares_files(self.connection.sql_flavor_code):
+            return []
+        params = resolve_connection_params(self.connection.__dict__)
+        declarations = parse_file_declarations(self.table_group.file_declarations)
+        if not (count_queries := self.flavor_service.file_count_queries(params, declarations)):
+            return []
+        max_query_chars = self.connection.max_query_chars or DEFAULT_MAX_QUERY_CHARS
+        chunked_queries = chunk_queries(count_queries, " UNION ALL ", max_query_chars)
+        return [ (query, None) for query in chunked_queries ]
+
     def verify_access(self, table_name: str) -> tuple[str, None]:
         # Runs on Target database
         schema = self.table_group.table_group_schema
@@ -155,6 +171,7 @@ class RefreshDataCharsSQL:
                 column.object_type,
                 column.approx_record_ct,
                 column.record_ct,
+                column.file_ct,
             ]
             for column in data_chars
         ]

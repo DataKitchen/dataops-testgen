@@ -745,7 +745,10 @@ def preview_table_group(
     if stats.get("approx_data_point_ct") is not None:
         doc.field("Approx data points", stats.get("approx_data_point_ct"))
 
+    has_files = declares_files(connection.sql_flavor_code)
     headers = ["Table", "Columns", "Approx Rows", "Approx Data Points"]
+    if has_files:
+        headers.insert(1, "Files")
     if verify_access:
         headers.append("Read Access")
 
@@ -757,6 +760,8 @@ def preview_table_group(
             info.get("approx_record_ct"),
             info.get("approx_data_point_ct"),
         ]
+        if has_files:
+            row.insert(1, info.get("file_ct"))
         if verify_access:
             access = info.get("can_access")
             row.append("Yes" if access is True else "No" if access is False else "Unknown")

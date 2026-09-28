@@ -11,6 +11,7 @@ WITH new_chars AS (
       MAX(object_type) AS object_type,
       MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
+      MAX(file_ct) AS file_ct,
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
@@ -25,6 +26,7 @@ updated_records AS (
    SET object_type = n.object_type,
       approx_record_ct = n.approx_record_ct,
       record_ct = n.record_ct,
+      file_ct = n.file_ct,
       column_ct = n.column_ct,
       last_refresh_date = n.run_date,
       drop_date = NULL
@@ -61,6 +63,7 @@ WITH new_chars AS (
       MAX(object_type) AS object_type,
       MAX(approx_record_ct) AS approx_record_ct,
       MAX(record_ct) AS record_ct,
+      MAX(file_ct) AS file_ct,
       COUNT(*) AS column_ct
    FROM stg_data_chars_updates
    WHERE table_groups_id = :TABLE_GROUPS_ID
@@ -80,6 +83,7 @@ inserted_records AS (
          object_type,
          approx_record_ct,
          record_ct,
+         file_ct,
          column_ct
       )
    SELECT n.table_groups_id,
@@ -90,6 +94,7 @@ inserted_records AS (
       n.object_type,
       n.approx_record_ct,
       n.record_ct,
+      n.file_ct,
       n.column_ct
    FROM new_chars n
       LEFT JOIN data_table_chars d ON (
