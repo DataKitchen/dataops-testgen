@@ -10,6 +10,7 @@ from testgen.common.connection_schema import (
     Req,
     schema_for,
 )
+from testgen.common.database.flavor.duckdb_flavor_service import container_path_help
 from testgen.common.generation_set_service import get_generation_set_members
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssueType
@@ -322,8 +323,8 @@ def glossary_resource() -> str:
 ## Entity Hierarchy
 
 - **Project** — Top-level organizational unit.
-- **Connection** — Database connection configuration (host, credentials).
-- **Table Group** — A set of tables on one connection that are profiled and tested together.
+- **Connection** — How TestGen reaches a data source: a database (host, credentials) or file storage (path, bucket, or container).
+- **Table Group** — A set of tables that are profiled and tested together: a schema and filters on a database, or declared files on a file data source.
 - **Profiling Run** — A scan of a table group that produces column-level statistics and detects hygiene issues.
 - **Hygiene Issue** — A potential data-quality concern detected by a profiling run (e.g. PII columns, non-standard blanks, mixed types).
 - **Test Suite** — A collection of test definitions scoped to a table group.
@@ -401,15 +402,30 @@ _FIELD_NOTES: dict[str, str] = {
     "Catalog": "Databricks catalog (the database/namespace).",
     "Service Name": "Oracle service name.",
     "Warehouse": "Snowflake warehouse name.",
-    "Database File": (
-        "Path to the DuckDB database file. The path is resolved inside the TestGen "
-        "container, so the file has to be on a mounted volume."
+    "Database File": " ".join(filter(None, ["Path to the DuckDB database file.", container_path_help("file")])),
+    "Base Path": " ".join(
+        filter(
+            None,
+            [
+                "Path to the directory holding the data files.",
+                container_path_help("directory"),
+                "Every table in a table group on this connection names a path relative to it.",
+            ],
+        )
     ),
-    "Base Path": (
-        "Path to the directory holding the data files. The path is resolved inside the TestGen "
-        "container, so the directory has to be on a mounted volume. Every table in a table group "
-        "on this connection names a path relative to it."
+    "Base URI": (
+        "S3 location holding the data files, such as s3://bucket/prefix. Every table in a table "
+        "group on this connection names a path relative to it."
     ),
+    "Region": "AWS region of the bucket, such as us-east-1.",
+    "Access Key ID": "AWS access key ID.",
+    "Secret Access Key": "AWS secret access key.",
+    "Storage Account": "Name of the Azure storage account.",
+    "Container": (
+        "Blob container holding the data files. Every table in a table group on this connection "
+        "names a path relative to the container root."
+    ),
+    "Account Key": "Azure storage account access key.",
     "URL": "Full connection URL. Provide instead of the host fields.",
 }
 
@@ -466,24 +482,24 @@ def _append_mode(doc: MdDoc, mode: FlavorMode, schema: FlavorSchema, *, url_offe
 
 
 def connection_parameters_resource(flavor: str) -> str:
-    """Per-flavor connection parameter shapes: the auth modes and the exact
-    ``connection_params`` keys (with required/optional + secret notes) for the flavor.
+    """Per-connection-type parameter shapes: the auth modes and the exact
+    ``connection_params`` keys (with required/optional + secret notes) for the type.
 
     The URI template variable is documented here rather than with ``Field``: resource
     templates publish no input schema, so a ``Field`` description would go nowhere.
 
     Args:
-        flavor: Flavor code, e.g. ``snowflake``, ``azure_mssql``, ``salesforce_data360``.
+        flavor: Connection type code, e.g. ``snowflake``, ``azure_mssql``, ``s3``, ``files``.
     """
     if flavor not in FLAVOR_CONNECTION_SCHEMA:
         valid = ", ".join(sorted(FLAVOR_CONNECTION_SCHEMA))
-        raise MCPUserError(f"Unknown flavor `{flavor}`. Valid flavor codes: {valid}.")
+        raise MCPUserError(f"Unknown connection type `{flavor}`. Valid values: {valid}.")
 
     schema = schema_for(flavor)
     doc = MdDoc()
     doc.heading(1, f"{schema.label} Connection Parameters")
     doc.text(
-        f'Create with `sql_flavor="{schema.label}"` and a `connection_params` dict keyed by the '
+        f'Create with `connection_type="{schema.label}"` and a `connection_params` dict keyed by the '
         "field labels below. Secrets are encrypted at rest and never returned."
     )
 
@@ -499,19 +515,19 @@ def connection_parameters_resource(flavor: str) -> str:
 
 
 def connection_parameters_index_resource() -> str:
-    """Supported database flavors for the connection tools.
+    """Supported connection types (databases and file data sources) for the connection tools.
 
-    Covers the accepted ``sql_flavor`` values and, for each, the resource that
+    Covers the accepted ``connection_type`` values and, for each, the resource that
     documents its connection modes and fields.
     """
     doc = MdDoc()
-    doc.heading(1, "Connection Flavors")
+    doc.heading(1, "Connection Types")
     doc.text(
-        "Accepted `sql_flavor` values. Read the per-flavor resource for a flavor's "
+        "Accepted `connection_type` values. Read the per-type resource for a connection type's "
         "connection modes and the fields each needs."
     )
     doc.table(
-        headers=["sql_flavor", "Parameters resource"],
+        headers=["connection_type", "Parameters resource"],
         rows=[
             [schema.label, f"testgen://connection-parameters/{code}"]
             for code, schema in FLAVOR_CONNECTION_SCHEMA.items()

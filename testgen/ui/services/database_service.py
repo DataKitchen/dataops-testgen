@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.engine import Connection as SAConnection
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.engine.cursor import CursorResult
 
@@ -65,10 +66,12 @@ class TargetQuery:
 
     ``declaration_failures`` maps the name of each file declaration that could not be made
     queryable to the reason, and is empty for a flavor that reads tables rather than files.
+    ``connection`` is the open connection the queries run on.
     """
 
     _run: Callable[[str, dict | None], list[RowMapping]]
     declaration_failures: dict[str, str]
+    connection: SAConnection
 
     def __call__(self, query: str, params: dict | None = None) -> list[RowMapping]:
         return self._run(query, params)
@@ -108,7 +111,7 @@ def target_db_session(
                     raise
                 return cursor.mappings().fetchall()
 
-            yield TargetQuery(run, flavor_service.declaration_failures(conn))
+            yield TargetQuery(run, flavor_service.declaration_failures(conn), conn)
     finally:
         engine.dispose()
 

@@ -37,6 +37,9 @@
  * @property {string?} private_key_passphrase
  * @property {string?} http_path
  * @property {string?} warehouse
+ * @property {object?} parameters
+ * @property {object?} secrets
+ * @property {string[]?} stored_secrets
  * @property {ConnectionStatus?} status
  *
  * @typedef FormState
@@ -143,6 +146,7 @@ const ConnectionForm = (props, saveButton) => {
         connect_with_identity: connection?.connect_with_identity ?? false,
         connect_with_service_principal: connection?.connect_with_service_principal ?? false,
         parameters: connection?.parameters ?? {},
+        secrets: {},
         sql_flavor_code: connectionFlavor.rawVal ?? '',
         connection_name: connectionName.rawVal ?? '',
         max_threads: connectionMaxThreads.rawVal ?? 4,
@@ -308,6 +312,24 @@ const ConnectionForm = (props, saveButton) => {
                 setFieldValidity('files_form', isValid);
             },
         ),
+        s3: () => S3Form(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('s3_form', isValid);
+            },
+            connection,
+        ),
+        azure_blob: () => AzureBlobForm(
+            updatedConnection,
+            getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
+            (formValue, isValid) => {
+                updatedConnection.val = {...updatedConnection.val, ...formValue};
+                setFieldValidity('azure_blob_form', isValid);
+            },
+            connection,
+        ),
         salesforce_data360: () => SalesforceData360Form(
             updatedConnection,
             getValue(props.flavors).find(f => f.value === connectionFlavor.rawVal),
@@ -343,6 +365,7 @@ const ConnectionForm = (props, saveButton) => {
                 connect_with_identity: false,
                 connect_with_service_principal: false,
                 parameters: {},
+                secrets: {},
             };
         }
 
@@ -382,11 +405,11 @@ const ConnectionForm = (props, saveButton) => {
     return div(
         { class: 'flex-column fx-gap-3 fx-align-stretch', style: 'overflow-y: auto;' },
         Select({
-            label: 'Database Type',
+            label: 'Data Source',
             value: connectionFlavor,
             options: props.flavors,
             disabled: props.disableFlavor,
-            help: 'Type of database server to connect to. This determines the database driver and SQL dialect that will be used by TestGen.',
+            help: 'The database or file storage this connection reads. This determines how TestGen connects and which SQL dialect it uses.',
         }),
         Input({
             name: 'connection_name',
@@ -522,7 +545,7 @@ const RedshiftForm = (
             { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
             Caption({content: 'Server', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
             RadioGroup({
-                label: 'Connect by',
+                label: 'Connect By',
                 options: [
                     {
                         label: 'Host',
@@ -733,7 +756,7 @@ const AzureMSSQLForm = (
             // Reactive so `disabled` re-evaluates when authMode changes.
             supportsUrlMode
                 ? () => RadioGroup({
-                    label: 'Connect by',
+                    label: 'Connect By',
                     options: [
                         {
                             label: 'Host',
@@ -832,11 +855,11 @@ const AzureMSSQLForm = (
                 label: 'Connection Strategy',
                 options: [
                     ...(supportsPassword
-                        ? [{label: 'Connect By Password', value: 'password'}]
+                        ? [{label: 'Password', value: 'password'}]
                         : []),
-                    {label: 'Connect with Managed Identity', value: 'identity'},
+                    {label: 'Managed Identity', value: 'identity'},
                     ...(supportsServicePrincipal
-                        ? [{label: 'Connect with Service Principal', value: 'service_principal'}]
+                        ? [{label: 'Service Principal', value: 'service_principal'}]
                         : []),
                 ],
                 value: authMode,
@@ -870,7 +893,7 @@ const AzureMSSQLForm = (
                 if (_authMode === 'identity') {
                     return div(
                         {class: 'flex-row p-4 fx-justify-center text-secondary'},
-                        'Microsoft Entra ID credentials configured on host machine will be used',
+                        'Uses the managed identity of the environment running TestGen, such as an Azure VM.',
                     );
                 }
 
@@ -927,7 +950,7 @@ const AzureMSSQLForm = (
                           }),
                     Input({
                         name: 'password',
-                        label: isServicePrincipal ? 'Password (Client Secret)' : 'Password',
+                        label: isServicePrincipal ? 'Client Secret' : 'Password',
                         value: connectionPassword,
                         type: 'password',
                         passwordSuggestions: false,
@@ -1015,7 +1038,7 @@ const DatabricksForm = (
             Caption({content: 'Server', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
 
             () => useOAuth.val ? div() : RadioGroup({
-                label: 'Connect by',
+                label: 'Connect By',
                 options: [
                     {
                         label: 'Host',
@@ -1123,10 +1146,10 @@ const DatabricksForm = (
             Caption({content: 'Authentication', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
 
             RadioGroup({
-                label: 'Authentication method',
+                label: 'Connection Strategy',
                 options: [
-                    {label: 'Access Token (PAT)', value: false},
-                    {label: 'Service Principal (OAuth)', value: true},
+                    {label: 'Personal Access Token', value: false},
+                    {label: 'Service Principal', value: true},
                 ],
                 value: useOAuth,
                 onChange: (value) => {
@@ -1269,7 +1292,7 @@ const SnowflakeForm = (
             Caption({content: 'Server', style: 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;' }),
 
             RadioGroup({
-                label: 'Connect by',
+                label: 'Connect By',
                 options: [
                     {
                         label: 'Host',
@@ -1377,8 +1400,8 @@ const SnowflakeForm = (
             RadioGroup({
                 label: 'Connection Strategy',
                 options: [
-                    {label: 'Connect By Key-Pair', value: true},
-                    {label: 'Connect By Password', value: false},
+                    {label: 'Key Pair', value: true},
+                    {label: 'Password', value: false},
                 ],
                 value: connectByKey,
                 onChange: (value) => connectByKey.val = value,
@@ -1721,7 +1744,7 @@ const FilesForm = (
         Input({
             name: 'base_path',
             label: 'Base Path',
-            help: flavor?.field_help?.base_path ?? 'Path to the directory containing the data files',
+            help: flavor?.field_help?.base_path ?? 'Path to the directory holding the data files',
             value: basePath,
             onChange: (value, state) => {
                 basePath.val = value;
@@ -1730,6 +1753,315 @@ const FilesForm = (
             },
             validators: [required],
         }),
+    );
+};
+
+const boxCaptionStyle = 'position: absolute; top: -10px; background: var(--app-background-color); padding: 0px 8px;';
+
+/**
+ * Whether a secret is already stored on the connection being edited, so its input can stay blank.
+ *
+ * @param {Connection?} originalConnection
+ * @param {string} key
+ * @returns {boolean}
+ */
+const hasStoredSecret = (originalConnection, key) =>
+    !!originalConnection?.connection_id && (originalConnection?.stored_secrets ?? []).includes(key);
+
+/**
+ * @param {VanState<Connection>} connection
+ * @param {Flavor} flavor
+ * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
+ * @param {Connection?} originalConnection
+ * @returns {HTMLElement}
+ */
+const S3Form = (
+    connection,
+    flavor,
+    onChange,
+    originalConnection,
+) => {
+    const parameters = connection.rawVal?.parameters ?? {};
+    const isValid = van.state(false);
+    const baseUri = van.state(parameters.base_uri ?? '');
+    const region = van.state(parameters.region ?? '');
+    const initialStrategy = parameters.strategy ?? 'access_keys';
+    const strategy = van.state(initialStrategy);
+    const accessKeyId = van.state(parameters.access_key_id ?? '');
+    const secretAccessKey = van.state('');
+    const validityPerField = {};
+    const updateValidity = () => isValid.val = Object.values(validityPerField).every(v => v);
+
+    van.derive(() => {
+        const usesKeys = strategy.val === 'access_keys';
+        onChange({
+            parameters: {
+                base_uri: baseUri.val,
+                region: region.val,
+                strategy: strategy.val,
+                ...(usesKeys ? { access_key_id: accessKeyId.val } : {}),
+            },
+            secrets: usesKeys ? { secret_access_key: secretAccessKey.val } : {},
+        }, isValid.val);
+    });
+
+    return div(
+        { class: 'flex-column fx-gap-3 fx-flex' },
+        Input({
+            name: 'base_uri',
+            label: 'Base URI',
+            help: 'S3 location holding the data files, such as s3://bucket/prefix',
+            value: baseUri,
+            onChange: (value, state) => {
+                baseUri.val = value;
+                validityPerField['base_uri'] = state.valid;
+                updateValidity();
+            },
+            validators: [required, maxLength(1024)],
+        }),
+        Input({
+            name: 'region',
+            label: 'Region',
+            help: 'AWS region of the bucket, such as us-east-1',
+            value: region,
+            onChange: (value, state) => {
+                region.val = value;
+                validityPerField['region'] = state.valid;
+                updateValidity();
+            },
+            validators: [required, maxLength(50)],
+        }),
+        div(
+            { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
+            Caption({ content: 'Authentication', style: boxCaptionStyle }),
+            RadioGroup({
+                label: 'Connection Strategy',
+                options: [
+                    { label: 'Access Keys', value: 'access_keys' },
+                    { label: 'IAM Role', value: 'iam_role' },
+                ],
+                value: strategy,
+                onChange: (value) => {
+                    strategy.val = value;
+                    // Un-rendered Inputs don't re-validate; drop stale keys.
+                    delete validityPerField['access_key_id'];
+                    delete validityPerField['secret_access_key'];
+                    // Entering access keys: hold Save disabled until the key inputs mount and validate.
+                    isValid.val = value === 'access_keys' ? false : Object.values(validityPerField).every(v => v);
+                },
+                layout: 'inline',
+            }),
+            () => {
+                if (strategy.val === 'iam_role') {
+                    return div(
+                        { class: 'flex-row p-4 fx-justify-center text-secondary' },
+                        'Uses the AWS credentials of the environment running TestGen, such as an EC2 instance role.',
+                    );
+                }
+                return div(
+                    { class: 'flex-column fx-gap-1' },
+                    Input({
+                        name: 'access_key_id',
+                        label: 'Access Key ID',
+                        value: accessKeyId,
+                        onChange: (value, state) => {
+                            accessKeyId.val = value;
+                            validityPerField['access_key_id'] = state.valid;
+                            updateValidity();
+                        },
+                        validators: [requiredIf(() => strategy.val === 'access_keys'), maxLength(128)],
+                    }),
+                    Input({
+                        name: 'secret_access_key',
+                        label: 'Secret Access Key',
+                        value: secretAccessKey,
+                        type: 'password',
+                        passwordSuggestions: false,
+                        placeholder: hasStoredSecret(originalConnection, 'secret_access_key') ? secretsPlaceholder : '',
+                        onChange: (value, state) => {
+                            secretAccessKey.val = value;
+                            validityPerField['secret_access_key'] = state.valid;
+                            updateValidity();
+                        },
+                        validators: [
+                            // A stored key is kept only while the strategy is unchanged: switching
+                            // strategies drops it on save.
+                            requiredIf(() =>
+                                strategy.val === 'access_keys'
+                                && (strategy.val !== initialStrategy || !hasStoredSecret(originalConnection, 'secret_access_key'))
+                            ),
+                        ],
+                    }),
+                );
+            },
+        ),
+    );
+};
+
+/**
+ * @param {VanState<Connection>} connection
+ * @param {Flavor} flavor
+ * @param {(params: Partial<Connection>, isValid: boolean) => void} onChange
+ * @param {Connection?} originalConnection
+ * @returns {HTMLElement}
+ */
+const AzureBlobForm = (
+    connection,
+    flavor,
+    onChange,
+    originalConnection,
+) => {
+    const parameters = connection.rawVal?.parameters ?? {};
+    const isValid = van.state(false);
+    const storageAccount = van.state(parameters.storage_account ?? '');
+    const container = van.state(parameters.container ?? '');
+    const initialStrategy = parameters.strategy ?? 'account_key';
+    const strategy = van.state(initialStrategy);
+    const clientId = van.state(parameters.client_id ?? '');
+    const tenantId = van.state(parameters.tenant_id ?? '');
+    const accountKey = van.state('');
+    const clientSecret = van.state('');
+    const validityPerField = {};
+    const updateValidity = () => isValid.val = Object.values(validityPerField).every(v => v);
+    // A stored secret is kept only while the strategy is unchanged: switching strategies drops it on save.
+    const secretRequired = (mode, key) =>
+        strategy.val === mode && (strategy.val !== initialStrategy || !hasStoredSecret(originalConnection, key));
+
+    van.derive(() => {
+        const mode = strategy.val;
+        onChange({
+            parameters: {
+                storage_account: storageAccount.val,
+                container: container.val,
+                strategy: mode,
+                ...(mode === 'service_principal' ? { client_id: clientId.val, tenant_id: tenantId.val } : {}),
+            },
+            secrets: {
+                ...(mode === 'account_key' ? { account_key: accountKey.val } : {}),
+                ...(mode === 'service_principal' ? { client_secret: clientSecret.val } : {}),
+            },
+        }, isValid.val);
+    });
+
+    return div(
+        { class: 'flex-column fx-gap-3 fx-flex' },
+        Input({
+            name: 'storage_account',
+            label: 'Storage Account',
+            help: 'Name of the Azure storage account',
+            value: storageAccount,
+            onChange: (value, state) => {
+                storageAccount.val = value;
+                validityPerField['storage_account'] = state.valid;
+                updateValidity();
+            },
+            validators: [required, maxLength(24)],
+        }),
+        Input({
+            name: 'container',
+            label: 'Container',
+            help: 'Blob container holding the data files',
+            value: container,
+            onChange: (value, state) => {
+                container.val = value;
+                validityPerField['container'] = state.valid;
+                updateValidity();
+            },
+            validators: [required, maxLength(63)],
+        }),
+        div(
+            { class: 'flex-column border border-radius-1 p-3 mt-1 fx-gap-1', style: 'position: relative;' },
+            Caption({ content: 'Authentication', style: boxCaptionStyle }),
+            RadioGroup({
+                label: 'Connection Strategy',
+                options: [
+                    { label: 'Account Key', value: 'account_key' },
+                    { label: 'Managed Identity', value: 'managed_identity' },
+                    { label: 'Service Principal', value: 'service_principal' },
+                ],
+                value: strategy,
+                onChange: (value) => {
+                    strategy.val = value;
+                    // Un-rendered Inputs don't re-validate; drop stale keys.
+                    delete validityPerField['account_key'];
+                    delete validityPerField['client_id'];
+                    delete validityPerField['tenant_id'];
+                    delete validityPerField['client_secret'];
+                    // Entering a mode with inputs: hold Save disabled until they mount and validate.
+                    isValid.val = value === 'managed_identity' ? Object.values(validityPerField).every(v => v) : false;
+                },
+                layout: 'inline',
+            }),
+            () => {
+                const mode = strategy.val;
+                if (mode === 'managed_identity') {
+                    return div(
+                        { class: 'flex-row p-4 fx-justify-center text-secondary' },
+                        'Uses the managed identity of the environment running TestGen, such as an Azure VM or AKS pod.',
+                    );
+                }
+                if (mode === 'account_key') {
+                    return Input({
+                        name: 'account_key',
+                        label: 'Account Key',
+                        value: accountKey,
+                        type: 'password',
+                        passwordSuggestions: false,
+                        placeholder: hasStoredSecret(originalConnection, 'account_key') ? secretsPlaceholder : '',
+                        onChange: (value, state) => {
+                            accountKey.val = value;
+                            validityPerField['account_key'] = state.valid;
+                            updateValidity();
+                        },
+                        validators: [requiredIf(() => secretRequired('account_key', 'account_key'))],
+                    });
+                }
+                return div(
+                    { class: 'flex-column fx-gap-1' },
+                    div(
+                        { class: 'flex-row fx-gap-3 fx-flex' },
+                        Input({
+                            name: 'client_id',
+                            label: 'Client ID',
+                            value: clientId,
+                            class: 'fx-flex',
+                            onChange: (value, state) => {
+                                clientId.val = value;
+                                validityPerField['client_id'] = state.valid;
+                                updateValidity();
+                            },
+                            validators: [requiredIf(() => strategy.val === 'service_principal'), maxLength(64)],
+                        }),
+                        Input({
+                            name: 'tenant_id',
+                            label: 'Tenant ID',
+                            value: tenantId,
+                            class: 'fx-flex',
+                            onChange: (value, state) => {
+                                tenantId.val = value;
+                                validityPerField['tenant_id'] = state.valid;
+                                updateValidity();
+                            },
+                            validators: [requiredIf(() => strategy.val === 'service_principal'), maxLength(64)],
+                        }),
+                    ),
+                    Input({
+                        name: 'client_secret',
+                        label: 'Client Secret',
+                        value: clientSecret,
+                        type: 'password',
+                        passwordSuggestions: false,
+                        placeholder: hasStoredSecret(originalConnection, 'client_secret') ? secretsPlaceholder : '',
+                        onChange: (value, state) => {
+                            clientSecret.val = value;
+                            validityPerField['client_secret'] = state.valid;
+                            updateValidity();
+                        },
+                        validators: [requiredIf(() => secretRequired('service_principal', 'client_secret'))],
+                    }),
+                );
+            },
+        ),
     );
 };
 

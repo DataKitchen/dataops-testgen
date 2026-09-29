@@ -53,6 +53,9 @@ class ConnectionListItem(EntityMinimal):
     sql_flavor_code: SqlFlavorCode
     project_host: str | None
     project_db: str | None
+    connect_by_url: bool | None
+    url: str | None
+    parameters: dict | None
     table_group_count: int
 
 
@@ -153,6 +156,9 @@ class Connection(Entity):
                 cls.sql_flavor_code,
                 cls.project_host,
                 cls.project_db,
+                cls.connect_by_url,
+                cls.url,
+                cls.parameters,
                 func.coalesce(tg_count_subq.c.table_group_count, 0).label("table_group_count"),
             )
             .outerjoin(tg_count_subq, tg_count_subq.c.connection_id == cls.connection_id)

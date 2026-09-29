@@ -54,7 +54,7 @@ def _validate_declared_fields(
 
     for key in values:
         if key not in declared:
-            raise ValueError(f"'{key}' is not a connection {noun} for this database type.")
+            raise ValueError(f"'{key}' is not a connection {noun} for this connection type.")
 
     for entry in schema:
         if entry.required:
@@ -214,16 +214,34 @@ class FlavorService:
         """Shape of the flavor's ``connections.secrets`` entry. Empty means the flavor stores none."""
         return ()
 
-    def validate_parameters(self, parameters: dict[str, Any] | None, sql_flavor_code: str) -> None:
-        """Raise ``ValueError`` naming the offending field if ``parameters`` does not match the shape."""
-        _validate_declared_fields(self.parameters_schema(sql_flavor_code), parameters, "parameter")
+    def validate_settings(
+        self, parameters: dict[str, Any] | None, secrets: dict[str, Any] | None, sql_flavor_code: str
+    ) -> None:
+        """Raise ``ValueError`` naming the first field ``parameters`` or ``secrets`` gets wrong.
 
-    def validate_secrets(self, secrets: dict[str, Any] | None, sql_flavor_code: str) -> None:
-        """Raise ``ValueError`` naming the offending field if ``secrets`` does not match the shape."""
+        Checks each against the shape the flavor declares for it.
+        """
+        _validate_declared_fields(self.parameters_schema(sql_flavor_code), parameters, "parameter")
         _validate_declared_fields(self.secrets_schema(sql_flavor_code), secrets, "secret")
 
-    def test_connection_details(self, params: ResolvedConnectionParams) -> str | None:  # noqa: ARG002
-        """Text shown beneath a successful connection test, or None when there is nothing to add."""
+    def scrub_settings(
+        self,
+        parameters: dict[str, Any] | None,
+        secrets: dict[str, Any] | None,
+        sql_flavor_code: str,  # noqa: ARG002
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+        """The ``parameters`` and ``secrets`` with every value the connection's auth mode does not read removed."""
+        return parameters, secrets
+
+    def test_connection_details(
+        self,
+        connection: Connection,  # noqa: ARG002
+        params: ResolvedConnectionParams,  # noqa: ARG002
+    ) -> str | None:
+        """Text shown beneath a successful connection test, or None when there is nothing to add.
+
+        ``connection`` is the connection that was just tested, still open.
+        """
         return None
 
     def init(

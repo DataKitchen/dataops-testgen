@@ -6,7 +6,7 @@ verify-access flag, partial-inaccessible footer, no-connection branch,
 connection failure, empty result).
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -317,7 +317,7 @@ def _session(mock_session, respond, declaration_failures=None):
     """Point the patched ``target_db_session`` at a runner answering with ``respond(query)``."""
     def run(query, _params=None):
         return respond(query)
-    target = TargetQuery(run, declaration_failures or {})
+    target = TargetQuery(run, declaration_failures or {}, MagicMock())
     mock_session.return_value.__enter__.return_value = target
     return target
 
@@ -445,7 +445,7 @@ def test_preview_verify_access_partial_failure_sets_footer(mock_session, mock_sq
     assert preview["tables"]["customer"]["can_access"] is True
     assert preview["tables"]["rental"]["can_access"] is False
     assert preview["message"] == (
-        "Some tables were not accessible. Please check the database permissions."
+        "Some tables were not accessible. Check that TestGen has read access to them."
     )
 
 

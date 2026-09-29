@@ -630,7 +630,7 @@ def _init_target_db_connection() -> Connection:
         # A flavor whose pool holds one connection expects no contention at all, so waiting for a
         # turn means one was never returned. The pool's own message names the pool and not that.
         raise ValueError(
-            "Timed out waiting for a connection to the target database. "
+            "Timed out waiting for a connection to the data source. "
             "A previous connection was not released."
         ) from error
 

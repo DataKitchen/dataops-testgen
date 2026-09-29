@@ -11,6 +11,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.database.connection_service import ConnectionStatus
+from testgen.common.models.connection import Connection
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -63,38 +64,81 @@ def _mock_connection(**overrides) -> MagicMock:
     return conn
 
 
+def _stored_connection(**overrides) -> Connection:
+    """Build a real, unsaved Connection standing in for one loaded from the database."""
+    columns = {
+        "connection_id": 7,
+        "project_code": "demo",
+        "connection_name": "Local PG",
+        "sql_flavor": "postgresql",
+        "sql_flavor_code": "postgresql",
+        "project_host": "localhost",
+        "project_port": "5432",
+        "project_db": "testgen_local",
+        "project_user": "testgen",
+        "project_pw_encrypted": "stored_pw",
+        "connect_by_url": False,
+        "connect_by_key": False,
+        "connect_with_identity": False,
+        "connect_with_service_principal": False,
+        "max_threads": 4,
+        **overrides,
+    }
+    return Connection(**columns)
+
+
+def _s3_access_keys_connection() -> Connection:
+    return _stored_connection(
+        connection_name="Claims bucket",
+        sql_flavor="duckdb",
+        sql_flavor_code="s3",
+        project_host=None,
+        project_port=None,
+        project_db=None,
+        project_user=None,
+        project_pw_encrypted=None,
+        max_threads=1,
+        parameters={
+            "base_uri": "s3://claims/landing",
+            "region": "us-east-1",
+            "strategy": "access_keys",
+            "access_key_id": "AKIAEXAMPLE",
+        },
+        secrets={"secret_access_key": "stored-secret"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # test_connection
 # ---------------------------------------------------------------------------
 
 
-def test_test_connection_neither_id_nor_flavor(db_session_mock):
+def test_test_connection_neither_id_nor_connection_type(db_session_mock):
     from testgen.mcp.tools.connections import test_connection
 
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
         test_connection()
     msg = str(exc.value)
     assert "`connection_id`" in msg
-    assert "`sql_flavor`" in msg
+    assert "`connection_type`" in msg
 
 
 @patch(f"{MODULE}.resolve_connection")
-def test_test_connection_rejects_sql_flavor_with_id(mock_resolve, db_session_mock):
+def test_test_connection_rejects_connection_type_with_id(mock_resolve, db_session_mock):
     """sql_flavor override is meaningless on a stored connection — must reject loud."""
     mock_resolve.return_value = _mock_connection()
 
     from testgen.mcp.tools.connections import test_connection
 
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
-        test_connection(connection_id=7, sql_flavor="Snowflake")
-    assert "sql_flavor" in str(exc.value)
+        test_connection(connection_id=7, connection_type="Snowflake")
+    assert "connection_type" in str(exc.value)
 
 
 @patch(f"{MODULE}.test_connection_status", return_value=ConnectionStatus(message="The connection was successful.", successful=True))
 @patch(f"{MODULE}.resolve_connection")
 def test_test_connection_with_id_only(mock_resolve, mock_runner, db_session_mock):
-    conn = _mock_connection(connection_id=7, connection_name="Local PG", project_host="localhost")
-    mock_resolve.return_value = conn
+    mock_resolve.return_value = _stored_connection()
 
     from testgen.mcp.tools.connections import test_connection
 
@@ -111,16 +155,63 @@ def test_test_connection_with_id_only(mock_resolve, mock_runner, db_session_mock
 @patch(f"{MODULE}.test_connection_status", return_value=ConnectionStatus(message="The connection was successful.", successful=True))
 @patch(f"{MODULE}.resolve_connection")
 def test_test_connection_with_id_and_overrides(mock_resolve, mock_runner, db_session_mock):
-    """Overrides win: assigned to the loaded connection before status runs."""
-    conn = _mock_connection(connection_id=7, project_host="old.host")
-    mock_resolve.return_value = conn
+    """Overrides reach the test, and the stored connection keeps its values."""
+    stored = _stored_connection(project_host="old.host")
+    mock_resolve.return_value = stored
 
     from testgen.mcp.tools.connections import test_connection
 
     with _patch_perms():
-        test_connection(connection_id=7, connection_params={"Host": "new.host"})
+        test_connection(connection_id=7, connection_params={"Host": "new.host", "Password": "tried"})
 
-    assert conn.project_host == "new.host"
+    tested = mock_runner.call_args.args[0]
+    assert tested is not stored
+    assert tested.project_host == "new.host"
+    assert tested.project_pw_encrypted == "tried"
+    assert stored.project_host == "old.host"
+    assert stored.project_pw_encrypted == "stored_pw"
+
+
+@patch(f"{MODULE}.test_connection_status", return_value=ConnectionStatus(message="Access denied.", successful=False))
+@patch(f"{MODULE}.resolve_connection")
+def test_test_connection_mode_override_keeps_stored_secrets(mock_resolve, mock_runner, db_session_mock):
+    """Switching the mode for a test drops the key pair from the tested copy only."""
+    stored = _s3_access_keys_connection()
+    mock_resolve.return_value = stored
+
+    from testgen.mcp.tools.connections import test_connection
+
+    with _patch_perms():
+        test_connection(connection_id=7, connection_mode="IAM Role")
+
+    tested = mock_runner.call_args.args[0]
+    assert tested.parameters["strategy"] == "iam_role"
+    assert "access_key_id" not in tested.parameters
+    assert not tested.secrets
+    assert stored.parameters == {
+        "base_uri": "s3://claims/landing",
+        "region": "us-east-1",
+        "strategy": "access_keys",
+        "access_key_id": "AKIAEXAMPLE",
+    }
+    assert stored.secrets == {"secret_access_key": "stored-secret"}
+
+
+@patch(f"{MODULE}.test_connection_status")
+@patch(f"{MODULE}.resolve_connection")
+def test_test_connection_rejected_override_keeps_stored_values(mock_resolve, mock_runner, db_session_mock):
+    """An override that fails validation leaves the stored connection as it was."""
+    stored = _s3_access_keys_connection()
+    mock_resolve.return_value = stored
+
+    from testgen.mcp.tools.connections import test_connection
+
+    with _patch_perms(), pytest.raises(MCPUserError):
+        test_connection(connection_id=7, connection_params={"Base URI": "not-a-bucket"})
+
+    mock_runner.assert_not_called()
+    assert stored.parameters["base_uri"] == "s3://claims/landing"
+    assert stored.secrets == {"secret_access_key": "stored-secret"}
 
 
 @patch(f"{MODULE}.test_connection_status", return_value=ConnectionStatus(message="The connection was successful.", successful=True))
@@ -134,7 +225,7 @@ def test_test_connection_inline_only(mock_conn_cls, mock_runner, db_session_mock
 
     with _patch_perms():
         out = test_connection(
-            sql_flavor="PostgreSQL",
+            connection_type="PostgreSQL",
             connection_params={
                 "Host": "localhost",
                 "Port": 5432,
@@ -162,7 +253,7 @@ def test_test_connection_inline_applies_defaults(mock_conn_cls, mock_runner, db_
 
     with _patch_perms():
         test_connection(
-            sql_flavor="PostgreSQL",
+            connection_type="PostgreSQL",
             connection_params={"Host": "h", "Port": 5432, "Database": "d", "Username": "u", "Password": "p"},
         )
 
@@ -173,7 +264,7 @@ def test_test_connection_inline_applies_defaults(mock_conn_cls, mock_runner, db_
 @patch(f"{MODULE}.resolve_connection")
 def test_test_connection_failure_renders_details(mock_resolve, mock_runner, db_session_mock):
     """Failure with detail string renders the detail verbatim in a code block."""
-    mock_resolve.return_value = _mock_connection()
+    mock_resolve.return_value = _stored_connection()
     driver_text = "FATAL: password authentication failed for user 'dq'"
     mock_runner.return_value = ConnectionStatus(
         message="Error attempting the connection.",
@@ -196,7 +287,7 @@ def test_test_connection_inline_validation_failure(db_session_mock):
 
     # PostgreSQL inline with no params -> uses a real Connection (no patch) with empty fields.
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
-        test_connection(sql_flavor="PostgreSQL", connection_params={})
+        test_connection(connection_type="PostgreSQL", connection_params={})
     msg = str(exc.value)
     assert "Cannot test connection" in msg
     assert "`Host` is required for PostgreSQL." in msg
@@ -208,7 +299,7 @@ def test_test_connection_inline_multi_mode_requires_mode(db_session_mock):
 
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
         test_connection(
-            sql_flavor="Salesforce Data 360",
+            connection_type="Salesforce Data 360",
             connection_params={"Login URL": "https://my.salesforce.com", "Consumer Key": "ck"},
         )
     msg = str(exc.value)
@@ -228,7 +319,7 @@ def test_test_connection_inline_does_not_save(mock_conn_cls, mock_runner, db_ses
 
     with _patch_perms():
         test_connection(
-            sql_flavor="PostgreSQL",
+            connection_type="PostgreSQL",
             connection_params={"Host": "h", "Port": 5432, "Database": "d", "Username": "u", "Password": "p"},
         )
 
@@ -250,13 +341,16 @@ def _list_item(**overrides):
         sql_flavor_code=overrides.get("sql_flavor_code", "snowflake"),
         project_host=overrides.get("project_host", "abc.snowflakecomputing.com"),
         project_db=overrides.get("project_db", "ANALYTICS"),
+        connect_by_url=overrides.get("connect_by_url", False),
+        url=overrides.get("url"),
+        parameters=overrides.get("parameters"),
         table_group_count=overrides.get("table_group_count", 4),
     )
 
 
-@patch(f"{MODULE}.Connection")
-def test_list_connections_returns_rows_with_display_label(mock_conn_cls, db_session_mock):
-    mock_conn_cls.list_for_project.return_value = (
+@patch(f"{MODULE}.Connection.list_for_project")
+def test_list_connections_returns_rows_with_display_label(mock_list, db_session_mock):
+    mock_list.return_value = (
         [_list_item(project_host="warehouse-host.example.com")],
         1,
     )
@@ -271,15 +365,33 @@ def test_list_connections_returns_rows_with_display_label(mock_conn_cls, db_sess
     # Display label is rendered, NOT the raw sql_flavor_code:
     assert "Snowflake" in out
     assert "snowflake" not in out
-    assert "warehouse-host.example.com" in out
-    assert "ANALYTICS" in out
+    assert "`warehouse-host.example.com / ANALYTICS`" in out
     assert "4" in out  # table_group_count
 
 
-@patch(f"{MODULE}.Connection")
-def test_list_connections_pagination_footer(mock_conn_cls, db_session_mock):
+@patch(f"{MODULE}.Connection.list_for_project")
+def test_list_connections_locates_a_file_connection_by_its_storage_settings(mock_list, db_session_mock):
+    blob = _list_item(
+        sql_flavor_code="azure_blob",
+        project_host=None,
+        project_db=None,
+        parameters={"storage_account": "claimsacct", "container": "claims", "strategy": "account_key"},
+    )
+    mock_list.return_value = ([blob], 1)
+
+    from testgen.mcp.tools.connections import list_connections
+
+    with _patch_perms(permission="view"):
+        out = list_connections("demo")
+
+    assert "`claimsacct / claims`" in out
+    assert "account_key" not in out
+
+
+@patch(f"{MODULE}.Connection.list_for_project")
+def test_list_connections_pagination_footer(mock_list, db_session_mock):
     rows = [_list_item(connection_id=i, connection_name=f"c{i}") for i in range(1, 3)]
-    mock_conn_cls.list_for_project.return_value = (rows, 25)
+    mock_list.return_value = (rows, 25)
 
     from testgen.mcp.tools.connections import list_connections
 
@@ -290,9 +402,9 @@ def test_list_connections_pagination_footer(mock_conn_cls, db_session_mock):
     assert "Use `page=2`" in out
 
 
-@patch(f"{MODULE}.Connection")
-def test_list_connections_empty(mock_conn_cls, db_session_mock):
-    mock_conn_cls.list_for_project.return_value = ([], 0)
+@patch(f"{MODULE}.Connection.list_for_project")
+def test_list_connections_empty(mock_list, db_session_mock):
+    mock_list.return_value = ([], 0)
 
     from testgen.mcp.tools.connections import list_connections
 

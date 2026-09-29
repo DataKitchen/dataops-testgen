@@ -40,7 +40,7 @@ Please investigate test failures and identify root causes:{suite_filter}
 4. For each failure category, call `get_test_type(test_type='...')` to understand what the test checks.
 5. Call `list_test_results(test_suite_id='...', status='Failed')` to drill into the specific failing tests in the latest run.
 6. For key failures, call `get_source_data(test_definition_id='...')` to see the actual rows violating the test criteria.
-   This shows current data from the connected database — rows may have been fixed since the test ran.
+   This shows current data from the data source — rows may have been fixed since the test ran.
 7. Analyze the patterns:
    - Are failures concentrated in specific tables or columns?
    - Do certain test types fail consistently?

@@ -347,20 +347,20 @@ def test_connection_parameters_resource_snowflake_both_modes():
     from testgen.mcp.tools.reference import connection_parameters_resource
 
     out = connection_parameters_resource("snowflake")
-    assert "Mode: Key-Pair" in out
+    assert "Mode: Key Pair" in out
     assert "Mode: Password" in out
     assert "Private Key" in out
     assert "Warehouse" in out
     assert "Set `connection_mode`" in out
-    assert 'connection_mode="Key-Pair"' in out
+    assert 'connection_mode="Key Pair"' in out
 
 
 def test_connection_parameters_resource_databricks_pat_fields():
     from testgen.mcp.tools.reference import connection_parameters_resource
 
     out = connection_parameters_resource("databricks")
-    assert "Mode: Access Token" in out
-    assert "Mode: Service Principal (OAuth)" in out
+    assert "Mode: Personal Access Token" in out
+    assert "Mode: Service Principal" in out
     assert "Catalog" in out
     assert "HTTP Path" in out
     assert "Client ID" in out

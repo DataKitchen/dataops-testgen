@@ -13,7 +13,12 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
-from testgen.common.database.file_declarations import NAME_INVALID, URI_IS_FOLDER, parse_file_declarations
+from testgen.common.database.file_declarations import (
+    NAME_INVALID,
+    PATH_OUTSIDE_BASE_PATH,
+    URI_IS_FOLDER,
+    parse_file_declarations,
+)
 from testgen.common.database.flavor import duckdb_flavor_service
 from testgen.common.database.flavor.duckdb_flavor_service import (
     ATTACHED_CATALOG,
@@ -230,35 +235,35 @@ def test_a_version_mismatch_message_names_the_versions():
 def test_a_duckdb_connection_requires_a_database_file():
     service = DuckdbFlavorService()
     with pytest.raises(ValueError, match="Database File is required."):
-        service.validate_parameters({}, "duckdb")
+        service.validate_settings({}, None, "duckdb")
     with pytest.raises(ValueError, match="Database File is required."):
-        service.validate_parameters({"database_file": "   "}, "duckdb")
+        service.validate_settings({"database_file": "   "}, None, "duckdb")
     with pytest.raises(ValueError, match="Database File is required."):
-        service.validate_parameters(None, "duckdb")
+        service.validate_settings(None, None, "duckdb")
 
 
 def test_an_undeclared_parameter_is_rejected_by_name():
     service = DuckdbFlavorService()
     with pytest.raises(ValueError, match="'memory_limit' is not a connection parameter"):
-        service.validate_parameters({"database_file": "/data/c.duckdb", "memory_limit": "4GB"}, "duckdb")
+        service.validate_settings({"database_file": "/data/c.duckdb", "memory_limit": "4GB"}, None, "duckdb")
 
 
 def test_a_well_formed_duckdb_parameter_set_validates():
-    DuckdbFlavorService().validate_parameters({"database_file": "/data/c.duckdb"}, "duckdb")
+    DuckdbFlavorService().validate_settings({"database_file": "/data/c.duckdb"}, None, "duckdb")
 
 
 def test_a_flavor_that_declares_no_parameters_accepts_none():
     from testgen.common.database.flavor.postgresql_flavor_service import PostgresqlFlavorService
 
-    PostgresqlFlavorService().validate_parameters(None, "postgresql")
-    PostgresqlFlavorService().validate_parameters({}, "postgresql")
+    PostgresqlFlavorService().validate_settings(None, None, "postgresql")
+    PostgresqlFlavorService().validate_settings({}, None, "postgresql")
 
 
 def test_a_flavor_that_declares_no_parameters_still_rejects_stray_keys():
     from testgen.common.database.flavor.postgresql_flavor_service import PostgresqlFlavorService
 
     with pytest.raises(ValueError, match="'database_file' is not a connection parameter"):
-        PostgresqlFlavorService().validate_parameters({"database_file": "/data/c.duckdb"}, "postgresql")
+        PostgresqlFlavorService().validate_settings({"database_file": "/data/c.duckdb"}, None, "postgresql")
 
 
 # Every DuckDB type and every alias its documentation lists, with the general_type the schema
@@ -623,17 +628,17 @@ def test_a_motherduck_path_is_rejected_before_it_can_open_a_browser(tmp_path):
     service = DuckdbFlavorService()
     for path in ("md:analytics", "MD:analytics", "motherduck:analytics"):
         with pytest.raises(ValueError, match="MotherDuck"):
-            service.validate_parameters({"database_file": path}, "duckdb")
+            service.validate_settings({"database_file": path}, None, "duckdb")
 
 
 def test_a_local_path_is_accepted():
-    DuckdbFlavorService().validate_parameters({"database_file": "/data/warehouse.duckdb"}, "duckdb")
+    DuckdbFlavorService().validate_settings({"database_file": "/data/warehouse.duckdb"}, None, "duckdb")
 
 
 @pytest.mark.parametrize("path", ["s3://bucket/warehouse.duckdb", "https://host/warehouse.duckdb"])
 def test_a_remote_path_is_accepted(path):
     """DuckDB attaches these read-only through its bundled extensions."""
-    DuckdbFlavorService().validate_parameters({"database_file": path}, "duckdb")
+    DuckdbFlavorService().validate_settings({"database_file": path}, None, "duckdb")
 
 
 @pytest.mark.parametrize(
@@ -644,10 +649,10 @@ def test_both_duckdb_codes_accept_the_same_kinds_of_path(sql_flavor_code, key):
     """One flavor accepting a path the other rejects would be a difference with no reason
     behind it, since the same engine opens both."""
     service = DuckdbFlavorService()
-    service.validate_parameters({key: "/data/target"}, sql_flavor_code)
-    service.validate_parameters({key: "~/data/target"}, sql_flavor_code)
+    service.validate_settings({key: "/data/target"}, None, sql_flavor_code)
+    service.validate_settings({key: "~/data/target"}, None, sql_flavor_code)
     with pytest.raises(ValueError, match="must be an absolute path"):
-        service.validate_parameters({key: "data/target"}, sql_flavor_code)
+        service.validate_settings({key: "data/target"}, None, sql_flavor_code)
 
 
 @pytest.mark.parametrize(
@@ -1107,11 +1112,12 @@ def test_the_files_code_shares_the_duckdb_family():
     assert str(FLAVOR_CODE_TO_LABEL[SqlFlavorCode.FILES]) == "Local Files"
 
 
-def test_only_the_files_code_declares_its_tables():
+def test_only_the_file_codes_declare_their_tables():
     """Pinning a schema and declaring tables as files are separate facts; a flavor can do the
     first without the second."""
-    assert declares_files(SqlFlavorCode.FILES)
-    assert fixed_table_group_schema(SqlFlavorCode.FILES) == "main"
+    for code in (SqlFlavorCode.FILES, SqlFlavorCode.S3, SqlFlavorCode.AZURE_BLOB):
+        assert declares_files(code)
+        assert fixed_table_group_schema(code) == "main"
     assert not declares_files(SqlFlavorCode.DUCKDB)
     assert fixed_table_group_schema(SqlFlavorCode.DUCKDB) is None
     assert not declares_files(None)
@@ -1121,21 +1127,27 @@ def test_each_duckdb_code_declares_its_own_connection_parameter():
     service = DuckdbFlavorService()
     assert [field.key for field in service.parameters_schema("duckdb")] == ["database_file"]
     assert [field.key for field in service.parameters_schema("files")] == ["base_path"]
+    assert [field.key for field in service.parameters_schema("s3")] == ["base_uri", "region", "strategy", "access_key_id"]
+    assert [field.key for field in service.secrets_schema("s3")] == ["secret_access_key"]
+    assert [field.key for field in service.parameters_schema("azure_blob")] == [
+        "storage_account", "container", "strategy", "client_id", "tenant_id",
+    ]
+    assert [field.key for field in service.secrets_schema("azure_blob")] == ["account_key", "client_secret"]
 
 
 def test_a_files_connection_requires_a_base_path():
     with pytest.raises(ValueError, match="Base Path is required."):
-        DuckdbFlavorService().validate_parameters({}, "files")
+        DuckdbFlavorService().validate_settings({}, None, "files")
 
 
 def test_a_relative_base_path_is_rejected():
     """It would resolve against the working directory, which differs between the UI and scheduler."""
     with pytest.raises(ValueError, match="Base Path must be an absolute path."):
-        DuckdbFlavorService().validate_parameters({"base_path": "data/claims"}, "files")
+        DuckdbFlavorService().validate_settings({"base_path": "data/claims"}, None, "files")
 
 
 def test_an_absolute_base_path_is_accepted():
-    DuckdbFlavorService().validate_parameters({"base_path": "/data/claims"}, "files")
+    DuckdbFlavorService().validate_settings({"base_path": "/data/claims"}, None, "files")
 
 
 def test_a_missing_base_path_is_reported(tmp_path):
@@ -1313,7 +1325,7 @@ def test_a_failure_reports_the_declaration_it_belongs_to(data_directory):
         engine.dispose()
 
     assert set(failures) == {"missing", "escape"}
-    assert "outside the connection base path" in failures["escape"]
+    assert failures["escape"] == PATH_OUTSIDE_BASE_PATH
 
 
 def test_a_name_differing_only_in_case_fails_rather_than_replacing(data_directory):
@@ -1414,9 +1426,16 @@ def test_a_declaration_outside_the_base_path_never_reaches_sql(data_directory):
         engine.dispose()
 
 
+class _NoQueries:
+    """A connection that fails any query."""
+
+    def execute(self, statement, *_args):
+        raise AssertionError(f"A mounted path is counted on the filesystem, not by a query: {statement}")
+
+
 def test_a_files_connection_reports_what_it_found(data_directory):
     details = DuckdbFlavorService().test_connection_details(
-        resolve_connection_params(files_params(data_directory))
+        _NoQueries(), resolve_connection_params(files_params(data_directory))
     )
     assert details == "6 files found under the base path."
 
@@ -1424,7 +1443,7 @@ def test_a_files_connection_reports_what_it_found(data_directory):
 def test_an_empty_directory_reports_no_count(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
-    details = DuckdbFlavorService().test_connection_details(resolve_connection_params(files_params(empty)))
+    details = DuckdbFlavorService().test_connection_details(_NoQueries(), resolve_connection_params(files_params(empty)))
     assert details == "No files found under the base path."
 
 
@@ -1432,13 +1451,13 @@ def test_a_single_file_is_reported_in_the_singular(tmp_path):
     root = tmp_path / "one"
     root.mkdir()
     (root / "only.csv").write_text("a\n1\n")
-    details = DuckdbFlavorService().test_connection_details(resolve_connection_params(files_params(root)))
+    details = DuckdbFlavorService().test_connection_details(_NoQueries(), resolve_connection_params(files_params(root)))
     assert details == "1 file found under the base path."
 
 
 def test_a_database_connection_reports_no_file_count(customer_database):
     assert DuckdbFlavorService().test_connection_details(
-        resolve_connection_params(connection_params(customer_database))
+        _NoQueries(), resolve_connection_params(connection_params(customer_database))
     ) is None
 
 
@@ -1580,6 +1599,8 @@ def test_a_database_file_connection_has_no_file_counts(customer_database):
     [
         ("duckdb", True, '"sales"."orders"'),
         ("files", False, '"orders"'),
+        ("s3", False, '"orders"'),
+        ("azure_blob", False, '"orders"'),
     ],
 )
 def test_only_the_database_file_code_qualifies_table_references(code, qualifies, expected_ref):

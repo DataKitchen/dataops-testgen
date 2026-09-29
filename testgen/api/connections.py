@@ -33,7 +33,7 @@ def list_connections(
     page: int = Query(default=1, ge=1),
     limit: int = Query(default=20, ge=1, le=100),
 ):
-    """Database connections in a project, each with the number of table groups defined on it.
+    """Connections in a project, each with the number of table groups defined on it.
 
     Connection parameters are not included — read a single connection for those.
     """
@@ -44,7 +44,7 @@ def list_connections(
                 connection_id=row.connection_id,
                 connection_name=row.connection_name,
                 project_code=row.project_code,
-                database_type=FLAVOR_CODE_TO_LABEL[row.sql_flavor_code],
+                connection_type=FLAVOR_CODE_TO_LABEL[row.sql_flavor_code],
                 table_group_count=row.table_group_count,
             )
             for row in rows
@@ -61,9 +61,9 @@ def list_connections(
     summary="Read a connection",
 )
 def get_connection(connection: Connection = resolve_connection("view")):  # noqa: B008
-    """A connection's configuration, including the parameters used to reach the database.
+    """A connection's configuration, including the parameters used to reach its data source.
 
-    The keys under ``settings`` depend on the database type and authentication method —
+    The keys under ``settings`` depend on the connection type and authentication method —
     a Databricks connection carries ``catalog`` and ``http_path`` where a PostgreSQL one
     carries ``database``. Credentials are never returned.
     """
@@ -71,7 +71,7 @@ def get_connection(connection: Connection = resolve_connection("view")):  # noqa
         connection_id=connection.connection_id,
         connection_name=connection.connection_name,
         project_code=connection.project_code,
-        database_type=FLAVOR_CODE_TO_LABEL[connection.sql_flavor_code],
+        connection_type=FLAVOR_CODE_TO_LABEL[connection.sql_flavor_code],
         authentication=(
             AUTHENTICATION_FROM_MODE[mode] if (mode := authentication_method(connection)) is not None else None
         ),

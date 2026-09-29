@@ -23,7 +23,7 @@ import { formatNumber } from '../display_utils.js';
 import { Alert } from '../components/alert.js';
 
 const { div, span, strong } = van.tags;
-const profilingWarningText = 'Profiling on large datasets could be time-consuming or resource-intensive, depending on your database configuration.';
+const profilingWarningText = 'Profiling on large datasets could be time-consuming or resource-intensive.';
 
 /**
  * @param {Properties} props

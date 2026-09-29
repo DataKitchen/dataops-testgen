@@ -1,25 +1,26 @@
-"""MCP tools for database connections — list, get, and test database connections.
+"""MCP tools for connections — list, get, and test connections to data sources.
 
-The per-flavor connection shape (which auth modes exist and which ``connection_params`` keys
-each needs) lives in ``testgen.common.database.connection_service`` and is exposed to the
-model through the ``testgen://connection-parameters/{flavor}`` resource. Validation and
-auth-path normalization are delegated to that same module so the rules stay in one place.
+The per-connection-type shape (which auth modes exist and which ``connection_params`` keys
+each needs) lives in ``testgen.common.connection_schema`` and is exposed to the model through
+the ``testgen://connection-parameters/{flavor}`` resource. Validation and auth-path
+normalization come from ``testgen.common.database.connection_service``.
 """
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Annotated
 
 from pydantic import Field
 
-from testgen.common.connection_schema import validate_connection_fields
+from testgen.common.connection_schema import connection_location, validate_connection_fields
 from testgen.common.database.connection_service import (
     apply_connection_defaults,
     enforce_connection_rules,
     test_connection_status,
 )
 from testgen.common.models import with_database_session
-from testgen.common.models.connection import Connection
+from testgen.common.models.connection import Connection, ConnectionListItem
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import (
@@ -29,7 +30,7 @@ from testgen.mcp.tools.common import (
     format_flavor_label,
     format_page_footer,
     format_page_info,
-    parse_sql_flavor,
+    parse_connection_type,
     raise_validation_error,
     render_connection_body,
     resolve_connection,
@@ -49,8 +50,8 @@ def list_connections(
     limit: Annotated[int, Field(description="Page size (default 20, max 100).")] = 20,
 ) -> str:
     """List connections in a project.
-    Each connection carries its database type and table-group counts.
-    Use this before changing or referencing a connection to confirm its ID, name, and host.
+    Each connection carries its connection type, location, and table-group count.
+    Use this before changing or referencing a connection to confirm its ID, name, and location.
     Credentials are never returned.
     """
     validate_page(page)
@@ -76,15 +77,14 @@ def list_connections(
                 row.connection_id,
                 row.connection_name,
                 format_flavor_label(row.sql_flavor_code),
-                row.project_host,
-                row.project_db,
+                _location(row),
                 row.table_group_count,
             ]
         )
     doc.table(
-        ["ID", "Name", "Type", "Host", "Database", "Table groups"],
+        ["ID", "Name", "Type", "Location", "Table groups"],
         table_rows,
-        code=[0, 3, 4],
+        code=[0, 3],
     )
     if footer := format_page_footer(total, page, limit):
         doc.text(footer)
@@ -97,7 +97,7 @@ def get_connection(
     connection_id: Annotated[int, Field(description="Bigint connection ID returned by `list_connections`.")],
 ) -> str:
     """Get a connection's configuration.
-    Includes database type, host, and authentication mode.
+    Includes connection type, connection settings, and authentication mode.
     Credentials (password, private key, service-account key) are never returned.
     Use this before editing a connection or creating a table group on it.
     """
@@ -115,46 +115,55 @@ def test_connection(
         int | None,
         Field(description="Stored connection ID, e.g. from ``get_data_inventory``. Omit for inline tests."),
     ] = None,
-    sql_flavor: Annotated[
+    connection_type: Annotated[
         str | None,
         Field(
-            description="SQL Database flavor. Required for inline tests; not accepted when ``connection_id`` is set.",
+            description=(
+                "Connection type, e.g. PostgreSQL, Snowflake, Amazon S3, Local Files — the accepted values are "
+                "listed in ``testgen://connection-parameters``. Required for inline tests; not accepted when "
+                "``connection_id`` is set."
+            ),
         ),
     ] = None,
     connection_params: Annotated[
         dict | None,
         Field(description="Connection field values. For a stored connection, omitted fields keep their stored value."),
     ] = None,
-    connection_mode: Annotated[str | None, Field(description="Authentication mode for multi-mode flavors.")] = None,
+    connection_mode: Annotated[
+        str | None,
+        Field(description="Authentication mode, for connection types that have more than one."),
+    ] = None,
 ) -> str:
     """Test connectivity against a stored or inline-supplied connection.
 
     Two call shapes: pass ``connection_id`` to test a stored connection
     (``connection_params`` / ``connection_mode`` override the stored values for
-    the test only, nothing is saved); or pass ``sql_flavor`` plus
-    ``connection_params`` (and ``connection_mode`` for multi-mode flavors) to
-    test inline without persisting. See the
-    ``testgen://connection-parameters/{flavor}`` resource for each flavor's
+    the test only, nothing is saved); or pass ``connection_type`` plus
+    ``connection_params`` (and ``connection_mode`` where the type has more than one)
+    to test inline without persisting. See the
+    ``testgen://connection-parameters/{flavor}`` resource for each connection type's
     ``connection_mode`` values and ``connection_params`` keys.
     """
-    if connection_id is None and sql_flavor is None:
+    if connection_id is None and connection_type is None:
         raise MCPUserError(
             "Provide `connection_id` to test an existing connection, "
-            "or `sql_flavor` plus `connection_params` to test inline."
+            "or `connection_type` plus `connection_params` to test inline."
         )
 
     connection: Connection | None = None
     if connection_id is not None:
-        if sql_flavor is not None:
+        if connection_type is not None:
             raise MCPUserError(
-                "`sql_flavor` cannot be overridden when `connection_id` is set "
-                "— database type is immutable on an existing connection."
+                "`connection_type` cannot be supplied with `connection_id` "
+                "— a connection's type cannot be changed."
             )
-        connection = resolve_connection(connection_id)
+        # The test runs on a copy outside the session, so neither the overrides nor the rules
+        # enforced below (which drop the credentials a mode does not read) reach the stored record.
+        connection = Connection(**deepcopy(resolve_connection(connection_id).to_dict()))
 
     inline = connection is None
     if connection is None:
-        _, code, family = parse_sql_flavor(sql_flavor)  # type: ignore[arg-type]
+        _, code, family = parse_connection_type(connection_type)  # type: ignore[arg-type]
         connection = Connection(sql_flavor=family, sql_flavor_code=code)
 
     if connection_params is not None or connection_mode is not None:
@@ -194,3 +203,16 @@ def test_connection(
     if status.details:
         doc.code_block(status.details)
     return doc.render()
+
+
+def _location(row: ConnectionListItem) -> str | None:
+    """Where a listed connection's data lives, as its location values joined with ``/``."""
+    connection = Connection(
+        sql_flavor_code=row.sql_flavor_code,
+        project_host=row.project_host,
+        project_db=row.project_db,
+        connect_by_url=row.connect_by_url,
+        url=row.url,
+        parameters=row.parameters,
+    )
+    return " / ".join(value for _, value in connection_location(connection)) or None

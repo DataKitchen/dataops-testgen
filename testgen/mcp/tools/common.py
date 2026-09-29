@@ -1186,8 +1186,8 @@ SQL_FLAVOR_LABEL_TO_CODE: dict[SqlFlavorLabel, str] = {
 SQL_FLAVOR_CODE_TO_FAMILY: dict[str, str] = dict(FLAVOR_CODE_TO_FAMILY)
 
 
-def parse_sql_flavor(value: str) -> tuple[SqlFlavorLabel, str, str]:
-    """Validate a user-facing ``sql_flavor`` value and return ``(label, code, family)``.
+def parse_connection_type(value: str) -> tuple[SqlFlavorLabel, str, str]:
+    """Validate a user-facing ``connection_type`` value and return ``(label, code, family)``.
 
     Accepts either the display label (``Azure SQL Database``) or the flavor code
     (``azure_mssql``), in any casing. The code is accepted because it is the slug in
@@ -1198,7 +1198,7 @@ def parse_sql_flavor(value: str) -> tuple[SqlFlavorLabel, str, str]:
         label = match_mapping(value, SQL_FLAVOR_CODE_TO_LABEL)
     if label is None:
         valid = ", ".join(f.value for f in SqlFlavorLabel)
-        raise MCPUserError(f"Invalid sql_flavor `{value}`. Valid values: {valid}")
+        raise MCPUserError(f"Invalid connection_type `{value}`. Valid values: {valid}")
     code = SQL_FLAVOR_LABEL_TO_CODE[label]
     return label, code, SQL_FLAVOR_CODE_TO_FAMILY[code]
 
@@ -1281,6 +1281,8 @@ def apply_connection_params(
     # Forced columns first so explicit params can't be clobbered by sets.
     for attr, value in fmode.sets.items():
         setattr(connection, attr, value)
+    if fmode.parameter_sets:
+        connection.parameters = {**(connection.parameters or {}), **fmode.parameter_sets}
 
     # mssql-family SPN identity: two fields packed into project_user as
     # ``<cid>@<tid>``. Enforce both-or-neither.
@@ -1337,8 +1339,8 @@ def reject_fixed_max_threads(sql_flavor_code: str, max_threads: int | None) -> N
     if max_threads is not None and fixed is not None and max_threads != fixed:
         label = FLAVOR_CODE_TO_LABEL.get(sql_flavor_code, sql_flavor_code)
         raise MCPUserError(
-            f"`max_threads` cannot be set for {label}. It runs inside TestGen rather than on a "
-            f"separate database server, so its thread count is fixed at {fixed}."
+            f"`max_threads` cannot be set for {label}. TestGen queries it with an engine that runs "
+            f"inside TestGen, so its thread count is fixed at {fixed}."
         )
 
 
@@ -1381,7 +1383,7 @@ def render_connection_body(doc: MdDoc, connection: Connection) -> None:
 
 
 _TARGET_DB_ERROR_WITHHELD = (
-    "The target database reported an error. Its text is withheld by the source-data "
+    "The data source reported an error. Its text is withheld by the source-data "
     "protection policy on this install, because driver messages quote the value that "
     "caused them."
 )

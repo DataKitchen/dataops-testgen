@@ -36,7 +36,7 @@ from testgen.common.database.database_service import empty_cache, get_flavor_ser
 from testgen.common.database.flavor.flavor_service import FlavorConnectionError, resolve_connection_params
 from testgen.common.flavors import fixed_max_threads
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
-from testgen.ui.services.database_service import fetch_from_target_db
+from testgen.ui.services.database_service import target_db_session
 
 try:
     from pyodbc import Error as PyODBCError
@@ -80,17 +80,14 @@ def test_connection_status(connection: Connection) -> ConnectionStatus:
     empty_cache()
     try:
         flavor_service = get_flavor_service(connection.sql_flavor)
-        results = fetch_from_target_db(connection, flavor_service.test_query, table_group=None)
-        connection_successful = len(results) == 1 and next(iter(results[0].values())) == 1
-
-        if not connection_successful:
-            return ConnectionStatus(message="Error completing a query to the database server.", successful=False)
-
-        return ConnectionStatus(
-            message="The connection was successful.",
-            details=flavor_service.test_connection_details(resolve_connection_params(connection.to_dict())),
-            successful=True,
-        )
+        with target_db_session(connection, table_group=None) as session:
+            results = session(flavor_service.test_query)
+            if not (len(results) == 1 and next(iter(results[0].values())) == 1):
+                return ConnectionStatus(message="Error completing a test query against the data source.", successful=False)
+            details = flavor_service.test_connection_details(
+                session.connection, resolve_connection_params(connection.to_dict())
+            )
+        return ConnectionStatus(message="The connection was successful.", details=details, successful=True)
     except FlavorConnectionError as error:
         # The flavor wrote this for the user, so it is shown instead of a generic failure.
         LOG.info(f"Connection test failed: {error}")
@@ -145,13 +142,16 @@ def merge_posted_secrets(posted: dict, stored: Connection | None = None) -> None
     """Fold a posted ``secrets`` entry into ``stored``'s, rewriting ``posted`` in place.
 
     An untouched value -- blank, the mask, or ``None`` -- keeps the stored secret,
-    ``CLEAR_SENTINEL`` drops it, anything else replaces it. A payload carrying no
-    ``secrets`` entry is left alone.
+    ``CLEAR_SENTINEL`` drops it, anything else replaces it. Nothing stored is kept when the
+    payload changes the ``sql_flavor_code``. A payload carrying no ``secrets`` entry is left alone.
     """
     if "secrets" not in posted:
         return
 
-    merged = dict((stored.secrets if stored else None) or {})
+    # A secret stored for another connection type fails validation for this one, and the form has
+    # no field that could clear it.
+    same_type = stored is not None and posted.get("sql_flavor_code", stored.sql_flavor_code) == stored.sql_flavor_code
+    merged = dict((stored.secrets if same_type else None) or {})
     for key, raw in (posted["secrets"] or {}).items():
         value = raw.strip() if isinstance(raw, str) else raw
         if value == CLEAR_SENTINEL:
@@ -164,18 +164,22 @@ def merge_posted_secrets(posted: dict, stored: Connection | None = None) -> None
 def enforce_connection_rules(connection: Connection) -> None:
     """Enforce the rules a connection must satisfy to be saved or used.
 
+    First drops the ``parameters`` and ``secrets`` values the flavor's auth mode does not read.
     Raises ``ValueError`` on the first rule a connection breaks: a flavor's ``parameters``
-    or ``secrets`` not matching its declared shape, or a combination of auth flags that
-    cannot work. Then clears the credential columns the chosen auth mode does not use, so
-    flipping between modes leaves no stale opposite-mode values behind. Databricks OAuth
-    stores the client secret in ``project_pw_encrypted`` despite ``connect_by_key=True``, so
-    it sticks with the password path. Finally pins ``max_threads`` for a flavor that fixes it.
+    or ``secrets`` not matching its declared shape or missing what its auth mode needs, or a
+    combination of auth flags that cannot work. Then clears the credential columns the chosen
+    auth mode does not use, so flipping between modes leaves no stale opposite-mode values
+    behind. Databricks OAuth stores the client secret in ``project_pw_encrypted`` despite
+    ``connect_by_key=True``, so it sticks with the password path. Finally pins ``max_threads``
+    for a flavor that fixes it.
     """
     code = connection.sql_flavor_code
 
     flavor_service = get_flavor_service(connection.sql_flavor)
-    flavor_service.validate_parameters(connection.parameters, code)
-    flavor_service.validate_secrets(connection.secrets, code)
+    connection.parameters, connection.secrets = flavor_service.scrub_settings(
+        connection.parameters, connection.secrets, code
+    )
+    flavor_service.validate_settings(connection.parameters, connection.secrets, code)
 
     if (threads := fixed_max_threads(code)) is not None:
         connection.max_threads = threads

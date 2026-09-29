@@ -319,7 +319,7 @@ def pii_flag_from_db(value: str | None) -> PiiFlag | None:
 
 
 class AuthenticationMethod(StrEnum):
-    """How a connection authenticates to its database."""
+    """How a connection authenticates to its data source."""
 
     password = "password"  # noqa: S105 — auth-method name, not a credential
     key_pair = "key_pair"
@@ -329,10 +329,13 @@ class AuthenticationMethod(StrEnum):
     jwt_bearer = "jwt_bearer"
     client_credentials = "client_credentials"
     service_account = "service_account"
+    access_keys = "access_keys"
+    iam_role = "iam_role"
+    account_key = "account_key"
 
 
 # ``ConnectionMode`` members are the display labels the connection form uses
-# ("Key-Pair", "Service Principal (OAuth)"); the API exposes snake_case tokens.
+# ("Key Pair", "Service Principal"); the API exposes snake_case tokens.
 AUTHENTICATION_FROM_MODE: dict[ConnectionMode, AuthenticationMethod] = {
     ConnectionMode.PASSWORD: AuthenticationMethod.password,
     ConnectionMode.KEY_PAIR: AuthenticationMethod.key_pair,
@@ -342,13 +345,16 @@ AUTHENTICATION_FROM_MODE: dict[ConnectionMode, AuthenticationMethod] = {
     ConnectionMode.JWT_BEARER: AuthenticationMethod.jwt_bearer,
     ConnectionMode.CLIENT_CREDENTIALS: AuthenticationMethod.client_credentials,
     ConnectionMode.SERVICE_ACCOUNT: AuthenticationMethod.service_account,
+    ConnectionMode.ACCESS_KEYS: AuthenticationMethod.access_keys,
+    ConnectionMode.IAM_ROLE: AuthenticationMethod.iam_role,
+    ConnectionMode.ACCOUNT_KEY: AuthenticationMethod.account_key,
 }
 
 
-# A connection's database type, as shown to API consumers: the same values as the
-# internal SqlFlavorLabel, under a public class name so the exposed OpenAPI schema
-# carries "DatabaseType" rather than the internal "flavor" vocabulary. Derived from
+# A connection's type, as shown to API consumers: the same values as the internal
+# SqlFlavorLabel, under a public class name so the exposed OpenAPI schema carries
+# "ConnectionType" rather than the internal "flavor" vocabulary. Derived from
 # the source so the two cannot drift. Built via the functional API — mypy can't read
 # the members of a comprehension-built enum, but nothing needs member access; the
 # values are the whole contract.
-DatabaseType = StrEnum("DatabaseType", {m.name: m.value for m in SqlFlavorLabel})  # type: ignore[misc]
+ConnectionType = StrEnum("ConnectionType", {m.name: m.value for m in SqlFlavorLabel})  # type: ignore[misc]

@@ -21,19 +21,23 @@ import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
+from testgen.common.database.flavor.duckdb_object_storage import STRATEGY_PARAMETER, AzureBlobStrategy, S3Strategy
+from testgen.common.flavors import FLAVOR_CODE_TO_LABEL, SqlFlavorCode
 from testgen.common.models.connection import Connection
 
 
 class ConnectionMode(StrEnum):
     PASSWORD = "Password"  # noqa: S105 — auth-mode label, not a credential
-    KEY_PAIR = "Key-Pair"
+    KEY_PAIR = "Key Pair"
     MANAGED_IDENTITY = "Managed Identity"
-    ACCESS_TOKEN = "Access Token"  # noqa: S105 — auth-mode label, not a credential
-    SERVICE_PRINCIPAL = "Service Principal (OAuth)"
+    ACCESS_TOKEN = "Personal Access Token"  # noqa: S105 — auth-mode label, not a credential
+    SERVICE_PRINCIPAL = "Service Principal"
     JWT_BEARER = "JWT Bearer Flow"
     CLIENT_CREDENTIALS = "Client Credentials Flow"
     SERVICE_ACCOUNT = "Service Account Key"
+    ACCESS_KEYS = "Access Keys"
+    IAM_ROLE = "IAM Role"
+    ACCOUNT_KEY = "Account Key"
 
 
 class Req(StrEnum):
@@ -83,6 +87,8 @@ class FlavorMode:
     supports_url: bool  # whether the URL alternative is offered
     # Columns forced regardless of supplied params (auth flags, Databricks PAT user).
     sets: dict[str, object] = field(default_factory=dict)
+    # ``parameters`` keys forced the same way, for a flavor that records its mode there.
+    parameter_sets: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -136,6 +142,20 @@ _DATABASE_FILE = ConnField("Database File", "database_file", Req.REQUIRED, in_pa
 
 # Files
 _BASE_PATH = ConnField("Base Path", "base_path", Req.REQUIRED, in_parameters=True)
+
+# Amazon S3
+_BASE_URI = ConnField("Base URI", "base_uri", Req.REQUIRED, in_parameters=True)
+_REGION = ConnField("Region", "region", Req.REQUIRED, in_parameters=True)
+_ACCESS_KEY_ID = ConnField("Access Key ID", "access_key_id", Req.REQUIRED, in_parameters=True)
+_SECRET_ACCESS_KEY = ConnField("Secret Access Key", "secret_access_key", Req.REQUIRED, secret=True, in_secrets=True)
+
+# Azure Blob Storage
+_STORAGE_ACCOUNT = ConnField("Storage Account", "storage_account", Req.REQUIRED, in_parameters=True)
+_CONTAINER = ConnField("Container", "container", Req.REQUIRED, in_parameters=True)
+_ACCOUNT_KEY = ConnField("Account Key", "account_key", Req.REQUIRED, secret=True, in_secrets=True)
+_BLOB_CLIENT_ID = ConnField("Client ID", "client_id", Req.REQUIRED, in_parameters=True)
+_BLOB_TENANT_ID = ConnField("Tenant ID", "tenant_id", Req.REQUIRED, in_parameters=True)
+_BLOB_CLIENT_SECRET = ConnField("Client Secret", "client_secret", Req.REQUIRED, secret=True, in_secrets=True)
 
 
 def _host_auth_schema(code: str, *, db_field: ConnField = _DATABASE) -> FlavorSchema:
@@ -207,6 +227,50 @@ FLAVOR_CONNECTION_SCHEMA: dict[str, FlavorSchema] = {
         code="files",
         label=FLAVOR_CODE_TO_LABEL["files"],
         modes=(FlavorMode(mode=None, fields=(_BASE_PATH,), supports_url=False),),
+        url_field=None,
+    ),
+    "s3": FlavorSchema(
+        code="s3",
+        label=FLAVOR_CODE_TO_LABEL["s3"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.ACCESS_KEYS,
+                fields=(_BASE_URI, _REGION, _ACCESS_KEY_ID, _SECRET_ACCESS_KEY),
+                supports_url=False,
+                parameter_sets={STRATEGY_PARAMETER: S3Strategy.ACCESS_KEYS},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.IAM_ROLE,
+                fields=(_BASE_URI, _REGION),
+                supports_url=False,
+                parameter_sets={STRATEGY_PARAMETER: S3Strategy.IAM_ROLE},
+            ),
+        ),
+        url_field=None,
+    ),
+    "azure_blob": FlavorSchema(
+        code="azure_blob",
+        label=FLAVOR_CODE_TO_LABEL["azure_blob"],
+        modes=(
+            FlavorMode(
+                mode=ConnectionMode.ACCOUNT_KEY,
+                fields=(_STORAGE_ACCOUNT, _CONTAINER, _ACCOUNT_KEY),
+                supports_url=False,
+                parameter_sets={STRATEGY_PARAMETER: AzureBlobStrategy.ACCOUNT_KEY},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.MANAGED_IDENTITY,
+                fields=(_STORAGE_ACCOUNT, _CONTAINER),
+                supports_url=False,
+                parameter_sets={STRATEGY_PARAMETER: AzureBlobStrategy.MANAGED_IDENTITY},
+            ),
+            FlavorMode(
+                mode=ConnectionMode.SERVICE_PRINCIPAL,
+                fields=(_STORAGE_ACCOUNT, _CONTAINER, _BLOB_CLIENT_ID, _BLOB_TENANT_ID, _BLOB_CLIENT_SECRET),
+                supports_url=False,
+                parameter_sets={STRATEGY_PARAMETER: AzureBlobStrategy.SERVICE_PRINCIPAL},
+            ),
+        ),
         url_field=None,
     ),
     "azure_mssql": _azure_schema("azure_mssql", include_service_principal=True),
@@ -291,13 +355,15 @@ def schema_for(code: str) -> FlavorSchema:
 
 # Every column any flavor treats as a credential. Surfaces that render a connection
 # filter on this rather than listing the columns themselves, so a column added to the
-# schema without ``secret=True`` cannot reach a response by being forgotten.
+# schema without ``secret=True`` cannot reach a response by being forgotten. A field
+# stored in ``secrets`` names a key inside that column rather than a column, so it is
+# not listed; the whole ``secrets`` column is encrypted.
 SECRET_COLUMNS: frozenset[str] = frozenset(
     fld.column
     for schema in FLAVOR_CONNECTION_SCHEMA.values()
     for mode in schema.modes
     for fld in mode.fields
-    if fld.secret
+    if fld.secret and not fld.in_secrets
 )
 
 
@@ -310,6 +376,13 @@ def infer_mode(connection: Connection) -> ConnectionMode | None:
     schema = FLAVOR_CONNECTION_SCHEMA.get(code)
     if schema is None or (len(schema.modes) == 1 and schema.modes[0].mode is None):
         return None
+
+    if any(fmode.parameter_sets for fmode in schema.modes):
+        parameters = connection.parameters or {}
+        for fmode in schema.modes:
+            if all(parameters.get(key) == value for key, value in fmode.parameter_sets.items()):
+                return fmode.mode
+        return schema.modes[0].mode
 
     if code in {"azure_mssql", "synapse_mssql"}:
         if connection.connect_with_service_principal:
@@ -424,6 +497,35 @@ def connection_field_labels(connection: Connection) -> dict[str, str]:
     if schema.url_field is not None:
         labels[schema.url_field.column] = schema.url_field.label
     return labels
+
+# The columns that say where a connection's data lives, in display order. A connection in URL mode
+# shows its URL instead.
+_DEFAULT_LOCATION_COLUMNS = ("project_host", "project_db")
+_LOCATION_COLUMNS: dict[str, tuple[str, ...]] = {
+    # The username is kept in ``project_db``, so the login URL alone locates the org.
+    SqlFlavorCode.SALESFORCE_DATA360: ("project_host",),
+    SqlFlavorCode.DUCKDB: ("database_file",),
+    SqlFlavorCode.FILES: ("base_path",),
+    SqlFlavorCode.S3: ("base_uri",),
+    SqlFlavorCode.AZURE_BLOB: ("storage_account", "container"),
+}
+
+
+def connection_location(connection: Connection) -> list[tuple[str, str]]:
+    """``(label, value)`` pairs saying where a connection's data lives, under its UI labels."""
+    if connection.sql_flavor_code == SqlFlavorCode.BIGQUERY:
+        # The project comes from the service account key; a connection created outside the form has
+        # it only there.
+        key = connection.service_account_key if isinstance(connection.service_account_key, dict) else {}
+        project = connection.project_db or key.get("project_id")
+        return [("Project ID", str(project))] if project else []
+    if getattr(connection, "connect_by_url", False):
+        columns: tuple[str, ...] = ("url",)
+    else:
+        columns = _LOCATION_COLUMNS.get(connection.sql_flavor_code, _DEFAULT_LOCATION_COLUMNS)
+    values = {fld.column: (fld.label, str(value)) for fld, value in connection_display_values(connection)}
+    return [values[column] for column in columns if column in values]
+
 
 # -- field-requirement validation -------------------------------------------
 

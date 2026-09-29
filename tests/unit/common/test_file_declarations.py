@@ -1,5 +1,6 @@
 """Tests for file declarations — the table list a file-based connection's table group carries."""
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,7 @@ from testgen.common.database.file_declarations import (
     NO_DECLARATIONS,
     PATH_OUTSIDE_BASE_PATH,
     URI_HAS_CREDENTIALS,
+    URI_HAS_QUERY,
     URI_IS_FOLDER,
     URI_OUTSIDE_BASE_PATH,
     URI_REQUIRED,
@@ -351,3 +353,148 @@ def test_no_table_group_carries_no_declarations(monkeypatch):
 )
 def test_skip_reason_names_why_a_declaration_cannot_be_read(base_path, name, uri, expected):
     assert skip_reason(str(base_path), FileDeclaration(name=name, uri=uri, format=FileFormat.CSV)) == expected
+
+
+# -- object storage ---------------------------------------------------------------
+
+S3_BASE = "s3://claims-bucket/monthly"
+AZURE_BASE = "az://claims"
+
+
+def _csv(uri: str) -> FileDeclaration:
+    return FileDeclaration(name="claims", uri=uri, format=FileFormat.CSV)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "claims.csv",
+        "2024/claims.csv",
+        "/claims.csv",
+        "s3://claims-bucket/monthly/claims.csv",
+        "2024/../2025/claims.csv",
+        "claims_*.csv",
+    ],
+)
+def test_an_object_storage_uri_inside_the_base_location_is_accepted(uri):
+    assert is_inside_base_path(S3_BASE, uri)
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        # DuckDB's allow-list passes this one, so the check here is the only thing that refuses it.
+        "../other/claims.csv",
+        "2024/../../other/claims.csv",
+        "s3://other-bucket/monthly/claims.csv",
+        # A sibling that shares the prefix is not inside it.
+        "s3://claims-bucket/monthly-archive/claims.csv",
+        "az://claims-bucket/monthly/claims.csv",
+    ],
+)
+def test_an_object_storage_uri_outside_the_base_location_is_refused(uri):
+    assert not is_inside_base_path(S3_BASE, uri)
+
+
+def test_a_bucket_root_base_location_contains_the_whole_bucket():
+    assert is_inside_base_path("s3://claims-bucket", "monthly/claims.csv")
+    assert not is_inside_base_path("s3://claims-bucket", "s3://other-bucket/claims.csv")
+
+
+@pytest.mark.parametrize("base", ["s3://claims-bucket", AZURE_BASE])
+@pytest.mark.parametrize("uri", ["../claims.csv", "2024/../../claims.csv", "../other/claims.csv"])
+def test_a_uri_climbing_above_the_bucket_or_container_root_is_refused(base, uri):
+    assert not is_inside_base_path(base, uri)
+
+
+@pytest.mark.parametrize(
+    ("uri", "multi", "pattern"),
+    [
+        ("claims.csv", False, "s3://claims-bucket/monthly/claims.csv"),
+        ("snapshots/claims_*.csv", True, "s3://claims-bucket/monthly/snapshots/claims_*.csv"),
+        ("snapshots/**/*.csv", True, "s3://claims-bucket/monthly/snapshots/**/*.csv"),
+        ("./snapshots/../claims.csv", False, "s3://claims-bucket/monthly/claims.csv"),
+    ],
+)
+def test_an_object_storage_declaration_is_read_as_written(uri, multi, pattern):
+    assert is_multi_file(_csv(uri)) is multi
+    assert read_pattern(S3_BASE, _csv(uri)) == pattern
+
+
+def test_a_container_declaration_resolves_against_the_container_root():
+    assert read_pattern(AZURE_BASE, _csv("2024/claims.csv")) == "az://claims/2024/claims.csv"
+    assert read_pattern(AZURE_BASE, _csv("2024/*.csv")) == "az://claims/2024/*.csv"
+
+
+def test_an_object_storage_folder_is_rejected_in_favor_of_a_pattern():
+    """Object storage has no directories to ask about, so only a trailing slash marks a folder."""
+    errors = validate_file_declarations([{"name": "snapshots", "uri": "snapshots/", "format": "csv"}], S3_BASE)
+    assert errors == [f"snapshots: {URI_IS_FOLDER}"]
+    assert skip_reason(S3_BASE, _csv("snapshots/")) == URI_IS_FOLDER
+    assert skip_reason(S3_BASE, _csv("snapshots")) is None
+
+
+def test_an_object_storage_pattern_unions_the_columns_of_its_files():
+    """The cumulative-snapshot shape: each month's file can add a column the earlier ones lack."""
+    statement = create_view_statement(S3_BASE, _csv("snapshots/*.csv"), "main")
+    assert "read_csv('s3://claims-bucket/monthly/snapshots/*.csv'" in statement
+    assert "union_by_name = true" in statement
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        # DuckDB reads s3_* query parameters as settings, which would send the signed request to
+        # another host over plain HTTP.
+        "claims.csv?s3_endpoint=127.0.0.1:9&s3_use_ssl=false",
+        "claims.csv?s3_access_key_id=AKIAOTHER",
+        # Not a wildcard on object storage, where it only ever starts a query string.
+        "claims_202?.csv",
+    ],
+)
+def test_an_object_storage_declaration_cannot_carry_a_query_string(uri):
+    assert validate_file_declarations([{"name": "claims", "uri": uri, "format": "csv"}], S3_BASE) == [
+        f"claims: {URI_HAS_QUERY}"
+    ]
+    assert skip_reason(S3_BASE, _csv(uri)) == URI_HAS_QUERY
+
+
+@pytest.mark.parametrize("uri", ["claims#1.csv", "s3://claims-bucket/monthly/claims#1.csv"])
+def test_an_object_storage_key_may_contain_a_hash(uri):
+    """S3 reads ``#`` as part of the key, not as a fragment."""
+    assert validate_file_declarations([{"name": "claims", "uri": uri, "format": "csv"}], S3_BASE) == []
+    assert read_pattern(S3_BASE, _csv(uri)) == "s3://claims-bucket/monthly/claims#1.csv"
+
+
+@pytest.mark.parametrize("uri", [".", "2024/.."])
+def test_a_uri_naming_the_base_location_itself_is_a_folder(uri):
+    assert skip_reason(S3_BASE, _csv(uri)) == URI_IS_FOLDER
+
+
+@pytest.mark.parametrize(
+    ("uri", "message"),
+    [
+        ("claims.csv?s3_endpoint=attacker.example", URI_HAS_QUERY),
+        ("../other/claims.csv", PATH_OUTSIDE_BASE_PATH),
+    ],
+)
+def test_read_pattern_refuses_what_skip_reason_refuses(uri, message):
+    """The path goes into SQL text, so the builders refuse it even when called without the check."""
+    with pytest.raises(ValueError, match=re.escape(message)):
+        read_pattern(S3_BASE, _csv(uri))
+
+
+def test_a_question_mark_on_a_mounted_path_is_still_a_glob(base_path):
+    assert validate([{"name": "claims", "uri": "claims_202?.csv"}], base_path) == []
+
+
+def test_object_storage_declarations_are_validated_against_the_base_location():
+    errors = validate_file_declarations(
+        [
+            {"name": "inside", "uri": "claims.csv", "format": "csv"},
+            {"name": "outside", "uri": "s3://other-bucket/claims.csv", "format": "csv"},
+            {"name": "signed", "uri": "claims.csv?X-Amz-Signature=abc", "format": "csv"},
+        ],
+        S3_BASE,
+    )
+    assert errors == [f"outside: {URI_OUTSIDE_BASE_PATH}", f"signed: {URI_HAS_CREDENTIALS}"]

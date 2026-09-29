@@ -914,10 +914,10 @@ def test_sql_flavor_label_set_matches_common_layer():
     assert set(SQL_FLAVOR_LABEL_TO_CODE.values()) == set(FLAVOR_CODE_TO_FAMILY.keys())
 
 
-def test_parse_sql_flavor_returns_label_code_family():
-    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+def test_parse_connection_type_returns_label_code_family():
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_connection_type
 
-    label, code, family = parse_sql_flavor("Azure SQL Database")
+    label, code, family = parse_connection_type("Azure SQL Database")
     assert label == SqlFlavorLabel.AZURE_MSSQL
     assert code == "azure_mssql"
     assert family == "mssql"
@@ -935,33 +935,33 @@ def test_parse_sql_flavor_returns_label_code_family():
         "  azure_mssql  ",
     ],
 )
-def test_parse_sql_flavor_accepts_label_or_code_in_any_casing(supplied):
+def test_parse_connection_type_accepts_label_or_code_in_any_casing(supplied):
     """The flavor code is accepted alongside the label because it is the slug in
     ``testgen://connection-parameters/<code>`` URIs — a caller that just read one has
     the code, not the label, in hand."""
-    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_connection_type
 
-    label, code, family = parse_sql_flavor(supplied)
+    label, code, family = parse_connection_type(supplied)
     assert label == SqlFlavorLabel.AZURE_MSSQL
     assert code == "azure_mssql"
     assert family == "mssql"
 
 
-def test_parse_sql_flavor_every_code_round_trips():
+def test_parse_connection_type_every_code_round_trips():
     """Every documented resource-URI slug resolves back to its flavor."""
-    from testgen.mcp.tools.common import SQL_FLAVOR_CODE_TO_LABEL, parse_sql_flavor
+    from testgen.mcp.tools.common import SQL_FLAVOR_CODE_TO_LABEL, parse_connection_type
 
     for flavor_code, expected_label in SQL_FLAVOR_CODE_TO_LABEL.items():
-        label, code, _family = parse_sql_flavor(flavor_code)
+        label, code, _family = parse_connection_type(flavor_code)
         assert label == expected_label
         assert code == flavor_code
 
 
-def test_parse_sql_flavor_invalid_lists_display_values():
-    from testgen.mcp.tools.common import SqlFlavorLabel, parse_sql_flavor
+def test_parse_connection_type_invalid_lists_display_values():
+    from testgen.mcp.tools.common import SqlFlavorLabel, parse_connection_type
 
-    with pytest.raises(MCPUserError, match="Invalid sql_flavor `bogus`") as exc:
-        parse_sql_flavor("bogus")
+    with pytest.raises(MCPUserError, match="Invalid connection_type `bogus`") as exc:
+        parse_connection_type("bogus")
     msg = str(exc.value)
     for member in SqlFlavorLabel:
         assert member.value in msg

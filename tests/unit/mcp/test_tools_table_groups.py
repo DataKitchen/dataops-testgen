@@ -766,7 +766,7 @@ def test_preview_partial_inaccessible_appends_footer(mock_resolve, mock_conn_cls
                 },
             },
             "success": True,
-            "message": "Some tables were not accessible. Please check the database permissions.",
+            "message": "Some tables were not accessible. Check that TestGen has read access to them.",
         },
         None,
         None,

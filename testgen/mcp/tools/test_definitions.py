@@ -776,7 +776,7 @@ def validate_custom_test(
         doc.code_block(message)
         return doc.render()
 
-    flavor = format_flavor_label(connection.sql_flavor_code) or "target database"
+    flavor = format_flavor_label(connection.sql_flavor_code) or "data source"
     doc.text(
         f"**SQL ran successfully** against `{connection.connection_name}` ({flavor})."
     )

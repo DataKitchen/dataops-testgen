@@ -76,7 +76,7 @@ const SAMPLE_SKIPS_VIEWS_FLAVORS = ['mssql', 'postgresql'];
 // Flavor codes whose tables are declared file by file instead of matched from a schema. Branching
 // on the code rather than the family matters: the DuckDB database flavor shares a family with the
 // file one and keeps the schema-and-criteria form.
-const FILE_DECLARATION_FLAVOR_CODES = ['files'];
+const FILE_DECLARATION_FLAVOR_CODES = ['files', 's3', 'azure_blob'];
 const declaresFiles = (sqlFlavorCode) => FILE_DECLARATION_FLAVOR_CODES.includes(sqlFlavorCode);
 
 const FILE_FORMAT_OPTIONS = [
@@ -85,9 +85,14 @@ const FILE_FORMAT_OPTIONS = [
     { label: 'JSON', value: 'json' },
 ];
 
-const URI_HELP = 'Path relative to the connection base path. Name one file (sales/orders.csv), '
-    + 'or a pattern to read every file that matches it: sales/*.csv for the CSV files in a folder, '
-    + 'sales/**/*.csv to include its subfolders.';
+const URI_BASE_BY_FLAVOR_CODE = {
+    files: 'the connection base path',
+    s3: 'the connection base URI',
+    azure_blob: 'the container',
+};
+const uriHelp = (sqlFlavorCode) => `Path relative to ${URI_BASE_BY_FLAVOR_CODE[sqlFlavorCode] ?? URI_BASE_BY_FLAVOR_CODE.files}. `
+    + 'Name one file (sales/orders.csv), or a pattern to read every file that matches it: '
+    + 'sales/*.csv for the CSV files in a folder, sales/**/*.csv to include its subfolders.';
 
 
 const HEADER_OPTIONS = [
@@ -358,7 +363,7 @@ const TableGroupForm = (props) => {
         ),
         div(
             { style: () => declaresFilesState.val ? '' : 'display: none;' },
-            TablesForm(declarationRows),
+            TablesForm(declarationRows, flavorCode),
         ),
         SettingsForm(
             { editMode: !!tableGroup.id, disablePiiFlag: getValue(props.disablePiiFlag) ?? false, setValidity: setFieldValidity },
@@ -428,7 +433,8 @@ const MainForm = (
     );
 };
 
-const TablesForm = (declarationRows) => {
+const TablesForm = (declarationRows, flavorCode) => {
+    const uriHelpText = van.derive(() => uriHelp(flavorCode.val));
     const addRow = () => {
         declarationRows.val = [...declarationRows.rawVal, declarationRow()];
     };
@@ -449,7 +455,7 @@ const TablesForm = (declarationRows) => {
                     'File or Pattern',
                     withTooltip(
                         Icon({ size: 16, classes: 'text-disabled' }, 'help'),
-                        { text: URI_HELP, position: 'bottom-right', width: 260 },
+                        { text: uriHelpText, position: 'bottom-right', width: 260 },
                     ),
                 ),
                 span('Format'),
