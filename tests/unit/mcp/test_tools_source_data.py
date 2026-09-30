@@ -14,6 +14,7 @@ def _make_context(**overrides):
     base = {
         "test_type": "Alpha_Trunc",
         "test_name_short": "Alpha Truncation",
+        "table_groups_id": uuid4(),
         "schema_name": "public",
         "table_name": "orders",
         "column_names": "customer_name",
@@ -56,7 +57,8 @@ def test_get_source_data_query_basic(mock_td, mock_build, db_session_mock):
     assert f"# Source Data Query for Test Definition `{td_id}`" in result
     assert "Alpha Truncation" in result
     assert "Alpha_Trunc`" not in result  # the stored code never surfaces
-    assert "public.orders" in result
+    assert "**Schema:** `public`" in result
+    assert "**Table:** `orders`" in result
     assert "`customer_name`" in result
     assert "SELECT * FROM orders" in result
     mock_build.assert_called_once()
@@ -349,7 +351,8 @@ def test_get_source_data_query_hygiene_basic(mock_resolve, mock_pr, mock_build, 
     result = get_source_data_query(issue_id=issue_id)
 
     assert f"# Source Data Query for Hygiene Issue `{issue_id}`" in result
-    assert "public.users" in result
+    assert "**Schema:** `public`" in result
+    assert "**Table:** `users`" in result
     assert "`address`" in result
     assert "SELECT * FROM users" in result
     assert "Test Definition" not in result
@@ -406,7 +409,8 @@ def test_get_source_data_hygiene_ok(mock_resolve, mock_pr, mock_fetch, db_sessio
 
     assert f"# Source Data for Hygiene Issue `{issue_id}`" in result
     assert "**Rows returned:** 2" in result
-    assert "public.users" in result
+    assert "**Schema:** `public`" in result
+    assert "**Table:** `users`" in result
     assert "`address`" in result
     assert "SELECT ..." in result
     assert "Test Definition" not in result

@@ -26,6 +26,7 @@ from sqlalchemy.exc import IntegrityError
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
 from testgen.commands.run_refresh_data_chars import write_data_chars
 from testgen.common.database.column_chars import ColumnChars, ObjectType
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.file_declarations import (
     BASE_PATH_PARAMETER,
     NO_FILES_MATCHED,
@@ -34,9 +35,10 @@ from testgen.common.database.file_declarations import (
     validate_file_declarations,
 )
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
-from testgen.common.flavors import declares_files, fixed_table_group_schema
+from testgen.common.flavors import declares_files, fixed_table_group_schema, table_group_schema_label
 from testgen.common.models.connection import Connection
-from testgen.common.models.table_group import TableGroup
+from testgen.common.models.table_group import TableGroup, TableGroupMinimal
+from testgen.common.models.test_definition import TestDefinition
 from testgen.ui.services.database_service import target_db_session
 
 LOG = logging.getLogger("testgen")
@@ -189,6 +191,46 @@ def is_duplicate_name_error(err: IntegrityError) -> bool:
     return "table_groups_name_unique" in str(err.orig)
 
 
+def apply_test_definition_flavor_rules(
+    test_definition: TestDefinition,
+    table_group: TableGroup | TableGroupMinimal,
+    *,
+    qualifies_table_refs: bool,
+) -> None:
+    """Settle the test-definition fields the connection's flavor decides rather than the user.
+
+    Where the flavor does not qualify table references it reaches every table through one schema,
+    so the reference table's schema is overwritten rather than defaulted: a definition arriving
+    from an import or a copy carries the source's schema, which names nothing reachable on the
+    target. Where the flavor does qualify, only a blank is filled.
+
+    ``match_table_name`` is what marks a definition as referential.
+    """
+    if not test_definition.match_table_name:
+        return
+
+    if not qualifies_table_refs or not test_definition.match_schema_name:
+        test_definition.match_schema_name = test_definition.schema_name or table_group.table_group_schema
+
+
+def schema_label_for_table_group(table_group_id: str | UUID) -> str | None:
+    """The name the table group's database type gives its schema, or None when it reports none."""
+    connection = Connection.get_by_table_group(table_group_id)
+    return table_group_schema_label(connection.sql_flavor_code if connection else None)
+
+
+def table_group_qualifies_table_refs(table_group_id: str | UUID) -> bool:
+    """Whether SQL against this table group names a table as ``schema.table``.
+
+    Separate from the schema's label: a Data Space is reported to the user under its own name and
+    still cannot qualify a table reference.
+    """
+    connection = Connection.get_by_table_group(table_group_id)
+    if not connection:
+        return True
+    return get_flavor_service(connection.sql_flavor).qualifies_table_refs_with_schema(connection.sql_flavor_code)
+
+
 # ---------------------------------------------------------------------------
 # Preview
 # ---------------------------------------------------------------------------
@@ -198,6 +240,7 @@ class StatsPreview(TypedDict, total=False):
     id: UUID | None
     table_groups_name: str
     table_group_schema: str
+    schema_label: str | None
     table_ct: int | None
     column_ct: int | None
     approx_record_ct: int | None
@@ -322,6 +365,7 @@ def _build_preview(
     connection: Connection,
 ) -> tuple[TableGroupPreview, list[ColumnChars], RefreshDataCharsSQL]:
     sql_generator = RefreshDataCharsSQL(connection, table_group)
+    schema_label = table_group_schema_label(connection.sql_flavor_code)
     declaration_failures: dict[str, str] = {}
     if sql_generator.flavor_service.metadata_via_api:
         params = resolve_connection_params(connection.__dict__)
@@ -346,11 +390,8 @@ def _build_preview(
         "stats": {
             "id": table_group.id,
             "table_groups_name": table_group.table_groups_name,
-            # A flavor that fixes the schema picked it rather than the user, so naming it in a
-            # summary says nothing about the table group.
-            "table_group_schema": (
-                None if declares_files(connection.sql_flavor_code) else table_group.table_group_schema
-            ),
+            "table_group_schema": table_group.table_group_schema if schema_label else None,
+            "schema_label": schema_label,
             "table_ct": 0,
             "column_ct": 0,
             "approx_record_ct": None,

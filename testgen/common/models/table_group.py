@@ -9,6 +9,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 
 from testgen.common.enums import MonitorType
+from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -50,12 +51,19 @@ class TableGroupStats(EntityMinimal):
     id: UUID
     table_groups_name: str
     table_group_schema: str
+    sql_flavor_code: str | None
     table_ct: int
     column_ct: int
     approx_record_ct: int
     record_ct: int
     approx_data_point_ct: int
     data_point_ct: int
+
+    def to_dict(self, json_safe: bool = False) -> dict[str, Any]:
+        return {
+            **super().to_dict(json_safe),
+            "schema_label": table_group_schema_label(self.sql_flavor_code),
+        }
 
 
 @dataclass
@@ -391,6 +399,7 @@ class TableGroup(Entity):
         SELECT groups.id,
             groups.table_groups_name,
             groups.table_group_schema,
+            connections.sql_flavor_code,
             stats.table_ct,
             stats.column_ct,
             stats.approx_record_ct,
@@ -399,6 +408,7 @@ class TableGroup(Entity):
             stats.data_point_ct
         FROM table_groups AS groups
             LEFT JOIN stats ON (groups.id = stats.table_groups_id)
+            LEFT JOIN connections ON (connections.connection_id = groups.connection_id)
         WHERE groups.project_code = :project_code
             {"AND groups.id = :table_group_id" if table_group_id else ""}
         ORDER BY LOWER(groups.table_groups_name);

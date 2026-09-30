@@ -7,7 +7,12 @@ from sqlalchemy import func, or_
 
 from testgen.common.data_catalog_service import build_create_table_script
 from testgen.common.database.column_chars import ObjectType
+from testgen.common.database.table_group_service import (
+    schema_label_for_table_group,
+    table_group_qualifies_table_refs,
+)
 from testgen.common.enums import JOB_STATUS_LABEL, PII_FLAG_PREFIX_TO_LABEL, JobKey, JobStatus
+from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import with_database_session
 from testgen.common.models.data_column import (
     GENERAL_TYPE_CODE_TO_LABEL,
@@ -56,6 +61,10 @@ from testgen.utils import friendly_score
 _DOC_GROUP = DocGroup.BROWSE_PROFILING
 
 
+def _qualified_table_name(schema_name: str | None, table_name: str, qualifies: bool) -> str:
+    return f"{schema_name}.{table_name}" if qualifies and schema_name else table_name
+
+
 @with_database_session
 @mcp_permission("catalog")
 def get_table(
@@ -72,7 +81,9 @@ def get_table(
     if overview is None:
         raise MCPUserError(f"Table `{table_name}` not found in this table group.")
 
-    fq_name = f"{overview.schema_name}.{overview.table_name}" if overview.schema_name else overview.table_name
+    fq_name = _qualified_table_name(
+        overview.schema_name, overview.table_name, table_group_qualifies_table_refs(tg.id)
+    )
 
     doc = MdDoc()
     doc.heading(1, f"Table: {fq_name}")
@@ -585,12 +596,13 @@ def get_profiling_run(
 
     doc = MdDoc()
     tg_label = summary.table_groups_name or "—"
+    schema_label = table_group_schema_label(summary.sql_flavor_code)
     doc.heading(1, f"Profiling run: {tg_label}")
     doc.field("Profiling Run", summary.job_execution_id, code=True)
     if summary.table_groups_name:
         doc.field("Table group", summary.table_groups_name)
-    if summary.table_group_schema:
-        doc.field("Schema", summary.table_group_schema)
+    if schema_label and summary.table_group_schema:
+        doc.field(schema_label, summary.table_group_schema)
     doc.field("Status", summary.status_label)
     doc.field("Submitted", summary.created_at)
     doc.field("Started", summary.started_at or "—")
@@ -625,14 +637,15 @@ def get_profiling_run(
         breakdown = ProfilingRun.select_table_breakdown(summary.profiling_run_id)
         if breakdown:
             doc.heading(2, "Per-table breakdown")
-            doc.table(
-                ["Schema", "Table", "Records", "Columns", "Hygiene issues"],
-                [
-                    [r.schema_name, r.table_name, r.record_ct, r.column_ct, r.anomaly_ct]
-                    for r in breakdown
-                ],
-                code=[0, 1],
-            )
+            headers = ["Table", "Records", "Columns", "Hygiene issues"]
+            rows: list[list[object]] = [
+                [r.table_name, r.record_ct, r.column_ct, r.anomaly_ct] for r in breakdown
+            ]
+            if schema_label:
+                headers.insert(0, schema_label)
+                for row, r in zip(rows, breakdown, strict=True):
+                    row.insert(0, r.schema_name)
+            doc.table(headers, rows, code=[0, 1] if schema_label else [0])
 
     if summary.error_message:
         doc.heading(2, "Error")
@@ -836,7 +849,7 @@ def get_column_profile_detail(
     if detail.pii_flag and not get_project_permissions().has_permission("view_pii", tg.project_code):
         mask_profiling_pii(payload, {detail.column_name})
 
-    return _render_column_profile_detail(payload)
+    return _render_column_profile_detail(payload, table_group_qualifies_table_refs(tg.id))
 
 
 def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
@@ -861,10 +874,10 @@ def _raise_run_not_ready(detail: ColumnProfileDetail) -> None:
     raise MCPUserError("\n".join(lines))
 
 
-def _render_column_profile_detail(p: dict) -> str:
+def _render_column_profile_detail(p: dict, qualifies: bool) -> str:
     """Render a column profile detail payload as grouped Markdown sections."""
     doc = MdDoc()
-    fq_name = f"{p['schema_name']}.{p['table_name']}" if p["schema_name"] else p["table_name"]
+    fq_name = _qualified_table_name(p["schema_name"], p["table_name"], qualifies)
     doc.heading(1, f"Column Profile: `{p['column_name']}` in `{fq_name}`")
 
     general_type = p.get("general_type")
@@ -1211,15 +1224,24 @@ def search_columns(
                 code=[0],
             )
 
+    # Hits span table groups, so the schema column carries whatever the matched connections
+    # call theirs, and is dropped only when none of them reports one.
+    schema_labels = {
+        groups_id: schema_label_for_table_group(groups_id)
+        for groups_id in dict.fromkeys(hit.table_groups_id for hit in data)
+    }
+    schema_header = " / ".join(sorted({label for label in schema_labels.values() if label}))
+
     doc.heading(2, "Columns")
-    doc.table(
-        ["Project", "Table group", "Schema", "Table", "Column"],
-        [
-            [hit.project_code, hit.table_groups_name, hit.schema_name, hit.table_name, hit.column_name]
-            for hit in data
-        ],
-        code=[0, 1],
-    )
+    headers = ["Project", "Table group", "Table", "Column"]
+    rows: list[list[object]] = [
+        [hit.project_code, hit.table_groups_name, hit.table_name, hit.column_name] for hit in data
+    ]
+    if schema_header:
+        headers.insert(2, schema_header)
+        for row, hit in zip(rows, data, strict=True):
+            row.insert(2, hit.schema_name if schema_labels[hit.table_groups_id] else None)
+    doc.table(headers, rows, code=[0, 1])
 
     footer = format_page_footer(total, page, limit)
     if footer:

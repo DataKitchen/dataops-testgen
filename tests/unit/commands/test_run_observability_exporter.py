@@ -110,6 +110,7 @@ def test_get_input_parameters(input_parameters, expected_outcome):
 def _event(**overrides):
     defaults = {
         "sql_flavor": "postgresql",
+        "sql_flavor_code": "postgresql",
         "dataset_key": "dataset-key",
         "dataset_name": "dataset-name",
         "schema": "public",
@@ -151,3 +152,20 @@ def test_sample_settings_are_null_when_sampling_is_off():
     assert config["uses_sampling"] is False
     assert config["sample_percentage"] is None
     assert config["sample_minimum_count"] is None
+
+
+def _exported_schema(event):
+    return _get_event_data(event)["component_integrations"]["integrations"]["testgen"]["schema"]
+
+
+@pytest.mark.parametrize(
+    ("sql_flavor_code", "expected"),
+    [
+        ("postgresql", "public"),
+        ("salesforce_data360", "public"),
+        ("files", None),
+    ],
+)
+def test_the_exported_schema_follows_what_the_database_type_reports(sql_flavor_code, expected):
+    """A flavor with no schema to report sends none, rather than the engine's default."""
+    assert _exported_schema(_event(sql_flavor_code=sql_flavor_code)) == expected

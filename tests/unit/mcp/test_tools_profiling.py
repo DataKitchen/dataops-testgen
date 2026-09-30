@@ -538,6 +538,7 @@ def _mock_profiling_run(**overrides):
         "error_message": None,
         "table_groups_name": "demo-tg",
         "table_group_schema": "demo",
+        "sql_flavor_code": "postgresql",
         "table_ct": 5, "column_ct": 30, "record_ct": 1000,
         "anomaly_ct": 4,
         "anomalies_definite_ct": 1, "anomalies_likely_ct": 1,
@@ -723,6 +724,66 @@ def test_get_profiling_run_pending_no_breakdown(mock_run_cls, db_session_mock):
     assert "Pending" in result
     assert "In progress" in result
     assert "Per-table breakdown" not in result
+
+
+def _run_get_profiling_run(job_execution_id):
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="catalog", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+
+            from testgen.mcp.tools.profiling import get_profiling_run
+            return get_profiling_run(str(job_execution_id))
+
+
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_reports_no_schema_on_a_files_connection(
+    mock_run_cls, mock_hygiene_cls, db_session_mock,
+):
+    """The stored value is the engine's own default schema, not one the user chose."""
+    summary = _mock_profiling_run(sql_flavor_code="files", table_group_schema="main")
+    mock_run_cls.select_summary.return_value = ([summary], 1)
+    mock_run_cls.select_table_breakdown.return_value = [
+        MagicMock(schema_name="main", table_name="claims", record_ct=1000, column_ct=5, anomaly_ct=2),
+    ]
+    mock_hygiene_cls.count_for_run.return_value = IssueCounts(
+        hygiene_issues=HygieneIssueCounts(definite=0, likely=0, possible=0),
+        potential_pii=PotentialPiiCounts(high=0, moderate=0),
+        dismissed=0,
+    )
+
+    result = _run_get_profiling_run(summary.job_execution_id)
+
+    assert "Schema" not in result
+    assert "`main`" not in result
+    assert "| Table | Records | Columns | Hygiene issues |" in result
+    assert "claims" in result
+
+
+@patch("testgen.mcp.tools.profiling.HygieneIssue")
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_names_the_data_space_on_a_data_360_connection(
+    mock_run_cls, mock_hygiene_cls, db_session_mock,
+):
+    summary = _mock_profiling_run(sql_flavor_code="salesforce_data360", table_group_schema="sales")
+    mock_run_cls.select_summary.return_value = ([summary], 1)
+    mock_run_cls.select_table_breakdown.return_value = [
+        MagicMock(schema_name="sales", table_name="orders", record_ct=1000, column_ct=5, anomaly_ct=2),
+    ]
+    mock_hygiene_cls.count_for_run.return_value = IssueCounts(
+        hygiene_issues=HygieneIssueCounts(definite=0, likely=0, possible=0),
+        potential_pii=PotentialPiiCounts(high=0, moderate=0),
+        dismissed=0,
+    )
+
+    result = _run_get_profiling_run(summary.job_execution_id)
+
+    assert "**Data Space:** sales" in result
+    assert "| Data Space | Table | Records | Columns | Hygiene issues |" in result
+    assert "Schema" not in result
 
 
 @patch("testgen.mcp.tools.profiling.ProfilingRun")

@@ -323,7 +323,7 @@ def glossary_resource() -> str:
 
 - **Project** — Top-level organizational unit.
 - **Connection** — Database connection configuration (host, credentials).
-- **Table Group** — A set of tables within a schema that are profiled and tested together.
+- **Table Group** — A set of tables on one connection that are profiled and tested together.
 - **Profiling Run** — A scan of a table group that produces column-level statistics and detects hygiene issues.
 - **Hygiene Issue** — A potential data-quality concern detected by a profiling run (e.g. PII columns, non-standard blanks, mixed types).
 - **Test Suite** — A collection of test definitions scoped to a table group.

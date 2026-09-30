@@ -1,7 +1,7 @@
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import ClassVar, Literal, NamedTuple, Self, TypedDict, get_args
+from typing import Any, ClassVar, Literal, NamedTuple, Self, TypedDict, get_args
 from uuid import UUID
 
 from sqlalchemy import (
@@ -25,6 +25,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.sql.expression import case
 
 from testgen.common.enums import JOB_STATUS_LABEL, Disposition, JobStatus
+from testgen.common.flavors import table_group_schema_label
 from testgen.common.models import database_session, get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -72,6 +73,7 @@ class ProfilingRunSummary(EntityMinimal):
     progress: list[ProgressStep]
     table_groups_name: str | None
     table_group_schema: str | None
+    sql_flavor_code: str | None
     table_ct: int | None
     column_ct: int | None
     record_ct: int | None
@@ -89,6 +91,12 @@ class ProfilingRunSummary(EntityMinimal):
     @property
     def status_label(self) -> str:
         return self.STATUS_LABEL.get(self.status, self.status)
+
+    def to_dict(self, json_safe: bool = False) -> dict[str, Any]:
+        return {
+            **super().to_dict(json_safe),
+            "schema_label": table_group_schema_label(self.sql_flavor_code),
+        }
 
 
 @dataclass
@@ -278,6 +286,7 @@ class ProfilingRun(Entity):
             COALESCE(pr.progress, '[]'::jsonb) AS progress,
             tg.table_groups_name,
             tg.table_group_schema,
+            cn.sql_flavor_code,
             pr.table_ct,
             pr.column_ct,
             pr.record_ct,
@@ -292,6 +301,7 @@ class ProfilingRun(Entity):
         FROM job_executions je
             LEFT JOIN profiling_runs pr ON pr.id = je.id
             LEFT JOIN table_groups tg ON tg.id = pr.table_groups_id
+            LEFT JOIN connections cn ON cn.connection_id = tg.connection_id
             LEFT JOIN profile_anomalies pa ON pa.profile_run_id = pr.id
         WHERE je.job_key = 'run-profile'
             {" AND je.project_code = :project_code" if project_code else ""}

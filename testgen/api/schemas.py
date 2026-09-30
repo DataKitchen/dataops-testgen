@@ -25,6 +25,17 @@ from testgen.common.enums import JobSource, JobStatus, PublicJobKey
 from testgen.common.models.table_group import table_group_defaults
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
+SchemaName = Annotated[
+    str | None,
+    Field(
+        default=None,
+        description=(
+            "Schema the item belongs to. Null when the connection's database type organizes "
+            "its data without one."
+        ),
+    ),
+]
+
 # --- Jobs ---
 
 
@@ -101,7 +112,7 @@ class TestResultItem(BaseModel):
     test_definition_id: UUID
     test_type: str
     test_type_name: str | None = None
-    schema_name: str
+    schema_name: SchemaName
     table_name: str | None = None
     column_names: str | None = None
     result_status: ResultStatus | None = None
@@ -200,7 +211,7 @@ class HygieneIssueItem(BaseModel):
     id: UUID
     issue_type: str
     issue_type_name: str
-    schema_name: str
+    schema_name: SchemaName
     table_name: str
     column_name: str
     likelihood: IssueLikelihood | None = None
@@ -224,7 +235,7 @@ class PotentialPiiItem(BaseModel):
     id: UUID
     issue_type: str
     issue_type_name: str
-    schema_name: str
+    schema_name: SchemaName
     table_name: str
     column_name: str
     pii_risk: PiiRisk | None = None
@@ -294,7 +305,7 @@ class ProfilingColumnItem(BaseModel):
     reports the latest scores and classification.
     """
 
-    schema_name: str
+    schema_name: SchemaName
     table_name: str
     column_name: str
     general_type: GeneralType | None = None
@@ -809,7 +820,7 @@ class TableGroupItem(BaseModel):
 
     table_group_id: UUID
     table_group_name: str
-    schema_name: str
+    schema_name: SchemaName
     project_code: str
     connection_id: int
     connection_name: str | None = None
@@ -855,7 +866,7 @@ class TableGroupResponse(BaseModel):
 
     table_group_id: UUID
     table_group_name: str
-    schema_name: str
+    schema_name: SchemaName
     project_code: str
     connection_id: int
     default_test_suite_id: UUID | None = None

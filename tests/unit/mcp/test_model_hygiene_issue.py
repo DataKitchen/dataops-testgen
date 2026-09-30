@@ -74,6 +74,7 @@ def _detail_row_mapping(**overrides):
     base = _list_row_mapping()
     base.pop("issue_type_code", None)
     base.update({
+        "table_groups_id": uuid4(),
         "type_description": "type description",
         "suggested_action": "suggested action",
         "job_execution_id": uuid4(),

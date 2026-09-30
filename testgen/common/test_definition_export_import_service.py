@@ -11,6 +11,10 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Row
 
 from testgen import settings
+from testgen.common.database.table_group_service import (
+    apply_test_definition_flavor_rules,
+    table_group_qualifies_table_refs,
+)
 from testgen.common.models import get_current_session
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.suite_version import SuiteVersion
@@ -246,6 +250,8 @@ _EXISTING_TD_COLUMNS = (
     TestDefinition.last_auto_gen_date,
     TestDefinition.external_id,
     TestDefinition.lock_refresh,
+    TestDefinition.match_table_name,
+    TestDefinition.match_schema_name,
 )
 
 
@@ -478,11 +484,15 @@ def _apply_actions(
     now = datetime.now(UTC)
     version_id = session.scalar(select(SuiteVersion.resolved_for(test_suite.id)))
     TestDefinition.assert_version_writable(version_id)
+    # Resolved before either loop: a lookup inside pass 1 would autoflush the pending INSERTs.
+    qualifies_table_refs = table_group_qualifies_table_refs(table_group.id)
 
     # Pass 1: build new TDs and register them in the session.
     for planned in actions:
         if planned.action == ImportAction.create and planned.td_import is not None:
-            td = _create_td(planned.td_import, test_suite, table_group, config, now, version_id)
+            td = _create_td(
+                planned.td_import, test_suite, table_group, config, now, version_id, qualifies_table_refs
+            )
             session.add(td)
             planned.target = td
 
@@ -493,7 +503,7 @@ def _apply_actions(
     ids_to_delete: list[UUID] = []
     for planned in actions:
         if planned.action == ImportAction.update and planned.target is not None and planned.td_import is not None:
-            _update_td(planned.td_import, planned.target)
+            _update_td(planned.td_import, planned.target, table_group, qualifies_table_refs)
         elif planned.action == ImportAction.delete and planned.target is not None:
             ids_to_delete.append(planned.target.id)
 
@@ -512,6 +522,7 @@ def _create_td(
     config: ImportConfig,
     now: datetime,
     version_id: UUID,
+    qualifies_table_refs: bool,
 ) -> TestDefinition:
     is_auto = td_import.last_auto_gen_date is not None
 
@@ -528,6 +539,7 @@ def _create_td(
     td.version_id = version_id
     td.table_groups_id = test_suite.table_groups_id
     td.schema_name = table_group.table_group_schema
+    apply_test_definition_flavor_rules(td, table_group, qualifies_table_refs=qualifies_table_refs)
 
     # Instance-local defaults
     td.profile_run_id = None
@@ -549,7 +561,9 @@ def _create_td(
     return td
 
 
-def _update_td(td_import: TestDefinitionExport, target: Row) -> None:
+def _update_td(
+    td_import: TestDefinitionExport, target: Row, table_group: TableGroup, qualifies_table_refs: bool
+) -> None:
     session = get_current_session()
 
     values = {
@@ -557,6 +571,18 @@ def _update_td(td_import: TestDefinitionExport, target: Row) -> None:
         for field_name in td_import.model_fields_set
         if field_name not in _UPDATE_EXCLUDE_FIELDS
     }
+
+    # The payload carries the source's reference schema, which names nothing reachable on a target
+    # whose flavor has only one. Write the settled value only where it differs from what is stored,
+    # so a field the file omits stays untouched.
+    settled = TestDefinition(
+        schema_name=table_group.table_group_schema,
+        match_table_name=values.get("match_table_name", target.match_table_name),
+        match_schema_name=values.get("match_schema_name", target.match_schema_name),
+    )
+    apply_test_definition_flavor_rules(settled, table_group, qualifies_table_refs=qualifies_table_refs)
+    if settled.match_schema_name != target.match_schema_name:
+        values["match_schema_name"] = settled.match_schema_name
 
     # Inherit source's external_id if target has none
     if target.external_id is None and td_import.external_id is not None:

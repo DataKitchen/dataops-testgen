@@ -80,6 +80,13 @@ const REFRESH_STARTING = 6000;
 const REFRESH_RUNNING = 30000;
 const REFRESH_DEFAULT = 60000;
 
+// Runs listed together can span connections of different database types, which do not all give the
+// schema the same name, so the header carries whichever names they use.
+const schemaColumnLabel = (runs) => {
+    const labels = new Set((runs ?? []).map(run => run.schema_label).filter(Boolean));
+    return labels.size ? [...labels].sort().join(' / ') : 'Schema';
+};
+
 const progressStatusIcons = {
     Pending: { color: 'grey', icon: 'more_horiz', size: 22 },
     Running: { color: 'blue', icon: 'autoplay', size: 18 },
@@ -208,9 +215,9 @@ const ProfilingRuns = (/** @type Properties */ props) => {
                                 { style: `flex: 0 0 ${columns[2]}` },
                                 'Status | Duration',
                             ),
-                            span(
+                            () => span(
                                 { style: `flex: 0 0 ${columns[3]}` },
-                                'Schema',
+                                schemaColumnLabel(profilingRuns.val),
                             ),
                             span(
                                 { style: `flex: 0 0 ${columns[4]}`, class: 'tg-profiling-runs--issues' },
@@ -473,7 +480,10 @@ const ProfilingRunItem = (
         ),
         div(
             { style: `flex: 0 0 ${columns[3]}; max-width: ${columns[3]};` },
-            div({ 'data-testid': 'profiling-run-item-schema' }, item.table_group_schema || '--'),
+            div(
+                { 'data-testid': 'profiling-run-item-schema' },
+                (item.schema_label && item.table_group_schema) || '--',
+            ),
             div(
                 {
                     class: 'text-caption mt-1 mb-1',

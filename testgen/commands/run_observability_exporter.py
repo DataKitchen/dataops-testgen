@@ -16,6 +16,7 @@ from testgen.common.database.database_service import (
     fetch_dict_from_db,
 )
 from testgen.common.enums import SuiteType
+from testgen.common.flavors import reports_table_group_schema
 from testgen.common.models import with_database_session
 from testgen.common.models.test_suite import TestSuite
 
@@ -166,7 +167,7 @@ def _get_event_data(event):
         "component_integrations": {
             "integrations": {
                 "testgen": {
-                    "schema": event.schema,
+                    "schema": event.schema if reports_table_group_schema(event.sql_flavor_code) else None,
                     "connection_name": event.connection_name,
                     "database_name": event.project_db,
                     "version": 1,

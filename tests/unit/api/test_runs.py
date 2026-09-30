@@ -93,6 +93,15 @@ def _no_filters(**overrides):
     return kwargs
 
 
+@pytest.fixture(autouse=True)
+def schema_label_mock():
+    """Resolve every endpoint's schema label without a database, reporting one by default."""
+    with patch(f"{MODULE}.get_current_session"), patch(
+        f"{MODULE}.schema_label_for_table_group", return_value="Schema"
+    ) as mock:
+        yield mock
+
+
 def _mock_job(**overrides):
     defaults = {
         "id": uuid4(),
@@ -1283,3 +1292,81 @@ def test_http_columns_404_when_no_view_permission(_ml, mock_sess, _mock_perm):
     mock_sess.return_value.scalars.return_value.first.return_value = _mock_job()
     resp = _client().get(f"/api/v1/profiling-runs/{uuid4()}/columns")
     assert resp.status_code == 404
+
+
+# --- schema reporting per database type ---
+
+
+@patch.object(TestResult, "list_for_run")
+def test_results_omit_the_schema_when_the_database_type_names_none(mock_list, schema_label_mock):
+    schema_label_mock.return_value = None
+    mock_list.return_value = ([_mock_result_row(schema_name="main")], 1)
+
+    item = list_test_run_results(_mock_job(), **_no_filters()).items[0]
+
+    assert item.schema_name is None
+
+
+@patch.object(TestResult, "list_for_run")
+def test_results_carry_the_schema_when_the_database_type_names_one(mock_list, schema_label_mock):
+    schema_label_mock.return_value = "Data Space"
+    mock_list.return_value = ([_mock_result_row(schema_name="sales_space")], 1)
+
+    item = list_test_run_results(_mock_job(), **_no_filters()).items[0]
+
+    assert item.schema_name == "sales_space"
+
+
+@patch.object(TestResult, "list_for_run")
+def test_results_resolve_the_schema_label_once_for_the_whole_page(mock_list, schema_label_mock):
+    mock_list.return_value = ([_mock_result_row(), _mock_result_row(), _mock_result_row()], 3)
+
+    list_test_run_results(_mock_job(), **_no_filters())
+
+    assert schema_label_mock.call_count == 1
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_hygiene_issues_omit_the_schema_when_the_database_type_names_none(
+    mock_list, _mock_perm, schema_label_mock
+):
+    schema_label_mock.return_value = None
+    mock_list.return_value = ([_mock_hygiene_row(schema_name="main")], 1)
+
+    item = list_profiling_run_hygiene_issues(_mock_job(), **_no_hygiene_filters()).items[0]
+
+    assert item.schema_name is None
+
+
+@patch(f"{MODULE}.has_project_permission", return_value=True)
+@patch.object(HygieneIssue, "list_for_run")
+def test_potential_pii_omits_the_schema_when_the_database_type_names_none(
+    mock_list, _mock_perm, schema_label_mock
+):
+    schema_label_mock.return_value = None
+    mock_list.return_value = ([_mock_pii_row(schema_name="main")], 1)
+
+    item = list_profiling_run_potential_pii(_mock_job(), **_no_pii_filters()).items[0]
+
+    assert item.schema_name is None
+
+
+@patch.object(ProfileResult, "list_columns_for_run")
+def test_column_profiles_omit_the_schema_when_the_database_type_names_none(mock_list, schema_label_mock):
+    schema_label_mock.return_value = None
+    mock_list.return_value = ([_mock_column_row(schema_name="main")], 1)
+
+    item = list_profiling_run_columns(_mock_job(), **_column_defaults()).items[0]
+
+    assert item.schema_name is None
+
+
+@patch.object(ProfileResult, "list_columns_for_run")
+def test_column_profiles_carry_the_schema_when_the_database_type_names_one(mock_list, schema_label_mock):
+    schema_label_mock.return_value = "Data Space"
+    mock_list.return_value = ([_mock_column_row(schema_name="sales_space")], 1)
+
+    item = list_profiling_run_columns(_mock_job(), **_column_defaults()).items[0]
+
+    assert item.schema_name == "sales_space"

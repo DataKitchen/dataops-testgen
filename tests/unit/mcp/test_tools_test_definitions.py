@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.custom_test_validation import CustomQueryResult
+from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY
 from testgen.common.models.test_definition import TestDefinition, TestDefinitionNote
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.tools.test_definitions import _DELETED_LISTING_LIMIT
@@ -449,6 +450,89 @@ def test_get_test_flagged_with_notes(mock_td, mock_tr, mock_notes, db_session_mo
     assert "Flagged, 2 Notes" in result
     assert "auto-generated" in result
     assert "2026-03-15" in result
+
+
+_RULES_MODULE = "testgen.common.database.table_group_service"
+
+
+def _patch_table_group_flavor(sql_flavor_code):
+    """Report the table group's connection as this database type to the flavor lookups.
+
+    Both the family and the code are set: the family resolves the flavor service, and the code
+    decides whether it qualifies table references.
+    """
+    connection = MagicMock()
+    connection.sql_flavor = FLAVOR_CODE_TO_FAMILY[sql_flavor_code]
+    connection.sql_flavor_code = sql_flavor_code
+    return patch(f"{_RULES_MODULE}.Connection.get_by_table_group", return_value=connection)
+
+
+
+def _minimal_test_definition() -> MagicMock:
+    td = MagicMock()
+    td.id = uuid4()
+    td.table_groups_id = uuid4()
+    td.test_type = "Alpha_Trunc"
+    td.display_name = "Alpha Truncation"
+    td.table_name = "orders"
+    td.column_name = "customer_name"
+    td.schema_name = "main"
+    td.test_suite_id = uuid4()
+    td.param_columns = {"match_schema_name", "match_table_name"}
+    td.param_fields = []
+    td.match_schema_name = "reference"
+    td.match_table_name = "customers"
+    td.custom_query = None
+    td.last_manual_update = None
+    td.last_auto_gen_date = None
+    td.test_description = None
+    td.default_test_description = None
+    td.usage_notes = None
+    return td
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestResult")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+def test_get_test_reports_no_schema_on_a_files_connection(mock_td, mock_tr, mock_notes, db_session_mock):
+    """The stored value is the engine's own default schema, not one the user chose."""
+    td = _minimal_test_definition()
+    mock_td.get_for_project.return_value = td
+    mock_tr.select_history.return_value = []
+    mock_notes.get_notes.return_value = []
+
+    from testgen.mcp.tools.test_definitions import get_test
+
+    with _patch_table_group_flavor("files"):
+        result = get_test(str(td.id))
+
+    assert "Schema" not in result
+    assert "`main`" not in result
+    assert "`orders`" in result
+
+
+@patch("testgen.mcp.tools.test_definitions.TestDefinitionNote")
+@patch("testgen.mcp.tools.test_definitions.TestResult")
+@patch("testgen.mcp.tools.test_definitions.TestDefinition")
+def test_get_test_names_the_data_space_on_a_data_360_connection(mock_td, mock_tr, mock_notes, db_session_mock):
+    td = _minimal_test_definition()
+    td.schema_name = "sales"
+    mock_td.get_for_project.return_value = td
+    mock_tr.select_history.return_value = []
+    mock_notes.get_notes.return_value = []
+
+    from testgen.mcp.tools.test_definitions import get_test
+
+    with _patch_table_group_flavor("salesforce_data360"):
+        result = get_test(str(td.id))
+
+    assert "**Data Space:** `sales`" in result
+    assert "Schema" not in result
+    # The reference table's schema is a SQL question, not a naming one: Data 360 reaches every
+    # table through one data space, so the field is settled rather than offered.
+    assert "Match Data Space" not in result
+    assert "match_schema_name" not in result
+    assert "**Match Table:** `customers`" in result
 
 
 def test_get_test_invalid_uuid(db_session_mock):

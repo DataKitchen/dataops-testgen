@@ -19,6 +19,7 @@ from testgen.common.data_catalog_service import (
     disable_autoflags,
     fetch_table_sample,
 )
+from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.enums import JobSource
 from testgen.common.models import database_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -499,8 +500,9 @@ def get_excel_report_data(update_progress: PROGRESS_UPDATE_TYPE, table_group: Ta
     data["frequent_values"] = data["frequent_values"].apply(format_frequent)
     data["frequent_patterns"] = data["frequent_patterns"].apply(format_frequent)
 
+    schema_label = schema_label_for_table_group(table_group.id)
     file_columns = {
-        "schema_name": {"header": "Schema"},
+        **({"schema_name": {"header": schema_label}} if schema_label else {}),
         "table_name": {"header": "Table"},
         "column_name": {"header": "Column"},
         "critical_data_element": {},

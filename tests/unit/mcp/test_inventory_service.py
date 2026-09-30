@@ -38,7 +38,8 @@ def scorecards_by_project_mock():
 
 def _make_row(project_code="demo", project_name="Demo", connection_id=1, connection_name="main",
               table_group_id=None, table_groups_name="core",
-              table_group_schema="public", test_suite_id=None, test_suite="Quality"):
+              table_group_schema="public", sql_flavor_code="postgresql",
+              test_suite_id=None, test_suite="Quality"):
     row = MagicMock()
     row.project_code = project_code
     row.project_name = project_name
@@ -47,6 +48,7 @@ def _make_row(project_code="demo", project_name="Demo", connection_id=1, connect
     row.table_group_id = table_group_id or uuid4()
     row.table_groups_name = table_groups_name
     row.table_group_schema = table_group_schema
+    row.sql_flavor_code = sql_flavor_code
     row.test_suite_id = test_suite_id or uuid4()
     row.test_suite = test_suite
     return row
@@ -428,3 +430,27 @@ def test_get_inventory_no_projects_renders_fallback(mock_select, session_mock):
     assert "Authenticated as alice" in result
     assert "No projects accessible." in result
     assert "## Project:" not in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_reports_no_schema_for_a_files_connection(mock_select, session_mock):
+    """The stored value is the engine's own default schema, not one the user chose."""
+    row = _make_row(table_groups_name="claims_tg", table_group_schema="main", sql_flavor_code="files")
+    session_mock.execute.return_value.all.return_value = [row]
+
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+
+    assert "claims_tg" in result
+    assert "schema" not in result
+    assert "`main`" not in result
+
+
+@patch("testgen.mcp.services.inventory_service.select")
+def test_get_inventory_names_the_data_space_for_a_data_360_connection(mock_select, session_mock):
+    row = _make_row(table_group_schema="sales", sql_flavor_code="salesforce_data360")
+    session_mock.execute.return_value.all.return_value = [row]
+
+    result = _get_inventory(project_codes=["demo"], view_project_codes=["demo"])
+
+    assert "data space: `sales`" in result
+    assert "schema:" not in result

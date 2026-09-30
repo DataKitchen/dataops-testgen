@@ -138,6 +138,12 @@ const TestDefinitions = (/** @type object */ props) => {
     });
 
     const permissions = van.derive(() => getValue(props.permissions) ?? {});
+    const pageSchemaLabel = van.derive(
+        () => ('schema_label' in props ? getValue(props.schema_label) : 'Schema'),
+    );
+    const pageQualifiesTableRefs = van.derive(
+        () => getValue(props.qualifies_table_refs_with_schema) ?? true,
+    );
     const canEdit = van.derive(() => getValue(permissions).can_edit ?? false);
     const canDisposition = van.derive(() => getValue(permissions).can_disposition ?? false);
 
@@ -876,7 +882,7 @@ const TestDefinitions = (/** @type object */ props) => {
                             onclick: () => emit('ProfilingClicked', { payload: { table_name: row.table_name, column_name: row.column_name, table_groups_id: row.table_groups_id } }),
                         }) : '',
                     ),
-                    DetailPanel(row),
+                    DetailPanel(row, pageSchemaLabel.val, pageQualifiesTableRefs.val),
                 );
             },
         ),
@@ -914,8 +920,14 @@ const ExportMenu = (props, testDefinitions, hasSelection, getSelectedIds) => {
     });
 };
 
+// A null value means the database type has no schema to report, which a bare ?? fallback would
+// turn back into "Schema". A payload that does not describe the flavor at all keeps the default.
+const readSchemaLabel = (payload) => (
+    payload && 'schema_label' in payload ? payload.schema_label : 'Schema'
+);
+
 // Detail panel shown when a single row is selected
-const DetailPanel = (row) => {
+const DetailPanel = (row, schemaLabel, qualifiesTableRefsWithSchema) => {
     const paramCols = row.default_parm_columns
         ? row.default_parm_columns.split(',').map(c => c.trim()).filter(Boolean)
         : [];
@@ -928,8 +940,10 @@ const DetailPanel = (row) => {
             { class: 'flex-row fx-align-flex-start fx-gap-4' },
             div(
                 { class: 'flex-column fx-flex fx-gap-4' },
-                Attribute({ label: 'Schema Name', value: row.schema_name }),
-                Attribute({ label: 'Table Name', value: row.table_name }),
+                schemaLabel
+                    ? Attribute({ label: schemaLabel, value: row.schema_name })
+                    : '',
+                Attribute({ label: 'Table', value: row.table_name }),
                 Attribute({ label: 'Test Focus', value: row.column_name }),
                 Attribute({ label: 'Test Type', value: row.test_name_short }),
                 Attribute({ label: 'Test Active', value: row.test_active_display }),
@@ -937,11 +951,20 @@ const DetailPanel = (row) => {
                 Attribute({ label: 'Lock Refresh', value: row.lock_refresh_display }),
                 Attribute({ label: 'Urgency', value: row.urgency }),
                 Attribute({ label: 'Export to Observability', value: row.export_to_observability_display }),
-                ...paramCols.map((col, index) => Attribute({
-                    label: paramLabels[index] || capitalize(col.replaceAll('_', ' ')),
-                    help: paramHelp[index] || null,
-                    value: String(row[col] ?? ''),
-                })),
+                ...paramCols
+                    .map((col, index) => ({
+                        column: col,
+                        label: paramLabels[index] || capitalize(col.replaceAll('_', ' ')),
+                        help: paramHelp[index] || null,
+                    }))
+                    // The reference table's schema is settled by the flavor rather than chosen, so it
+                    // is left out where the flavor does not qualify table references.
+                    .filter(({ column }) => qualifiesTableRefsWithSchema || column !== 'match_schema_name')
+                    .map(({ column, label, help }) => Attribute({
+                        label,
+                        help,
+                        value: String(row[column] ?? ''),
+                    })),
             ),
             div(
                 { class: 'flex-column fx-flex fx-gap-3' },
@@ -987,6 +1010,7 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
     const tableGroupSchema = van.derive(() => getValue(info)?.table_group_schema ?? '');
     const tableGroupsId = van.derive(() => getValue(info)?.table_groups_id ?? '');
     const qualifiesTableRefsWithSchema = van.derive(() => getValue(info)?.qualifies_table_refs_with_schema ?? true);
+    const schemaLabel = van.derive(() => readSchemaLabel(getValue(info)));
     const prefillColumn = van.derive(() => getValue(info)?.prefill_column ?? null);
 
     // selectedColumn carries the general_type needed by the type-aware filter; resolve it from
@@ -1399,6 +1423,7 @@ const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
         tableColumns: tableColumns.rawVal,
         testSuite: testSuite.rawVal,
         qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
+        schemaLabel: schemaLabel.rawVal,
         validateResult: getValue(validateResult),
         mode: 'add',
         activeTab: formActiveTab,
@@ -1423,6 +1448,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
     const tableColumns = van.derive(() => dialogInfo.val?.table_columns ?? []);
     const testSuite = van.derive(() => dialogInfo.val?.test_suite ?? {});
     const qualifiesTableRefsWithSchema = van.derive(() => dialogInfo.val?.qualifies_table_refs_with_schema ?? true);
+    const schemaLabel = van.derive(() => readSchemaLabel(dialogInfo.val));
     const validateResult = van.derive(() => getValue(validateResultProp) ?? null);
 
     const formValues = van.state(null);
@@ -1473,6 +1499,7 @@ const EditDialogComponent = ({ open, info, validateResult: validateResultProp, o
                     tableColumns: tableColumns.rawVal,
                     testSuite: testSuite.rawVal,
                     qualifiesTableRefsWithSchema: qualifiesTableRefsWithSchema.rawVal,
+                    schemaLabel: schemaLabel.rawVal,
                     validateResult: vr,
                     mode: 'edit',
                     activeTab: formActiveTab,
@@ -1496,7 +1523,7 @@ const TabLabel = (text, invalid) => span(
 );
 
 // Shared form content for add/edit dialogs
-const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, activeTab, onFormChange, onValidate, onSave, onCancel, onBack }) => {
+const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, schemaLabel, activeTab, onFormChange, onValidate, onSave, onCancel, onBack }) => {
     const testScope = formValues.test_scope ?? 'column';
     const runType = formValues.run_type ?? 'CAT';
     const testType = formValues.test_type ?? '';
@@ -1564,7 +1591,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
     const columnLabel = formValues.column_name_prompt || (testScope === 'column' ? 'Column' : 'Test Focus');
     const columnHelp = formValues.column_name_help ?? null;
 
-    const showSchemaRow = qualifiesTableRefsWithSchema;
+    const showSchemaRow = Boolean(schemaLabel);
     const showTableRow = testScope !== 'tablegroup';
     const showColumnRow = ['column', 'referential', 'custom'].includes(testScope);
 
@@ -1576,7 +1603,9 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
     // In CUSTOM, match_column_names is a plain column list rather than a mirror of column_name, so
     // match_* fields only pair up when the test type also has match_schema_name/match_table_name.
     const hasMatchAttributes = paramColumnSet.has('match_schema_name') || paramColumnSet.has('match_table_name');
-    const matchSchemaConfig = hasMatchAttributes && showSchemaRow ? findParamConfig('match_schema_name') : undefined;
+    const matchSchemaConfig = hasMatchAttributes && qualifiesTableRefsWithSchema
+        ? findParamConfig('match_schema_name')
+        : undefined;
     const matchTableConfig = hasMatchAttributes && showTableRow ? findParamConfig('match_table_name') : undefined;
     // The reference-side mirror of the tested column(s) is named match_column_names in some test
     // types and match_groupby_names in others. Either only mirrors column_name when the test type
@@ -1657,7 +1686,7 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                     ? pairWithMatch(
                         Input({
                             name: 'schema_name',
-                            label: 'Schema',
+                            label: schemaLabel,
                             value: formValues.schema_name ?? '',
                             disabled: true,
                         }),

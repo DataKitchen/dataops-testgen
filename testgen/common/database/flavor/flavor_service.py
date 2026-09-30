@@ -158,7 +158,6 @@ class FlavorService:
     test_query = "SELECT 1"
     url_scheme = "postgresql"
 
-    qualifies_table_refs_with_schema = True
     metadata_via_api = False
 
     # Whether the engine has an approximate percentile function profiling can use in place of
@@ -166,6 +165,14 @@ class FlavorService:
     # so the capability is confirmed against the target rather than assumed from the declaration.
     supports_approx_percentile = False
     approx_percentile_probe: str | None = None
+
+    def qualifies_table_refs_with_schema(self, sql_flavor_code: str) -> bool:  # noqa: ARG002
+        """Whether generated SQL names a table as ``schema.table`` rather than ``table``.
+
+        Takes the code rather than the family because two codes sharing one engine can reach
+        their tables differently.
+        """
+        return True
 
     def sampleable_object_types(self, sql_flavor_code: str) -> frozenset[ObjectType] | None:  # noqa: ARG002
         """Object types that can be sampled with TABLESAMPLE.
@@ -189,10 +196,10 @@ class FlavorService:
         """
         return None
 
-    def get_table_ref(self, schema: str, table: str) -> str:
-        """Return a fully-qualified table reference for SQL queries."""
+    def get_table_ref(self, schema: str, table: str, sql_flavor_code: str) -> str:
+        """Return a table reference for SQL queries, qualified where the flavor qualifies."""
         q = self.quote_character
-        if not self.qualifies_table_refs_with_schema:
+        if not self.qualifies_table_refs_with_schema(sql_flavor_code):
             return f"{q}{table}{q}"
         return f"{q}{schema}{q}.{q}{table}{q}"
 

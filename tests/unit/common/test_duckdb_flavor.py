@@ -1570,3 +1570,51 @@ def test_a_database_file_connection_has_no_file_counts(customer_database):
     })
     declarations = parse_file_declarations([{"name": "claims", "uri": "claims.csv", "format": "csv"}])
     assert DuckdbFlavorService().file_count_queries(params, declarations) == []
+
+
+# --- Schema qualification per flavor code ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("code", "qualifies", "expected_ref"),
+    [
+        ("duckdb", True, '"sales"."orders"'),
+        ("files", False, '"orders"'),
+    ],
+)
+def test_only_the_database_file_code_qualifies_table_references(code, qualifies, expected_ref):
+    """The codes share an engine family, so the flag has to resolve from the code."""
+    service = DuckdbFlavorService()
+    assert service.qualifies_table_refs_with_schema(code) is qualifies
+    assert service.get_table_ref("sales", "orders", code) == expected_ref
+
+
+def test_a_declaration_resolves_without_its_schema(data_directory):
+    """Dropping the qualifier is only safe because a declaration view lands on the search path."""
+    service = DuckdbFlavorService()
+    engine, connection = open_files_connection(service, files_params(data_directory), [
+        {"name": "claims", "uri": "claims_*.csv", "format": "csv"},
+    ])
+    try:
+        table_ref = service.get_table_ref("main", "claims", SqlFlavorCode.FILES)
+        assert table_ref == '"claims"'
+        assert connection.execute(text(f"SELECT COUNT(*) FROM {table_ref}")).scalar() == 3
+    finally:
+        connection.close()
+        engine.dispose()
+
+
+def test_the_attached_database_still_needs_its_schema(customer_database):
+    """An unqualified name does not reach a table in an attached catalog's non-default schema."""
+    service = DuckdbFlavorService()
+    params = connection_params(customer_database)
+    engine = service.create_engine(params)
+    try:
+        with engine.connect() as connection:
+            service.init(connection, resolve_connection_params(params), [])
+            table_ref = service.get_table_ref("sales", "orders", SqlFlavorCode.DUCKDB)
+            assert connection.execute(text(f"SELECT COUNT(*) FROM {table_ref}")).scalar() == 1
+            with pytest.raises(SQLAlchemyError):
+                connection.execute(text('SELECT COUNT(*) FROM "orders"'))
+    finally:
+        engine.dispose()

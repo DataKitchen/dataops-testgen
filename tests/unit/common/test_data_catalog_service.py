@@ -43,7 +43,7 @@ def test_render_uses_suggested_type_and_quotes_identifiers():
     fs = _flavor_service()
     columns = [_column("id", "int", "INTEGER"), _column("name", "text", "VARCHAR(20)")]
 
-    script = render_create_table_script("demo", "orders", columns, fs)
+    script = render_create_table_script("demo", "orders", columns, fs, "postgresql")
 
     assert script.startswith('CREATE TABLE "demo"."orders" (')
     assert '"id"' in script
@@ -56,7 +56,7 @@ def test_render_omits_was_annotations_by_default():
     fs = _flavor_service()
     columns = [_column("name", db_type="text", suggestion="VARCHAR(20)")]
 
-    script = render_create_table_script("demo", "orders", columns, fs)
+    script = render_create_table_script("demo", "orders", columns, fs, "postgresql")
 
     assert "-- WAS" not in script
 
@@ -65,7 +65,7 @@ def test_render_includes_was_annotations_when_enabled():
     fs = _flavor_service()
     columns = [_column("name", db_type="text", suggestion="VARCHAR(20)")]
 
-    script = render_create_table_script("demo", "orders", columns, fs, annotate_changes=True)
+    script = render_create_table_script("demo", "orders", columns, fs, "postgresql", annotate_changes=True)
 
     assert "-- WAS text" in script
 
@@ -74,7 +74,7 @@ def test_render_no_was_annotation_when_type_unchanged():
     fs = _flavor_service()
     columns = [_column("name", db_type="VARCHAR(20)", suggestion="VARCHAR(20)")]
 
-    script = render_create_table_script("demo", "orders", columns, fs, annotate_changes=True)
+    script = render_create_table_script("demo", "orders", columns, fs, "postgresql", annotate_changes=True)
 
     assert "-- WAS" not in script
 
@@ -83,7 +83,7 @@ def test_render_falls_back_to_db_type_when_no_suggestion():
     fs = _flavor_service()
     columns = [_column("name", db_type="text", suggestion=None)]
 
-    script = render_create_table_script("demo", "orders", columns, fs)
+    script = render_create_table_script("demo", "orders", columns, fs, "postgresql")
 
     assert "text" in script
 
@@ -92,7 +92,7 @@ def test_render_only_last_column_has_no_trailing_comma():
     fs = _flavor_service()
     columns = [_column("a", "int", "INTEGER"), _column("b", "int", "INTEGER")]
 
-    script = render_create_table_script("demo", "orders", columns, fs)
+    script = render_create_table_script("demo", "orders", columns, fs, "postgresql")
 
     body_lines = [line for line in script.splitlines() if '"a"' in line or '"b"' in line]
     assert body_lines[0].rstrip().endswith(",")

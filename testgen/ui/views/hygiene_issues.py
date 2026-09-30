@@ -7,6 +7,7 @@ import streamlit as st
 import testgen.ui.queries.profiling_queries as profiling_queries
 from testgen.commands.run_rollup_scores import run_profile_rollup_scoring_queries
 from testgen.common import date_service
+from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.common.mixpanel_service import MixpanelService
 from testgen.common.models import with_database_session
 from testgen.common.models.hygiene_issue import HygieneIssue
@@ -145,7 +146,14 @@ class HygieneIssuesPage(Page):
             download_dialog(
                 dialog_title="Download Excel Report",
                 file_content_func=get_excel_report_data,
-                args=(run.table_groups_name, run.table_group_schema, run_date, run_id, export_df),
+                args=(
+                    run.table_groups_name,
+                    run.table_group_schema,
+                    schema_label_for_table_group(run.table_groups_id),
+                    run_date,
+                    run_id,
+                    export_df,
+                ),
             )
 
         # Parse pagination and sorting params
@@ -473,6 +481,7 @@ def get_excel_report_data(
     update_progress: PROGRESS_UPDATE_TYPE,
     table_group: str,
     schema: str,
+    schema_label: str | None,
     run_date: str,
     run_id: str,
     data: pd.DataFrame | None = None,
@@ -499,7 +508,11 @@ def get_excel_report_data(
     return get_excel_file_data(
         data,
         "Hygiene Issues",
-        details={"Table group": table_group, "Schema": schema, "Profiling run date": run_date},
+        details={
+            "Table group": table_group,
+            **({schema_label: schema} if schema_label else {}),
+            "Profiling run date": run_date,
+        },
         columns=columns,
         update_progress=update_progress,
     )

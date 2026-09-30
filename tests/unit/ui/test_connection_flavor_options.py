@@ -60,3 +60,24 @@ def test_a_server_flavor_leaves_the_thread_count_to_the_form(monkeypatch):
     connections = load_connections(monkeypatch, "pypi")
     snowflake = next(o for o in connections.FLAVOR_OPTIONS if o.value == "snowflake")
     assert snowflake.fixed_max_threads is None
+
+
+# --- Table group schema label ------------------------------------------------
+
+
+def flavor_option(connections, value):
+    return next(option for option in connections.FLAVOR_OPTIONS if option.value == value)
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("files", None),
+        ("salesforce_data360", "Data Space"),
+        ("duckdb", "Schema"),
+        ("postgresql", "Schema"),
+    ],
+)
+def test_the_flavor_option_carries_the_schema_label_to_the_form(monkeypatch, value, expected):
+    connections = load_connections(monkeypatch, "pypi")
+    assert flavor_option(connections, value).schema_label == expected

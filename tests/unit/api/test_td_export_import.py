@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from sqlalchemy.engine.result import result_tuple
 from sqlalchemy.sql.dml import Delete
 
 from testgen.api.schemas import ImportRequest
@@ -16,6 +17,7 @@ from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import FrozenVersionError
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.test_definition_export_import_service import (
+    _EXISTING_TD_COLUMNS,
     ExportDocument,
     ExportSource,
     ImportAction,
@@ -33,6 +35,8 @@ from testgen.common.test_definition_export_import_service import (
     OnNew,
     Origin,
     TestDefinitionExport,
+    _create_td,
+    _update_td,
 )
 from tests.unit.sql_assertions import scopes_to_a_version
 
@@ -65,6 +69,16 @@ def _route_the_write_guards_session_through_the_mocked_one():
 
 
 # --- Fixtures ---
+
+
+@pytest.fixture(autouse=True)
+def target_qualifies_table_refs():
+    """Read the target as a database type that qualifies table references.
+
+    Tests that say nothing about the flavor then see the payload's own values.
+    """
+    with patch(f"{SERVICE_MODULE}.table_group_qualifies_table_refs", return_value=True) as resolved:
+        yield resolved
 
 
 def _make_test_suite(**overrides):
@@ -122,17 +136,27 @@ def _make_existing_row(
     last_auto_gen_date=_DEFAULT_AUTO_GEN_DATE,
     external_id=None,
     lock_refresh=False,
+    match_table_name=None,
+    match_schema_name=None,
     id_=None,
 ):
-    row = MagicMock()
-    row.id = id_ or uuid4()
-    row.test_type = test_type
-    row.table_name = table_name
-    row.column_name = column_name
-    row.last_auto_gen_date = last_auto_gen_date
-    row.external_id = external_id
-    row.lock_refresh = lock_refresh
-    return row
+    """A row shaped like the import's select of existing definitions.
+
+    A real ``Row`` rather than a mock, so reading a column the select leaves out fails the test.
+    """
+    stored = {
+        "id": id_ or uuid4(),
+        "test_type": test_type,
+        "table_name": table_name,
+        "column_name": column_name,
+        "last_auto_gen_date": last_auto_gen_date,
+        "external_id": external_id,
+        "lock_refresh": lock_refresh,
+        "match_table_name": match_table_name,
+        "match_schema_name": match_schema_name,
+    }
+    keys = [column.key for column in _EXISTING_TD_COLUMNS]
+    return result_tuple(keys)(tuple(stored[key] for key in keys))
 
 
 def _make_import_td(
@@ -1466,3 +1490,54 @@ class Test_version_scoping:
                 )
 
         session.add.assert_not_called()
+
+
+class Test_import_reference_schema:
+    """A target whose flavor reaches every table through one schema settles the reference schema."""
+
+    def test_create_replaces_the_schema_the_file_carries(self):
+        test_suite = _make_test_suite()
+        table_group = _make_table_group(table_group_schema="main")
+        td_import = _make_import_td(match_table_name="customers", match_schema_name="public")
+
+        td = _create_td(
+            td_import, test_suite, table_group, _make_config(), datetime.now(UTC), uuid4(), False
+        )
+
+        assert td.match_schema_name == "main"
+
+    def test_create_keeps_the_schema_where_the_flavor_qualifies(self):
+        test_suite = _make_test_suite()
+        table_group = _make_table_group(table_group_schema="sales")
+        td_import = _make_import_td(match_table_name="customers", match_schema_name="reference")
+
+        td = _create_td(
+            td_import, test_suite, table_group, _make_config(), datetime.now(UTC), uuid4(), True
+        )
+
+        assert td.match_schema_name == "reference"
+
+    @staticmethod
+    def _set_clause(session) -> str:
+        update_stmt = session.execute.call_args[0][0]
+        return str(update_stmt.compile(compile_kwargs={"literal_binds": True})).split("SET")[1]
+
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_update_without_reference_fields_leaves_them_untouched(self, mock_session_fn):
+        session = mock_session_fn.return_value
+        target = _make_existing_row(match_table_name="customers", match_schema_name="reference")
+
+        _update_td(_make_import_td(threshold_value="99"), target, _make_table_group(), True)
+
+        assert "match_schema_name" not in self._set_clause(session)
+
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_update_replaces_the_stored_schema_where_the_flavor_does_not_qualify(self, mock_session_fn):
+        session = mock_session_fn.return_value
+        target = _make_existing_row(match_table_name="customers", match_schema_name="public")
+
+        _update_td(
+            _make_import_td(threshold_value="99"), target, _make_table_group(table_group_schema="main"), False
+        )
+
+        assert "match_schema_name='main'" in self._set_clause(session)

@@ -48,13 +48,13 @@ def test_flavor_service_properties(flavor_service):
     assert flavor_service.varchar_type == "VARCHAR(1000)"
     assert flavor_service.default_uppercase is False
     assert flavor_service.test_query == "SELECT 1"
-    assert flavor_service.qualifies_table_refs_with_schema is False
+    assert flavor_service.qualifies_table_refs_with_schema("salesforce_data360") is False
     assert flavor_service.metadata_via_api is True
     assert flavor_service.row_limiting_clause == "limit"
 
 
 def test_get_table_ref_omits_schema(flavor_service):
-    assert flavor_service.get_table_ref("data_space", "Account__dll") == '"Account__dll"'
+    assert flavor_service.get_table_ref("data_space", "Account__dll", "salesforce_data360") == '"Account__dll"'
 
 
 # --- Connection string ---
@@ -138,7 +138,7 @@ def test_no_pre_connection_queries(flavor_service, client_credentials_params):
 # --- Table reference (no schema prefix) ---
 
 def test_get_table_ref_no_schema(flavor_service):
-    ref = flavor_service.get_table_ref("default", "ssot__Account__dlm")
+    ref = flavor_service.get_table_ref("default", "ssot__Account__dlm", "salesforce_data360")
     assert ref == '"ssot__Account__dlm"'
     assert "default" not in ref
 

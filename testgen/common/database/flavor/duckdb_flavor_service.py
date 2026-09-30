@@ -214,7 +214,13 @@ class DuckdbFlavorService(FlavorService):
     row_limiting_clause = "limit"
     default_uppercase = False
     url_scheme = "duckdb"
-    qualifies_table_refs_with_schema = True
+
+    def qualifies_table_refs_with_schema(self, sql_flavor_code: str) -> bool:
+        # A declaration view lands in the default schema of the in-memory database the files code
+        # connects to, so an unqualified name resolves. The database-file code attaches the
+        # customer's file and selects it with USE, where the schema is whichever one the table
+        # lives in and has to be named.
+        return sql_flavor_code != SqlFlavorCode.FILES
 
     # The engine ships inside the package, so the pinned version decides and nothing needs probing.
     supports_approx_percentile = True

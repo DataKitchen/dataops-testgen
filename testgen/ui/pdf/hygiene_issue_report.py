@@ -5,6 +5,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Table, TableStyle
 
 from testgen import settings
+from testgen.common.database.table_group_service import schema_label_for_table_group
 from testgen.settings import ISSUE_REPORT_SOURCE_DATA_LOOKUP_LIMIT
 from testgen.ui.pdf.dataframe_table import DataFrameTableBuilder
 from testgen.ui.pdf.style import (
@@ -34,6 +35,7 @@ CLASS_COLORS =  {
 }
 
 def build_summary_table(document, hi_data):
+    schema_label = schema_label_for_table_group(hi_data["table_groups_id"])
 
     summary_table_style = TableStyle(
         (
@@ -109,7 +111,11 @@ def build_summary_table(document, hi_data):
         ),
 
         ("Profiling Date", profiling_timestamp, "Table Group", hi_data["table_groups_name"]),
-        ("Database/Schema", hi_data["schema_name"], "Data Type", hi_data["db_data_type"]),
+        (
+            *((schema_label, hi_data["schema_name"]) if schema_label else (None, None)),
+            "Data Type",
+            hi_data["db_data_type"],
+        ),
         ("Table", hi_data["table_name"], "Semantic Data Type", hi_data["functional_data_type"]),
         ("Column", hi_data["column_name"], "Impact Dimension", hi_data.get("impact_dimension")),
         ("Action", hi_data["disposition"] or "No Decision","Quality Dimension", hi_data.get("dq_dimension")),

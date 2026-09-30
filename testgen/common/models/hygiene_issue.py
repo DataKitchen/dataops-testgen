@@ -106,6 +106,7 @@ class HygieneIssueDetail:
 
     id: UUID
     project_code: str
+    table_groups_id: UUID
     issue_type_name: str
     type_description: str | None
     suggested_action: str | None
@@ -467,6 +468,7 @@ class HygieneIssue(Entity):
             select(
                 cls.id.label("id"),
                 cls.project_code.label("project_code"),
+                cls.table_groups_id.label("table_groups_id"),
                 HygieneIssueType.name.label("issue_type_name"),
                 HygieneIssueType.description.label("type_description"),
                 HygieneIssueType.suggested_action.label("suggested_action"),

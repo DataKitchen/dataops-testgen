@@ -21,7 +21,7 @@ from testgen.common.database.table_group_service import (
     preview_table_group as preview_table_group_service,
 )
 from testgen.common.enums import FileFormat
-from testgen.common.flavors import declares_files
+from testgen.common.flavors import TableGroupSchemaLabel, declares_files, table_group_schema_label
 from testgen.common.models import with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.table_group import TableGroup, table_group_defaults
@@ -54,10 +54,6 @@ _PII_FLAG_DENIED_MESSAGE = (
     "Changing PII detection requires permission to view PII. "
     "Leave this setting unchanged or contact your administrator."
 )
-_SCHEMA_LOCKED_MESSAGE = (
-    "Schema cannot be changed once the table group has been used. "
-    "Delete and recreate the table group to use a different schema."
-)
 _DECLARATIONS_REQUIRED_MESSAGE = (
     "Tables on this connection are declared one file or pattern at a time. Supply `file_declarations`."
 )
@@ -69,11 +65,25 @@ _SCHEMA_UNSUPPORTED_MESSAGE = "Tables on this connection are files, so it has no
 # Only on create. Telling an update to supply the declarations invites it to send a partial list,
 # and the field replaces the whole one.
 _SCHEMA_UNSUPPORTED_ON_CREATE_MESSAGE = f"{_SCHEMA_UNSUPPORTED_MESSAGE} Supply `file_declarations`."
-_SCHEMA_REQUIRED_MESSAGE = "`schema` is required for this connection."
 _CRITERIA_UNSUPPORTED_MESSAGE = (
     "Tables on this connection are files, so `table_set`, `include_mask` and `exclude_mask` do not "
     "apply. Name the tables to read with `file_declarations`."
 )
+
+
+def _schema_locked_message(label: str | None) -> str:
+    """The refusal for changing a used table group's schema, named as its connection names it."""
+    subject = label or TableGroupSchemaLabel.SCHEMA
+    return (
+        f"{subject} cannot be changed once the table group has been used. "
+        f"Delete and recreate the table group to use a different {subject.lower()}."
+    )
+
+
+def _schema_required_message(label: str | None) -> str:
+    """The refusal for a connection whose table group must name the schema it reads."""
+    names = f" It names the {label.lower()} holding the tables." if label else ""
+    return f"`schema` is required for this connection.{names}"
 
 
 class FileDeclaration(BaseModel):
@@ -169,7 +179,7 @@ def _verify_table_naming(
     if file_declarations is not None:
         raise MCPUserError(_DECLARATIONS_UNSUPPORTED_MESSAGE)
     if require and not schema:
-        raise MCPUserError(_SCHEMA_REQUIRED_MESSAGE)
+        raise MCPUserError(_schema_required_message(table_group_schema_label(connection.sql_flavor_code)))
 
 
 def _declaration_payloads(declarations: list[FileDeclaration]) -> list[dict[str, Any]]:
@@ -231,29 +241,30 @@ def list_table_groups(
     doc = MdDoc()
     doc.heading(1, heading)
     doc.text(format_page_info(total, page, limit))
+    # Rows can span connections, so the schema column carries whatever the listed ones call
+    # theirs, and is dropped only when none of them reports one.
+    schema_labels = [table_group_schema_label(row.sql_flavor_code) for row in rows]
+    schema_header = " / ".join(sorted({label for label in schema_labels if label}))
     table_rows: list[list[object]] = []
-    for row in rows:
-        table_rows.append(
-            [
-                str(row.id),
-                row.table_groups_name,
-                row.connection_name,
-                # A flavor that declares its tables as files has no schema the user chose; the
-                # stored value is the one its engine reads from.
-                None if declares_files(row.sql_flavor_code) else row.table_group_schema,
-                row.table_count,
-                row.column_count,
-                row.row_count,
-                row.last_profiled_date,
-                row.last_tested_date,
-                friendly_score(row.quality_score),
-            ]
-        )
-    doc.table(
-        ["ID", "Name", "Connection", "Schema", "Tables", "Columns", "Rows", "Last profiled", "Last tested", "Quality Score"],
-        table_rows,
-        code=[0, 3],
-    )
+    for row, schema_label in zip(rows, schema_labels, strict=True):
+        table_row: list[object] = [
+            str(row.id),
+            row.table_groups_name,
+            row.connection_name,
+            row.table_count,
+            row.column_count,
+            row.row_count,
+            row.last_profiled_date,
+            row.last_tested_date,
+            friendly_score(row.quality_score),
+        ]
+        if schema_header:
+            table_row.insert(3, row.table_group_schema if schema_label else None)
+        table_rows.append(table_row)
+    headers = ["ID", "Name", "Connection", "Tables", "Columns", "Rows", "Last profiled", "Last tested", "Quality Score"]
+    if schema_header:
+        headers.insert(3, schema_header)
+    doc.table(headers, table_rows, code=[0, 3] if schema_header else [0])
     if footer := format_page_footer(total, page, limit):
         doc.text(footer)
     return doc.render()
@@ -285,8 +296,8 @@ def get_table_group(
             f"{connection.connection_name} (`{connection.connection_id}`, {format_flavor_label(connection.sql_flavor_code)})",
         )
     declares_its_files = connection is not None and declares_files(connection.sql_flavor_code)
-    if not declares_its_files:
-        doc.field("Schema", table_group.table_group_schema, code=True)
+    if schema_label := table_group_schema_label(connection.sql_flavor_code if connection else None):
+        doc.field(schema_label, table_group.table_group_schema, code=True)
     if table_group.description:
         doc.field("Description", table_group.description)
 
@@ -347,7 +358,7 @@ def create_table_group(
     schema: Annotated[
         str | None,
         Field(
-            description="Schema name on the target database, e.g. ``public``. For Salesforce Data 360 connections, use "
+            description="Schema name on the target database, e.g. ``public``. On a Salesforce Data 360 connection, "
             "the data space name. Omit on a connection whose tables are files, which has no schema to choose.",
         ),
     ] = None,
@@ -527,7 +538,10 @@ def update_table_group(
     ] = None,
     schema: Annotated[
         str | None,
-        Field(description="New target-DB schema. Rejected if the table group has been used."),
+        Field(
+            description="New schema name on the target database. On a Salesforce Data 360 connection, the data "
+            "space name. Rejected if the table group has been used.",
+        ),
     ] = None,
     file_declarations: Annotated[
         list[FileDeclaration] | None,
@@ -662,12 +676,14 @@ def update_table_group(
             require=False,
         )
 
+    schema_label = table_group_schema_label(connection.sql_flavor_code if connection else None)
+
     if (
         schema is not None
         and schema != table_group.table_group_schema
         and TableGroup.is_in_use([table_group.id])
     ):
-        raise MCPUserError(_SCHEMA_LOCKED_MESSAGE)
+        raise MCPUserError(_schema_locked_message(schema_label))
 
     if (
         profile_flag_pii is not None
@@ -690,7 +706,8 @@ def update_table_group(
     doc.heading(1, f"Table Group `{table_group.table_groups_name}` updated")
     doc.field("ID", str(table_group.id), code=True)
 
-    rendered = render_diff_table(doc, before, after, attrs=_DIFF_ATTRS, labels=_DIFF_LABELS)
+    diff_attrs, diff_labels = _diff_shape(schema_label)
+    rendered = render_diff_table(doc, before, after, attrs=diff_attrs, labels=diff_labels)
     if not rendered:
         doc.text("No fields changed — supplied values matched the current state.")
         return doc.render()
@@ -742,8 +759,8 @@ def preview_table_group(
 
     doc.heading(1, f"Preview for table group `{name}`")
     doc.field("Table Group ID", str(table_group.id), code=True)
-    if not declares_files(connection.sql_flavor_code):
-        doc.field("Schema", stats.get("table_group_schema"), code=True)
+    if schema_label := table_group_schema_label(connection.sql_flavor_code):
+        doc.field(schema_label, stats.get("table_group_schema"), code=True)
     doc.field("Tables matched", stats.get("table_ct") or 0)
     doc.field("Total columns", stats.get("column_ct") or 0)
     if stats.get("approx_record_ct") is not None:
@@ -852,6 +869,14 @@ _DIFF_LABELS: dict[str, str] = {
     "data_product": "Data product",
     "data_classification": "Data classification",
 }
+
+
+def _diff_shape(schema_label: str | None) -> tuple[tuple[str, ...], dict[str, str]]:
+    """The diff attrs and labels, with the schema row named as the connection names it."""
+    if schema_label is None:
+        return tuple(attr for attr in _DIFF_ATTRS if attr != "table_group_schema"), _DIFF_LABELS
+    return _DIFF_ATTRS, {**_DIFF_LABELS, "table_group_schema": schema_label}
+
 
 _CATALOG_ATTRS: tuple[str, ...] = (
     "data_source",
@@ -1014,8 +1039,8 @@ def _render_created_table_group(table_group: TableGroup, connection: Connection)
     if declares_files(connection.sql_flavor_code):
         doc.heading(2, "Declared tables")
         _render_declared_tables(doc, table_group)
-    else:
-        doc.field("Schema", table_group.table_group_schema, code=True)
+    if schema_label := table_group_schema_label(connection.sql_flavor_code):
+        doc.field(schema_label, table_group.table_group_schema, code=True)
     if table_group.description:
         doc.field("Description", table_group.description)
 

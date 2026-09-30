@@ -18,8 +18,23 @@ from testgen.common.models.table_group import TableGroup
 pytestmark = pytest.mark.unit
 
 MODULE = "testgen.api.table_groups"
+RULES_MODULE = "testgen.common.database.table_group_service"
 NOW = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
 TG_ID = uuid4()
+
+
+@pytest.fixture(autouse=True)
+def target_connection():
+    """The connection the detail response reads to name the schema.
+
+    Defaults to a database type that reports one, so tests saying nothing about the flavor see
+    the stored value.
+    """
+    connection = MagicMock()
+    connection.sql_flavor = "postgresql"
+    connection.sql_flavor_code = "postgresql"
+    with patch(f"{RULES_MODULE}.Connection.get_by_table_group", return_value=connection):
+        yield connection
 
 
 def _row(**overrides):
@@ -27,6 +42,7 @@ def _row(**overrides):
         "id": TG_ID,
         "table_groups_name": "sales",
         "table_group_schema": "public",
+        "sql_flavor_code": "postgresql",
         "project_code": "demo",
         "connection_id": 3,
         "connection_name": "Prod",
@@ -734,3 +750,34 @@ def test_every_create_field_names_a_table_group_column_or_is_handled_by_the_endp
     columns = set(TableGroup.__table__.columns.keys())
 
     assert set(TableGroupCreate.model_fields) - handled <= columns
+
+
+# --- Schema reported per database type ---------------------------------------
+
+
+@patch(f"{MODULE}.TableGroup")
+def test_list_reports_no_schema_for_a_type_that_has_none(mock_cls):
+    """The stored value is the engine's own default schema, not one the user chose."""
+    mock_cls.list_for_project.return_value = ([_row(sql_flavor_code="files", table_group_schema="main")], 1)
+
+    item = list_table_groups(project_code="demo", page=1, limit=20).items[0]
+
+    assert item.schema_name is None
+
+
+@patch(f"{MODULE}.TableGroup")
+def test_list_reports_the_stored_value_for_a_type_that_names_one(mock_cls):
+    mock_cls.list_for_project.return_value = ([_row(sql_flavor_code="salesforce_data360")], 1)
+
+    item = list_table_groups(project_code="demo", page=1, limit=20).items[0]
+
+    assert item.schema_name == "public"
+
+
+def test_detail_reports_no_schema_for_a_type_that_has_none(target_connection):
+    target_connection.sql_flavor = "duckdb"
+    target_connection.sql_flavor_code = "files"
+
+    response = get_table_group(table_group=_table_group(table_group_schema="main"))
+
+    assert response.schema_name is None

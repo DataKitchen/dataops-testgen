@@ -9,7 +9,10 @@ from testgen.common.flavors import (
     FLAVOR_CODE_TO_FAMILY,
     FLAVOR_CODE_TO_LABEL,
     FLAVOR_FAMILIES,
+    FLAVOR_TABLE_GROUP_SCHEMA_LABEL,
     SqlFlavorLabel,
+    reports_table_group_schema,
+    table_group_schema_label,
 )
 from testgen.common.read_file import read_template_sql_file
 
@@ -125,3 +128,33 @@ def test_every_target_fan_out_reads_the_pinned_thread_count():
         if re.search(r"\.max_threads\b", line) and "effective_max_threads" not in line
     ]
     assert not offenders, "Read Connection.effective_max_threads instead:\n" + "\n".join(offenders)
+
+
+# --- Table group schema label -----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("files", None),
+        ("salesforce_data360", "Data Space"),
+        ("duckdb", "Schema"),
+        ("postgresql", "Schema"),
+        ("snowflake", "Schema"),
+        (None, "Schema"),
+        ("a_code_that_does_not_exist", "Schema"),
+    ],
+)
+def test_table_group_schema_label_names_the_value_per_flavor_code(code, expected):
+    assert table_group_schema_label(code) == expected
+    assert reports_table_group_schema(code) is (expected is not None)
+
+
+def test_the_schema_label_registry_only_names_known_flavor_codes():
+    assert set(FLAVOR_TABLE_GROUP_SCHEMA_LABEL) <= set(FLAVOR_CODE_TO_FAMILY)
+
+
+def test_the_two_duckdb_codes_are_named_differently():
+    """The codes share an engine family, so a label resolved from the family cannot tell them apart."""
+    assert FLAVOR_CODE_TO_FAMILY["files"] == FLAVOR_CODE_TO_FAMILY["duckdb"]
+    assert table_group_schema_label("files") != table_group_schema_label("duckdb")

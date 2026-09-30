@@ -8,6 +8,11 @@ from pydantic import Field, ValidationError
 from sqlalchemy import update
 
 from testgen.common.custom_test_validation import validate_custom_query
+from testgen.common.database.table_group_service import (
+    apply_test_definition_flavor_rules,
+    schema_label_for_table_group,
+    table_group_qualifies_table_refs,
+)
 from testgen.common.enums import ImpactDimension, QualityDimension
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
@@ -211,12 +216,16 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
     else:
         doc.heading(1, f"{test_name} on `{td.table_name}`")
 
+    schema_label = schema_label_for_table_group(td.table_groups_id)
+    qualifies = table_group_qualifies_table_refs(td.table_groups_id)
+
     doc.field("ID", td.id, code=True)
     doc.field("Test Type", test_name)
     doc.field("Table", td.table_name, code=True)
     if td.column_name:
         doc.field("Column", td.column_name, code=True)
-    doc.field("Schema", td.schema_name, code=True)
+    if schema_label:
+        doc.field(schema_label, td.schema_name, code=True)
     if td.test_scope:
         doc.field("Scope", td.test_scope)
     if td.impact_dimension or td.default_impact_dimension:
@@ -263,7 +272,7 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
             doc.field(MdDoc.escape(key), value)
 
     # Parameters (editable fields from test type metadata)
-    _append_parameters_section(doc, td)
+    _append_parameters_section(doc, td, qualifies)
 
     # Custom SQL (only show when the test type declares it as an editable parameter)
     if "custom_query" in td.param_columns:
@@ -274,7 +283,7 @@ def _append_td_summary(doc: MdDoc, td: TestDefinitionSummary) -> None:
             doc.text("_No custom SQL defined._")
 
     # Reference match (only fields listed in param_columns)
-    _append_match_section(doc, td)
+    _append_match_section(doc, td, schema_label, qualifies)
 
 
 @with_database_session
@@ -425,11 +434,12 @@ _CALIBRATION_SHAPED_PARAM_COLUMNS: frozenset[str] = frozenset({
 })
 
 
-def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
+def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary, qualifies: bool) -> None:
     """Build the editable parameters table from test type metadata.
 
-    Always shows all parameters declared in param_columns, even when the
-    value is empty — this tells the LLM/user which fields can be edited.
+    Shows every parameter declared in param_columns even when the value is empty, so the caller
+    knows which fields can be edited. The reference table's schema is left out where the flavor
+    settles it, since it is not a field the caller can set.
     """
     if not td.param_fields:
         return
@@ -438,6 +448,8 @@ def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
     rows = []
     for column, prompt, _help in td.param_fields:
         if hide_source_data and column in _CALIBRATION_SHAPED_PARAM_COLUMNS:
+            continue
+        if column == "match_schema_name" and not qualifies:
             continue
         value = getattr(td, column, None)
         rows.append([prompt, column, str(value) if value is not None else None])
@@ -449,17 +461,23 @@ def _append_parameters_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
     doc.table(["Parameter", "Field", "Value"], rows, code=[1])
 
 
-def _append_match_section(doc: MdDoc, td: TestDefinitionSummary) -> None:
-    """Append reference match section — shows all match fields declared in param_columns."""
+def _append_match_section(
+    doc: MdDoc, td: TestDefinitionSummary, schema_label: str | None, qualifies: bool
+) -> None:
+    """Append reference match section — shows all match fields declared in param_columns.
+
+    The reference table's schema is named as the connection names its own, and is left out on a
+    flavor that reaches every table through one schema, where it is settled rather than chosen.
+    """
     match_fields = [
-        ("Match Schema", "match_schema_name", td.match_schema_name),
+        (f"Match {schema_label}" if qualifies and schema_label else None, "match_schema_name", td.match_schema_name),
         ("Match Table", "match_table_name", td.match_table_name),
         ("Match Columns", "match_column_names", td.match_column_names),
         ("Match Subset Condition", "match_subset_condition", td.match_subset_condition),
         ("Match Grouping Columns", "match_groupby_names", td.match_groupby_names),
         ("Match Having Condition", "match_having_condition", td.match_having_condition),
     ]
-    relevant = [(label, value) for label, col, value in match_fields if col in td.param_columns]
+    relevant = [(label, value) for label, col, value in match_fields if label and col in td.param_columns]
     if not relevant:
         return
 
@@ -620,6 +638,10 @@ def create_test(
     for key, value in fields.items():
         setattr(td, key, value)
 
+    apply_test_definition_flavor_rules(
+        td, table_group, qualifies_table_refs=table_group_qualifies_table_refs(table_group.id)
+    )
+
     try:
         td.validate(tt)
     except InvalidTestDefinitionFields as e:
@@ -673,6 +695,14 @@ def update_test(
     for key, value in fields.items():
         setattr(td, key, value)
     td.last_manual_update = datetime.now(UTC)
+
+    update_table_group = TableGroup.get(td.table_groups_id)
+    if update_table_group is not None:
+        apply_test_definition_flavor_rules(
+            td,
+            update_table_group,
+            qualifies_table_refs=table_group_qualifies_table_refs(update_table_group.id),
+        )
 
     try:
         td.validate(tt)
@@ -1090,7 +1120,8 @@ def export_tests(
     doc.heading(1, f"Test Definition Export from suite `{suite.test_suite}`")
     doc.field("Project", export.source.project_code, code=True)
     doc.field("Table Group", export.source.table_group)
-    doc.field("Schema", export.source.table_group_schema, code=True)
+    if schema_label := schema_label_for_table_group(suite.table_groups_id):
+        doc.field(schema_label, export.source.table_group_schema, code=True)
     doc.field("Exported At", export.source.exported_at)
     if filters:
         doc.field("Filters", ", ".join(filters))

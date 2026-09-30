@@ -57,6 +57,7 @@ def render_create_table_script(
     table_name: str,
     columns: list[CreateScriptColumn],
     flavor_service: FlavorService,
+    sql_flavor_code: str,
     *,
     annotate_changes: bool = False,
 ) -> str:
@@ -67,7 +68,7 @@ def render_create_table_script(
     suggestion differs from the original type.
     """
     quote = flavor_service.quote_character
-    table_ref = flavor_service.get_table_ref(schema_name, table_name)
+    table_ref = flavor_service.get_table_ref(schema_name, table_name, sql_flavor_code)
     quoted_names = [f"{quote}{col.column_name}{quote}" for col in columns]
 
     name_width = max(len(name) for name in quoted_names)
@@ -103,7 +104,12 @@ def build_create_table_script(
         return None
     flavor_service = get_flavor_service(connection.sql_flavor)
     return render_create_table_script(
-        schema_name, table_name, columns, flavor_service, annotate_changes=annotate_changes,
+        schema_name,
+        table_name,
+        columns,
+        flavor_service,
+        connection.sql_flavor_code,
+        annotate_changes=annotate_changes,
     )
 
 
@@ -121,7 +127,7 @@ def fetch_table_sample(
     flavor_service = get_flavor_service(connection.sql_flavor)
     prefix, suffix = flavor_service.row_limit_clauses(limit)
     quote = flavor_service.quote_character
-    table_ref = flavor_service.get_table_ref(schema_name, table_name)
+    table_ref = flavor_service.get_table_ref(schema_name, table_name, connection.sql_flavor_code)
     columns_expr = f"{quote}{column_name}{quote}" if column_name else "*"
     query = f"SELECT DISTINCT {prefix} {columns_expr} FROM {table_ref} {suffix}".strip()
 
