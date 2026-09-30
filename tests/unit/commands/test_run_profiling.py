@@ -47,10 +47,16 @@ def _no_job_row_session() -> MagicMock:
 
 # --- the column profiling step: outcome-handling branches --------------------------------
 
-def _run_columns(outcomes: dict[str, tuple[str, object]], sampling_params: dict[str, TableSampling] | None = None):
+def _run_columns(
+    outcomes: dict[str, tuple[str, object]],
+    sampling_params: dict[str, TableSampling] | None = None,
+    capabilities: ProfilingCapabilities | None = None,
+    sql_generator: MagicMock | None = None,
+):
     """Drive the column profiling step through the engine with a stubbed worker pool.
 
-    ``outcomes`` maps column_name -> ("ok", result_list) | ("err", message). Returns
+    ``outcomes`` maps column_name -> ("ok", result_list) | ("err", message). The SQL generator
+    supplies no row values unless ``sql_generator`` is given. Returns
     (profiling_run, ProfileResult mock, _write_column_error mock).
     """
     data_chars = [_col("t", name) for name in outcomes]
@@ -60,8 +66,11 @@ def _run_columns(outcomes: dict[str, tuple[str, object]], sampling_params: dict[
     job.data_chars = data_chars
     job.table_record_counts = {"t": 10}
     job.sampling_params = sampling_params or {}
-    job.capabilities = ProfilingCapabilities()
-    job.sql_generator = MagicMock()
+    job.capabilities = capabilities or ProfilingCapabilities()
+    if sql_generator is None:
+        sql_generator = MagicMock()
+        sql_generator.profiled_row_values.return_value = {}
+    job.sql_generator = sql_generator
     job.sql_generator.run_column_profiling.return_value = ("SELECT 1", {})
     job.connection = MagicMock(max_threads=4)
     job.profiling_run = MagicMock(**{"progress_error.return_value": None})
@@ -127,6 +136,21 @@ def test_empty_result_is_skipped_without_error():
 
 
 SAMPLING = TableSampling(table_name="t", sample_count=3, sample_ratio=10 / 3, sample_percent=30.0)
+
+
+@pytest.mark.parametrize("approx_percentile", [False, True])
+def test_a_measured_row_is_written_with_the_values_the_run_supplies(approx_percentile):
+    sql_generator = MagicMock()
+    sql_generator.profiled_row_values.return_value = {"column_name": "c1", "percentile_method": "exact"}
+
+    _, profile_result, _ = _run_columns(
+        {"c1": ("ok", [{"record_ct": 3}])},
+        capabilities=ProfilingCapabilities(approx_percentile=approx_percentile),
+        sql_generator=sql_generator,
+    )
+
+    sql_generator.profiled_row_values.assert_called_once_with(_col("t", "c1"), approx_percentile)
+    profile_result.upsert.assert_called_once_with({"record_ct": 3, "column_name": "c1", "percentile_method": "exact"})
 
 
 def test_a_sampled_tables_row_is_scaled_before_it_is_written():

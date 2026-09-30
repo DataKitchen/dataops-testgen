@@ -37,18 +37,6 @@ WITH target_table AS (
 )
 -- TG-ENDIF
 SELECT
-  {CONNECTION_ID} AS connection_id,
-  '{PROJECT_CODE}' AS project_code,
-  '{TABLE_GROUPS_ID}' AS table_groups_id,
-  '{DATA_SCHEMA}' AS schema_name,
-  '{RUN_DATE}' AS run_date,
-  '{DATA_TABLE}' AS table_name,
-  {COL_POS} AS position,
-  '{COL_NAME_SANITIZED}' AS column_name,
-  '{COL_TYPE}' AS column_type,
-  '{DB_DATA_TYPE}' AS db_data_type,
-  '{COL_GEN_TYPE}' AS general_type,
-  COUNT(*) AS record_ct,
   COUNT(`{COL_NAME}`) AS value_ct,
   COUNT(DISTINCT `{COL_NAME}`) AS distinct_value_ct,
   SUM(CASE WHEN `{COL_NAME}` IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
@@ -178,7 +166,6 @@ SELECT
   MIN(pct_25) AS percentile_25,
   MIN(pct_50) AS percentile_50,
   MIN(pct_75) AS percentile_75,
-  '{PERCENTILE_METHOD}' AS percentile_method,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(MOD(`{COL_NAME}`, 1)), 5)) AS fractional_sum,
@@ -238,7 +225,7 @@ SELECT
   SUM(CAST(SIGN(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ',''))) AS BIGINT)) AS embedded_space_ct,
   AVG(CAST(LEN(TRIM(`{COL_NAME}`)) - LEN(REPLACE(TRIM(`{COL_NAME}`),' ','')) AS FLOAT)) AS avg_embedded_spaces,
 -- TG-ENDIF
-  '{PROFILE_RUN_ID}' AS profile_run_id
+  COUNT(*) AS record_ct
   FROM target_table
 -- TG-IF is_type_A
   CROSS JOIN pattern_slots
