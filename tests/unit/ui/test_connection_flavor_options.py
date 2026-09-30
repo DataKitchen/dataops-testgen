@@ -4,6 +4,8 @@ import importlib
 
 import pytest
 
+from testgen.common.flavors import FLAVOR_CODE_TO_LABEL
+
 pytestmark = pytest.mark.unit
 
 
@@ -21,7 +23,7 @@ def duckdb_option(connections):
     return next(option for option in connections.FLAVOR_OPTIONS if option.value == "duckdb")
 
 
-def test_duckdb_appears_in_the_database_type_picker(monkeypatch):
+def test_duckdb_appears_in_the_data_source_picker(monkeypatch):
     connections = load_connections(monkeypatch, "pypi")
     option = duckdb_option(connections)
     assert option.label == "DuckDB"
@@ -60,6 +62,17 @@ def test_a_server_flavor_leaves_the_thread_count_to_the_form(monkeypatch):
     connections = load_connections(monkeypatch, "pypi")
     snowflake = next(o for o in connections.FLAVOR_OPTIONS if o.value == "snowflake")
     assert snowflake.fixed_max_threads is None
+
+
+def test_every_flavor_code_is_offered(monkeypatch):
+    connections = load_connections(monkeypatch, "pypi")
+    assert {option.value for option in connections.FLAVOR_OPTIONS} == set(FLAVOR_CODE_TO_LABEL)
+
+
+def test_data_sources_are_listed_alphabetically(monkeypatch):
+    connections = load_connections(monkeypatch, "pypi")
+    labels = [option.label for option in connections.FLAVOR_OPTIONS]
+    assert labels == sorted(labels, key=str.casefold)
 
 
 # --- Table group schema label ------------------------------------------------

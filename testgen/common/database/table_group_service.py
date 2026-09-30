@@ -28,12 +28,12 @@ from testgen.commands.run_refresh_data_chars import write_data_chars
 from testgen.common.database.column_chars import ColumnChars, ObjectType
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.file_declarations import (
-    BASE_PATH_PARAMETER,
     NO_FILES_MATCHED,
     FileDeclaration,
     parse_file_declarations,
     validate_file_declarations,
 )
+from testgen.common.database.flavor.duckdb_flavor_service import base_location
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.flavors import declares_files, fixed_table_group_schema, table_group_schema_label
 from testgen.common.models.connection import Connection
@@ -106,7 +106,7 @@ def validate_table_group_fields(
     Args:
         table_group: The table group to check.
         connection: The table group's connection. Pass it to have the file declarations
-            checked, which needs the base path they are relative to.
+            checked, which needs the base location they are relative to.
         field_names: Name to show for a model attribute in the messages, keyed by
             attribute. Overrides the public field names, which the messages use by
             default; an attribute with no public name is shown by its own name.
@@ -125,7 +125,11 @@ def validate_table_group_fields(
         errors.append(f"{field('table_groups_name')} must be between {_NAME_MIN} and {_NAME_MAX} characters.")
 
     if connection is not None and declares_files(connection.sql_flavor_code):
-        errors.extend(validate_file_declarations(table_group.file_declarations, _base_path(connection)))
+        errors.extend(
+            validate_file_declarations(
+                table_group.file_declarations, base_location(connection.sql_flavor_code, connection.parameters)
+            )
+        )
     elif _missing(table_group.table_group_schema):
         errors.append(f"{field('table_group_schema')} is required.")
 
@@ -157,10 +161,6 @@ def validate_table_group_fields(
         errors.append(f"{field('profile_sample_min_count')} must be at most {_BIGINT_MAX}.")
 
     return errors
-
-
-def _base_path(connection: Connection) -> str:
-    return ((connection.parameters or {}).get(BASE_PATH_PARAMETER) or "").strip()
 
 
 def apply_table_group_flavor_rules(table_group: TableGroup, connection: Connection | None) -> None:
@@ -275,7 +275,7 @@ _NO_TABLES_MESSAGE = (
     "No tables found matching the criteria. Please check the Table Group configuration"
     " or the database permissions."
 )
-_INACCESSIBLE_MESSAGE = "Some tables were not accessible. Please check the database permissions."
+_INACCESSIBLE_MESSAGE = "Some tables were not accessible. Check that TestGen has read access to them."
 _NO_DECLARATIONS_READ_MESSAGE = (
     "None of the declared tables could be read. Check that the paths are correct and that the files"
     " are readable by TestGen."

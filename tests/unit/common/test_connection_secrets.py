@@ -53,43 +53,43 @@ class _SecretiveFlavor(FlavorService):
 
 
 # ---------------------------------------------------------------------------
-# validate_secrets
+# validate_settings: the secrets shape
 # ---------------------------------------------------------------------------
 
 
-def test_validate_secrets_accepts_a_complete_shape():
-    _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA", "session_token": "tok"}, "postgresql")
+def test_validate_settings_accepts_a_complete_shape():
+    _SecretiveFlavor().validate_settings(None, {"access_key_id": "AKIA", "session_token": "tok"}, "postgresql")
 
 
-def test_validate_secrets_accepts_only_the_required_entry():
-    _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA"}, "postgresql")
+def test_validate_settings_accepts_only_the_required_entry():
+    _SecretiveFlavor().validate_settings(None, {"access_key_id": "AKIA"}, "postgresql")
 
 
-def test_validate_secrets_rejects_an_undeclared_key_by_name():
+def test_validate_settings_rejects_an_undeclared_key_by_name():
     with pytest.raises(ValueError, match="'nope' is not a connection secret"):
-        _SecretiveFlavor().validate_secrets({"access_key_id": "AKIA", "nope": "x"}, "postgresql")
+        _SecretiveFlavor().validate_settings(None, {"access_key_id": "AKIA", "nope": "x"}, "postgresql")
 
 
 @pytest.mark.parametrize("value", [None, "", "   "])
-def test_validate_secrets_rejects_a_blank_required_entry_by_label(value):
+def test_validate_settings_rejects_a_blank_required_entry_by_label(value):
     with pytest.raises(ValueError, match="Access Key ID is required."):
-        _SecretiveFlavor().validate_secrets({"access_key_id": value}, "postgresql")
+        _SecretiveFlavor().validate_settings(None, {"access_key_id": value}, "postgresql")
 
 
-def test_validate_secrets_rejects_a_missing_required_entry_by_label():
+def test_validate_settings_rejects_a_missing_required_entry_by_label():
     with pytest.raises(ValueError, match="Access Key ID is required."):
-        _SecretiveFlavor().validate_secrets({}, "postgresql")
+        _SecretiveFlavor().validate_settings(None, {}, "postgresql")
 
 
 @pytest.mark.parametrize("secrets", [None, {}])
-def test_validate_secrets_accepts_nothing_for_a_flavor_declaring_none(secrets):
+def test_validate_settings_accepts_nothing_for_a_flavor_declaring_none(secrets):
     """Every flavor shipping today declares no secrets, so both shapes have to pass."""
-    FlavorService().validate_secrets(secrets, "postgresql")
+    FlavorService().validate_settings(None, secrets, "postgresql")
 
 
-def test_validate_secrets_rejects_a_stray_key_for_a_flavor_declaring_none():
+def test_validate_settings_rejects_a_stray_key_for_a_flavor_declaring_none():
     with pytest.raises(ValueError, match="'anything' is not a connection secret"):
-        FlavorService().validate_secrets({"anything": "x"}, "postgresql")
+        FlavorService().validate_settings(None, {"anything": "x"}, "postgresql")
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +141,21 @@ def test_merge_yields_none_when_nothing_survives():
     assert posted["secrets"] is None
 
 
+def test_merge_carries_nothing_stored_across_a_change_of_connection_type():
+    """A secret stored for another type would fail the new type's validation, with no field to clear it."""
+    stored = _conn(sql_flavor="duckdb", sql_flavor_code="s3", secrets={"secret_access_key": "old"})
+    posted = {"sql_flavor_code": "files", "secrets": {}}
+    merge_posted_secrets(posted, stored)
+    assert posted["secrets"] is None
+
+
+def test_merge_keeps_stored_secrets_when_the_payload_names_the_same_type():
+    stored = _conn(sql_flavor="duckdb", sql_flavor_code="s3", secrets={"secret_access_key": "old"})
+    posted = {"sql_flavor_code": "s3", "secrets": {}}
+    merge_posted_secrets(posted, stored)
+    assert posted["secrets"] == {"secret_access_key": "old"}
+
+
 def test_merge_without_a_stored_connection_takes_the_payload():
     posted = {"secrets": {"access_key_id": "AKIA", "session_token": ""}}
     merge_posted_secrets(posted)
@@ -185,19 +200,20 @@ def test_enforce_connection_rules_validates_secrets():
     from testgen.common.database import connection_service
 
     flavor_service = MagicMock()
+    flavor_service.scrub_settings.side_effect = lambda parameters, secrets, _code: (parameters, secrets)
     with patch.object(connection_service, "get_flavor_service", return_value=flavor_service):
         connection = _conn(parameters={"a": 1}, secrets={"b": 2})
         connection_service.enforce_connection_rules(connection)
 
-    flavor_service.validate_parameters.assert_called_once_with({"a": 1}, "postgresql")
-    flavor_service.validate_secrets.assert_called_once_with({"b": 2}, "postgresql")
+    flavor_service.validate_settings.assert_called_once_with({"a": 1}, {"b": 2}, "postgresql")
 
 
 def test_enforce_connection_rules_surfaces_a_secrets_failure():
     from testgen.common.database import connection_service
 
     flavor_service = MagicMock()
-    flavor_service.validate_secrets.side_effect = ValueError("Access Key ID is required.")
+    flavor_service.scrub_settings.side_effect = lambda parameters, secrets, _code: (parameters, secrets)
+    flavor_service.validate_settings.side_effect = ValueError("Access Key ID is required.")
     with (
         patch.object(connection_service, "get_flavor_service", return_value=flavor_service),
         pytest.raises(ValueError, match="Access Key ID is required."),

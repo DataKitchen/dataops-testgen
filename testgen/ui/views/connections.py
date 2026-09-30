@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass
 import streamlit as st
 
 from testgen import settings
+from testgen.common.connection_schema import connection_location
 from testgen.common.database.connection_service import (
     CLEAR_SENTINEL,
     MASKED_VALUE,
@@ -16,6 +17,7 @@ from testgen.common.database.connection_service import (
     test_connection_status,
 )
 from testgen.common.database.database_service import get_flavor_service
+from testgen.common.database.flavor.duckdb_flavor_service import container_path_help
 from testgen.common.database.flavor.flavor_service import resolve_connection_params
 from testgen.common.database.table_group_service import apply_table_group_flavor_rules
 from testgen.common.enums import JobSource
@@ -79,7 +81,7 @@ class ConnectionsPage(Page):
     def render(self, project_code: str, **_kwargs) -> None:
         testgen.page_header(
             PAGE_TITLE,
-            "connect-your-database/manage-connections/",
+            "connect-your-data/manage-connections/",
         )
 
         connections = select_connections_where(Connection.project_code == project_code)
@@ -269,6 +271,9 @@ class ConnectionsPage(Page):
 
     def _format_connection(self, connection: Connection, should_test: bool = False) -> dict:
         formatted_connection = format_connection(connection)
+        formatted_connection["location"] = [
+            {"label": label, "value": value} for label, value in connection_location(connection)
+        ]
         if should_test:
             formatted_connection["status"] = asdict(self.test_connection(connection))
         return formatted_connection
@@ -517,8 +522,9 @@ def format_connection(connection: Connection | ConnectionMinimal) -> dict:
     ):
         formatted_connection["project_db"] = formatted_connection["service_account_key"].get("project_id") or ""
 
-    # Dropped rather than masked: no form reads it back.
-    formatted_connection.pop("secrets", None)
+    # The values are dropped rather than masked. The keys stay, so a form can tell that a secret
+    # is already stored and show a placeholder instead of asking for it again.
+    formatted_connection["stored_secrets"] = sorted((formatted_connection.pop("secrets", None) or {}).keys())
 
     # Masked rather than dropped because the forms test this for truthiness to tell that a
     # credential is already stored.
@@ -545,10 +551,13 @@ class ConnectionFlavor:
 
 
 # Labels and families come from the shared source in ``common/flavors.py`` (the
-# same labels MCP uses); only the icon + display order are UI-specific.
+# same labels MCP uses); only the icon + display order are UI-specific. The picker
+# lists flavors in this order, which is alphabetical by label, ignoring case.
 _FLAVOR_ICONS: dict[str, str] = {
     "redshift": "flavors/redshift.svg",
     "redshift_spectrum": "flavors/redshift.svg",
+    "s3": "flavors/s3.svg",
+    "azure_blob": "flavors/azure_blob.svg",
     "azure_mssql": "flavors/azure_sql.svg",
     "synapse_mssql": "flavors/azure_synapse_table.svg",
     "databricks": "flavors/databricks.svg",
@@ -559,26 +568,22 @@ _FLAVOR_ICONS: dict[str, str] = {
     "mssql": "flavors/mssql.svg",
     "oracle": "flavors/oracle.svg",
     "postgresql": "flavors/postgresql.svg",
-    "sap_hana": "flavors/sap_hana.svg",
     "salesforce_data360": "flavors/salesforce_data360.svg",
+    "sap_hana": "flavors/sap_hana.svg",
     "snowflake": "flavors/snowflake.svg",
 }
 
-_RUNS_IN_CONTAINER = settings.CHECK_FOR_LATEST_VERSION == "docker"
-
-
-def _container_path_note(noun: str) -> str:
-    if not _RUNS_IN_CONTAINER:
-        return ""
-    return f". It must be a path inside the TestGen container, so the {noun} has to be on a mounted volume."
+def _with_container_path_help(help_text: str, noun: str) -> str:
+    """The help text, followed by the container-path sentence in a container install."""
+    return f"{help_text}. {note}" if (note := container_path_help(noun)) else help_text
 
 
 _FLAVOR_FIELD_HELP: dict[str, dict[str, str]] = {
     "duckdb": {
-        "database_file": "Path to the DuckDB database file" + _container_path_note("file"),
+        "database_file": _with_container_path_help("Path to the DuckDB database file", "file"),
     },
     "files": {
-        "base_path": "Path to the directory containing the data files" + _container_path_note("directory"),
+        "base_path": _with_container_path_help("Path to the directory holding the data files", "directory"),
     },
 }
 

@@ -29,6 +29,8 @@ class SqlFlavorCode(StrEnum):
     DATABRICKS = "databricks"
     DUCKDB = "duckdb"
     FILES = "files"
+    S3 = "s3"
+    AZURE_BLOB = "azure_blob"
     BIGQUERY = "bigquery"
     ONELAKE_MSSQL = "onelake_mssql"
     MSSQL = "mssql"
@@ -49,6 +51,8 @@ class SqlFlavorLabel(StrEnum):
     DATABRICKS = "Databricks"
     DUCKDB = "DuckDB"
     FILES = "Local Files"
+    S3 = "Amazon S3"
+    AZURE_BLOB = "Azure Blob Storage"
     BIGQUERY = "Google BigQuery"
     ONELAKE_MSSQL = "Microsoft OneLake"
     MSSQL = "Microsoft SQL Server"
@@ -69,6 +73,8 @@ FLAVOR_CODE_TO_LABEL: dict[SqlFlavorCode, SqlFlavorLabel] = {
     SqlFlavorCode.DATABRICKS: SqlFlavorLabel.DATABRICKS,
     SqlFlavorCode.DUCKDB: SqlFlavorLabel.DUCKDB,
     SqlFlavorCode.FILES: SqlFlavorLabel.FILES,
+    SqlFlavorCode.S3: SqlFlavorLabel.S3,
+    SqlFlavorCode.AZURE_BLOB: SqlFlavorLabel.AZURE_BLOB,
     SqlFlavorCode.BIGQUERY: SqlFlavorLabel.BIGQUERY,
     SqlFlavorCode.ONELAKE_MSSQL: SqlFlavorLabel.ONELAKE_MSSQL,
     SqlFlavorCode.MSSQL: SqlFlavorLabel.MSSQL,
@@ -89,6 +95,8 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
     "databricks": "databricks",
     "duckdb": "duckdb",
     "files": "duckdb",
+    "s3": "duckdb",
+    "azure_blob": "duckdb",
     "bigquery": "bigquery",
     "onelake_mssql": "mssql",
     "mssql": "mssql",
@@ -112,6 +120,8 @@ FLAVOR_FAMILIES: frozenset[str] = frozenset(FLAVOR_CODE_TO_FAMILY.values())
 FLAVOR_FIXED_MAX_THREADS: dict[str, int] = {
     SqlFlavorCode.DUCKDB: 1,
     SqlFlavorCode.FILES: 1,
+    SqlFlavorCode.S3: 1,
+    SqlFlavorCode.AZURE_BLOB: 1,
 }
 
 
@@ -125,12 +135,14 @@ def fixed_max_threads(sql_flavor_code: str | None) -> int | None:
 # show the field and the value is written here instead.
 FLAVOR_FIXED_TABLE_GROUP_SCHEMA: dict[str, str] = {
     SqlFlavorCode.FILES: "main",
+    SqlFlavorCode.S3: "main",
+    SqlFlavorCode.AZURE_BLOB: "main",
 }
 
 # Flavors whose table group lists its tables as files instead of having them discovered from a
 # catalog. Separate from the fixed-schema registry above: a flavor can pin a schema and still read
 # a real catalog.
-FLAVOR_DECLARES_FILES: frozenset[str] = frozenset({SqlFlavorCode.FILES})
+FLAVOR_DECLARES_FILES: frozenset[str] = frozenset({SqlFlavorCode.FILES, SqlFlavorCode.S3, SqlFlavorCode.AZURE_BLOB})
 
 
 def fixed_table_group_schema(sql_flavor_code: str | None) -> str | None:
@@ -155,6 +167,8 @@ class TableGroupSchemaLabel(StrEnum):
 # nothing is reported for it -- the stored value is still needed to reach the target.
 FLAVOR_TABLE_GROUP_SCHEMA_LABEL: dict[str, TableGroupSchemaLabel | None] = {
     SqlFlavorCode.FILES: None,
+    SqlFlavorCode.S3: None,
+    SqlFlavorCode.AZURE_BLOB: None,
     SqlFlavorCode.SALESFORCE_DATA360: TableGroupSchemaLabel.DATA_SPACE,
 }
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Discriminator, Field, RootModel, Str
 
 from testgen.api.enums import (
     AuthenticationMethod,
-    DatabaseType,
+    ConnectionType,
     Disposition,
     GeneralType,
     HygieneDisposition,
@@ -765,7 +765,9 @@ class ConnectionItem(BaseModel):
     connection_id: int
     connection_name: str
     project_code: str
-    database_type: DatabaseType = Field(description="The connection's database type.")
+    connection_type: ConnectionType = Field(
+        description="The connection's type: a database, such as Snowflake, or a file data source, such as Amazon S3."
+    )
     table_group_count: int
 
 
@@ -781,12 +783,13 @@ class ConnectionListResponse(BaseModel):
 class ConnectionResponse(BaseModel):
     """A connection's configuration.
 
-    Connection parameters vary by database type, so they are grouped under
+    Connection parameters vary by connection type, so they are grouped under
     ``settings`` rather than given fixed top-level fields: a Snowflake connection
     carries ``host`` / ``database`` / ``warehouse`` / ``username``, while a
     Salesforce Data 360 connection carries ``login_url`` / ``username`` /
-    ``consumer_key``. Keys are stable per database type and authentication method,
-    and are named for what the target database calls each value.
+    ``consumer_key``, and an Amazon S3 connection carries ``base_uri`` / ``region``. Keys
+    are stable per connection type and authentication method, and are named for what the
+    data source calls each value.
 
     Credentials are never included — no password, private key, token, or
     service-account key.
@@ -795,12 +798,14 @@ class ConnectionResponse(BaseModel):
     connection_id: int
     connection_name: str
     project_code: str
-    database_type: DatabaseType = Field(description="The connection's database type.")
+    connection_type: ConnectionType = Field(
+        description="The connection's type: a database, such as Snowflake, or a file data source, such as Amazon S3."
+    )
     authentication: AuthenticationMethod | None = Field(
         default=None,
         description=(
-            "How the connection authenticates to its database. Null for a database type that "
-            "takes no credentials, such as a file path read from local storage."
+            "How the connection authenticates to its data source. Null for a connection type that "
+            "takes no credentials, such as Local Files."
         ),
     )
     max_threads: int | None = None
@@ -808,7 +813,7 @@ class ConnectionResponse(BaseModel):
         default=None, description="Maximum character length of a generated query expression."
     )
     settings: dict[str, str] = Field(
-        description="Connection parameters for this database type, excluding credentials."
+        description="Connection parameters for this connection type, excluding credentials."
     )
 
 

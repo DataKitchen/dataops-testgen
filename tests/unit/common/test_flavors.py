@@ -137,6 +137,8 @@ def test_every_target_fan_out_reads_the_pinned_thread_count():
     ("code", "expected"),
     [
         ("files", None),
+        ("s3", None),
+        ("azure_blob", None),
         ("salesforce_data360", "Data Space"),
         ("duckdb", "Schema"),
         ("postgresql", "Schema"),

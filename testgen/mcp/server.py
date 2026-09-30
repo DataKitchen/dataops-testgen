@@ -39,11 +39,12 @@ class HandlerKind(StrEnum):
 
 
 _SERVER_INSTRUCTIONS_HEADER = """\
-TestGen is a data quality platform that profiles databases, generates tests, and monitors tables.
+TestGen is a data quality platform that profiles data in databases and files, generates tests, and monitors tables.
 
 DATA MODEL
 
-Projects contain Connections (to target databases) and Table Groups (sets of tables to profile and test together).
+Projects contain Connections (to data sources: databases or file storage) and Table Groups (sets of tables to profile
+and test together).
 Table Groups contains Test Suites — collections of Test Definitions with configured thresholds.
 Test Runs execute a Test Suite and produce Test Results (one per Test Definition).
 Profiling Runs scan a Table Group and produce column-level statistics and detects data hygiene issues.

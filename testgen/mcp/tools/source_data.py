@@ -126,7 +126,7 @@ def get_source_data_query(
     """Get the SQL query that would look up source data, without executing it.
 
     Builds a lookup query using the current criteria of a test definition or a hygiene issue.
-    The query targets the connected database.
+    The query targets the connection's data source.
 
     Provide exactly one of ``test_definition_id`` or ``issue_id``.
     """
@@ -187,9 +187,9 @@ def get_source_data(
     limit: Annotated[int, Field(description="Maximum rows to return (default 100, max 500).")] = 100,
 ) -> str:
     """Look up rows that match or violate a test or hygiene issue's criteria.
-    Rows are read from the connected database.
+    Rows are read from the connection's data source.
 
-    Executes the source data query against the connected database and returns matching rows.
+    Executes the source data query against the connection's data source and returns matching rows.
     Shows CURRENT data — rows may have changed since the test or profiling run.
 
     Provide exactly one of ``test_definition_id`` or ``issue_id``.
@@ -266,7 +266,7 @@ def get_table_sample(
 
     if result.status == "ERR":
         raise MCPUserError(
-            f"Could not read from the source database for connection `{connection.connection_name}`."
+            f"Could not read from the data source for connection `{connection.connection_name}`."
         )
 
     doc = MdDoc()

@@ -99,8 +99,8 @@ class FileDeclaration(BaseModel):
     uri: Annotated[
         str,
         Field(
-            description="Path to the data, relative to the connection base path. Name one file "
-            "(``sales/orders.csv``) or a glob pattern (``sales/*.csv``, or ``sales/**/*.csv`` to include "
+            description="Path to the data, relative to the connection's base path, base URI or container. Name one "
+            "file (``sales/orders.csv``) or a glob pattern (``sales/*.csv``, or ``sales/**/*.csv`` to include "
             "subfolders). A pattern is one table whose rows span every file it matches. A bare folder is rejected.",
         ),
     ]
@@ -727,7 +727,9 @@ def preview_table_group(
     table_group_id: Annotated[str, Field(description="UUID of the table group.")],
     verify_access: Annotated[bool, Field(description="When True, probe read access on every matched table.")] = False,
 ) -> str:
-    """Probe the target database for tables matching a table group's filters.
+    """Probe the data source for the tables a table group covers.
+
+    On a database, these are the tables matching its filters; on a file data source, its declared files.
 
     Returns counts plus a per-table breakdown. Does not save anything to the
     application database.

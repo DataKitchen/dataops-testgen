@@ -89,13 +89,16 @@ FLAVOR_TO_SERVER_TYPE: dict[SqlFlavorCode, ServerType] = {
 
 # Flavors with no faithful ODCS server type. ``redshift_spectrum`` reads S3-backed external
 # tables rather than a Redshift-native store, ``onelake_mssql`` is Microsoft Fabric storage,
-# ``salesforce_data360`` has no counterpart in the enum at all, and ``files`` sets a format per
-# declared table where the ``local`` server type takes one path and one format for the whole store.
+# ``salesforce_data360`` has no counterpart in the enum at all, and ``files``, ``s3`` and
+# ``azure_blob`` set a format per declared table where the ``local``, ``s3`` and ``azure`` server
+# types take one location and one format for the whole store.
 UNMAPPABLE_FLAVORS: frozenset[SqlFlavorCode] = frozenset({
     SqlFlavorCode.REDSHIFT_SPECTRUM,
     SqlFlavorCode.ONELAKE_MSSQL,
     SqlFlavorCode.SALESFORCE_DATA360,
     SqlFlavorCode.FILES,
+    SqlFlavorCode.S3,
+    SqlFlavorCode.AZURE_BLOB,
 })
 
 # Every server carries ``server``; these are the fields each type requires beyond it.

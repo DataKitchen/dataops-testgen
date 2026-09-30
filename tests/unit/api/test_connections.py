@@ -104,7 +104,7 @@ def test_list_connections_maps_flavor_code_to_display_label(mock_cls):
     result = list_connections(project_code="demo", page=1, limit=20)
 
     assert result.total == 1
-    assert result.items[0].database_type == "Snowflake"
+    assert result.items[0].connection_type == "Snowflake"
     assert result.items[0].table_group_count == 2
 
 
@@ -147,7 +147,7 @@ def test_get_connection_snowflake_key_pair():
 
     result = get_connection(connection)
 
-    assert result.database_type == "Snowflake"
+    assert result.connection_type == "Snowflake"
     assert result.authentication is AuthenticationMethod.key_pair
     assert result.settings == {
         "host": "acme.snowflakecomputing.com",
@@ -348,9 +348,9 @@ def test_no_field_maps_to_a_nonexistent_column():
         if schema.url_field is not None:
             fields.append(schema.url_field)
         for fld in fields:
-            # An in_parameters field names a key inside the ``parameters`` JSON rather
-            # than a column of its own, so that column is what has to exist.
-            attribute = "parameters" if fld.in_parameters else fld.column
+            # An in_parameters or in_secrets field names a key inside that column's JSON
+            # rather than a column of its own, so that column is what has to exist.
+            attribute = "parameters" if fld.in_parameters else "secrets" if fld.in_secrets else fld.column
             assert hasattr(Connection, attribute), f"{schema.code}: {fld.label} -> {attribute}"
 
 
@@ -389,7 +389,7 @@ def test_list_connections_route_is_reachable(mock_cls, _perm):
     resp = _client().get("/api/v1/projects/DEFAULT/connections")
 
     assert resp.status_code == 200
-    assert resp.json()["items"][0]["database_type"] == "Snowflake"
+    assert resp.json()["items"][0]["connection_type"] == "Snowflake"
 
 
 @pytest.mark.parametrize("query", ["?page=0", "?limit=0", "?limit=101"])

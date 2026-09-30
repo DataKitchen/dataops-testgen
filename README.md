@@ -45,7 +45,7 @@ We recommend you start by going through the [Data Observability Overview Demo](h
 For support requests, [join the Data Observability Slack](https://data-observability-slack.datakitchen.io/join) 👋 and post on the `#support` channel.
 
 ### Connect to your database
-Follow [these instructions](https://docs.datakitchen.io/testgen/connect-your-database/) to improve the quality of data in your database.
+Follow [these instructions](https://docs.datakitchen.io/testgen/connect-your-data/) to improve the quality of data in your database.
 
 ### Community
 Talk and learn with other data practitioners who are building with DataKitchen. Share knowledge, get help, and contribute to our open-source project.

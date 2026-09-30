@@ -28,12 +28,12 @@ const { i, span, strong } = van.tags;
 
 const EMPTY_STATE_MESSAGE = {
     connection: {
-        line1: 'Begin by connecting your database.',
+        line1: 'Begin by connecting your data.',
         line2: 'TestGen delivers data quality through data profiling, hygiene review, test generation, and test execution.',
     },
     tableGroup: {
         line1: 'Profile your tables to detect hygiene issues',
-        line2: 'Create table groups for your connected databases to run data profiling and hygiene review.',
+        line2: 'Create table groups for your connected data sources to run data profiling and hygiene review.',
     },
     profiling: {
         line1: 'Profile your tables to detect hygiene issues',
@@ -80,7 +80,7 @@ const EmptyState = (/** @type Properties */ props) => {
                 getValue(props.button) ??
                 (
                     getValue(props.link)
-                    ? Link({ emit, 
+                    ? Link({ emit,
                         class: 'tg-empty-state--link',
                         right_icon: 'chevron_right',
                         ...(getValue(props.link)),

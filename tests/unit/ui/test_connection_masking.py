@@ -88,6 +88,15 @@ def test_format_connection_drops_the_secrets_column_outright():
     assert "secrets" not in _format(_conn(secrets={"access_key_id": "AKIA"}))
 
 
+def test_format_connection_names_the_stored_secrets_without_their_values():
+    """The form shows a placeholder for a stored secret instead of asking for it again."""
+    formatted = _format(_conn(secrets={"secret_access_key": "s3-secret-value", "account_key": "azure-key"}))
+    assert formatted["stored_secrets"] == ["account_key", "secret_access_key"]
+    assert "s3-secret-value" not in str(formatted)
+    assert "azure-key" not in str(formatted)
+    assert _format(_conn())["stored_secrets"] == []
+
+
 def test_format_connection_leaves_an_empty_encrypted_column_alone():
     """An absent credential stays falsy so a form can tell that nothing is stored."""
     formatted = _format(_conn())

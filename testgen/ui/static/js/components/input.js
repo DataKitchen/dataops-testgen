@@ -145,6 +145,12 @@ const Input = (/** @type Properties */ props) => {
                     isDirty.val = true;
                     value.val = event.target.value;
                 }, 300),
+                // Blur fires change before a click on another control lands, so a button pressed
+                // inside the debounce window still sees the last keystrokes.
+                onchange: (/** @type Event */ event) => {
+                    isDirty.val = true;
+                    value.val = event.target.value;
+                },
                 onclick: van.derive(() => autocompleteOptions.val?.length
                     ? () => autocompleteOpened.val = true
                     : null

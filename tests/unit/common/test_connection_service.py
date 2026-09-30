@@ -6,7 +6,8 @@ connection-parameter schema / validation lives in ``mcp/tools/common.py`` and is
 tested in ``tests/unit/mcp/test_connection_schema.py``.
 """
 
-from unittest.mock import patch
+from contextlib import contextmanager
+from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy.exc import DatabaseError, DBAPIError
@@ -20,6 +21,7 @@ from testgen.common.database.connection_service import (
 # Aliased on import so pytest doesn't try to collect the ``test_*`` function as a test.
 from testgen.common.database.connection_service import test_connection_status as run_connection_test
 from testgen.common.models.connection import Connection
+from testgen.ui.services.database_service import TargetQuery
 
 pytestmark = pytest.mark.unit
 
@@ -53,6 +55,19 @@ def _conn(**overrides) -> Connection:
     return Connection(**defaults)
 
 
+def _session(**query_behavior):
+    """Patch ``target_db_session`` so every query the session runs behaves as ``query_behavior`` says.
+
+    ``query_behavior`` configures a ``MagicMock``: ``return_value`` for the rows, ``side_effect``
+    for a failure.
+    """
+    @contextmanager
+    def session(_connection, table_group):
+        yield TargetQuery(MagicMock(**query_behavior), {}, MagicMock())
+
+    return patch(f"{MODULE}.target_db_session", session)
+
+
 # ---------------------------------------------------------------------------
 # ConnectionStatus dataclass
 # ---------------------------------------------------------------------------
@@ -76,9 +91,9 @@ def test_connection_status_random_field_breaks_equality():
 
 
 @patch(f"{MODULE}.empty_cache")
-@patch(f"{MODULE}.fetch_from_target_db", return_value=[{"col": 1}])
+@_session(return_value=[{"col": 1}])
 @patch(f"{MODULE}.get_flavor_service")
-def test_connection_status_success(mock_flavor, mock_fetch, mock_empty_cache):
+def test_connection_status_success(mock_flavor, mock_empty_cache):
     mock_flavor.return_value.test_query = "SELECT 1"
     mock_flavor.return_value.test_connection_details.return_value = None
 
@@ -91,22 +106,44 @@ def test_connection_status_success(mock_flavor, mock_fetch, mock_empty_cache):
 
 
 @patch(f"{MODULE}.empty_cache")
-@patch(f"{MODULE}.fetch_from_target_db", return_value=[{"col": 0}])
 @patch(f"{MODULE}.get_flavor_service")
-def test_connection_status_query_returns_wrong_result(mock_flavor, mock_fetch, mock_empty_cache):
+def test_connection_details_come_from_the_connection_that_was_tested(mock_flavor, mock_empty_cache):
+    """One connection serves both, so a flavor that registers credentials on connect does so once."""
+    mock_flavor.return_value.test_query = "SELECT 1"
+    mock_flavor.return_value.test_connection_details.return_value = "3 files found under the container."
+    opened = []
+
+    @contextmanager
+    def session(_connection, table_group):
+        target = TargetQuery(MagicMock(return_value=[{"col": 1}]), {}, MagicMock())
+        opened.append(target.connection)
+        yield target
+
+    with patch(f"{MODULE}.target_db_session", session):
+        status = run_connection_test(_conn())
+
+    assert status.details == "3 files found under the container."
+    assert len(opened) == 1
+    assert mock_flavor.return_value.test_connection_details.call_args.args[0] is opened[0]
+
+
+@patch(f"{MODULE}.empty_cache")
+@_session(return_value=[{"col": 0}])
+@patch(f"{MODULE}.get_flavor_service")
+def test_connection_status_query_returns_wrong_result(mock_flavor, mock_empty_cache):
     """``SELECT 1`` returns something other than 1 → 'Error completing a query'."""
     mock_flavor.return_value.test_query = "SELECT 1"
 
     status = run_connection_test(_conn())
 
     assert status.successful is False
-    assert status.message == "Error completing a query to the database server."
+    assert status.message == "Error completing a test query against the data source."
 
 
 @patch(f"{MODULE}.empty_cache")
-@patch(f"{MODULE}.fetch_from_target_db", side_effect=KeyError("host"))
+@_session(side_effect=KeyError("host"))
 @patch(f"{MODULE}.get_flavor_service")
-def test_connection_status_key_error(mock_flavor, mock_fetch, mock_empty_cache):
+def test_connection_status_key_error(mock_flavor, mock_empty_cache):
     """Missing required field → 'Complete all the required fields.'"""
     mock_flavor.return_value.test_query = "SELECT 1"
 
@@ -119,13 +156,12 @@ def test_connection_status_key_error(mock_flavor, mock_fetch, mock_empty_cache):
 
 @patch(f"{MODULE}.empty_cache")
 @patch(f"{MODULE}.get_flavor_service")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_connection_status_database_error(mock_fetch, mock_flavor, mock_empty_cache):
+def test_connection_status_database_error(mock_flavor, mock_empty_cache):
     mock_flavor.return_value.test_query = "SELECT 1"
     orig = Exception("FATAL: password authentication failed")
-    mock_fetch.side_effect = DatabaseError("stmt", {}, orig)
 
-    status = run_connection_test(_conn())
+    with _session(side_effect=DatabaseError("stmt", {}, orig)):
+        status = run_connection_test(_conn())
 
     assert status.successful is False
     assert status.message == "Error attempting the connection."
@@ -134,13 +170,12 @@ def test_connection_status_database_error(mock_fetch, mock_flavor, mock_empty_ca
 
 @patch(f"{MODULE}.empty_cache")
 @patch(f"{MODULE}.get_flavor_service")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_connection_status_dbapi_error(mock_fetch, mock_flavor, mock_empty_cache):
+def test_connection_status_dbapi_error(mock_flavor, mock_empty_cache):
     mock_flavor.return_value.test_query = "SELECT 1"
     orig = Exception("driver-level failure")
-    mock_fetch.side_effect = DBAPIError("stmt", {}, orig)
 
-    status = run_connection_test(_conn())
+    with _session(side_effect=DBAPIError("stmt", {}, orig)):
+        status = run_connection_test(_conn())
 
     assert status.successful is False
     assert status.message == "Error attempting the connection."
@@ -149,8 +184,7 @@ def test_connection_status_dbapi_error(mock_fetch, mock_flavor, mock_empty_cache
 
 @patch(f"{MODULE}.empty_cache")
 @patch(f"{MODULE}.get_flavor_service")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_connection_status_open_ssl_error(mock_fetch, mock_flavor, mock_empty_cache):
+def test_connection_status_open_ssl_error(mock_flavor, mock_empty_cache):
     """A TypeError whose args[1][0] is an OpenSSLError uses args[0] as details."""
     mock_flavor.return_value.test_query = "SELECT 1"
 
@@ -158,9 +192,9 @@ def test_connection_status_open_ssl_error(mock_fetch, mock_flavor, mock_empty_ca
         pass
 
     err = TypeError("bad key", [OpenSSLError()])
-    mock_fetch.side_effect = err
 
-    status = run_connection_test(_conn())
+    with _session(side_effect=err):
+        status = run_connection_test(_conn())
 
     assert status.successful is False
     assert status.message == "Error attempting the connection."
@@ -169,14 +203,13 @@ def test_connection_status_open_ssl_error(mock_fetch, mock_flavor, mock_empty_ca
 
 @patch(f"{MODULE}.empty_cache")
 @patch(f"{MODULE}.get_flavor_service")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_connection_status_missing_private_key(mock_fetch, mock_flavor, mock_empty_cache):
+def test_connection_status_missing_private_key(mock_flavor, mock_empty_cache):
     """connect_by_key=True with no private_key → 'The private key is missing.'"""
     mock_flavor.return_value.test_query = "SELECT 1"
-    mock_fetch.side_effect = RuntimeError("something")
 
     conn = _conn(sql_flavor="snowflake", sql_flavor_code="snowflake", connect_by_key=True, private_key=None)
-    status = run_connection_test(conn)
+    with _session(side_effect=RuntimeError("something")):
+        status = run_connection_test(conn)
 
     assert status.successful is False
     assert status.message == "Error attempting the connection."
@@ -185,12 +218,11 @@ def test_connection_status_missing_private_key(mock_fetch, mock_flavor, mock_emp
 
 @patch(f"{MODULE}.empty_cache")
 @patch(f"{MODULE}.get_flavor_service")
-@patch(f"{MODULE}.fetch_from_target_db")
-def test_connection_status_generic_exception(mock_fetch, mock_flavor, mock_empty_cache):
+def test_connection_status_generic_exception(mock_flavor, mock_empty_cache):
     mock_flavor.return_value.test_query = "SELECT 1"
-    mock_fetch.side_effect = RuntimeError("unexpected")
 
-    status = run_connection_test(_conn())
+    with _session(side_effect=RuntimeError("unexpected")):
+        status = run_connection_test(_conn())
 
     assert status.successful is False
     assert status.message == "Error attempting the connection."

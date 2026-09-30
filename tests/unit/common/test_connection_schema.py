@@ -12,6 +12,7 @@ import pytest
 from testgen.common.connection_schema import (
     ConnectionMode,
     Req,
+    connection_location,
     infer_mode,
     schema_for,
     validate_connection_fields,
@@ -174,17 +175,17 @@ def test_resolve_mode_single_mode_rejects_label():
 def test_resolve_mode_multi_mode_requires_label():
     with pytest.raises(MCPUserError) as exc:
         resolve_mode("snowflake", None)
-    assert "Key-Pair" in str(exc.value) and "Password" in str(exc.value)
+    assert "Key Pair" in str(exc.value) and "Password" in str(exc.value)
 
 
 def test_resolve_mode_multi_mode_invalid_label():
     with pytest.raises(MCPUserError) as exc:
         resolve_mode("snowflake", "Bogus")
-    assert "Key-Pair" in str(exc.value)
+    assert "Key Pair" in str(exc.value)
 
 
 def test_resolve_mode_multi_mode_valid_label():
-    assert resolve_mode("snowflake", "Key-Pair").mode is ConnectionMode.KEY_PAIR
+    assert resolve_mode("snowflake", "Key Pair").mode is ConnectionMode.KEY_PAIR
 
 
 # ---------------------------------------------------------------------------
@@ -240,7 +241,7 @@ def test_apply_params_snowflake_key_pair_sets_flag():
     apply_connection_params(
         conn,
         "snowflake",
-        "Key-Pair",
+        "Key Pair",
         {"Host": "h", "Port": 443, "Database": "d", "Username": "u", "Private Key": "KEY"},
     )
     assert conn.connect_by_key is True
@@ -252,7 +253,7 @@ def test_apply_params_databricks_pat_auto_token_username():
     apply_connection_params(
         conn,
         "databricks",
-        "Access Token",
+        "Personal Access Token",
         {"Host": "h", "Port": 443, "Catalog": "main", "HTTP Path": "/sql/1.0/abc", "Access Token": "tok"},
     )
     assert conn.project_user == "token"
@@ -267,7 +268,7 @@ def test_apply_params_databricks_oauth_client_id_secret():
     apply_connection_params(
         conn,
         "databricks",
-        "Service Principal (OAuth)",
+        "Service Principal",
         {"Host": "h", "Port": 443, "Catalog": "main", "HTTP Path": "/p", "Client ID": "cid", "Client Secret": "csec"},
     )
     assert conn.connect_by_key is True
@@ -278,7 +279,7 @@ def test_apply_params_databricks_oauth_client_id_secret():
 def test_apply_params_databricks_oauth_rejects_url():
     conn = Connection(sql_flavor="databricks", sql_flavor_code="databricks")
     with pytest.raises(MCPUserError):
-        apply_connection_params(conn, "databricks", "Service Principal (OAuth)", {"URL": "x"})
+        apply_connection_params(conn, "databricks", "Service Principal", {"URL": "x"})
 
 
 def test_apply_params_azure_managed_identity_sets_flag():
@@ -332,7 +333,7 @@ def test_apply_params_onelake_service_principal_sets_flag():
     apply_connection_params(
         conn,
         "onelake_mssql",
-        "Service Principal (OAuth)",
+        "Service Principal",
         {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Tenant ID": "tid", "Client Secret": "csec"},
     )
     assert conn.connect_with_service_principal is True
@@ -376,7 +377,7 @@ def test_apply_params_azure_service_principal_sets_flag():
     apply_connection_params(
         conn,
         "azure_mssql",
-        "Service Principal (OAuth)",
+        "Service Principal",
         {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Tenant ID": "tid", "Client Secret": "csec"},
     )
     assert conn.connect_with_service_principal is True
@@ -390,7 +391,7 @@ def test_apply_params_synapse_service_principal_sets_flag():
     apply_connection_params(
         conn,
         "synapse_mssql",
-        "Service Principal (OAuth)",
+        "Service Principal",
         {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Tenant ID": "tid", "Client Secret": "csec"},
     )
     assert conn.connect_with_service_principal is True
@@ -407,14 +408,14 @@ def test_apply_params_azure_service_principal_rejects_partial_identity():
         apply_connection_params(
             conn,
             "azure_mssql",
-            "Service Principal (OAuth)",
+            "Service Principal",
             {"Host": "h", "Port": 1433, "Database": "d", "Client ID": "cid", "Client Secret": "csec"},
         )
     with pytest.raises(MCPUserError, match="both `Client ID` and `Tenant ID`"):
         apply_connection_params(
             conn,
             "azure_mssql",
-            "Service Principal (OAuth)",
+            "Service Principal",
             {"Host": "h", "Port": 1433, "Database": "d", "Tenant ID": "tid", "Client Secret": "csec"},
         )
 
@@ -867,3 +868,119 @@ def test_password_is_reported_for_a_flavor_whose_schema_declares_a_secret():
 
     connection = Connection(sql_flavor="postgresql", sql_flavor_code="postgresql")
     assert authentication_label(connection) == "Password"
+
+
+# ---------------------------------------------------------------------------
+# Object storage codes: the mode is recorded in parameters
+# ---------------------------------------------------------------------------
+
+
+def _storage_conn(code: str, parameters: dict, secrets: dict | None = None) -> Connection:
+    return _conn(
+        sql_flavor="duckdb",
+        sql_flavor_code=code,
+        project_host=None,
+        project_port=None,
+        project_db=None,
+        project_user=None,
+        project_pw_encrypted=None,
+        parameters=parameters,
+        secrets=secrets,
+    )
+
+
+@pytest.mark.parametrize(
+    ("code", "modes"),
+    [
+        ("s3", [ConnectionMode.ACCESS_KEYS, ConnectionMode.IAM_ROLE]),
+        ("azure_blob", [ConnectionMode.ACCOUNT_KEY, ConnectionMode.MANAGED_IDENTITY, ConnectionMode.SERVICE_PRINCIPAL]),
+    ],
+)
+def test_storage_codes_offer_the_form_strategies_in_form_order(code, modes):
+    assert [fmode.mode for fmode in schema_for(code).modes] == modes
+    assert schema_for(code).url_field is None
+
+
+@pytest.mark.parametrize(
+    ("code", "strategy", "mode"),
+    [
+        ("s3", "access_keys", ConnectionMode.ACCESS_KEYS),
+        ("s3", "iam_role", ConnectionMode.IAM_ROLE),
+        ("azure_blob", "account_key", ConnectionMode.ACCOUNT_KEY),
+        ("azure_blob", "managed_identity", ConnectionMode.MANAGED_IDENTITY),
+        ("azure_blob", "service_principal", ConnectionMode.SERVICE_PRINCIPAL),
+    ],
+)
+def test_a_storage_connections_mode_is_read_from_its_strategy(code, strategy, mode):
+    assert infer_mode(_storage_conn(code, {"strategy": strategy})) is mode
+
+
+def test_applying_a_storage_mode_records_its_strategy_and_routes_each_field():
+    connection = _storage_conn("s3", {"strategy": "iam_role", "base_uri": "s3://bucket", "region": "us-east-1"})
+    apply_connection_params(
+        connection,
+        "s3",
+        "Access Keys",
+        {"Access Key ID": "AKIAEXAMPLE", "Secret Access Key": "s3-secret-value"},
+    )
+    assert connection.parameters == {
+        "strategy": "access_keys",
+        "base_uri": "s3://bucket",
+        "region": "us-east-1",
+        "access_key_id": "AKIAEXAMPLE",
+    }
+    assert connection.secrets == {"secret_access_key": "s3-secret-value"}
+    assert validate_connection_fields(connection) == []
+
+
+def test_a_storage_mode_missing_its_secret_is_reported_by_label():
+    connection = _storage_conn(
+        "azure_blob", {"strategy": "account_key", "storage_account": "acct", "container": "claims"}
+    )
+    assert validate_connection_fields(connection) == ["`Account Key` is required for Azure Blob Storage."]
+
+
+def test_a_storage_connection_never_renders_its_secrets():
+    connection = _storage_conn(
+        "azure_blob",
+        {"strategy": "service_principal", "storage_account": "acct", "container": "claims", "client_id": "cid", "tenant_id": "tid"},
+        {"client_secret": "spn-secret-value"},
+    )
+    doc = MdDoc()
+    render_connection_body(doc, connection)
+    rendered = doc.render()
+    assert "spn-secret-value" not in rendered
+    assert "cid" in rendered
+    assert "tid" in rendered
+
+
+# --- connection_location ---
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected"),
+    [
+        ({}, [("Host", "localhost"), ("Database", "testgen_local")]),
+        ({"connect_by_url": True, "url": "postgresql://h:5432/db"}, [("URL", "postgresql://h:5432/db")]),
+        ({"sql_flavor": "oracle", "sql_flavor_code": "oracle"}, [("Host", "localhost"), ("Service Name", "testgen_local")]),
+        (
+            {"sql_flavor": "salesforce_data360", "sql_flavor_code": "salesforce_data360", "project_host": "https://org.my.salesforce.com", "project_db": "user@org"},
+            [("Login URL", "https://org.my.salesforce.com")],
+        ),
+        (
+            {"sql_flavor": "bigquery", "sql_flavor_code": "bigquery", "project_db": None, "service_account_key": {"project_id": "acme-dq"}},
+            [("Project ID", "acme-dq")],
+        ),
+        (
+            {"sql_flavor": "duckdb", "sql_flavor_code": "s3", "project_host": None, "project_db": None, "parameters": {"base_uri": "s3://b/p", "region": "us-east-1", "strategy": "iam_role"}},
+            [("Base URI", "s3://b/p")],
+        ),
+        (
+            {"sql_flavor": "duckdb", "sql_flavor_code": "azure_blob", "project_host": None, "project_db": None, "parameters": {"storage_account": "acct", "container": "claims", "strategy": "managed_identity"}},
+            [("Storage Account", "acct"), ("Container", "claims")],
+        ),
+    ],
+    ids=["database", "url", "oracle", "salesforce", "bigquery", "s3", "azure_blob"],
+)
+def test_connection_location_names_where_the_data_lives(overrides, expected):
+    assert connection_location(_conn(**overrides)) == expected
