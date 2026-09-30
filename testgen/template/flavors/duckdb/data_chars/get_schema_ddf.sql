@@ -2,9 +2,8 @@
 -- "TIMESTAMP WITH TIME ZONE", "INTEGER[]", "MAP(VARCHAR, INTEGER)"), so db_data_type is that
 -- string and column_type is its normalized form.
 --
--- An ENUM spells its values out, and both columns reach the profiling query inside a single-quoted
--- literal. The value list is reported as the bare type name, and any quote surviving elsewhere —
--- a nested type holding an ENUM — is dropped, so neither string can end the literal early.
+-- An ENUM spells its values out. Both columns report it as the bare type name instead, and drop any
+-- quote surviving elsewhere, as in a nested type holding an ENUM.
 --
 -- Type names are matched exactly rather than by substring: a nested type spells out the types it
 -- contains, so MAP(VARCHAR, INTEGER) and STRUCT(y VARCHAR) both contain "VARCHAR" without being
