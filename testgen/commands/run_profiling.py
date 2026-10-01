@@ -296,6 +296,7 @@ class ProfilingJob(PausableJob[ColumnChars]):
         def handle(outcome: WorkerOutcome[ColumnChars, list[dict]]) -> None:
             if outcome.result:
                 row = with_frequent_patterns(outcome.result[0])
+                row.update(self.sql_generator.profiled_row_values(outcome.key, self.capabilities.approx_percentile))
                 if table_sampling := self.sampling_params.get(outcome.key.table_name):
                     ProfileResult.scale_sampled_estimates(row, table_sampling.sample_ratio)
                 ProfileResult.upsert(row)
@@ -520,8 +521,7 @@ def _order_largest_work_first(
 
 
 def _write_column_error(sql_generator: ProfilingSQL, column: ColumnChars, error: str) -> None:
-    error_row = sql_generator.get_profiling_errors([(column, error)])[0]
-    ProfileResult.upsert(dict(zip(sql_generator.error_columns, error_row, strict=True)))
+    ProfileResult.upsert(sql_generator.column_error_row(column, error))
 
 
 def _fetch_target(built: tuple[str, dict]) -> list[dict]:

@@ -18,6 +18,7 @@ from testgen.commands.queries.profiling_query import ProfilingSQL, TableSampling
 from testgen.common.database.column_chars import ColumnChars
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.flavor.flavor_service import SQLFlavor
+from testgen.common.models.profile_result import PercentileMethod
 
 pytestmark = pytest.mark.unit
 
@@ -47,7 +48,7 @@ def _percentile_methods(flavor: str) -> tuple[bool, ...]:
     return tuple(methods)
 
 
-def _render(flavor: str, general_type: str, sampled: bool, is_decimal: bool = False, approx: bool = False) -> str:
+def _profiling_sql(flavor: str) -> ProfilingSQL:
     connection = MagicMock(sql_flavor=flavor, sql_flavor_code=flavor, connection_id=1)
     table_group = MagicMock(
         project_code="P",
@@ -57,7 +58,11 @@ def _render(flavor: str, general_type: str, sampled: bool, is_decimal: bool = Fa
         profile_sk_column_mask="%sk",
     )
     profiling_run = MagicMock(id=uuid4(), profiling_starttime=datetime(2026, 1, 1, tzinfo=UTC))
-    column = ColumnChars(
+    return ProfilingSQL(connection, table_group, profiling_run)
+
+
+def _column(general_type: str, is_decimal: bool = False) -> ColumnChars:
+    return ColumnChars(
         schema_name="s",
         table_name="t",
         column_name="c",
@@ -68,9 +73,12 @@ def _render(flavor: str, general_type: str, sampled: bool, is_decimal: bool = Fa
         is_decimal=is_decimal,
         record_ct=1000,
     )
+
+
+def _render(flavor: str, general_type: str, sampled: bool, is_decimal: bool = False, approx: bool = False) -> str:
     sampling = TableSampling(table_name="t", sample_count=300, sample_ratio=1000 / 300, sample_percent=30.0) if sampled else None
-    query, _ = ProfilingSQL(connection, table_group, profiling_run).run_column_profiling(
-        column, sampling, use_approx_percentile=approx
+    query, _ = _profiling_sql(flavor).run_column_profiling(
+        _column(general_type, is_decimal), sampling, use_approx_percentile=approx
     )
     return query
 
@@ -101,14 +109,28 @@ def test_every_type_renders_a_well_formed_select(flavor, general_type, sampled):
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_percentiles_never_read_the_sample(flavor):
     """Sampling covers the rest of the numeric query; the percentile derived table reads the whole
-    table with whichever method the run resolved, and labels the row with that method."""
+    table with whichever method the run resolved."""
     for approx in _percentile_methods(flavor):
         query = _render(flavor, "N", sampled=True, approx=approx)
         pctile = PERCENTILE_SUBQUERY.search(query)
         assert pctile, f"{flavor}: no percentile derived table"
         assert not SAMPLING_CLAUSE.search(pctile.group(0)), f"{flavor}: {pctile.group(0)}"
-        method = "approximate" if approx else "exact"
-        assert f"'{method}' AS percentile_method" in query, f"{flavor} ({method})"
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_the_percentile_label_names_the_function_the_query_renders(flavor):
+    for approx in _percentile_methods(flavor):
+        pctile = PERCENTILE_SUBQUERY.search(_render(flavor, "N", sampled=False, approx=approx)).group(0)
+        label = _profiling_sql(flavor).profiled_row_values(_column("N"), approx)["percentile_method"]
+        assert label == (PercentileMethod.APPROXIMATE if "APPROX" in pctile.upper() else PercentileMethod.EXACT)
+
+
+@pytest.mark.parametrize("general_type", GENERAL_TYPES)
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_the_query_projects_nothing_the_run_supplies(flavor, general_type):
+    for approx in _percentile_methods(flavor):
+        supplied = _profiling_sql(flavor).profiled_row_values(_column(general_type), approx)
+        assert _aliases(_render(flavor, general_type, sampled=False, approx=approx)).isdisjoint(supplied)
 
 
 @pytest.mark.parametrize("flavor", [flavor for flavor in FLAVORS if len(_percentile_methods(flavor)) == 2])
@@ -129,8 +151,7 @@ def test_a_type_emits_only_its_own_measures(flavor):
     assert {"numeric_ct", "distinct_std_value_ct", "min_length"} <= alpha
     assert {"min_value", "min_date", "boolean_true_ct", "fractional_sum"}.isdisjoint(alpha)
 
-    assert {"min_value", "percentile_50", "percentile_method", "min_length"} <= numeric
-    assert "percentile_method" not in alpha | date | boolean
+    assert {"min_value", "percentile_50", "min_length"} <= numeric
     assert {"numeric_ct", "min_date", "boolean_true_ct", "fractional_sum"}.isdisjoint(numeric)
     assert "fractional_sum" in _aliases(_render(flavor, "N", sampled=False, is_decimal=True))
 

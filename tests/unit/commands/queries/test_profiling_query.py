@@ -2,11 +2,13 @@ import re
 from dataclasses import replace as dataclasses_replace
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
+from uuid import UUID
 
 import pytest
 
 from testgen.commands.queries.profiling_query import ProfilingSQL, TableSampling, calculate_sampling_params
 from testgen.common.database.column_chars import ColumnChars
+from testgen.common.models.profile_result import PercentileMethod, ProfileResult
 from testgen.common.read_file import read_template_sql_file
 
 pytestmark = pytest.mark.unit
@@ -175,15 +177,14 @@ def test_sampling_decimal_string_percent():
     assert result.sample_count == 1550
 
 
-# --- ProfilingSQL.get_profiling_errors ---
+# --- ProfilingSQL row values ---
 
 
-def test_error_rows_carry_the_same_run_date_as_profiled_rows():
-    sql = _make_profiling_sql()
-    column = ColumnChars(
+def _alpha_column(column_name: str = "nct_id") -> ColumnChars:
+    return ColumnChars(
         schema_name="public",
         table_name="studies",
-        column_name="nct_id",
+        column_name=column_name,
         ordinal_position=1,
         general_type="A",
         column_type="varchar",
@@ -191,13 +192,103 @@ def test_error_rows_carry_the_same_run_date_as_profiled_rows():
         record_ct=513,
     )
 
-    error_row = sql.get_profiling_errors([(column, "unsupported type")])[0]
-    error_run_date = dict(zip(sql.error_columns, error_row, strict=True))["run_date"]
 
-    # A run writes one run_date: the value inlined into the profiling query for
-    # successful columns must be the value error rows get too.
-    assert error_run_date == sql._get_params()["RUN_DATE"]
-    assert error_run_date == "2026-07-14 21:22:26"
+def test_row_values_carry_the_run_date_the_query_is_rendered_with():
+    sql = _make_profiling_sql()
+
+    # One run writes one run_date, and the app-side profiling queries match rows against the
+    # value the target queries are rendered with.
+    assert sql.column_row_values(_alpha_column())["run_date"] == sql._get_params()["RUN_DATE"]
+    assert sql.column_error_row(_alpha_column(), "unsupported type")["run_date"] == "2026-07-14 21:22:26"
+
+
+def test_row_values_key_the_row_by_the_catalog_column_name():
+    sql = _make_profiling_sql()
+
+    assert sql.column_row_values(_alpha_column("owner's_name"))["column_name"] == "owner's_name"
+    assert sql.column_error_row(_alpha_column("owner's_name"), "boom")["column_name"] == "owner's_name"
+
+
+@pytest.mark.parametrize("general_type", ["A", "D", "B", "X"])
+def test_only_a_numeric_column_is_labelled_with_a_percentile_method(general_type):
+    sql = _make_profiling_sql()
+    column = dataclasses_replace(_alpha_column(), general_type=general_type)
+
+    assert "percentile_method" not in sql.profiled_row_values(column, use_approx_percentile=True)
+
+
+@pytest.mark.parametrize("approx, method", [(False, PercentileMethod.EXACT), (True, PercentileMethod.APPROXIMATE)])
+def test_a_numeric_column_is_labelled_with_the_percentile_method_it_was_run_with(approx, method):
+    sql = _make_profiling_sql()
+    column = dataclasses_replace(_alpha_column(), general_type="N")
+
+    assert sql.profiled_row_values(column, use_approx_percentile=approx)["percentile_method"] == method
+
+
+TABLE_GROUP_ID = UUID("00000000-0000-0000-0000-00000000a001")
+PROFILE_RUN_ID = UUID("00000000-0000-0000-0000-00000000b002")
+
+
+def _identified_profiling_sql() -> ProfilingSQL:
+    connection = MagicMock(sql_flavor="snowflake", sql_flavor_code="snowflake", connection_id=42)
+    table_group = MagicMock(project_code="PROJ", id=TABLE_GROUP_ID, table_group_schema="group_schema")
+    profiling_run = MagicMock(id=PROFILE_RUN_ID, profiling_starttime=RUN_STARTTIME)
+    return ProfilingSQL(connection, table_group, profiling_run)
+
+
+def _distinct_fields_column(general_type: str = "A") -> ColumnChars:
+    # Every field differs from the others, so a value written under the wrong key shows up.
+    return ColumnChars(
+        schema_name="catalog_schema",
+        table_name="studies",
+        column_name="nct_id",
+        ordinal_position=7,
+        general_type=general_type,
+        column_type="varchar(20)",
+        db_data_type="character varying",
+        record_ct=513,
+    )
+
+
+EXPECTED_ROW_VALUES = {
+    "project_code": "PROJ",
+    "connection_id": 42,
+    "table_groups_id": TABLE_GROUP_ID,
+    "schema_name": "group_schema",
+    "profile_run_id": PROFILE_RUN_ID,
+    "run_date": "2026-07-14 21:22:26",
+    "table_name": "studies",
+    "column_name": "nct_id",
+    "position": 7,
+    "column_type": "varchar(20)",
+    "db_data_type": "character varying",
+    "general_type": "A",
+}
+
+
+def test_row_values_map_each_known_value_to_its_profile_results_column():
+    assert _identified_profiling_sql().column_row_values(_distinct_fields_column()) == EXPECTED_ROW_VALUES
+
+
+def test_every_supplied_field_is_a_profile_results_column():
+    sql = _identified_profiling_sql()
+    columns = set(ProfileResult.__table__.columns.keys())
+
+    assert set(sql.profiled_row_values(_distinct_fields_column("N"), use_approx_percentile=True)) <= columns
+    assert set(sql.column_error_row(_distinct_fields_column(), "boom")) <= columns
+
+
+def test_an_error_row_records_the_error_under_the_column_it_belongs_to():
+    sql = _identified_profiling_sql()
+
+    row = sql.column_error_row(_distinct_fields_column("N"), "x" * (sql.max_error_length + 10))
+
+    assert row == {
+        **EXPECTED_ROW_VALUES,
+        "general_type": "X",
+        "record_ct": 513,
+        "query_error": "x" * sql.max_error_length,
+    }
 
 
 def test_datatype_suggestions_runs_before_and_after_functional_datatype():
@@ -297,12 +388,11 @@ def test_exact_percentiles_read_the_whole_table_on_a_sampled_run():
     pctile = _percentile_subquery(query)
     assert "PERCENTILE_CONT" in pctile
     assert "SAMPLE" not in pctile.upper()
-    assert "'exact' AS percentile_method" in query
     # The rest of the query still reads the sample.
     assert "SAMPLE (30000 rows)" in query
 
 
-def test_approximate_percentiles_use_the_engine_function_and_say_so():
+def test_approximate_percentiles_use_the_engine_function():
     sql = _make_profiling_sql()
     query, _ = sql.run_column_profiling(_numeric_column(), SAMPLING, use_approx_percentile=True)
 
@@ -310,8 +400,6 @@ def test_approximate_percentiles_use_the_engine_function_and_say_so():
     assert "APPROX_PERCENTILE" in pctile
     assert "PERCENTILE_CONT" not in pctile
     assert "SAMPLE" not in pctile.upper()
-    assert "'approximate' AS percentile_method" in query
-    assert "'exact'" not in query
 
 
 def test_a_non_numeric_column_carries_no_percentile_method():

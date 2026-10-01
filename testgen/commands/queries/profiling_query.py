@@ -1,5 +1,5 @@
 import dataclasses
-from uuid import UUID
+from typing import Any
 
 from testgen.common import read_template_sql_file
 from testgen.common.database.column_chars import ColumnChars
@@ -67,23 +67,6 @@ class HygieneIssueType:
 
 class ProfilingSQL:
 
-    error_columns = (
-        "project_code",
-        "connection_id",
-        "table_groups_id",
-        "schema_name",
-        "profile_run_id",
-        "run_date",
-        "table_name",
-        "column_name",
-        "position",
-        "column_type",
-        "general_type",
-        "db_data_type",
-        "record_ct",
-        "query_error",
-    )
-
     max_pattern_length = 25
     max_error_length = 2000
 
@@ -112,11 +95,6 @@ class ProfilingSQL:
             params.update({
                 "DATA_TABLE": column_chars.table_name,
                 "COL_NAME": column_chars.column_name,
-                "COL_NAME_SANITIZED": column_chars.column_name.replace("'", "''"),
-                "COL_GEN_TYPE": column_chars.general_type,
-                "COL_TYPE": column_chars.column_type,
-                "DB_DATA_TYPE": column_chars.db_data_type,
-                "COL_POS": column_chars.ordinal_position,
             })
         if table_sampling:
             params.update({
@@ -232,11 +210,9 @@ class ProfilingSQL:
         # samples: approximately where the target has the function, exactly otherwise.
         general_type = column_chars.general_type
         do_sample = bool(table_sampling)
-        percentile_method = PercentileMethod.APPROXIMATE if use_approx_percentile else PercentileMethod.EXACT
 
         extra_params = {
             "TABLE_HINT": self.flavor_service.table_hint(self.connection.sql_flavor_code),
-            "PERCENTILE_METHOD": percentile_method,
             "do_sample": do_sample,
             "is_type_A": general_type == "A",
             "is_type_N": general_type == "N",
@@ -259,25 +235,46 @@ class ProfilingSQL:
             table_sampling=table_sampling,
         )
 
-    def get_profiling_errors(self, column_errors: list[tuple[ColumnChars, str]]) -> list[list[str | UUID | int]]:
-        return [
-            [
-                self.table_group.project_code,
-                self.connection.connection_id,
-                self.table_group.id,
-                self.table_group.table_group_schema,
-                self.profiling_run.id,
-                to_sql_timestamp(self.run_date),
-                column_chars.table_name,
-                column_chars.column_name.replace("'", "''"),
-                column_chars.ordinal_position,
-                column_chars.column_type,
-                "X",
-                column_chars.db_data_type,
-                column_chars.record_ct,
-                error[:self.max_error_length],
-            ] for column_chars, error in column_errors
-        ]
+    def column_row_values(self, column_chars: ColumnChars) -> dict[str, Any]:
+        """Return the profile-results fields of a column that are known before it is profiled.
+
+        These are the run, table group and catalog values that identify the column's row, keyed by
+        profile-results column name.
+        """
+        return {
+            "project_code": self.table_group.project_code,
+            "connection_id": self.connection.connection_id,
+            "table_groups_id": self.table_group.id,
+            "schema_name": self.table_group.table_group_schema,
+            "profile_run_id": self.profiling_run.id,
+            "run_date": to_sql_timestamp(self.run_date),
+            "table_name": column_chars.table_name,
+            "column_name": column_chars.column_name,
+            "position": column_chars.ordinal_position,
+            "column_type": column_chars.column_type,
+            "db_data_type": column_chars.db_data_type,
+            "general_type": column_chars.general_type,
+        }
+
+    def profiled_row_values(self, column_chars: ColumnChars, use_approx_percentile: bool = False) -> dict[str, Any]:
+        """Return ``column_row_values`` for a column being measured.
+
+        A numeric column also gets ``percentile_method``: approximate when ``use_approx_percentile``
+        is set, exact otherwise.
+        """
+        values = self.column_row_values(column_chars)
+        if column_chars.general_type == "N":
+            values["percentile_method"] = PercentileMethod.APPROXIMATE if use_approx_percentile else PercentileMethod.EXACT
+        return values
+
+    def column_error_row(self, column_chars: ColumnChars, error: str) -> dict[str, Any]:
+        """Return the profile-results row recording that a column could not be profiled."""
+        return {
+            **self.column_row_values(column_chars),
+            "general_type": "X",
+            "record_ct": column_chars.record_ct,
+            "query_error": error[: self.max_error_length],
+        }
 
     def run_frequency_analysis(self, column_chars: ColumnChars, table_sampling: TableSampling | None = None) -> tuple[str, dict]:
         # Runs on Target database
