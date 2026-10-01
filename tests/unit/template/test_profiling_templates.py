@@ -24,7 +24,7 @@ pytestmark = pytest.mark.unit
 
 TEMPLATE_ROOT = Path(testgen.__file__).parent / "template"
 FLAVORS = get_args(SQLFlavor)
-GENERAL_TYPES = ("A", "N", "D", "B", "X")
+GENERAL_TYPES = ("A", "N", "D", "B", "X", "T")
 
 PLACEHOLDER = re.compile(r"^\s*NULL AS \w+,?\s*$", re.MULTILINE)
 DANGLING_COMMA = re.compile(r",\s*(?:FROM\b|CROSS JOIN\b|\))", re.IGNORECASE)
@@ -160,3 +160,39 @@ def test_a_type_emits_only_its_own_measures(flavor):
 
     assert "boolean_true_ct" in boolean
     assert {"numeric_ct", "min_value", "min_date", "min_length"}.isdisjoint(boolean)
+
+
+@pytest.mark.parametrize("sampled", [False, True])
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_a_text_column_reports_the_value_count_of_each_sample_read(flavor, sampled):
+    assert {"sample_value_ct", "sample_pattern_value_ct"} <= _aliases(_render(flavor, "A", sampled=sampled))
+
+
+# A CTE's name and body, up to the parenthesis that closes it at the start of a line.
+CTE = re.compile(r"(\w+) AS \((.*?)\n\)", re.DOTALL)
+
+
+@pytest.mark.parametrize("general_type", ["N", "D", "B", "T"])
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_every_non_text_type_counts_its_values(flavor, general_type):
+    assert {"record_ct", "value_ct", "null_value_ct", "distinct_value_ct"} <= _aliases(
+        _render(flavor, general_type, sampled=False)
+    )
+
+
+@pytest.mark.parametrize("general_type", ["N", "D", "B", "X", "T"])
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_only_text_columns_read_the_sample(flavor, general_type):
+    assert not SAMPLING_CLAUSE.search(_render(flavor, general_type, sampled=True))
+
+
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_each_sample_a_text_column_takes_is_read_once(flavor):
+    query = _render(flavor, "A", sampled=True)
+    sampled_ctes = [name for name, body in CTE.findall(query) if SAMPLING_CLAUSE.search(body)]
+
+    assert sampled_ctes, f"{flavor}: no sampled CTE"
+    assert len(SAMPLING_CLAUSE.findall(query)) == len(sampled_ctes), f"{flavor}: a sampling clause outside a CTE"
+    # Each CTE's own definition plus one read: an engine may draw a new sample on every read.
+    reads = {name: len(re.findall(rf"\b{name}\b", query)) for name in sampled_ctes}
+    assert reads == dict.fromkeys(sampled_ctes, 2), f"{flavor}: {reads}"

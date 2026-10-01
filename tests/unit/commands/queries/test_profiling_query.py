@@ -390,24 +390,6 @@ def test_exact_percentiles_read_the_whole_table_on_a_sampled_run():
     assert "SAMPLE" not in pctile.upper()
 
 
-def test_a_sampled_numeric_column_reads_only_the_whole_table():
-    sql = _make_profiling_sql()
-    query, _ = sql.run_column_profiling(_numeric_column(), SAMPLING, use_approx_percentile=False)
-
-    assert "SAMPLE" not in query.upper()
-
-
-def test_each_sample_a_text_column_takes_is_read_once():
-    sql = _make_profiling_sql()
-    column = dataclasses_replace(_numeric_column(), general_type="A")
-    query, _ = sql.run_column_profiling(column, SAMPLING)
-
-    sampled_ctes = re.findall(r"(\w+) AS \((?:(?!\n\)).)*SAMPLE \(30000 rows\)", query, re.DOTALL)
-    assert sampled_ctes
-    # Each CTE's own definition plus one read: an engine may draw a new sample on every read.
-    assert {cte: len(re.findall(rf"\b{cte}\b", query)) for cte in sampled_ctes} == dict.fromkeys(sampled_ctes, 2)
-
-
 def test_approximate_percentiles_use_the_engine_function():
     sql = _make_profiling_sql()
     query, _ = sql.run_column_profiling(_numeric_column(), SAMPLING, use_approx_percentile=True)

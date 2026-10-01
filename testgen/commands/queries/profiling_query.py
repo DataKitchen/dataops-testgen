@@ -222,6 +222,7 @@ class ProfilingSQL:
             "is_type_DN": general_type in ("D", "N"),
             "is_type_X": general_type == "X",
             "is_not_A": general_type != "A",
+            "is_not_A_or_X": general_type not in ("A", "X"),
             "is_A_sampling": general_type == "A" and do_sample,
             "is_A_no_sampling": general_type == "A" and not do_sample,
             "is_N_decimal": general_type == "N" and column_chars.is_decimal,

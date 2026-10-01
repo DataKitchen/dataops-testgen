@@ -1,32 +1,46 @@
-SELECT
-  main.*
 -- TG-IF is_type_A
-  , patterns.*
--- TG-ENDIF
-FROM (
+WITH whole_table_measures AS (
   SELECT
--- TG-IF is_type_X
-    COUNT(CASE WHEN "{COL_NAME}" IS NOT NULL THEN 1 END) AS value_ct,
--- TG-ELSE
+    COUNT(*) AS record_ct,
     COUNT("{COL_NAME}") AS value_ct,
     COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
--- TG-ENDIF
     SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
--- TG-IF is_type_ADN
     MIN(LENGTH(TO_CHAR("{COL_NAME}"))) AS min_length,
     MAX(LENGTH(TO_CHAR("{COL_NAME}"))) AS max_length,
     AVG(NULLIF(LENGTH(TO_CHAR("{COL_NAME}")), 0)) AS avg_length,
--- TG-ENDIF
--- TG-IF is_type_A
     SUM(CASE
           WHEN REGEXP_LIKE(TRIM("{COL_NAME}"), '^0(\.0*)?$') THEN 1 ELSE 0
         END) AS zero_value_ct,
+    COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", 'X '',.-', 'X'))) AS distinct_std_value_ct,
+    SUBSTR(MIN(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS min_text,
+    SUBSTR(MAX(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS max_text
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+)
 -- TG-ENDIF
--- TG-IF is_type_N
-    SUM(1 - ABS(SIGN("{COL_NAME}"))) AS zero_value_ct,
+-- TG-IF is_A_sampling
+, sampleable_rows AS (
+  SELECT "{COL_NAME}"
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
+)
+, pattern_rows AS (
+  SELECT "{COL_NAME}" AS v
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
+)
+-- TG-ENDIF
+-- TG-IF is_A_no_sampling
+, sampleable_rows AS (
+  SELECT "{COL_NAME}"
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+)
+, pattern_rows AS (
+  SELECT "{COL_NAME}" AS v
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+)
 -- TG-ENDIF
 -- TG-IF is_type_A
-    COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", 'X '',.-', 'X'))) AS distinct_std_value_ct,
+, sampleable_measures AS (
+  SELECT
+    COUNT("{COL_NAME}") AS sample_value_ct,
     0 AS zero_length_ct,
     SUM(CASE
            WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
@@ -44,8 +58,6 @@ FROM (
                                       '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
                                                                                      ELSE 0
          END) AS filled_value_ct,
-    SUBSTR(MIN(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS min_text,
-    SUBSTR(MAX(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS max_text,
     SUM(CASE
           WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', ' ') = "{COL_NAME}" THEN 0
           WHEN TRANSLATE("{COL_NAME}", 'abcdefghijklmnopqrstuvwxyz', ' ') = "{COL_NAME}" THEN 1
@@ -88,162 +100,143 @@ FROM (
                        AND SUBSTR("{COL_NAME}", 1, 3) NOT BETWEEN '734' AND '749'
                        AND SUBSTR("{COL_NAME}", 1, 3) <> '666' THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'SSN'
     END AS std_pattern_match,
+    SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', '')))) AS embedded_space_ct,
+    AVG(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', ''))) AS avg_embedded_spaces
+    FROM sampleable_rows
+)
+, pattern_counts AS (
+  SELECT pattern,
+         COUNT(*) AS pattern_ct,
+         COUNT(value_length) AS value_ct,
+         MAX(value_length) AS max_length
+    FROM ( SELECT CASE
+                    WHEN v > ' '
+                      THEN REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
+                             v, '[a-z]', 'a'),
+                                '[A-Z]', 'A'),
+                                '[0-9]', 'N')
+                  END AS pattern,
+                  LENGTH(v) AS value_length
+             FROM pattern_rows ) patterned
+   GROUP BY pattern
+)
+, ranked_patterns AS (
+  SELECT pattern,
+         pattern_ct,
+         value_ct,
+         CASE
+           WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+         END AS pattern_rank
+    FROM pattern_counts
+)
+, pattern_measures AS (
+  SELECT
+    MAX(CASE WHEN pattern_rank = 1 THEN pattern END) AS pattern_0,
+    MAX(CASE WHEN pattern_rank = 1 THEN pattern_ct END) AS pattern_ct_0,
+    MAX(CASE WHEN pattern_rank = 2 THEN pattern END) AS pattern_1,
+    MAX(CASE WHEN pattern_rank = 2 THEN pattern_ct END) AS pattern_ct_1,
+    MAX(CASE WHEN pattern_rank = 3 THEN pattern END) AS pattern_2,
+    MAX(CASE WHEN pattern_rank = 3 THEN pattern_ct END) AS pattern_ct_2,
+    MAX(CASE WHEN pattern_rank = 4 THEN pattern END) AS pattern_3,
+    MAX(CASE WHEN pattern_rank = 4 THEN pattern_ct END) AS pattern_ct_3,
+    MAX(CASE WHEN pattern_rank = 5 THEN pattern END) AS pattern_4,
+    MAX(CASE WHEN pattern_rank = 5 THEN pattern_ct END) AS pattern_ct_4,
+    COUNT(pattern) AS distinct_pattern_ct,
+    SUM(value_ct) AS sample_pattern_value_ct
+    FROM ranked_patterns
+)
+SELECT *
+  FROM whole_table_measures
+  CROSS JOIN sampleable_measures
+  CROSS JOIN pattern_measures
 -- TG-ENDIF
--- TG-IF is_type_N
-    MIN("{COL_NAME}") AS min_value,
-    MIN(CASE WHEN "{COL_NAME}" > 0 THEN "{COL_NAME}" ELSE NULL END) AS min_value_over_0,
-    MAX("{COL_NAME}") AS max_value,
-    AVG(CAST("{COL_NAME}" AS NUMBER)) AS avg_value,
-    STDDEV(CAST("{COL_NAME}" AS NUMBER)) AS stdev_value,
-    MIN(pct_25) AS percentile_25,
-    MIN(pct_50) AS percentile_50,
-    MIN(pct_75) AS percentile_75,
+-- TG-IF is_not_A
+SELECT
+  COUNT(CASE WHEN "{COL_NAME}" IS NOT NULL THEN 1 END) AS value_ct,
+  SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
 -- TG-ENDIF
--- TG-IF is_N_decimal
-    SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
--- TG-ENDIF
--- TG-IF is_type_D
-    CASE
-           WHEN MIN("{COL_NAME}") IS NULL THEN NULL
-           ELSE GREATEST(MIN("{COL_NAME}"), TO_DATE('0001-01-01', 'YYYY-MM-DD'))
-         END AS min_date,
-    MAX("{COL_NAME}") AS max_date,
-    SUM(CASE
-          WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 12 THEN 1
-                                                              ELSE 0
-        END) AS before_1yr_date_ct,
-    SUM(CASE
-          WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 60 THEN 1
-                                                              ELSE 0
-        END) AS before_5yr_date_ct,
-    SUM(CASE
-            WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 240 THEN 1
-                                                                ELSE 0
-          END) AS before_20yr_date_ct,
-    SUM(CASE
-            WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 1200 THEN 1
-                                                                ELSE 0
-          END) AS before_100yr_date_ct,
-    SUM(CASE
-          WHEN <%DATEDIFF_DAY;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> BETWEEN 0 AND 365 THEN 1
-                                                                           ELSE 0
-        END) AS within_1yr_date_ct,
-    SUM(CASE
-          WHEN <%DATEDIFF_DAY;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> BETWEEN 0 AND 30 THEN 1
-                                                                          ELSE 0
-        END) AS within_1mo_date_ct,
-    SUM(CASE
-          WHEN "{COL_NAME}" > TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS') THEN 1 ELSE 0
-        END) AS future_date_ct,
-    SUM(CASE
-            WHEN <%DATEDIFF_MONTH;TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS');"{COL_NAME}"%> > 240 THEN 1
-                                                                                    ELSE 0
-          END) AS distant_future_date_ct,
-    COUNT(DISTINCT <%DATEDIFF_DAY;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_days_present,
-    COUNT(DISTINCT <%DATEDIFF_WEEK;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_weeks_present,
-    COUNT(DISTINCT <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_months_present,
+-- TG-IF is_not_A_or_X
+  COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_B
-    SUM(CAST("{COL_NAME}" AS NUMBER)) AS boolean_true_ct,
+  SUM(CAST("{COL_NAME}" AS NUMBER)) AS boolean_true_ct,
 -- TG-ENDIF
--- TG-IF is_type_A
-    SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', '')))) AS embedded_space_ct,
-    AVG(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', ''))) AS avg_embedded_spaces,
+-- TG-IF is_type_DN
+  MIN(LENGTH(TO_CHAR("{COL_NAME}"))) AS min_length,
+  MAX(LENGTH(TO_CHAR("{COL_NAME}"))) AS max_length,
+  AVG(NULLIF(LENGTH(TO_CHAR("{COL_NAME}")), 0)) AS avg_length,
 -- TG-ENDIF
-    COUNT(*) AS record_ct
--- TG-IF do_sample
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
--- TG-ELSE
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+-- TG-IF is_type_N
+  SUM(1 - ABS(SIGN("{COL_NAME}"))) AS zero_value_ct,
+  MIN("{COL_NAME}") AS min_value,
+  MIN(CASE WHEN "{COL_NAME}" > 0 THEN "{COL_NAME}" ELSE NULL END) AS min_value_over_0,
+  MAX("{COL_NAME}") AS max_value,
+  AVG(CAST("{COL_NAME}" AS NUMBER)) AS avg_value,
+  STDDEV(CAST("{COL_NAME}" AS NUMBER)) AS stdev_value,
+  MIN(pct_25) AS percentile_25,
+  MIN(pct_50) AS percentile_50,
+  MIN(pct_75) AS percentile_75,
+-- TG-ENDIF
+-- TG-IF is_N_decimal
+  SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
+-- TG-ENDIF
+-- TG-IF is_type_D
+  CASE
+         WHEN MIN("{COL_NAME}") IS NULL THEN NULL
+         ELSE GREATEST(MIN("{COL_NAME}"), TO_DATE('0001-01-01', 'YYYY-MM-DD'))
+       END AS min_date,
+  MAX("{COL_NAME}") AS max_date,
+  SUM(CASE
+        WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 12 THEN 1
+                                                            ELSE 0
+      END) AS before_1yr_date_ct,
+  SUM(CASE
+        WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 60 THEN 1
+                                                            ELSE 0
+      END) AS before_5yr_date_ct,
+  SUM(CASE
+          WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 240 THEN 1
+                                                              ELSE 0
+        END) AS before_20yr_date_ct,
+  SUM(CASE
+          WHEN <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> > 1200 THEN 1
+                                                              ELSE 0
+        END) AS before_100yr_date_ct,
+  SUM(CASE
+        WHEN <%DATEDIFF_DAY;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> BETWEEN 0 AND 365 THEN 1
+                                                                         ELSE 0
+      END) AS within_1yr_date_ct,
+  SUM(CASE
+        WHEN <%DATEDIFF_DAY;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%> BETWEEN 0 AND 30 THEN 1
+                                                                        ELSE 0
+      END) AS within_1mo_date_ct,
+  SUM(CASE
+        WHEN "{COL_NAME}" > TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS') THEN 1 ELSE 0
+      END) AS future_date_ct,
+  SUM(CASE
+          WHEN <%DATEDIFF_MONTH;TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS');"{COL_NAME}"%> > 240 THEN 1
+                                                                                  ELSE 0
+        END) AS distant_future_date_ct,
+  COUNT(DISTINCT <%DATEDIFF_DAY;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_days_present,
+  COUNT(DISTINCT <%DATEDIFF_WEEK;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_weeks_present,
+  COUNT(DISTINCT <%DATEDIFF_MONTH;"{COL_NAME}";TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS date_months_present,
+-- TG-ENDIF
+-- TG-IF is_not_A
+  COUNT(*) AS record_ct
+  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-ENDIF
 -- TG-IF is_N_approx_pctile
-    , (SELECT
-               APPROX_PERCENTILE(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-               APPROX_PERCENTILE(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-               APPROX_PERCENTILE(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-          FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
+  , (SELECT
+             APPROX_PERCENTILE(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
+             APPROX_PERCENTILE(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
+             APPROX_PERCENTILE(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
+        FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
 -- TG-ENDIF
 -- TG-IF is_N_exact_pctile
-    , (SELECT
-               PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-               PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-               PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-          FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
--- TG-ENDIF
-) main
--- TG-IF is_A_sampling
-CROSS JOIN (
-  SELECT slots.*,
-    (SELECT COUNT(DISTINCT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
-                            "{COL_NAME}", '[a-z]', 'a'),
-                                        '[A-Z]', 'A'),
-                                        '[0-9]', 'N')
-                  )
-       FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
-      WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ') AS distinct_pattern_ct
-    FROM (
-      SELECT
-    MAX(CASE WHEN rn = 1 THEN pattern END) AS pattern_0,
-    MAX(CASE WHEN rn = 1 THEN ct END)      AS pattern_ct_0,
-    MAX(CASE WHEN rn = 2 THEN pattern END) AS pattern_1,
-    MAX(CASE WHEN rn = 2 THEN ct END)      AS pattern_ct_1,
-    MAX(CASE WHEN rn = 3 THEN pattern END) AS pattern_2,
-    MAX(CASE WHEN rn = 3 THEN ct END)      AS pattern_ct_2,
-    MAX(CASE WHEN rn = 4 THEN pattern END) AS pattern_3,
-    MAX(CASE WHEN rn = 4 THEN ct END)      AS pattern_ct_3,
-    MAX(CASE WHEN rn = 5 THEN pattern END) AS pattern_4,
-    MAX(CASE WHEN rn = 5 THEN ct END)      AS pattern_ct_4
-    FROM ( SELECT pattern,
-                  ct,
-                  ROW_NUMBER() OVER (ORDER BY ct DESC, pattern) AS rn
-             FROM ( SELECT pattern, COUNT(*) AS ct
-                      FROM (SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
-                            "{COL_NAME}", '[a-z]', 'a'),
-                                        '[A-Z]', 'A'),
-                                        '[0-9]', 'N') AS pattern
-                              FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})
-                             WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                               FROM "{DATA_SCHEMA}"."{DATA_TABLE}" SAMPLE ({SAMPLE_PERCENT_CALC})) BETWEEN 3 and {MAX_PATTERN_LENGTH} ) p
-                     GROUP BY pattern
-                    HAVING pattern > ' ' ) grouped ) ranked
-       WHERE rn <= 5 ) slots
-) patterns
--- TG-ENDIF
--- TG-IF is_A_no_sampling
-CROSS JOIN (
-  SELECT slots.*,
-    (SELECT COUNT(DISTINCT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
-                            "{COL_NAME}", '[a-z]', 'a'),
-                                        '[A-Z]', 'A'),
-                                        '[0-9]', 'N')
-                  )
-       FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
-      WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ') AS distinct_pattern_ct
-    FROM (
-      SELECT
-    MAX(CASE WHEN rn = 1 THEN pattern END) AS pattern_0,
-    MAX(CASE WHEN rn = 1 THEN ct END)      AS pattern_ct_0,
-    MAX(CASE WHEN rn = 2 THEN pattern END) AS pattern_1,
-    MAX(CASE WHEN rn = 2 THEN ct END)      AS pattern_ct_1,
-    MAX(CASE WHEN rn = 3 THEN pattern END) AS pattern_2,
-    MAX(CASE WHEN rn = 3 THEN ct END)      AS pattern_ct_2,
-    MAX(CASE WHEN rn = 4 THEN pattern END) AS pattern_3,
-    MAX(CASE WHEN rn = 4 THEN ct END)      AS pattern_ct_3,
-    MAX(CASE WHEN rn = 5 THEN pattern END) AS pattern_4,
-    MAX(CASE WHEN rn = 5 THEN ct END)      AS pattern_ct_4
-    FROM ( SELECT pattern,
-                  ct,
-                  ROW_NUMBER() OVER (ORDER BY ct DESC, pattern) AS rn
-             FROM ( SELECT pattern, COUNT(*) AS ct
-                      FROM (SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(
-                            "{COL_NAME}", '[a-z]', 'a'),
-                                        '[A-Z]', 'A'),
-                                        '[0-9]', 'N') AS pattern
-                              FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
-                             WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                               FROM "{DATA_SCHEMA}"."{DATA_TABLE}") BETWEEN 3 and {MAX_PATTERN_LENGTH} ) p
-                     GROUP BY pattern
-                    HAVING pattern > ' ' ) grouped ) ranked
-       WHERE rn <= 5 ) slots
-) patterns
+  , (SELECT
+             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
+             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
+             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
+        FROM "{DATA_SCHEMA}"."{DATA_TABLE}") pctile
 -- TG-ENDIF
