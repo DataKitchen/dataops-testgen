@@ -35,9 +35,18 @@ def test_terminal_is_read_off_the_transition_graph():
 
 def test_claimable_is_read_off_the_transition_graph():
     assert set(JobStatus.claimable()) == {
-        JobStatus.PENDING, JobStatus.INTERRUPTED, JobStatus.RESUME_REQUESTED,
+        JobStatus.PENDING, JobStatus.INTERRUPTED, JobStatus.RESUME_REQUESTED, JobStatus.QUEUED,
     }
     assert JobStatus.claimable() == JobStatus.sources_for(JobStatus.CLAIMED)
+
+
+def test_queued_is_reached_only_from_a_status_waiting_for_a_claim():
+    """The poll queues what it could not claim, so QUEUED is entered only from the statuses a claim
+    would have taken, and it stays claimable so a freed slot picks it up."""
+    assert set(JobStatus.sources_for(JobStatus.QUEUED)) == set(JobStatus.claimable()) - {JobStatus.QUEUED}
+    assert JobStatus.QUEUED in JobStatus.active()
+    assert JobStatus.QUEUED not in JobStatus.stale_recoverable()
+    assert JobStatus.QUEUED not in JobStatus.sources_for(JobStatus.PAUSE_REQUESTED)
 
 
 def test_interrupted_is_queued_work():

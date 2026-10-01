@@ -24,7 +24,7 @@ from testgen.common.models.data_column import (
 )
 from testgen.common.models.data_table import DataTable
 from testgen.common.models.hygiene_issue import HygieneIssue
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.profile_result import ProfileResult
 from testgen.common.models.profiling_run import ProfilingRun, ProfilingRunSummary
 from testgen.common.models.scheduler import RUN_PROFILE_JOB_KEY
@@ -604,6 +604,8 @@ def get_profiling_run(
     if schema_label and summary.table_group_schema:
         doc.field(schema_label, summary.table_group_schema)
     doc.field("Status", summary.status_label)
+    if summary.status == JobStatus.QUEUED:
+        doc.text(QUEUED_MESSAGE)
     doc.field("Submitted", summary.created_at)
     doc.field("Started", summary.started_at or "—")
     doc.field("Ended", summary.completed_at or "In progress")
@@ -657,6 +659,8 @@ def get_profiling_run(
 def _render_pending_profiling_je(doc: MdDoc, je: JobExecution, label: str) -> None:
     status_label = ProfilingRunSummary.STATUS_LABEL.get(je.status, je.status)
     doc.heading(3, f"{label} — {status_label}")
+    if je.status == JobStatus.QUEUED:
+        doc.text(QUEUED_MESSAGE)
     doc.field("Profiling Run", je.id, code=True)
     if je.job_schedule_id is not None:
         doc.field("Schedule", je.job_schedule_id, code=True)

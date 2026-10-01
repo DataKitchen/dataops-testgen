@@ -6,6 +6,7 @@ import pytest
 
 from testgen.common.models.data_column import ColumnProfileDetail, ColumnProfileSummary, DataColumnChars
 from testgen.common.models.hygiene_issue import HygieneIssueCounts, IssueCounts, PotentialPiiCounts
+from testgen.common.models.job_execution import QUEUED_MESSAGE
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
@@ -2163,3 +2164,20 @@ def test_render_numeric_block_drops_extrema_and_percentiles_when_source_data_pro
     assert "Average Value" in result
     assert "42.5" in result
     assert "Standard Deviation" in result
+
+
+@patch("testgen.mcp.tools.profiling.ProfilingRun")
+def test_get_profiling_run_explains_a_queued_run(mock_run_cls, db_session_mock):
+    summary = _mock_profiling_run(
+        status=JobStatus.QUEUED, status_label="Queued",
+        profiling_run_id=None, started_at=None, completed_at=None,
+        table_ct=None, column_ct=None, record_ct=None, anomaly_ct=None,
+        anomalies_definite_ct=None, anomalies_likely_ct=None,
+        anomalies_possible_ct=None, dq_score_profiling=None,
+    )
+    mock_run_cls.select_summary.return_value = ([summary], 1)
+
+    result = _run_get_profiling_run(str(summary.job_execution_id))
+
+    assert "**Status:** Queued" in result
+    assert QUEUED_MESSAGE in result

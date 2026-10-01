@@ -63,7 +63,7 @@ import { Select } from '/app/static/js/components/select.js';
 import { Paginator } from '/app/static/js/components/paginator.js';
 import { EMPTY_STATE_MESSAGE, EmptyState } from '/app/static/js/components/empty_state.js';
 import { Icon } from '/app/static/js/components/icon.js';
-import { ACTIVE_STATUSES, CANCELABLE_STATUSES, RUNNING_STATUSES, STARTING_STATUSES, STATUS_COLORS } from '/app/static/js/job_status.js';
+import { ACTIVE_STATUSES, CANCELABLE_STATUSES, QUEUED_MESSAGE, RUNNING_STATUSES, STARTING_STATUSES, STATUS_COLORS } from '/app/static/js/job_status.js';
 import { Dialog } from '/app/static/js/components/dialog.js';
 import { RunTestsDialog } from '/app/static/js/components/run_tests_dialog.js';
 import { ScheduleList } from '/app/static/js/components/schedule_list.js';
@@ -528,6 +528,12 @@ const TestRunStatus = (/** @type TestRun */ item) => {
             ? withTooltip(
                 Icon({ style: 'font-size: 18px; margin-left: 4px;' }, 'info'),
                 { text: errorMessage, width: 250, style: 'word-break: break-word;' },
+            )
+            : null,
+        item.status === 'queued'
+            ? withTooltip(
+                Icon({ style: 'font-size: 18px; margin-left: 4px;' }, 'info'),
+                { text: QUEUED_MESSAGE, width: 250, style: 'word-break: break-word;' },
             )
             : null,
     );

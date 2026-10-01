@@ -5,7 +5,7 @@ import pytest
 
 from testgen.commands.job_runner import submit_and_wait
 from testgen.common.enums import JobStatus
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 
 pytestmark = pytest.mark.unit
 
@@ -115,3 +115,20 @@ def test_submit_and_wait_exits_on_error(mock_session):
         pytest.raises(SystemExit, match="1"),
     ):
         submit_and_wait("run-tests", {"test_suite_id": "suite-123"}, "DEFAULT", no_wait=False)
+
+
+def test_submit_and_wait_says_once_that_a_run_is_queued(mock_session, capsys):
+    submitted = _make_job_exec(status=JobStatus.PENDING)
+    queued = _make_job_exec(status=JobStatus.QUEUED)
+    completed = _make_job_exec(status=JobStatus.COMPLETED)
+    mock_session.flush = Mock()
+
+    with (
+        patch.object(JobExecution, "submit", return_value=submitted),
+        patch.object(JobExecution, "get", side_effect=[queued, queued, completed]),
+        patch(f"{JOB_RUNNER_MODULE}.time.sleep"),
+        patch(f"{JOB_RUNNER_MODULE}._print_run_summary"),
+    ):
+        submit_and_wait("run-tests", {"test_suite_id": "suite-123"}, "DEFAULT", no_wait=False)
+
+    assert capsys.readouterr().out.count(QUEUED_MESSAGE) == 1

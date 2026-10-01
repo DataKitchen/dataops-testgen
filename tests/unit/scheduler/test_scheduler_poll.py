@@ -161,7 +161,7 @@ def test_poll_loop_claims_and_dispatches(scheduler_instance, job_exec, mock_sess
     ):
         scheduler_instance._poll_loop()
 
-    claim_mock.assert_called_once_with(limit=scheduler_instance._poll_batch_size)
+    claim_mock.assert_called_once_with(limit=scheduler_instance._poll_batch_size, in_process_slots=1)
     dispatch_mock.assert_called_once_with(job_exec)
 
 
@@ -268,3 +268,145 @@ def test_start_job_submits_execution(scheduler_instance, mock_session):
     assert added.source == "scheduler"
     assert added.job_schedule_id == schedule_id
     mock_session.commit.assert_called_once()
+
+
+def _run_one_poll(scheduler_instance, actionable):
+    """Run the poll loop for exactly one claim and return the claim mock."""
+    call_count = 0
+
+    def stopping_side_effect(timeout):
+        nonlocal call_count
+        call_count += 1
+        return call_count > 1
+
+    scheduler_instance._stopping = Mock()
+    scheduler_instance._stopping.wait.side_effect = stopping_side_effect
+    with (
+        patch.object(JobExecution, "claim_actionable", return_value=actionable) as claim_mock,
+        patch.object(scheduler_instance, "_dispatch"),
+    ):
+        scheduler_instance._poll_loop()
+    return claim_mock
+
+
+@pytest.mark.parametrize(("cap", "held", "expected_slots"), [(1, 0, 1), (1, 1, 0), (3, 1, 2), (2, 3, 0)])
+def test_poll_offers_the_slots_left_under_the_cap(scheduler_instance, mock_session, cap, held, expected_slots):
+    scheduler_instance._in_process_jobs = {uuid4() for _ in range(held)}
+
+    with patch(f"{SCHEDULER_MODULE}.settings.MAX_CONCURRENT_IN_PROCESS_RUNS", cap):
+        claim_mock = _run_one_poll(scheduler_instance, [])
+
+    assert claim_mock.call_args.kwargs["in_process_slots"] == expected_slots
+
+
+def test_claimed_in_process_rows_do_not_fill_the_batch(scheduler_instance, mock_session):
+    """In-process rows are limited by the free slots, not by the batch, so a batch they fill says
+    nothing about more rows waiting. Counting them would re-poll with no wait while the rest of
+    the in-process queue is held."""
+    batch_size = scheduler_instance._poll_batch_size
+    in_process_batch = [
+        JobExecution(id=uuid4(), job_key=JobKey.run_profile, status=JobStatus.CLAIMED, in_process=True)
+        for _ in range(batch_size)
+    ]
+    call_log = []
+
+    def stopping_side_effect(timeout):
+        call_log.append("wait")
+        return call_log.count("claim") >= 1
+
+    def claim_side_effect(**_kwargs):
+        call_log.append("claim")
+        return in_process_batch
+
+    scheduler_instance._stopping = Mock()
+    scheduler_instance._stopping.wait.side_effect = stopping_side_effect
+    with (
+        patch(f"{SCHEDULER_MODULE}.settings.MAX_CONCURRENT_IN_PROCESS_RUNS", batch_size),
+        patch.object(JobExecution, "claim_actionable", side_effect=claim_side_effect),
+        patch.object(scheduler_instance, "_dispatch"),
+    ):
+        scheduler_instance._poll_loop()
+
+    assert call_log == ["wait", "claim", "wait"]
+
+
+def test_dispatch_takes_a_slot_for_an_in_process_job(scheduler_instance, job_exec, mock_session):
+    job_exec.in_process = True
+
+    with (
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}, clear=False),
+        patch(f"{SCHEDULER_MODULE}.subprocess.Popen"),
+        patch(f"{SCHEDULER_MODULE}.threading.Thread"),
+    ):
+        scheduler_instance._dispatch(job_exec)
+
+    assert scheduler_instance._in_process_jobs == {job_exec.id}
+
+
+def test_dispatch_takes_no_slot_for_a_server_job(scheduler_instance, job_exec, mock_session):
+    job_exec.in_process = False
+
+    with (
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}, clear=False),
+        patch(f"{SCHEDULER_MODULE}.subprocess.Popen"),
+        patch(f"{SCHEDULER_MODULE}.threading.Thread"),
+    ):
+        scheduler_instance._dispatch(job_exec)
+
+    assert scheduler_instance._in_process_jobs == set()
+
+
+def test_dispatch_takes_no_slot_when_the_process_fails_to_start(scheduler_instance, job_exec, mock_session):
+    job_exec.in_process = True
+
+    with (
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}, clear=False),
+        patch(f"{SCHEDULER_MODULE}.subprocess.Popen", side_effect=OSError("no fork")),
+        pytest.raises(OSError),
+    ):
+        scheduler_instance._dispatch(job_exec)
+
+    assert scheduler_instance._in_process_jobs == set()
+
+
+@pytest.mark.parametrize("exit_code", [0, -9])
+def test_proc_wrapper_frees_the_slot_however_the_process_ends(scheduler_instance, job_exec, mock_session, exit_code):
+    job_exec.status = "running"
+    job_exec.in_process = True
+    scheduler_instance._in_process_jobs = {job_exec.id}
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
+    proc_mock = Mock(pid=555)
+    proc_mock.wait.return_value = exit_code
+
+    scheduler_instance._proc_wrapper(proc_mock, job_exec)
+
+    assert scheduler_instance._in_process_jobs == set()
+    assert job_exec.id not in scheduler_instance._running_jobs
+
+
+def test_proc_wrapper_frees_the_slot_when_monitoring_fails(scheduler_instance, job_exec, mock_session):
+    job_exec.status = "running"
+    job_exec.in_process = True
+    scheduler_instance._in_process_jobs = {job_exec.id}
+    mock_session.execute.return_value.scalar_one_or_none.return_value = _returning_row(job_exec, status="error")
+    proc_mock = Mock(pid=555)
+    proc_mock.wait.side_effect = OSError("broken")
+
+    scheduler_instance._proc_wrapper(proc_mock, job_exec)
+
+    assert scheduler_instance._in_process_jobs == set()
+
+
+def test_dispatch_frees_the_slot_when_the_wrapper_cannot_start(scheduler_instance, job_exec, mock_session):
+    job_exec.in_process = True
+
+    with (
+        patch.dict(JOB_DISPATCH, {JobKey.run_tests: JobConfig(handler=Mock())}, clear=False),
+        patch(f"{SCHEDULER_MODULE}.subprocess.Popen"),
+        patch(f"{SCHEDULER_MODULE}.threading.Thread") as thread_mock,
+        pytest.raises(RuntimeError),
+    ):
+        thread_mock.return_value.start.side_effect = RuntimeError("can't start new thread")
+        scheduler_instance._dispatch(job_exec)
+
+    assert scheduler_instance._in_process_jobs == set()
