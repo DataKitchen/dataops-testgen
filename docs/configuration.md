@@ -260,14 +260,6 @@ A SQL filter supported by the project database's `LIKE` operator representing su
 
 default: `%%sk`
 
-#### `DEFAULT_PROFILING_USE_SAMPLING`
-
-Toggle on to base profiling on a sample of records instead of the full table. Percentiles are
-always computed over the full table, approximately where the database offers an approximate
-percentile function and exactly otherwise. Accepts `Y` or `N`.
-
-default: `N`
-
 #### `OBSERVABILITY_API_URL`
 
 API URL of your instance of Observability where to send events to for the project.
