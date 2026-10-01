@@ -161,7 +161,7 @@ def container_path_note() -> str:
     return "The path is read inside the TestGen container, not on the host."
 
 
-def attach_error_message(failure: AttachFailure, error: Exception) -> str:
+def attach_error_message(failure: AttachFailure, error: Exception, database_file: str) -> str:
     if failure is AttachFailure.LOCKED:
         # DuckDB names the holding process's executable path, PID and username. That is somebody
         # else's environment, so the detail is dropped rather than shown.
@@ -173,6 +173,14 @@ def attach_error_message(failure: AttachFailure, error: Exception) -> str:
         # Both of DuckDB's wordings name the versions involved, which the detail carries through.
         return f"This database was written by a newer version of DuckDB than TestGen supports. {error}"
     if failure is AttachFailure.FILE_MISSING:
+        if _REMOTE_URL.match(database_file):
+            # DuckDB reports an unreachable host, a refused request and a missing object with the
+            # same "does not exist" wording, so the message covers all three.
+            return (
+                "The database file could not be read from this URL. Check that TestGen can reach it "
+                "and that it can be read without credentials, such as a public object or a pre-signed "
+                "URL that has not expired."
+            )
         return f"The database file was not found at this path. {container_path_note()}".rstrip()
     if failure is AttachFailure.INVALID_FILE:
         return "This file is not a DuckDB database."
@@ -580,7 +588,7 @@ class DuckdbFlavorService(FlavorService):
             except Exception as error:
                 failure = classify_attach_error(error)
                 if failure is not AttachFailure.LOCKED or attempt == _LOCK_RETRY_ATTEMPTS:
-                    raise DuckdbConnectionError(attach_error_message(failure, error), failure) from error
+                    raise DuckdbConnectionError(attach_error_message(failure, error, database_file), failure) from error
                 # The failed ATTACH aborted the transaction. Without this the next attempt
                 # raises "transaction is aborted" instead, which classifies as UNKNOWN and
                 # replaces the message written for this case.
