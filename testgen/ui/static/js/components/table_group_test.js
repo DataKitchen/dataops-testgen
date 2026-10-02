@@ -8,7 +8,7 @@
  * @property {number} approx_data_point_ct
  * @property {boolean} can_access
  * @property {number?} file_ct
- * @property {{column_name: string, column_type: string}[]?} columns
+ * @property {{column_name: string, column_type: string}[]} columns
  * @property {string?} error
  *
  * @typedef TableGroupPreview
@@ -184,14 +184,11 @@ const TableDetail = (table) => {
         return div({ class: 'tg-table-detail text-error p-3' }, table.error);
     }
 
-    const tableColumns = table.columns ?? [];
-    const gridStyle = `grid-template-columns: repeat(${Math.max(tableColumns.length, 1)}, minmax(90px, 1fr));`;
-
     return div(
         { class: 'tg-table-detail flex-column fx-gap-2 p-3' },
         div(
-            { class: 'tg-table-detail--grid text-caption', style: gridStyle },
-            tableColumns.map(column => div(
+            { class: 'tg-table-detail--grid text-caption' },
+            table.columns.map(column => div(
                 { class: 'flex-column' },
                 span({ class: 'text-bold' }, column.column_name),
                 span({ class: 'text-secondary' }, column.column_type),
@@ -204,11 +201,16 @@ const stylesheet = new CSSStyleSheet();
 stylesheet.replace(`
 .tg-table-detail {
     border-bottom: 1px solid var(--border-color);
+    max-height: 250px;
+    overflow: auto;
 }
 .tg-table-detail--grid {
     display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 8px;
-    overflow-x: auto;
+}
+.tg-table-detail--grid > div {
+    overflow-wrap: anywhere;
 }`);
 
 export { TableGroupTest };

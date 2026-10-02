@@ -298,14 +298,19 @@ def test_is_duplicate_name_error_ignores_other_violations():
 # ---------------------------------------------------------------------------
 
 
-def _column_row(table_name: str, column_name: str, approx_record_ct: int | None = None) -> dict:
+def _column_row(
+    table_name: str,
+    column_name: str,
+    approx_record_ct: int | None = None,
+    column_type: str = "varchar",
+) -> dict:
     return {
         "schema_name": "public",
         "table_name": table_name,
         "column_name": column_name,
         "ordinal_position": 1,
         "general_type": "A",
-        "column_type": "varchar",
+        "column_type": column_type,
         "db_data_type": "VARCHAR",
         "is_decimal": False,
         "approx_record_ct": approx_record_ct,
@@ -374,6 +379,29 @@ def test_preview_happy_path_aggregates_stats(mock_session, mock_sql_cls):
     assert preview["tables"]["customer"]["column_ct"] == 2
     assert data_chars is not None and len(data_chars) == 3
     assert sql_gen is sql_generator
+
+
+@patch(f"{MODULE}.RefreshDataCharsSQL")
+@patch(f"{MODULE}.target_db_session")
+def test_preview_lists_each_database_tables_columns_in_catalog_order(mock_session, mock_sql_cls):
+    sql_generator = mock_sql_cls.return_value
+    sql_generator.flavor_service.metadata_via_api = False
+    sql_generator.get_schema_ddf.return_value = ("SELECT ...", {})
+    _session(mock_session, lambda _query: [
+        _column_row("customer", "id", column_type="integer"),
+        _column_row("customer", "email", column_type="character varying(255)"),
+        _column_row("rental", "rented_at", column_type="timestamp"),
+    ])
+
+    preview, _data_chars, _sql_gen = preview_table_group(_tg(), connection=_conn(), verify_access=False)
+
+    assert preview["tables"]["customer"]["columns"] == [
+        {"column_name": "id", "column_type": "integer"},
+        {"column_name": "email", "column_type": "character varying(255)"},
+    ]
+    assert preview["tables"]["rental"]["columns"] == [{"column_name": "rented_at", "column_type": "timestamp"}]
+    # Only a file declaration carries an `error` key; a database table's read access is reported through `can_access`.
+    assert "error" not in preview["tables"]["customer"]
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
@@ -622,6 +650,8 @@ def test_a_declaration_that_failed_reports_why_it_failed(mock_session, mock_sql_
 
     assert preview["tables"]["escapee"]["error"] == "This path is outside the connection base path."
     assert preview["tables"]["claims"]["error"] is None
+    assert preview["tables"]["claims"]["columns"] == [{"column_name": "id", "column_type": "varchar"}]
+    assert preview["tables"]["escapee"]["columns"] == []
 
 
 @patch(f"{MODULE}.RefreshDataCharsSQL")
