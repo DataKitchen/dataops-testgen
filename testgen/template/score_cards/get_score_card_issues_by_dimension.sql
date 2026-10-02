@@ -26,9 +26,10 @@ anomalies AS (
     FROM profile_anomaly_results AS results
         INNER JOIN profile_anomaly_types AS types ON (types.id = results.anomaly_id)
         INNER JOIN profiling_runs AS runs ON (runs.id = results.profile_run_id)
+        -- The catalog is joined without schema_name: the catalog row's schema follows whichever
+        -- schema was last refreshed, while these rows keep the one they were written against.
         LEFT JOIN data_column_chars AS dcc ON (
             results.table_groups_id = dcc.table_groups_id
-            AND results.schema_name = dcc.schema_name
             AND results.table_name = dcc.table_name
             AND results.column_name = dcc.column_name
         )

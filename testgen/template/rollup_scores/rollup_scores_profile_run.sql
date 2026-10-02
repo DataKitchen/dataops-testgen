@@ -24,9 +24,10 @@ WITH score_detail
          ON (pr.table_groups_id = tg.id)
       INNER JOIN projects proj
          ON (tg.project_code = proj.project_code)
+      -- The catalog is joined without schema_name: the catalog row's schema follows whichever
+      -- schema was last refreshed, while these rows keep the one they were written against.
       LEFT JOIN data_column_chars dcc
          ON (pr.table_groups_id = dcc.table_groups_id
-        AND  pr.schema_name = dcc.schema_name
         AND  pr.table_name = dcc.table_name
         AND  pr.column_name = dcc.column_name)
       LEFT JOIN data_table_chars dtc

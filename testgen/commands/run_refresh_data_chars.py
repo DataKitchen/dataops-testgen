@@ -19,8 +19,13 @@ from testgen.utils import get_exception_message
 LOG = logging.getLogger("testgen")
 
 
-def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_date: datetime) -> list[ColumnChars]:
-    sql_generator = RefreshDataCharsSQL(connection, table_group)
+def run_data_chars_refresh(
+    connection: Connection,
+    table_group: TableGroup,
+    run_date: datetime,
+    schema: str | None = None,
+) -> list[ColumnChars]:
+    sql_generator = RefreshDataCharsSQL(connection, table_group, schema)
 
     LOG.info("Getting DDF for table group")
     try:
@@ -30,7 +35,7 @@ def run_data_chars_refresh(connection: Connection, table_group: TableGroup, run_
             # Apply the table-group filters in Python
             # since we bypass the SQL {TABLE_CRITERIA} clause.
             params = resolve_connection_params(connection.__dict__)
-            api_columns = sql_generator.flavor_service.get_schema_columns(params, table_group.table_group_schema) or []
+            api_columns = sql_generator.flavor_service.get_schema_columns(params, sql_generator.schema) or []
             data_chars = sql_generator.filter_schema_columns(api_columns)
         else:
             rows = fetch_dict_from_db(*sql_generator.get_schema_ddf(), use_target_db=True)
