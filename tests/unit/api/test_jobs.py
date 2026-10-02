@@ -23,6 +23,7 @@ from testgen.api.jobs import (
 from testgen.api.schemas import TestGenerationRequest, TestRunRequest
 from testgen.common.enums import JobKey, PublicJobKey, SuiteType
 from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.table_group import SCHEMA_NAME_MAX_LENGTH
 
 pytestmark = pytest.mark.unit
 
@@ -130,7 +131,8 @@ def test_submit_test_run_passes_a_match_schema_override(mock_je_cls):
 @pytest.mark.parametrize("body", [None, TestRunRequest(), TestRunRequest(match_schema_name=None)])
 @patch(f"{MODULE}.JobExecution")
 def test_submit_test_run_omits_the_schema_key_when_not_given(mock_je_cls, body):
-    """An absent override must not reach kwargs, so the handler falls back to the table group."""
+    """An absent match schema must not reach kwargs, or the handler would stop falling back to
+    each definition's stored one."""
     test_suite = _mock_test_suite()
     mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
 
@@ -193,7 +195,7 @@ def test_test_run_request_accepts_nested_metadata():
         "a.b",
         "1abc",
         "",
-        "a" * 129,
+        "a" * (SCHEMA_NAME_MAX_LENGTH + 1),
     ],
 )
 def test_test_run_request_rejects_anything_but_a_bare_identifier(schema_name):

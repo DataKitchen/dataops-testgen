@@ -797,7 +797,6 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
 
 def _handle_export(export_filters: dict, run_id: str, run_date: str, test_suite: TestSuiteMinimal) -> None:
     table_group = get_table_group_minimal(test_suite.table_groups_id)
-    run = get_test_run_minimal(run_id)
 
     export_type = export_filters.get("type", "all")
     with st.spinner("Loading data ..."):

@@ -318,7 +318,7 @@ def test_the_files_of_a_table_group_are_counted_in_one_query(tmp_path):
 # --- schema resolution ---
 
 
-def test_schema_defaults_to_the_table_group():
+def test_schema_comes_from_the_table_group():
     sql_generator = RefreshDataCharsSQL(
         Connection(sql_flavor="postgresql"), TableGroup(table_group_schema="test_schema")
     )
@@ -326,36 +326,20 @@ def test_schema_defaults_to_the_table_group():
     assert sql_generator.schema == "test_schema"
 
 
-def test_an_override_replaces_the_table_group_schema_everywhere_it_is_read():
+def test_every_read_of_the_scanned_schema_agrees():
     """The scanned schema reaches the DDF query, the row counts and the access probe.
 
-    A refresh that scans one schema while probing another would catalog rows the run
-    cannot read, so all three have to agree.
+    A refresh that scans one schema while probing another would catalog rows the run cannot
+    read, so all three have to agree.
     """
     connection = Connection(sql_flavor="postgresql", max_query_chars=10_000)
-    table_group = TableGroup(table_group_schema="test_schema")
-    sql_generator = RefreshDataCharsSQL(connection, table_group, schema="onboard_2026_09_10")
-
-    assert sql_generator.schema == "onboard_2026_09_10"
+    sql_generator = RefreshDataCharsSQL(connection, TableGroup(table_group_schema="onboard_2026_09_10"))
 
     ddf_query, ddf_params = sql_generator.get_schema_ddf()
     assert ddf_params["DATA_SCHEMA"] == "onboard_2026_09_10"
-    assert "test_schema" not in ddf_query
 
     (count_query, _), = sql_generator.get_row_counts(["orders"])
     assert '"onboard_2026_09_10"."orders"' in count_query
 
     access_query, _ = sql_generator.verify_access("orders")
     assert '"onboard_2026_09_10"."orders"' in access_query
-
-    # The table group itself must be left alone — it is a session-attached ORM instance,
-    # so assigning to it would flush an UPDATE and repoint it for every later run.
-    assert table_group.table_group_schema == "test_schema"
-
-
-def test_an_empty_override_falls_back_rather_than_targeting_nothing():
-    sql_generator = RefreshDataCharsSQL(
-        Connection(sql_flavor="postgresql"), TableGroup(table_group_schema="test_schema"), schema=""
-    )
-
-    assert sql_generator.schema == "test_schema"

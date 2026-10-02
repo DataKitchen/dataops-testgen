@@ -770,40 +770,28 @@ def test_freshness_exclusions_skip_other_test_types():
     assert instance._freshness_exclusion_params(td) == {"EXCLUDED_MINUTES": 0, "IS_EXCLUDED_DAY": 0}
 
 
-# --- run-scoped schema ---
+# --- schema on the execution path ---
 
 
-def _make_schema_execution_sql(schema: str | None = None) -> TestExecutionSQL:
+def _make_schema_execution_sql() -> TestExecutionSQL:
     """Build a TestExecutionSQL through __init__ so schema resolution is exercised."""
     table_group = MagicMock(id=uuid4(), table_group_schema="test_schema")
     test_suite = MagicMock(suite_type=SuiteType.REGULAR, predict_exclude_weekends=False, id=uuid4())
     test_run = MagicMock(id=uuid4(), test_suite_id=uuid4(), test_starttime=datetime(2026, 1, 1, tzinfo=UTC))
-    return TestExecutionSQL(
-        Connection(sql_flavor="postgresql"), table_group, test_suite, test_run, schema=schema
-    )
+    return TestExecutionSQL(Connection(sql_flavor="postgresql"), table_group, test_suite, test_run)
 
 
-def test_schema_defaults_to_the_table_group():
+def test_schema_comes_from_the_table_group():
     assert _make_schema_execution_sql().schema == "test_schema"
 
 
-def test_an_override_does_not_mutate_the_table_group():
-    """The table group is a session-attached ORM instance, so assigning to its schema would
-    flush an UPDATE and repoint it for every later run."""
-    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+def test_the_test_definition_drives_the_executed_sql():
+    """Every schema read on the execution path goes through ``TestExecutionDef.schema_name``.
 
-    assert sql_generator.schema == "onboard_2026_09_10"
-    assert sql_generator.table_group.table_group_schema == "test_schema"
-
-
-def test_retargeting_a_test_def_moves_the_executed_sql():
-    """Retargeting ``TestExecutionDef.schema_name`` is the single point the run relies on.
-
-    Every schema read on the execution path goes through this field, so a refactor that
-    sourced the schema from the table group instead would silently run against the wrong
-    one while reporting success. Assert the field still drives the emitted SQL.
+    A refactor sourcing the schema from the table group instead would run against the wrong one
+    whenever the two disagree, while reporting success.
     """
-    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+    sql_generator = _make_schema_execution_sql()
     td = _make_td(schema_name="onboard_2026_09_10", measure="COUNT(*)", test_condition="100")
 
     queries, groups = sql_generator.aggregate_cat_tests([td])
@@ -813,9 +801,9 @@ def test_retargeting_a_test_def_moves_the_executed_sql():
     assert groups == [[td]]
 
 
-def test_retargeting_a_test_def_moves_the_recorded_result_schema():
-    """Results carry the schema the run actually targeted, which the score rollup joins on."""
-    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+def test_the_test_definition_drives_the_recorded_result_schema():
+    """Results carry the schema the run read, which the score rollup joins on."""
+    sql_generator = _make_schema_execution_sql()
     td = _make_td(schema_name="onboard_2026_09_10", errors=["Deactivated", "Missing table: x"])
 
     (row,) = sql_generator.get_test_errors([td])
@@ -823,13 +811,13 @@ def test_retargeting_a_test_def_moves_the_recorded_result_schema():
     assert row[TestExecutionSQL.result_columns.index("schema_name")] == "onboard_2026_09_10"
 
 
-def test_retargeting_moves_the_referential_match_schema_too():
-    """A referential test compares two tables. Both sides move with the run, so a pair that
-    travels together stays compared to each other rather than against a stale copy."""
-    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+def test_the_match_schema_is_independent_of_the_test_s_own():
+    """A referential test compares against a table outside the table group, so the two schemas
+    are separate inputs -- a run retargets the match side alone."""
+    sql_generator = _make_schema_execution_sql()
     td = _make_td(
         schema_name="onboard_2026_09_10",
-        match_schema_name="onboard_2026_09_10",
+        match_schema_name="reference_2026_09_16",
         match_table_name="orders",
         match_column_names="customer_id",
     )
@@ -837,4 +825,4 @@ def test_retargeting_moves_the_referential_match_schema_too():
     params = sql_generator._get_params(td)
 
     assert params["SCHEMA_NAME"] == "onboard_2026_09_10"
-    assert params["MATCH_SCHEMA_NAME"] == "onboard_2026_09_10"
+    assert params["MATCH_SCHEMA_NAME"] == "reference_2026_09_16"

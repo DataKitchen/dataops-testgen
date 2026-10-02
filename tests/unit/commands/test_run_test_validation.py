@@ -297,8 +297,8 @@ def test_validation_deactivates_failing_definitions_by_default(monkeypatch):
 
 
 def test_validation_records_errors_without_deactivating_when_asked(monkeypatch):
-    """A run aimed at an overridden schema cannot speak to whether the stored definitions are
-    still valid, so the failure is reported and ``test_active`` is left alone."""
+    """A failure under a caller-supplied match schema says nothing about whether the stored
+    definition is still valid, so it is reported and ``test_active`` is left alone."""
     td, valid, written, executed = _validation_harness(monkeypatch, deactivate_invalid=False)
 
     assert valid == []

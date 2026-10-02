@@ -39,8 +39,8 @@ def test_inserts_the_table_groups_schema(path):
 
     assert not ROW_SOURCED.search(text), (
         f"{path.name} inserts a schema read off a row. Profiling rows keep the schema they ran "
-        "against, so this names where the data used to be once the table group moves. Use "
-        ":DATA_SCHEMA."
+        "against, so a table group reading another one generates tests naming a schema it does "
+        "not read. Use :DATA_SCHEMA."
     )
     if "profile_results" in text:
         # Seeding templates insert literals and have no row to read a schema off; only the ones

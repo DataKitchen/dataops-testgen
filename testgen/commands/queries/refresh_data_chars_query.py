@@ -43,11 +43,10 @@ class RefreshDataCharsSQL:
         "file_ct",
     )
 
-    def __init__(self, connection: Connection, table_group: TableGroup, schema: str | None = None):
+    def __init__(self, connection: Connection, table_group: TableGroup):
         self.connection = connection
         self.table_group = table_group
-        # The schema actually scanned. Defaults to the table group's, which a run may override.
-        self.schema = schema or table_group.table_group_schema
+        self.schema = table_group.table_group_schema
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
 

@@ -23,9 +23,8 @@ def run_data_chars_refresh(
     connection: Connection,
     table_group: TableGroup,
     run_date: datetime,
-    schema: str | None = None,
 ) -> list[ColumnChars]:
-    sql_generator = RefreshDataCharsSQL(connection, table_group, schema)
+    sql_generator = RefreshDataCharsSQL(connection, table_group)
 
     LOG.info("Getting DDF for table group")
     try:

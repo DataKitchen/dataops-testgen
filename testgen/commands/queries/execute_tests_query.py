@@ -310,12 +310,10 @@ class TestExecutionSQL:
         table_group: TableGroup,
         test_suite: TestSuite,
         test_run: TestRun,
-        schema: str | None = None,
     ):
         self.connection = connection
         self.table_group = table_group
-        # The schema the run targets. Defaults to the table group's, which a run may override.
-        self.schema = schema or table_group.table_group_schema
+        self.schema = table_group.table_group_schema
         self.test_suite = test_suite
         self.test_run = test_run
         self.run_date = test_run.test_starttime

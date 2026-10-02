@@ -76,8 +76,6 @@ def run_test_execution(
         if version_id
         else get_current_session().scalar(select(SuiteVersion.for_run(test_suite_id)))
     )
-    target_schema = table_group.table_group_schema
-
     LOG.info("Creating test run record")
     test_run = TestRun(
         id=job_context.get().job_id,
@@ -103,12 +101,10 @@ def run_test_execution(
 
     try:
         LOG.info(f"Test run: {test_run.id}, Test suite: {test_suite.test_suite}, Table group: {table_group.table_groups_name}, Connection: {connection.connection_name}")
-        data_chars = run_data_chars_refresh(
-            connection, table_group, test_run.test_starttime, schema=target_schema
-        )
+        data_chars = run_data_chars_refresh(connection, table_group, test_run.test_starttime)
         test_run.set_progress("data_chars", "Completed")
 
-        sql_generator = TestExecutionSQL(connection, table_group, test_suite, test_run, schema=target_schema)
+        sql_generator = TestExecutionSQL(connection, table_group, test_suite, test_run)
 
         if test_suite.suite_type == SuiteType.MONITOR:
             _sync_monitor_definitions(sql_generator)

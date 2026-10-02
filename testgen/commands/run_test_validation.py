@@ -167,8 +167,8 @@ def run_test_validation(
     whatever is still broken).
 
     ``deactivate_invalid=False`` keeps the Error results but leaves ``test_active``
-    alone, for a run whose target schema is not the one the definitions are stored
-    against and so cannot speak to whether they are still valid.
+    alone, for a run comparing against a caller-supplied match schema: a failure there
+    says nothing about whether the stored definition is still valid.
     """
     quote = sql_generator.flavor_service.quote_character
 

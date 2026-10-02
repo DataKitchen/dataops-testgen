@@ -1,6 +1,6 @@
 """Tests for ``run_refresh_data_chars``.
 
-Covers ``write_data_chars``'s staging key and its empty-input guard, and that a run-scoped
+Covers ``write_data_chars``'s staging key and its empty-input guard, and that the scanned
 schema reaches the query builder.
 """
 
@@ -199,52 +199,20 @@ def test_a_catalog_refresh_records_no_file_counts(mock_sql, _fetch, mock_threade
     mock_threaded.assert_called_once()
 
 
-# --- run-scoped schema ---
-
-
-@pytest.mark.parametrize(
-    "schema,expected",
-    [("onboard_2026_09_10", "onboard_2026_09_10"), (None, None)],
-)
-@patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_run_data_chars_refresh_forwards_the_schema(mock_sql_cls, schema, expected):
-    """The scanned schema is resolved in one place, so it has to reach the builder verbatim."""
-    mock_sql_cls.return_value.flavor_service.metadata_via_api = False
-    connection, table_group = MagicMock(), MagicMock()
-
-    with patch(f"{MODULE}.fetch_dict_from_db", return_value=[]):
-        run_data_chars_refresh(connection, table_group, datetime.now(UTC), schema=schema)
-
-    mock_sql_cls.assert_called_once_with(connection, table_group, expected)
+# --- the scanned schema ---
 
 
 @patch(f"{MODULE}.resolve_connection_params", return_value={})
 @patch(f"{MODULE}.RefreshDataCharsSQL")
-def test_metadata_via_api_flavors_scan_the_resolved_schema(mock_sql_cls, _mock_params):
+def test_metadata_via_api_flavors_scan_the_builder_s_schema(mock_sql_cls, _mock_params):
     """Flavors with no information_schema take the schema as an argument rather than through a
-    template, so they read it off the builder instead of the table group."""
+    template, so they read it off the builder."""
     sql_generator = mock_sql_cls.return_value
     sql_generator.flavor_service.metadata_via_api = True
     sql_generator.schema = "onboard_2026_09_10"
     sql_generator.flavor_service.get_schema_columns.return_value = []
     sql_generator.filter_schema_columns.return_value = []
 
-    run_data_chars_refresh(MagicMock(), MagicMock(table_group_schema="test_schema"), datetime.now(UTC),
-                           schema="onboard_2026_09_10")
+    run_data_chars_refresh(MagicMock(), MagicMock(table_group_schema="onboard_2026_09_10"), datetime.now(UTC))
 
     assert sql_generator.flavor_service.get_schema_columns.call_args.args[1] == "onboard_2026_09_10"
-
-
-def test_data_chars_update_never_reconciles_on_schema():
-    """A catalogued table is identified by its table group and name. Matching on schema as well
-    makes a refresh of another schema look like a wholesale drop and re-add."""
-    sql = read_template_sql_file("data_chars_update.sql", "data_chars")
-
-    joins = [line for line in sql.splitlines() if "schema_name" in line and " = " in line]
-    reconciling = [
-        line for line in joins
-        if "n.schema_name" in line and "d.schema_name" in line
-    ]
-    assert not reconciling, f"schema is back in a join predicate: {reconciling}"
-    # Both passes still record which schema the row was last seen in.
-    assert sql.count("schema_name = n.schema_name") == 2
