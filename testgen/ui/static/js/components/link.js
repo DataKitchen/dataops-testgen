@@ -20,7 +20,7 @@
  * @property {((event: any) => void)?} onClick
  */
 import { getValue, loadStylesheet } from '../utils.js';
-import { Tooltip } from './tooltip.js';
+import { withTooltip } from './tooltip.js';
 import van from '../van.min.js';
 
 const { a, div, i, span } = van.tags;
@@ -33,10 +33,9 @@ const Link = (/** @type Properties */ props) => {
     const params = getValue(props.params) ?? {};
     const open_new = !!getValue(props.open_new);
     const onClick = getValue(props.onClick);
-    const showTooltip = van.state(false);
     const isExternal = /http(s)?:\/\//.test(href);
 
-    return a(
+    const element = a(
         {
             'data-testid': 'link',
             class: `tg-link
@@ -51,14 +50,7 @@ const Link = (/** @type Properties */ props) => {
                 event.stopPropagation();
                 emit('LinkClicked', { href, params });
             })),
-            onmouseenter: props.tooltip ? (() => showTooltip.val = true) : undefined,
-            onmouseleave: props.tooltip ? (() => showTooltip.val = false) : undefined,
         },
-        () => getValue(props.tooltip) ? Tooltip({
-            text: props.tooltip,
-            show: showTooltip,
-            position: props.tooltipPosition,
-        }) : '',
         div(
             {class: 'tg-link--wrapper'},
             props.left_icon ? LinkIcon(props.left_icon, props.left_icon_size, 'left') : undefined,
@@ -66,6 +58,10 @@ const Link = (/** @type Properties */ props) => {
             props.right_icon ? LinkIcon(props.right_icon, props.right_icon_size, 'right') : undefined,
         ),
     );
+
+    return props.tooltip
+        ? withTooltip(element, { text: props.tooltip, position: props.tooltipPosition })
+        : element;
 };
 
 const LinkIcon = (

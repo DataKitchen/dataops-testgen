@@ -35,7 +35,12 @@ from testgen.api.enums import (
     TableState,
 )
 from testgen.common.enums import JobSource, JobStatus, PublicJobKey
-from testgen.common.models.table_group import table_group_defaults
+from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, validate_caller_metadata
+from testgen.common.models.table_group import (
+    SCHEMA_NAME_MAX_LENGTH,
+    SCHEMA_NAME_PATTERN,
+    table_group_defaults,
+)
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
 SchemaName = Annotated[
@@ -59,6 +64,71 @@ class JobSubmittedResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TableGroupSchemaMoveRequest(BaseModel):
+    """Body for moving a table group to another schema."""
+
+    schema_name: str = Field(
+        pattern=SCHEMA_NAME_PATTERN,
+        max_length=SCHEMA_NAME_MAX_LENGTH,
+        description="Schema on the target database the table group's data now lives in.",
+    )
+
+
+class TableGroupSchemaMoveResponse(BaseModel):
+    """What the move did."""
+
+    table_group_id: UUID
+    previous_schema_name: str
+    schema_name: str
+    definitions_repointed: int = Field(
+        description="Test definitions whose stored schema was moved. A contract's frozen version keeps its own.",
+    )
+    missing_tables: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Catalogued tables the new schema does not carry. The move still applies; their tests "
+            "report a missing table until the schema carries them or the tests are removed."
+        ),
+    )
+
+
+class TestRunRequest(BaseModel):
+    """Optional body for a test run submission."""
+
+    match_schema_name: str | None = Field(
+        default=None,
+        pattern=SCHEMA_NAME_PATTERN,
+        max_length=SCHEMA_NAME_MAX_LENGTH,
+        description=(
+            "Schema holding the tables that referential tests compare against, for this run only. "
+            "Applies to tests configured with a second table; tests without one are unaffected, "
+            "and the stored test definitions are left unchanged. To change where the table group's "
+            "own data is read from, update the table group's schema instead."
+        ),
+    )
+    external_url: str | None = Field(
+        default=None,
+        max_length=EXTERNAL_URL_MAX_LENGTH,
+        description=(
+            "Link back to whatever triggered this run, shown on the results page beside the score."
+        ),
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Free-form detail about what triggered this run, stored with it and shown on the "
+            "results page. Its shape is yours; TestGen lists it back as given."
+        ),
+    )
+
+    @field_validator("metadata")
+    @classmethod
+    def _check_metadata(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if error := validate_caller_metadata(value):
+            raise ValueError(error)
+        return value
 
 
 class JobResponse(BaseModel):
@@ -116,6 +186,8 @@ class TestRunResponse(BaseModel):
     table_group_id: UUID | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
+    external_url: str | None = None
+    metadata: dict[str, Any] | None = None
     result: TestRunResult | None = None
 
 

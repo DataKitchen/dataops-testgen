@@ -542,6 +542,9 @@ class TestResultsPage(Page):
                     "run_date": run_date,
                     "project_code": run.project_code,
                     "is_latest_run": run.is_latest_run,
+                    "overrides": {"Match schema": run.match_schema_override} if run.match_schema_override else None,
+                    "external_url": run.external_url,
+                    "metadata": make_json_safe(run.caller_metadata) if run.caller_metadata else None,
                 },
                 "profiling_column": make_json_safe(profiling_column) if profiling_column else None,
                 "source_data": make_json_safe(source_data) if source_data else None,
@@ -794,6 +797,7 @@ def _build_test_definition_data(test_definition_id: str | None, test_suite: Test
 
 def _handle_export(export_filters: dict, run_id: str, run_date: str, test_suite: TestSuiteMinimal) -> None:
     table_group = get_table_group_minimal(test_suite.table_groups_id)
+    run = get_test_run_minimal(run_id)
 
     export_type = export_filters.get("type", "all")
     with st.spinner("Loading data ..."):

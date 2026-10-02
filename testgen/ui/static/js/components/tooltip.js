@@ -34,24 +34,43 @@ const Tooltip = (/** @type Properties */ props) => {
     );
 };
 
-const computeTooltipStyle = (rect, position) => {
+const VIEWPORT_MARGIN = 8;
+
+/**
+ * How far to slide a tooltip horizontally so it stays inside the viewport, given where its left
+ * edge would otherwise land. Never slides so far that the opposite edge goes out instead.
+ */
+const viewportShift = (leftEdge, width) => {
+    const overflowRight = leftEdge + width - (window.innerWidth - VIEWPORT_MARGIN);
+    if (overflowRight > 0) {
+        return -Math.min(overflowRight, leftEdge - VIEWPORT_MARGIN);
+    }
+    const overflowLeft = VIEWPORT_MARGIN - leftEdge;
+    return overflowLeft > 0 ? overflowLeft : 0;
+};
+
+const computeTooltipStyle = (rect, position, width = 0) => {
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
     const gap = 5;
 
+    // `edge` is where the tooltip's left edge lands once `transform` has been applied, which is
+    // what decides whether it clears the viewport.
     const variants = {
-        'top':          { left: cx,         top: rect.top,    transform: `translateX(-50%) translateY(calc(-100% - ${gap}px))` },
-        'top-left':     { left: cx + 20,    top: rect.top,    transform: `translateX(-100%) translateY(calc(-100% - ${gap}px))` },
-        'top-right':    { left: cx - 20,    top: rect.top,    transform: `translateY(calc(-100% - ${gap}px))` },
-        'bottom':       { left: cx,         top: rect.bottom, transform: `translateX(-50%) translateY(${gap}px)` },
-        'bottom-left':  { left: cx + 20,    top: rect.bottom, transform: `translateX(-100%) translateY(${gap}px)` },
-        'bottom-right': { left: cx - 20,    top: rect.bottom, transform: `translateY(${gap}px)` },
-        'right':        { left: rect.right, top: cy,          transform: `translateX(${gap}px) translateY(-50%)` },
-        'left':         { left: rect.left,  top: cy,          transform: `translateX(calc(-100% - ${gap}px)) translateY(-50%)` },
+        'top':          { left: cx,         top: rect.top,    transform: `translateX(-50%) translateY(calc(-100% - ${gap}px))`, edge: cx - width / 2 },
+        'top-left':     { left: cx + 20,    top: rect.top,    transform: `translateX(-100%) translateY(calc(-100% - ${gap}px))`, edge: cx + 20 - width },
+        'top-right':    { left: cx - 20,    top: rect.top,    transform: `translateY(calc(-100% - ${gap}px))`, edge: cx - 20 },
+        'bottom':       { left: cx,         top: rect.bottom, transform: `translateX(-50%) translateY(${gap}px)`, edge: cx - width / 2 },
+        'bottom-left':  { left: cx + 20,    top: rect.bottom, transform: `translateX(-100%) translateY(${gap}px)`, edge: cx + 20 - width },
+        'bottom-right': { left: cx - 20,    top: rect.bottom, transform: `translateY(${gap}px)`, edge: cx - 20 },
+        'right':        { left: rect.right, top: cy,          transform: `translateX(${gap}px) translateY(-50%)`, edge: rect.right + gap },
+        'left':         { left: rect.left,  top: cy,          transform: `translateX(calc(-100% - ${gap}px)) translateY(-50%)`, edge: rect.left - gap - width },
     };
 
-    const { left, top, transform } = variants[position] || variants['top'];
-    return `position: fixed; left: ${left}px; top: ${top}px; bottom: auto; right: auto; transform: ${transform};`;
+    const { left, top, transform, edge } = variants[position] || variants['top'];
+    const shift = width ? viewportShift(edge, width) : 0;
+    const shifted = shift ? `${transform} translateX(${shift}px)` : transform;
+    return `position: fixed; left: ${left}px; top: ${top}px; bottom: auto; right: auto; transform: ${shifted};`;
 };
 
 const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */ tooltipProps) => {
@@ -73,7 +92,12 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
     van.add(document.body, tooltipEl);
 
     requestAnimationFrame(() => {
-        if (!component.isConnected) return;
+        // The portal is on the body already, and the observer that cleans it up is set up below.
+        // A component gone before this frame would leave it with neither.
+        if (!component.isConnected) {
+            tooltipEl.remove();
+            return;
+        }
 
         if (hasStreamlitDialogAncestor(component)) {
             zIndex.val = STREAMLIT_DIALOG_ZINDEX + 1;
@@ -88,9 +112,24 @@ const withTooltip = (/** @type HTMLElement */ component, /** @type Properties */
         observer.observe(document.body, { childList: true, subtree: true });
     });
 
+    // The tooltip is display:none until shown, so it has no width to measure. Uncover it just long
+    // enough to read one, within the same frame, so nothing is painted in between.
+    const measureWidth = () => {
+        const wasHidden = tooltipEl.classList.contains('hidden');
+        if (wasHidden) {
+            tooltipEl.classList.remove('hidden');
+        }
+        const width = tooltipEl.offsetWidth;
+        if (wasHidden) {
+            tooltipEl.classList.add('hidden');
+        }
+        return width;
+    };
+
     component.addEventListener('mouseenter', () => {
         if (getValue(tooltipProps.text)) {
-            positionStyle.val = computeTooltipStyle(component.getBoundingClientRect(), getValue(tooltipProps.position) || defaultPosition);
+            const position = getValue(tooltipProps.position) || defaultPosition;
+            positionStyle.val = computeTooltipStyle(component.getBoundingClientRect(), position, measureWidth());
             showTooltip.val = true;
         }
     });

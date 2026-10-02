@@ -1,5 +1,25 @@
 SET SEARCH_PATH TO {SCHEMA_NAME};
 
+-- Schema changes for moving a table group to another schema. They are one migration because
+-- they are one change: the catalog identity is what makes a move possible, and the two run
+-- columns are what let a run still report the schema it actually read afterwards.
+
+-- ---------------------------------------------------------------------------------------
+-- What triggered a run, kept beside the run itself
+-- ---------------------------------------------------------------------------------------
+
+-- Detail supplied by whoever triggered the run, kept beside the run itself. The link is its own
+-- column because the results page renders it; the rest is the caller's shape, rendered as given.
+ALTER TABLE job_executions
+    ADD COLUMN IF NOT EXISTS external_url VARCHAR;
+
+ALTER TABLE job_executions
+    ADD COLUMN IF NOT EXISTS caller_metadata JSONB;
+
+-- ---------------------------------------------------------------------------------------
+-- The catalog's identity, and the duplicates a schema-keyed one could leave behind
+-- ---------------------------------------------------------------------------------------
+
 -- A catalogued table or column is identified by (table_groups_id, table_name[, column_name]).
 --
 -- A catalog written while schema_name formed part of that identity can hold more than one row per
@@ -91,8 +111,34 @@ DELETE FROM data_column_chars c
 DROP INDEX IF EXISTS idx_dtc_tg_schema_table;
 DROP INDEX IF EXISTS idx_dcc_tg_schema_table_column;
 
+-- These index each table's own primary-key column, which its primary key already covers. They
+-- only add write cost to the refresh.
+DROP INDEX IF EXISTS idx_dtc_id;
+DROP INDEX IF EXISTS idx_dcc_id;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uix_dtc_tg_table
   ON data_table_chars (table_groups_id, table_name);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uix_dcc_tg_table_column
   ON data_column_chars (table_groups_id, table_name, column_name);
+
+-- ---------------------------------------------------------------------------------------
+-- The schema a profiling run read
+-- ---------------------------------------------------------------------------------------
+
+-- The schema a profiling run read, stamped when it starts. The run's own rows carry it, but the
+-- run list and its summary read the table group, which is where it reads now rather than where a
+-- run from before it moved read. Backfilled from the rows each run actually wrote; a run that
+-- wrote none keeps NULL, and the surfaces fall back to the table group for it.
+ALTER TABLE profiling_runs
+    ADD COLUMN IF NOT EXISTS schema_name VARCHAR(50);
+
+UPDATE profiling_runs r
+   SET schema_name = p.schema_name
+  FROM (
+     SELECT DISTINCT ON (profile_run_id) profile_run_id, schema_name
+       FROM profile_results
+      ORDER BY profile_run_id, schema_name
+  ) p
+ WHERE r.schema_name IS NULL
+   AND p.profile_run_id = r.id;

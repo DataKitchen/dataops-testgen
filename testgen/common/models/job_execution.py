@@ -1,3 +1,4 @@
+import json
 import logging
 import signal
 from collections.abc import Iterable
@@ -83,6 +84,30 @@ class OnlyWhenTransitioningTo:
     value: Any
 
 
+# Caller metadata is stored verbatim and rendered back to whoever opens the run, so it is bounded
+# rather than validated: the shape belongs to the caller, the size belongs to the database.
+CALLER_METADATA_MAX_KEYS = 50
+CALLER_METADATA_MAX_BYTES = 10_240
+EXTERNAL_URL_MAX_LENGTH = 2_048
+
+
+def validate_caller_metadata(value: object) -> str | None:
+    """Return an error message if ``value`` is not a valid ``caller_metadata`` payload, else ``None``."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        return "must be a JSON object of key-value pairs"
+    if len(value) > CALLER_METADATA_MAX_KEYS:
+        return f"must have at most {CALLER_METADATA_MAX_KEYS} keys"
+    try:
+        serialized = json.dumps(value)
+    except (TypeError, ValueError):
+        return "must be JSON-serializable"
+    if len(serialized) > CALLER_METADATA_MAX_BYTES:
+        return f"must be at most {CALLER_METADATA_MAX_BYTES} bytes when serialized as JSON"
+    return None
+
+
 class JobExecution(Base):
     __tablename__ = "job_executions"
 
@@ -119,6 +144,12 @@ class JobExecution(Base):
     # revisited, so a queued run keeps it even if its connection's type changes before the run
     # starts.
     in_process: bool = Column(Boolean, nullable=False, default=False, server_default=false())
+    # A link back to whatever triggered the run, rendered on the results page.
+    external_url: str | None = Column(String, nullable=True)
+    # Free-form detail from whoever triggered the run, stored verbatim beside it. The shape is the
+    # caller's and nothing here reads it.
+    # Named for its origin rather than `metadata`, which Declarative reserves.
+    caller_metadata: dict[str, Any] | None = Column(postgresql.JSONB(none_as_null=True), nullable=True)
 
     @classmethod
     def submit(
@@ -128,6 +159,8 @@ class JobExecution(Base):
         source: JobSource,
         project_code: str,
         job_schedule_id: UUID | None = None,
+        external_url: str | None = None,
+        caller_metadata: dict[str, Any] | None = None,
     ) -> Self:
         """Create a pending job execution row. Caller controls the commit."""
         session = get_current_session()
@@ -138,6 +171,8 @@ class JobExecution(Base):
             project_code=project_code,
             job_schedule_id=job_schedule_id,
             in_process=cls._reads_in_process_target(job_key, kwargs),
+            external_url=external_url,
+            caller_metadata=caller_metadata,
         )
         session.add(job_exec)
         session.flush([job_exec])

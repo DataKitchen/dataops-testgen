@@ -276,6 +276,104 @@ const EditTestDialog = (props) => {
     }, emit);
 };
 
+/**
+ * Renders a metadata value for display. Strings show as-is; anything else is JSON so a nested
+ * object stays readable rather than collapsing to [object Object].
+ */
+const formatMetadataValue = (value) => {
+    if (value === null || value === undefined) {
+        return '';
+    }
+    return typeof value === 'string' ? value : JSON.stringify(value);
+};
+
+/**
+ * The run's link and metadata, beside the score. Each half renders only when the caller sent it, and
+ * the link becomes an anchor only when it is http(s) -- the guard every caller-supplied URL goes
+ * through.
+ */
+const RunTriggerInfo = (externalUrl, metadata, overrides, onOpenDetails) => {
+    const hasDetails = !!(metadata && Object.keys(metadata).length)
+        || !!(overrides && Object.keys(overrides).length);
+    if (!externalUrl && !hasDetails) {
+        return '';
+    }
+
+    // A two-column grid rather than a row per item, so the two controls share a column and line up
+    // under each other however wide their labels are.
+    const children = [];
+    if (externalUrl) {
+        children.push(small({ class: 'text-caption' }, 'Link:'));
+        children.push(
+            isHttpUrl(externalUrl)
+                ? Link({
+                    href: externalUrl.trim(),
+                    label: '',
+                    open_new: true,
+                    left_icon: 'open_in_new',
+                    left_icon_size: 18,
+                    tooltip: externalUrl,
+                    tooltipPosition: 'bottom-left',
+                    class: 'tg-tr--trigger-control',
+                })
+                : span({ class: 'text-secondary tg-tr--trigger-url' }, externalUrl),
+        );
+    }
+    if (hasDetails) {
+        children.push(small({ class: 'text-caption' }, 'Execution overrides:'));
+        children.push(Button({
+            type: 'icon',
+            icon: 'info',
+            iconSize: 18,
+            tooltip: 'View execution overrides',
+            tooltipPosition: 'bottom-left',
+            onclick: onOpenDetails,
+        }));
+    }
+
+    return div({ 'data-testid': 'run-trigger-info', class: 'tg-tr--trigger-info' }, ...children);
+};
+
+const DetailEntries = (entries) => entries.map(([key, value]) => div(
+    { class: 'flex-column' },
+    small({ class: 'text-caption' }, key),
+    typeof value === 'string' && isHttpUrl(value)
+        ? Link({ href: value, label: value, open_new: true })
+        : span({ class: 'tg-tr--metadata-value' }, formatMetadataValue(value)),
+));
+
+/**
+ * What the run carried besides its results: what it was pointed away from its defaults at, and the
+ * keys the caller sent, in the order they sent them. Headings appear only when both are present.
+ */
+const RunMetadataList = (overrides, metadata) => {
+    const overrideEntries = Object.entries(overrides ?? {});
+    const metadataEntries = Object.entries(metadata ?? {});
+    if (!overrideEntries.length && !metadataEntries.length) {
+        return span({ class: 'text-secondary' }, 'Nothing was sent with this run.');
+    }
+    const bothShown = !!overrideEntries.length && !!metadataEntries.length;
+
+    return div(
+        { 'data-testid': 'run-metadata-list', class: 'flex-column fx-gap-3' },
+        overrideEntries.length
+            ? div(
+                { class: 'flex-column fx-gap-2' },
+                bothShown ? span({ class: 'text-bold' }, 'Overrides') : null,
+                ...DetailEntries(overrideEntries),
+            )
+            : null,
+        metadataEntries.length
+            ? div(
+                { class: 'flex-column fx-gap-2' },
+                bothShown ? span({ class: 'text-bold' }, 'Metadata') : null,
+                ...DetailEntries(metadataEntries),
+            )
+            : null,
+    );
+};
+
+
 const TestResults = (/** @type Properties */ props) => {
     const { emit } = props;
     loadStylesheet('test-results', stylesheet);
@@ -305,6 +403,7 @@ const TestResults = (/** @type Properties */ props) => {
 
     // Notes dialog: persistent local state + one-time sync from Python prop
     const notesDialogOpen = van.state(false);
+    const metadataDialogOpen = van.state(false);
     van.derive(() => { if (getValue(props.notes_dialog)) notesDialogOpen.val = true; });
 
     // Sort state initialized from Python
@@ -770,6 +869,17 @@ const TestResults = (/** @type Properties */ props) => {
             },
         ),
 
+        // Run metadata dialog
+        Dialog(
+            {
+                title: 'Execution overrides',
+                open: metadataDialogOpen,
+                onClose: () => { metadataDialogOpen.val = false; },
+                width: '36rem',
+            },
+            () => RunMetadataList(getValue(props.run_info)?.overrides, getValue(props.run_info)?.metadata),
+        ),
+
         // Header row: summary bar + score
         div(
             { class: 'flex-row fx-gap-2 fx-align-flex-end mb-2 fx-flex-wrap' },
@@ -791,6 +901,12 @@ const TestResults = (/** @type Properties */ props) => {
                     style: 'color: var(--secondary-text-color)',
                     onclick: () => emit('ScoreRefreshClicked', {}),
                 }),
+            ),
+            () => RunTriggerInfo(
+                getValue(props.run_info)?.external_url,
+                getValue(props.run_info)?.metadata,
+                getValue(props.run_info)?.overrides,
+                () => { metadataDialogOpen.val = true; },
             ),
         ),
 
@@ -952,6 +1068,43 @@ stylesheet.replace(`
     font-size: 28px;
     font-weight: 500;
     line-height: 1.2;
+}
+
+/* Sits beside the score in the header row, so it has to stay within the score's height rather
+   than growing the row and pushing the summary bar down. */
+.tg-tr--trigger-info {
+    display: grid;
+    grid-template-columns: auto auto;
+    align-items: center;
+    column-gap: 4px;
+    row-gap: 0;
+}
+
+.tg-tr--trigger-info .tg-tr--trigger-control,
+.tg-tr--trigger-info button.tg-button.tg-icon-button {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Labels flush to their controls, so each pair reads with the same gap. */
+.tg-tr--trigger-info > small {
+    justify-self: end;
+}
+
+/* Only a URL that is not linkable renders as text, and it has no line breaks to wrap on. */
+.tg-tr--trigger-url {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tg-tr--metadata-value {
+    overflow-wrap: anywhere;
 }
 .tg-tr--detail {
     border-top: 1px dashed var(--border-color, #dddfe2);

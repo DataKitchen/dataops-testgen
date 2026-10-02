@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
 
 from testgen.api.deps import db_session, get_authorized_user
@@ -19,7 +20,7 @@ from testgen.api.jobs import (
     submit_test_generation,
     submit_test_run,
 )
-from testgen.api.schemas import TestGenerationRequest
+from testgen.api.schemas import TestGenerationRequest, TestRunRequest
 from testgen.common.enums import JobKey, PublicJobKey, SuiteType
 from testgen.common.models.job_execution import JobExecution
 
@@ -103,8 +104,106 @@ def test_submit_test_run_success(mock_je_cls):
         kwargs={"test_suite_id": str(test_suite.id)},
         source="api",
         project_code=test_suite.project_code,
+        external_url=None,
+        caller_metadata=None,
     )
     assert result.id == job.id
+
+
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_run_passes_a_match_schema_override(mock_je_cls):
+    test_suite = _mock_test_suite()
+    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+
+    submit_test_run(test_suite, TestRunRequest(match_schema_name="reference_2026_09_10"))
+
+    mock_je_cls.submit.assert_called_once_with(
+        job_key="run-tests",
+        kwargs={"test_suite_id": str(test_suite.id), "match_schema_name": "reference_2026_09_10"},
+        source="api",
+        project_code=test_suite.project_code,
+        external_url=None,
+        caller_metadata=None,
+    )
+
+
+@pytest.mark.parametrize("body", [None, TestRunRequest(), TestRunRequest(match_schema_name=None)])
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_run_omits_the_schema_key_when_not_given(mock_je_cls, body):
+    """An absent override must not reach kwargs, so the handler falls back to the table group."""
+    test_suite = _mock_test_suite()
+    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+
+    submit_test_run(test_suite, body)
+
+    assert mock_je_cls.submit.call_args.kwargs["kwargs"] == {"test_suite_id": str(test_suite.id)}
+
+
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_run_passes_caller_metadata(mock_je_cls):
+    test_suite = _mock_test_suite()
+    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+    metadata = {"url": "https://ci.example.com/runs/1", "system": "DataOps Automation"}
+
+    submit_test_run(test_suite, TestRunRequest(metadata=metadata))
+
+    assert mock_je_cls.submit.call_args.kwargs["caller_metadata"] == metadata
+
+
+@pytest.mark.parametrize("body", [None, TestRunRequest()])
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_run_sends_no_metadata_when_none_given(mock_je_cls, body):
+    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+
+    submit_test_run(_mock_test_suite(), body)
+
+    assert mock_je_cls.submit.call_args.kwargs["caller_metadata"] is None
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        "not-an-object",
+        [1, 2, 3],
+        {str(i): i for i in range(51)},
+        {"big": "x" * 10_300},
+    ],
+)
+def test_test_run_request_rejects_unusable_metadata(metadata):
+    """Stored verbatim and rendered back, so it is bounded at the edge rather than on read."""
+    with pytest.raises(ValidationError):
+        TestRunRequest(metadata=metadata)
+
+
+def test_test_run_request_accepts_nested_metadata():
+    """The shape belongs to the caller — nesting is theirs to choose."""
+    metadata = {"url": "https://x/1", "ctx": {"kitchen": "prod", "attempt": 2}}
+
+    assert TestRunRequest(metadata=metadata).metadata == metadata
+
+
+@pytest.mark.parametrize(
+    "schema_name",
+    [
+        'x" OR 1=1--',   # closes the double quote the templates wrap it in
+        "x` OR 1=1--",   # and the backtick, for the flavors that use it
+        "a'; DROP TABLE x; --",
+        "a;b",
+        "a b",
+        "a.b",
+        "1abc",
+        "",
+        "a" * 129,
+    ],
+)
+def test_test_run_request_rejects_anything_but_a_bare_identifier(schema_name):
+    with pytest.raises(ValidationError):
+        TestRunRequest(match_schema_name=schema_name)
+
+
+@pytest.mark.parametrize("schema_name", ["onboard_2026_09_10", "public", "_staging", "A$1"])
+def test_test_run_request_accepts_bare_identifiers(schema_name):
+    assert TestRunRequest(match_schema_name=schema_name).match_schema_name == schema_name
 
 
 # --- submit_test_generation ---
@@ -309,3 +408,19 @@ def test_list_jobs_rejects_internal_job_key(mock_je_cls, _mock_perm):
     body = resp.json()
     assert body["detail"][0]["loc"] == ["query", "job_key"]
     assert body["detail"][0]["type"] == "enum"
+
+
+@patch(f"{MODULE}.JobExecution")
+def test_submit_test_run_passes_the_link_and_metadata_separately(mock_je_cls):
+    """The link is its own field, so it reaches its own column rather than riding inside metadata."""
+    test_suite = _mock_test_suite()
+    mock_je_cls.submit.return_value = _mock_job(job_key="run-tests")
+
+    submit_test_run(
+        test_suite,
+        TestRunRequest(external_url="https://ci.example.com/runs/8891", metadata={"order_run_id": "8891"}),
+    )
+
+    call = mock_je_cls.submit.call_args.kwargs
+    assert call["external_url"] == "https://ci.example.com/runs/8891"
+    assert call["caller_metadata"] == {"order_run_id": "8891"}

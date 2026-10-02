@@ -150,7 +150,6 @@ def get_test_results(
         AND  r.test_type = c.test_type)
     LEFT JOIN data_column_chars dcc
         ON (tg.id = dcc.table_groups_id
-        AND  r.schema_name = dcc.schema_name
         AND  r.table_name = dcc.table_name
         AND  r.column_names = dcc.column_name)
     LEFT JOIN data_table_chars dtc
@@ -240,7 +239,6 @@ def get_test_results_by_ids(test_result_ids: list[str]) -> pd.DataFrame:
         AND  r.test_type = c.test_type)
     LEFT JOIN data_column_chars dcc
         ON (tg.id = dcc.table_groups_id
-        AND  r.schema_name = dcc.schema_name
         AND  r.table_name = dcc.table_name
         AND  r.column_names = dcc.column_name)
     LEFT JOIN data_table_chars dtc
