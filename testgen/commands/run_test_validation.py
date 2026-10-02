@@ -156,6 +156,7 @@ def run_test_validation(
     sql_generator: TestExecutionSQL,
     test_defs: list[TestExecutionDef],
     defer_persistence: bool = False,
+    deactivate_invalid: bool = True,
 ) -> list[TestExecutionDef]:
     """Validate test definitions against the current target schema.
 
@@ -164,6 +165,10 @@ def run_test_validation(
     ``defer_persistence=True`` to skip those side effects (e.g. when the caller
     will attempt a regeneration first and let a later validation pass persist
     whatever is still broken).
+
+    ``deactivate_invalid=False`` keeps the Error results but leaves ``test_active``
+    alone, for a run whose target schema is not the one the definitions are stored
+    against and so cannot speak to whether they are still valid.
     """
     quote = sql_generator.flavor_service.quote_character
 
@@ -185,14 +190,21 @@ def run_test_validation(
                 test_defs_by_id[test_id].errors.extend(error_list[1:] if test_defs_by_id[test_id].errors else error_list)
 
     if not defer_persistence:
+        if not deactivate_invalid:
+            # The collectors above prefix every failure with the outcome they assume follows.
+            for td in test_defs_by_id.values():
+                if td.errors and td.errors[0] == "Deactivated":
+                    td.errors[0] = "Not run"
+
         error_results = sql_generator.get_test_errors(test_defs_by_id.values())
         if error_results:
             LOG.warning(f"Tests in test suite failed validation: {len(error_results)}")
             LOG.info("Writing test validation errors to test results")
             write_to_app_db(error_results, sql_generator.result_columns, sql_generator.test_results_table)
 
-            LOG.info("Disabling tests in test suite that failed validation")
-            execute_db_queries([sql_generator.disable_invalid_test_definitions()])
+            if deactivate_invalid:
+                LOG.info("Disabling tests in test suite that failed validation")
+                execute_db_queries([sql_generator.disable_invalid_test_definitions()])
         else:
             LOG.info("No tests in test suite failed validation")
 

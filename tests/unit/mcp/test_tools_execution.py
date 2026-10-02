@@ -77,6 +77,71 @@ def test_run_tests_invalid_uuid(db_session_mock):
 
 @patch("testgen.mcp.tools.execution.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_passes_a_match_schema_override(mock_suite_cls, mock_job_exec, db_session_mock):
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+    mock_job_exec.submit.return_value = MagicMock(id=uuid4())
+
+    from testgen.mcp.tools.execution import run_tests
+
+    run_tests(str(suite_id), match_schema_name="reference_2026_09_10")
+
+    assert mock_job_exec.submit.call_args.kwargs["kwargs"] == {
+        "test_suite_id": str(suite_id),
+        "match_schema_name": "reference_2026_09_10",
+    }
+
+
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_passes_caller_metadata(mock_suite_cls, mock_job_exec, db_session_mock):
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+    mock_job_exec.submit.return_value = MagicMock(id=uuid4())
+
+    from testgen.mcp.tools.execution import run_tests
+
+    run_tests(str(suite_id), metadata={"url": "https://ci.example.com/runs/1"})
+
+    assert mock_job_exec.submit.call_args.kwargs["caller_metadata"] == {
+        "url": "https://ci.example.com/runs/1",
+    }
+
+
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_rejects_metadata_that_is_not_an_object(mock_suite_cls, mock_job_exec, db_session_mock):
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+
+    from testgen.mcp.tools.execution import run_tests
+
+    with pytest.raises(MCPUserError, match="metadata must be a JSON object"):
+        run_tests(str(suite_id), metadata="not-an-object")
+
+    mock_job_exec.submit.assert_not_called()
+
+
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_run_tests_rejects_a_schema_that_is_not_a_bare_identifier(
+    mock_suite_cls, mock_job_exec, db_session_mock
+):
+    """The value is substituted into generated SQL inside quote characters, so a name carrying
+    one would close them. Rejected before a job is queued."""
+    suite_id = uuid4()
+    mock_suite_cls.get.return_value = _mock_test_suite(suite_id=suite_id)
+
+    from testgen.mcp.tools.execution import run_tests
+
+    with pytest.raises(MCPUserError, match="match_schema_name must start with"):
+        run_tests(str(suite_id), match_schema_name='x" OR 1=1--')
+
+    mock_job_exec.submit.assert_not_called()
+
+
+@patch("testgen.mcp.tools.execution.JobExecution")
+@patch("testgen.mcp.tools.common.TestSuite")
 def test_run_tests_suite_not_found_or_inaccessible(mock_suite_cls, mock_job_exec, db_session_mock):
     """Unknown UUID, monitor suite, and forbidden project all collapse to the same SQL-side
     miss inside resolve_test_suite."""

@@ -8,7 +8,8 @@ from sqlalchemy import select
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey, JobSource
 from testgen.common.generation_set_service import resolve_generation_sets
 from testgen.common.models import get_current_session, with_database_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import EXTERNAL_URL_MAX_LENGTH, JobExecution, validate_caller_metadata
+from testgen.common.models.table_group import validate_schema_name
 from testgen.mcp.exceptions import MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import get_project_permissions, mcp_permission
 from testgen.mcp.tools.common import DocGroup, parse_uuid, resolve_table_group, resolve_test_suite
@@ -21,16 +22,49 @@ from testgen.mcp.tools.markdown import MdDoc
 @mcp_permission("edit")
 def run_tests(
     test_suite_id: Annotated[str, Field(description="UUID of the test suite to run, e.g. from ``list_test_suites``.")],
+    match_schema_name: Annotated[
+        str | None,
+        Field(
+            description="Schema holding the tables that referential tests compare against, for this run only. "
+            "Applies to tests configured with a second table; tests without one are unaffected, and the stored "
+            "test definitions are left unchanged. To change where the table group's own data is read from, update "
+            "the table group's schema instead.",
+        ),
+    ] = None,
+    external_url: Annotated[
+        str | None,
+        Field(
+            description="Link back to whatever triggered this run, shown on the results page beside the score.",
+            max_length=EXTERNAL_URL_MAX_LENGTH,
+        ),
+    ] = None,
+    metadata: Annotated[
+        dict | None,
+        Field(
+            description="Free-form detail about what triggered this run, stored with it and shown on the results "
+            "page. Its shape is yours; TestGen lists it back as given.",
+        ),
+    ] = None,
 ) -> str:
     """Submit a test run for a test suite. Returns immediately with a job_execution_id;
     use ``list_test_runs`` to track status.
     """
     suite = resolve_test_suite(test_suite_id)
+    kwargs: dict[str, str] = {"test_suite_id": str(suite.id)}
+    if match_schema_name:
+        if error := validate_schema_name(match_schema_name):
+            raise MCPUserError(f"match_schema_name {error}.")
+        kwargs["match_schema_name"] = match_schema_name
+    if error := validate_caller_metadata(metadata):
+        raise MCPUserError(f"metadata {error}.")
+
     job = JobExecution.submit(
         job_key=JobKey.run_tests,
-        kwargs={"test_suite_id": str(suite.id)},
+        kwargs=kwargs,
         source=JobSource.mcp,
         project_code=suite.project_code,
+        external_url=external_url,
+        caller_metadata=metadata,
     )
     return _render_submission("Test run", suite.test_suite, "Test suite", job, "list_test_runs")
 

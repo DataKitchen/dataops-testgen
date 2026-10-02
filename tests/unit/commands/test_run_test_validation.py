@@ -1,9 +1,11 @@
+from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
 
+from testgen.commands import run_test_validation as run_test_validation_module
 from testgen.commands.queries.execute_tests_query import TestExecutionDef
-from testgen.commands.run_test_validation import check_identifiers, collect_test_identifiers
+from testgen.commands.run_test_validation import check_identifiers, collect_test_identifiers, run_test_validation
 
 pytestmark = pytest.mark.unit
 
@@ -263,3 +265,50 @@ def test_check_error_format_starts_with_deactivated():
     columns = set()
     errors = check_identifiers(identifiers, tables, columns)
     assert errors[test_id][0] == "Deactivated"
+
+
+# --- run_test_validation persistence ---
+
+
+def _validation_harness(monkeypatch, **kwargs):
+    """Run validation over one test def whose table is absent from the target, capturing writes."""
+    sql_generator = MagicMock()
+    sql_generator.flavor_service.quote_character = '"'
+    sql_generator.get_test_errors.side_effect = lambda tds: [[". ".join(td.errors)] for td in tds if td.errors]
+
+    monkeypatch.setattr(run_test_validation_module, "get_target_identifiers", lambda *_: (set(), set()))
+    written = MagicMock()
+    executed = MagicMock()
+    monkeypatch.setattr(run_test_validation_module, "write_to_app_db", written)
+    monkeypatch.setattr(run_test_validation_module, "execute_db_queries", executed)
+
+    td = _make_td()
+    valid = run_test_validation(sql_generator, [td], **kwargs)
+    return td, valid, written, executed
+
+
+def test_validation_deactivates_failing_definitions_by_default(monkeypatch):
+    td, valid, written, executed = _validation_harness(monkeypatch)
+
+    assert valid == []
+    assert written.called
+    assert executed.called
+    assert td.errors[0] == "Deactivated"
+
+
+def test_validation_records_errors_without_deactivating_when_asked(monkeypatch):
+    """A run aimed at an overridden schema cannot speak to whether the stored definitions are
+    still valid, so the failure is reported and ``test_active`` is left alone."""
+    td, valid, written, executed = _validation_harness(monkeypatch, deactivate_invalid=False)
+
+    assert valid == []
+    assert written.called
+    assert not executed.called
+    assert td.errors[0] == "Not run"
+
+
+def test_validation_defers_every_side_effect_when_deferring_persistence(monkeypatch):
+    _, _, written, executed = _validation_harness(monkeypatch, defer_persistence=True)
+
+    assert not written.called
+    assert not executed.called

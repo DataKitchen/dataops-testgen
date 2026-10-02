@@ -135,6 +135,8 @@ def get_test_run(job: JobExecution = resolve_job("view", JobExecution.job_key ==
         table_group_id=table_group_id,
         started_at=job.started_at,
         completed_at=job.completed_at,
+        external_url=job.external_url,
+        metadata=job.caller_metadata,
         result=result,
     )
 

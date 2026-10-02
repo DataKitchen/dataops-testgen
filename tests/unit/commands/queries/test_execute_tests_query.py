@@ -13,6 +13,7 @@ from testgen.commands.queries.execute_tests_query import (
     parse_cat_results,
 )
 from testgen.common.database.database_service import get_flavor_service, replace_params
+from testgen.common.enums import SuiteType
 from testgen.common.models.connection import Connection
 
 pytestmark = pytest.mark.unit
@@ -767,3 +768,73 @@ def test_freshness_exclusions_skip_other_test_types():
     instance = _make_freshness_execution_sql(datetime(2026, 12, 25, 12, 0), holiday_dates={date(2026, 12, 25)})
     td = _make_td(test_type="Volume_Trend", baseline_sum="2026-12-24 06:00:00")
     assert instance._freshness_exclusion_params(td) == {"EXCLUDED_MINUTES": 0, "IS_EXCLUDED_DAY": 0}
+
+
+# --- run-scoped schema ---
+
+
+def _make_schema_execution_sql(schema: str | None = None) -> TestExecutionSQL:
+    """Build a TestExecutionSQL through __init__ so schema resolution is exercised."""
+    table_group = MagicMock(id=uuid4(), table_group_schema="test_schema")
+    test_suite = MagicMock(suite_type=SuiteType.REGULAR, predict_exclude_weekends=False, id=uuid4())
+    test_run = MagicMock(id=uuid4(), test_suite_id=uuid4(), test_starttime=datetime(2026, 1, 1, tzinfo=UTC))
+    return TestExecutionSQL(
+        Connection(sql_flavor="postgresql"), table_group, test_suite, test_run, schema=schema
+    )
+
+
+def test_schema_defaults_to_the_table_group():
+    assert _make_schema_execution_sql().schema == "test_schema"
+
+
+def test_an_override_does_not_mutate_the_table_group():
+    """The table group is a session-attached ORM instance, so assigning to its schema would
+    flush an UPDATE and repoint it for every later run."""
+    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+
+    assert sql_generator.schema == "onboard_2026_09_10"
+    assert sql_generator.table_group.table_group_schema == "test_schema"
+
+
+def test_retargeting_a_test_def_moves_the_executed_sql():
+    """Retargeting ``TestExecutionDef.schema_name`` is the single point the run relies on.
+
+    Every schema read on the execution path goes through this field, so a refactor that
+    sourced the schema from the table group instead would silently run against the wrong
+    one while reporting success. Assert the field still drives the emitted SQL.
+    """
+    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+    td = _make_td(schema_name="onboard_2026_09_10", measure="COUNT(*)", test_condition="100")
+
+    queries, groups = sql_generator.aggregate_cat_tests([td])
+
+    assert '"onboard_2026_09_10"."orders"' in queries[0][0]
+    assert "test_schema" not in queries[0][0]
+    assert groups == [[td]]
+
+
+def test_retargeting_a_test_def_moves_the_recorded_result_schema():
+    """Results carry the schema the run actually targeted, which the score rollup joins on."""
+    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+    td = _make_td(schema_name="onboard_2026_09_10", errors=["Deactivated", "Missing table: x"])
+
+    (row,) = sql_generator.get_test_errors([td])
+
+    assert row[TestExecutionSQL.result_columns.index("schema_name")] == "onboard_2026_09_10"
+
+
+def test_retargeting_moves_the_referential_match_schema_too():
+    """A referential test compares two tables. Both sides move with the run, so a pair that
+    travels together stays compared to each other rather than against a stale copy."""
+    sql_generator = _make_schema_execution_sql(schema="onboard_2026_09_10")
+    td = _make_td(
+        schema_name="onboard_2026_09_10",
+        match_schema_name="onboard_2026_09_10",
+        match_table_name="orders",
+        match_column_names="customer_id",
+    )
+
+    params = sql_generator._get_params(td)
+
+    assert params["SCHEMA_NAME"] == "onboard_2026_09_10"
+    assert params["MATCH_SCHEMA_NAME"] == "onboard_2026_09_10"
