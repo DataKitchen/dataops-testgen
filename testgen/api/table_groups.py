@@ -18,10 +18,14 @@ from testgen.api.schemas import (
     TableGroupItem,
     TableGroupListResponse,
     TableGroupResponse,
+    TableGroupSchemaMoveRequest,
+    TableGroupSchemaMoveResponse,
 )
 from testgen.common.database.table_group_service import (
+    SchemaMoveRefused,
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
+    move_table_group_schema,
     schema_label_for_table_group,
     validate_table_group_fields,
 )
@@ -203,4 +207,48 @@ def _to_response(table_group: TableGroup) -> TableGroupResponse:
         profile_exclude_xde=table_group.profile_exclude_xde,
         include_in_dashboard=table_group.include_in_dashboard,
         catalog_tags=CatalogTags.model_validate(table_group, from_attributes=True),
+    )
+
+
+_REFUSAL_STATUS = {
+    "job_in_flight": 409,
+    "invalid_schema_name": 422,
+    "schema_empty": 422,
+    "schema_unreadable": 422,
+}
+
+
+@router.patch(
+    "/table-groups/{table_group_id}/schema",
+    response_model=TableGroupSchemaMoveResponse,
+    summary="Move a table group to another schema",
+    responses={
+        409: {"model": ErrorResponse, "description": "A job for this table group is still running"},
+        422: {"model": ErrorResponse, "description": "The schema cannot be moved to"},
+    },
+)
+def move_schema(
+    table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
+    body: TableGroupSchemaMoveRequest = Body(...),  # noqa: B008
+) -> TableGroupSchemaMoveResponse:
+    """Point a table group at the schema its data now lives in.
+
+    Profiling, test generation, the catalog and every later run read the table group's schema, so
+    this moves all of them together and the suite keeps its test definitions, their history and
+    their predicted thresholds.
+
+    The new schema has to carry the tables the table group covers. One carrying none of them is
+    refused; one missing some is applied and the missing tables are listed back.
+    """
+    try:
+        move = move_table_group_schema(table_group, body.schema_name)
+    except SchemaMoveRefused as refusal:
+        raise api_error(_REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message) from refusal
+
+    return TableGroupSchemaMoveResponse(
+        table_group_id=table_group.id,
+        previous_schema_name=move.previous_schema,
+        schema_name=move.schema,
+        definitions_repointed=move.definitions_repointed,
+        missing_tables=move.missing_tables,
     )

@@ -13,7 +13,6 @@
  * @property {object} dialog
  * @property {Connection[]} connections
  * @property {TableGroup} table_group
- * @property {boolean} is_in_use
  * @property {boolean?} can_view_pii
  * @property {TableGroupPreview?} table_group_preview
  * @property {EditResult?} result
@@ -61,7 +60,6 @@ const TableGroupEditDialog = (props) => {
         tableGroup: getValue(props.table_group),
         showConnectionSelector: connections.length > 1,
         disableConnectionSelector: false,
-        disableSchemaField: getValue(props.is_in_use) ?? false,
         disablePiiFlag: !(getValue(props.can_view_pii) ?? false),
         onChange: (updatedTableGroup, state) => {
             tableGroupState.val = updatedTableGroup;
