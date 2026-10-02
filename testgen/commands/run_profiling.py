@@ -43,7 +43,7 @@ LOG = logging.getLogger("testgen")
 # measures, or a different meaning for an existing one. A parked run resuming under a build that
 # measures differently would file both readings under one profiling run; a bump discards its
 # checkpoint so the run starts over and is measured one way.
-PROFILE_RESULT_SHAPE_VERSION = 2
+PROFILE_RESULT_SHAPE_VERSION = 3
 
 
 @with_database_session
@@ -296,9 +296,10 @@ class ProfilingJob(PausableJob[ColumnChars]):
         def handle(outcome: WorkerOutcome[ColumnChars, list[dict]]) -> None:
             if outcome.result:
                 row = with_frequent_patterns(outcome.result[0])
+                ProfileResult.calibrate_sampled_counts(row)
                 row.update(self.sql_generator.profiled_row_values(outcome.key, self.capabilities.approx_percentile))
                 if table_sampling := self.sampling_params.get(outcome.key.table_name):
-                    ProfileResult.scale_sampled_estimates(row, table_sampling.sample_ratio)
+                    row["sample_ratio"] = table_sampling.sample_ratio
                 ProfileResult.upsert(row)
 
         result = self.fan_out(

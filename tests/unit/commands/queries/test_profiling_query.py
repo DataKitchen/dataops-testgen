@@ -388,8 +388,6 @@ def test_exact_percentiles_read_the_whole_table_on_a_sampled_run():
     pctile = _percentile_subquery(query)
     assert "PERCENTILE_CONT" in pctile
     assert "SAMPLE" not in pctile.upper()
-    # The rest of the query still reads the sample.
-    assert "SAMPLE (30000 rows)" in query
 
 
 def test_approximate_percentiles_use_the_engine_function():

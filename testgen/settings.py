@@ -421,15 +421,6 @@ from env variable: `DEFAULT_PROFILING_SK_COLUMN_MASK`
 defaults to: `%sk`
 """
 
-DEFAULT_PROFILING_USE_SAMPLING: str = getenv("DEFAULT_PROFILING_USE_SAMPLING", "N")
-"""
-Toggle on to base profiling on a sample of records instead of the full
-table. Accepts `Y` or `N`
-
-from env variable: `DEFAULT_PROFILING_USE_SAMPLING`
-defaults to: `N`
-"""
-
 OBSERVABILITY_API_URL: str = getenv("OBSERVABILITY_API_URL", "")
 """
 API URL of your instance of Observability where to send events to for

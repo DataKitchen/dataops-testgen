@@ -714,7 +714,7 @@ const SamplingForm = (
             Checkbox({
                 name: 'profile_use_sampling',
                 label: 'Use profile sampling',
-                help: 'When checked, profiling will be based on a sample of records instead of the full table',
+                help: 'When checked, pattern and character analysis and the list of frequent values are based on a sample of records. Record counts, distinct values, minimums, maximums, and average lengths and values always cover the full table',
                 checked: profileUseSampling,
                 onChange: (value) => profileUseSampling.val = value,
             }),
