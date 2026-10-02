@@ -940,7 +940,11 @@ class TableGroupCreate(BaseModel):
 
     profile_use_sampling: StrictBool | None = Field(
         default=_TABLE_GROUP_DEFAULTS["profile_use_sampling"],
-        description="Profile a sample of each table's rows instead of all of them.",
+        description=(
+            "Base pattern and character analysis, and the list of frequent values, on a sample of each table's rows."
+            " Record counts, distinct values, minimums, maximums, and average lengths and values always cover the"
+            " full table."
+        ),
     )
     profile_sample_percent: StrictInt | None = Field(
         default=_TABLE_GROUP_DEFAULTS["profile_sample_percent"],

@@ -1,131 +1,160 @@
--- TG-IF do_sample
-WITH target_table AS (
-  SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI({SAMPLE_PERCENT_CALC})
+-- TG-IF is_type_A
+WITH whole_table_measures AS (
+  SELECT
+    COUNT(*) AS record_ct,
+    COUNT("{COL_NAME}") AS value_ct,
+    COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
+    SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
+    MIN(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS min_length,
+    MAX(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS max_length,
+    AVG(NULLIF(LENGTH(TO_VARCHAR("{COL_NAME}")), 0)) AS avg_length,
+    SUM(CASE
+          WHEN TRIM("{COL_NAME}") LIKE_REGEXPR '^0(\.0*)?$' THEN 1 ELSE 0
+        END) AS zero_value_ct,
+    COUNT(DISTINCT UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COL_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', ''))) AS distinct_std_value_ct,
+    SUBSTR(MIN(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS min_text,
+    SUBSTR(MAX(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS max_text
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 )
--- TG-ELSE
-WITH target_table AS (
-  SELECT * FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+-- TG-ENDIF
+-- TG-IF is_A_sampling
+, sampleable_rows AS (
+  SELECT "{COL_NAME}"
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI({SAMPLE_PERCENT_CALC})
+)
+, pattern_rows AS (
+  SELECT "{COL_NAME}" AS v
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI({SAMPLE_PERCENT_CALC})
+)
+-- TG-ENDIF
+-- TG-IF is_A_no_sampling
+, sampleable_rows AS (
+  SELECT "{COL_NAME}"
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+)
+, pattern_rows AS (
+  SELECT "{COL_NAME}" AS v
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 )
 -- TG-ENDIF
 -- TG-IF is_type_A
+, sampleable_measures AS (
+  SELECT
+    COUNT("{COL_NAME}") AS sample_value_ct,
+    0 AS zero_length_ct,
+    SUM(CASE
+           WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
+                                                ELSE 0
+         END) AS lead_space_ct,
+    SUM(CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) AS quoted_value_ct,
+    SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '[0-9]' THEN 1 ELSE 0 END) AS includes_digit_ct,
+    SUM(CASE
+           WHEN LOWER("{COL_NAME}") LIKE_REGEXPR '^(\.{1,}|-{1,}|\?{1,}|[[:space:]]{1,}|0{2,}|9{2,}|x{2,}|z{2,})$' THEN 1
+           WHEN LOWER("{COL_NAME}") IN ('blank','error','missing','tbd',
+                                      'n/a','#na','none','null','unknown')           THEN 1
+           WHEN LOWER("{COL_NAME}") IN ('(blank)','(error)','(missing)','(tbd)',
+                                      '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1
+           WHEN LOWER("{COL_NAME}") IN ('[blank]','[error]','[missing]','[tbd]',
+                                      '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
+                                                                                     ELSE 0
+         END) AS filled_value_ct,
+    SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" <> LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS upper_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" = LOWER("{COL_NAME}") AND "{COL_NAME}" <> UPPER("{COL_NAME}") THEN 1 ELSE 0 END) AS lower_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" = LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS non_alpha_ct,
+    COUNT(CASE WHEN
+        REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COL_NAME}",
+        NCHAR(160), ''), NCHAR(8201), ''), NCHAR(8203), ''), NCHAR(8204), ''), NCHAR(8205), ''),
+        NCHAR(8206), ''), NCHAR(8207), ''), NCHAR(8239), ''), NCHAR(12288), ''), NCHAR(65279), '')
+        <> "{COL_NAME}" THEN 1 END) AS non_printing_ct,
+    SUM(<%IS_NUM;SUBSTR("{COL_NAME}", 1, 31)%>) AS numeric_ct,
+    SUM(<%IS_DATE;SUBSTR("{COL_NAME}", 1, 26)%>) AS date_ct,
+    CASE
+      WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[0-9]{1,5}[a-zA-Z]?[[:space:]][[:alnum:]_]{1,5}\.?[[:space:]]?[[:alnum:]_]*[[:space:]]?[[:alnum:]_]*[[:space:]][a-zA-Z]{1,6}\.?[[:space:]]?[0-9]{0,5}[A-Z]?$'
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'STREET_ADDR'
+      WHEN SUM(CASE WHEN "{COL_NAME}" IN ('AL','AK','AS','AZ','AR','CA','CO','CT','DE','DC','FM','FL','GA','GU','HI','ID','IL','IN','IA','KS','KY','LA','ME','MH','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','MP','OH','OK','OR','PW','PA','PR','RI','SC','SD','TN','TX','UT','VT','VI','VA','WA','WV','WI','WY','AE','AP','AA')
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'STATE_USA'
+      WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^(\+1|1)?[ .-]?(\([2-9][0-9]{2}\)|[2-9][0-9]{2})[ .-]?[2-9][0-9]{2}[ .-]?[0-9]{4}$'
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'PHONE_USA'
+      WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
+                AND "{COL_NAME}" NOT LIKE '%://%'
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'EMAIL'
+      WHEN SUM(CASE WHEN REPLACE_REGEXPR('[0-9]' IN "{COL_NAME}" WITH '9') IN ('99999', '999999999', '99999-9999')
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'ZIP_USA'
+      WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[[:alnum:]_[:space:]-]+\.(txt|csv|tsv|dat|doc|pdf|xlsx)$'
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'FILE_NAME'
+      WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^([0-9]{4}[- ]?){3}[0-9]{4}$'
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'CREDIT_CARD'
+      WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^([^,|' || CHAR(9) || ']{1,20}[,|' || CHAR(9) || ']){2,}[^,|' || CHAR(9) || ']{0,20}([,|' || CHAR(9) || ']?[^,|' || CHAR(9) || ']{0,20})*$'
+                      AND NOT "{COL_NAME}" LIKE_REGEXPR '[[:space:]](and|but|or|yet)[[:space:]]'
+           THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'DELIMITED_DATA'
+      WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[0-8][0-9]{2}-[0-9]{2}-[0-9]{4}$'
+                       AND SUBSTR("{COL_NAME}", 1, 3) NOT BETWEEN '734' AND '749'
+                       AND SUBSTR("{COL_NAME}", 1, 3) <> '666' THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'SSN'
+    END AS std_pattern_match,
+    SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', '')))) AS embedded_space_ct,
+    AVG(CAST(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', '')) AS DOUBLE)) AS avg_embedded_spaces
+    FROM sampleable_rows
+)
+, pattern_counts AS (
+  SELECT pattern,
+         COUNT(*) AS pattern_ct,
+         COUNT(value_length) AS value_ct,
+         MAX(value_length) AS max_length
+    FROM ( SELECT CASE
+                    WHEN v > ' '
+                      THEN REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN
+                             v WITH 'a') WITH 'A') WITH 'N')
+                  END AS pattern,
+                  LENGTH(v) AS value_length
+             FROM pattern_rows ) patterned
+   GROUP BY pattern
+)
 , ranked_patterns AS (
   SELECT pattern,
-         ct,
-         ROW_NUMBER() OVER (ORDER BY ct DESC, pattern) AS rn
-    FROM ( SELECT pattern, COUNT(*) AS ct
-             FROM ( SELECT REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN
-                             "{COL_NAME}" WITH 'a') WITH 'A') WITH 'N') AS pattern
-                      FROM target_table
-                     WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ' AND (SELECT MAX(LENGTH("{COL_NAME}"))
-                                                     FROM target_table) BETWEEN 3 and {MAX_PATTERN_LENGTH} ) p
-            GROUP BY pattern
-           HAVING pattern > ' ' ) ranked
+         pattern_ct,
+         value_ct,
+         CASE
+           WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+         END AS pattern_rank
+    FROM pattern_counts
 )
-, pattern_slots AS (
+, pattern_measures AS (
   SELECT
-         MAX(CASE WHEN rn = 1 THEN pattern END) AS pattern_0,
-         MAX(CASE WHEN rn = 1 THEN ct END)      AS pattern_ct_0,
-         MAX(CASE WHEN rn = 2 THEN pattern END) AS pattern_1,
-         MAX(CASE WHEN rn = 2 THEN ct END)      AS pattern_ct_1,
-         MAX(CASE WHEN rn = 3 THEN pattern END) AS pattern_2,
-         MAX(CASE WHEN rn = 3 THEN ct END)      AS pattern_ct_2,
-         MAX(CASE WHEN rn = 4 THEN pattern END) AS pattern_3,
-         MAX(CASE WHEN rn = 4 THEN ct END)      AS pattern_ct_3,
-         MAX(CASE WHEN rn = 5 THEN pattern END) AS pattern_4,
-         MAX(CASE WHEN rn = 5 THEN ct END)      AS pattern_ct_4
+    MAX(CASE WHEN pattern_rank = 1 THEN pattern END) AS pattern_0,
+    MAX(CASE WHEN pattern_rank = 1 THEN pattern_ct END) AS pattern_ct_0,
+    MAX(CASE WHEN pattern_rank = 2 THEN pattern END) AS pattern_1,
+    MAX(CASE WHEN pattern_rank = 2 THEN pattern_ct END) AS pattern_ct_1,
+    MAX(CASE WHEN pattern_rank = 3 THEN pattern END) AS pattern_2,
+    MAX(CASE WHEN pattern_rank = 3 THEN pattern_ct END) AS pattern_ct_2,
+    MAX(CASE WHEN pattern_rank = 4 THEN pattern END) AS pattern_3,
+    MAX(CASE WHEN pattern_rank = 4 THEN pattern_ct END) AS pattern_ct_3,
+    MAX(CASE WHEN pattern_rank = 5 THEN pattern END) AS pattern_4,
+    MAX(CASE WHEN pattern_rank = 5 THEN pattern_ct END) AS pattern_ct_4,
+    COUNT(pattern) AS distinct_pattern_ct,
+    SUM(value_ct) AS sample_pattern_value_ct
     FROM ranked_patterns
-   WHERE rn <= 5
 )
+SELECT *
+  FROM whole_table_measures
+  CROSS JOIN sampleable_measures
+  CROSS JOIN pattern_measures
 -- TG-ENDIF
+-- TG-IF is_not_A
 SELECT
--- TG-IF is_type_X
   COUNT(CASE WHEN "{COL_NAME}" IS NOT NULL THEN 1 END) AS value_ct,
--- TG-ELSE
-  COUNT("{COL_NAME}") AS value_ct,
+  SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
+-- TG-ENDIF
+-- TG-IF is_not_A_or_X
   COUNT(DISTINCT "{COL_NAME}") AS distinct_value_ct,
 -- TG-ENDIF
-  SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
--- TG-IF is_type_ADN
+-- TG-IF is_type_DN
   MIN(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS min_length,
   MAX(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS max_length,
   AVG(NULLIF(LENGTH(TO_VARCHAR("{COL_NAME}")), 0)) AS avg_length,
 -- TG-ENDIF
--- TG-IF is_type_A
-  SUM(CASE
-        WHEN TRIM("{COL_NAME}") LIKE_REGEXPR '^0(\.0*)?$' THEN 1 ELSE 0
-      END) AS zero_value_ct,
--- TG-ENDIF
 -- TG-IF is_type_N
   SUM(1 - ABS(SIGN("{COL_NAME}"))) AS zero_value_ct,
--- TG-ENDIF
--- TG-IF is_type_A
-  COUNT(DISTINCT UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COL_NAME}", ' ', ''), '''', ''), ',', ''), '.', ''), '-', ''))) AS distinct_std_value_ct,
-  0 AS zero_length_ct,
-  SUM(CASE
-         WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
-                                              ELSE 0
-       END) AS lead_space_ct,
-  SUM(CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) AS quoted_value_ct,
-  SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '[0-9]' THEN 1 ELSE 0 END) AS includes_digit_ct,
-  SUM(CASE
-         WHEN LOWER("{COL_NAME}") LIKE_REGEXPR '^(\.{1,}|-{1,}|\?{1,}|[[:space:]]{1,}|0{2,}|9{2,}|x{2,}|z{2,})$' THEN 1
-         WHEN LOWER("{COL_NAME}") IN ('blank','error','missing','tbd',
-                                    'n/a','#na','none','null','unknown')           THEN 1
-         WHEN LOWER("{COL_NAME}") IN ('(blank)','(error)','(missing)','(tbd)',
-                                    '(n/a)','(#na)','(none)','(null)','(unknown)') THEN 1
-         WHEN LOWER("{COL_NAME}") IN ('[blank]','[error]','[missing]','[tbd]',
-                                    '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
-                                                                                   ELSE 0
-       END) AS filled_value_ct,
-  SUBSTR(MIN(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS min_text,
-  SUBSTR(MAX(CASE WHEN "{COL_NAME}" IS NOT NULL THEN "{COL_NAME}" END), 1, 100) AS max_text,
-  SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" <> LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS upper_case_ct,
-  SUM(CASE WHEN "{COL_NAME}" = LOWER("{COL_NAME}") AND "{COL_NAME}" <> UPPER("{COL_NAME}") THEN 1 ELSE 0 END) AS lower_case_ct,
-  SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" = LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS non_alpha_ct,
-  COUNT(CASE WHEN
-      REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COL_NAME}",
-      NCHAR(160), ''), NCHAR(8201), ''), NCHAR(8203), ''), NCHAR(8204), ''), NCHAR(8205), ''),
-      NCHAR(8206), ''), NCHAR(8207), ''), NCHAR(8239), ''), NCHAR(12288), ''), NCHAR(65279), '')
-      <> "{COL_NAME}" THEN 1 END) AS non_printing_ct,
-  SUM(<%IS_NUM;SUBSTR("{COL_NAME}", 1, 31)%>) AS numeric_ct,
-  SUM(<%IS_DATE;SUBSTR("{COL_NAME}", 1, 26)%>) AS date_ct,
-  CASE
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[0-9]{1,5}[a-zA-Z]?[[:space:]][[:alnum:]_]{1,5}\.?[[:space:]]?[[:alnum:]_]*[[:space:]]?[[:alnum:]_]*[[:space:]][a-zA-Z]{1,6}\.?[[:space:]]?[0-9]{0,5}[A-Z]?$'
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'STREET_ADDR'
-    WHEN SUM(CASE WHEN "{COL_NAME}" IN ('AL','AK','AS','AZ','AR','CA','CO','CT','DE','DC','FM','FL','GA','GU','HI','ID','IL','IN','IA','KS','KY','LA','ME','MH','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','MP','OH','OK','OR','PW','PA','PR','RI','SC','SD','TN','TX','UT','VT','VI','VA','WA','WV','WI','WY','AE','AP','AA')
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'STATE_USA'
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^(\+1|1)?[ .-]?(\([2-9][0-9]{2}\)|[2-9][0-9]{2})[ .-]?[2-9][0-9]{2}[ .-]?[0-9]{4}$'
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'PHONE_USA'
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'
-              AND "{COL_NAME}" NOT LIKE '%://%'
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'EMAIL'
-    WHEN SUM(CASE WHEN REPLACE_REGEXPR('[0-9]' IN "{COL_NAME}" WITH '9') IN ('99999', '999999999', '99999-9999')
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'ZIP_USA'
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[[:alnum:]_[:space:]-]+\.(txt|csv|tsv|dat|doc|pdf|xlsx)$'
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'FILE_NAME'
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^([0-9]{4}[- ]?){3}[0-9]{4}$'
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'CREDIT_CARD'
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^([^,|' || CHAR(9) || ']{1,20}[,|' || CHAR(9) || ']){2,}[^,|' || CHAR(9) || ']{0,20}([,|' || CHAR(9) || ']?[^,|' || CHAR(9) || ']{0,20})*$'
-                    AND NOT "{COL_NAME}" LIKE_REGEXPR '[[:space:]](and|but|or|yet)[[:space:]]'
-         THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.8 THEN 'DELIMITED_DATA'
-    WHEN SUM(CASE WHEN "{COL_NAME}" LIKE_REGEXPR '^[0-8][0-9]{2}-[0-9]{2}-[0-9]{4}$'
-                     AND SUBSTR("{COL_NAME}", 1, 3) NOT BETWEEN '734' AND '749'
-                     AND SUBSTR("{COL_NAME}", 1, 3) <> '666' THEN 1 ELSE 0 END) / NULLIF(COUNT("{COL_NAME}"), 0) > 0.9 THEN 'SSN'
-  END AS std_pattern_match,
--- TG-ENDIF
--- TG-IF is_type_A
-  MAX(pattern_slots.pattern_0) AS pattern_0,
-  MAX(pattern_slots.pattern_ct_0) AS pattern_ct_0,
-  MAX(pattern_slots.pattern_1) AS pattern_1,
-  MAX(pattern_slots.pattern_ct_1) AS pattern_ct_1,
-  MAX(pattern_slots.pattern_2) AS pattern_2,
-  MAX(pattern_slots.pattern_ct_2) AS pattern_ct_2,
-  MAX(pattern_slots.pattern_3) AS pattern_3,
-  MAX(pattern_slots.pattern_ct_3) AS pattern_ct_3,
-  MAX(pattern_slots.pattern_4) AS pattern_4,
-  MAX(pattern_slots.pattern_ct_4) AS pattern_ct_4,
--- TG-ENDIF
--- TG-IF is_type_N
   MIN("{COL_NAME}") AS min_value,
   MIN(CASE WHEN "{COL_NAME}" > 0 THEN "{COL_NAME}" ELSE NULL END) AS min_value_over_0,
   MAX("{COL_NAME}") AS max_value,
@@ -182,19 +211,9 @@ SELECT
 -- TG-IF is_type_B
   SUM(CAST("{COL_NAME}" AS INTEGER)) AS boolean_true_ct,
 -- TG-ENDIF
--- TG-IF is_type_A
-  (SELECT COUNT(DISTINCT REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN
-                          "{COL_NAME}" WITH 'a') WITH 'A') WITH 'N')
-                )
-     FROM target_table
-    WHERE "{COL_NAME}" IS NOT NULL AND "{COL_NAME}" > ' ') AS distinct_pattern_ct,
-  SUM(SIGN(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', '')))) AS embedded_space_ct,
-  AVG(LENGTH(TRIM("{COL_NAME}")) - LENGTH(REPLACE(TRIM("{COL_NAME}"), ' ', ''))) AS avg_embedded_spaces,
--- TG-ENDIF
+-- TG-IF is_not_A
   COUNT(*) AS record_ct
-  FROM target_table
--- TG-IF is_type_A
-  CROSS JOIN pattern_slots
+  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-ENDIF
 -- TG-IF is_N_exact_pctile
   , (SELECT

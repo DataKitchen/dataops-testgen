@@ -153,28 +153,33 @@ def test_a_measured_row_is_written_with_the_values_the_run_supplies(approx_perce
     profile_result.upsert.assert_called_once_with({"record_ct": 3, "column_name": "c1", "percentile_method": "exact"})
 
 
-def test_a_sampled_tables_row_is_scaled_before_it_is_written():
+def test_a_row_is_calibrated_before_it_is_written():
+    _, profile_result, _ = _run_columns({"c1": ("ok", [{"record_ct": 3}])})
+
+    profile_result.calibrate_sampled_counts.assert_called_once_with({"record_ct": 3})
+    names = [name for name, _args, _kwargs in profile_result.mock_calls]
+    assert names.index("calibrate_sampled_counts") < names.index("upsert")
+
+
+def test_a_sampled_tables_row_records_the_ratio():
     _, profile_result, _ = _run_columns({"c1": ("ok", [{"record_ct": 3}])}, sampling_params={"t": SAMPLING})
 
-    profile_result.scale_sampled_estimates.assert_called_once_with({"record_ct": 3}, SAMPLING.sample_ratio)
-    profile_result.upsert.assert_called_once_with({"record_ct": 3})
-    names = [name for name, _args, _kwargs in profile_result.mock_calls]
-    assert names.index("scale_sampled_estimates") < names.index("upsert")
+    profile_result.upsert.assert_called_once_with({"record_ct": 3, "sample_ratio": SAMPLING.sample_ratio})
 
 
-def test_a_table_that_is_not_sampled_is_written_as_measured():
+def test_a_table_that_is_not_sampled_records_no_ratio():
     other_table = TableSampling(table_name="u", sample_count=3, sample_ratio=10 / 3, sample_percent=30.0)
     _, profile_result, _ = _run_columns({"c1": ("ok", [{"record_ct": 3}])}, sampling_params={"u": other_table})
 
-    profile_result.scale_sampled_estimates.assert_not_called()
     profile_result.upsert.assert_called_once_with({"record_ct": 3})
 
 
-def test_an_error_row_on_a_sampled_table_is_not_scaled():
+def test_an_error_row_on_a_sampled_table_is_not_calibrated():
     # An error row carries the catalog's exact record count and nothing measured on the sample.
     _, profile_result, write_error = _run_columns({"c1": ("err", "boom"), "c2": ("ok", [{"x": 1}])}, sampling_params={"t": SAMPLING})
 
-    profile_result.scale_sampled_estimates.assert_called_once_with({"x": 1}, SAMPLING.sample_ratio)
+    assert profile_result.calibrate_sampled_counts.call_count == 1
+    assert profile_result.calibrate_sampled_counts.call_args.args[0]["x"] == 1
     write_error.assert_called_once()
     assert write_error.call_args.args[1:] == (_col("t", "c1"), "boom")
 
