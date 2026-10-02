@@ -12,6 +12,7 @@ from testgen.common.database.database_service import (
 )
 from testgen.common.enums import SuiteType
 from testgen.common.freshness_service import (
+    effective_exclude_weekends,
     get_freshness_gap_threshold,
     infer_schedule,
     minutes_to_next_deadline,
@@ -249,7 +250,7 @@ def compute_freshness_threshold(
         # Once the schedule is active, excluded_days is the single source of truth
         # for day exclusion — it supersedes exclude_weekends, which was the user's
         # initial hint before enough data was available for schedule inference.
-        schedule_exclude_weekends = False if excluded_days else exclude_weekends
+        schedule_exclude_weekends = effective_exclude_weekends(exclude_weekends, excluded_days)
 
         # For sub-daily schedules, apply window exclusion for overnight gaps
         has_window = (
@@ -259,7 +260,7 @@ def compute_freshness_threshold(
         )
 
         # Recompute gap thresholds with schedule-aware exclusion
-        if excluded_days or has_window:
+        if excluded_days or has_window or schedule_exclude_weekends != exclude_weekends:
             try:
                 result = get_freshness_gap_threshold(
                     history,
@@ -279,15 +280,18 @@ def compute_freshness_threshold(
                 pass  # Keep first-pass thresholds
 
         # An active schedule certifies the cadence is regular, so the tight staleness
-        # threshold (median * factor) applies. Full-week schedules skip the recompute
-        # above and use the first-pass result — with no excluded days, those gaps are
-        # already in business minutes. Non-active stages keep staleness = None so the
-        # prediction SQL falls back to upper_tolerance (avoids false weekend anomalies).
+        # threshold (median * factor) applies. A full-week schedule with no sub-daily
+        # window, in a suite that does not exclude weekends, skips the recompute above
+        # and keeps the first-pass result — those gaps are already in business minutes.
+        # Non-active stages keep staleness = None so the prediction SQL falls back to
+        # upper_tolerance (avoids false weekend anomalies).
         staleness = result.staleness
 
         # Override upper threshold with schedule-based deadline (daily/weekly only)
         if schedule.frequency != "sub_daily":
-            holiday_dates = resolve_holiday_dates(holiday_codes, history.index) if holiday_codes else None
+            # The deadline can land past the end of the history, in the next calendar year
+            lookahead = pd.DatetimeIndex([history.index.min(), result.last_update + pd.Timedelta(days=31)])
+            holiday_dates = resolve_holiday_dates(holiday_codes, lookahead) if holiday_codes else None
             schedule_upper = minutes_to_next_deadline(
                 result.last_update, schedule,
                 schedule_exclude_weekends, holiday_dates, schedule_tz,

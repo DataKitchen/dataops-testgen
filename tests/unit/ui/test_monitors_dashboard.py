@@ -1,11 +1,11 @@
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
-from testgen.common.monitor_forecast import gated_forecast_prediction
+from testgen.common.monitor_forecast import gated_forecast_prediction, next_update_window, resolve_suite_holiday_dates
 from testgen.ui.views.monitors_dashboard import _freshness_next_update_window, build_table_trends_data
 
 pytestmark = pytest.mark.unit
@@ -92,6 +92,78 @@ def test_window_start_is_none_when_no_lower_tolerance(mock_abm, _mock_sched):
     window = _freshness_next_update_window(_freshness_def(lower=None), _events(), _suite(), _schedule())
     assert window["start"] is None
     assert window["end"] == int(pd.Timestamp("2026-06-23 19:00").timestamp() * 1000)
+
+
+# --- next_update_window: schedule days, sub-daily windows, and no business time ---
+
+def _weekend_excluding_suite():
+    s = _suite()
+    s.predict_exclude_weekends = True
+    return s
+
+
+def _active_schedule_def(active_days, upper="600"):
+    return _freshness_def(prediction={"schedule_stage": "active", "active_days": active_days}, upper=upper, lower=None)
+
+
+def test_window_for_weekend_only_schedule_in_weekend_excluding_suite():
+    window = next_update_window(
+        _active_schedule_def([5, 6]), datetime(2026, 9, 26, 10, 0),  # Saturday
+        test_suite=_weekend_excluding_suite(), cron_tz="UTC",
+    )
+    assert window == {"start": None, "end": int(pd.Timestamp("2026-09-26 20:00").timestamp() * 1000)}
+
+
+def test_window_counts_schedule_active_saturday_in_weekend_excluding_suite():
+    window = next_update_window(
+        _active_schedule_def([0, 1, 2, 3, 4, 5]), datetime(2026, 9, 25, 20, 0),  # Friday
+        test_suite=_weekend_excluding_suite(), cron_tz="UTC",
+    )
+    assert window["end"] == int(pd.Timestamp("2026-09-26 06:00").timestamp() * 1000)
+
+
+def test_window_counts_weekend_for_full_week_schedule_in_weekend_excluding_suite():
+    window = next_update_window(
+        _active_schedule_def(list(range(7))), datetime(2026, 9, 25, 20, 0),  # Friday
+        test_suite=_weekend_excluding_suite(), cron_tz="UTC",
+    )
+    assert window["end"] == int(pd.Timestamp("2026-09-26 06:00").timestamp() * 1000)
+
+
+def test_window_counts_only_hours_inside_sub_daily_window():
+    definition = _freshness_def(
+        prediction={
+            "schedule_stage": "active", "frequency": "sub_daily", "active_days": list(range(7)),
+            "window_start": 8.0, "window_end": 18.0,
+        },
+        upper="180", lower=None,
+    )
+    window = next_update_window(definition, datetime(2026, 9, 22, 17, 0), test_suite=_suite(), cron_tz="UTC")
+    assert window["end"] == int(pd.Timestamp("2026-09-23 10:00").timestamp() * 1000)
+
+
+def test_window_start_not_after_end_across_fall_back_weekend():
+    definition = _freshness_def(prediction={"schedule_stage": "active"}, upper="45", lower="30")
+    window = next_update_window(
+        definition, datetime(2026, 10, 31, 3, 30),  # Friday 23:30 EDT
+        test_suite=_weekend_excluding_suite(), cron_tz="America/New_York",
+    )
+    assert window["start"] <= window["end"]
+
+
+def test_suite_holidays_cover_the_last_update_year():
+    suite = _suite()
+    suite.holiday_codes_list = ["US"]
+    holidays = resolve_suite_holiday_dates(suite, pd.Timestamp("2025-12-20"))
+    assert date(2025, 12, 25) in holidays
+
+
+@patch(f"{MODULE}.add_business_minutes", side_effect=ValueError)
+def test_window_is_none_when_no_business_time_elapses(_mock_abm):
+    window = next_update_window(
+        _active_schedule_def([5, 6]), datetime(2026, 9, 26, 10, 0), test_suite=_suite(), cron_tz="UTC",
+    )
+    assert window is None
 
 
 # --- gated_forecast_prediction ---

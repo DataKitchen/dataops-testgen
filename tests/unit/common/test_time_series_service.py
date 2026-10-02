@@ -10,9 +10,9 @@ from testgen.common.freshness_service import (
     FreshnessThreshold,
     add_business_minutes,
     count_excluded_minutes,
+    effective_exclude_weekends,
     get_freshness_gap_threshold,
     is_excluded_day,
-    next_business_day_start,
 )
 from testgen.common.models.test_suite import PredictSensitivity
 from testgen.common.time_series_service import MIN_TRAIN_VALUES, NotEnoughData, get_sarimax_forecast
@@ -305,6 +305,22 @@ class Test_CountExcludedMinutes:
         assert result_et == pytest.approx(44 * 60)
 
 
+class Test_CountExcludedMinutes_WrappedWindow:
+    def test_time_inside_wrapped_window_is_not_excluded(self):
+        excluded = count_excluded_minutes(
+            pd.Timestamp("2026-09-22T23:00"), pd.Timestamp("2026-09-23T01:00"),
+            exclude_weekends=False, holiday_dates=None, window_start=22.5, window_end=1.5,
+        )
+        assert excluded == 0
+
+    def test_time_between_wrapped_window_ends_is_excluded(self):
+        excluded = count_excluded_minutes(
+            pd.Timestamp("2026-09-23T01:00"), pd.Timestamp("2026-09-23T23:00"),
+            exclude_weekends=False, holiday_dates=None, window_start=22.5, window_end=1.5,
+        )
+        assert excluded == 21 * 60
+
+
 class Test_IsExcludedDay:
     def test_weekend_saturday(self):
         assert is_excluded_day(pd.Timestamp("2026-02-07"), exclude_weekends=True, holiday_dates=None) is True
@@ -344,28 +360,16 @@ class Test_IsExcludedDay:
         ) is True
 
 
-class Test_NextBusinessDayStart:
-    def test_friday_to_monday(self):
-        result = next_business_day_start(pd.Timestamp("2026-02-06T17:00"), exclude_weekends=True, holiday_dates=None)
-        assert result == pd.Timestamp("2026-02-09")  # Monday midnight
+class Test_EffectiveExcludeWeekends:
+    def test_schedule_excluded_days_override_weekend_setting(self):
+        assert effective_exclude_weekends(True, frozenset({0, 1, 2, 3, 4})) is False
 
-    def test_saturday_to_monday(self):
-        result = next_business_day_start(pd.Timestamp("2026-02-07T10:00"), exclude_weekends=True, holiday_dates=None)
-        assert result == pd.Timestamp("2026-02-09")  # Monday midnight
+    def test_weekend_setting_applies_without_schedule(self):
+        assert effective_exclude_weekends(True, None) is True
+        assert effective_exclude_weekends(False, None) is False
 
-    def test_sunday_to_monday(self):
-        result = next_business_day_start(pd.Timestamp("2026-02-08T10:00"), exclude_weekends=True, holiday_dates=None)
-        assert result == pd.Timestamp("2026-02-09")  # Monday midnight
-
-    def test_weekday_to_next_day(self):
-        result = next_business_day_start(pd.Timestamp("2026-02-09T17:00"), exclude_weekends=True, holiday_dates=None)
-        assert result == pd.Timestamp("2026-02-10")  # Tuesday midnight
-
-    def test_weekend_plus_holiday(self):
-        # Friday → Saturday (weekend) → Sunday (weekend) → Monday (holiday) → Tuesday
-        holidays = {date(2026, 2, 9)}  # Monday
-        result = next_business_day_start(pd.Timestamp("2026-02-06T17:00"), exclude_weekends=True, holiday_dates=holidays)
-        assert result == pd.Timestamp("2026-02-10")  # Tuesday midnight
+    def test_full_week_schedule_overrides_weekend_setting(self):
+        assert effective_exclude_weekends(True, frozenset()) is False
 
 
 class Test_ComputeFreshnessThreshold:
@@ -573,6 +577,161 @@ class Test_AddBusinessMinutes:
         start = datetime(2026, 2, 9, 8, 0)  # Monday
         result = add_business_minutes(start, 60, exclude_weekends=True, holiday_dates=None)
         assert result == pd.Timestamp("2026-02-09T09:00")
+
+    def test_raises_when_weekends_and_excluded_days_cover_every_weekday(self):
+        start = pd.Timestamp("2026-09-26T10:00")  # Saturday
+        with pytest.raises(ValueError):
+            add_business_minutes(start, 600, exclude_weekends=True, holiday_dates=None, excluded_days=frozenset(range(5)))
+
+    def test_raises_when_excluded_days_cover_every_weekday(self):
+        start = pd.Timestamp("2026-09-26T10:00")
+        with pytest.raises(ValueError):
+            add_business_minutes(start, 600, exclude_weekends=False, holiday_dates=None, excluded_days=frozenset(range(7)))
+
+    def test_window_counts_only_hours_inside_window(self):
+        start = pd.Timestamp("2026-09-22T17:00")  # Tuesday, 1h before the window closes
+        result = add_business_minutes(
+            start, 180, exclude_weekends=False, holiday_dates=None, window_start=8.0, window_end=18.0,
+        )
+        assert result == pd.Timestamp("2026-09-23T10:00")
+
+    def test_window_start_before_opening_waits_for_window(self):
+        start = pd.Timestamp("2026-09-22T05:00")
+        result = add_business_minutes(
+            start, 60, exclude_weekends=False, holiday_dates=None, window_start=8.0, window_end=18.0,
+        )
+        assert result == pd.Timestamp("2026-09-22T09:00")
+
+    def test_window_skips_excluded_days(self):
+        start = pd.Timestamp("2026-09-25T17:00")  # Friday
+        result = add_business_minutes(
+            start, 120, exclude_weekends=True, holiday_dates=None, window_start=8.0, window_end=18.0,
+        )
+        assert result == pd.Timestamp("2026-09-28T09:00")  # Monday
+
+    def test_inverse_property_with_window(self):
+        start = pd.Timestamp("2026-09-24T15:30")  # Thursday
+        kwargs = {"exclude_weekends": True, "holiday_dates": None, "tz": "America/New_York",
+                  "window_start": 9.0, "window_end": 17.0}
+        end = add_business_minutes(start, 1000, **kwargs)
+        wall_minutes = (end - start).total_seconds() / 60
+        assert wall_minutes - count_excluded_minutes(start, end, **kwargs) == pytest.approx(1000)
+
+    def test_raises_when_window_has_no_length(self):
+        start = pd.Timestamp("2026-09-22T10:00")
+        with pytest.raises(ValueError):
+            add_business_minutes(start, 60, exclude_weekends=False, holiday_dates=None, window_start=10.0, window_end=10.0)
+
+    def test_raises_when_minutes_do_not_elapse_within_walk_limit(self):
+        start = pd.Timestamp("2026-09-22T10:00")
+        with pytest.raises(ValueError):
+            add_business_minutes(start, 4000, exclude_weekends=False, holiday_dates=None, window_start=0.0, window_end=0.0001)
+
+    def test_window_wrapping_midnight(self):
+        start = pd.Timestamp("2026-09-22T23:00")
+        result = add_business_minutes(
+            start, 120, exclude_weekends=False, holiday_dates=None, window_start=22.5, window_end=1.5,
+        )
+        assert result == pd.Timestamp("2026-09-23T01:00")
+
+    def test_window_wrapping_midnight_skips_hours_between(self):
+        start = pd.Timestamp("2026-09-23T01:00")
+        result = add_business_minutes(
+            start, 60, exclude_weekends=False, holiday_dates=None, window_start=22.5, window_end=1.5,
+        )
+        assert result == pd.Timestamp("2026-09-23T23:00")
+
+    def test_crosses_midnight_skipped_by_dst(self):
+        # Clocks in Santiago jump from Sat 23:59 to Sun 01:00 on 2026-09-06
+        start = pd.Timestamp("2026-09-04T12:00")  # Friday 08:00 local
+        result = add_business_minutes(start, 3 * 1440, exclude_weekends=True, holiday_dates=None, tz="America/Santiago")
+        assert result == pd.Timestamp("2026-09-09T12:00")  # Wednesday 09:00 local
+
+    @pytest.mark.parametrize("minutes", [31, 45, 89])
+    def test_target_inside_fall_back_jump_lands_on_first_active_instant(self, minutes):
+        # New York falls back on Sunday 2026-11-01, inside the excluded weekend, which adds
+        # 60 business minutes at that instant as count_excluded_minutes measures them
+        start = pd.Timestamp("2026-10-31T03:30")  # Friday 23:30 EDT
+        result = add_business_minutes(start, minutes, exclude_weekends=True, holiday_dates=None, tz="America/New_York")
+        assert result == pd.Timestamp("2026-11-02T05:00")  # Monday 00:00 EST
+
+    def test_result_never_moves_earlier_as_minutes_grow(self):
+        start = pd.Timestamp("2026-10-31T03:30")
+        results = [
+            add_business_minutes(start, minutes, exclude_weekends=True, holiday_dates=None, tz="America/New_York")
+            for minutes in range(0, 200, 5)
+        ]
+        assert results == sorted(results)
+
+    def test_result_in_repeated_fall_back_hour(self):
+        # Europe/London repeats 01:00-02:00 on 2026-10-25; 158 business minutes land in the first pass
+        start = pd.Timestamp("2026-10-23T21:55")
+        result = add_business_minutes(
+            start, 158, exclude_weekends=False, holiday_dates=None, tz="Europe/London", excluded_days=frozenset({2, 5}),
+        )
+        assert result == pd.Timestamp("2026-10-25T00:33")  # 01:33 BST
+
+    def test_window_closing_inside_spring_forward_gap(self):
+        # New York skips 02:00-03:00 on 2026-03-08, so a 00:00-02:00 window holds only 60
+        # business minutes that night as count_excluded_minutes measures them
+        start = pd.Timestamp("2026-03-07T22:26")
+        kwargs = {"exclude_weekends": False, "holiday_dates": None, "tz": "America/New_York",
+                  "window_start": 0.0, "window_end": 2.0}
+        result = add_business_minutes(start, 120, **kwargs)
+        assert result == pd.Timestamp("2026-03-09T05:00")  # Monday 01:00 EDT
+        assert (result - start).total_seconds() / 60 - count_excluded_minutes(start, result, **kwargs) == 120
+
+    def test_window_reached_in_second_pass_of_fall_back_hour(self):
+        # New York repeats 01:00-02:00 on 2026-11-01; the 00:00-01:30 window opens again at 01:00 EST
+        start = pd.Timestamp("2026-11-01T02:00")  # Saturday 22:00 EDT
+        result = add_business_minutes(
+            start, 100, exclude_weekends=False, holiday_dates=None, tz="America/New_York",
+            window_start=0.0, window_end=1.5,
+        )
+        assert result == pd.Timestamp("2026-11-01T06:00")  # 01:00 EST
+
+    def test_start_inside_repeated_fall_back_hour(self):
+        start = pd.Timestamp("2026-10-25T00:11")  # 01:11 BST, first pass of the repeated hour
+        result = add_business_minutes(
+            start, 30, exclude_weekends=False, holiday_dates=None, tz="Europe/London",
+            window_start=22.0, window_end=1.5,
+        )
+        assert result == pd.Timestamp("2026-10-25T01:00")  # 01:00 GMT, second pass
+
+    @pytest.mark.parametrize(
+        ("tz", "start", "window"),
+        [
+            ("America/New_York", "2026-11-01T02:00", (0.0, 1.5)),
+            ("America/New_York", "2026-03-07T22:26", (0.0, 2.0)),
+            ("Europe/London", "2026-10-24T20:00", (22.0, 1.5)),
+            ("Australia/Lord_Howe", "2026-04-04T00:00", (22.0, 1.5)),
+            ("America/Santiago", "2026-04-05T02:37", (1.75, 1.25)),
+        ],
+    )
+    @pytest.mark.parametrize("minutes", [30, 100, 200])
+    def test_result_is_earliest_active_minute_on_dst_days(self, tz, start, window, minutes):
+        start = pd.Timestamp(start)
+        kwargs = {"exclude_weekends": False, "holiday_dates": None, "tz": tz,
+                  "window_start": window[0], "window_end": window[1]}
+
+        def measured(at):
+            return (at - start).total_seconds() / 60 - count_excluded_minutes(start, at, **kwargs)
+
+        result = add_business_minutes(start, minutes, **kwargs)
+        assert measured(result) >= minutes - 1e-6
+        at = start + pd.Timedelta(minutes=1)
+        while at < result:
+            if not is_excluded_day(at, **kwargs):
+                assert measured(at) < minutes
+            at += pd.Timedelta(minutes=1)
+
+    @pytest.mark.parametrize("start", ["2026-10-30T20:00", "2026-03-06T20:00"])
+    def test_inverse_property_across_dst_change(self, start):
+        start = pd.Timestamp(start)  # Friday before fall-back / spring-forward in New York
+        kwargs = {"exclude_weekends": True, "holiday_dates": None, "tz": "America/New_York"}
+        end = add_business_minutes(start, 3000, **kwargs)
+        wall_minutes = (end - start).total_seconds() / 60
+        assert wall_minutes - count_excluded_minutes(start, end, **kwargs) == pytest.approx(3000)
 
 
 class Test_GetSarimaxForecast_TimezoneExog:

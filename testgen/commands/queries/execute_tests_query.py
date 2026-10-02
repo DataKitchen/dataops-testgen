@@ -17,6 +17,7 @@ from testgen.common.database.database_service import (
 from testgen.common.enums import MonitorCalculation, SuiteType
 from testgen.common.freshness_service import (
     count_excluded_minutes,
+    effective_exclude_weekends,
     get_freshness_gated_baseline,
     get_schedule_params,
     is_excluded_day,
@@ -435,37 +436,40 @@ class TestExecutionSQL:
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),
             })
 
-            # Freshness exclusion params — computed per test at execution time
-            if test_def.test_type == "Freshness_Trend" and test_def.baseline_sum:
-                sched = get_schedule_params(test_def.prediction)
-                # Once the schedule is active (excluded_days derived from active_days),
-                # it supersedes exclude_weekends as the single source of truth for
-                # day exclusion — avoids conflicts where a detection day (e.g. Saturday)
-                # is active per schedule but excluded per exclude_weekends.
-                effective_exclude_weekends = False if sched.excluded_days else self._exclude_weekends
-                has_exclusions = effective_exclude_weekends or sched.excluded_days or sched.window_start is not None
-                if has_exclusions:
-                    last_update = pd.Timestamp(test_def.baseline_sum)
-                    excluded = round(count_excluded_minutes(
-                        last_update, self.run_date, effective_exclude_weekends, self._holiday_dates,
-                        tz=self._schedule_tz, excluded_days=sched.excluded_days,
-                        window_start=sched.window_start, window_end=sched.window_end,
-                    ))
-                    is_excl = 1 if is_excluded_day(
-                        pd.Timestamp(self.run_date), effective_exclude_weekends, self._holiday_dates,
-                        tz=self._schedule_tz, excluded_days=sched.excluded_days,
-                        window_start=sched.window_start, window_end=sched.window_end,
-                    ) else 0
-                    params["EXCLUDED_MINUTES"] = excluded
-                    params["IS_EXCLUDED_DAY"] = is_excl
-                else:
-                    params["EXCLUDED_MINUTES"] = 0
-                    params["IS_EXCLUDED_DAY"] = 0
-            else:
-                params["EXCLUDED_MINUTES"] = 0
-                params["IS_EXCLUDED_DAY"] = 0
+            params.update(self._freshness_exclusion_params(test_def))
 
         return params
+
+    def _freshness_exclusion_params(self, test_def: TestExecutionDef) -> dict:
+        """Freshness exclusion parameters for a test at this run's date.
+
+        :param test_def: The test definition being executed.
+        :returns: ``EXCLUDED_MINUTES`` between the last detected update and the run date, and
+            ``IS_EXCLUDED_DAY`` (1 or 0) for the run date; both 0 for other test types, when
+            no update has been detected, or when nothing is excluded.
+        """
+        no_exclusions = {"EXCLUDED_MINUTES": 0, "IS_EXCLUDED_DAY": 0}
+        if test_def.test_type != "Freshness_Trend" or not test_def.baseline_sum:
+            return no_exclusions
+
+        sched = get_schedule_params(test_def.prediction)
+        exclude_weekends = effective_exclude_weekends(self._exclude_weekends, sched.excluded_days)
+        if not (exclude_weekends or self._holiday_dates or sched.excluded_days or sched.window_start is not None):
+            return no_exclusions
+
+        exclusions = {
+            "exclude_weekends": exclude_weekends,
+            "holiday_dates": self._holiday_dates,
+            "tz": self._schedule_tz,
+            "excluded_days": sched.excluded_days,
+            "window_start": sched.window_start,
+            "window_end": sched.window_end,
+        }
+        run_date = pd.Timestamp(self.run_date)
+        return {
+            "EXCLUDED_MINUTES": round(count_excluded_minutes(pd.Timestamp(test_def.baseline_sum), run_date, **exclusions)),
+            "IS_EXCLUDED_DAY": 1 if is_excluded_day(run_date, **exclusions) else 0,
+        }
 
     def _get_query(
         self,
