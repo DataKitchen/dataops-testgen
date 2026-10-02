@@ -79,7 +79,7 @@ dependencies = [
     # MCP server
     "mcp[cli]==1.28.1",
     "uvicorn==0.41.0",
-    "PyJWT==2.13.0",
+    "PyJWT==2.15.1",
     "bcrypt==5.0.0",
 
     # API & OAuth server
