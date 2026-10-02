@@ -4,6 +4,7 @@ Rows are written by column name, so a measure a type does not take is simply abs
 query rather than padded with a NULL placeholder to share one column list.
 """
 
+import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import get_args
 from unittest.mock import MagicMock
 from uuid import uuid4
 
+import duckdb
 import pytest
 
 import testgen
@@ -30,6 +32,8 @@ PLACEHOLDER = re.compile(r"^\s*NULL AS \w+,?\s*$", re.MULTILINE)
 DANGLING_COMMA = re.compile(r",\s*(?:FROM\b|CROSS JOIN\b|\))", re.IGNORECASE)
 # The percentile derived table: the innermost "(SELECT" that closes as ") pctile".
 PERCENTILE_SUBQUERY = re.compile(r"\(SELECT(?:(?!\(SELECT).)*?\)\s*pctile", re.DOTALL)
+# A percentile aggregated in the column's main read, one line per percentile.
+INLINE_PERCENTILE = re.compile(r"^.*\bAS percentile_\d+,?$", re.MULTILINE)
 # The sampling clauses the flavors use. Placeholders are rendered by then, so this matches the SQL.
 SAMPLING_CLAUSE = re.compile(r"\bSAMPLE\b|\bTABLESAMPLE\b|\bRAND(?:OM)?\s*\(", re.IGNORECASE)
 
@@ -46,6 +50,16 @@ def _percentile_methods(flavor: str) -> tuple[bool, ...]:
         methods.append(True)
     assert methods, f"{flavor}: no percentile branch to render"
     return tuple(methods)
+
+
+def _percentile_sql(query: str) -> str:
+    """The SQL that computes the percentiles: the percentile derived table, or the percentile
+    expressions where the flavor aggregates them in the column's main read."""
+    if derived := PERCENTILE_SUBQUERY.search(query):
+        return derived.group(0)
+    inline = "\n".join(INLINE_PERCENTILE.findall(query))
+    assert inline, "no percentiles in the query"
+    return inline
 
 
 def _profiling_sql(flavor: str) -> ProfilingSQL:
@@ -107,20 +121,9 @@ def test_every_type_renders_a_well_formed_select(flavor, general_type, sampled):
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
-def test_percentiles_never_read_the_sample(flavor):
-    """Sampling covers the rest of the numeric query; the percentile derived table reads the whole
-    table with whichever method the run resolved."""
-    for approx in _percentile_methods(flavor):
-        query = _render(flavor, "N", sampled=True, approx=approx)
-        pctile = PERCENTILE_SUBQUERY.search(query)
-        assert pctile, f"{flavor}: no percentile derived table"
-        assert not SAMPLING_CLAUSE.search(pctile.group(0)), f"{flavor}: {pctile.group(0)}"
-
-
-@pytest.mark.parametrize("flavor", FLAVORS)
 def test_the_percentile_label_names_the_function_the_query_renders(flavor):
     for approx in _percentile_methods(flavor):
-        pctile = PERCENTILE_SUBQUERY.search(_render(flavor, "N", sampled=False, approx=approx)).group(0)
+        pctile = _percentile_sql(_render(flavor, "N", sampled=False, approx=approx))
         label = _profiling_sql(flavor).profiled_row_values(_column("N"), approx)["percentile_method"]
         assert label == (PercentileMethod.APPROXIMATE if "APPROX" in pctile.upper() else PercentileMethod.EXACT)
 
@@ -135,8 +138,8 @@ def test_the_query_projects_nothing_the_run_supplies(flavor, general_type):
 
 @pytest.mark.parametrize("flavor", [flavor for flavor in FLAVORS if len(_percentile_methods(flavor)) == 2])
 def test_the_two_percentile_methods_render_different_functions(flavor):
-    exact = PERCENTILE_SUBQUERY.search(_render(flavor, "N", sampled=False, approx=False)).group(0)
-    approx = PERCENTILE_SUBQUERY.search(_render(flavor, "N", sampled=False, approx=True)).group(0)
+    exact = _percentile_sql(_render(flavor, "N", sampled=False, approx=False))
+    approx = _percentile_sql(_render(flavor, "N", sampled=False, approx=True))
     assert exact != approx
     assert "APPROX" in approx.upper()
 
@@ -183,7 +186,8 @@ def test_every_non_text_type_counts_its_values(flavor, general_type):
 @pytest.mark.parametrize("general_type", ["N", "D", "B", "X", "T"])
 @pytest.mark.parametrize("flavor", FLAVORS)
 def test_only_text_columns_read_the_sample(flavor, general_type):
-    assert not SAMPLING_CLAUSE.search(_render(flavor, general_type, sampled=True))
+    for approx in _percentile_methods(flavor):
+        assert not SAMPLING_CLAUSE.search(_render(flavor, general_type, sampled=True, approx=approx))
 
 
 @pytest.mark.parametrize("flavor", FLAVORS)
@@ -196,3 +200,41 @@ def test_each_sample_a_text_column_takes_is_read_once(flavor):
     # Each CTE's own definition plus one read: an engine may draw a new sample on every read.
     reads = {name: len(re.findall(rf"\b{name}\b", query)) for name in sampled_ctes}
     assert reads == dict.fromkeys(sampled_ctes, 2), f"{flavor}: {reads}"
+
+
+# A CSV column of each general type, as DuckDB reads it back.
+DUCKDB_COLUMN_VALUES = {
+    "A": "'v' || i",
+    "N": "i * 1.5",
+    "D": "DATE '2026-01-01' + i::INTEGER",
+    "B": "i % 2 = 0",
+}
+
+
+def _source_reads(plan: list[dict]) -> int:
+    nodes = list(plan)
+    reads = 0
+    while nodes:
+        node = nodes.pop()
+        reads += node.get("name") == "READ_CSV"
+        nodes.extend(node.get("children", []))
+    return reads
+
+
+@pytest.mark.parametrize("sampled", [False, True])
+@pytest.mark.parametrize("general_type", sorted(DUCKDB_COLUMN_VALUES))
+def test_a_duckdb_column_query_reads_its_source_once(tmp_path, general_type, sampled):
+    """On a file source every read parses the whole file, so the plan is held to one."""
+    source = tmp_path / "t.csv"
+    database = duckdb.connect()
+    database.execute(
+        f"COPY (SELECT {DUCKDB_COLUMN_VALUES[general_type]} AS c FROM range(100) r(i)) TO '{source}' (HEADER)"
+    )
+    database.execute("CREATE SCHEMA s")
+    database.execute(f"CREATE VIEW s.t AS SELECT * FROM read_csv('{source}')")
+
+    for approx in _percentile_methods("duckdb"):
+        query = _render("duckdb", general_type, sampled, approx=approx)
+        plan = json.loads(database.execute(f"EXPLAIN (FORMAT json) {query}").fetchone()[1])
+        assert _source_reads(plan) == 1
+        assert database.execute(query).fetchone()
