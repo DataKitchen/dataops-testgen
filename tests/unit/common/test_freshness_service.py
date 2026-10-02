@@ -1031,6 +1031,42 @@ class Test_WeekendScheduleInteraction:
         )
         assert result is True
 
+    def test_full_week_schedule_ignores_weekend_setting(self):
+        """A table active every day gets the same thresholds whether or not the suite excludes weekends."""
+        offsets = [-20, 5, 12, -8, 17, -3, 9, -15, 2, 14, -11, 6, -18, 10]
+        days = pd.date_range("2026-08-10", periods=8 * 7, freq="D")
+        updates = [
+            (day + pd.Timedelta(hours=6, minutes=offsets[i % len(offsets)])).isoformat()
+            for i, day in enumerate(days)
+        ]
+        history = _make_freshness_history(updates, check_interval_minutes=60)
+
+        excluding = compute_freshness_threshold(
+            history, PredictSensitivity.medium, exclude_weekends=True, schedule_tz="UTC",
+        )
+        not_excluding = compute_freshness_threshold(
+            history, PredictSensitivity.medium, exclude_weekends=False, schedule_tz="UTC",
+        )
+        assert json.loads(excluding[3])["active_days"] == list(range(7))
+        assert excluding == not_excluding
+        assert excluding[0] is not None  # weekend gaps count in full, so a lower tolerance is learned
+
+    def test_deadline_in_next_year_excludes_its_holidays(self):
+        """A deadline past the end of the history still sees that year's holidays."""
+        offsets = [-20, 5, 12, -8, 17, -3, 9, -15, 2, 14, -11, 6, -18, 10]
+        days = [day for day in pd.date_range("2026-10-01", "2026-12-31", freq="D") if day.weekday() < 5]
+        updates = [
+            (day + pd.Timedelta(hours=6, minutes=offsets[i % len(offsets)])).isoformat()
+            for i, day in enumerate(days)
+        ]
+        history = _make_freshness_history(updates, check_interval_minutes=60)
+
+        _, upper, _, _ = compute_freshness_threshold(
+            history, PredictSensitivity.medium, exclude_weekends=True, holiday_codes=["US"], schedule_tz="UTC",
+        )
+        # Last update Thursday 2026-12-31 06:14; the Friday deadline falls on New Year's Day
+        assert upper == (pd.Timestamp("2027-01-01") - pd.Timestamp(updates[-1])).total_seconds() / 60
+
     def test_saturday_excluded_minutes_zero_for_weekday_gap(self):
         """No excluded minutes between Friday and Saturday when Saturday is active."""
         excluded_days = frozenset({0, 6})
