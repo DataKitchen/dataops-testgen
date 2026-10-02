@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -648,3 +648,43 @@ def test_get_params_empty_tolerances_become_null():
     assert params["UPPER_TOLERANCE"] == "NULL"
 
 
+
+
+# --- TestExecutionSQL freshness exclusion params ---
+
+
+def _make_freshness_execution_sql(run_date, exclude_weekends=False, holiday_dates=None) -> TestExecutionSQL:
+    instance = TestExecutionSQL.__new__(TestExecutionSQL)
+    instance.run_date = run_date
+    instance._exclude_weekends = exclude_weekends
+    instance._holiday_dates = holiday_dates
+    instance._schedule_tz = "UTC"
+    return instance
+
+
+def _freshness_td(prediction=None, last_update="2026-12-24 06:00:00"):
+    return _make_td(test_type="Freshness_Trend", baseline_sum=last_update, prediction=prediction)
+
+
+def test_freshness_exclusions_count_holidays_without_other_exclusions():
+    instance = _make_freshness_execution_sql(datetime(2026, 12, 25, 12, 0), holiday_dates={date(2026, 12, 25)})
+    params = instance._freshness_exclusion_params(_freshness_td())
+    assert params == {"EXCLUDED_MINUTES": 12 * 60, "IS_EXCLUDED_DAY": 1}
+
+
+def test_freshness_exclusions_zero_without_any_exclusions():
+    instance = _make_freshness_execution_sql(datetime(2026, 12, 25, 12, 0))
+    assert instance._freshness_exclusion_params(_freshness_td()) == {"EXCLUDED_MINUTES": 0, "IS_EXCLUDED_DAY": 0}
+
+
+def test_freshness_exclusions_full_week_schedule_overrides_weekend_setting():
+    prediction = {"schedule_stage": "active", "active_days": list(range(7))}
+    instance = _make_freshness_execution_sql(datetime(2026, 9, 26, 12, 0), exclude_weekends=True)  # Saturday
+    params = instance._freshness_exclusion_params(_freshness_td(prediction, last_update="2026-09-25 06:00:00"))
+    assert params == {"EXCLUDED_MINUTES": 0, "IS_EXCLUDED_DAY": 0}
+
+
+def test_freshness_exclusions_skip_other_test_types():
+    instance = _make_freshness_execution_sql(datetime(2026, 12, 25, 12, 0), holiday_dates={date(2026, 12, 25)})
+    td = _make_td(test_type="Volume_Trend", baseline_sum="2026-12-24 06:00:00")
+    assert instance._freshness_exclusion_params(td) == {"EXCLUDED_MINUTES": 0, "IS_EXCLUDED_DAY": 0}

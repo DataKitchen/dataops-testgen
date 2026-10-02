@@ -19,7 +19,12 @@ from datetime import UTC, date, datetime
 import pandas as pd
 
 from testgen.common.enums import MonitorCalculation
-from testgen.common.freshness_service import add_business_minutes, get_schedule_params, resolve_holiday_dates
+from testgen.common.freshness_service import (
+    add_business_minutes,
+    effective_exclude_weekends,
+    get_schedule_params,
+    resolve_holiday_dates,
+)
 from testgen.common.models.test_definition import MonitorForecastPoint, TestDefinition, TestDefinitionSummary
 from testgen.common.models.test_suite import TestSuite
 
@@ -28,13 +33,14 @@ from testgen.common.models.test_suite import TestSuite
 MonitorDefinition = TestDefinition | TestDefinitionSummary
 
 
-def resolve_suite_holiday_dates(test_suite: TestSuite) -> set[date] | None:
-    """Holiday dates excluded from the suite's schedule, over a window spanning
-    recent history through the forecast horizon. ``None`` when no calendars are set."""
+def resolve_suite_holiday_dates(test_suite: TestSuite, since: pd.Timestamp) -> set[date] | None:
+    """Holiday dates excluded from the suite's schedule, from ``since`` through a year past
+    the later of ``since`` and today. ``None`` when no calendars are set."""
     if not test_suite.holiday_codes_list:
         return None
-    now = pd.Timestamp.now("UTC")
-    idx = pd.DatetimeIndex([now - pd.Timedelta(days=7), now + pd.Timedelta(days=30)])
+    since = since.tz_localize("UTC") if since.tzinfo is None else since
+    horizon = max(since, pd.Timestamp.now("UTC")) + pd.Timedelta(days=366)
+    idx = pd.DatetimeIndex([since, horizon])
     return resolve_holiday_dates(test_suite.holiday_codes_list, idx)
 
 
@@ -50,8 +56,10 @@ def next_update_window(
     The schedule-derived business-time interval from the last detected update out
     to the lower/upper staleness tolerance. ``start`` is ``None`` when only an
     upper tolerance is configured (the update is expected by ``end``). Returns
-    ``None`` unless the Freshness monitor is in Prediction Model mode with a
-    trained schedule and at least one observed update.
+    ``None`` when the Freshness monitor is not in Prediction Model mode, has a
+    prediction without a schedule stage, or lacks an upper tolerance or an observed
+    update, and also when the schedule's active window has no length, so no business
+    time elapses.
     """
     if (
         freshness_definition is None
@@ -63,26 +71,26 @@ def next_update_window(
         return None
 
     tz = cron_tz or "UTC"
-    exclude_weekends = test_suite.predict_exclude_weekends
-    holiday_dates = resolve_suite_holiday_dates(test_suite)
+    last_update = pd.Timestamp(last_detection_time)
+    holiday_dates = resolve_suite_holiday_dates(test_suite, last_update)
     sched = get_schedule_params(freshness_definition.prediction)
+    exclude_weekends = effective_exclude_weekends(test_suite.predict_exclude_weekends, sched.excluded_days)
 
-    window_end = add_business_minutes(
-        pd.Timestamp(last_detection_time),
-        float(freshness_definition.upper_tolerance),
-        exclude_weekends,
-        holiday_dates, tz,
-        excluded_days=sched.excluded_days,
-    )
-    window_start = None
-    if lower_minutes := (float(freshness_definition.lower_tolerance) if freshness_definition.lower_tolerance else None):
-        window_start = add_business_minutes(
-            pd.Timestamp(last_detection_time),
-            lower_minutes,
-            exclude_weekends,
-            holiday_dates, tz,
+    upper_minutes = float(freshness_definition.upper_tolerance)
+    lower_minutes = float(freshness_definition.lower_tolerance) if freshness_definition.lower_tolerance else None
+    try:
+        window_end = add_business_minutes(
+            last_update, upper_minutes, exclude_weekends, holiday_dates, tz,
             excluded_days=sched.excluded_days,
+            window_start=sched.window_start, window_end=sched.window_end,
         )
+        window_start = add_business_minutes(
+            last_update, lower_minutes, exclude_weekends, holiday_dates, tz,
+            excluded_days=sched.excluded_days,
+            window_start=sched.window_start, window_end=sched.window_end,
+        ) if lower_minutes else None
+    except ValueError:
+        return None
 
     return {
         "start": int(window_start.timestamp() * 1000) if window_start else None,

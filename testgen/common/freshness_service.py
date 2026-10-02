@@ -19,6 +19,10 @@ MIN_FRESHNESS_GAPS = 5
 # Default sliding window size — use only the most recent N gaps
 MAX_FRESHNESS_GAPS = 40
 
+ALL_WEEKDAYS = frozenset(range(7))
+MAX_BUSINESS_WALK_DAYS = 3660
+WEEKEND_DAYS = frozenset({5, 6})
+
 
 class FreshnessThreshold(NamedTuple):
     lower: float | None
@@ -144,6 +148,21 @@ def get_schedule_params(prediction: dict | str | None) -> ScheduleParams:
     return ScheduleParams(excluded_days=excluded_days, window_start=window_start, window_end=window_end)
 
 
+def effective_exclude_weekends(exclude_weekends: bool, excluded_days: frozenset[int] | None) -> bool:
+    """Weekend exclusion to apply alongside a schedule's inactive days.
+
+    An active schedule supersedes the suite's weekend setting, so its own active
+    days decide whether a weekend counts, including a schedule active every day.
+
+    :param exclude_weekends: The suite's weekend exclusion setting.
+    :param excluded_days: Inactive weekdays inferred from an active schedule (empty when
+        it is active every day), or None when there is no active schedule with recorded
+        active days.
+    :returns: False when a schedule is active, else ``exclude_weekends``.
+    """
+    return False if excluded_days is not None else exclude_weekends
+
+
 def get_freshness_gated_baseline(prediction: dict | str | None) -> float | None:
     """Extract the freshness-gated baseline value from a Volume_Trend / Metric_Trend
     prediction JSON.
@@ -204,19 +223,6 @@ def is_excluded_day(
     return False
 
 
-def next_business_day_start(
-    dt: pd.Timestamp,
-    exclude_weekends: bool,
-    holiday_dates: set[date] | None,
-    tz: str | None = None,
-    excluded_days: frozenset[int] | None = None,
-) -> pd.Timestamp:
-    day = (pd.Timestamp(dt) + pd.DateOffset(days=1)).normalize()
-    while is_excluded_day(day, exclude_weekends, holiday_dates, tz=tz, excluded_days=excluded_days):
-        day += pd.DateOffset(days=1)
-    return day
-
-
 def count_excluded_minutes(
     start: pd.Timestamp,
     end: pd.Timestamp,
@@ -274,10 +280,6 @@ def count_excluded_minutes(
             total_minutes += (overlap_end - overlap_start).total_seconds() / 60
         elif has_window:
             # Active day but with window exclusion: exclude hours outside the window
-            # Compute the active window boundaries for this calendar day
-            win_open = day_start + pd.Timedelta(hours=window_start)
-            win_close = day_start + pd.Timedelta(hours=window_end)
-
             # Clip to the [start, end] interval
             overlap_start = max(start, day_start)
             overlap_end = min(end, next_day)
@@ -287,9 +289,10 @@ def count_excluded_minutes(
             total_overlap = (overlap_end - overlap_start).total_seconds() / 60
 
             # Compute overlap with the active window
-            active_start = max(overlap_start, win_open)
-            active_end = min(overlap_end, win_close)
-            active_minutes = max((active_end - active_start).total_seconds() / 60, 0)
+            active_minutes = sum(
+                max((min(overlap_end, win_close) - max(overlap_start, win_open)).total_seconds() / 60, 0)
+                for win_open, win_close in _window_segments(day_start, window_start, window_end)
+            )
 
             excluded_on_day = total_overlap - active_minutes
             if excluded_on_day > 0:
@@ -307,56 +310,151 @@ def add_business_minutes(
     holiday_dates: set[date] | None,
     tz: str | None = None,
     excluded_days: frozenset[int] | None = None,
+    window_start: float | None = None,
+    window_end: float | None = None,
 ) -> pd.Timestamp:
-    """Advance wall-clock time by N business minutes, skipping excluded days.
+    """Advance wall-clock time by N business minutes, skipping excluded time.
 
-    Inverse of count_excluded_minutes: given a start time and a number of
-    business minutes to elapse, returns the wall-clock timestamp at which
-    those minutes will have passed, skipping weekends and holidays.
+    Inverse of count_excluded_minutes: returns the earliest timestamp outside
+    excluded time at which count_excluded_minutes measures at least
+    business_minutes elapsed since start.
+    Weekends, holidays and inferred inactive days are skipped whole; when
+    window_start/window_end are provided, only the hours inside that window count
+    on the remaining days, and a window whose start is after its end wraps midnight.
 
-    When tz is provided, naive timestamps are interpreted as UTC and day
-    boundary checks use the local timezone.
+    When tz is provided, a naive start is interpreted as UTC and the result is
+    returned as naive UTC; an aware start returns an aware timestamp. When tz
+    is omitted, an aware start is assumed to have a fixed UTC offset.
+
+    :raises ValueError: If business_minutes is positive and the settings leave no
+        time to count: excluded_days plus weekend exclusion cover all seven days, or
+        window_start equals window_end, or the minutes do not elapse within
+        MAX_BUSINESS_WALK_DAYS days.
     """
     start = pd.Timestamp(start)
     if business_minutes <= 0:
         return start
 
-    has_exclusions = exclude_weekends or bool(holiday_dates) or bool(excluded_days)
+    has_window = window_start is not None and window_end is not None
+    if (excluded_days or frozenset()) | (WEEKEND_DAYS if exclude_weekends else frozenset()) >= ALL_WEEKDAYS:
+        raise ValueError("Every day of the week is excluded, so no business time elapses.")
+    if has_window and window_end == window_start:
+        raise ValueError("The active window has no length, so no business time elapses.")
+
+    has_exclusions = exclude_weekends or bool(holiday_dates) or bool(excluded_days) or has_window
     if not has_exclusions:
         return start + pd.Timedelta(minutes=business_minutes)
 
-    cursor = start
     if tz:
-        cursor = _to_local(cursor, tz)
+        local_tz = zoneinfo.ZoneInfo(tz)
+        local_start = _to_local(start, tz)
+    else:
+        local_tz = start.tzinfo
+        local_start = start
+    cursor = local_start.tz_localize(None) if local_tz else local_start
 
-    remaining = business_minutes
+    def to_absolute(naive: pd.Timestamp, nonexistent: str = "shift_forward") -> pd.Timestamp:
+        return naive.tz_localize(local_tz, ambiguous=True, nonexistent=nonexistent) if local_tz else naive
 
-    while remaining > 0:
+    def measured(at: pd.Timestamp) -> float:
+        return (at - local_start).total_seconds() / 60 - count_excluded_minutes(
+            local_start, at, exclude_weekends, holiday_dates, tz=tz, excluded_days=excluded_days,
+            window_start=window_start, window_end=window_end,
+        )
+
+    def finish(result: pd.Timestamp) -> pd.Timestamp:
+        if local_tz and start.tzinfo is None:
+            return result.tz_convert("UTC").tz_localize(None)
+        return result
+
+    # count_excluded_minutes subtracts naive-local excluded time from absolute elapsed
+    # time. Track the naive excluded minutes passed so far and measure business time at
+    # each active segment in absolute time, so a DST change cannot shift the result.
+    excluded = 0.0
+    walk_limit = cursor.normalize() + pd.Timedelta(days=MAX_BUSINESS_WALK_DAYS)
+    while True:
         day_start = cursor.normalize()
-        next_day = (day_start + pd.DateOffset(days=1)).normalize()
+        next_day = day_start + pd.Timedelta(days=1)
+        if day_start >= walk_limit:
+            raise ValueError(f"Business time does not elapse within {MAX_BUSINESS_WALK_DAYS} days.")
 
-        if is_excluded_day(cursor, exclude_weekends, holiday_dates, excluded_days=excluded_days):
-            cursor = next_day
-            # Skip consecutive excluded days
-            for _ in range(365):
-                if not is_excluded_day(cursor, exclude_weekends, holiday_dates, excluded_days=excluded_days):
-                    break
-                cursor = (cursor + pd.DateOffset(days=1)).normalize()
-            continue
+        if not is_excluded_day(day_start, exclude_weekends, holiday_dates, excluded_days=excluded_days):
+            segments = (
+                _window_segments(day_start, window_start, window_end) if has_window else [(day_start, next_day)]
+            )
+            fold = _fall_back_fold(to_absolute(day_start), to_absolute(next_day)) if tz else None
+            if fold:
+                # The naive hours [fold_start, fold_end) occur twice. Walk the day as two
+                # passes, each with one fixed UTC offset, and measure business time directly.
+                fold_start, fold_end, offset_before, offset_after = fold
+                passes = [(day_start, fold_end, offset_before), (fold_start, next_day, offset_after)]
+                for pass_start, pass_end, offset in passes:
+                    for open_at, close_at in segments:
+                        low, high = max(open_at, pass_start), min(close_at, pass_end)
+                        if high < low:
+                            continue
+                        entry = max((low - offset).tz_localize("UTC").tz_convert(local_tz), local_start)
+                        close = (high - offset).tz_localize("UTC").tz_convert(local_tz)
+                        if close < entry:
+                            continue
+                        at_entry = measured(entry)
+                        if business_minutes <= at_entry + (close - entry).total_seconds() / 60:
+                            return finish(entry + pd.Timedelta(minutes=max(business_minutes - at_entry, 0)))
+                cursor = next_day
+                excluded = (to_absolute(next_day) - local_start).total_seconds() / 60 - measured(to_absolute(next_day))
+                continue
 
-        minutes_left_today = (next_day - cursor).total_seconds() / 60
+            for open_at, close_at in segments:
+                if close_at <= cursor:
+                    continue
+                segment_start = max(cursor, open_at)
+                excluded += (segment_start - cursor).total_seconds() / 60
+                entry = to_absolute(segment_start)
+                elapsed_at_entry = (entry - local_start).total_seconds() / 60 - excluded
+                close = to_absolute(close_at, nonexistent="shift_backward")
+                elapsed_at_close = (close - local_start).total_seconds() / 60 - excluded
+                if business_minutes <= elapsed_at_close:
+                    return finish(entry + pd.Timedelta(minutes=max(business_minutes - elapsed_at_entry, 0)))
+                cursor = close_at
 
-        if remaining <= minutes_left_today:
-            cursor = cursor + pd.Timedelta(minutes=remaining)
-            remaining = 0
+        excluded += (next_day - cursor).total_seconds() / 60
+        cursor = next_day
+
+
+def _fall_back_fold(
+    day_start: pd.Timestamp, next_day: pd.Timestamp,
+) -> tuple[pd.Timestamp, pd.Timestamp, pd.Timedelta, pd.Timedelta] | None:
+    """The repeated naive-local interval of a day whose UTC offset decreases.
+
+    :param day_start: Aware start of the local day.
+    :param next_day: Aware start of the following local day.
+    :returns: (fold_start, fold_end, offset_before, offset_after), with fold bounds as naive
+        local times, or None when the offset does not decrease during the day.
+    """
+    offset_before, offset_after = day_start.utcoffset(), next_day.utcoffset()
+    if offset_after >= offset_before:
+        return None
+    low, high = day_start, next_day
+    while high - low > pd.Timedelta(seconds=1):
+        middle = low + (high - low) / 2
+        if middle.utcoffset() == offset_before:
+            low = middle
         else:
-            remaining -= minutes_left_today
-            cursor = next_day
+            high = middle
+    fold_end = (high.tz_convert("UTC").tz_localize(None) + offset_before).round("min")
+    return fold_end - (offset_before - offset_after), fold_end, offset_before, offset_after
 
-    if tz and start.tzinfo is None:
-        cursor = cursor.tz_convert("UTC").tz_localize(None)
 
-    return cursor
+def _window_segments(
+    day_start: pd.Timestamp, window_start: float, window_end: float,
+) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Active intervals of one calendar day for an hour-of-day window; a window whose
+    start is after its end wraps midnight and covers both ends of the day."""
+    open_at = day_start + pd.Timedelta(hours=window_start)
+    close_at = day_start + pd.Timedelta(hours=window_end)
+    if window_start <= window_end:
+        return [(open_at, close_at)]
+    return [(day_start, close_at), (open_at, day_start + pd.Timedelta(days=1))]
 
 
 def _is_in_time_window(hour: float, window_start: float, window_end: float) -> bool:
