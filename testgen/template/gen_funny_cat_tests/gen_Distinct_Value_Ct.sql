@@ -13,7 +13,6 @@ latest_results AS (
   INNER JOIN latest_run lr ON p.profile_run_id = lr.profile_run_id
   LEFT JOIN data_column_chars dcc ON (
     p.table_groups_id = dcc.table_groups_id
-    AND p.schema_name = dcc.schema_name
     AND p.table_name = dcc.table_name
     AND p.column_name = dcc.column_name
   )
@@ -62,7 +61,6 @@ selected_columns AS (
   )
   LEFT JOIN data_column_chars dcc ON (
     p.table_groups_id = dcc.table_groups_id
-    AND p.schema_name = dcc.schema_name
     AND p.table_name = dcc.table_name
     AND p.column_name = dcc.column_name
   )
@@ -95,7 +93,7 @@ SELECT
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
   :VERSION_ID ::UUID      AS version_id,
   'Distinct_Value_Ct'     AS test_type,
-  r.schema_name,
+  :DATA_SCHEMA            AS schema_name,
   r.table_name,
   r.column_name,
   'Y'                     AS test_active, 
