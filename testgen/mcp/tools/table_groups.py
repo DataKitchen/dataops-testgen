@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
+    apply_schema_move,
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
     move_table_group_schema,
@@ -620,10 +621,13 @@ def update_table_group(
     """Update fields on an existing table group. Atomic — no partial save.
 
     Connection and project are immutable — delete and recreate the table group
-    to re-parent it. ``schema`` is also immutable once the table group has been
-    used (profiled or has test suites); supply a different ``schema`` only on
-    unused table groups. On a file connection, ``file_declarations`` replaces the whole table
-    list — read the current one with ``get_table_group`` first.
+    to re-parent it. A different ``schema`` moves the table group to it: profiling, test
+    generation, the data catalog and later runs all read the new schema, and the test
+    definitions keep their identity and their history. A schema carrying none of the table
+    group's tables is refused, as is a table group with a job still running; tables the new
+    schema lacks are reported. On a file connection, tables are not reached through a schema,
+    so there is nothing to move to, and ``file_declarations`` replaces the whole table list —
+    read the current one with ``get_table_group`` first.
     """
     supplied = {
         "table_group_name": table_group_name,
@@ -712,6 +716,16 @@ def update_table_group(
     except IntegrityError as err:
         _maybe_raise_duplicate_name(err)
         raise
+
+    if move:
+        apply_schema_move(move, table_group.id)
+        doc.field("Test definitions repointed", str(move.definitions_repointed))
+        if move.missing_tables:
+            doc.text(
+                f"{len(move.missing_tables)} catalogued tables are not in `{move.schema}`. Their tests "
+                "report a missing table until the schema carries them or the tests are removed: "
+                + ", ".join(f"`{name}`" for name in sorted(move.missing_tables))
+            )
 
     return doc.render()
 

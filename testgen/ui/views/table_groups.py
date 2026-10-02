@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
+    apply_schema_move,
     apply_table_group_flavor_rules,
     move_table_group_schema,
     schema_label_for_table_group,
@@ -565,12 +566,13 @@ class TableGroupsPage(Page):
                     if table_group.table_group_schema != original_schema
                     else None
                 )
+                move = None
                 try:
                     if moving_to:
                         # The move reads the schema being left off the instance, and the form has
                         # already written the new one onto it.
                         table_group.table_group_schema = original_schema
-                        move_table_group_schema(table_group, moving_to)
+                        move = move_table_group_schema(table_group, moving_to)
                     table_group.save(add_scorecard_definition)
                 except SchemaMoveRefused as refusal:
                     table_group.table_group_schema = original_schema
@@ -578,7 +580,11 @@ class TableGroupsPage(Page):
                 except IntegrityError:
                     result = {"success": False, "message": "A Table Group with the same name already exists."}
                 else:
-                    if save_data_chars:
+                    if move:
+                        # The move probed the schema it is moving to, so its catalog write is the
+                        # one that describes where the table group now reads.
+                        apply_schema_move(move, table_group.id)
+                    elif save_data_chars:
                         try:
                             save_data_chars(table_group.id)
                         except Exception:

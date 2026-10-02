@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TypedDict
 from uuid import UUID
@@ -514,12 +514,18 @@ class SchemaMoveRefused(Exception):
 
 @dataclass
 class SchemaMove:
-    """What a move did: where it went, and which catalogued tables the new schema lacks."""
+    """What a move did: where it went, and which catalogued tables the new schema lacks.
+
+    ``refresh_catalog`` rewrites the catalog against the schema the move names. It is handed back
+    rather than run, because it writes on its own connection and commits there and then -- see
+    ``apply_schema_move``.
+    """
 
     previous_schema: str
     schema: str
     missing_tables: list[str]
     definitions_repointed: int
+    refresh_catalog: Callable[[UUID], None] | None = field(default=None, repr=False, compare=False)
 
 
 def _tables_in_use(table_group_id: UUID) -> set[str]:
@@ -549,6 +555,9 @@ def _has_job_in_flight(table_group: TableGroup) -> bool:
             or_(
                 JobExecution.kwargs["table_group_id"].astext.in_(named),
                 JobExecution.kwargs["test_suite_id"].astext.in_(named),
+                # Monitor generation names the suite under its own key, and profiling enqueues it
+                # as a follow-up, so this is the job most likely to be in flight during a move.
+                JobExecution.kwargs["monitor_suite_id"].astext.in_(named),
             ),
         )
     ).first()
@@ -598,12 +607,20 @@ def move_table_group_schema(
     genuinely dropped a table is a legitimate move — and the catalog reconciles them on the next
     refresh.
 
-    Raises ``SchemaMoveRefused`` for an unusable name, a job already in flight, or a schema that
-    matches nothing. Returns what moved.
+    Raises ``SchemaMoveRefused`` for a connection whose tables are not reached through a schema, an
+    unusable name, a job already in flight, or a schema that matches nothing. Returns what moved.
     """
     previous = table_group.table_group_schema
     if schema == previous:
         return SchemaMove(previous_schema=previous, schema=schema, missing_tables=[], definitions_repointed=0)
+
+    connection = connection or Connection.get(table_group.connection_id)
+    flavor_code = connection.sql_flavor_code if connection else None
+    if declares_files(flavor_code) or fixed_table_group_schema(flavor_code) is not None:
+        raise SchemaMoveRefused(
+            "schema_unsupported",
+            "Tables on this connection are not reached through a schema, so there is nothing to move to.",
+        )
 
     if error := validate_schema_name(schema):
         raise SchemaMoveRefused("invalid_schema_name", f"schema {error}.")
@@ -634,12 +651,32 @@ def move_table_group_schema(
 
     table_group.table_group_schema = schema
     repointed = _repoint_definitions(table_group, previous, schema)
-    if data_chars and sql_generator:
-        make_save_data_chars(data_chars, sql_generator)(table_group.id)
 
     return SchemaMove(
         previous_schema=previous,
         schema=schema,
         missing_tables=missing,
         definitions_repointed=repointed,
+        refresh_catalog=(
+            make_save_data_chars(data_chars, sql_generator) if data_chars and sql_generator else None
+        ),
     )
+
+
+def apply_schema_move(move: SchemaMove, table_group_id: UUID) -> None:
+    """Make the move durable, then rewrite the catalog against the schema it names.
+
+    The catalog is written on its own connection and commits there, so it cannot be undone by the
+    caller rolling back. Running it before the move is durable would leave a catalog describing a
+    schema that the table group and its test definitions do not name -- which reads as a full
+    table drop-and-add to the schema-change monitors.
+
+    A catalog that fails to write is recoverable: the next refresh rebuilds it.
+    """
+    get_current_session().commit()
+    if move.refresh_catalog is None:
+        return
+    try:
+        move.refresh_catalog(table_group_id)
+    except Exception:
+        LOG.exception("Catalog refresh after the schema move encountered errors")

@@ -1,6 +1,5 @@
 """Tests for the MCP table-group CRUD tools — create / update / preview."""
 
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -8,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
-from testgen.common.database.table_group_service import SchemaMoveRefused
+from testgen.common.database.table_group_service import SchemaMove, SchemaMoveRefused
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -460,7 +459,7 @@ def test_update_table_group_moves_the_schema_through_the_guarded_path(
     def apply(table_group, schema, **_kwargs):
         # The real move sets this; the tool saves only what its diff can see.
         table_group.table_group_schema = schema
-        return SimpleNamespace(
+        return SchemaMove(
             previous_schema="public", schema=schema, missing_tables=[], definitions_repointed=3,
         )
 
@@ -495,11 +494,10 @@ def test_update_table_group_surfaces_a_refused_move(mock_resolve, mock_tg_cls, m
 
 @patch(f"{MODULE}.TableGroup")
 @patch(f"{MODULE}.resolve_table_group")
-def test_update_table_group_same_schema_on_in_use_group_is_noop(mock_resolve, mock_tg_cls, db_session_mock):
-    """Re-supplying the current schema on an in-use group is a no-op, not a lock violation."""
+def test_update_table_group_same_schema_is_noop(mock_resolve, mock_tg_cls, db_session_mock):
+    """Re-supplying the current schema moves nothing, so there is nothing to save."""
     tg = _mock_table_group(table_group_schema="public")
     mock_resolve.return_value = tg
-    mock_tg_cls.is_in_use.return_value = True
 
     from testgen.mcp.tools.table_groups import update_table_group
 

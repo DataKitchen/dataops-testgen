@@ -23,6 +23,7 @@ from testgen.api.schemas import (
 )
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
+    apply_schema_move,
     apply_table_group_flavor_rules,
     is_duplicate_name_error,
     move_table_group_schema,
@@ -215,6 +216,7 @@ _REFUSAL_STATUS = {
     "invalid_schema_name": 422,
     "schema_empty": 422,
     "schema_unreadable": 422,
+    "schema_unsupported": 422,
 }
 
 
@@ -244,6 +246,8 @@ def move_schema(
         move = move_table_group_schema(table_group, body.schema_name)
     except SchemaMoveRefused as refusal:
         raise api_error(_REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message) from refusal
+
+    apply_schema_move(move, table_group.id)
 
     return TableGroupSchemaMoveResponse(
         table_group_id=table_group.id,
