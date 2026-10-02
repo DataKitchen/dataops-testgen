@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from enum import StrEnum
-from typing import Any
+from types import MappingProxyType
+from typing import Any, ClassVar
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -41,6 +42,21 @@ class PercentileMethod(StrEnum):
     APPROXIMATE = "approximate"
 
 
+class MeasureAcquisition(StrEnum):
+    """How a profiling measure is taken, which together with the row's ``sample_ratio`` and
+    ``percentile_method`` says whether its value is exact, approximate or a sampled estimate."""
+
+    WHOLE_TABLE = "whole_table"
+    """Read over every row of the table, exactly."""
+    PERCENTILE = "percentile"
+    """Read over every row of the table, exactly or approximately as ``percentile_method`` records."""
+    SAMPLEABLE_COUNT = "sampleable_count"
+    """Counted on the sample when the row has a ``sample_ratio``, and lifted to the whole-table scale
+    by the ratio of the whole-table value count to the value count the sample observed."""
+    SAMPLEABLE = "sampleable"
+    """Read on the sample when the row has a ``sample_ratio``, and stored as measured."""
+
+
 def _as_decimal(value: Any) -> Decimal | None:
     # Target drivers return counts as int, Decimal or float; Databricks returns float('nan') for NULL.
     try:
@@ -48,6 +64,28 @@ def _as_decimal(value: Any) -> Decimal | None:
     except (InvalidOperation, ValueError, TypeError):
         return None
     return number if number.is_finite() else None
+
+
+def _lift(count: Any, whole: Decimal, sampled: Decimal) -> int | None:
+    number = _as_decimal(count)
+    if number is None:
+        return None
+    return int((number * whole / sampled).quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def _lift_partition(counts: list[Decimal], whole: Decimal, sampled: Decimal) -> list[int]:
+    """Scale counts that add up to ``sampled`` so that they add up to ``whole``.
+
+    Each count gets the integer part of its share, and the units still missing go one each to the
+    counts with the largest fractional parts, earlier counts first on a tie.
+    """
+    numerators = [int(count) * int(whole) for count in counts]
+    lifted = [numerator // int(sampled) for numerator in numerators]
+    shortfall = int(whole) - sum(lifted)
+    by_remainder = sorted(range(len(counts)), key=lambda index: numerators[index] % int(sampled), reverse=True)
+    for index in by_remainder[:shortfall]:
+        lifted[index] += 1
+    return lifted
 
 
 def _sanitize_write_value(value: Any) -> Any:
@@ -177,44 +215,113 @@ class ProfileResult(Entity):
         with database_session() as session, session.begin_nested():
             session.execute(statement)
 
-    # Counts a sampled run measures on the sample and lifts to the full-table scale. Distinct counts
-    # are left as measured: a random sample is taken to represent them already.
-    _sampled_estimate_columns = (
-        "record_ct",
-        "value_ct",
-        "null_value_ct",
-        "zero_value_ct",
-        "lead_space_ct",
-        "embedded_space_ct",
-        "includes_digit_ct",
-        "filled_value_ct",
-        "numeric_ct",
-        "date_ct",
-        "before_1yr_date_ct",
-        "before_5yr_date_ct",
-        "before_20yr_date_ct",
-        "within_1yr_date_ct",
-        "within_1mo_date_ct",
-        "future_date_ct",
-        "boolean_true_ct",
-    )
+    measure_acquisition: ClassVar[Mapping[str, MeasureAcquisition]] = MappingProxyType({
+        "record_ct": MeasureAcquisition.WHOLE_TABLE,
+        "value_ct": MeasureAcquisition.WHOLE_TABLE,
+        "null_value_ct": MeasureAcquisition.WHOLE_TABLE,
+        "distinct_value_ct": MeasureAcquisition.WHOLE_TABLE,
+        "zero_value_ct": MeasureAcquisition.WHOLE_TABLE,
+        "min_length": MeasureAcquisition.WHOLE_TABLE,
+        "max_length": MeasureAcquisition.WHOLE_TABLE,
+        "avg_length": MeasureAcquisition.WHOLE_TABLE,
+        "min_text": MeasureAcquisition.WHOLE_TABLE,
+        "max_text": MeasureAcquisition.WHOLE_TABLE,
+        "distinct_std_value_ct": MeasureAcquisition.WHOLE_TABLE,
+        "min_value": MeasureAcquisition.WHOLE_TABLE,
+        "min_value_over_0": MeasureAcquisition.WHOLE_TABLE,
+        "max_value": MeasureAcquisition.WHOLE_TABLE,
+        "avg_value": MeasureAcquisition.WHOLE_TABLE,
+        "stdev_value": MeasureAcquisition.WHOLE_TABLE,
+        "fractional_sum": MeasureAcquisition.WHOLE_TABLE,
+        "min_date": MeasureAcquisition.WHOLE_TABLE,
+        "max_date": MeasureAcquisition.WHOLE_TABLE,
+        "before_1yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "before_5yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "before_20yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "before_100yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "within_1yr_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "within_1mo_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "future_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "distant_future_date_ct": MeasureAcquisition.WHOLE_TABLE,
+        "date_days_present": MeasureAcquisition.WHOLE_TABLE,
+        "date_weeks_present": MeasureAcquisition.WHOLE_TABLE,
+        "date_months_present": MeasureAcquisition.WHOLE_TABLE,
+        "boolean_true_ct": MeasureAcquisition.WHOLE_TABLE,
+        "percentile_25": MeasureAcquisition.PERCENTILE,
+        "percentile_50": MeasureAcquisition.PERCENTILE,
+        "percentile_75": MeasureAcquisition.PERCENTILE,
+        "zero_length_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "lead_space_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "quoted_value_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "includes_digit_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "filled_value_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "upper_case_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "lower_case_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "non_alpha_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "non_printing_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "numeric_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "date_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "embedded_space_ct": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "frequent_patterns": MeasureAcquisition.SAMPLEABLE_COUNT,
+        "avg_embedded_spaces": MeasureAcquisition.SAMPLEABLE,
+        "std_pattern_match": MeasureAcquisition.SAMPLEABLE,
+        "distinct_pattern_ct": MeasureAcquisition.SAMPLEABLE,
+        "frequent_values": MeasureAcquisition.SAMPLEABLE,
+        "distinct_value_hash": MeasureAcquisition.SAMPLEABLE,
+    })
+    """How each measure column is taken. See ``MeasureAcquisition``."""
+
+    _case_class_columns: ClassVar[tuple[str, ...]] = ("upper_case_ct", "lower_case_ct", "non_alpha_ct")
 
     @classmethod
-    def scale_sampled_estimates(cls, row: MutableMapping[str, Any], sample_ratio: float) -> None:
-        """Lift a sampled row's counts to full-table estimates in place and record the ratio used.
+    def calibrate_sampled_counts(cls, row: MutableMapping[str, Any]) -> None:
+        """Lift the counts a column query took on the sample onto the whole-table scale, in place.
 
-        Each count in ``_sampled_estimate_columns`` becomes ``count * sample_ratio`` rounded to the
-        nearest integer, ties away from zero. A count that is absent, NULL or not a number is left
-        as it is. ``sample_ratio`` is written onto the row.
+        The query reports how many values its two sample reads held, ``sample_value_ct`` for the
+        counts and ``sample_pattern_value_ct`` for ``frequent_patterns``, and both are removed from
+        the row. Each ``SAMPLEABLE_COUNT`` count is multiplied by ``value_ct`` over the value count of
+        the read it was taken on and rounded to the nearest integer, ties away from zero, so a count
+        covering every sampled value lands exactly on ``value_ct``. The letter-case counts are shared
+        out by largest remainder instead, so that they and the mixed-case values they leave add up
+        to ``value_ct``. A count that is NULL or not a number stays NULL. When the sample held no
+        values while the table did, there is no ratio and the counts become NULL.
+        A row without ``sample_value_ct`` is left as it is.
         """
+        if "sample_value_ct" not in row:
+            return
+        whole = _as_decimal(row.get("value_ct"))
+        sampled = _as_decimal(row.pop("sample_value_ct"))
+        pattern_sampled = _as_decimal(row.pop("sample_pattern_value_ct"))
+        if whole is None or sampled is None:
+            return
+
         with localcontext() as context:
             context.prec = 60
-            ratio = Decimal(str(sample_ratio))
-            for column in cls._sampled_estimate_columns:
-                count = _as_decimal(row.get(column))
-                if count is not None:
-                    row[column] = int((count * ratio).quantize(Decimal(1), rounding=ROUND_HALF_UP))
-        row["sample_ratio"] = sample_ratio
+            if (patterns := row.get("frequent_patterns")) and pattern_sampled != whole:
+                for entry in patterns["values"]:
+                    entry["ct"] = _lift(entry["ct"], whole, pattern_sampled)
+            if whole == sampled:
+                return
+
+            counts = [
+                column
+                for column, acquisition in cls.measure_acquisition.items()
+                if acquisition is MeasureAcquisition.SAMPLEABLE_COUNT and column != "frequent_patterns" and column in row
+            ]
+            if not sampled:
+                # The sample held no values while the table did: there is no ratio to lift by.
+                for column in counts:
+                    row[column] = None
+                return
+
+            case_classes = [_as_decimal(row.get(column)) for column in cls._case_class_columns]
+            if None not in case_classes:
+                mixed = sampled - sum(case_classes)
+                lifted = _lift_partition([*case_classes, mixed], whole, sampled)
+                row.update(zip(cls._case_class_columns, lifted[:-1], strict=True))
+                counts = [column for column in counts if column not in cls._case_class_columns]
+            for column in counts:
+                row[column] = _lift(row[column], whole, sampled)
 
     @classmethod
     def delete_for_run(cls, profile_run_id: UUID) -> int:
