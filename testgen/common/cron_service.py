@@ -1,4 +1,5 @@
 import zoneinfo
+from collections.abc import Mapping
 from datetime import datetime
 from typing import TypedDict
 
@@ -50,3 +51,48 @@ def describe_cron(cron_expr: str) -> str | None:
         return cron_descriptor.get_description(cron_expr)
     except Exception:
         return None
+
+
+# Widths of the ``job_schedules`` VARCHAR columns (030_initialize_new_schema_structure.sql).
+_CRON_EXPR_MAX = 50
+_CRON_TZ_MAX = 30
+
+_PUBLIC_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "timezone"}
+
+
+def validate_schedule(cron_expr: str | None, cron_tz: str | None, *, field_names: Mapping[str, str] | None = None) -> list[str]:
+    """Return every reason a cron expression and timezone cannot be stored as a schedule (empty list = valid).
+
+    Args:
+        cron_expr: The cron expression, five space-separated fields.
+        cron_tz: An IANA timezone name.
+        field_names: Name to show in the messages for ``cron_expr`` and ``cron_tz``. Overrides the
+            public field names, ``cron_expression`` and ``timezone``.
+    """
+    names = {**_PUBLIC_FIELD_NAMES, **(field_names or {})}
+    errors: list[str] = []
+
+    if not cron_expr:
+        errors.append(f"`{names['cron_expr']}` is required.")
+    elif len(cron_expr) > _CRON_EXPR_MAX:
+        errors.append(f"`{names['cron_expr']}` must be at most {_CRON_EXPR_MAX} characters.")
+
+    if not cron_tz:
+        errors.append(f"`{names['cron_tz']}` is required (IANA name, e.g. `UTC`).")
+    elif len(cron_tz) > _CRON_TZ_MAX:
+        errors.append(f"`{names['cron_tz']}` must be at most {_CRON_TZ_MAX} characters.")
+
+    if not errors:
+        sample = get_cron_sample(cron_expr, cron_tz, sample_count=1)
+        if "error" in sample:
+            errors.append(f"Invalid cron expression or timezone: {sample['error']}")
+
+    return errors
+
+
+def normalize_cron(cron_expr: str) -> str:
+    """Return ``cron_expr`` in canonical form, e.g. ``0 3 * * mon-fri`` as ``0 3 * * 1-5``.
+
+    The expression must already be valid.
+    """
+    return cron_converter.Cron(cron_expr).to_string()

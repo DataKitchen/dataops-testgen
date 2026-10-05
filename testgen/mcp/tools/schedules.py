@@ -7,7 +7,7 @@ from typing import Annotated
 from pydantic import Field
 from sqlalchemy import select
 
-from testgen.common.cron_service import describe_cron, get_cron_sample
+from testgen.common.cron_service import describe_cron, validate_schedule
 from testgen.common.enums import JOB_STATUS_LABEL, JobKey
 from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.job_execution import JobExecution
@@ -55,16 +55,10 @@ def _kind_display(key: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _validate_cron(cron_expression: str, cron_tz: str) -> str:
-    """Validate cron expression + timezone. Returns the human-readable description."""
-    if not cron_expression:
-        raise MCPUserError("`cron_expression` is required.")
-    if not cron_tz:
-        raise MCPUserError("`cron_tz` is required (IANA name, e.g. `UTC`).")
-    sample = get_cron_sample(cron_expression, cron_tz, sample_count=1)
-    if "error" in sample:
-        raise MCPUserError(f"Invalid cron expression or timezone: {sample['error']}")
-    return sample["readable_expr"]
+def _validate_cron(cron_expression: str, cron_tz: str) -> None:
+    """Raise ``MCPUserError`` listing every reason the cron expression and timezone cannot be stored."""
+    if errors := validate_schedule(cron_expression, cron_tz, field_names={"cron_tz": "cron_tz"}):
+        raise MCPUserError("\n".join(errors))
 
 
 def _parse_schedule_type(value: str) -> ScheduleType:
