@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from typing import TypedDict
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 
 from testgen.commands.queries.refresh_data_chars_query import RefreshDataCharsSQL
@@ -567,8 +567,10 @@ def _has_job_in_flight(table_group: TableGroup) -> bool:
 def _repoint_definitions(table_group: TableGroup, previous: str, schema: str) -> int:
     """Move the table group's stored test definitions onto ``schema``.
 
-    Only each suite's resolved version is touched: a contract's frozen version is the agreement as
-    it was signed, and reads the schema it named.
+    Every version is moved, frozen ones included. Where a contract's data is read is not one of
+    the terms it froze -- a contract checks a deliverable that is rebuilt each cycle, so an
+    agreement left reading the schema it was signed against would report every table missing from
+    the next run on. The terms themselves are untouched.
 
     ``match_schema_name`` is left alone. A referential test compares against a table this table
     group does not own, on whatever schema the author pointed it at, so moving this table group
@@ -581,13 +583,12 @@ def _repoint_definitions(table_group: TableGroup, previous: str, schema: str) ->
     if not suite_ids:
         return 0
 
-    scoped = and_(
-        TestDefinition.test_suite_id.in_(suite_ids),
-        TestDefinition.version_clause(),
-    )
     result = session.execute(
         update(TestDefinition)
-        .where(scoped, TestDefinition.schema_name == previous)
+        .where(
+            TestDefinition.test_suite_id.in_(suite_ids),
+            TestDefinition.schema_name == previous,
+        )
         .values(schema_name=schema)
     )
     return result.rowcount or 0
