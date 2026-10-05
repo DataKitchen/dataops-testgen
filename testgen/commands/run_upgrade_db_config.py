@@ -91,12 +91,9 @@ def _refresh_static_metadata(params_mapping):
     # Recreate standard views
     strQueryViews = read_template_sql_file("060_create_standard_views.sql", "dbsetup")
     strQueryViews = replace_params(strQueryViews, params_mapping)
-    # Reassign rights to standard roles
-    strQueryRights = read_template_sql_file("075_grant_role_rights.sql", "dbsetup")
-    strQueryRights = replace_params(strQueryRights, params_mapping)
 
     execute_db_queries(
-        [(strQueryMetadata, None), (strQueryViews, None), (strQueryRights, None)],
+        [(strQueryMetadata, None), (strQueryViews, None)],
         user_override=params_mapping["TESTGEN_ADMIN_USER"],
         password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
         user_type="schema_admin",

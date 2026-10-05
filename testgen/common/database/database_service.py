@@ -122,14 +122,11 @@ def get_flavor_service(flavor: SQLFlavor) -> FlavorService:
 class CreateDatabaseParams(TypedDict):
     TESTGEN_ADMIN_USER: str
     TESTGEN_ADMIN_PASSWORD: str
-    TESTGEN_USER: str | None
-    TESTGEN_REPORT_USER: str | None
 
 def create_database(
     database_name: str,
     params: CreateDatabaseParams,
     drop_existing: bool = False,
-    drop_users_and_roles: bool = False,
 ) -> None:
     LOG.debug("DB operation: create_database on App database (User type = database_admin)")
 
@@ -155,13 +152,6 @@ def create_database(
             # connections on the next checkout.
             empty_cache()
             connection.execute(text(f"DROP DATABASE IF EXISTS {database_name}"))
-            if drop_users_and_roles:
-                if user := params.get("TESTGEN_USER"):
-                    connection.execute(text(f"DROP USER IF EXISTS {user}"))
-                if report_user := params.get("TESTGEN_REPORT_USER"):
-                    connection.execute(text(f"DROP USER IF EXISTS {report_user}"))
-                connection.execute(text("DROP ROLE IF EXISTS testgen_execute_role"))
-                connection.execute(text("DROP ROLE IF EXISTS testgen_report_role"))
         with suppress(ProgrammingError):
             connection.execute(text(f"CREATE DATABASE {database_name}"))
 
