@@ -1,5 +1,11 @@
 -- TG-IF is_type_A
-WITH whole_table_measures AS (
+-- Every part of the query reads the column from here: a part that names the table reads the source
+-- again, and on a file source every read parses the whole file.
+WITH column_rows AS MATERIALIZED (
+  SELECT "{COL_NAME}"
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+)
+, whole_table_measures AS (
   SELECT
     COUNT(*) AS record_ct,
     COUNT("{COL_NAME}") AS value_ct,
@@ -14,27 +20,28 @@ WITH whole_table_measures AS (
     COUNT(DISTINCT UPPER(TRANSLATE("{COL_NAME}", ' '',.-', ''))) AS distinct_std_value_ct,
     LEFT(MIN(NULLIF("{COL_NAME}", '')), 100) AS min_text,
     LEFT(MAX(NULLIF("{COL_NAME}", '')), 100) AS max_text
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+    FROM column_rows
 )
 -- TG-ENDIF
 -- TG-IF is_A_sampling
+-- No REPEATABLE: a seed does not hold over a CTE, whose rows a parallel scan reorders on every run.
 , sampleable_rows AS (
   SELECT "{COL_NAME}"
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}%) REPEATABLE (64)
+    FROM column_rows TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}%)
 )
 , pattern_rows AS (
   SELECT "{COL_NAME}" AS v
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}%) REPEATABLE (64)
+    FROM column_rows TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}%)
 )
 -- TG-ENDIF
 -- TG-IF is_A_no_sampling
 , sampleable_rows AS (
   SELECT "{COL_NAME}"
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+    FROM column_rows
 )
 , pattern_rows AS (
   SELECT "{COL_NAME}" AS v
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+    FROM column_rows
 )
 -- TG-ENDIF
 -- TG-IF is_type_A
@@ -178,9 +185,19 @@ SELECT
   MAX("{COL_NAME}") AS max_value,
   AVG(CAST("{COL_NAME}" AS DOUBLE)) AS avg_value,
   STDDEV(CAST("{COL_NAME}" AS DOUBLE)) AS stdev_value,
-  MIN(pct_25) AS percentile_25,
-  MIN(pct_50) AS percentile_50,
-  MIN(pct_75) AS percentile_75,
+  -- Keep the percentiles in this SELECT: a derived table reads the source a second time. The list
+  -- form builds one state for all three, and keeps a DECIMAL column's type where a scalar
+  -- approx_quantile truncates it to an integer.
+-- TG-ENDIF
+-- TG-IF is_N_approx_pctile
+  approx_quantile("{COL_NAME}", [0.25, 0.50, 0.75])[1] AS percentile_25,
+  approx_quantile("{COL_NAME}", [0.25, 0.50, 0.75])[2] AS percentile_50,
+  approx_quantile("{COL_NAME}", [0.25, 0.50, 0.75])[3] AS percentile_75,
+-- TG-ENDIF
+-- TG-IF is_N_exact_pctile
+  (PERCENTILE_CONT([0.25, 0.50, 0.75]) WITHIN GROUP (ORDER BY "{COL_NAME}"))[1] AS percentile_25,
+  (PERCENTILE_CONT([0.25, 0.50, 0.75]) WITHIN GROUP (ORDER BY "{COL_NAME}"))[2] AS percentile_50,
+  (PERCENTILE_CONT([0.25, 0.50, 0.75]) WITHIN GROUP (ORDER BY "{COL_NAME}"))[3] AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
@@ -234,18 +251,4 @@ SELECT
 -- TG-IF is_not_A
   COUNT(*) AS record_ct
   FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
--- TG-ENDIF
--- TG-IF is_N_approx_pctile
-  , (SELECT pcts[1] AS pct_25,
-            pcts[2] AS pct_50,
-            pcts[3] AS pct_75
-       FROM (SELECT approx_quantile("{COL_NAME}", [0.25, 0.50, 0.75]) AS pcts
-               FROM "{DATA_SCHEMA}"."{DATA_TABLE}")) pctile
--- TG-ENDIF
--- TG-IF is_N_exact_pctile
-  , (SELECT
-             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" LIMIT 1) pctile
 -- TG-ENDIF
