@@ -216,7 +216,7 @@ def test_a_lock_conflict_message_does_not_leak_the_holding_process():
         'IO Error: Could not set lock on file "/data/c.duckdb": Conflicting lock is held in '
         "/usr/bin/python3 (PID 11827) by user someone-else."
     )
-    message = attach_error_message(AttachFailure.LOCKED, Exception(detail))
+    message = attach_error_message(AttachFailure.LOCKED, Exception(detail), "/data/c.duckdb")
     assert "PID" not in message
     assert "someone-else" not in message
     assert message == (
@@ -225,9 +225,33 @@ def test_a_lock_conflict_message_does_not_leak_the_holding_process():
     )
 
 
+@pytest.mark.parametrize(
+    "database_file",
+    [
+        "https://bucket.s3.us-east-1.amazonaws.com/c.duckdb?X-Amz-Expires=60",
+        "s3://bucket/c.duckdb",
+        "az://container/c.duckdb",
+    ],
+)
+def test_a_remote_database_that_cannot_be_read_is_not_reported_as_a_missing_path(database_file):
+    detail = f'IO Error: Cannot open database "{database_file}" in read-only mode: database does not exist'
+    message = attach_error_message(classify_attach_error(Exception(detail)), Exception(detail), database_file)
+    assert message.startswith("The database file could not be read from this URL.")
+    assert "inside the TestGen container" not in message
+
+
+def test_a_local_database_that_does_not_exist_names_the_container_path(monkeypatch):
+    monkeypatch.setattr(duckdb_flavor_service, "runs_in_container", lambda: True)
+    detail = 'IO Error: Cannot open database "/data/c.duckdb" in read-only mode: database does not exist'
+    message = attach_error_message(AttachFailure.FILE_MISSING, Exception(detail), "/data/c.duckdb")
+    assert message == (
+        "The database file was not found at this path. The path is read inside the TestGen container, not on the host."
+    )
+
+
 def test_a_version_mismatch_message_names_the_versions():
     detail = "Trying to read a database file with version number 65, but we can only read versions between 64 and 64."
-    message = attach_error_message(AttachFailure.VERSION_MISMATCH, Exception(detail))
+    message = attach_error_message(AttachFailure.VERSION_MISMATCH, Exception(detail), "/data/c.duckdb")
     assert "65" in message
     assert "64" in message
 

@@ -111,18 +111,27 @@ FLAVOR_CODE_TO_FAMILY: dict[str, str] = {
 FLAVOR_FAMILIES: frozenset[str] = frozenset(FLAVOR_CODE_TO_FAMILY.values())
 
 # Flavors that run their engine inside the TestGen process rather than on a server reachable over
-# the network. ``max_threads`` sizes the pool TestGen fans per-column queries across, and every
-# checkout of an in-process engine is another engine instance over the same cores — several times
-# the peak memory for no additional throughput.
+# the network. Every engine instance sizes its memory budget against the whole container as though
+# it were alone there, so instances that run at once oversubscribe the container's memory.
+IN_PROCESS_FLAVOR_CODES: frozenset[str] = frozenset({
+    SqlFlavorCode.DUCKDB,
+    SqlFlavorCode.FILES,
+    SqlFlavorCode.S3,
+    SqlFlavorCode.AZURE_BLOB,
+})
+
+# ``max_threads`` sizes the pool TestGen fans per-column queries across, and every checkout of an
+# in-process engine is another engine instance over the same cores — several times the peak memory
+# for no additional throughput.
 #
 # The engine's own intra-query parallelism is a separate setting TestGen does not configure:
 # DuckDB sizes its thread pool from the detected CPU count whatever this value says.
-FLAVOR_FIXED_MAX_THREADS: dict[str, int] = {
-    SqlFlavorCode.DUCKDB: 1,
-    SqlFlavorCode.FILES: 1,
-    SqlFlavorCode.S3: 1,
-    SqlFlavorCode.AZURE_BLOB: 1,
-}
+FLAVOR_FIXED_MAX_THREADS: dict[str, int] = dict.fromkeys(IN_PROCESS_FLAVOR_CODES, 1)
+
+
+def runs_in_process(sql_flavor_code: str | None) -> bool:
+    """Whether a flavor's engine runs inside the TestGen process."""
+    return sql_flavor_code in IN_PROCESS_FLAVOR_CODES
 
 
 def fixed_max_threads(sql_flavor_code: str | None) -> int | None:

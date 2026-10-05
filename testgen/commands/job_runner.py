@@ -13,7 +13,7 @@ from sqlalchemy import select
 from testgen.commands.exec_job import POLL_INTERVAL
 from testgen.common.enums import JobSource, JobStatus
 from testgen.common.models import database_session, get_current_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.profiling_run import ProfilingRun
 from testgen.common.models.test_run import TestRun
 
@@ -52,6 +52,7 @@ def submit_and_wait(
 
     click.echo("Waiting for completion...")
     reported_interrupted = False
+    reported_queued = False
     while True:
         time.sleep(POLL_INTERVAL)
         with database_session():
@@ -61,6 +62,9 @@ def submit_and_wait(
             if job_exec.status == JobStatus.INTERRUPTED and not reported_interrupted:
                 reported_interrupted = True
                 click.echo("The run stopped partway and kept its progress; it continues when the scheduler restarts.")
+            if job_exec.status == JobStatus.QUEUED and not reported_queued:
+                reported_queued = True
+                click.echo(QUEUED_MESSAGE)
             if job_exec.status in _WAIT_ENDS_AT:
                 break
 

@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.enums import JobStatus
+from testgen.common.models.job_execution import QUEUED_MESSAGE
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
@@ -364,3 +365,28 @@ def test_get_test_run_invalid_uuid(db_session_mock):
 
     with pytest.raises(MCPUserError, match="not a valid UUID"):
         get_test_run("not-a-uuid")
+
+
+@patch("testgen.mcp.tools.test_runs.TestRun")
+def test_get_test_run_explains_a_queued_run(mock_run, db_session_mock):
+    summary = _make_run_summary(
+        project_code="demo",
+        status=JobStatus.QUEUED, status_label="Queued",
+        started_at=None, completed_at=None,
+        test_ct=None, passed_ct=None, failed_ct=None, warning_ct=None, error_ct=None,
+        log_ct=None, dismissed_ct=None, dq_score_testing=None,
+    )
+    mock_run.select_summary.return_value = ([summary], 1)
+
+    with patch("testgen.mcp.permissions._compute_project_permissions") as mock_compute:
+        mock_compute.return_value = ProjectPermissions(
+            memberships={"demo": "role_a"}, permission="view", username="test_user",
+        )
+        with patch("testgen.mcp.permissions.PluginHook") as mock_hook:
+            mock_hook.instance().rbac.get_roles_with_permission.return_value = ["role_a"]
+            from testgen.mcp.tools.test_runs import get_test_run
+
+            result = get_test_run(str(summary.job_execution_id))
+
+    assert "**Status:** Queued" in result
+    assert QUEUED_MESSAGE in result

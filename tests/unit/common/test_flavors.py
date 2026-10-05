@@ -9,9 +9,13 @@ from testgen.common.flavors import (
     FLAVOR_CODE_TO_FAMILY,
     FLAVOR_CODE_TO_LABEL,
     FLAVOR_FAMILIES,
+    FLAVOR_FIXED_MAX_THREADS,
     FLAVOR_TABLE_GROUP_SCHEMA_LABEL,
+    IN_PROCESS_FLAVOR_CODES,
+    SqlFlavorCode,
     SqlFlavorLabel,
     reports_table_group_schema,
+    runs_in_process,
     table_group_schema_label,
 )
 from testgen.common.read_file import read_template_sql_file
@@ -160,3 +164,20 @@ def test_the_two_duckdb_codes_are_named_differently():
     """The codes share an engine family, so a label resolved from the family cannot tell them apart."""
     assert FLAVOR_CODE_TO_FAMILY["files"] == FLAVOR_CODE_TO_FAMILY["duckdb"]
     assert table_group_schema_label("files") != table_group_schema_label("duckdb")
+
+
+def test_every_in_process_flavor_and_only_those_fix_the_thread_count():
+    assert set(FLAVOR_FIXED_MAX_THREADS) == IN_PROCESS_FLAVOR_CODES
+    assert set(FLAVOR_FIXED_MAX_THREADS.values()) == {1}
+
+
+def test_in_process_flavors_are_the_duckdb_family():
+    assert {code for code, family in FLAVOR_CODE_TO_FAMILY.items() if family == "duckdb"} == IN_PROCESS_FLAVOR_CODES
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [(SqlFlavorCode.DUCKDB, True), (SqlFlavorCode.AZURE_BLOB, True), (SqlFlavorCode.SNOWFLAKE, False), (None, False)],
+)
+def test_runs_in_process(code, expected):
+    assert runs_in_process(code) is expected

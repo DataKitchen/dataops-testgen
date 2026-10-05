@@ -589,6 +589,18 @@ from env variable: 'TG_JOB_SHUTDOWN_TIMEOUT'
 defaults to: 60
 """
 
+MAX_CONCURRENT_IN_PROCESS_RUNS: int = max(1, int(getenv("TG_MAX_CONCURRENT_IN_PROCESS_RUNS", "1")))
+"""
+Maximum number of runs a scheduler has in flight at once against connection types whose engine runs inside the
+TestGen process (DuckDB and the file connection types). Each such run takes memory from the
+TestGen deployment itself, so raise this only when the deployment's memory is sized for that many
+runs together. Further runs wait in the queue, in the order they were submitted. Runs against
+every other connection type are not limited by this. Values below 1 are treated as 1.
+
+from env variable: 'TG_MAX_CONCURRENT_IN_PROCESS_RUNS'
+defaults to: 1
+"""
+
 JOB_TERMINATE_TIMEOUT: int = int(getenv("TG_JOB_TERMINATE_TIMEOUT", "10"))
 """
 Seconds a canceled job's process is given to exit after SIGTERM before it is killed.

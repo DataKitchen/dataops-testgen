@@ -108,7 +108,7 @@ def test_claim_actionable_claims_pending_rows(mock_session):
     mock_session.scalars.return_value.all.return_value = [row1, row2]
     _mock_claim_results(mock_session, row1, row2)
 
-    result = JobExecution.claim_actionable(limit=5)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
 
     assert len(result) == 2
     assert row1.status == "claimed"
@@ -123,7 +123,7 @@ def test_claim_actionable_passes_through_cancel_requested(mock_session):
     mock_session.scalars.return_value.all.return_value = [pending, cancel]
     _mock_claim_results(mock_session, pending)
 
-    result = JobExecution.claim_actionable(limit=5)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
 
     assert len(result) == 2
     assert pending.status == "claimed"
@@ -135,7 +135,7 @@ def test_claim_actionable_does_not_commit(mock_session):
         JobExecution(id=uuid4(), status="pending", job_key="run-profile")
     ]
 
-    JobExecution.claim_actionable(limit=5)
+    JobExecution.claim_actionable(limit=5, in_process_slots=0)
 
     mock_session.commit.assert_not_called()
 
@@ -143,7 +143,7 @@ def test_claim_actionable_does_not_commit(mock_session):
 def test_claim_actionable_empty(mock_session):
     mock_session.scalars.return_value.all.return_value = []
 
-    result = JobExecution.claim_actionable(limit=5)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
 
     assert result == []
 
@@ -364,7 +364,7 @@ def test_claim_actionable_claims_a_run_queued_to_continue(mock_session, status):
     mock_session.scalars.return_value.all.return_value = [row]
     _mock_claim_results(mock_session, row)
 
-    result = JobExecution.claim_actionable(limit=5)
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=0)
 
     assert len(result) == 1
     assert row.status == "claimed"
@@ -378,7 +378,7 @@ def test_the_poll_query_cannot_reach_a_paused_row(mock_session):
     no filter of its own and would hand back whatever it was given."""
     mock_session.scalars.return_value.all.return_value = []
 
-    JobExecution.claim_actionable(limit=5)
+    JobExecution.claim_actionable(limit=5, in_process_slots=0)
 
     selected = next(
         v for v in mock_session.scalars.call_args[0][0].compile().params.values()
@@ -393,7 +393,7 @@ def test_claim_actionable_drops_a_row_it_lost_the_race_for(mock_session):
     mock_session.scalars.return_value.all.return_value = [row]
     mock_session.execute.return_value.scalar_one_or_none.return_value = None
 
-    assert JobExecution.claim_actionable(limit=5) == []
+    assert JobExecution.claim_actionable(limit=5, in_process_slots=0) == []
 
 
 def test_actionable_statuses_match_the_transition_graph():
@@ -857,3 +857,212 @@ def test_mark_failed_does_not_log_a_message_the_row_keeps(mock_session, caplog):
         job.mark_failed("TestGen ran out of memory")
 
     assert "TestGen ran out of memory" not in caplog.text
+
+
+def _compiled(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+@pytest.mark.parametrize(
+    ("job_key", "kwarg"),
+    [("run-profile", "table_group_id"), ("run-tests", "test_suite_id"), ("run-monitors", "test_suite_id")],
+)
+@pytest.mark.parametrize(("flavor_code", "expected"), [("duckdb", True), ("s3", True), ("postgresql", False)])
+def test_submit_stamps_a_target_reading_job_by_its_connection_type(
+    mock_session, job_key, kwarg, flavor_code, expected,
+):
+    mock_session.scalar.return_value = flavor_code
+
+    result = JobExecution.submit(job_key=job_key, kwargs={kwarg: str(uuid4())}, source="ui", project_code="DEFAULT")
+
+    assert result.in_process is expected
+
+
+def test_submit_stamps_a_job_whose_id_was_given_in_uppercase(mock_session):
+    """Postgres accepts a UUID in any case, so the CLI passes one through as typed."""
+    mock_session.scalar.return_value = "duckdb"
+
+    result = JobExecution.submit(
+        job_key="run-profile", kwargs={"table_group_id": str(uuid4()).upper()}, source="cli", project_code="DEFAULT",
+    )
+
+    assert result.in_process is True
+
+
+def test_submit_resolves_a_suite_through_its_table_group(mock_session):
+    """The table group's connection is the one a test run opens; the suite's own connection_id
+    column is not consulted."""
+    mock_session.scalar.return_value = "duckdb"
+
+    JobExecution.submit(
+        job_key="run-tests", kwargs={"test_suite_id": str(uuid4())}, source="ui", project_code="DEFAULT",
+    )
+
+    sql = _compiled(mock_session.scalar.call_args[0][0])
+    assert "test_suites.table_groups_id = table_groups.id" in sql
+    assert "test_suites.connection_id" not in sql
+
+
+@pytest.mark.parametrize(
+    ("job_key", "kwargs"),
+    [
+        ("run-test-generation", {"test_suite_id": str(uuid4())}),
+        ("run-monitor-generation", {"monitor_suite_id": str(uuid4()), "monitors": []}),
+        ("run-score-update", {"parent_job_id": str(uuid4()), "parent_job_key": "run-profile"}),
+        ("recalculate-project-scores", {"project_code": "DEFAULT"}),
+        ("run-data-cleanup", {"project_code": "DEFAULT", "retention_days": 30}),
+    ],
+)
+def test_submit_never_stamps_a_job_that_opens_no_target(mock_session, job_key, kwargs):
+    mock_session.scalar.return_value = "duckdb"
+
+    result = JobExecution.submit(job_key=job_key, kwargs=kwargs, source="ui", project_code="DEFAULT")
+
+    assert result.in_process is False
+    mock_session.scalar.assert_not_called()
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"table_group_id": "not-a-uuid"}])
+def test_submit_does_not_stamp_a_job_whose_target_cannot_be_named(mock_session, kwargs):
+    result = JobExecution.submit(job_key="run-profile", kwargs=kwargs, source="ui", project_code="DEFAULT")
+
+    assert result.in_process is False
+    mock_session.scalar.assert_not_called()
+
+
+def test_submit_does_not_stamp_a_job_whose_table_group_is_gone(mock_session):
+    mock_session.scalar.return_value = None
+
+    result = JobExecution.submit(
+        job_key="run-profile", kwargs={"table_group_id": str(uuid4())}, source="ui", project_code="DEFAULT",
+    )
+
+    assert result.in_process is False
+
+
+def _row(status="pending", in_process=False, minutes=0):
+    return JobExecution(
+        id=uuid4(), status=status, job_key="run-profile", in_process=in_process,
+        created_at=datetime(2026, 9, 30, 12, tzinfo=UTC) + timedelta(minutes=minutes),
+    )
+
+
+def _claim_selects(mock_session) -> list[str]:
+    """The claim SELECTs the poll issued, in order, leaving out the QUEUED update."""
+    sql = [_compiled(call[0][0]) for call in mock_session.scalars.call_args_list]
+    return [statement for statement in sql if statement.startswith("SELECT")]
+
+
+def _queue_update(mock_session) -> str:
+    [statement] = [
+        sql for sql in (_compiled(call[0][0]) for call in mock_session.scalars.call_args_list)
+        if sql.startswith("UPDATE")
+    ]
+    return statement
+
+
+def test_claim_with_no_free_slot_issues_no_in_process_claim(mock_session):
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=0)
+
+    [query] = _claim_selects(mock_session)
+    assert "job_executions.in_process IS false" in query
+
+
+def test_claim_keeps_in_process_rows_out_of_the_batch(mock_session):
+    """The batch query must exclude startable in-process rows, or it would claim them outside
+    the slot count and out of order. It still returns their cancel requests."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+
+    batch, in_process = _claim_selects(mock_session)
+    assert "job_executions.status = 'cancel_requested' OR job_executions.in_process IS false" in batch
+    assert "LIMIT 5" in batch
+    assert "job_executions.status != 'cancel_requested'" in in_process
+    assert "job_executions.in_process IS true" in in_process
+    assert "LIMIT 1" in in_process
+
+
+@pytest.mark.parametrize("slots", [0, 2])
+def test_both_claim_queries_take_the_oldest_rows_first(mock_session, slots):
+    """Submission order is what keeps a queued run from waiting behind newer ones. ``id`` breaks
+    ties between rows submitted in one transaction, which share ``created_at``."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=slots)
+
+    for query in _claim_selects(mock_session):
+        assert "ORDER BY job_executions.created_at, job_executions.id" in query
+        assert "FOR UPDATE SKIP LOCKED" in query
+
+
+def test_both_claim_queries_keep_the_poll_index_predicate(mock_session):
+    """The partial index the poll scans is keyed on exactly the actionable status list."""
+    mock_session.scalars.return_value.all.return_value = []
+    actionable = ", ".join(f"'{status}'" for status in JobExecution.ACTIONABLE_STATUSES)
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+
+    for query in _claim_selects(mock_session):
+        assert f"job_executions.status IN ({actionable})" in query
+
+
+def test_the_in_process_claim_takes_queued_rows():
+    """A queued run is claimable: the slot that frees up is what it waits for."""
+    assert JobStatus.QUEUED in JobExecution.ACTIONABLE_STATUSES
+
+
+@pytest.mark.parametrize("slots", [0, 1])
+def test_claim_queues_the_in_process_rows_it_could_not_take(mock_session, slots):
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=slots)
+
+    update = _queue_update(mock_session)
+    waiting = ", ".join(f"'{status}'" for status in JobStatus.sources_for(JobStatus.QUEUED))
+    assert update.startswith("UPDATE job_executions SET status='queued'")
+    assert f"job_executions.status IN ({waiting})" in update
+    assert "job_executions.in_process IS true" in update
+    assert "'queued'" not in update.split("SET status='queued'", 1)[1]
+
+
+def test_the_queue_update_skips_rows_another_scheduler_holds(mock_session):
+    """The update runs while this poll holds its own claims, so waiting on a row another
+    scheduler has locked could deadlock the two."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+
+    assert "FOR UPDATE SKIP LOCKED" in _queue_update(mock_session)
+
+
+def test_claim_queues_only_after_claiming(mock_session):
+    """Queuing first would move the rows the in-process claim is about to take out of its reach
+    for this poll."""
+    mock_session.scalars.return_value.all.return_value = []
+
+    JobExecution.claim_actionable(limit=5, in_process_slots=1)
+
+    kinds = [_compiled(call[0][0]).split(" ", 1)[0] for call in mock_session.scalars.call_args_list]
+    assert kinds == ["SELECT", "SELECT", "UPDATE"]
+
+
+def test_claim_returns_both_queries_rows_in_submission_order(mock_session):
+    server_late = _row(minutes=2)
+    in_process_early = _row(in_process=True, minutes=1)
+    cancel = _row(status="cancel_requested", in_process=True, minutes=0)
+    mock_session.scalars.side_effect = [
+        Mock(all=Mock(return_value=[cancel, server_late])),
+        Mock(all=Mock(return_value=[in_process_early])),
+        Mock(all=Mock(return_value=[])),
+    ]
+    _mock_claim_results(mock_session, in_process_early, server_late)
+
+    result = JobExecution.claim_actionable(limit=5, in_process_slots=1)
+
+    assert result == [cancel, in_process_early, server_late]
+    assert cancel.status == "cancel_requested"
+    assert in_process_early.status == "claimed"
+    assert server_late.status == "claimed"
