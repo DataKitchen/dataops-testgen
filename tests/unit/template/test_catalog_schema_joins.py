@@ -36,11 +36,6 @@ ACCOUNTED: dict[str, tuple[int, str]] = {
     "template/gen_funny_cat_tests/gen_Constant.sql": (1, "two profiling-derived CTEs"),
     "template/gen_funny_cat_tests/gen_Distinct_Value_Ct.sql": (1, "two profiling-derived CTEs"),
     "template/generation/delete_overridden_autogen_tests.sql": (1, "test definitions to test definitions"),
-    "template/generation/delete_stale_monitors.sql": (
-        1,
-        "destructive and irreversible: a definition is only dropped when the catalog says that "
-        "table is gone from the schema the definition itself names",
-    ),
     "template/get_entities/get_profile_screen.sql": (3, "profiling results to a profiling-derived CTE"),
     "template/profiling/functional_tabletype_stage.sql": (1, "profiling results to a profiling-derived subquery"),
     "template/profiling/functional_tabletype_update.sql": (1, "staging to profiling results, same run"),

@@ -46,3 +46,13 @@ def test_inserts_the_table_groups_schema(path):
         # Seeding templates insert literals and have no row to read a schema off; only the ones
         # generating from a profiling run have to be told which schema to name.
         assert ":DATA_SCHEMA" in text, f"{path.name} generates from profiling without naming a schema"
+
+
+def test_stale_monitor_cleanup_does_not_match_on_schema():
+    """A table the new schema lacks keeps the schema it was last scanned in, because the catalog
+    stamps a drop date without touching ``schema_name``, while its definitions name the schema the
+    table group now reads. Matching the two would leave those monitors erroring on every run."""
+    sql = (TEMPLATE_ROOT / "generation" / "delete_stale_monitors.sql").read_text(encoding="utf-8")
+
+    assert "dtc.table_name = td.table_name" in sql, "the cleanup no longer matches on table name"
+    assert "dtc.schema_name" not in sql, "the cleanup matches the catalog on schema again"

@@ -174,3 +174,35 @@ def test_every_job_kwarg_naming_the_table_group_blocks_a_move(mock_session):
     probed = {value for value in compiled.params.values() if isinstance(value, str)}
     for key in ("table_group_id", "test_suite_id", "monitor_suite_id"):
         assert key in probed, f"a job naming the table group under {key} would not block a move"
+
+
+# --- telling an unreadable schema from an empty one ---
+
+
+@patch(f"{MODULE}._has_job_in_flight", return_value=False)
+def test_a_schema_that_cannot_be_read_says_so(_job):
+    """A probe that raised and a schema that held nothing both come back as a failed preview, and
+    reporting the wrong one sends the caller to their table-group filters over a dead connection."""
+    failed = ({"tables": {}, "success": False, "message": "could not connect to server"}, None, None)
+
+    with patch(f"{MODULE}.preview_table_group", return_value=failed):
+        with pytest.raises(SchemaMoveRefused) as refusal:
+            move_table_group_schema(
+                _table_group("public"), "onboard_2026_09_16", connection=_connection(SqlFlavorCode.POSTGRESQL)
+            )
+
+    assert refusal.value.reason == "schema_unreadable"
+    assert "could not connect to server" in refusal.value.message
+
+
+@patch(f"{MODULE}._has_job_in_flight", return_value=False)
+def test_a_schema_that_holds_nothing_says_that_instead(_job):
+    empty = ({"tables": {}, "success": False, "message": "No tables found"}, [], MagicMock())
+
+    with patch(f"{MODULE}.preview_table_group", return_value=empty):
+        with pytest.raises(SchemaMoveRefused) as refusal:
+            move_table_group_schema(
+                _table_group("public"), "onboard_2026_09_16", connection=_connection(SqlFlavorCode.POSTGRESQL)
+            )
+
+    assert refusal.value.reason == "schema_empty"

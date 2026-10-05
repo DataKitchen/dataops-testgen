@@ -637,15 +637,16 @@ def move_table_group_schema(
     probe.table_group_schema = schema
     preview, data_chars, sql_generator = preview_table_group(probe, connection=connection)
 
-    # An empty schema is reported as a failed preview too, so name that case before the general one
-    # or the caller is told it could not be read when it was read and held nothing.
+    # An empty schema is reported as a failed preview too, so the two cases are told apart by what
+    # the probe returned rather than by `success`: a schema that was read and held nothing comes
+    # back with an empty list, one that could not be read at all with none.
+    if data_chars is None:
+        raise SchemaMoveRefused("schema_unreadable", preview["message"] or "The schema could not be read.")
     if not preview["tables"]:
         raise SchemaMoveRefused(
             "schema_empty",
             f"No tables in {schema} match this table group's filters, so its tests would all fail.",
         )
-    if not preview["success"]:
-        raise SchemaMoveRefused("schema_unreadable", preview["message"] or "The schema could not be read.")
 
     missing = sorted(_tables_in_use(table_group.id) - set(preview["tables"]))
 
