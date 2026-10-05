@@ -15,6 +15,7 @@ from testgen.common.models.monitor import Monitor
 from testgen.common.models.notification_destinations import NotificationDestination
 from testgen.common.models.notification_settings import NotificationSettings
 from testgen.common.models.project_membership import ProjectMembership
+from testgen.common.models.scheduler import SCHEDULABLE_JOB_KEYS, JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.models.user import User
@@ -154,6 +155,17 @@ def resolve_job(permission: str, *extra_filters):
             *extra_filters,
         )
         return _check_access(get_current_session().scalars(query).first(), user, permission)
+    return Depends(dependency)
+
+
+def resolve_schedule(permission: str):
+    """Resolve a profiling or test run JobSchedule by ``schedule_id`` path param and verify project permission.
+
+    Monitor and system schedules are not exposed, and resolve as not found.
+    """
+    def dependency(schedule_id: UUID, user: User = _require_user) -> JobSchedule:
+        schedule = JobSchedule.get(JobSchedule.id == schedule_id, JobSchedule.key.in_(SCHEDULABLE_JOB_KEYS))
+        return _check_access(schedule, user, permission)
     return Depends(dependency)
 
 

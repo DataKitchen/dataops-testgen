@@ -6,6 +6,7 @@ from testgen.api.jobs import router as _jobs_router
 from testgen.api.monitors import router as _monitors_router
 from testgen.api.notifications import router as _notifications_router
 from testgen.api.runs import router as _runs_router
+from testgen.api.schedules import router as _schedules_router
 from testgen.api.scores import router as _scores_router
 from testgen.api.table_groups import router as _table_groups_router
 from testgen.api.test_definitions import router as _test_definitions_router
@@ -18,6 +19,7 @@ router.include_router(_jobs_router)
 router.include_router(_monitors_router)
 router.include_router(_notifications_router)
 router.include_router(_runs_router)
+router.include_router(_schedules_router)
 router.include_router(_scores_router)
 router.include_router(_table_groups_router)
 router.include_router(_test_definitions_router)

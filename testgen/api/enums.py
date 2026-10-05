@@ -9,7 +9,7 @@ single seam that normalizes them to the API surface — the DB is never changed.
 from enum import StrEnum
 
 from testgen.common.connection_schema import ConnectionMode
-from testgen.common.enums import PII_FLAG_PREFIX_TO_LABEL
+from testgen.common.enums import PII_FLAG_PREFIX_TO_LABEL, JobKey
 from testgen.common.enums import Disposition as DbDisposition
 from testgen.common.enums import ImpactDimension as DbImpactDimension
 from testgen.common.enums import IssueLikelihood as DbIssueLikelihood
@@ -382,3 +382,17 @@ DEFAULT_SEVERITY_TO_DB: dict[DefaultSeverity, SuiteSeverity] = {
     DefaultSeverity.log: SuiteSeverity.LOG,
 }
 DEFAULT_SEVERITY_FROM_DB: dict[SuiteSeverity, DefaultSeverity] = {v: k for k, v in DEFAULT_SEVERITY_TO_DB.items()}
+
+
+class ScheduleKind(StrEnum):
+    """What a schedule runs: profiling of a table group, or a test suite's tests."""
+
+    profiling_run = "profiling_run"
+    test_run = "test_run"
+
+
+SCHEDULE_KIND_TO_JOB_KEY: dict[ScheduleKind, JobKey] = {
+    ScheduleKind.profiling_run: JobKey.run_profile,
+    ScheduleKind.test_run: JobKey.run_tests,
+}
+SCHEDULE_KIND_FROM_JOB_KEY: dict[JobKey, ScheduleKind] = {v: k for k, v in SCHEDULE_KIND_TO_JOB_KEY.items()}
