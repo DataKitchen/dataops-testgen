@@ -96,6 +96,7 @@ class JobStatus(StrEnum):
     PAUSE_REQUESTED = "pause_requested"
     PAUSED = "paused"
     RESUME_REQUESTED = "resume_requested"
+    QUEUED = "queued"
 
     @classmethod
     def ordered(cls, statuses: Iterable["JobStatus"]) -> tuple["JobStatus", ...]:
@@ -147,12 +148,13 @@ JOB_STATUS_LABEL: dict[str, str] = {
     JobStatus.PAUSE_REQUESTED: "Pausing",
     JobStatus.PAUSED: "Paused",
     JobStatus.RESUME_REQUESTED: "Resuming",
+    JobStatus.QUEUED: "Queued",
 }
 
 
 # The job lifecycle. A status absent from this mapping, or mapped to nothing, is terminal.
 _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
-    JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED}),
+    JobStatus.PENDING: frozenset({JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED, JobStatus.QUEUED}),
     JobStatus.CLAIMED: frozenset({JobStatus.RUNNING, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED}),
     JobStatus.RUNNING: frozenset({
         JobStatus.COMPLETED, JobStatus.ERROR, JobStatus.CANCEL_REQUESTED,
@@ -170,7 +172,7 @@ _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     # Claimable, like PENDING: an interrupted run is queued work that the next poll picks up.
     # The checkpoint on the row is what tells the two apart.
     JobStatus.INTERRUPTED: frozenset({
-        JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED, JobStatus.INTERRUPTED,
+        JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED, JobStatus.INTERRUPTED, JobStatus.QUEUED,
     }),
     # A pause request also races the run finishing, failing, or being canceled, so it needs the
     # same escapes: the request only asks, and the run may reach the boundary it would park at
@@ -186,8 +188,12 @@ _TRANSITIONS: dict[JobStatus, frozenset[JobStatus]] = {
     }),
     # Claimable again, so the poll that would have skipped a paused run now takes this one.
     JobStatus.RESUME_REQUESTED: frozenset({
-        JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED, JobStatus.RESUME_REQUESTED,
+        JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED, JobStatus.RESUME_REQUESTED, JobStatus.QUEUED,
     }),
+    # Claimable, like the statuses that lead here: a startable in-process run the poll could not
+    # claim because every in-process slot was taken. A resume checkpoint on the row survives, so
+    # a run that was interrupted still continues from it once it is claimed.
+    JobStatus.QUEUED: frozenset({JobStatus.CLAIMED, JobStatus.CANCEL_REQUESTED}),
 }
 
 

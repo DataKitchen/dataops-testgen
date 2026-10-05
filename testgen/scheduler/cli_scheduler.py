@@ -32,6 +32,9 @@ class CliScheduler(Scheduler):
 
     def __init__(self):
         self._running_jobs: dict[UUID, subprocess.Popen] = {}
+        # The in-process jobs this scheduler has dispatched and not yet reaped, which hold the
+        # slots ``MAX_CONCURRENT_IN_PROCESS_RUNS`` allows. Guarded by ``_running_jobs_cond``.
+        self._in_process_jobs: set[UUID] = set()
         self._running_jobs_cond = threading.Condition()
         self._force_kills: dict[UUID, threading.Timer] = {}
         self.reload_timer = None
@@ -39,6 +42,7 @@ class CliScheduler(Scheduler):
         self._poll_interval = settings.JOB_POLL_INTERVAL
         self._poll_batch_size = 5
         LOG.info("Starting CLI Scheduler with registered jobs: %s", ", ".join(JOB_DISPATCH.keys()))
+        LOG.info("Runs on in-process connections limited to %d at a time", settings.MAX_CONCURRENT_IN_PROCESS_RUNS)
         super().__init__()
 
     @with_database_session
@@ -98,9 +102,19 @@ class CliScheduler(Scheduler):
         skip_wait = False
         while skip_wait or not self._stopping.wait(timeout=self._poll_interval):
             try:
+                with self._running_jobs_cond:
+                    free_slots = settings.MAX_CONCURRENT_IN_PROCESS_RUNS - len(self._in_process_jobs)
                 with database_session():
-                    actionable = JobExecution.claim_actionable(limit=self._poll_batch_size)
-                skip_wait = len(actionable) >= self._poll_batch_size
+                    actionable = JobExecution.claim_actionable(
+                        limit=self._poll_batch_size, in_process_slots=max(0, free_slots),
+                    )
+                # Claimed in-process rows are bounded by the free slots, not by ``limit``, so they
+                # say nothing about more rows waiting. Counting them would re-poll without waiting
+                # while the rest of the in-process queue is held.
+                skip_wait = sum(
+                    1 for job_exec in actionable
+                    if not (job_exec.in_process and job_exec.status == JobStatus.CLAIMED)
+                ) >= self._poll_batch_size
             except Exception:
                 LOG.exception("Error polling for actionable jobs")
                 skip_wait = False
@@ -183,7 +197,17 @@ class CliScheduler(Scheduler):
             exec_cmd,  # noqa: S603
             start_new_session=True,
         )
-        threading.Thread(target=self._proc_wrapper, args=(proc, job_exec)).start()
+        if job_exec.in_process:
+            # Taken here rather than in the wrapper thread, so the next poll already counts it.
+            with self._running_jobs_cond:
+                self._in_process_jobs.add(job_exec.id)
+        try:
+            threading.Thread(target=self._proc_wrapper, args=(proc, job_exec)).start()
+        except Exception:
+            # The wrapper is what frees the slot, so a wrapper that never started must not keep it.
+            with self._running_jobs_cond:
+                self._in_process_jobs.discard(job_exec.id)
+            raise
 
     def _proc_wrapper(self, proc: subprocess.Popen, job_exec: JobExecution):
         """Monitor a subprocess and act as crash-recovery safety net.
@@ -210,6 +234,7 @@ class CliScheduler(Scheduler):
         finally:
             with self._running_jobs_cond:
                 del self._running_jobs[job_exec.id]
+                self._in_process_jobs.discard(job_exec.id)
                 # Cancel rather than drop: an armed timer keeps its thread, and the Popen it
                 # closes over, alive for the rest of the deadline.
                 if timer := self._force_kills.pop(job_exec.id, None):

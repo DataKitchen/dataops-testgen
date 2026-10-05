@@ -380,6 +380,7 @@ def parse_category(value: str) -> ScoreCategory:
 # stopping or already parked -- what separates them is whether it picks itself back up.
 _RUN_STATUS_FILTER: dict[str, list[JobStatus]] = {
     "Pending": [JobStatus.PENDING, JobStatus.CLAIMED],
+    "Queued": [JobStatus.QUEUED],
     "Running": [JobStatus.RUNNING],
     "Interrupted": [JobStatus.INTERRUPT_REQUESTED, JobStatus.INTERRUPTED],
     "Paused": [JobStatus.PAUSE_REQUESTED, JobStatus.PAUSED, JobStatus.RESUME_REQUESTED],

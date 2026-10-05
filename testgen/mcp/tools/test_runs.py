@@ -3,9 +3,9 @@ from typing import Annotated
 
 from pydantic import Field
 
-from testgen.common.enums import JobKey, SuiteType
+from testgen.common.enums import JobKey, JobStatus, SuiteType
 from testgen.common.models import with_database_session
-from testgen.common.models.job_execution import JobExecution
+from testgen.common.models.job_execution import QUEUED_MESSAGE, JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY
 from testgen.common.models.test_run import TestRun, TestRunSummary
 from testgen.common.models.test_suite import TestSuite
@@ -191,6 +191,8 @@ def get_test_run(
         doc.field("Table group", summary.table_groups_name)
     doc.field("Project", summary.project_code)
     doc.field("Status", summary.status_label)
+    if summary.status == JobStatus.QUEUED:
+        doc.text(QUEUED_MESSAGE)
     doc.field("Submitted", summary.created_at)
     doc.field("Started", summary.started_at or "—")
     doc.field("Ended", summary.completed_at or "In progress")
@@ -309,6 +311,8 @@ def _select_pending_test_jes(
 def _render_pending_je(doc: MdDoc, je: JobExecution, label: str) -> None:
     status_label = TestRunSummary.STATUS_LABEL.get(je.status, je.status)
     doc.heading(3, f"{label} — {status_label}")
+    if je.status == JobStatus.QUEUED:
+        doc.text(QUEUED_MESSAGE)
     doc.field("Test Run", je.id, code=True)
     if je.job_schedule_id is not None:
         doc.field("Schedule", je.job_schedule_id, code=True)

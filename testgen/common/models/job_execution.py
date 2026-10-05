@@ -6,12 +6,32 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar, Self
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, Float, String, Text, case, delete, func, literal, select, text, update
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Float,
+    Select,
+    String,
+    Text,
+    case,
+    delete,
+    false,
+    func,
+    literal,
+    or_,
+    select,
+    text,
+    update,
+)
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.sql.elements import ColumnElement
 
 from testgen.common.enums import PAUSABLE_JOB_KEYS, WORKING_STATUSES, JobKey, JobSource, JobStatus
+from testgen.common.flavors import runs_in_process
 from testgen.common.models import Base, database_session, get_current_session
+from testgen.common.models.connection import Connection
+from testgen.common.models.table_group import TableGroup
+from testgen.common.models.test_suite import TestSuite
 
 LOG = logging.getLogger("testgen")
 
@@ -20,6 +40,11 @@ _RESOURCE_REMEDY = "Raise the memory available to TestGen, or reduce how much da
 _SAMPLING_REMEDY = (
     "Raise the memory available to TestGen, or reduce how much data the run reads by turning on"
     " sampling for the table group."
+)
+
+QUEUED_MESSAGE = (
+    "Waiting for another run on a DuckDB or file connection to finish."
+    " TestGen runs a limited number of these at once."
 )
 
 # What ``Popen.returncode`` reports for a process the kernel killed, which is how an out-of-memory
@@ -90,6 +115,10 @@ class JobExecution(Base):
     # that segment runs to the recovery, so it carries the downtime with it. A run that was
     # claimed but never started records nothing at all, since none of that time was work.
     active_seconds: float | None = Column(Float, nullable=True)
+    # Whether the job runs a target engine inside the TestGen process. Stamped at submit and not
+    # revisited, so a queued run keeps it even if its connection's type changes before the run
+    # starts.
+    in_process: bool = Column(Boolean, nullable=False, default=False, server_default=false())
 
     @classmethod
     def submit(
@@ -108,35 +137,88 @@ class JobExecution(Base):
             source=source,
             project_code=project_code,
             job_schedule_id=job_schedule_id,
+            in_process=cls._reads_in_process_target(job_key, kwargs),
         )
         session.add(job_exec)
         session.flush([job_exec])
         LOG.info("Submitted job execution %s: job_key=%s, source=%s", job_exec.id, job_key, source)
         return job_exec
 
+    @classmethod
+    def _reads_in_process_target(cls, job_key: str, kwargs: dict[str, Any]) -> bool:
+        """Whether the job's handler opens a target connection whose engine runs in-process.
+
+        Only profiling, test runs and monitor runs open a target connection. A run whose table
+        group or suite id is missing, is not a UUID, or matches no row resolves to False.
+        """
+        match job_key:
+            case JobKey.run_profile:
+                id_key = "table_group_id"
+            case JobKey.run_tests | JobKey.run_monitors:
+                id_key = "test_suite_id"
+            case _:
+                return False
+        # Parsed, not checked with is_uuid4, which accepts only lowercase: the id arrives as the
+        # caller typed it, and Postgres matches it in any case.
+        try:
+            target_id = UUID(str(kwargs[id_key]))
+        except (KeyError, ValueError):
+            return False
+
+        query = select(Connection.sql_flavor_code).join(
+            TableGroup, TableGroup.connection_id == Connection.connection_id
+        )
+        if id_key == "table_group_id":
+            query = query.where(TableGroup.id == target_id)
+        else:
+            # The table group's connection, not the suite's own column, is the one the run opens.
+            query = query.join(TestSuite, TestSuite.table_groups_id == TableGroup.id).where(
+                TestSuite.id == target_id
+            )
+        return runs_in_process(get_current_session().scalar(query))
+
     # What a poll acts on: everything it can start, plus the one status it settles instead.
     ACTIONABLE_STATUSES: ClassVar[tuple[JobStatus, ...]] = (*JobStatus.claimable(), JobStatus.CANCEL_REQUESTED)
 
     @classmethod
-    def claim_actionable(cls, limit: int = 5) -> list[Self]:
-        """Claim startable rows and fetch cancel_requested rows in one query.
+    def _select_actionable(cls, *clauses: ColumnElement[bool]) -> Select:
+        # The status list must stay exactly ACTIONABLE_STATUSES, which is the predicate of the
+        # partial index the poll scans; ``*clauses`` narrow it further.
+        return (
+            select(cls)
+            .where(cls.status.in_(cls.ACTIONABLE_STATUSES), *clauses)
+            .order_by(cls.created_at, cls.id)
+            .with_for_update(skip_locked=True)
+        )
 
-        PENDING (fresh start), INTERRUPTED (a shutdown stopped it) and RESUME_REQUESTED (a resume
-        was requested) all transition to claimed; the resume state on the row is what tells
-        a fresh start from a continuation, so the dispatch path is identical for all three.
+    @classmethod
+    def claim_actionable(cls, limit: int, in_process_slots: int) -> list[Self]:
+        """Claim startable rows and fetch cancel_requested rows.
+
+        PENDING (fresh start), INTERRUPTED (a shutdown stopped it), RESUME_REQUESTED (a resume
+        was requested) and QUEUED (waiting for an in-process slot) all transition to claimed; the
+        resume state on the row is what tells a fresh start from a continuation, so the dispatch
+        path is identical for all four.
         Cancel_requested rows are returned as-is for the scheduler to act on.
-        Uses SELECT FOR UPDATE SKIP LOCKED to prevent concurrent processing. Every returned
-        row is claimed or cancel_requested.
+
+        Startable ``in_process`` rows are claimed separately, at most ``in_process_slots`` of
+        them, oldest first, and every startable ``in_process`` row left over moves to QUEUED.
+        Every other row counts toward ``limit``. Every query here, including the one that picks
+        rows to queue, uses FOR UPDATE SKIP LOCKED to prevent concurrent processing. Every returned row is claimed or cancel_requested.
         """
         session = get_current_session()
-        query = (
-            select(cls)
-            .where(cls.status.in_(cls.ACTIONABLE_STATUSES))
-            .order_by(cls.created_at)
-            .with_for_update(skip_locked=True)
-            .limit(limit)
-        )
-        rows = session.scalars(query).all()
+        rows = list(session.scalars(
+            cls._select_actionable(
+                or_(cls.status == JobStatus.CANCEL_REQUESTED, cls.in_process.is_(False))
+            ).limit(limit)
+        ).all())
+        if in_process_slots > 0:
+            rows += session.scalars(
+                cls._select_actionable(
+                    cls.status != JobStatus.CANCEL_REQUESTED, cls.in_process.is_(True)
+                ).limit(in_process_slots)
+            ).all()
+        rows.sort(key=lambda row: (row.created_at, row.id))
         actionable: list[Self] = []
         claimed = 0
         for row in rows:
@@ -147,6 +229,16 @@ class JobExecution(Base):
             actionable.append(row)
         if claimed:
             LOG.info("Claimed %d job execution(s)", claimed)
+        # After the claims, so only rows this poll could not take are left to queue. Skips rows
+        # another scheduler holds, as the claims do: waiting on them while holding this poll's
+        # own claims would let two schedulers deadlock on each other's rows.
+        held = (
+            select(cls.id)
+            .where(cls.in_process.is_(True), cls.status.in_(JobStatus.sources_for(JobStatus.QUEUED)))
+            .with_for_update(skip_locked=True)
+        )
+        if queued := cls._transition_bulk_where(JobStatus.QUEUED, cls.id.in_(held)):
+            LOG.info("Queued %d job execution(s) for an in-process slot", len(queued))
         return actionable
 
     @classmethod

@@ -1121,16 +1121,17 @@ CREATE TABLE job_executions (
     started_at      TIMESTAMPTZ,
     completed_at    TIMESTAMPTZ,
     resume_state    JSONB,
-    active_seconds  DOUBLE PRECISION
+    active_seconds  DOUBLE PRECISION,
+    in_process      BOOLEAN         NOT NULL DEFAULT FALSE
 );
 
--- The claim query selects status IN ('pending', 'interrupted', 'resume_requested',
+-- The claim query selects status IN ('pending', 'interrupted', 'resume_requested', 'queued',
 -- 'cancel_requested') ordered by created_at. Keyed on created_at alone: the partial predicate
 -- already fixes status, so leading with it carries no information and costs the poll's ordered
 -- limit its index scan. The predicate must match the claim query's status list exactly, or
 -- Postgres cannot use the index for the poll.
 CREATE INDEX idx_job_executions_poll ON job_executions (created_at)
-    WHERE status IN ('pending', 'interrupted', 'resume_requested', 'cancel_requested');
+    WHERE status IN ('pending', 'interrupted', 'resume_requested', 'queued', 'cancel_requested');
 CREATE INDEX idx_job_executions_schedule ON job_executions (job_schedule_id);
 CREATE INDEX idx_job_executions_project ON job_executions (project_code, created_at DESC);
 CREATE INDEX idx_job_executions_project_completed
