@@ -1,10 +1,21 @@
 """Pydantic request/response models for API v1 endpoints."""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, RootModel, StrictBool, StrictInt, Tag
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    RootModel,
+    StrictBool,
+    StrictInt,
+    Tag,
+    ValidationInfo,
+    field_validator,
+)
 
 from testgen.api.enums import (
     AuthenticationMethod,
@@ -1050,6 +1061,7 @@ class TestSuiteResponse(BaseModel):
 class TestSuiteCreate(BaseModel):
     """A test suite to create under a table group.
 
+    Omitted optional fields, and fields sent as ``null``, take the default shown.
     Unknown fields are rejected. Test suite names need not be unique, so repeating a
     create makes a second suite with the same name.
     """
@@ -1083,3 +1095,10 @@ class TestSuiteCreate(BaseModel):
         "first profiling run then generates tests into it; a table group that has already been profiled "
         "does not.",
     )
+
+    @field_validator(
+        "component_type", "exclude_from_quality_score", "export_to_observability", "set_as_default", mode="before"
+    )
+    @classmethod
+    def _null_takes_the_default(cls, value: Any, info: ValidationInfo) -> Any:
+        return cls.model_fields[info.field_name].default if value is None else value

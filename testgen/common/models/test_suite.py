@@ -73,6 +73,50 @@ class TestSuiteSummary(EntityMinimal):
     last_run_dismissed_ct: int
     generation_sets: list[str] | None
 
+def _last_run_sql(suites_condition: str = "TRUE") -> str:
+    """A query yielding each test suite's last completed run, with its result counts by status.
+
+    Args:
+        suites_condition: SQL condition on ``test_suites AS suites`` naming the suites to cover.
+
+    Returns:
+        SQL for a CTE body. Its rows carry ``test_suite_id``, the run's ``id``, ``test_starttime``,
+        ``started_at`` (from ``job_executions``, zone-aware), ``test_ct`` and the ``*_ct`` counts of
+        confirmed results by status, plus ``dismissed_ct``.
+    """
+    return f"""
+            SELECT suites.id AS test_suite_id,
+                runs.id,
+                runs.test_starttime,
+                jobs.started_at,
+                runs.test_ct,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Passed'
+                ) AS passed_ct,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Warning'
+                ) AS warning_ct,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Failed'
+                ) AS failed_ct,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Error'
+                ) AS error_ct,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Log'
+                ) AS log_ct,
+                COUNT(*) FILTER (
+                    WHERE COALESCE(results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive')
+                ) AS dismissed_ct
+            FROM test_suites AS suites
+                JOIN test_runs AS runs ON runs.id = suites.last_complete_test_run_id
+                LEFT JOIN job_executions AS jobs ON jobs.id = runs.id
+                LEFT JOIN test_results AS results ON results.test_run_id = runs.id
+            WHERE {suites_condition}
+            GROUP BY suites.id, runs.id, runs.test_starttime, jobs.started_at, runs.test_ct
+        """
+
+
 @dataclass
 class TestSuiteListItem:
     id: UUID
@@ -153,61 +197,7 @@ class TestSuite(Entity):
             return []
 
         query = f"""
-        WITH last_run AS (
-            SELECT test_runs.test_suite_id,
-                test_runs.id,
-                test_runs.test_starttime,
-                test_runs.test_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND test_results.result_status = 'Passed' THEN 1
-                        ELSE 0
-                    END
-                ) AS passed_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND test_results.result_status = 'Warning' THEN 1
-                        ELSE 0
-                    END
-                ) AS warning_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND test_results.result_status = 'Failed' THEN 1
-                        ELSE 0
-                    END
-                ) AS failed_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND test_results.result_status = 'Error' THEN 1
-                        ELSE 0
-                    END
-                ) AS error_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(test_results.disposition, 'Confirmed') = 'Confirmed'
-                        AND test_results.result_status = 'Log' THEN 1
-                        ELSE 0
-                    END
-                ) AS log_ct,
-                SUM(
-                    CASE
-                        WHEN COALESCE(test_results.disposition, 'Confirmed') IN ('Dismissed', 'Inactive') THEN 1
-                        ELSE 0
-                    END
-                ) AS dismissed_ct
-            FROM test_suites
-                LEFT JOIN test_runs ON (
-                    test_suites.last_complete_test_run_id = test_runs.id
-                )
-                LEFT JOIN test_results ON (
-                    test_runs.id = test_results.test_run_id
-                )
-            GROUP BY test_runs.id
-        ),
+        WITH last_run AS ({_last_run_sql()}),
         test_defs AS (
             SELECT test_suite_id,
                 COUNT(*) AS count
@@ -259,108 +249,60 @@ class TestSuite(Entity):
 
     @classmethod
     def list_for_project(
-        cls,
-        project_code: str,
-        *,
-        table_group_id: UUID | None = None,
-        test_suite_name: str | None = None,
-        page: int = 1,
-        limit: int = 20,
+        cls, project_code: str, *clauses, page: int = 1, limit: int = 20
     ) -> tuple[list[TestSuiteListItem], int]:
         """Paginated regular test suites of a project, each with its test count and last completed run.
 
-        The optional filters match exactly. Returns the page of items and the total across pages.
+        Returns the page of items and the total across pages.
         """
-        scope_sql = ["suites.project_code = :project_code", "suites.suite_type = 'regular'"]
-        params: dict = {"project_code": project_code}
-        if table_group_id is not None:
-            scope_sql.append("suites.table_groups_id = :table_group_id")
-            params["table_group_id"] = str(table_group_id)
-        if test_suite_name is not None:
-            scope_sql.append("suites.test_suite = :test_suite_name")
-            params["test_suite_name"] = test_suite_name
-        scope = " AND ".join(scope_sql)
+        query = (
+            select(cls.id)
+            .where(cls.project_code == project_code, cls.suite_type == SuiteType.REGULAR, *clauses)
+            .order_by(func.lower(cls.test_suite), cls.id)
+        )
+        rows, total = cls._paginate(query, page=page, limit=limit)
+        if not rows:
+            return [], total
 
-        session = get_current_session()
-        # Separate COUNT(*) query keeps `total` correct on out-of-range pages.
-        total = session.execute(text(f"SELECT COUNT(*) FROM test_suites AS suites WHERE {scope};"), params).scalar()
-        if not total:
-            return [], 0
-
+        ids = [row["id"] for row in rows]
         query = f"""
-        WITH page AS (
-            SELECT suites.*
-            FROM test_suites AS suites
-            WHERE {scope}
-            ORDER BY LOWER(suites.test_suite), suites.id
-            LIMIT :limit OFFSET :offset
-        ),
+        WITH last_run AS ({_last_run_sql("suites.id IN :ids")}),
         test_defs AS (
             SELECT td.test_suite_id, COUNT(*) AS test_count
             FROM test_definitions AS td
-                JOIN page ON page.id = td.test_suite_id
-            WHERE td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
+            WHERE td.test_suite_id IN :ids
+                AND td.version_id = {SuiteVersion.resolved_for_sql("td.test_suite_id")}
             GROUP BY td.test_suite_id
-        ),
-        last_run AS (
-            -- The start comes from job_executions: ``test_runs.test_starttime`` is
-            -- timestamp-without-zone.
-            SELECT page.id AS test_suite_id,
-                runs.id AS run_id,
-                jobs.started_at,
-                runs.test_ct,
-                COUNT(*) FILTER (
-                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Passed'
-                ) AS passed_count,
-                COUNT(*) FILTER (
-                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Failed'
-                ) AS failed_count,
-                COUNT(*) FILTER (
-                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Warning'
-                ) AS warning_count,
-                COUNT(*) FILTER (
-                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Error'
-                ) AS error_count,
-                COUNT(*) FILTER (
-                    WHERE COALESCE(results.disposition, 'Confirmed') = 'Confirmed' AND results.result_status = 'Log'
-                ) AS log_count,
-                COUNT(*) FILTER (
-                    WHERE results.disposition IN ('Dismissed', 'Inactive')
-                ) AS dismissed_count
-            FROM page
-                JOIN test_runs AS runs ON runs.id = page.last_complete_test_run_id
-                LEFT JOIN job_executions AS jobs ON jobs.id = runs.id
-                LEFT JOIN test_results AS results ON results.test_run_id = runs.id
-            GROUP BY page.id, runs.id, jobs.started_at, runs.test_ct
         )
         SELECT
-            page.id,
-            page.test_suite,
-            page.project_code,
-            page.connection_id,
-            page.table_groups_id,
+            suites.id,
+            suites.test_suite,
+            suites.project_code,
+            suites.connection_id,
+            suites.table_groups_id,
             groups.table_groups_name,
-            page.test_suite_description,
+            suites.test_suite_description,
             COALESCE(test_defs.test_count, 0) AS test_count,
-            last_run.run_id AS latest_run_id,
+            last_run.id AS latest_run_id,
             last_run.started_at AS latest_run_started_at,
             last_run.test_ct AS latest_run_test_count,
-            last_run.passed_count AS latest_run_passed_count,
-            last_run.failed_count AS latest_run_failed_count,
-            last_run.warning_count AS latest_run_warning_count,
-            last_run.error_count AS latest_run_error_count,
-            last_run.log_count AS latest_run_log_count,
-            last_run.dismissed_count AS latest_run_dismissed_count
-        FROM page
-            LEFT JOIN table_groups AS groups ON groups.id = page.table_groups_id
-            LEFT JOIN test_defs ON test_defs.test_suite_id = page.id
-            LEFT JOIN last_run ON last_run.test_suite_id = page.id
-        ORDER BY LOWER(page.test_suite), page.id;
+            last_run.passed_ct AS latest_run_passed_count,
+            last_run.failed_ct AS latest_run_failed_count,
+            last_run.warning_ct AS latest_run_warning_count,
+            last_run.error_ct AS latest_run_error_count,
+            last_run.log_ct AS latest_run_log_count,
+            last_run.dismissed_ct AS latest_run_dismissed_count
+        FROM test_suites AS suites
+            LEFT JOIN table_groups AS groups ON groups.id = suites.table_groups_id
+            LEFT JOIN test_defs ON test_defs.test_suite_id = suites.id
+            LEFT JOIN last_run ON last_run.test_suite_id = suites.id
+        WHERE suites.id IN :ids;
         """
-        rows = session.execute(
-            text(query), {**params, "limit": limit, "offset": (page - 1) * limit}
+        results = get_current_session().execute(
+            text(query), {"ids": tuple(str(id_) for id_ in ids)}
         ).mappings().all()
-        return [TestSuiteListItem(**row) for row in rows], total
+        by_id = {row["id"]: TestSuiteListItem(**row) for row in results}
+        return [by_id[id_] for id_ in ids], total
 
     @classmethod
     def test_definition_stats(cls, test_suite_id: str | UUID) -> "TestDefinitionStats":

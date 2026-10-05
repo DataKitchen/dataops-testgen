@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.dialects import postgresql
 
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import TestSuiteCreate
@@ -120,22 +121,37 @@ def test_list_test_suites_reports_no_latest_run_for_a_suite_never_run(mock_cls, 
     assert resp.json()["items"][0]["latest_run"] is None
 
 
-@patch("testgen.api.deps.has_project_permission", return_value=True)
-@patch(f"{MODULE}.TestSuite")
-def test_list_test_suites_reads_filters_from_the_query_string(mock_cls, _perm):
-    mock_cls.list_for_project.return_value = ([], 0)
+def _list_clauses(query: str):
+    with (
+        patch("testgen.api.deps.has_project_permission", return_value=True),
+        patch.object(TestSuite, "list_for_project", return_value=([], 0)) as mock_list,
+    ):
+        resp = _client().get(f"/api/v1/projects/demo/test-suites{query}")
+    return resp, mock_list
 
-    resp = _client().get(f"/api/v1/projects/demo/test-suites?table_group_id={TG_ID}&test_suite_name=Orders&page=2")
+
+def _compiled(clause) -> str:
+    return str(clause.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+
+
+def test_list_test_suites_turns_the_query_string_into_filters():
+    resp, mock_list = _list_clauses(f"?table_group_id={TG_ID}&test_suite_name=Orders&page=2")
 
     assert resp.status_code == 200
     assert resp.json()["items"] == []
-    assert mock_cls.list_for_project.call_args.args == ("demo",)
-    assert mock_cls.list_for_project.call_args.kwargs == {
-        "table_group_id": TG_ID,
-        "test_suite_name": "Orders",
-        "page": 2,
-        "limit": 20,
-    }
+    args = mock_list.call_args.args
+    assert args[0] == "demo"
+    assert [_compiled(clause) for clause in args[1:]] == [
+        f"test_suites.table_groups_id = '{TG_ID}'",
+        "test_suites.test_suite = 'Orders'",
+    ]
+    assert mock_list.call_args.kwargs == {"page": 2, "limit": 20}
+
+
+def test_list_test_suites_without_filters_passes_no_clauses():
+    _, mock_list = _list_clauses("")
+
+    assert mock_list.call_args.args == ("demo",)
 
 
 @pytest.mark.parametrize("query", ["?page=0", "?limit=0", "?limit=101", "?table_group_id=not-a-uuid"])
@@ -322,6 +338,30 @@ def test_create_test_suite_does_not_take_the_model_export_default():
     assert resp.json()["export_to_observability"] is False
 
 
+def test_create_test_suite_strips_the_name():
+    resp, mock_save, _, _ = _post({"test_suite_name": "  client_42  "})
+
+    assert _saved(mock_save).test_suite == "client_42"
+    assert resp.json()["test_suite_name"] == "client_42"
+
+
+def test_create_test_suite_treats_null_as_omitted():
+    resp, mock_save, _, table_group = _post({
+        "test_suite_name": "Orders",
+        "component_type": None,
+        "export_to_observability": None,
+        "exclude_from_quality_score": None,
+        "set_as_default": None,
+    })
+
+    assert resp.status_code == 201
+    saved = _saved(mock_save)
+    assert saved.component_type == "dataset"
+    assert saved.export_to_observability is False
+    assert saved.dq_score_exclude is False
+    table_group.save.assert_not_called()
+
+
 def test_create_test_suite_applies_every_supplied_field():
     resp, mock_save, _, _ = _post({
         "test_suite_name": "Orders",
@@ -455,8 +495,8 @@ def test_select_list_supplies_every_dataclass_field():
     """``list_for_project`` builds rows with ``TestSuiteListItem(**row)``, so a column dropped
     from the SELECT raises TypeError at runtime. Every other test here mocks the query."""
     source = inspect.getsource(TestSuite.list_for_project)
-    start = source.index("        SELECT\n            page.id,")
-    select_list = source[start:source.index("        FROM page\n", start)]
+    start = source.index("        SELECT\n            suites.id,")
+    select_list = source[start:source.index("        FROM test_suites AS suites\n", start)]
 
     missing = [
         field

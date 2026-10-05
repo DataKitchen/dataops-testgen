@@ -43,13 +43,12 @@ def list_test_suites(
     Test suite names are not unique, so ``test_suite_name`` can match more than one
     suite. Filter by it before creating a suite to avoid making a second one.
     """
-    rows, total = TestSuite.list_for_project(
-        project_code,
-        table_group_id=table_group_id,
-        test_suite_name=test_suite_name,
-        page=page,
-        limit=limit,
-    )
+    clauses = []
+    if table_group_id is not None:
+        clauses.append(TestSuite.table_groups_id == table_group_id)
+    if test_suite_name is not None:
+        clauses.append(TestSuite.test_suite == test_suite_name)
+    rows, total = TestSuite.list_for_project(project_code, *clauses, page=page, limit=limit)
     return TestSuiteListResponse(items=[_to_item(row) for row in rows], page=page, limit=limit, total=total)
 
 
@@ -87,7 +86,7 @@ def create_test_suite(
         project_code=table_group.project_code,
         connection_id=table_group.connection_id,
         table_groups_id=table_group.id,
-        test_suite=body.test_suite_name,
+        test_suite=body.test_suite_name.strip(),
         test_suite_description=body.description,
         severity=DEFAULT_SEVERITY_TO_DB[DefaultSeverity(body.default_severity)] if body.default_severity else None,
         dq_score_exclude=body.exclude_from_quality_score,

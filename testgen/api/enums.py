@@ -362,8 +362,7 @@ ConnectionType = StrEnum("ConnectionType", {m.name: m.value for m in SqlFlavorLa
 
 
 class DefaultSeverity(StrEnum):
-    """Severity a test suite gives its tests that set none of their own. ``log`` records a
-    failure without failing; it is set only from the TestGen UI."""
+    """Severity a test suite gives its tests that set none of their own."""
 
     fail = "fail"
     warning = "warning"
