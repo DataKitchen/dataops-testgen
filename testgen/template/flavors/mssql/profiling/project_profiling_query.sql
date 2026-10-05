@@ -183,6 +183,7 @@ SELECT *
   CROSS JOIN pattern_measures
 -- TG-ENDIF
 -- TG-IF is_not_A
+WITH column_measures AS (
 SELECT
 -- TG-ENDIF
 -- TG-IF is_type_X
@@ -207,9 +208,6 @@ SELECT
   MAX("{COL_NAME}") AS max_value,
   AVG(CAST("{COL_NAME}" AS FLOAT)) AS avg_value,
   STDEV(CAST("{COL_NAME}" AS FLOAT)) AS stdev_value,
-  MIN(pct_25) AS percentile_25,
-  MIN(pct_50) AS percentile_50,
-  MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
   SUM(ROUND(ABS(("{COL_NAME}" % 1)), 5)) AS fractional_sum,
@@ -262,17 +260,33 @@ SELECT
   COUNT_BIG(*) AS record_ct
   FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
 -- TG-ENDIF
+-- TG-IF is_not_A
+)
+-- TG-ENDIF
 -- TG-IF is_N_approx_pctile
-  , (SELECT
-             APPROX_PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_25,
-             APPROX_PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_50,
-             APPROX_PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS pct_75
-        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}) pctile
+, percentiles AS (
+  SELECT
+    APPROX_PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_25,
+    APPROX_PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_50,
+    APPROX_PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") AS percentile_75
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
+)
 -- TG-ENDIF
 -- TG-IF is_N_exact_pctile
-  , (SELECT TOP 1
-             PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_25,
-             PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_50,
-             PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS pct_75
-        FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}) pctile
+, percentiles AS (
+  SELECT TOP 1
+    PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS percentile_25,
+    PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS percentile_50,
+    PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY "{COL_NAME}") OVER () AS percentile_75
+    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
+)
+-- TG-ENDIF
+-- TG-IF is_not_A
+SELECT *
+  FROM column_measures
+-- TG-ENDIF
+-- TG-IF is_type_N
+  -- Joined to the aggregated row: joined before aggregating, SQL Server spools every row of a small table.
+  -- An outer join: the exact percentile query returns no row for an empty table.
+  LEFT JOIN percentiles ON 1 = 1
 -- TG-ENDIF
