@@ -131,7 +131,7 @@ def generation_sets_resource() -> str:
         if not names:
             continue
         doc.heading(2, generation_set)
-        doc.text(", ".join(names))
+        doc.bullets(names)
 
     return doc.render()
 

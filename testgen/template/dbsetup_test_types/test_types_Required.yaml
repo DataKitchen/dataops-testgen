@@ -10,7 +10,7 @@ test_types:
   measure_uom: Missing values
   measure_uom_description: null
   selection_criteria: |-
-    record_ct = value_ct AND record_ct > 10
+    record_ct = value_ct AND record_ct > 10 AND NOT COALESCE(general_type = 'A' AND zero_length_ct = 0 AND filled_value_ct = 0 AND sample_ratio IS NULL, FALSE)
   generation_template: null
   dq_score_prevalence_formula: |-
     ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)

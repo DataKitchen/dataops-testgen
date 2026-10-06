@@ -32,6 +32,7 @@ EXPECTED_CRITERIA = {
     # List of Values: tested against a set/lookup of allowed values (Set / lookup algorithm)
     "LOV_All": TestCriteria.LIST_OF_VALUES,
     "LOV_Match": TestCriteria.LIST_OF_VALUES,
+    "Required_No_Placeholder": TestCriteria.LIST_OF_VALUES,
     "US_State": TestCriteria.LIST_OF_VALUES,
     # Defined Rule: predefined validity/integrity rule, no user-supplied value (enumerated)
     "Dupe_Rows": TestCriteria.DEFINED_RULE,
@@ -56,6 +57,8 @@ EXPECTED_CRITERIA = {
     "Future_Date": TestCriteria.DEFINED_THRESHOLD,
     "Future_Date_1Y": TestCriteria.DEFINED_THRESHOLD,
     "Incr_Avg_Shift": TestCriteria.DEFINED_THRESHOLD,
+    "Max_Date": TestCriteria.DEFINED_THRESHOLD,
+    "Max_Val": TestCriteria.DEFINED_THRESHOLD,
     "Min_Date": TestCriteria.DEFINED_THRESHOLD,
     "Min_Val": TestCriteria.DEFINED_THRESHOLD,
     "Missing_Pct": TestCriteria.DEFINED_THRESHOLD,
@@ -66,6 +69,7 @@ EXPECTED_CRITERIA = {
     "Row_Ct": TestCriteria.DEFINED_THRESHOLD,
     "Row_Ct_Pct": TestCriteria.DEFINED_THRESHOLD,
     "Table_Freshness": TestCriteria.DEFINED_THRESHOLD,
+    "Text_Length_Range": TestCriteria.DEFINED_THRESHOLD,
     "Unique_Pct": TestCriteria.DEFINED_THRESHOLD,
     "Variability_Increase": TestCriteria.DEFINED_THRESHOLD,
     "Variability_Decrease": TestCriteria.DEFINED_THRESHOLD,

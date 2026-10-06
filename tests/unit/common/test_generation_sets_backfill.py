@@ -8,10 +8,10 @@ EXPECTED_PAIRS = {("Standard", t) for t in [
     "Alpha_Trunc", "Avg_Shift", "Constant", "Daily_Record_Ct", "Dec_Trunc", "Distinct_Date_Ct",
     "Distinct_Value_Ct", "Dupe_Rows", "Email_Format", "Future_Date", "Future_Date_1Y",
     "Incr_Avg_Shift", "LOV_Match", "Min_Date", "Min_Val", "Missing_Pct", "Monthly_Rec_Ct",
-    "Outlier_Pct_Above", "Outlier_Pct_Below", "Pattern_Match", "Recency", "Required",
+    "Outlier_Pct_Above", "Outlier_Pct_Below", "Pattern_Match", "Recency", "Required", "Required_No_Placeholder",
     "Street_Addr_Pattern", "US_State", "Unique", "Unique_Pct", "Valid_Characters", "Valid_Month",
     "Valid_US_Zip", "Valid_US_Zip3", "Variability_Decrease", "Variability_Increase", "Weekly_Rec_Ct",
-]} | {("Monitor", t) for t in ["Schema_Drift", "Freshness_Trend", "Volume_Trend"]}
+]} | {("Monitor", t) for t in ["Schema_Drift", "Freshness_Trend", "Volume_Trend"]} | {("Contract", "Required_No_Placeholder")}
 
 
 def _load_all_core_test_types():

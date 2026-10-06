@@ -1,0 +1,224 @@
+test_types:
+  id: '1520'
+  test_type: Required_No_Placeholder
+  test_name_short: Required, No Placeholder
+  test_name_long: Required non-null, non-placeholder value present
+  test_description: |-
+    Tests that the column contains no nulls and none of the set placeholder values, such as an empty string or N/A.
+  except_message: |-
+    Null or placeholder values found in column.
+  measure_uom: Missing values
+  measure_uom_description: null
+  selection_criteria: |-
+    record_ct = value_ct AND record_ct > 10 AND general_type = 'A' AND zero_length_ct = 0 AND filled_value_ct = 0 AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value,threshold_value
+  default_parm_values: |-
+    '"",blank,(blank),[blank],error,(error),[error],missing,(missing),[missing],tbd,(tbd),[tbd],n/a,(n/a),[n/a],#na,(#na),[#na],none,(none),[none],null,(null),[null],unknown,(unknown),[unknown],BLANK,(BLANK),[BLANK],ERROR,(ERROR),[ERROR],MISSING,(MISSING),[MISSING],TBD,(TBD),[TBD],N/A,(N/A),[N/A],#NA,(#NA),[#NA],NONE,(NONE),[NONE],NULL,(NULL),[NULL],UNKNOWN,(UNKNOWN),[UNKNOWN]',0
+  default_parm_prompts: |-
+    List of Placeholder Values,Threshold Missing Value Count
+  default_parm_help: |-
+    Comma-separated list of values that count as missing, matched exactly. Enclose a value in double quotes if it contains a comma, and use "" for the empty string.|The number of missing values that are acceptable before test fails.
+  default_parm_required: Y,N
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Completeness
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of missing values
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test counts null values together with values that stand in for missing data, such as an empty string, N/A or Unknown. Each value in the list is matched exactly, so list every spelling the source system uses. Required Entry counts null values only.
+  active: Y
+  ai_redact_values: false
+  algorithm: Set / lookup
+  generation_sets:
+    - Standard
+    - Contract
+  cat_test_conditions:
+  - id: '7040'
+    test_type: Required_No_Placeholder
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6040'
+    test_type: Required_No_Placeholder
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3040'
+    test_type: Required_No_Placeholder
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR (CAST({COLUMN_NAME} AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 IN ({BASELINE_VALUE_LIST}) AND DATALENGTH({COLUMN_NAME}) = DATALENGTH(RTRIM({COLUMN_NAME}))) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4040'
+    test_type: Required_No_Placeholder
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2020'
+    test_type: Required_No_Placeholder
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7040'
+    test_type: Required_No_Placeholder
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2120'
+    test_type: Required_No_Placeholder
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8040'
+    test_type: Required_No_Placeholder
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8040'
+    test_type: Required_No_Placeholder
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '10042'
+    test_type: Required_No_Placeholder
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11106'
+    test_type: Required_No_Placeholder
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} IS NULL OR {COLUMN_NAME} IN ({BASELINE_VALUE_LIST}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1501'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` IN ({BASELINE_VALUE_LIST}) GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1505'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NULL OR `{COLUMN_NAME}` IN ({BASELINE_VALUE_LIST}) GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1509'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR (CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 IN ({BASELINE_VALUE_LIST}) AND DATALENGTH("{COLUMN_NAME}") = DATALENGTH(RTRIM("{COLUMN_NAME}"))) GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1513'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1517'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1521'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1525'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8519'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8519'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10051'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11107'
+    test_id: '1520'
+    test_type: Required_No_Placeholder
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NULL OR "{COLUMN_NAME}" IN ({BASELINE_VALUE_LIST}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  test_templates: []
