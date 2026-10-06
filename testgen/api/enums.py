@@ -396,3 +396,11 @@ SCHEDULE_KIND_TO_JOB_KEY: dict[ScheduleKind, JobKey] = {
     ScheduleKind.test_run: JobKey.run_tests,
 }
 SCHEDULE_KIND_FROM_JOB_KEY: dict[JobKey, ScheduleKind] = {v: k for k, v in SCHEDULE_KIND_TO_JOB_KEY.items()}
+
+
+class MonitorSensitivity(StrEnum):
+    """How readily monitors flag a deviation: ``high`` flags smaller deviations, ``low`` only large ones."""
+
+    low = "low"
+    medium = "medium"
+    high = "high"
