@@ -29,21 +29,14 @@ PACKAGE_ROOT = Path(testgen.__file__).parent
 COMPARISON = re.compile(r"[\w.]+\.schema_name\s*==?\s*[\w.]+\.schema_name")
 
 ACCOUNTED: dict[str, tuple[int, str]] = {
-    "common/models/hygiene_issue.py": (4, "hygiene issues to profiling results, and to each other"),
+    "common/models/hygiene_issue.py": (3, "hygiene issues to the profiling results of their own run"),
     "common/models/profile_result.py": (1, "hygiene issues to profiling results"),
     "common/models/profiling_run.py": (1, "hygiene issues to profiling results"),
     "template/dbupgrade/0169_incremental_upgrade.sql": (1, "test results to test definitions; applied, immutable"),
-    "template/gen_funny_cat_tests/gen_Constant.sql": (1, "two profiling-derived CTEs"),
-    "template/gen_funny_cat_tests/gen_Distinct_Value_Ct.sql": (1, "two profiling-derived CTEs"),
     "template/generation/delete_overridden_autogen_tests.sql": (1, "test definitions to test definitions"),
     "template/get_entities/get_profile_screen.sql": (3, "profiling results to a profiling-derived CTE"),
-    "template/profiling/functional_tabletype_stage.sql": (1, "profiling results to a profiling-derived subquery"),
     "template/profiling/functional_tabletype_update.sql": (1, "staging to profiling results, same run"),
-    "template/profiling/profile_anomalies_screen_column.sql": (1, "profiling results to muted hygiene issues"),
-    "template/profiling/profile_anomalies_screen_multi_column.sql": (2, "profiling results to muted hygiene issues"),
-    "template/profiling/profile_anomalies_screen_table.sql": (1, "profiling results to muted hygiene issues"),
-    "template/profiling/profile_anomalies_screen_table_dates.sql": (1, "profiling results to muted hygiene issues"),
-    "template/profiling/profile_anomalies_screen_variants.sql": (1, "profiling results to muted hygiene issues"),
+    "template/profiling/profile_anomalies_screen_multi_column.sql": (1, "two reads of one run's results"),
 }
 
 

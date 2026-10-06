@@ -40,7 +40,7 @@ recent_runs AS (
 ),
 selected_columns AS (
   -- Select columns based on recent profiling results
-  SELECT p.schema_name, p.table_name, p.column_name,
+  SELECT p.table_name, p.column_name,
     SUM(CASE WHEN p.distinct_value_ct = 1 THEN 0 ELSE 1 END) AS always_one_val,
     COUNT(
       DISTINCT CASE
@@ -65,7 +65,9 @@ selected_columns AS (
     AND dcc.excluded_data_element IS NOT TRUE
     -- No dates as constants
     AND NOT (p.general_type = 'D' AND rr.run_rank = 1)
-  GROUP BY p.schema_name, p.table_name, p.column_name
+  -- Not grouped by schema: a table group that now reads another schema would split its
+  -- own history in two, and the window would hold only the runs since the move.
+  GROUP BY p.table_name, p.column_name
   HAVING SUM(CASE WHEN p.distinct_value_ct = 1 THEN 0 ELSE 1 END) = 0
     AND SUM(CASE WHEN p.max_length < 100 THEN 0 ELSE 1 END) = 0
     AND COUNT(
@@ -86,7 +88,7 @@ INSERT INTO test_definitions (
   test_active, last_auto_gen_date, profiling_as_of_date, profile_run_id,
   baseline_value, threshold_value, skip_errors
 )
-SELECT 
+SELECT
   :TABLE_GROUPS_ID ::UUID AS table_groups_id,
   :TEST_SUITE_ID ::UUID   AS test_suite_id,
   :VERSION_ID ::UUID      AS version_id,
@@ -94,8 +96,8 @@ SELECT
   :DATA_SCHEMA            AS schema_name,
   r.table_name,
   r.column_name,
-  'Y'                     AS test_active, 
-  :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date, 
+  'Y'                     AS test_active,
+  :RUN_DATE ::TIMESTAMP   AS last_auto_gen_date,
   :AS_OF_DATE ::TIMESTAMP AS profiling_as_of_date,
   r.profile_run_id,
   CASE WHEN r.general_type = 'A' THEN fn_quote_literal_escape(r.min_text, :SQL_FLAVOR)::VARCHAR
@@ -110,8 +112,7 @@ SELECT
 FROM latest_results r
 -- Only insert tests for selected columns
 INNER JOIN selected_columns c ON (
-  r.schema_name = c.schema_name
-  AND r.table_name = c.table_name
+  r.table_name = c.table_name
   AND r.column_name = c.column_name
 )
   -- Only insert if test type is active
@@ -120,8 +121,8 @@ WHERE EXISTS (SELECT 1 FROM test_types WHERE test_type = 'Constant' AND active =
 
 -- Match "uix_td_autogen_column" unique index exactly
 ON CONFLICT (test_suite_id, version_id, test_type, schema_name, table_name, column_name)
-WHERE last_auto_gen_date IS NOT NULL 
-  AND table_name IS NOT NULL 
+WHERE last_auto_gen_date IS NOT NULL
+  AND table_name IS NOT NULL
   AND column_name IS NOT NULL
 
 -- Update tests if they already exist
