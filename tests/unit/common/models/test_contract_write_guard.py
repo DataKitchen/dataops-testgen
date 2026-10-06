@@ -151,10 +151,14 @@ def test_save_of_a_term_the_draft_did_not_copy_is_refused():
 def test_a_new_term_on_a_frozen_only_contract_is_inserted_into_the_draft():
     frozen_version_id = uuid4()
     draft_version_id = uuid4()
-    term = TestDefinition(test_suite_id=uuid4())
+    term = TestDefinition(
+        test_suite_id=uuid4(), test_type="Row_Ct", schema_name="public",
+        table_name="orders", column_name="order_id",
+    )
     session = MagicMock()
-    # The version a new definition resolves to, then the routing check, which finds it frozen.
-    session.scalar.side_effect = [frozen_version_id, frozen_version_id]
+    # The version a new definition resolves to, then the routing check, which finds it frozen,
+    # then the draft's suite-owned check, then the term-identity taken-check.
+    session.scalar.side_effect = [frozen_version_id, frozen_version_id, draft_version_id, None]
     with (
         patch("testgen.common.models.test_definition.get_current_session", return_value=session),
         patch("testgen.common.models.entity.get_current_session", return_value=session),

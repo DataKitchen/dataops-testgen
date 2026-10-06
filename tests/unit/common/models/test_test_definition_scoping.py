@@ -45,6 +45,14 @@ EXEMPT_METHODS = {
     "editable_fields": "derives a field list from the test type; issues no statement",
     "validate": "checks fields already in memory; issues no statement",
     "version_clause": "builds the predicate the reads apply; issues no statement itself",
+    "mint_term_id": (
+        "takes no suite and reads no terms — its taken-check narrows by an explicit version_id, "
+        "which is stricter than the resolved-version predicate rather than a bypass of it"
+    ),
+    "assign_missing_term_ids": (
+        "narrows by an explicit version_id, which is stricter than the resolved-version "
+        "predicate rather than a bypass of it"
+    ),
 }
 
 # get_source_data_context is raw SQL. It guards on a scoped get() and then reads by primary key,

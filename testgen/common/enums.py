@@ -20,6 +20,19 @@ class QualityDimension(StrEnum):
     VALIDITY = "Validity"
 
 
+class TestScope(StrEnum):
+    """Stored ``test_types.test_scope`` values -- where a test type's check applies.
+
+    Read by both the ODCS quality-rule mapping (``common/odcs/quality_rules.py``) and the
+    contract renderer, which is why it lives here rather than on ``TestDefinition``.
+    """
+    COLUMN = "column"
+    REFERENTIAL = "referential"
+    TABLE = "table"
+    TABLEGROUP = "tablegroup"
+    CUSTOM = "custom"
+
+
 class ImpactDimension(StrEnum):
     """Stored ``impact_dimension`` values shared by ``profile_anomaly_types`` /
     ``profile_anomaly_results`` and ``test_types``. The primary dimension breakdown
@@ -312,6 +325,22 @@ class FileFormat(StrEnum):
     CSV = "csv"
     PARQUET = "parquet"
     JSON = "json"
+
+
+class OdcsDimension(StrEnum):
+    """The ``$defs.DataQuality.properties.dimension`` enum from the pinned ODCS JSON schema.
+
+    Distinct from ``QualityDimension``: TestGen's own dimension vocabulary does not translate
+    one-for-one onto ODCS's, most notably ``QualityDimension.VALIDITY`` (TestGen's most-used
+    dimension), which has no ODCS counterpart and maps to ``CONFORMITY`` instead.
+    """
+    ACCURACY = "accuracy"
+    COMPLETENESS = "completeness"
+    CONFORMITY = "conformity"
+    CONSISTENCY = "consistency"
+    COVERAGE = "coverage"
+    TIMELINESS = "timeliness"
+    UNIQUENESS = "uniqueness"
 
 
 class SuiteType(StrEnum):

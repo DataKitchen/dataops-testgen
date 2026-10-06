@@ -67,6 +67,7 @@ dependencies = [
     "statsmodels==0.14.6",
     "holidays~=0.89",
     "packaging>=24.0",
+    "jsonschema[format]==4.26.0",
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==23.0.1",
@@ -133,11 +134,12 @@ salesforce_data360 = "testgen.common.database.salesforce_data360_dialect:Salesfo
 include-package-data = true
 
 [tool.setuptools.package-data]
-"*" = ["*.toml", "*.sql", "*.yaml"]
+"*" = ["*.toml", "*.sql", "*.yaml", "*.json"]
 "testgen.template" = ["*.sql", "*.yaml", "**/*.sql", "**/*.yaml"]
 "testgen.ui.static" = ["**/*.js", "**/*.css", "**/*.woff2"]
 "testgen.ui.assets" = ["*.svg", "*.png", "*.js", "*.css", "*.ico", "flavors/*.svg"]
 "testgen.ui.components.frontend" = ["**/*.js", "**/*.css", "**/*.woff2", "**/*.svg"]
+"testgen.common.odcs.schemas" = ["*.json"]
 
 [tool.setuptools.packages.find]
 # see the important note for why we glob. TL;DR: Otherwise you don't get submodules

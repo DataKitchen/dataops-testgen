@@ -189,6 +189,20 @@ def test_a_run_with_no_version_does_not_read_as_a_draft():
     assert SuiteVersion.is_draft(None) is False
 
 
+def test_only_a_suite_owned_version_reads_as_suite_owned():
+    session = MagicMock()
+    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
+        session.scalar.return_value = uuid4()
+        assert SuiteVersion.is_suite_owned(uuid4()) is True
+
+        session.scalar.return_value = None
+        assert SuiteVersion.is_suite_owned(uuid4()) is False
+
+
+def test_a_version_with_no_id_does_not_read_as_suite_owned():
+    assert SuiteVersion.is_suite_owned(None) is False
+
+
 def _checks_suite_owned_and_unfrozen(statement) -> bool:
     """Whether the statement ANDs a suite-owned check with an unfrozen check, as separate terms.
 

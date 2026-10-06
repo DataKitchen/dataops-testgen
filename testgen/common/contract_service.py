@@ -5,14 +5,15 @@ decided in one place. Functions raise stdlib exceptions; the calling surface tra
 into its own user-facing errors.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import yaml
 from sqlalchemy import asc, delete, func, select
 from sqlalchemy.orm.attributes import flag_modified
 
 from testgen.commands.test_generation import run_test_generation
-from testgen.common.contract_term_service import slugify_term_id
 from testgen.common.enums import SuiteType
 from testgen.common.generation_set_service import CONTRACT_GENERATION_SET
 from testgen.common.models import get_current_session
@@ -22,7 +23,9 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.odcs_server import ODCS_API_VERSION, ODCS_KIND, build_server_block
+from testgen.common.odcs import render, serialize
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, build_server_block
+from testgen.common.odcs.validation import validate_document
 
 
 def resolve_write_target(suite: TestSuite) -> tuple[UUID, dict[UUID, UUID]]:
@@ -45,17 +48,65 @@ def _assert_contract(suite: TestSuite) -> None:
         raise ValueError(f"Test suite {suite.id} is not a contract and keeps no versions.")
 
 
+class InvalidContractDocumentError(ValueError):
+    """Raised when a contract's merged document fails ODCS validation.
+
+    Carries the validator's own messages, so a caller can show the same violations it
+    reported rather than a generic refusal.
+    """
+
+    def __init__(self, problems: list[str]) -> None:
+        super().__init__("; ".join(problems))
+        self.problems = problems
+
+
 def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersion:
-    """Freeze the suite's draft, making it the agreement in force."""
+    """Freeze the suite's draft, making it the agreement in force.
+
+    Renders the draft's terms into its stored document and validates the merge before
+    anything is written. Raises ``InvalidContractDocumentError``, leaving the draft a draft,
+    when the merged document does not validate; terms are not regenerated here, only what
+    the draft already holds is rendered.
+    """
     draft = SuiteVersion.draft_for(suite.id)
     if draft is None:
         raise ValueError("This contract has no draft to freeze.")
 
+    document = render.render_document(draft)
+    api_version = document["apiVersion"]
+    problems = validate_document(document, api_version)
+    if problems:
+        raise InvalidContractDocumentError(problems)
+
+    draft.odcs_api_version = api_version
+    draft.frozen_document = serialize.serialize_document(document)
     draft.frozen_at = datetime.now(UTC)
     if label is not None:
         draft.label = label
     get_current_session().flush()
     return draft
+
+
+@dataclass(frozen=True)
+class ExportedDocument:
+    """A contract version's document as YAML text, alongside whether it still validates."""
+
+    text: str
+    problems: list[str]
+
+
+def export_version(version: SuiteVersion) -> ExportedDocument:
+    """The version's document as YAML text, with a fresh check of whether it validates.
+
+    Returns a frozen version's stored bytes unchanged, reading no terms and rendering
+    nothing; a draft, which has no stored bytes yet, is rendered and serialized fresh.
+    Either way ``problems`` is computed against the returned text rather than assumed, so a
+    frozen document that no longer validates -- for instance after a schema pin change --
+    is reported rather than presumed clean.
+    """
+    text = version.frozen_document or serialize.serialize_document(render.render_document(version))
+    problems = validate_document(yaml.safe_load(text), version.odcs_api_version)
+    return ExportedDocument(text, problems)
 
 
 def discard_draft(suite: TestSuite) -> int:
@@ -327,29 +378,4 @@ def _generate_for_tables(suite: TestSuite, table_names: list[str], version_id: U
     session = get_current_session()
     session.commit()
     run_test_generation(suite.id, table_names=table_names)
-    _stamp_term_ids(version_id)
-
-
-def _stamp_term_ids(version_id: UUID) -> None:
-    """Give every generated term in the version that has no contract identity yet its own.
-
-    Generation inserts through a SQL template, which cannot reach the slug rule, so the terms
-    it writes arrive without the identity that has to survive a freeze.
-
-    Generated terms only. The natural-key indexes are partial on ``last_auto_gen_date``, so a
-    manual term is deduped against nothing and one sharing a generated term's key would slug
-    identically and fail ``uix_td_contract_term``. A term with no identity is outside that
-    index; a term with a colliding one wedges the contract.
-    """
-    session = get_current_session()
-    for term in session.scalars(
-        select(TestDefinition).where(
-            TestDefinition.version_id == version_id,
-            TestDefinition.contract_term_id.is_(None),
-            TestDefinition.last_auto_gen_date.is_not(None),
-        )
-    ).all():
-        term.contract_term_id = slugify_term_id(
-            term.test_type, term.schema_name, term.table_name, term.column_name
-        )
-    session.flush()
+    TestDefinition.assign_missing_term_ids(version_id)
