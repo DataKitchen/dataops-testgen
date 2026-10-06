@@ -1004,7 +1004,8 @@ const KeyHint = (key, action) => {
 const AddDialogComponent = ({ open, info, validateResult, onClose }, emit) => {
     const { div, span, input, label, h4 } = van.tags;
 
-    const testTypes = van.derive(() => getValue(info)?.test_types ?? []);
+    // Types not offered for new tests stay in test_types so saved tests of those types can still be edited
+    const testTypes = van.derive(() => (getValue(info)?.test_types ?? []).filter(tt => tt.offered));
     const tableColumns = van.derive(() => getValue(info)?.table_columns ?? []);
     const testSuite = van.derive(() => getValue(info)?.test_suite ?? {});
     const tableGroupSchema = van.derive(() => getValue(info)?.table_group_schema ?? '');
@@ -1525,9 +1526,8 @@ const TabLabel = (text, invalid) => span(
 // Shared form content for add/edit dialogs
 const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResult, mode, qualifiesTableRefsWithSchema, schemaLabel, activeTab, onFormChange, onValidate, onSave, onCancel, onBack }) => {
     const testScope = formValues.test_scope ?? 'column';
-    const runType = formValues.run_type ?? 'CAT';
     const testType = formValues.test_type ?? '';
-    const isValidatable = testType === 'Condition_Flag' || testType === 'CUSTOM';
+    const isValidatable = ['Condition_Flag', 'CUSTOM', 'SQL_Metric'].includes(testType);
 
     const fv = van.state({ ...formValues });
     const updateField = (key, value) => {
@@ -1782,18 +1782,6 @@ const TestDefFormContent = ({ formValues, tableColumns, testSuite, validateResul
                         },
                     }),
                 ),
-
-                // Skip errors (QUERY run type only)
-                runType === 'QUERY'
-                    ? Input({
-                        name: 'skip_errors',
-                        label: 'Threshold Error Count',
-                        type: 'number',
-                        value: () => fv.val.skip_errors ?? 0,
-                        step: 1,
-                        onChange: (value) => updateField('skip_errors', value ?? 0),
-                    })
-                    : null,
                 ),
             ),
             Tab(

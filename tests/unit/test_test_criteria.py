@@ -19,6 +19,7 @@ EXPECTED_CRITERIA = {
     # Custom Criteria: user authors the test in SQL (custom scope or Custom SQL algorithm)
     "CUSTOM": TestCriteria.CUSTOM_CRITERIA,
     "Condition_Flag": TestCriteria.CUSTOM_CRITERIA,
+    "SQL_Metric": TestCriteria.CUSTOM_CRITERIA,
     # Reference Dataset: compared against another dataset (referential scope)
     "Aggregate_Balance": TestCriteria.REFERENCE_DATASET,
     "Aggregate_Balance_Percent": TestCriteria.REFERENCE_DATASET,
