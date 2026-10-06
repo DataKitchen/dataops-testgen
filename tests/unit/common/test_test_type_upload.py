@@ -194,6 +194,11 @@ def test_default_parm_required_ok() -> None:
     assert result.ok, result.errors
 
 
+def test_default_parm_required_accepts_at_least_one_flag() -> None:
+    result = validate_test_type_yaml(_valid_parent_yaml("  default_parm_required: Y,A,A\n"))
+    assert result.ok, result.errors
+
+
 # -- Child sections ---------------------------------------------------------
 
 

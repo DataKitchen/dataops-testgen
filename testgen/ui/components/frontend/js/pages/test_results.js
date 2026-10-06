@@ -232,8 +232,8 @@ const TestResultSourceDataHeader = (d) => {
     const children = [
         div(
             { class: 'text-caption mb-2' },
-            span({ style: 'font-weight: 500' }, `Table > Column: `),
-            span({}, `${d.table_name} > ${d.column_names}`),
+            span({ style: 'font-weight: 500' }, d.column_names ? 'Table > Column: ' : 'Table: '),
+            span({}, d.column_names ? `${d.table_name} > ${d.column_names}` : d.table_name),
         ),
         h4({ style: 'margin: 0 0 4px' }, d.test_name_short),
         d.test_description ? p({ class: 'text-caption', style: 'margin: 0 0 8px' }, d.test_description) : '',

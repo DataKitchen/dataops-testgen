@@ -12,7 +12,7 @@ from testgen.commands.queries.execute_tests_query import (
     group_cat_tests,
     parse_cat_results,
 )
-from testgen.common.database.database_service import get_flavor_service
+from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.models.connection import Connection
 
 pytestmark = pytest.mark.unit
@@ -539,6 +539,67 @@ def _make_params_execution_sql() -> TestExecutionSQL:
     instance.test_run = MagicMock(test_suite_id=uuid4(), id=uuid4())
     instance.run_date = datetime(2026, 1, 1, tzinfo=UTC)
     return instance
+
+
+@pytest.mark.parametrize(
+    ("flavor", "baseline_value", "expected"),
+    [
+        ("postgresql", '"",n/a,"a,b"', "'', 'n/a', 'a,b'"),
+        ("bigquery", "it's,a\\b", "'it\\'s', 'a\\\\b'"),
+        ("postgresql", None, "NULL"),
+    ],
+)
+def test_get_params_baseline_value_list_renders_flavor_literals(flavor, baseline_value, expected):
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service(flavor)
+    params = instance._get_params(_make_td(test_type="Required_No_Placeholder", baseline_value=baseline_value))
+    assert params["BASELINE_VALUE_LIST"] == expected
+    assert list(params)[-2:] == ["BASELINE_VALUE_LIST", "BASELINE_VALUE_LITERAL"]
+
+
+@pytest.mark.parametrize(
+    ("flavor", "baseline_value", "expected"),
+    [
+        ("postgresql", "o'brien (3), x (1)", "'o''brien (3), x (1)'"),
+        ("bigquery", "it's,a\\b", "'it\\'s,a\\\\b'"),
+        ("mssql", "café", "N'café'"),
+        ("postgresql", "", "NULL"),
+        ("postgresql", None, "NULL"),
+    ],
+)
+def test_get_params_baseline_value_literal_renders_flavor_literal(flavor, baseline_value, expected):
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service(flavor)
+    params = instance._get_params(_make_td(test_type="Match_Frequent_Values", baseline_value=baseline_value))
+    assert params["BASELINE_VALUE_LITERAL"] == expected
+
+
+def test_baseline_value_literal_is_not_expanded_by_other_params():
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service("postgresql")
+    td = _make_td(test_type="Match_Frequent_Values", baseline_value="{DATA_SCHEMA} (2), {BASELINE_CT} (1)")
+    query = replace_params("SELECT {BASELINE_VALUE_LITERAL} FROM {DATA_SCHEMA}.t", instance._get_params(td))
+    assert query == "SELECT '{DATA_SCHEMA} (2), {BASELINE_CT} (1)' FROM public.t"
+
+
+def test_run_query_test_renders_inline_template_unbound():
+    instance = _make_params_execution_sql()
+    instance.flavor_service = get_flavor_service("postgresql")
+    td = _make_td(
+        test_type="Match_Frequent_Values",
+        run_type="QUERY",
+        template="SELECT {BASELINE_VALUE_LITERAL}::TEXT FROM {DATA_SCHEMA}.t",
+        baseline_value="a :b (1)",
+    )
+    query, params = instance.run_query_test(td)
+    assert query == "SELECT 'a \\:b (1)'\\:\\:TEXT FROM public.t"
+    assert params is None
+
+
+def test_get_params_custom_query_drops_trailing_semicolons():
+    instance = _make_params_execution_sql()
+    params = instance._get_params(_make_td(test_type="CUSTOM", custom_query="SELECT * FROM t WHERE x < 0;\n"))
+    assert params["CUSTOM_QUERY"] == "SELECT * FROM t WHERE x < 0"
 
 
 def test_get_params_empty_baseline_counts_become_null():

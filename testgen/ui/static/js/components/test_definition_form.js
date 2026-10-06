@@ -93,6 +93,7 @@ const PARAMETER_CONFIG = {
     lower_tolerance: { type: 'number' },
     upper_tolerance: { type: 'number' },
     threshold_value: { placeholder: 'Defaults to 0 (any error fails)' },
+    skip_errors: { type: 'number', step: 1, placeholder: 'Defaults to 0 (any error fails)' },
     subset_condition: { placeholder: 'No filter — applies to all rows' },
 };
 
@@ -112,17 +113,18 @@ const buildParamFieldConfigs = (definition, qualifiesTableRefsWithSchema = true)
     const paramColumns = parseParamColumns(definition);
     const paramLabels = (definition.default_parm_prompts || '').split(',').map(v => v.trim());
     const paramHelp = (definition.default_parm_help || '').split('|').map(v => v.trim());
-    const paramRequired = (definition.default_parm_required || '').split(',').map(v => v.trim().toUpperCase() === 'Y');
+    const paramFlags = (definition.default_parm_required || '').split(',').map(v => v.trim().toUpperCase());
 
     const hasThresholds = paramColumns.includes('history_calculation');
     return paramColumns
         .map((column, index) => {
             const config = PARAMETER_CONFIG[column] || { type: 'text' };
-            const isRequired = paramRequired[index];
+            const isRequired = paramFlags[index] === 'Y';
             return {
                 ...config,
                 placeholder: isRequired ? undefined : config.placeholder,
                 column,
+                oneOf: paramFlags[index] === 'A',
                 label: paramLabels[index] || capitalize(column.replaceAll('_', ' ')),
                 help: paramHelp[index] || null,
                 validators: isRequired ? [required] : undefined,
@@ -249,11 +251,17 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
     const updatedDefinition = van.state({ ...definition });
     const validityPerField = van.state({});
 
+    // Fields flagged `A` in default_parm_required: the form is valid only when at least one is set.
+    const oneOfConfigs = dynamicParamColumns.filter(config => config.oneOf);
+    const oneOfMissing = van.derive(() => oneOfConfigs.length > 0
+        && oneOfConfigs.every(config => !(updatedDefinition.val[config.column] ?? config.default)));
+
     van.derive(() => {
         const newDefinition = updatedDefinition.val
         const fieldsValidity = validityPerField.val;
         const isValid = Object.keys(fieldsValidity).length > 0 &&
-            Object.values(fieldsValidity).every(v => v);
+            Object.values(fieldsValidity).every(v => v) &&
+            !oneOfMissing.val;
 
         const changes = {};
         for (const key in newDefinition) {
@@ -303,6 +311,12 @@ const TestDefinitionForm = (/** @type Properties */ props) => {
                 return renderField(group[0]);
             }),
         ),
+        () => oneOfMissing.val
+            ? div(
+                { class: 'text-caption text-error mt-2' },
+                `Enter at least one of: ${oneOfConfigs.map(config => config.label).join(', ')}.`,
+            )
+            : '',
         hasThresholds
             ? ThresholdForm(
                 { setFieldValues, setFieldValidity },

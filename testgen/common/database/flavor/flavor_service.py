@@ -140,6 +140,8 @@ class FlavorService:
     concat_operator = "||"
     quote_character = '"'
     escaped_single_quote = "''"
+    literal_escapes_backslash = False
+    string_literal_prefix = ""
     escaped_underscore = "\\_"
     escape_clause = ""
     varchar_type = "VARCHAR(1000)"
@@ -195,6 +197,21 @@ class FlavorService:
         Return None to use the standard SQL template path.
         """
         return None
+
+    def string_literal(self, value: str) -> str:
+        """Return ``value`` as a single-quoted SQL string literal."""
+        if self.literal_escapes_backslash:
+            value = value.replace("\\", "\\\\")
+        escaped = value.replace("'", self.escaped_single_quote)
+        return f"{self.string_literal_prefix}'{escaped}'"
+
+    def string_literal_or_null(self, value: str | None) -> str:
+        """Return ``value`` as a SQL string literal, or ``NULL`` when it is empty."""
+        return self.string_literal(value) if value else "NULL"
+
+    def string_literal_list(self, values: list[str]) -> str:
+        """Return ``values`` as a comma-separated list of SQL string literals, or ``NULL`` when empty."""
+        return ", ".join(self.string_literal(value) for value in values) or "NULL"
 
     def get_table_ref(self, schema: str, table: str, sql_flavor_code: str) -> str:
         """Return a table reference for SQL queries, qualified where the flavor qualifies."""

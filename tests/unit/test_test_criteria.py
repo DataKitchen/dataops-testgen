@@ -16,7 +16,7 @@ YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
 # shared by the UI lookup and MCP. This dict pins the expected facet value for every test type;
 # redline here and the derivation together.
 EXPECTED_CRITERIA = {
-    # Custom Criteria: user authors the test in SQL (custom scope)
+    # Custom Criteria: user authors the test in SQL (custom scope or Custom SQL algorithm)
     "CUSTOM": TestCriteria.CUSTOM_CRITERIA,
     "Condition_Flag": TestCriteria.CUSTOM_CRITERIA,
     # Reference Dataset: compared against another dataset (referential scope)
@@ -52,11 +52,9 @@ EXPECTED_CRITERIA = {
     "Dec_Trunc": TestCriteria.DEFINED_THRESHOLD,
     "Distinct_Date_Ct": TestCriteria.DEFINED_THRESHOLD,
     "Distinct_Value_Ct": TestCriteria.DEFINED_THRESHOLD,
-    "Freshness_Trend": TestCriteria.DEFINED_THRESHOLD,
     "Future_Date": TestCriteria.DEFINED_THRESHOLD,
     "Future_Date_1Y": TestCriteria.DEFINED_THRESHOLD,
     "Incr_Avg_Shift": TestCriteria.DEFINED_THRESHOLD,
-    "Metric_Trend": TestCriteria.DEFINED_THRESHOLD,
     "Min_Date": TestCriteria.DEFINED_THRESHOLD,
     "Min_Val": TestCriteria.DEFINED_THRESHOLD,
     "Missing_Pct": TestCriteria.DEFINED_THRESHOLD,
@@ -70,7 +68,6 @@ EXPECTED_CRITERIA = {
     "Unique_Pct": TestCriteria.DEFINED_THRESHOLD,
     "Variability_Increase": TestCriteria.DEFINED_THRESHOLD,
     "Variability_Decrease": TestCriteria.DEFINED_THRESHOLD,
-    "Volume_Trend": TestCriteria.DEFINED_THRESHOLD,
     "Weekly_Rec_Ct": TestCriteria.DEFINED_THRESHOLD,
 }
 

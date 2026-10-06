@@ -298,10 +298,10 @@ def _check_parent_specials(parent: dict[str, Any], errors: list[str]) -> None:
     if isinstance(parm_required, str) and parm_required != "":
         for token in parm_required.split(","):
             normalized = token.strip().upper()
-            if normalized not in {"Y", "N", ""}:
+            if normalized not in {"Y", "N", "A", ""}:
                 errors.append(
                     f"default_parm_required: '{parm_required}' is not a valid value. "
-                    f"Expected a comma-separated list of Y or N."
+                    f"Expected a comma-separated list of Y, N or A."
                 )
                 break
 

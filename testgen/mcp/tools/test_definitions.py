@@ -677,7 +677,6 @@ def update_test(
     tt = TestType.get(td.test_type)
     if tt is None:
         raise MCPUserError("This test definition's test type is no longer defined, so it cannot be updated.")
-    _reject_non_public_test_type(tt)
 
     if not fields:
         raise MCPUserError("No fields supplied to update.")

@@ -30,6 +30,7 @@ _dialect_registry.register("redshift_pg", __name__, "_RedshiftDialect")
 class RedshiftFlavorService(FlavorService):
 
     escaped_underscore = "\\\\_"
+    literal_escapes_backslash = True
     url_scheme = "redshift_pg"
 
     # APPROXIMATE PERCENTILE_DISC runs only on a query that references a user table, so it cannot

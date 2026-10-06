@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -119,14 +119,18 @@ def derive_test_criteria(
     than reproducing the rules. Scope and algorithm resolve the cleanly-typed buckets (referential
     is checked before Set / lookup so Combo_Match stays Reference Dataset). Defined Rule, Defined
     Value, and Defined Threshold can't be told apart from structural attributes, so the first two
-    are enumerated and Defined Threshold is the fallthrough.
+    are enumerated and Defined Threshold is the fallthrough. Custom Criteria covers the custom
+    scope and any scope whose algorithm is Custom SQL. Outside the referential scope, Aggregate
+    reconciliation compares a measure with a stored baseline, which makes it Defined Value.
     """
-    if test_scope == "custom":
+    if test_scope == "custom" or algorithm == TestAlgorithm.CUSTOM_SQL:
         return TestCriteria.CUSTOM_CRITERIA
     if test_scope == "referential":
         return TestCriteria.REFERENCE_DATASET
     if algorithm == TestAlgorithm.SET_LOOKUP:
         return TestCriteria.LIST_OF_VALUES
+    if algorithm == TestAlgorithm.AGGREGATE_RECONCILIATION:
+        return TestCriteria.DEFINED_VALUE
     if test_type in _DEFINED_RULE_TESTS:
         return TestCriteria.DEFINED_RULE
     if test_type in _DEFINED_VALUE_TESTS:
@@ -584,9 +588,9 @@ def _enum_by_value(enum_cls: type[StrEnum]) -> Enum:
     return Enum(enum_cls, native_enum=False, values_callable=lambda cls: [member.value for member in cls])
 
 
-# Test types that are never offered as regular tests. Schema_Drift spans a whole table group,
-# takes no parameters, and runs as METADATA, so it cannot be configured against a single table.
-NON_PUBLIC_TEST_TYPES: frozenset[str] = frozenset({MonitorType.SCHEMA.value})
+# Test types that are never offered as regular tests: the monitor types, which only monitor suites
+# generate and manage.
+NON_PUBLIC_TEST_TYPES: frozenset[str] = frozenset(monitor_type.value for monitor_type in MonitorType)
 
 
 class TestType(ParamFieldsMixin, Entity):
@@ -681,7 +685,7 @@ def _required_fields_for(test_type: TestType) -> set[str]:
     - Tests that read a physical table implicitly require ``table_name`` — every scope except
       ``tablegroup`` (which spans the whole group) and the ``CUSTOM`` test type (whose
       ``custom_query`` supplies its own FROM clause; the table is only an output label).
-    - ``default_parm_required`` is a CSV of ``Y``/``N`` aligned with ``default_parm_columns``;
+    - ``default_parm_required`` is a CSV of ``Y``/``N``/``A`` aligned with ``default_parm_columns``;
       positions marked ``Y`` are required.
     """
     required: set[str] = set()
@@ -689,13 +693,46 @@ def _required_fields_for(test_type: TestType) -> set[str]:
         required.add("column_name")
     if test_type.test_scope != "tablegroup" and test_type.test_type != "CUSTOM":
         required.add("table_name")
-    if test_type.default_parm_required and test_type.default_parm_columns:
-        flags = [v.strip().upper() for v in test_type.default_parm_required.split(",")]
-        columns = [c.strip() for c in test_type.default_parm_columns.split(",")]
-        for col, flag in zip(columns, flags, strict=False):
-            if flag == "Y":
-                required.add(col)
-    return required
+    return required | _param_fields_flagged(test_type, "Y")
+
+
+def one_of_fields_for(test_type: TestType) -> list[str]:
+    """Parameters of which at least one must be present and non-empty, in configured order.
+
+    These are the positions marked ``A`` in ``default_parm_required``.
+    """
+    flagged = _param_fields_flagged(test_type, "A")
+    return [col for col in _param_columns(test_type) if col in flagged]
+
+
+def missing_required_fields(test_type: TestType, value_of: Callable[[str], object]) -> dict[str, str]:
+    """Required fields of ``test_type`` that are blank, mapped to the reason.
+
+    ``value_of`` returns a field's value by name. Covers the fields from
+    :func:`_required_fields_for` and the group from :func:`one_of_fields_for`.
+    """
+    errors = {
+        field: f"required for test type `{test_type.test_type}`"
+        for field in _required_fields_for(test_type)
+        if _is_blank(value_of(field))
+    }
+    one_of = one_of_fields_for(test_type)
+    if one_of and all(_is_blank(value_of(field)) for field in one_of):
+        listed = ", ".join(f"`{field}`" for field in one_of)
+        for field in one_of:
+            errors[field] = f"at least one of {listed} is required for test type `{test_type.test_type}`"
+    return errors
+
+
+def _param_columns(test_type: TestType) -> list[str]:
+    return [c.strip() for c in (test_type.default_parm_columns or "").split(",")]
+
+
+def _param_fields_flagged(test_type: TestType, flag: str) -> set[str]:
+    if not test_type.default_parm_required:
+        return set()
+    flags = [v.strip().upper() for v in test_type.default_parm_required.split(",")]
+    return {col for col, value in zip(_param_columns(test_type), flags, strict=False) if value == flag}
 
 
 class TestDefinition(Entity):
@@ -1221,9 +1258,7 @@ class TestDefinition(Entity):
         if metadata_error:
             errors["custom_metadata"] = metadata_error
 
-        for required in _required_fields_for(test_type):
-            if _is_blank(getattr(self, required, None)):
-                errors[required] = f"required for test type `{test_type.test_type}`"
+        errors.update(missing_required_fields(test_type, lambda field: getattr(self, field, None)))
 
         if errors:
             raise InvalidTestDefinitionFields(errors)

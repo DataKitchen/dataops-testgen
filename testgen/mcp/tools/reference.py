@@ -35,11 +35,13 @@ def get_test_type(
     except MCPUserError:
         tt = None
 
-    if not tt or tt.test_type in NON_PUBLIC_TEST_TYPES:
+    if not tt:
         return f"Test type `{test_type}` not found. Use `testgen://test-types` to see available types."
 
     doc = MdDoc()
     doc.heading(1, tt.test_name_short)
+    if tt.test_type in NON_PUBLIC_TEST_TYPES:
+        doc.text("New tests of this type cannot be created. Existing tests of this type can still be updated.")
     if tt.test_name_long:
         doc.field("Full Name", tt.test_name_long)
     if tt.test_description:

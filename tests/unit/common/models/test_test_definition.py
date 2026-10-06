@@ -14,6 +14,7 @@ from testgen.common.models.test_definition import (
     TestDefinition,
     TestDefinitionSummary,
     _required_fields_for,
+    one_of_fields_for,
 )
 
 
@@ -122,6 +123,31 @@ def test_required_fields_table_name_not_required_for_custom_type():
         default_parm_columns="custom_query",
     )
     assert "table_name" not in _required_fields_for(tt)
+
+
+def _bounded_test_type() -> MagicMock:
+    return make_test_type(
+        code="Text_Length_Range",
+        param_columns={"lower_tolerance", "upper_tolerance"},
+        default_parm_columns="lower_tolerance,upper_tolerance",
+        default_parm_required="A,A",
+    )
+
+
+def test_one_of_fields_parses_a_flags_in_configured_order():
+    tt = make_test_type(
+        param_columns={"custom_query", "lower_tolerance", "upper_tolerance"},
+        default_parm_columns="custom_query,lower_tolerance,upper_tolerance",
+        default_parm_required="Y,A,A",
+    )
+    assert one_of_fields_for(tt) == ["lower_tolerance", "upper_tolerance"]
+    assert "lower_tolerance" not in _required_fields_for(tt)
+    assert "custom_query" in _required_fields_for(tt)
+
+
+def test_one_of_fields_empty_without_a_flags():
+    tt = make_test_type(default_parm_required="Y")
+    assert one_of_fields_for(tt) == []
 
 
 # -- TestDefinition.editable_fields -------------------------------------------
@@ -504,3 +530,19 @@ def test_select_page_first_page_has_no_offset(mock_get_session):
 
     assert "LIMIT 500" in sql
     assert "OFFSET 0" in sql
+
+
+def test_validate_one_of_rejects_when_all_blank():
+    td = make_td(column_name="email", lower_tolerance="", upper_tolerance=None)
+    with pytest.raises(InvalidTestDefinitionFields) as exc_info:
+        td.validate(_bounded_test_type())
+    assert set(exc_info.value.errors) == {"lower_tolerance", "upper_tolerance"}
+    assert "at least one of `lower_tolerance`, `upper_tolerance`" in exc_info.value.errors["lower_tolerance"]
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"lower_tolerance": "1"}, {"upper_tolerance": "0"}, {"lower_tolerance": "1", "upper_tolerance": "5"}],
+)
+def test_validate_one_of_accepts_any_member(fields):
+    make_td(column_name="email", **fields).validate(_bounded_test_type())  # no raise

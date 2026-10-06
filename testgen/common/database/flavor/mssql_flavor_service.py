@@ -10,6 +10,8 @@ class MssqlFlavorService(FlavorService):
     concat_operator = "+"
     escaped_underscore = "[_]"
     row_limiting_clause = "top"
+    # A plain literal is converted to the database code page, which drops characters outside it.
+    string_literal_prefix = "N"
     url_scheme = "mssql+pyodbc"
 
     # APPROX_PERCENTILE_CONT arrived in SQL Server 2022; older servers fail the probe and stay exact.

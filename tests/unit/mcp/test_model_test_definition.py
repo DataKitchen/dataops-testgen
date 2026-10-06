@@ -214,13 +214,12 @@ def test_forecast_points_handles_one_sided_bounds():
 # --- NON_PUBLIC_TEST_TYPES / TestType.is_public ---
 
 
-def test_non_public_test_types_holds_only_the_schema_monitor():
-    """Schema_Drift spans a table group and takes no parameters, so it is the only type
-    withheld from the regular-test catalogs."""
+def test_non_public_test_types_are_the_monitor_types():
+    """Monitor suites own the monitor types, so the regular-test catalogs withhold every one of them."""
     from testgen.common.enums import MonitorType
     from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
 
-    assert NON_PUBLIC_TEST_TYPES == frozenset({MonitorType.SCHEMA.value})
+    assert NON_PUBLIC_TEST_TYPES == frozenset(monitor.value for monitor in MonitorType)
 
 
 def test_is_public_clause_excludes_non_public_types():
@@ -231,15 +230,6 @@ def test_is_public_clause_excludes_non_public_types():
     assert "test_types.test_type NOT IN" in sql
     for code in NON_PUBLIC_TEST_TYPES:
         assert f"'{code}'" in sql
-
-
-def test_other_monitor_types_stay_public():
-    """Freshness, Volume, and Metric Trend remain creatable as regular tests."""
-    from testgen.common.enums import MonitorType
-    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
-
-    for monitor in (MonitorType.FRESHNESS, MonitorType.VOLUME, MonitorType.METRIC):
-        assert monitor.value not in NON_PUBLIC_TEST_TYPES
 
 
 def _type_row(test_type: str, ai_redact_values):
@@ -289,8 +279,12 @@ def test_value_redacted_types_is_empty_when_nothing_is_flagged():
         assert TestType.value_redacted_types() == frozenset()
 
 
-def test_packaged_flag_values_match_the_migration():
-    """The YAML flags and the migration UPDATE list must not drift apart."""
+def test_packaged_flag_values_keep_the_migration_flags():
+    """Every type the migration flags stays flagged in its packaged YAML.
+
+    The YAML importer sets the flag on every install and upgrade, so a type added after the
+    migration is flagged in its YAML alone.
+    """
     import re
     from pathlib import Path
 
@@ -318,4 +312,4 @@ def test_packaged_flag_values_match_the_migration():
     update_clause = migrations[0].read_text().split("WHERE test_type IN", 1)[1]
     flagged_in_migration = set(re.findall(r"'([A-Za-z0-9_]+)'", update_clause))
 
-    assert flagged_in_yaml == flagged_in_migration
+    assert flagged_in_migration <= flagged_in_yaml

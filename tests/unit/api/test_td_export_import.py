@@ -15,7 +15,7 @@ from sqlalchemy.sql.dml import Delete
 from testgen.api.schemas import ImportRequest
 from testgen.common.enums import SuiteType
 from testgen.common.models.suite_version import FrozenVersionError
-from testgen.common.models.test_definition import TestDefinition
+from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.test_definition_export_import_service import (
     _EXISTING_TD_COLUMNS,
     ExportDocument,
@@ -157,6 +157,11 @@ def _make_existing_row(
     }
     keys = [column.key for column in _EXISTING_TD_COLUMNS]
     return result_tuple(keys)(tuple(stored[key] for key in keys))
+
+
+def _test_types(*codes: str) -> dict[str, TestType]:
+    """Column-scoped test types with no required parameters, keyed by code."""
+    return {code: TestType(test_type=code, test_scope="column") for code in codes}
 
 
 def _make_import_td(
@@ -315,7 +320,7 @@ class Test_import_matching:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.updated == 1
@@ -343,7 +348,7 @@ class Test_import_matching:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.updated == 1
@@ -365,7 +370,7 @@ class Test_import_matching:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.created == 1
@@ -428,7 +433,7 @@ class Test_import_policies:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.skipped == 1
@@ -452,7 +457,7 @@ class Test_import_policies:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.skipped == 1
@@ -476,7 +481,7 @@ class Test_import_policies:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.updated == 1
@@ -497,7 +502,7 @@ class Test_import_policies:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.skipped == 1
@@ -523,7 +528,7 @@ class Test_import_policies:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.deleted == 1
@@ -547,7 +552,7 @@ class Test_import_policies:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         # Locked orphan is omitted entirely — not deleted, not reported
@@ -556,6 +561,19 @@ class Test_import_policies:
 
 
 # --- Import: validation / skip reasons ---
+
+
+@patch(f"{SERVICE_MODULE}.get_current_session")
+def test_load_test_types_reads_only_active_types(mock_session_fn):
+    from testgen.common.test_definition_export_import_service import _load_test_types
+
+    session = mock_session_fn.return_value
+    session.scalars.return_value.all.return_value = []
+    _load_test_types()
+
+    stmt = session.scalars.call_args[0][0]
+    sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "test_types.active = 'Y'" in sql
 
 
 class Test_import_validation:
@@ -576,7 +594,7 @@ class Test_import_validation:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.skipped == 1
@@ -588,7 +606,7 @@ class Test_import_validation:
     def test_non_public_test_type_skipped(self, mock_session_fn, mock_tg_cls, mock_dt_cls):
         """A non-public type is a real row in ``test_types``, so it clears the
         ``invalid_test_type`` check and needs its own skip \u2014 otherwise import is a side
-        door around the ``create_test`` / ``update_test`` guards."""
+        door around the ``create_test`` guard."""
         from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
 
         session = MagicMock()
@@ -605,12 +623,44 @@ class Test_import_validation:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         # Present in test_types, so the invalid_test_type branch does not catch it.
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={non_public, "Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types(non_public, "Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.created == 0
         assert result.summary.skipped == 1
         assert ImportReason.non_public_test_type in _reasons(result, ImportAction.skip)
+
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_non_public_test_type_matching_existing_definition_updates(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls,
+    ):
+        """Re-importing a suite's export keeps a Volume Trend test already in that suite."""
+        from testgen.common.enums import MonitorType
+
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+
+        volume = MonitorType.VOLUME.value
+        target_id = uuid4()
+        existing = _make_existing_row(test_type=volume, table_name="t1", id_=target_id)
+        session.execute.return_value.all.return_value = [existing]
+
+        ts = _make_test_suite()
+        td = _make_import_td(test_type=volume, table_name="t1")
+        config = _make_config(on_match=OnMatch.overwrite_unlocked)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types(volume)):
+            result = import_definitions(ts, config, _make_payload(td))
+
+        assert result.summary.updated == 1
+        assert result.summary.skipped == 0
+        assert result.items[0].tds[0].target_id == target_id
 
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
@@ -635,7 +685,7 @@ class Test_import_validation:
         td = _make_import_td(test_type=non_public, table_name="t1")
         config = _make_config(mode=ImportMode.apply_strict)
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={non_public, "Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types(non_public, "Alpha")):
             with pytest.raises(ImportStrictViolation) as exc_info:
                 import_definitions(ts, config, _make_payload(td))
 
@@ -657,11 +707,77 @@ class Test_import_validation:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.skipped == 1
         assert ImportReason.invalid_table in _reasons(result, ImportAction.skip)
+
+    @pytest.mark.parametrize(
+        ("fields", "skipped"),
+        [
+            ({"threshold_value": "5"}, False),
+            ({"threshold_value": ""}, True),
+            ({"threshold_value": "5", "column_name": None}, True),
+        ],
+    )
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_required_field_blank_skipped(self, mock_session_fn, mock_tg_cls, mock_dt_cls, fields, skipped):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        ts = _make_test_suite()
+        td = _make_import_td(test_type="Thresholded", table_name="t1", **fields)
+        config = _make_config()
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        thresholded = TestType(
+            test_type="Thresholded",
+            test_scope="column",
+            default_parm_columns="threshold_value",
+            default_parm_required="Y",
+        )
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value={"Thresholded": thresholded}):
+            result = import_definitions(ts, config, _make_payload(td))
+
+        assert (ImportReason.missing_required_field in _reasons(result, ImportAction.skip)) is skipped
+
+    @pytest.mark.parametrize(
+        ("bounds", "skipped"),
+        [({}, True), ({"lower_tolerance": ""}, True), ({"upper_tolerance": "5"}, False)],
+    )
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_one_of_group_all_blank_skipped(self, mock_session_fn, mock_tg_cls, mock_dt_cls, bounds, skipped):
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+
+        ts = _make_test_suite()
+        td = _make_import_td(test_type="Bounded", table_name="t1", **bounds)
+        config = _make_config()
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        bounded = TestType(
+            test_type="Bounded",
+            test_scope="column",
+            default_parm_columns="lower_tolerance,upper_tolerance",
+            default_parm_required="A,A",
+        )
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value={"Bounded": bounded}):
+            result = import_definitions(ts, config, _make_payload(td))
+
+        assert (ImportReason.missing_required_field in _reasons(result, ImportAction.skip)) is skipped
 
     @patch(f"{SERVICE_MODULE}.DataTable")
     @patch(f"{SERVICE_MODULE}.TableGroup")
@@ -680,7 +796,7 @@ class Test_import_validation:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.skipped == 1
@@ -698,12 +814,13 @@ class Test_import_validation:
         session.execute.return_value.all.return_value = []
 
         ts = _make_test_suite()
-        td = _make_import_td(test_type="Alpha", table_name=None)
+        td = _make_import_td(test_type="CUSTOM", table_name=None)
         config = _make_config()
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        custom = TestType(test_type="CUSTOM", test_scope="custom")
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value={"CUSTOM": custom}):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.created == 1
@@ -725,7 +842,7 @@ class Test_import_validation:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with pytest.raises(InvalidImportPayload) as exc_info:
                 import_definitions(ts, config, _make_payload(td1, td2))
             assert exc_info.value.code == "duplicate_natural_key"
@@ -749,7 +866,7 @@ class Test_import_validation:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with pytest.raises(InvalidImportPayload) as exc_info:
                 import_definitions(ts, config, _make_payload(td1, td2))
             assert exc_info.value.code == "duplicate_natural_key"
@@ -777,7 +894,7 @@ class Test_import_strict_mode:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with pytest.raises(ImportStrictViolation) as exc_info:
                 import_definitions(ts, config, _make_payload(good_td, bad_td))
 
@@ -806,7 +923,7 @@ class Test_import_strict_mode:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with _patched_td_class() as mock_td_cls:
                 mock_td_cls.return_value = MagicMock(id=uuid4())
                 result = import_definitions(ts, config, _make_payload(td))
@@ -839,7 +956,7 @@ class Test_import_create:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         before = datetime.now(UTC)
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
@@ -866,7 +983,7 @@ class Test_import_create:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
@@ -891,7 +1008,7 @@ class Test_import_create:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
@@ -917,7 +1034,7 @@ class Test_import_create:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         before = datetime.now(UTC)
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
@@ -954,7 +1071,7 @@ class Test_import_update:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             import_definitions(ts, config, _make_payload(td))
 
         # Find the update() call (second execute call — first is the select for existing rows)
@@ -990,7 +1107,7 @@ class Test_import_update:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             import_definitions(ts, config, _make_payload(td))
 
         # The update should include external_id
@@ -1027,7 +1144,7 @@ class Test_import_update:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             import_definitions(ts, config, _make_payload(td))
 
         update_stmt = session.execute.call_args_list[-1][0][0]
@@ -1064,7 +1181,7 @@ class Test_import_absence_with_validation_skips:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         # TD is skipped for invalid test type, but the matched target is NOT deleted
@@ -1093,7 +1210,7 @@ class Test_import_preview:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         assert result.summary.created == 1
@@ -1116,7 +1233,7 @@ class Test_import_preview:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             result = import_definitions(ts, config, _make_payload(td))
 
         create_items = [item for item in result.items if item.action == ImportAction.create]
@@ -1231,7 +1348,7 @@ def test_apply_with_skips_still_applies_valid_actions(mock_session_fn, mock_tg_c
 
     from testgen.common.test_definition_export_import_service import import_definitions
 
-    with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+    with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
         with _patched_td_class() as mock_td_cls:
             mock_td_cls.return_value = MagicMock(id=uuid4())
             result = import_definitions(ts, config, _make_payload(good_td, bad_td))
@@ -1372,7 +1489,7 @@ class Test_click_through_fields:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with _patched_td_class() as mock_td_cls:
                 created_td = MagicMock(id=uuid4())
                 mock_td_cls.return_value = created_td
@@ -1433,7 +1550,7 @@ class Test_version_scoping:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             import_definitions(_make_test_suite(), _make_config(), _make_payload(_make_import_td()))
 
         assert "suite_versions" in str(session.execute.call_args[0][0])
@@ -1455,7 +1572,7 @@ class Test_version_scoping:
         from testgen.common.test_definition_export_import_service import import_definitions
 
         with (
-            patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}),
+            patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")),
             _patched_td_class() as mock_td_cls,
         ):
             created = MagicMock(id=uuid4())
@@ -1481,7 +1598,7 @@ class Test_version_scoping:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             import_definitions(
                 _make_test_suite(),
                 _make_config(mode=ImportMode.apply, on_absence=OnAbsence.delete_all),
@@ -1514,7 +1631,7 @@ class Test_version_scoping:
 
         from testgen.common.test_definition_export_import_service import import_definitions
 
-        with patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}):
+        with patch(f"{SERVICE_MODULE}._load_test_types", return_value=_test_types("Alpha")):
             with pytest.raises(FrozenVersionError):
                 import_definitions(
                     _make_test_suite(),

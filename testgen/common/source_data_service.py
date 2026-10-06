@@ -11,7 +11,7 @@ from typing import Literal
 import pandas as pd
 from sqlalchemy import text
 
-from testgen.common.clean_sql import concat_columns, null_if_empty
+from testgen.common.clean_sql import concat_columns, null_if_empty, parse_value_list, strip_trailing_semicolons
 from testgen.common.database.database_service import get_flavor_service, replace_params
 from testgen.common.date_service import parse_fuzzy_date
 from testgen.common.models import get_current_session
@@ -208,6 +208,7 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
     if not test_definition:
         return None
 
+    flavor_service = get_flavor_service(lookup_data.sql_flavor)
     params = {
         "TARGET_SCHEMA": issue_data["schema_name"],
         "TABLE_NAME": issue_data["table_name"],
@@ -216,13 +217,17 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "TEST_DATE": to_sql_timestamp(parsed_test_date)
         if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
         else None,
-        "CUSTOM_QUERY": test_definition.custom_query,
+        "CUSTOM_QUERY": strip_trailing_semicolons(test_definition.custom_query),
+        # After CUSTOM_QUERY, which may contain it
+        "DATA_SCHEMA": issue_data["schema_name"],
         # BASELINE_VALUE varies (quoted literal / number / IN-list) by test type — templated as-is.
         # The numeric baselines render empty as NULL to avoid invalid SQL like CAST( AS FLOAT).
         "BASELINE_VALUE": test_definition.baseline_value,
         "BASELINE_CT": null_if_empty(test_definition.baseline_ct),
         "BASELINE_AVG": null_if_empty(test_definition.baseline_avg),
         "BASELINE_SD": null_if_empty(test_definition.baseline_sd),
+        "BASELINE_SUM": null_if_empty(test_definition.baseline_sum),
+        "BASELINE_UNIQUE_CT": null_if_empty(test_definition.baseline_unique_ct),
         "LOWER_TOLERANCE": null_if_empty(test_definition.lower_tolerance),
         "UPPER_TOLERANCE": null_if_empty(test_definition.upper_tolerance),
         "THRESHOLD_VALUE": test_definition.threshold_value or 0,
@@ -247,6 +252,9 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "LIMIT": limit,
         "LIMIT_2": int(limit / 2),
         "LIMIT_4": int(limit / 4),
+        # These two go last, so their values are never expanded by a later substitution
+        "BASELINE_VALUE_LIST": flavor_service.string_literal_list(parse_value_list(test_definition.baseline_value)),
+        "BASELINE_VALUE_LITERAL": flavor_service.string_literal_or_null(test_definition.baseline_value),
     }
 
     lookup_query = replace_params(lookup_data.lookup_query, params)

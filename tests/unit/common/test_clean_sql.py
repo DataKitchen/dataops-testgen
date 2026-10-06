@@ -1,6 +1,6 @@
 import pytest
 
-from testgen.common.clean_sql import CleanSQL, concat_columns
+from testgen.common.clean_sql import CleanSQL, concat_columns, parse_value_list, strip_trailing_semicolons
 
 pytestmark = pytest.mark.unit
 
@@ -72,3 +72,41 @@ def test_concat_columns_empty():
 
 def test_concat_columns_none():
     assert concat_columns(None, "NULL") == ""
+
+
+# --- parse_value_list ---
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, []),
+        ("", []),
+        ('""', [""]),
+        ('"",n/a,none', ["", "n/a", "none"]),
+        ("a, b,c", ["a", "b", "c"]),
+        ('"a,b",c', ["a,b", "c"]),
+        ('"it""s"', ['it"s']),
+        ("it's", ["it's"]),
+        ("a\\b", ["a\\b"]),
+        ('" "," x"', [" ", " x"]),
+    ],
+)
+def test_parse_value_list(value, expected):
+    assert parse_value_list(value) == expected
+
+
+# --- strip_trailing_semicolons ---
+
+@pytest.mark.parametrize(
+    ("sql", "expected"),
+    [
+        (None, None),
+        ("", ""),
+        ("SELECT 1", "SELECT 1"),
+        ("SELECT 1;", "SELECT 1"),
+        ("SELECT 1 ; \n ;\n", "SELECT 1"),
+        ("SELECT ';' AS s", "SELECT ';' AS s"),
+    ],
+)
+def test_strip_trailing_semicolons(sql, expected):
+    assert strip_trailing_semicolons(sql) == expected
