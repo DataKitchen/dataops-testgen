@@ -331,6 +331,24 @@ def test_parse_null_value_handling():
     assert rows[0][13] is None  # <NULL> should become None
 
 
+@pytest.mark.parametrize(
+    ("null_measure_fails", "measure", "code", "expected"),
+    [
+        (True, "<NULL>", "1", "0"),
+        (True, "<NULL>", "-1", "-1"),
+        (True, "5", "1", "1"),
+        (False, "<NULL>", "1", "1"),
+    ],
+)
+def test_parse_null_measure_fails_only_for_flagged_types(null_measure_fails, measure, code, expected):
+    td = _make_td(null_measure_fails=null_measure_fails)
+    results = [{"query_index": 0, "result_measures": f"{measure}{MEASURE_SEPARATOR}", "result_codes": f"{code},"}]
+
+    rows = parse_cat_results(results, [[td]], uuid4(), uuid4(), "2026-01-01 00:00:00", _make_input_params_fn())
+
+    assert rows[0][10] == expected
+
+
 def test_parse_multi_test_per_query():
     td1 = _make_td(test_type="Alpha")
     td2 = _make_td(test_type="Beta")

@@ -35,7 +35,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Alpha Truncation tests that the longest text value in a column hasn't become shorter than the defined threshold, initially 95% of the longest value at baseline. This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset.
+    Alpha Truncation tests that the longest text value in a column hasn't become shorter than the defined threshold, initially 95% of the longest value at baseline. This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset. For an exact maximum length, use Match Maximum Length.
   active: Y
   ai_redact_values: false
   algorithm: Boundary check
@@ -62,7 +62,7 @@ test_types:
     test_type: Alpha_Trunc
     sql_flavor: mssql
     measure: |-
-      MAX(LEN({COLUMN_NAME}))
+      MAX((LEN(CAST({COLUMN_NAME} AS NVARCHAR(MAX)) + N'.') - 1))
     test_operator: <
     test_condition: |-
       {THRESHOLD_VALUE}
@@ -160,7 +160,7 @@ test_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", LEN("{COLUMN_NAME}") as current_max_length,  {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX(LEN("{COLUMN_NAME}")) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE LEN("{COLUMN_NAME}") = a.max_length AND a.max_length < {THRESHOLD_VALUE} ;
+      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) as current_max_length,  {THRESHOLD_VALUE} as previous_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}", (SELECT MAX((LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) as max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}") a WHERE (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) = a.max_length AND a.max_length < {THRESHOLD_VALUE} ;
     error_type: Test Results
   - id: '1083'
     test_id: '1004'

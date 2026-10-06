@@ -1,0 +1,224 @@
+test_types:
+  id: '1534'
+  test_type: Match_Distinct_Date_Ct
+  test_name_short: Match Date Count
+  test_name_long: Count of distinct dates equals baseline
+  test_description: |-
+    Tests that the number of distinct calendar days in the column equals the baseline count.
+  except_message: |-
+    Count of distinct dates differs from baseline.
+  measure_uom: Unique dates
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'D' AND date_days_present IS NOT NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_ct
+  default_parm_values: |-
+    date_days_present
+  default_parm_prompts: |-
+    Distinct Date Count at Baseline
+  default_parm_help: |-
+    The expected number of distinct calendar days in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected distinct date count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Date Count tests that the column covers exactly the baseline number of distinct calendar days. A change with an unchanged row count often points to a time-zone shift that moved values across midnight. For a count that is only expected not to drop, use Date Count.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7052'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(DISTINCT DATE_DIFF(SAFE_CAST(DATE('{RUN_DATE}') AS DATE), SAFE_CAST(DATE({COLUMN_NAME}) AS DATE), DAY))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '6052'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: databricks
+    measure: |-
+      COUNT(DISTINCT <%DATEDIFF_DAY; {COLUMN_NAME}; '{RUN_DATE}'::DATE%>)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '3052'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: mssql
+    measure: |-
+      COUNT(DISTINCT DATEDIFF(day, {COLUMN_NAME}, '{RUN_DATE}' ) )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '4052'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: postgresql
+    measure: |-
+      COUNT(DISTINCT <%DATEDIFF_DAY;{COLUMN_NAME};'{RUN_DATE}'%>)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2032'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(DISTINCT DATEDIFF(day, {COLUMN_NAME}::DATE, '{RUN_DATE}' ) )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '7052'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(DISTINCT DATEDIFF(day, {COLUMN_NAME}::DATE, '{RUN_DATE}' ) )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2132'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(DISTINCT DATEDIFF(day, {COLUMN_NAME}, '{RUN_DATE}'))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8052'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: oracle
+    measure: |-
+      COUNT(DISTINCT <%DATEDIFF_DAY;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8052'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      COUNT(DISTINCT <%DATEDIFF_DAY;{COLUMN_NAME};TO_DATE('{RUN_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '10063'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      COUNT(DISTINCT DATEDIFF('day', CAST({COLUMN_NAME} AS TIMESTAMP), CAST('{RUN_DATE}' AS TIMESTAMP)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '11132'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: duckdb
+    measure: |-
+      COUNT(DISTINCT <%DATEDIFF_DAY;{COLUMN_NAME};'{RUN_DATE}'%>)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  target_data_lookups:
+  - id: '1537'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT DATE_DIFF(SAFE_CAST(DATE('{TEST_DATE}') AS DATE), SAFE_CAST(DATE(`{COLUMN_NAME}`) AS DATE), DAY)) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1559'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT <%DATEDIFF_DAY; `{COLUMN_NAME}`; '{TEST_DATE}'::DATE%>) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1581'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT DATEDIFF(day, "{COLUMN_NAME}", '{TEST_DATE}' ) ) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1603'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT <%DATEDIFF_DAY;"{COLUMN_NAME}";'{TEST_DATE}'%>) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1625'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT DATEDIFF(day, "{COLUMN_NAME}"::DATE, '{TEST_DATE}' ) ) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1647'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT DATEDIFF(day, "{COLUMN_NAME}"::DATE, '{TEST_DATE}' ) ) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1669'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT DATEDIFF(day, "{COLUMN_NAME}", '{TEST_DATE}')) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8531'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT <%DATEDIFF_DAY;"{COLUMN_NAME}";TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8531'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT <%DATEDIFF_DAY;"{COLUMN_NAME}";TO_DATE('{TEST_DATE}', 'YYYY-MM-DD HH24:MI:SS')%>) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10082'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT DATEDIFF('day', CAST("{COLUMN_NAME}" AS TIMESTAMP), CAST('{TEST_DATE}' AS TIMESTAMP))) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11133'
+    test_id: '1534'
+    test_type: Match_Distinct_Date_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT <%DATEDIFF_DAY;"{COLUMN_NAME}";'{TEST_DATE}'%>) AS current_distinct_date_ct, {BASELINE_CT} AS baseline_distinct_date_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

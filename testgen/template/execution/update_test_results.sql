@@ -22,7 +22,23 @@ SET test_description = COALESCE(r.test_description, d.test_description, tt.test_
         WHEN COALESCE(d.export_to_observability, s.export_to_observability) = 'N' THEN 'Ignore'
       END
     ),
-    result_message = COALESCE(
+    result_message = CASE
+      -- A test type compared to a baseline column, with no threshold, reports the baseline it was
+      -- compared to, and a failure reports the value it found.
+      WHEN b.baseline_column IS NOT NULL AND r.result_message IS NOT NULL THEN
+        r.result_message || (
+          CASE
+            WHEN r.result_code = 0 THEN
+              ' Current: ' || COALESCE(r.result_signal, r.result_measure::VARCHAR, 'none')
+              || '. Baseline: ' || COALESCE(b.baseline_value, 'none') || '.'
+            ELSE ''
+          END
+        )
+      WHEN b.baseline_column IS NOT NULL THEN
+        tt.measure_uom || ': ' || COALESCE(r.result_measure::VARCHAR, 'none')
+        || ', ' || b.baseline_prompt || ': ' || COALESCE(b.baseline_value, 'none')
+        || COALESCE(', ' || b.tolerance_prompt || ': ' || d.upper_tolerance::VARCHAR, '')
+      ELSE COALESCE(
       r.result_message,
       tt.measure_uom || ': ' || r.result_measure::VARCHAR || (
         CASE
@@ -45,7 +61,7 @@ SET test_description = COALESCE(r.test_description, d.test_description, tt.test_
           ELSE ''
         END
       )
-    ),
+    ) END,
     table_groups_id = d.table_groups_id,
     test_suite_id = s.id,
     auto_gen = d.last_auto_gen_date IS NOT NULL,
@@ -54,5 +70,24 @@ FROM test_results r
 INNER JOIN test_suites s ON r.test_suite_id = s.id
 INNER JOIN test_definitions d ON r.test_definition_id = d.id
 INNER JOIN test_types tt ON r.test_type = tt.test_type
+LEFT JOIN LATERAL (
+  SELECT p.baseline_column,
+         a.parm_prompts[1] AS baseline_prompt,
+         a.parm_prompts[ARRAY_POSITION(a.parm_columns, 'upper_tolerance')] AS tolerance_prompt,
+         CASE p.baseline_column
+           WHEN 'baseline_value'     THEN d.baseline_value
+           WHEN 'baseline_ct'        THEN d.baseline_ct
+           WHEN 'baseline_unique_ct' THEN d.baseline_unique_ct
+           WHEN 'baseline_value_ct'  THEN d.baseline_value_ct
+           WHEN 'baseline_sum'       THEN d.baseline_sum
+           WHEN 'baseline_avg'       THEN d.baseline_avg
+           WHEN 'baseline_sd'        THEN d.baseline_sd
+         END AS baseline_value
+    FROM ( SELECT STRING_TO_ARRAY(tt.default_parm_columns, ',') AS parm_columns,
+                  STRING_TO_ARRAY(tt.default_parm_prompts, ',') AS parm_prompts ) a
+   CROSS JOIN LATERAL ( SELECT a.parm_columns[1] AS baseline_column ) p
+   WHERE LEFT(p.baseline_column, 9) = 'baseline_'
+     AND NOT 'threshold_value' = ANY(a.parm_columns)
+) b ON TRUE
 WHERE r.test_run_id = :TEST_RUN_ID
   AND test_results.id = r.id;

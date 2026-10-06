@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy.engine import URL
 
 from testgen import settings
@@ -29,6 +31,12 @@ class MssqlFlavorService(FlavorService):
         if sql_flavor_code == "onelake_mssql":
             return ""
         return "WITH (NOLOCK)"
+
+    def text_value(self, column_ref: str, column_type: str | None) -> str:
+        # CHAR and NCHAR values are stored padded with spaces to the declared length.
+        if column_type and re.fullmatch(r"n?char(\(\d+\))?", column_type.lower()):
+            return f"RTRIM({column_ref})"
+        return column_ref
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         connection_url = URL.create(

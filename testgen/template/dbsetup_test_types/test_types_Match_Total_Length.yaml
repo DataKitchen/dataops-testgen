@@ -1,0 +1,225 @@
+test_types:
+  id: '1545'
+  test_type: Match_Total_Length
+  test_name_short: Match Total Length
+  test_name_long: Total text length equals baseline
+  test_description: |-
+    Tests that the combined length of all values in the column equals the baseline total.
+  except_message: |-
+    Total text length differs from baseline.
+  measure_uom: Total length
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND value_ct > 0
+    AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_sum
+  default_parm_values: |-
+    CAST(ROUND(COALESCE(avg_length, 0) * (value_ct - COALESCE(zero_length_ct, 0))) AS BIGINT)
+  default_parm_prompts: |-
+    Total Length at Baseline
+  default_parm_help: |-
+    The expected combined length in characters of all values in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected total length
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Total Length tests that the combined length of all values in the column is exactly the baseline total. A change points to values truncated, padded, trimmed or rewritten with a different length, including changes that leave the shortest and longest values as they were.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7060'
+    test_type: Match_Total_Length
+    sql_flavor: bigquery
+    measure: |-
+      SUM(LENGTH(CAST({COLUMN_NAME} AS STRING)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '6060'
+    test_type: Match_Total_Length
+    sql_flavor: databricks
+    measure: |-
+      SUM(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '3060'
+    test_type: Match_Total_Length
+    sql_flavor: mssql
+    measure: |-
+      SUM(CAST((LEN(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) + N'.') - 1) AS BIGINT))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '4060'
+    test_type: Match_Total_Length
+    sql_flavor: postgresql
+    measure: |-
+      SUM(LENGTH(CAST({COLUMN_NAME} AS TEXT)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '2040'
+    test_type: Match_Total_Length
+    sql_flavor: redshift
+    measure: |-
+      SUM(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '7060'
+    test_type: Match_Total_Length
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '2140'
+    test_type: Match_Total_Length
+    sql_flavor: snowflake
+    measure: |-
+      SUM(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '8060'
+    test_type: Match_Total_Length
+    sql_flavor: oracle
+    measure: |-
+      SUM(LENGTH(TO_CHAR({COLUMN_NAME})))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '8060'
+    test_type: Match_Total_Length
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CAST(LENGTH(TO_VARCHAR({COLUMN_NAME})) AS BIGINT))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '10094'
+    test_type: Match_Total_Length
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(LENGTH(CAST({COLUMN_NAME} AS VARCHAR)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  - id: '11154'
+    test_type: Match_Total_Length
+    sql_flavor: duckdb
+    measure: |-
+      SUM(LENGTH(CAST({COLUMN_NAME} AS TEXT)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_SUM}
+  target_data_lookups:
+  - id: '1680'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LENGTH(CAST(`{COLUMN_NAME}` AS STRING))) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1681'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LEN(`{COLUMN_NAME}`)) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1682'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST((LEN(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) + N'.') - 1) AS BIGINT)) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1683'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LENGTH(CAST("{COLUMN_NAME}" AS TEXT))) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1684'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LEN("{COLUMN_NAME}")) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1685'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LEN("{COLUMN_NAME}")) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1686'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LEN("{COLUMN_NAME}")) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8542'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LENGTH(TO_CHAR("{COLUMN_NAME}"))) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8542'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(LENGTH(TO_VARCHAR("{COLUMN_NAME}")) AS BIGINT)) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10100'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR))) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11155'
+    test_id: '1545'
+    test_type: Match_Total_Length
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(LENGTH(CAST("{COLUMN_NAME}" AS TEXT))) AS current_total_length, {BASELINE_SUM} AS baseline_total_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

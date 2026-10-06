@@ -1,0 +1,657 @@
+test_types:
+  id: '1544'
+  test_type: Match_Frequent_Patterns
+  test_name_short: Match Frequent Patterns
+  test_name_long: Most frequent patterns and counts equal baseline
+  test_description: |-
+    Tests that the five most frequent character patterns in the column, and the count of each, equal the baseline.
+  except_message: |-
+    Most frequent patterns or their counts differ from baseline.
+  measure_uom: Matches baseline
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND frequent_patterns IS NOT NULL
+    AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    (SELECT STRING_AGG((entry ->> 'value') || ' (' || (entry ->> 'ct') || ')', ', ' ORDER BY rank)
+       FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent_patterns -> 'values', '[]'::JSONB)) WITH ORDINALITY AS t(entry, rank))
+  default_parm_prompts: |-
+    Frequent Patterns at Baseline
+  default_parm_help: |-
+    The five most frequent patterns with their counts, most frequent first, written as pattern (count) and separated by a comma and a space, for example `AA-NNNN (230), AA-NNN (12)`. A pattern replaces each lower-case letter with a, each upper-case letter with A and each digit with N.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected frequent patterns
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Differs","1":"Matches"}}}'
+  usage_notes: |-
+    Match Frequent Patterns tests that the five most frequent character patterns in the column, and the count of each, are exactly the baseline. A pattern represents each value by its character classes, so a failure points to a change in the shape of values, such as a new format for codes.
+  active: Y
+  ai_redact_values: false
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1547'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS BYTES)) AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST(`{COLUMN_NAME}` AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') AS pattern FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE CAST(`{COLUMN_NAME}` AS STRING) > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '1569'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS BINARY)) AS rn FROM ( SELECT TRANSLATE(`{COLUMN_NAME}`, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') AS pattern FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '1591'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn FROM ( SELECT TRANSLATE({COLUMN_VALUE} COLLATE Latin1_General_BIN, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '1613'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, pattern COLLATE "C") AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}", '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '1635'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(pattern, 'case_sensitive')) AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}", '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '1657'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(pattern, 'case_sensitive')) AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}", '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '1679'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY(pattern, 'UTF-8')) AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}"::VARCHAR, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '8541'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, NLSSORT(pattern, 'NLS_SORT=BINARY')) AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}", '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn
+    error_type: Test Results
+  - id: '8541'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY(pattern)) AS rn FROM ( SELECT REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN "{COLUMN_NAME}" WITH 'a') WITH 'A') WITH 'N') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn
+    error_type: Test Results
+  - id: '10092'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, pattern) AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}", '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') AS pattern FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  - id: '11153'
+    test_id: '1544'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_pattern, ct AS count FROM ( SELECT pattern AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, pattern) AS rn FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE("{COLUMN_NAME}", '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') AS pattern FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' ) p GROUP BY pattern HAVING pattern > ' ' ) ranked WHERE rn <= 5 ORDER BY rn;
+    error_type: Test Results
+  test_templates:
+  - id: '2523'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: bigquery
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS BYTES)) AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(CAST({COLUMN_NAME} AS STRING), r'[a-z]', 'a'), r'[A-Z]', 'A'), r'[0-9]', 'N') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE CAST({COLUMN_NAME} AS STRING) > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT STRING_AGG(CONCAT(val, ' (', CAST(ct AS STRING), ')'), ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2423'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: databricks
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS BINARY)) AS rn
+          FROM ( SELECT TRANSLATE({COLUMN_NAME}, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT ARRAY_JOIN(TRANSFORM(ARRAY_SORT(COLLECT_LIST(NAMED_STRUCT('rn', rn, 'entry', CONCAT(val, ' (', CAST(ct AS STRING), ')')))), e -> e.entry), ', ') AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2223'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: mssql
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn
+          FROM ( SELECT TRANSLATE({COLUMN_VALUE} COLLATE Latin1_General_BIN, 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_VALUE} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT STRING_AGG(CONCAT(CAST(val AS NVARCHAR(MAX)) COLLATE DATABASE_DEFAULT, N' (', CAST(ct AS NVARCHAR(20)), N')'), N', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2323'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: postgresql
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, pattern COLLATE "C") AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT STRING_AGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2023'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: redshift
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(pattern, 'case_sensitive')) AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2620'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: redshift_spectrum
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE(pattern, 'case_sensitive')) AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2123'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: snowflake
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY(pattern, 'UTF-8')) AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}::VARCHAR, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || TO_VARCHAR(ct) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '8020'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: oracle
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, NLSSORT(pattern, 'NLS_SORT=BINARY')) AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, '[a-z]', 'a'), '[A-Z]', 'A'), '[0-9]', 'N') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL AND {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || TO_CHAR(ct) || ')', ', ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             SUBSTR(measure, 1, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '8020'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: sap_hana
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY(pattern)) AS rn
+          FROM ( SELECT REPLACE_REGEXPR('[0-9]' IN REPLACE_REGEXPR('[A-Z]' IN REPLACE_REGEXPR('[a-z]' IN {COLUMN_NAME} WITH 'a') WITH 'A') WITH 'N') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL AND {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT STRING_AGG(val || ' (' || TO_VARCHAR(ct) || ')', ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '10099'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: salesforce_data360
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, pattern) AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') AS pattern
+                   FROM {QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT ARRAY_JOIN(ARRAY_AGG(entry), ', ') AS measure
+          FROM ( SELECT val || ' (' || CAST(ct AS VARCHAR) || ')' AS entry
+                   FROM ranked
+                  WHERE rn <= 5
+                  ORDER BY rn
+                  LIMIT 5 ) ordered
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             SUBSTR(measure, 1, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '11152'
+    test_type: Match_Frequent_Patterns
+    sql_flavor: duckdb
+    template: |-
+      WITH ranked AS (
+        SELECT pattern AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, pattern) AS rn
+          FROM ( SELECT REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE({COLUMN_NAME}, '[a-z]', 'a', 'g'), '[A-Z]', 'A', 'g'), '[0-9]', 'N', 'g') AS pattern
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} > ' ' ) p
+         GROUP BY pattern
+        HAVING pattern > ' '
+      ),
+      test AS (
+        SELECT STRING_AGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 5
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent patterns or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test

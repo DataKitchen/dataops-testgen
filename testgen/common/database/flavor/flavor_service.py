@@ -190,6 +190,19 @@ class FlavorService:
         """
         return ""
 
+    def text_value(self, column_ref: str, column_type: str | None) -> str:  # noqa: ARG002
+        """Return the SQL expression that reads a column's text value.
+
+        Args:
+            column_ref: The quoted column reference.
+            column_type: The column's type as recorded in the data catalog.
+
+        Returns:
+            ``column_ref``, or an expression over it that strips padding the flavor adds to
+            fixed-length text values.
+        """
+        return column_ref
+
     def get_schema_columns(self, _params: ResolvedConnectionParams, _schema: str) -> list[ColumnChars] | None:
         """Return column metadata without querying information_schema.
 

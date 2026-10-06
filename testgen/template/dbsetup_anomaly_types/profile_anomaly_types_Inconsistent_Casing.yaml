@@ -27,7 +27,7 @@ profile_anomaly_types:
       (
         SELECT 'Upper Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-        WHERE UPPER(CAST(`{COLUMN_NAME}` AS STRING)) = CAST(`{COLUMN_NAME}` AS STRING)
+        WHERE CAST(UPPER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES) = CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES)
         GROUP BY `{COLUMN_NAME}`
         LIMIT {LIMIT_2}
       )
@@ -35,8 +35,8 @@ profile_anomaly_types:
       (
         SELECT 'Mixed Case' AS casing, `{COLUMN_NAME}`, COUNT(*) AS count
         FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-        WHERE CAST(`{COLUMN_NAME}` AS STRING) <> UPPER(CAST(`{COLUMN_NAME}` AS STRING))
-          AND CAST(`{COLUMN_NAME}` AS STRING) <> LOWER(CAST(`{COLUMN_NAME}` AS STRING))
+        WHERE CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES) <> CAST(UPPER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES)
+          AND CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES) <> CAST(LOWER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES)
         GROUP BY `{COLUMN_NAME}`
         LIMIT {LIMIT_2}
       );
@@ -48,11 +48,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       (SELECT 'Upper Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-      WHERE UPPER(`{COLUMN_NAME}`) = `{COLUMN_NAME}`
+      WHERE CAST(UPPER(`{COLUMN_NAME}`) AS BINARY) = CAST(`{COLUMN_NAME}` AS BINARY)
       GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-      WHERE `{COLUMN_NAME}` <> UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` <> LOWER(`{COLUMN_NAME}`)
+      WHERE CAST(`{COLUMN_NAME}` AS BINARY) <> CAST(UPPER(`{COLUMN_NAME}`) AS BINARY) AND CAST(`{COLUMN_NAME}` AS BINARY) <> CAST(LOWER(`{COLUMN_NAME}`) AS BINARY)
       GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1260'
@@ -76,11 +76,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      WHERE UPPER("{COLUMN_NAME}") COLLATE "C" = "{COLUMN_NAME}" COLLATE "C"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      WHERE "{COLUMN_NAME}" COLLATE "C" <> UPPER("{COLUMN_NAME}") COLLATE "C" AND "{COLUMN_NAME}" COLLATE "C" <> LOWER("{COLUMN_NAME}") COLLATE "C"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1258'
@@ -90,11 +90,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      WHERE COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') = COLLATE("{COLUMN_NAME}", 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      WHERE COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1473'
@@ -104,11 +104,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      WHERE COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') = COLLATE("{COLUMN_NAME}", 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      WHERE COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1261'
@@ -118,11 +118,11 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      WHERE COLLATE(UPPER("{COLUMN_NAME}"), 'utf8') = COLLATE("{COLUMN_NAME}", 'utf8')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      WHERE COLLATE("{COLUMN_NAME}", 'utf8') <> COLLATE(UPPER("{COLUMN_NAME}"), 'utf8') AND COLLATE("{COLUMN_NAME}", 'utf8') <> COLLATE(LOWER("{COLUMN_NAME}"), 'utf8')
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly
   - id: '1526'
@@ -162,10 +162,10 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       (SELECT 'Upper Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE UPPER("{COLUMN_NAME}") = "{COLUMN_NAME}"
+      WHERE UPPER("{COLUMN_NAME}") COLLATE "binary" = CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
       UNION ALL
       (SELECT 'Mixed Case' as casing, "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-      WHERE "{COLUMN_NAME}" <> UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}")
+      WHERE CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" <> UPPER("{COLUMN_NAME}") COLLATE "binary" AND CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" <> LOWER("{COLUMN_NAME}") COLLATE "binary"
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT_2})
     error_type: Profile Anomaly

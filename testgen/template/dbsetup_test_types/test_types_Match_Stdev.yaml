@@ -1,0 +1,224 @@
+test_types:
+  id: '1530'
+  test_type: Match_Stdev
+  test_name_short: Match Standard Deviation
+  test_name_long: Standard deviation equals baseline within tolerance
+  test_description: |-
+    Tests that the standard deviation of the column equals the baseline, within a relative tolerance.
+  except_message: |-
+    Standard deviation differs from baseline by more than the tolerance.
+  measure_uom: Standard deviation
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'N' AND value_ct > 1 AND stdev_value IS NOT NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_sd,upper_tolerance
+  default_parm_values: |-
+    stdev_value,0.000000001
+  default_parm_prompts: |-
+    Std Deviation at Baseline,Relative Tolerance
+  default_parm_help: |-
+    The expected sample standard deviation of the column values.|Allowed difference as a fraction of the baseline value. For example, 0.001 allows a difference of 0.1 percent.
+  default_parm_required: Y,Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected standard deviation
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Standard Deviation tests that the sample standard deviation of the column is within a relative tolerance of the baseline. Together with Match Sum, it detects offsetting changes that leave the total unchanged. The default tolerance is close to an exact match; widen it per test when small numeric differences are expected.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7048'
+    test_type: Match_Stdev
+    sql_flavor: bigquery
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS FLOAT64))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS FLOAT64) - ABS(CAST({BASELINE_SD} AS FLOAT64) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS FLOAT64) + ABS(CAST({BASELINE_SD} AS FLOAT64) * {UPPER_TOLERANCE})
+  - id: '6048'
+    test_type: Match_Stdev
+    sql_flavor: databricks
+    measure: |-
+      STDDEV_SAMP(CAST({COLUMN_NAME} AS DOUBLE))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS DOUBLE) - ABS(CAST({BASELINE_SD} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS DOUBLE) + ABS(CAST({BASELINE_SD} AS DOUBLE) * {UPPER_TOLERANCE})
+  - id: '3048'
+    test_type: Match_Stdev
+    sql_flavor: mssql
+    measure: |-
+      STDEV(CAST({COLUMN_NAME} AS FLOAT))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS FLOAT) - ABS(CAST({BASELINE_SD} AS FLOAT) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS FLOAT) + ABS(CAST({BASELINE_SD} AS FLOAT) * {UPPER_TOLERANCE})
+  - id: '4048'
+    test_type: Match_Stdev
+    sql_flavor: postgresql
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME}::NUMERIC AS FLOAT))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS DOUBLE PRECISION) - ABS(CAST({BASELINE_SD} AS DOUBLE PRECISION) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS DOUBLE PRECISION) + ABS(CAST({BASELINE_SD} AS DOUBLE PRECISION) * {UPPER_TOLERANCE})
+  - id: '2028'
+    test_type: Match_Stdev
+    sql_flavor: redshift
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS FLOAT))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS FLOAT8) - ABS(CAST({BASELINE_SD} AS FLOAT8) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS FLOAT8) + ABS(CAST({BASELINE_SD} AS FLOAT8) * {UPPER_TOLERANCE})
+  - id: '7048'
+    test_type: Match_Stdev
+    sql_flavor: redshift_spectrum
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS FLOAT))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS FLOAT8) - ABS(CAST({BASELINE_SD} AS FLOAT8) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS FLOAT8) + ABS(CAST({BASELINE_SD} AS FLOAT8) * {UPPER_TOLERANCE})
+  - id: '2128'
+    test_type: Match_Stdev
+    sql_flavor: snowflake
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS FLOAT))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS FLOAT) - ABS(CAST({BASELINE_SD} AS FLOAT) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS FLOAT) + ABS(CAST({BASELINE_SD} AS FLOAT) * {UPPER_TOLERANCE})
+  - id: '8048'
+    test_type: Match_Stdev
+    sql_flavor: oracle
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS NUMBER))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS BINARY_DOUBLE) - ABS(CAST({BASELINE_SD} AS BINARY_DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS BINARY_DOUBLE) + ABS(CAST({BASELINE_SD} AS BINARY_DOUBLE) * {UPPER_TOLERANCE})
+  - id: '8048'
+    test_type: Match_Stdev
+    sql_flavor: sap_hana
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS DOUBLE))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS DOUBLE) - ABS(CAST({BASELINE_SD} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS DOUBLE) + ABS(CAST({BASELINE_SD} AS DOUBLE) * {UPPER_TOLERANCE})
+  - id: '10059'
+    test_type: Match_Stdev
+    sql_flavor: salesforce_data360
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS DOUBLE))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS DOUBLE PRECISION) - ABS(CAST({BASELINE_SD} AS DOUBLE PRECISION) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS DOUBLE PRECISION) + ABS(CAST({BASELINE_SD} AS DOUBLE PRECISION) * {UPPER_TOLERANCE})
+  - id: '11124'
+    test_type: Match_Stdev
+    sql_flavor: duckdb
+    measure: |-
+      STDDEV(CAST({COLUMN_NAME} AS DOUBLE))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SD} AS DOUBLE) - ABS(CAST({BASELINE_SD} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SD} AS DOUBLE) + ABS(CAST({BASELINE_SD} AS DOUBLE) * {UPPER_TOLERANCE})
+  target_data_lookups:
+  - id: '1533'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST(`{COLUMN_NAME}` AS FLOAT64)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1555'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV_SAMP(CAST(`{COLUMN_NAME}` AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1577'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1599'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}"::NUMERIC AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1621'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1643'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1665'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS FLOAT)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8527'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8527'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10078'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11125'
+    test_id: '1530'
+    test_type: Match_Stdev
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT STDDEV(CAST("{COLUMN_NAME}" AS DOUBLE)) AS current_stdev, {BASELINE_SD} AS baseline_stdev FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

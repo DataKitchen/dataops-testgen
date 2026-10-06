@@ -414,6 +414,9 @@ class DuckdbFlavorService(FlavorService):
         # Ahead of either branch: the files branch locks the configuration, and no SET is
         # accepted after that.
         self._set_spill_directory(connection)
+        # Timestamps with a time zone render in the session's zone, which defaults to the host's.
+        # Profiling and test measures must render the same instant the same way on every host.
+        connection.execute(text("SET TimeZone = 'UTC'"))
         if declares_files(params.sql_flavor_code):
             self._init_files(connection, params, declarations)
         else:

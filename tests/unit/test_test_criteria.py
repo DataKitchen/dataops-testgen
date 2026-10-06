@@ -47,6 +47,17 @@ EXPECTED_CRITERIA = {
     "Constant": TestCriteria.DEFINED_VALUE,
     "Pattern_Match": TestCriteria.DEFINED_VALUE,
     "Required": TestCriteria.DEFINED_VALUE,
+    # Defined Value: compared with a baseline stored on the test (Aggregate reconciliation, non-referential)
+    **dict.fromkeys(
+        [
+            "Match_Row_Ct", "Match_Column_Ct", "Match_Column_Type", "Match_Null_Ct", "Match_Distinct_Ct",
+            "Match_Min_Val", "Match_Max_Val", "Match_Zero_Ct", "Match_Sum", "Match_Stdev", "Match_Fractional_Sum",
+            "Match_Min_Date", "Match_Max_Date", "Match_Distinct_Date_Ct", "Match_True_Ct", "Match_Min_Length",
+            "Match_Max_Length", "Match_Total_Length", "Match_Lead_Space_Ct", "Match_Zero_Length_Ct", "Match_Upper_Case_Ct",
+            "Match_Non_Printing_Ct", "Match_Distinct_Hash", "Match_Frequent_Values", "Match_Frequent_Patterns",
+        ],
+        TestCriteria.DEFINED_VALUE,
+    ),
     # Defined Threshold: user tunes a numeric threshold/tolerance (fallthrough)
     "Alpha_Trunc": TestCriteria.DEFINED_THRESHOLD,
     "Avg_Shift": TestCriteria.DEFINED_THRESHOLD,

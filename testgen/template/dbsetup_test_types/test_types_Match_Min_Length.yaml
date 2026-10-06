@@ -1,0 +1,224 @@
+test_types:
+  id: '1536'
+  test_type: Match_Min_Length
+  test_name_short: Match Minimum Length
+  test_name_long: Minimum text length equals baseline
+  test_description: |-
+    Tests that the length of the shortest value in the column equals the baseline length.
+  except_message: |-
+    Minimum text length differs from baseline.
+  measure_uom: Minimum length
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND value_ct > 0
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    min_length
+  default_parm_prompts: |-
+    Minimum Length at Baseline
+  default_parm_help: |-
+    The expected length in characters of the shortest value in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected minimum length
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Minimum Length tests that the shortest value in the column has exactly the baseline length.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7054'
+    test_type: Match_Min_Length
+    sql_flavor: bigquery
+    measure: |-
+      MIN(LENGTH(CAST({COLUMN_NAME} AS STRING)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '6054'
+    test_type: Match_Min_Length
+    sql_flavor: databricks
+    measure: |-
+      MIN(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '3054'
+    test_type: Match_Min_Length
+    sql_flavor: mssql
+    measure: |-
+      MIN((LEN(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) + N'.') - 1))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '4054'
+    test_type: Match_Min_Length
+    sql_flavor: postgresql
+    measure: |-
+      MIN(LENGTH(CAST({COLUMN_NAME} AS TEXT)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '2034'
+    test_type: Match_Min_Length
+    sql_flavor: redshift
+    measure: |-
+      MIN(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '7054'
+    test_type: Match_Min_Length
+    sql_flavor: redshift_spectrum
+    measure: |-
+      MIN(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '2134'
+    test_type: Match_Min_Length
+    sql_flavor: snowflake
+    measure: |-
+      MIN(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '8054'
+    test_type: Match_Min_Length
+    sql_flavor: oracle
+    measure: |-
+      MIN(LENGTH(TO_CHAR({COLUMN_NAME})))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '8054'
+    test_type: Match_Min_Length
+    sql_flavor: sap_hana
+    measure: |-
+      MIN(LENGTH(TO_VARCHAR({COLUMN_NAME})))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '10065'
+    test_type: Match_Min_Length
+    sql_flavor: salesforce_data360
+    measure: |-
+      MIN(LENGTH(CAST({COLUMN_NAME} AS VARCHAR)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '11136'
+    test_type: Match_Min_Length
+    sql_flavor: duckdb
+    measure: |-
+      MIN(LENGTH(CAST({COLUMN_NAME} AS TEXT)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  target_data_lookups:
+  - id: '1539'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LENGTH(CAST(`{COLUMN_NAME}` AS STRING))) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1561'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LEN(`{COLUMN_NAME}`)) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1583'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN((LEN(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) + N'.') - 1)) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1605'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LENGTH(CAST("{COLUMN_NAME}" AS TEXT))) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1627'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LEN("{COLUMN_NAME}")) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1649'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LEN("{COLUMN_NAME}")) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1671'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LEN("{COLUMN_NAME}")) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8533'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LENGTH(TO_CHAR("{COLUMN_NAME}"))) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8533'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LENGTH(TO_VARCHAR("{COLUMN_NAME}"))) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10084'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR))) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11137'
+    test_id: '1536'
+    test_type: Match_Min_Length
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT MIN(LENGTH(CAST("{COLUMN_NAME}" AS TEXT))) AS current_min_length, {BASELINE_VALUE} AS baseline_min_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

@@ -1,0 +1,322 @@
+test_types:
+  id: '1523'
+  test_type: Match_Column_Type
+  test_name_short: Match Column Type
+  test_name_long: Column general type equals baseline
+  test_description: |-
+    Tests that the general data type of the column equals the baseline type.
+  except_message: |-
+    Column general type differs from baseline.
+  measure_uom: Matches baseline
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type IS NOT NULL AND NOT (general_type = 'X' AND query_error IS NOT NULL)
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    general_type
+  default_parm_prompts: |-
+    General Type at Baseline
+  default_parm_help: |-
+    The expected general type of the column: A for text, N for numeric, D for date or timestamp, T for time of day, B for boolean, or X for any other type.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: METADATA
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected general type
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Differs","1":"Matches"}}}'
+  usage_notes: |-
+    Match Column Type tests that the general data type of the column, such as text, numeric, date or boolean, is the baseline type. A change of specific type within the same general type, such as a wider text column, does not fail it.
+  active: Y
+  ai_redact_values: false
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '2520'
+    test_type: Match_Column_Type
+    sql_flavor: bigquery
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '2420'
+    test_type: Match_Column_Type
+    sql_flavor: databricks
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '2220'
+    test_type: Match_Column_Type
+    sql_flavor: mssql
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '2320'
+    test_type: Match_Column_Type
+    sql_flavor: postgresql
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '2020'
+    test_type: Match_Column_Type
+    sql_flavor: redshift
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '2617'
+    test_type: Match_Column_Type
+    sql_flavor: redshift_spectrum
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '2120'
+    test_type: Match_Column_Type
+    sql_flavor: snowflake
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '8017'
+    test_type: Match_Column_Type
+    sql_flavor: oracle
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '8017'
+    test_type: Match_Column_Type
+    sql_flavor: sap_hana
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '10096'
+    test_type: Match_Column_Type
+    sql_flavor: salesforce_data360
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;
+  - id: '11111'
+    test_type: Match_Column_Type
+    sql_flavor: duckdb
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             '{COLUMN_NAME_NO_QUOTES}' AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             MAX(general_type) AS result_signal,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_code,
+             CASE
+               WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 'Column general type differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE WHEN MAX(general_type) IS DISTINCT FROM {BASELINE_VALUE_LITERAL} THEN 0 ELSE 1 END AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND column_name = '{COLUMN_NAME_NO_QUOTES}'
+         AND drop_date IS NULL;

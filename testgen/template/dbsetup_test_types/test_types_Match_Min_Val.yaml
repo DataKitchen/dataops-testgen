@@ -1,0 +1,224 @@
+test_types:
+  id: '1526'
+  test_type: Match_Min_Val
+  test_name_short: Match Minimum Value
+  test_name_long: Minimum value equals baseline
+  test_description: |-
+    Tests that the lowest value in the column equals the baseline minimum.
+  except_message: |-
+    Minimum value differs from baseline.
+  measure_uom: Minimum value
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'N' AND value_ct > 0
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    min_value
+  default_parm_prompts: |-
+    Minimum Value at Baseline
+  default_parm_help: |-
+    The expected lowest value in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected minimum value
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Minimum Value tests that the lowest value in the column is exactly the baseline value, compared as a number. For a floor that values may stay above, use Minimum Value.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7044'
+    test_type: Match_Min_Val
+    sql_flavor: bigquery
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS FLOAT64)
+    test_operator: '<>'
+    test_condition: |-
+      CAST({BASELINE_VALUE} AS FLOAT64)
+  - id: '6044'
+    test_type: Match_Min_Val
+    sql_flavor: databricks
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS DOUBLE)
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DOUBLE)
+  - id: '3044'
+    test_type: Match_Min_Val
+    sql_flavor: mssql
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS FLOAT)
+    test_operator: '<>'
+    test_condition: |-
+      CAST({BASELINE_VALUE} AS FLOAT)
+  - id: '4044'
+    test_type: Match_Min_Val
+    sql_flavor: postgresql
+    measure: |-
+      CAST(CAST(MIN({COLUMN_NAME}) AS VARCHAR) AS DOUBLE PRECISION)
+    test_operator: '<>'
+    test_condition: |-
+      CAST({BASELINE_VALUE} AS DOUBLE PRECISION)
+  - id: '2024'
+    test_type: Match_Min_Val
+    sql_flavor: redshift
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS FLOAT8)
+    test_operator: '<>'
+    test_condition: |-
+      CASE WHEN CAST(CAST(MIN({COLUMN_NAME}) AS REAL) AS FLOAT8) = CAST(MIN({COLUMN_NAME}) AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END
+  - id: '7044'
+    test_type: Match_Min_Val
+    sql_flavor: redshift_spectrum
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS FLOAT8)
+    test_operator: '<>'
+    test_condition: |-
+      CASE WHEN CAST(CAST(MIN({COLUMN_NAME}) AS REAL) AS FLOAT8) = CAST(MIN({COLUMN_NAME}) AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END
+  - id: '2124'
+    test_type: Match_Min_Val
+    sql_flavor: snowflake
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS FLOAT)
+    test_operator: '<>'
+    test_condition: |-
+      CAST({BASELINE_VALUE} AS FLOAT)
+  - id: '8044'
+    test_type: Match_Min_Val
+    sql_flavor: oracle
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS BINARY_DOUBLE)
+    test_operator: '<>'
+    test_condition: |-
+      CAST({BASELINE_VALUE} AS BINARY_DOUBLE)
+  - id: '8044'
+    test_type: Match_Min_Val
+    sql_flavor: sap_hana
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS DOUBLE)
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DOUBLE)
+  - id: '10055'
+    test_type: Match_Min_Val
+    sql_flavor: salesforce_data360
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS DOUBLE PRECISION)
+    test_operator: '<>'
+    test_condition: |-
+      CAST({BASELINE_VALUE} AS DOUBLE PRECISION)
+  - id: '11116'
+    test_type: Match_Min_Val
+    sql_flavor: duckdb
+    measure: |-
+      CAST(MIN({COLUMN_NAME}) AS DOUBLE)
+    test_operator: '<>'
+    test_condition: |-
+      CAST('{BASELINE_VALUE}' AS DOUBLE)
+  target_data_lookups:
+  - id: '1529'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN(`{COLUMN_NAME}`) AS FLOAT64) AS current_min_val, CAST({BASELINE_VALUE} AS FLOAT64) AS baseline_min_val FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1551'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN(`{COLUMN_NAME}`) AS DOUBLE) AS current_min_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_min_val FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1573'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS FLOAT) AS current_min_val, CAST({BASELINE_VALUE} AS FLOAT) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1595'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(CAST(MIN("{COLUMN_NAME}") AS VARCHAR) AS DOUBLE PRECISION) AS current_min_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1617'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS FLOAT8) AS current_min_val, CASE WHEN CAST(CAST(MIN("{COLUMN_NAME}") AS REAL) AS FLOAT8) = CAST(MIN("{COLUMN_NAME}") AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1639'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS FLOAT8) AS current_min_val, CASE WHEN CAST(CAST(MIN("{COLUMN_NAME}") AS REAL) AS FLOAT8) = CAST(MIN("{COLUMN_NAME}") AS FLOAT8) THEN CAST(CAST({BASELINE_VALUE} AS REAL) AS FLOAT8) ELSE CAST({BASELINE_VALUE} AS FLOAT8) END AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1661'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS FLOAT) AS current_min_val, CAST({BASELINE_VALUE} AS FLOAT) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8523'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS BINARY_DOUBLE) AS current_min_val, CAST({BASELINE_VALUE} AS BINARY_DOUBLE) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8523'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS DOUBLE) AS current_min_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10074'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS DOUBLE PRECISION) AS current_min_val, CAST({BASELINE_VALUE} AS DOUBLE PRECISION) AS baseline_min_val FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11117'
+    test_id: '1526'
+    test_type: Match_Min_Val
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(MIN("{COLUMN_NAME}") AS DOUBLE) AS current_min_val, CAST('{BASELINE_VALUE}' AS DOUBLE) AS baseline_min_val FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

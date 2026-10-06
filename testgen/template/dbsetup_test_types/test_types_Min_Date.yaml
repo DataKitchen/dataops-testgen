@@ -35,7 +35,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This test is appropriate for a cumulative dataset only, because it assumes all prior values are still present. It's appropriate where new records are added with more recent dates, but old dates do not change.
+    This test is appropriate for a cumulative dataset, because it assumes all prior values are still present. It's appropriate where new records are added with more recent dates, but old dates do not change. For an exact earliest date, use Match Minimum Date.
   active: Y
   ai_redact_values: false
   algorithm: Boundary check

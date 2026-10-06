@@ -1,0 +1,224 @@
+test_types:
+  id: '1532'
+  test_type: Match_Min_Date
+  test_name_short: Match Minimum Date
+  test_name_long: Earliest date equals baseline
+  test_description: |-
+    Tests that the earliest date in the column equals the baseline date, compared to the second.
+  except_message: |-
+    Earliest date differs from baseline.
+  measure_uom: Earliest date
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'D' AND value_ct > 0
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    TO_CHAR(min_date, 'YYYY-MM-DD HH24:MI:SS')
+  default_parm_prompts: |-
+    Earliest Date at Baseline
+  default_parm_help: |-
+    The expected earliest date in the column, in the form YYYY-MM-DD HH:MM:SS.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected earliest date
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Minimum Date tests that the earliest date in the column is exactly the baseline date. Dates are compared to the second, and fractional seconds are ignored. For a floor that dates may stay above, use Minimum Date.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7050'
+    test_type: Match_Min_Date
+    sql_flavor: bigquery
+    measure: |-
+      FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', CAST(MIN({COLUMN_NAME}) AS DATETIME))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '6050'
+    test_type: Match_Min_Date
+    sql_flavor: databricks
+    measure: |-
+      DATE_FORMAT(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE CASE WHEN MIN({COLUMN_NAME}) >= CAST('0001-01-01' AS date) THEN MIN({COLUMN_NAME}) ELSE CAST('0001-01-01' AS date) END END, 'yyyy-MM-dd HH:mm:ss')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '3050'
+    test_type: Match_Min_Date
+    sql_flavor: mssql
+    measure: |-
+      CONVERT(VARCHAR(19), CAST(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE CASE WHEN MIN({COLUMN_NAME}) >= CAST('0001-01-01' AS date) THEN MIN({COLUMN_NAME}) ELSE CAST('0001-01-01' AS date) END END AS DATETIME2), 120)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '4050'
+    test_type: Match_Min_Date
+    sql_flavor: postgresql
+    measure: |-
+      TO_CHAR(CAST(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE GREATEST(MIN({COLUMN_NAME}), '0001-01-01') END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '2030'
+    test_type: Match_Min_Date
+    sql_flavor: redshift
+    measure: |-
+      TO_CHAR(CAST(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE GREATEST(MIN({COLUMN_NAME}), '0001-01-01') END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '7050'
+    test_type: Match_Min_Date
+    sql_flavor: redshift_spectrum
+    measure: |-
+      TO_CHAR(CAST(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE GREATEST(MIN({COLUMN_NAME}), '0001-01-01') END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '2130'
+    test_type: Match_Min_Date
+    sql_flavor: snowflake
+    measure: |-
+      TO_CHAR(CAST(GREATEST(MIN({COLUMN_NAME}), '0001-01-01') AS TIMESTAMP_NTZ), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '8050'
+    test_type: Match_Min_Date
+    sql_flavor: oracle
+    measure: |-
+      TO_CHAR(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE GREATEST(MIN({COLUMN_NAME}), TO_DATE('0001-01-01', 'YYYY-MM-DD')) END, 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '8050'
+    test_type: Match_Min_Date
+    sql_flavor: sap_hana
+    measure: |-
+      TO_VARCHAR(CAST(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE GREATEST(MIN({COLUMN_NAME}), TO_DATE('0001-01-01', 'YYYY-MM-DD')) END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '10061'
+    test_type: Match_Min_Date
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUBSTR(CAST(CAST(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE GREATEST(MIN({COLUMN_NAME}), CAST('0001-01-01' AS TIMESTAMP)) END AS TIMESTAMP) AS VARCHAR), 1, 19)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '11128'
+    test_type: Match_Min_Date
+    sql_flavor: duckdb
+    measure: |-
+      STRFTIME(CASE WHEN MIN({COLUMN_NAME}) IS NULL THEN NULL ELSE GREATEST(MIN({COLUMN_NAME})::TIMESTAMP, TIMESTAMP '0001-01-01') END, '%Y-%m-%d %H:%M:%S')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  target_data_lookups:
+  - id: '1535'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', CAST(MIN(`{COLUMN_NAME}`) AS DATETIME)) AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1557'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DATE_FORMAT(CASE WHEN MIN(`{COLUMN_NAME}`) IS NULL THEN NULL ELSE CASE WHEN MIN(`{COLUMN_NAME}`) >= CAST('0001-01-01' AS date) THEN MIN(`{COLUMN_NAME}`) ELSE CAST('0001-01-01' AS date) END END, 'yyyy-MM-dd HH:mm:ss') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1579'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT CONVERT(VARCHAR(19), CAST(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE CASE WHEN MIN("{COLUMN_NAME}") >= CAST('0001-01-01' AS date) THEN MIN("{COLUMN_NAME}") ELSE CAST('0001-01-01' AS date) END END AS DATETIME2), 120) AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1601'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE GREATEST(MIN("{COLUMN_NAME}"), '0001-01-01') END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1623'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE GREATEST(MIN("{COLUMN_NAME}"), '0001-01-01') END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1645'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE GREATEST(MIN("{COLUMN_NAME}"), '0001-01-01') END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1667'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(GREATEST(MIN("{COLUMN_NAME}"), '0001-01-01') AS TIMESTAMP_NTZ), 'YYYY-MM-DD HH24:MI:SS') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8529'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE GREATEST(MIN("{COLUMN_NAME}"), TO_DATE('0001-01-01', 'YYYY-MM-DD')) END, 'YYYY-MM-DD HH24:MI:SS') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8529'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_VARCHAR(CAST(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE GREATEST(MIN("{COLUMN_NAME}"), TO_DATE('0001-01-01', 'YYYY-MM-DD')) END AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10080'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUBSTR(CAST(CAST(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE GREATEST(MIN("{COLUMN_NAME}"), CAST('0001-01-01' AS TIMESTAMP)) END AS TIMESTAMP) AS VARCHAR), 1, 19) AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11129'
+    test_id: '1532'
+    test_type: Match_Min_Date
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT STRFTIME(CASE WHEN MIN("{COLUMN_NAME}") IS NULL THEN NULL ELSE GREATEST(MIN("{COLUMN_NAME}")::TIMESTAMP, TIMESTAMP '0001-01-01') END, '%Y-%m-%d %H:%M:%S') AS current_min_date, {BASELINE_VALUE_LITERAL} AS baseline_min_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

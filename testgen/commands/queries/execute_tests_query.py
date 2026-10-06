@@ -80,6 +80,7 @@ class TestExecutionDef(InputParameters):
     measure: str
     test_operator: str
     test_condition: str
+    null_measure_fails: bool = False
     # Runtime attributes
     column_type: str = None
     measure_expression: str = None
@@ -221,6 +222,10 @@ def parse_cat_results(
         result_codes = result["result_codes"].split(",")
 
         for index, td in enumerate(test_defs):
+            measure = result_measures[index] if result_measures[index] != null_value else None
+            result_code = result_codes[index]
+            if measure is None and td.null_measure_fails and result_code == "1":
+                result_code = "0"
             test_results.append([
                 test_run_id,
                 test_suite_id,
@@ -232,10 +237,10 @@ def parse_cat_results(
                 td.column_name,
                 td.skip_errors or 0,
                 input_parameters_fn(td),
-                result_codes[index],
+                result_code,
                 None,  # result_status will be calculated later
                 None,  # No result_message
-                result_measures[index] if result_measures[index] != null_value else None,
+                measure,
             ])
 
     return test_results
@@ -436,6 +441,9 @@ class TestExecutionSQL:
                 "CONCAT_MATCH_GROUPBY": concat_columns(test_def.match_groupby_names, self.null_value) if test_def.match_groupby_names else "",
                 "MATCH_HAVING_CONDITION": f"HAVING {test_def.match_having_condition}" if test_def.match_having_condition else "",
                 "COLUMN_TYPE": test_def.column_type,
+                "COLUMN_VALUE": self.flavor_service.text_value(
+                    f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
+                ),
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),
             })
 

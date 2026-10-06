@@ -632,6 +632,8 @@ class TestType(ParamFieldsMixin, Entity):
     """Whether this type's ``result_measure`` can carry an actual source-data value
     rather than a violation count or a normalized statistic. Surfaces that withhold
     source data from an AI consumer drop the measure only for flagged types."""
+    null_measure_fails: bool = Column(Boolean, default=False, nullable=False)
+    """Whether a CAT test of this type fails when its measure is NULL, instead of passing."""
 
     # Unmapped columns: generation_template, result_visualization, result_visualization_params, overrides
 

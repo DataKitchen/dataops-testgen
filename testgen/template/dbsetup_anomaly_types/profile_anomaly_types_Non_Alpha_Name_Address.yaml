@@ -26,8 +26,8 @@ profile_anomaly_types:
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) AS record_ct
       FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-      WHERE CAST(`{COLUMN_NAME}` AS STRING) = UPPER(CAST(`{COLUMN_NAME}` AS STRING))
-        AND CAST(`{COLUMN_NAME}` AS STRING) = LOWER(CAST(`{COLUMN_NAME}` AS STRING))
+      WHERE CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES) = CAST(UPPER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES)
+        AND CAST(CAST(`{COLUMN_NAME}` AS STRING) AS BYTES) = CAST(LOWER(CAST(`{COLUMN_NAME}` AS STRING)) AS BYTES)
         AND CAST(`{COLUMN_NAME}` AS STRING) > ''
       GROUP BY `{COLUMN_NAME}`
       LIMIT {LIMIT};
@@ -39,7 +39,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT `{COLUMN_NAME}`, COUNT(*) as record_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`
-       WHERE `{COLUMN_NAME}` = UPPER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` = LOWER(`{COLUMN_NAME}`) AND `{COLUMN_NAME}` > ''
+       WHERE CAST(`{COLUMN_NAME}` AS BINARY) = CAST(UPPER(`{COLUMN_NAME}`) AS BINARY) AND CAST(`{COLUMN_NAME}` AS BINARY) = CAST(LOWER(`{COLUMN_NAME}`) AS BINARY) AND `{COLUMN_NAME}` > ''
       GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1265'
@@ -49,7 +49,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+       WHERE "{COLUMN_NAME}" COLLATE Latin1_General_BIN = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" COLLATE Latin1_General_BIN = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
       GROUP BY "{COLUMN_NAME}"
     error_type: Profile Anomaly
   - id: '1264'
@@ -59,7 +59,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+       WHERE "{COLUMN_NAME}" COLLATE "C" = UPPER("{COLUMN_NAME}") COLLATE "C" AND "{COLUMN_NAME}" COLLATE "C" = LOWER("{COLUMN_NAME}") COLLATE "C" AND "{COLUMN_NAME}" > ''
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1263'
@@ -69,7 +69,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+       WHERE COLLATE("{COLUMN_NAME}", 'case_sensitive') = COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') = COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive') AND "{COLUMN_NAME}" > ''
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1474'
@@ -79,7 +79,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+       WHERE COLLATE("{COLUMN_NAME}", 'case_sensitive') = COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') = COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive') AND "{COLUMN_NAME}" > ''
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1266'
@@ -89,7 +89,7 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+       WHERE COLLATE("{COLUMN_NAME}", 'utf8') = COLLATE(UPPER("{COLUMN_NAME}"), 'utf8') AND COLLATE("{COLUMN_NAME}", 'utf8') = COLLATE(LOWER("{COLUMN_NAME}"), 'utf8') AND "{COLUMN_NAME}" > ''
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '1527'
@@ -125,6 +125,6 @@ profile_anomaly_types:
     lookup_type: null
     lookup_query: |-
       SELECT "{COLUMN_NAME}", COUNT(*) as record_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
-       WHERE "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" = LOWER("{COLUMN_NAME}") AND "{COLUMN_NAME}" > ''
+       WHERE CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" = UPPER("{COLUMN_NAME}") COLLATE "binary" AND CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" = LOWER("{COLUMN_NAME}") COLLATE "binary" AND "{COLUMN_NAME}" > ''
       GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly

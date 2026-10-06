@@ -36,7 +36,7 @@ profile_anomaly_types:
     sql_flavor: databricks
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (CASE WHEN `{COLUMN_NAME}` BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT {LIMIT};
+      SELECT DISTINCT `{COLUMN_NAME}`, COUNT(*) AS count  FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE (CASE WHEN (`{COLUMN_NAME}` LIKE ' %' AND LTRIM(`{COLUMN_NAME}`) <> '') THEN 1 ELSE 0 END) = 1 GROUP BY `{COLUMN_NAME}` ORDER BY `{COLUMN_NAME}` LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1123'
     test_id: '1009'
@@ -44,7 +44,7 @@ profile_anomaly_types:
     sql_flavor: mssql
     lookup_type: null
     lookup_query: |-
-      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}";
     error_type: Profile Anomaly
   - id: '1066'
     test_id: '1009'
@@ -52,7 +52,7 @@ profile_anomaly_types:
     sql_flavor: postgresql
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1041'
     test_id: '1009'
@@ -60,7 +60,7 @@ profile_anomaly_types:
     sql_flavor: redshift
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1441'
     test_id: '1009'
@@ -68,7 +68,7 @@ profile_anomaly_types:
     sql_flavor: redshift_spectrum
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1180'
     test_id: '1009'
@@ -76,7 +76,7 @@ profile_anomaly_types:
     sql_flavor: snowflake
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count  FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}"::VARCHAR LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '1508'
     test_id: '1009'
@@ -84,7 +84,7 @@ profile_anomaly_types:
     sql_flavor: oracle
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") IS NOT NULL) THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
     error_type: Profile Anomaly
   - id: '1508'
     test_id: '1009'
@@ -92,7 +92,7 @@ profile_anomaly_types:
     sql_flavor: sap_hana
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT}
     error_type: Profile Anomaly
   - id: '10055'
     test_id: 1009
@@ -100,7 +100,7 @@ profile_anomaly_types:
     sql_flavor: salesforce_data360
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly
   - id: '11106'
     test_id: '1009'
@@ -108,5 +108,5 @@ profile_anomaly_types:
     sql_flavor: duckdb
     lookup_type: null
     lookup_query: |-
-      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN "{COLUMN_NAME}" BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+      SELECT DISTINCT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) = 1 GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
     error_type: Profile Anomaly

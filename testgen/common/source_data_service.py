@@ -214,6 +214,10 @@ def _build_query_standard(issue_data: dict, limit: int) -> str | None:
         "TABLE_NAME": issue_data["table_name"],
         "COLUMN_NAME": issue_data["column_names"],
         "COLUMN_TYPE": issue_data["column_type"],
+        "COLUMN_VALUE": flavor_service.text_value(
+            f"{flavor_service.quote_character}{issue_data['column_names'] or ''}{flavor_service.quote_character}",
+            issue_data["column_type"],
+        ),
         "TEST_DATE": to_sql_timestamp(parsed_test_date)
         if (parsed_test_date := parse_fuzzy_date(issue_data["test_date"]))
         else None,

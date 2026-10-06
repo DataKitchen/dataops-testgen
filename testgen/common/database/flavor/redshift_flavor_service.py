@@ -1,3 +1,4 @@
+import re
 from urllib.parse import quote_plus
 
 from sqlalchemy.dialects import registry as _dialect_registry
@@ -36,6 +37,12 @@ class RedshiftFlavorService(FlavorService):
     # APPROXIMATE PERCENTILE_DISC runs only on a query that references a user table, so it cannot
     # be probed on a derived row; every supported Redshift release has it.
     supports_approx_percentile = True
+
+    def text_value(self, column_ref: str, column_type: str | None) -> str:
+        # CHAR values are stored padded with spaces to the declared length.
+        if column_type and re.fullmatch(r"char(\(\d+\))?", column_type.lower()):
+            return f"RTRIM({column_ref})"
+        return column_ref
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         return f"{self.url_scheme}://{params.username}:{quote_plus(params.password)}@{params.host}:{params.port}/{params.dbname}"

@@ -1,0 +1,224 @@
+test_types:
+  id: '1531'
+  test_type: Match_Fractional_Sum
+  test_name_short: Match Fractional Sum
+  test_name_long: Sum of fractional parts equals baseline
+  test_description: |-
+    Tests that the sum of the fractional parts of the column values equals the baseline sum.
+  except_message: |-
+    Sum of fractional parts differs from baseline.
+  measure_uom: Fractional sum
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'N' AND fractional_sum IS NOT NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_sum
+  default_parm_values: |-
+    fractional_sum
+  default_parm_prompts: |-
+    Fractional Sum at Baseline
+  default_parm_help: |-
+    The expected sum of the fractional parts of the column values. Each fractional part is rounded to five decimal places before it is added.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected fractional sum
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Fractional Sum tests that the sum of the fractional parts of the column values is exactly the baseline sum. A drop points to values rounded or truncated to fewer decimal places. For a floor rather than an exact sum, use Decimal Truncation.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7049'
+    test_type: Match_Fractional_Sum
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CAST(COALESCE(ROUND(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS NUMERIC), 8), 5), 0) AS BIGNUMERIC))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '6049'
+    test_type: Match_Fractional_Sum
+    sql_flavor: databricks
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '3049'
+    test_type: Match_Fractional_Sum
+    sql_flavor: mssql
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(({COLUMN_NAME} % 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '4049'
+    test_type: Match_Fractional_Sum
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS NUMERIC(38,8)), 5) AS NUMERIC(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '2029'
+    test_type: Match_Fractional_Sum
+    sql_flavor: redshift
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '7049'
+    test_type: Match_Fractional_Sum
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '2129'
+    test_type: Match_Fractional_Sum
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS NUMBER(38,8)), 5) AS NUMBER(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '8049'
+    test_type: Match_Fractional_Sum
+    sql_flavor: oracle
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS NUMBER(38,8)), 5) AS NUMBER(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '8049'
+    test_type: Match_Fractional_Sum
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '10060'
+    test_type: Match_Fractional_Sum
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD(CAST({COLUMN_NAME} AS DOUBLE), 1)) AS NUMERIC(38,8)), 5) AS NUMERIC(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  - id: '11126'
+    test_type: Match_Fractional_Sum
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CAST(ROUND(CAST(ABS(MOD({COLUMN_NAME}, 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5)))
+    test_operator: '<>'
+    test_condition: |-
+      ROUND({BASELINE_SUM}, 5)
+  target_data_lookups:
+  - id: '1534'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(COALESCE(ROUND(ROUND(CAST(ABS(MOD(`{COLUMN_NAME}`, 1)) AS NUMERIC), 8), 5), 0) AS BIGNUMERIC)) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1556'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD(`{COLUMN_NAME}`, 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1578'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(("{COLUMN_NAME}" % 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1600'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD("{COLUMN_NAME}", 1)) AS NUMERIC(38,8)), 5) AS NUMERIC(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1622'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD("{COLUMN_NAME}", 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1644'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD("{COLUMN_NAME}", 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1666'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD("{COLUMN_NAME}", 1)) AS NUMBER(38,8)), 5) AS NUMBER(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8528'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD("{COLUMN_NAME}", 1)) AS NUMBER(38,8)), 5) AS NUMBER(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8528'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD("{COLUMN_NAME}", 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10079'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD(CAST("{COLUMN_NAME}" AS DOUBLE), 1)) AS NUMERIC(38,8)), 5) AS NUMERIC(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11127'
+    test_id: '1531'
+    test_type: Match_Fractional_Sum
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(ROUND(CAST(ABS(MOD("{COLUMN_NAME}", 1)) AS DECIMAL(38,8)), 5) AS DECIMAL(38,5))) AS current_fractional_sum, ROUND({BASELINE_SUM}, 5) AS baseline_fractional_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []
