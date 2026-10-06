@@ -67,6 +67,8 @@ export TG_ANALYTICS=no
 export TG_JWT_HASHING_KEY=<base64_key>
 export TESTGEN_USERNAME=<username>
 export TESTGEN_PASSWORD=<password>
+export TG_METADATA_DB_USER=<database_username>
+export TG_METADATA_DB_PASSWORD=<database_password>
 export TG_DECRYPT_SALT=<decrypt_salt>
 export TG_DECRYPT_PASSWORD=<decrypt_password>
 ```

@@ -17,9 +17,9 @@ def get_tg_schema() -> str:
     return settings.DATABASE_SCHEMA
 
 
-def get_tg_username() -> str:
+def get_tg_username() -> str | None:
     return settings.DATABASE_USER
 
 
-def get_tg_password() -> str:
+def get_tg_password() -> str | None:
     return settings.DATABASE_PASSWORD
