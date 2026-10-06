@@ -18,11 +18,16 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
-import yaml
-
-from testgen.common.enums import OdcsDimension, QualityDimension
+from testgen.common.enums import OdcsDimension, QualityDimension, TestScope
 from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
-from testgen.common.models.test_definition import ODCS_RULE_METADATA_KEY, ODCS_STABLE_ID_PATTERN
+from testgen.common.models.test_definition import (
+    ODCS_AUTHORITATIVE_DEFINITION_FIELDS,
+    ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS,
+    ODCS_CUSTOM_PROPERTY_FIELDS,
+    ODCS_CUSTOM_PROPERTY_REQUIRED_FIELDS,
+    ODCS_RULE_METADATA_KEY,
+    ODCS_STABLE_ID_PATTERN,
+)
 from testgen.common.odcs.servers import FLAVOR_TO_SERVER_TYPE, ServerType
 from testgen.common.read_file import replace_templated_functions
 
@@ -117,9 +122,7 @@ class RuleShape(StrEnum):
 class RuleScope(StrEnum):
     """The ODCS node a test type's rule attaches to.
 
-    Declared by every test type a term can be authored against -- ``RULE_MAPPINGS`` for a
-    routed one, ``PENDING_DECISION`` for one whose rule shape is still undecided -- and read
-    through ``declared_scope``. Distinct from ``TestScope``: TestGen's
+    Derived from the catalogue by ``rule_scope``. Distinct from ``TestScope``: TestGen's
     ``test_types.test_scope`` has five stored values, an ODCS document has only two places a
     rule can nest.
     """
@@ -137,18 +140,31 @@ class LibraryMetric(StrEnum):
 
 
 @dataclass(frozen=True)
+class RuleArgument:
+    """One library rule's ``arguments`` entry: the ODCS key, and the term field feeding it.
+
+    The field is named rather than assumed because the two are not the same across rows --
+    ``LOV_Match`` and ``Pattern_Match`` carry their predicate in ``baseline_value``, while
+    ``Dupe_Rows`` lists its grouping from ``groupby_names``.
+    """
+    name: str
+    term_field: str
+
+
+@dataclass(frozen=True)
 class RuleMapping:
     """One test type's route to an ODCS quality rule.
 
-    ``metric``, ``unit`` and ``argument`` are set only when ``shape`` is ``LIBRARY``; every
+    ``metric``, ``unit`` and ``argument`` (a ``RuleArgument``) are set only when ``shape`` is ``LIBRARY``; every
     other shape carries ``None`` for all three. ``operator`` is the acceptance operator the
     rendered rule carries: for most rows this is the inversion of the type's stored
-    ``test_operator`` (see ``ACCEPTANCE_OPERATOR``), but ``Missing_Pct``, ``Unique_Pct`` and
+    ``test_operator`` (see ``ACCEPTANCE_OPERATOR``), but ``Missing_Pct`` and
     ``Row_Ct_Pct`` carry ``mustBeBetween`` outright -- a converted band around a fixed
     baseline, not an inversion of the stored operator. ``dimension`` is the already-translated
     ODCS dimension (``odcs_dimension`` output), except ``LOV_All``, which carries ``coverage``
     explicitly rather than the ``conformity`` its stored ``Validity`` dimension would translate
-    to.
+    to. ``scope`` is the node the rule renders on; when ``scope_follows_term`` is set the node
+    depends on the term, not the type (see ``rule_scope``), and ``scope`` is only the default.
     """
     test_type: str
     shape: RuleShape
@@ -157,7 +173,8 @@ class RuleMapping:
     dimension: str
     metric: LibraryMetric | None = None
     unit: str | None = None
-    argument: str | None = None
+    argument: RuleArgument | None = None
+    scope_follows_term: bool = False
 
 
 @dataclass(frozen=True)
@@ -177,11 +194,12 @@ class CatCondition:
     test_condition: str
 
 
-# The nine test types with a direct ODCS library metric. `Missing_Pct`, `Unique_Pct` and
-# `Row_Ct_Pct` carry `mustBeBetween`: each threshold is a Cohen's h drift bound, and Cohen's h
-# is monotonic in the underlying ratio, so one h-threshold around a fixed baseline maps onto a
-# closed interval on that ratio -- the interval's bounds are computed elsewhere, this table
-# only records that the rendered operator is the between one.
+# The seven test types with a direct ODCS library metric. `Missing_Pct` and `Row_Ct_Pct` carry
+# `mustBeBetween`. `Missing_Pct`'s threshold is a Cohen's h drift bound, and Cohen's h is
+# monotonic in the underlying ratio, so one h-threshold around a fixed baseline maps onto a
+# closed interval on that ratio; `Row_Ct_Pct`'s is a plain percent deviation from a baseline
+# count. The bounds are computed elsewhere, this table only records that the rendered operator
+# is the between one.
 _LIBRARY_ROWS: dict[str, RuleMapping] = {
     "Required": RuleMapping(
         test_type="Required",
@@ -201,15 +219,6 @@ _LIBRARY_ROWS: dict[str, RuleMapping] = {
         metric=LibraryMetric.NULL_VALUES,
         unit="percent",
     ),
-    "Unique_Pct": RuleMapping(
-        test_type="Unique_Pct",
-        shape=RuleShape.LIBRARY,
-        scope=RuleScope.COLUMN,
-        operator=Operator.MUST_BE_BETWEEN,
-        dimension=odcs_dimension(QualityDimension.UNIQUENESS),
-        metric=LibraryMetric.DUPLICATE_VALUES,
-        unit="percent",
-    ),
     "LOV_Match": RuleMapping(
         test_type="LOV_Match",
         shape=RuleShape.LIBRARY,
@@ -218,7 +227,7 @@ _LIBRARY_ROWS: dict[str, RuleMapping] = {
         dimension=odcs_dimension(QualityDimension.VALIDITY),
         metric=LibraryMetric.INVALID_VALUES,
         unit="rows",
-        argument="validValues",
+        argument=RuleArgument(name="validValues", term_field="baseline_value"),
     ),
     "Pattern_Match": RuleMapping(
         test_type="Pattern_Match",
@@ -228,7 +237,7 @@ _LIBRARY_ROWS: dict[str, RuleMapping] = {
         dimension=odcs_dimension(QualityDimension.VALIDITY),
         metric=LibraryMetric.INVALID_VALUES,
         unit="rows",
-        argument="pattern",
+        argument=RuleArgument(name="pattern", term_field="baseline_value"),
     ),
     "Row_Ct": RuleMapping(
         test_type="Row_Ct",
@@ -246,220 +255,30 @@ _LIBRARY_ROWS: dict[str, RuleMapping] = {
         operator=Operator.MUST_BE_BETWEEN,
         dimension=odcs_dimension(QualityDimension.COMPLETENESS),
         metric=LibraryMetric.ROW_COUNT,
-        unit="percent",
+        unit="rows",
+    ),
+    "Dupe_Rows": RuleMapping(
+        test_type="Dupe_Rows",
+        shape=RuleShape.LIBRARY,
+        scope=RuleScope.TABLE,
+        operator=Operator.MUST_BE_LESS_OR_EQUAL_TO,
+        dimension=odcs_dimension(QualityDimension.UNIQUENESS),
+        metric=LibraryMetric.DUPLICATE_VALUES,
+        unit="rows",
+        argument=RuleArgument(name="properties", term_field="groupby_names"),
+        scope_follows_term=True,
     ),
 }
 
-# Every other routed test type: `sql`, projected from `cat_test_conditions.measure`. The
+# Routed `sql` rules: the query is projected from `cat_test_conditions.measure`, and the
 # operator is the inversion (via `ACCEPTANCE_OPERATOR`) of the type's stored `test_operator`.
-# `Condition_Flag` is the one `custom`-scope row here. Its measure is
-# `SUM(CASE WHEN {CUSTOM_QUERY} THEN 1 ELSE 0 END)` -- it references `{CUSTOM_QUERY}` and never
-# `{COLUMN_NAME}`, and its `column_name_prompt` ("Test Focus") is a free-text label, not
-# necessarily a real column. The rule needs no column node, and ODCS's `{property}` placeholder
-# is only defined on a column-node rule, so `TABLE` is the correct attachment here, not a
-# fallback.
-_SQL_ROWS: dict[str, RuleMapping] = {
-    "Alpha_Trunc": RuleMapping(
-        test_type="Alpha_Trunc",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR["<"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Avg_Shift": RuleMapping(
-        test_type="Avg_Shift",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">="],
-        dimension=odcs_dimension(QualityDimension.CONSISTENCY),
-    ),
-    "Constant": RuleMapping(
-        test_type="Constant",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Daily_Record_Ct": RuleMapping(
-        test_type="Daily_Record_Ct",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.COMPLETENESS),
-    ),
-    "Dec_Trunc": RuleMapping(
-        test_type="Dec_Trunc",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR["<"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Distinct_Date_Ct": RuleMapping(
-        test_type="Distinct_Date_Ct",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR["<"],
-        dimension=odcs_dimension(QualityDimension.TIMELINESS),
-    ),
-    "Distinct_Value_Ct": RuleMapping(
-        test_type="Distinct_Value_Ct",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR["<>"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Email_Format": RuleMapping(
-        test_type="Email_Format",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Future_Date": RuleMapping(
-        test_type="Future_Date",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.TIMELINESS),
-    ),
-    "Future_Date_1Y": RuleMapping(
-        test_type="Future_Date_1Y",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.TIMELINESS),
-    ),
-    "Incr_Avg_Shift": RuleMapping(
-        test_type="Incr_Avg_Shift",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">="],
-        dimension=odcs_dimension(QualityDimension.ACCURACY),
-    ),
-    "LOV_All": RuleMapping(
-        test_type="LOV_All",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR["<>"],
-        dimension=OdcsDimension.COVERAGE.value,
-    ),
-    "Min_Date": RuleMapping(
-        test_type="Min_Date",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Min_Val": RuleMapping(
-        test_type="Min_Val",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Monthly_Rec_Ct": RuleMapping(
-        test_type="Monthly_Rec_Ct",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.COMPLETENESS),
-    ),
-    "Outlier_Pct_Above": RuleMapping(
-        test_type="Outlier_Pct_Above",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.ACCURACY),
-    ),
-    "Outlier_Pct_Below": RuleMapping(
-        test_type="Outlier_Pct_Below",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.ACCURACY),
-    ),
-    "Recency": RuleMapping(
-        test_type="Recency",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.TIMELINESS),
-    ),
-    "Street_Addr_Pattern": RuleMapping(
-        test_type="Street_Addr_Pattern",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR["<"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "US_State": RuleMapping(
-        test_type="US_State",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Valid_Characters": RuleMapping(
-        test_type="Valid_Characters",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Valid_Month": RuleMapping(
-        test_type="Valid_Month",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Valid_US_Zip": RuleMapping(
-        test_type="Valid_US_Zip",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Valid_US_Zip3": RuleMapping(
-        test_type="Valid_US_Zip3",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-    "Variability_Decrease": RuleMapping(
-        test_type="Variability_Decrease",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR["<"],
-        dimension=odcs_dimension(QualityDimension.ACCURACY),
-    ),
-    "Variability_Increase": RuleMapping(
-        test_type="Variability_Increase",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.ACCURACY),
-    ),
-    "Weekly_Rec_Ct": RuleMapping(
-        test_type="Weekly_Rec_Ct",
-        shape=RuleShape.SQL,
-        scope=RuleScope.COLUMN,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.COMPLETENESS),
-    ),
-    "Condition_Flag": RuleMapping(
-        test_type="Condition_Flag",
-        shape=RuleShape.SQL,
-        scope=RuleScope.TABLE,
-        operator=ACCEPTANCE_OPERATOR[">"],
-        dimension=odcs_dimension(QualityDimension.VALIDITY),
-    ),
-}
+# Empty in this tree: `SQL_Metric` is the only type this shape is decided for, and it is not
+# in the catalogue yet. `_build_sql_query` and the SQL branch of `project_rule` are kept
+# against its arrival.
+_SQL_ROWS: dict[str, RuleMapping] = {}
 
 # Every routed test type -- the union `render` and `resolve_rule` both read. Disjoint from
-# `EXCLUDED_TEST_TYPES` and `PENDING_DECISION`; `test_rule_mapping_coverage.py` enforces the
-# union of the three against the test type catalogue.
+# `EXCLUDED_TEST_TYPES`; a type in neither renders `custom`.
 RULE_MAPPINGS: dict[str, RuleMapping] = {**_LIBRARY_ROWS, **_SQL_ROWS}
 
 # Run-history test types: no term is ever authored against them, so no quality rule applies.
@@ -471,116 +290,70 @@ EXCLUDED_TEST_TYPES: dict[str, str] = {
     "Schema_Drift": "run-history type -- monitors schema changes over time, not a contract-testable state",
 }
 
-@dataclass(frozen=True)
-class PendingRouting:
-    """One test type whose ODCS rule shape is undecided, and where its rule hangs meanwhile.
 
-    ``reason`` is the open question a shape decision has to answer. ``scope`` does not wait on
-    that answer: which node a rule attaches to is a separate question, settled from the
-    catalogue's own ``column_name_prompt`` -- what the field holds, and whether that is a
-    column at all.
+def rule_shape(test_type: str) -> RuleShape | None:
+    """How ``test_type``'s terms render: ``None`` when no rule applies at all.
+
+    Three outcomes, in order. A run-history type (``EXCLUDED_TEST_TYPES``) renders nothing --
+    no term is ever authored against one. A type with a ``RULE_MAPPINGS`` row renders that
+    row's shape. Everything else renders ``custom``: the fallback carries the test type's own
+    parameters, so it needs no per-type entry and a type added to the catalogue later exports
+    without a mapping change.
+
+    Never raises. A name outside the catalogue falls through to ``custom`` like any other
+    unrouted type -- placement is where an unplaceable term is refused, not here.
     """
-    scope: RuleScope
-    reason: str
+    if test_type in EXCLUDED_TEST_TYPES:
+        return None
+    mapping = RULE_MAPPINGS.get(test_type)
+    return mapping.shape if mapping is not None else RuleShape.CUSTOM
 
 
-# Test types the team has deferred a routing decision on. Each carries the open question
-# rather than a guess -- routing one of these before the question is answered would render a
-# rule that is either wrong (see the null-counting and implicit-bound cases) or a coin flip
-# between two valid ODCS shapes (see the no-scalar-measure case). `test_rule_mapping_coverage.py`
-# carries one `xfail(strict=True)` test per entry so a routing lands as a marker removal, not a
-# silent addition.
-#
-# Each row's `scope` is read off the catalogue, which already says what the term's
-# `column_name` holds: COLUMN where it names one column (`test_scope: column` -- `Unique`) or
-# an aggregate over one (`column_name_prompt: Aggregate Expression` -- the four
-# `Aggregate_*` types, whose expression is exactly what a synthesized measure property is
-# for), and TABLE everywhere else, because everything else puts something in `column_name`
-# that is not a column: a comma-separated list of them (`Categorical Column List` -- the
-# `Combo_Match` family), a free-text label distinguishing two terms on the same table
-# (`Test Focus` -- `CUSTOM`, the same field `Condition_Flag` carries), or nothing at all
-# (`Dupe_Rows`, `Table_Freshness`). `test_rule_mapping_coverage.py` re-derives this from the
-# catalogue rather than restating it, so a new type whose declaration disagrees fails there.
-PENDING_DECISION: dict[str, PendingRouting] = {
-    "Unique": PendingRouting(
-        scope=RuleScope.COLUMN,
-        reason="its measure counts NULLs as duplicates, so no threshold conversion maps it onto duplicateValues",
-    ),
-    "Dupe_Rows": PendingRouting(
-        scope=RuleScope.TABLE,
-        reason="no threshold parameter -- the bound is implicit, and what the rendered rule's operator and "
-        "value should be is undecided",
-    ),
-    "Table_Freshness": PendingRouting(
-        scope=RuleScope.TABLE,
-        reason="no scalar measure and no numeric threshold -- its bound is a fingerprint comparison, "
-        "so what the rendered rule should assert is undecided",
-    ),
-    "Aggregate_Balance": PendingRouting(
-        scope=RuleScope.COLUMN,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "Aggregate_Balance_Percent": PendingRouting(
-        scope=RuleScope.COLUMN,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "Aggregate_Balance_Range": PendingRouting(
-        scope=RuleScope.COLUMN,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "Aggregate_Minimum": PendingRouting(
-        scope=RuleScope.COLUMN,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "Combo_Match": PendingRouting(
-        scope=RuleScope.TABLE,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "Distribution_Shift": PendingRouting(
-        scope=RuleScope.TABLE,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "Timeframe_Combo_Gain": PendingRouting(
-        scope=RuleScope.TABLE,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "Timeframe_Combo_Match": PendingRouting(
-        scope=RuleScope.TABLE,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-    "CUSTOM": PendingRouting(
-        scope=RuleScope.TABLE,
-        reason="no scalar cat_test_conditions measure -- sql (wrapped join) vs custom is undecided",
-    ),
-}
+_LOV_LITERAL_VALUE = re.compile(r"'((?:[^']|'')*)'")
 
 
-# Every test type that declares where its rule hangs, from both sources in one lookup. The
-# two paths that read it want opposite things from a type declaring nothing -- rendering our
-# own term raises, resolving a counterparty's rule declines -- so each handles the miss
-# itself rather than sharing one answer.
-_DECLARED_SCOPES: dict[str, RuleScope] = {
-    **{test_type: mapping.scope for test_type, mapping in RULE_MAPPINGS.items()},
-    **{test_type: routing.scope for test_type, routing in PENDING_DECISION.items()},
-}
+def lov_values(raw: str) -> list[str]:
+    """The individual values inside a stored LOV literal, e.g. ``"('Y','N')"`` -> ``["Y", "N"]``."""
+    return [match.replace("''", "'") for match in _LOV_LITERAL_VALUE.findall(raw)]
 
 
-def declared_scope(test_type: str) -> RuleScope:
-    """The ODCS node ``test_type``'s rule attaches to.
+def _unquote_identifier(name: str) -> str:
+    if len(name) >= 2 and name.startswith('"') and name.endswith('"'):
+        return name[1:-1].replace('""', '"')
+    return name
 
-    Read from the type's own declaration -- its ``RULE_MAPPINGS`` row, or its
-    ``PENDING_DECISION`` row while its shape is undecided. Raises ``ValueError`` for a type
-    that declares neither, rather than falling back to whether a term happens to carry a
-    ``column_name``: that field is a free-text label on some types and a list of columns on
-    others, so inferring placement from it lands a rule on a property representing no column.
 
-    For the rendering path, where a term stored against such a type is our own inconsistency.
-    A caller reading an incoming document must not use this -- see ``_resolve_marker``.
+def _groupby_columns(term: "TestDefinition") -> list[str]:
+    """``term``'s ``groupby_names`` as individual unquoted column names, empty when it holds none."""
+    return [_unquote_identifier(name.strip()) for name in (term.groupby_names or "").split(",") if name.strip()]
+
+
+def rule_scope(term: "TestDefinition", test_type: "TestType") -> RuleScope:
+    """The ODCS node ``term``'s rule attaches to.
+
+    Derived from the catalogue rather than declared per type: a rule hangs on a property
+    exactly when the term's ``column_name`` denotes one column (``test_scope: column``) or an
+    aggregate over one (``column_name_prompt: Aggregate Expression``). Every other stored
+    scope puts something in ``column_name`` that is not a column -- a free-text label, a
+    comma-separated list of them, or nothing -- so its rule hangs on the table.
+
+    Types whose mapping sets ``scope_follows_term`` (``Dupe_Rows``) depend on the term instead: a
+    grouping of one column attaches to that column, a grouping of several to the table.
+
+    Raises ``ValueError`` for an excluded type, whose terms should not exist.
     """
-    scope = _DECLARED_SCOPES.get(test_type)
-    if scope is None:
-        raise ValueError(f"{test_type!r} declares no rule scope, so its rule has no node to attach to.")
-    return scope
+    if test_type.test_type in EXCLUDED_TEST_TYPES:
+        raise ValueError(f"{test_type.test_type!r} renders no quality rule, so it has no node to attach one to.")
+
+    mapping = RULE_MAPPINGS.get(test_type.test_type)
+    if mapping is not None and mapping.scope_follows_term:
+        return RuleScope.COLUMN if len(_groupby_columns(term)) == 1 else RuleScope.TABLE
+
+    names_one_column = (
+        test_type.test_scope == TestScope.COLUMN
+        or (test_type.column_name_prompt or "").strip() == "Aggregate Expression"
+    )
+    return RuleScope.COLUMN if names_one_column else RuleScope.TABLE
 
 
 def _numeric(raw: str) -> int | float:
@@ -593,6 +366,21 @@ def _numeric(raw: str) -> int | float:
     return int(value) if value.is_integer() else value
 
 
+def _required_threshold(term: "TestDefinition") -> str:
+    """The term's stored threshold text, or a ``ValueError`` naming the term when it has none.
+
+    Every library-routed test type declares ``threshold_value`` optional, so a term saved with
+    it cleared reaches rendering with no bound to compare against.
+    """
+    raw = term.threshold_value
+    if raw is None or not str(raw).strip():
+        raise ValueError(
+            f"{term.test_type!r} term {term.contract_term_id!r} has no threshold value, "
+            "so the bound its rule compares against is undefined."
+        )
+    return str(raw)
+
+
 def _cohens_h_band(baseline_ratio: float, h: float) -> tuple[float, float]:
     """The closed ratio interval a Cohen's h bound ``h`` maps onto around ``baseline_ratio``.
 
@@ -600,10 +388,15 @@ def _cohens_h_band(baseline_ratio: float, h: float) -> tuple[float, float]:
     threshold around a fixed baseline corresponds to exactly one interval on the ratio
     itself: ``[inv(phi(baseline) - h), inv(phi(baseline) + h)]`` where
     ``inv(f) = sin(f/2)**2``.
+
+    ``phi`` maps onto ``[0, pi]``, and ``inv`` is only its inverse on that interval -- past
+    ``pi`` it turns back downward, below ``0`` it mirrors -- so the shifted centre is clamped
+    before inverting. A bound wide enough to reach either end saturates there: ratio 0 or 1,
+    which is what a drift threshold that admits everything should render as.
     """
     center = 2 * math.asin(math.sqrt(baseline_ratio))
-    lower = math.sin((center - h) / 2) ** 2
-    upper = math.sin((center + h) / 2) ** 2
+    lower = math.sin(max(0.0, center - h) / 2) ** 2
+    upper = math.sin(min(math.pi, center + h) / 2) ** 2
     return lower, upper
 
 
@@ -614,17 +407,14 @@ def _complement_percent_band(lower_ratio: float, upper_ratio: float) -> tuple[fl
 
 def _missing_pct_band(term: "TestDefinition") -> tuple[float, float, float, float]:
     """Null-percent band, baseline populated ratio and threshold bound for a ``Missing_Pct`` term."""
-    baseline_ratio = float(term.baseline_value_ct) / float(term.baseline_ct)
-    h = float(term.threshold_value)
-    lower_ratio, upper_ratio = _cohens_h_band(baseline_ratio, h)
-    lower, upper = _complement_percent_band(lower_ratio, upper_ratio)
-    return lower, upper, baseline_ratio, h
-
-
-def _unique_pct_band(term: "TestDefinition") -> tuple[float, float, float, float]:
-    """Duplicate-percent band, baseline distinct ratio and threshold bound for a ``Unique_Pct`` term."""
-    baseline_ratio = float(term.baseline_unique_ct) / float(term.baseline_value_ct)
-    h = float(term.threshold_value)
+    baseline_count = float(term.baseline_ct)
+    if baseline_count == 0:
+        raise ValueError(
+            f"{term.test_type!r} term {term.contract_term_id!r} has a baseline row count of 0, "
+            "so its baseline null ratio is undefined."
+        )
+    baseline_ratio = float(term.baseline_value_ct) / baseline_count
+    h = float(_required_threshold(term))
     lower_ratio, upper_ratio = _cohens_h_band(baseline_ratio, h)
     lower, upper = _complement_percent_band(lower_ratio, upper_ratio)
     return lower, upper, baseline_ratio, h
@@ -636,7 +426,12 @@ def _row_ct_pct_band(term: "TestDefinition") -> tuple[float, float, float, float
     ``|100*(n-b)/b| <= T`` rearranges to ``n in [b*(1-T/100), b*(1+T/100)]``.
     """
     baseline_count = float(term.baseline_ct)
-    percent = float(term.threshold_value)
+    if baseline_count == 0:
+        raise ValueError(
+            f"{term.test_type!r} term {term.contract_term_id!r} has a baseline row count of 0, "
+            "so its percent change from baseline is undefined."
+        )
+    percent = float(_required_threshold(term))
     lower = baseline_count * (1 - percent / 100)
     upper = baseline_count * (1 + percent / 100)
     return lower, upper, baseline_count, percent
@@ -679,10 +474,6 @@ _RESERVED_DIRECT_FIELDS: tuple[str, ...] = ("name", "businessImpact", "method", 
 # dropped rather than forwarded incomplete; all three are the same "tolerate history, don't
 # propagate a shape the writer would now refuse, keep everything else the user supplied"
 # move.
-_CUSTOM_PROPERTY_FIELDS: tuple[str, ...] = ("id", "property", "value", "description", "vendor")
-_CUSTOM_PROPERTY_REQUIRED_FIELDS = frozenset({"property", "value"})
-_AUTHORITATIVE_DEFINITION_FIELDS: tuple[str, ...] = ("id", "url", "type", "description")
-_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS = frozenset({"url", "type"})
 
 
 def _reconstruct_sealed_entries(
@@ -732,7 +523,10 @@ def _apply_reserved_subtree(rule: dict[str, Any], custom_metadata: dict | None) 
 
     dimension = reserved.get("dimension")
     if dimension is not None:
-        rule["dimension"] = OdcsDimension(dimension).value
+        # Normalised, not validated: a member would reach `yaml.safe_dump` as a `StrEnum` and
+        # raise, where a value the enum does not hold is reported by schema validation like
+        # every other field of this subtree.
+        rule["dimension"] = dimension.value if isinstance(dimension, OdcsDimension) else dimension
 
     tags = reserved.get("tags")
     if tags is not None:
@@ -741,11 +535,11 @@ def _apply_reserved_subtree(rule: dict[str, Any], custom_metadata: dict | None) 
     authoritative_definitions = reserved.get("authoritativeDefinitions")
     if authoritative_definitions is not None:
         rule["authoritativeDefinitions"] = _reconstruct_sealed_entries(
-            authoritative_definitions, _AUTHORITATIVE_DEFINITION_FIELDS, _AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS
+            authoritative_definitions, ODCS_AUTHORITATIVE_DEFINITION_FIELDS, ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS
         )
 
     custom_properties = reserved.get("customProperties")
-    return _reconstruct_sealed_entries(custom_properties, _CUSTOM_PROPERTY_FIELDS, _CUSTOM_PROPERTY_REQUIRED_FIELDS)
+    return _reconstruct_sealed_entries(custom_properties, ODCS_CUSTOM_PROPERTY_FIELDS, ODCS_CUSTOM_PROPERTY_REQUIRED_FIELDS)
 
 
 def _user_custom_properties(custom_metadata: dict | None) -> list[dict[str, Any]]:
@@ -759,28 +553,50 @@ def _user_custom_properties(custom_metadata: dict | None) -> list[dict[str, Any]
     ]
 
 
-# The term fields a `custom` rule's `implementation` carries -- the parameters that define
-# what the term checks, dumped as YAML rather than synthesized into a query no other ODCS
-# engine could run anyway (see `RuleShape.CUSTOM` on `RuleMapping`).
-_CUSTOM_IMPLEMENTATION_FIELDS: tuple[str, ...] = (
-    "schema_name", "table_name", "column_name",
-    "baseline_ct", "baseline_unique_ct", "baseline_value", "baseline_value_ct",
-    "threshold_value", "baseline_sum", "baseline_avg", "baseline_sd",
-    "lower_tolerance", "upper_tolerance",
-    "subset_condition", "groupby_names", "having_condition",
-    "window_date_column", "window_days",
-    "match_schema_name", "match_table_name", "match_column_names",
-    "match_subset_condition", "match_groupby_names", "match_having_condition",
-    "custom_query",
-)
+def _declared_parameters(test_type: "TestType") -> list[str]:
+    """The parameter names ``test_type`` declares, in catalogue order."""
+    return [name.strip() for name in (test_type.default_parm_columns or "").split(",") if name.strip()]
 
 
-def _custom_implementation(term: "TestDefinition") -> str:
-    """A YAML dump of ``term``'s own non-empty parameters -- the payload a ``custom`` rule carries."""
-    parameters = {
-        field: getattr(term, field) for field in _CUSTOM_IMPLEMENTATION_FIELDS if getattr(term, field) not in (None, "")
+def _custom_implementation(term: "TestDefinition", test_type: "TestType") -> dict[str, Any]:
+    """``term``'s values for the parameters its test type declares.
+
+    Keyed by the catalogue's own ``default_parm_columns`` rather than a fixed list, so a test
+    type added later exports its parameters with no change here. Carries no schema, table or
+    column: the subject is the node the rule nests on. Values the term leaves unset are
+    omitted rather than rendered null.
+    """
+    return {
+        name: getattr(term, name)
+        for name in _declared_parameters(test_type)
+        if name not in ("schema_name", "table_name", "column_name") and getattr(term, name, None) not in (None, "")
     }
-    return yaml.safe_dump(parameters, sort_keys=True)
+
+
+def _normalized(text: str | None) -> str:
+    """``text`` with runs of whitespace collapsed to single spaces, empty when unset."""
+    return " ".join(text.split()) if text else ""
+
+
+def _custom_description(term: "TestDefinition", test_type: "TestType") -> str:
+    """A plain-words statement of what a ``custom`` rule checks.
+
+    Built from the catalogue's own prose and the term's threshold. Other ODCS engines do not
+    run a ``custom`` rule, so for a counterparty without TestGen this is the only usable part
+    of it. Names no parameter: a reader is told what the check does, not which field carries
+    it. A segment the catalogue leaves unset is omitted rather than rendered as ``None``.
+    """
+    segments: list[str] = []
+    if statement := _normalized(test_type.test_description):
+        segments.append(statement)
+    if failure := _normalized(test_type.except_message):
+        segments.append(f"Fails: {failure}")
+    if term.threshold_value not in (None, ""):
+        bound = f"Threshold: {term.threshold_value}"
+        if label := _normalized(test_type.threshold_description):
+            bound = f"{bound} ({label})"
+        segments.append(f"{bound}.")
+    return " ".join(segments)
 
 
 # Server -> flavor is not injective (azure_mssql and mssql both serve ServerType.SQLSERVER),
@@ -912,34 +728,6 @@ def _build_sql_query(
     return query
 
 
-def _project_pending_rule(term: "TestDefinition", test_type: "TestType") -> dict[str, Any]:
-    """The ``text`` rule a routing-deferred (``PENDING_DECISION``) test type projects.
-
-    Nothing is dropped: a term whose type has no confirmed routing still lands in the
-    document, carrying its type and an explicit ``verifiable: false`` marker, so a later
-    routing decision replaces this rule with a real one rather than resurrecting a term
-    that silent exclusion had already lost.
-    """
-    name = term.test_description or test_type.test_name_long or test_type.test_name_short or term.test_type
-    rule: dict[str, Any] = {
-        "type": "text",
-        "name": name,
-        "description": "Carried unverified: routing for this test type is not yet decided.",
-        "dimension": odcs_dimension(QualityDimension(test_type.dq_dimension)),
-        "id": term.contract_term_id,
-    }
-
-    reserved_properties = _apply_reserved_subtree(rule, term.custom_metadata)
-    user_properties = _user_custom_properties(term.custom_metadata)
-    rule["customProperties"] = [
-        *reserved_properties,
-        *user_properties,
-        _test_type_marker(term.test_type),
-        {"property": "verifiable", "value": False, "vendor": "testgen"},
-    ]
-    return rule
-
-
 def project_rule(
     term: "TestDefinition",
     test_type: "TestType",
@@ -952,8 +740,8 @@ def project_rule(
     ``term`` supplies the stored values a rule is built from -- threshold, baseline
     statistics, custom query, contract identity, and the reserved
     ``custom_metadata['odcs']`` subtree. ``test_type`` supplies the catalogue context a
-    routing-deferred term needs (its display name and TestGen dimension) when
-    ``term.test_type`` has no row in ``RULE_MAPPINGS``. ``server_type`` names the dialect a
+    ``custom`` rule reads -- its declared parameters, prose, display name and TestGen
+    dimension. ``server_type`` names the dialect a
     ``sql`` or ``custom`` rule's payload is written in, carried onto the rule so it stays
     recoverable. ``condition`` is the resolved ``cat_test_conditions`` row for
     ``term.test_type`` and the declared server's flavor -- required for (and only for) an
@@ -965,19 +753,28 @@ def project_rule(
     result is plain JSON-safe data -- ``dict``, ``list``, ``str``, ``int``, ``float`` and
     ``bool`` only -- so it serializes with ``yaml.safe_dump`` and validates against the
     pinned ODCS schema.
-
-    A test type with no row in ``RULE_MAPPINGS`` -- one of ``PENDING_DECISION`` -- projects
-    as a ``text`` rule rather than raising or returning ``None``; see
-    ``_project_pending_rule``.
     """
+    shape = rule_shape(term.test_type)
+    if shape is None:
+        raise ValueError(
+            f"{term.test_type!r} renders no quality rule, so {term.contract_term_id!r} should not exist."
+        )
     mapping = RULE_MAPPINGS.get(term.test_type)
-    if mapping is None:
-        return _project_pending_rule(term, test_type)
 
-    rule: dict[str, Any] = {"type": mapping.shape.value}
+    rule: dict[str, Any] = {"type": shape.value}
     system_properties: list[dict[str, Any]] = []
 
-    if mapping.shape is RuleShape.LIBRARY:
+    if mapping is None or shape is RuleShape.CUSTOM:
+        rule["engine"] = "testgen"
+        rule["name"] = (
+            term.test_description or test_type.test_name_long
+            or test_type.test_name_short or term.test_type
+        )
+        rule["description"] = _custom_description(term, test_type)
+        rule["implementation"] = _custom_implementation(term, test_type)
+        system_properties.append(_server_type_marker(server_type))
+
+    elif shape is RuleShape.LIBRARY:
         if mapping.metric is None:
             # Every LIBRARY row carries a metric -- test_rule_mapping_coverage.py's
             # test_a_library_row_carries_a_metric_and_a_scope_and_nothing_else_does enforces it.
@@ -986,45 +783,58 @@ def project_rule(
         if mapping.unit is not None:
             rule["unit"] = mapping.unit
         if mapping.argument is not None:
-            rule["arguments"] = {mapping.argument: term.baseline_value}
+            value: Any
+            if mapping.argument.term_field == "groupby_names":
+                columns = _groupby_columns(term)
+                value = columns if len(columns) > 1 else None
+            else:
+                value = getattr(term, mapping.argument.term_field)
+                if value and mapping.argument.name == "validValues":
+                    value = lov_values(value)
+            if mapping.argument.term_field != "groupby_names" and not value:
+                raise ValueError(
+                    f"{term.test_type!r} term {term.contract_term_id!r} has no parseable "
+                    f"{mapping.argument.term_field!r} to render its {mapping.argument.name!r} argument."
+                )
+            if value:
+                rule["arguments"] = {mapping.argument.name: value}
 
         if term.test_type == "Missing_Pct":
             lower, upper, baseline_ratio, h = _missing_pct_band(term)
             rule.update(bound_clause(lower, upper))
             system_properties += _conversion_properties(baseline_ratio, h)
-        elif term.test_type == "Unique_Pct":
-            lower, upper, baseline_ratio, h = _unique_pct_band(term)
-            rule.update(bound_clause(lower, upper))
-            system_properties += _conversion_properties(baseline_ratio, h)
         elif term.test_type == "Row_Ct_Pct":
             lower, upper, baseline_count, percent = _row_ct_pct_band(term)
             rule.update(bound_clause(lower, upper))
-            # The stored threshold is a percent of baseline, but the converted band is a row
-            # count, not a percent -- the rendered unit follows the band, not the source.
-            rule["unit"] = "rows"
             system_properties += _conversion_properties(
                 baseline_count, percent, baseline_property="baselineCount", bound_property="thresholdPercent"
             )
+        elif term.test_type == "Dupe_Rows":
+            rule[mapping.operator.value] = term.skip_errors or 0
         else:
-            rule[mapping.operator.value] = _numeric(term.threshold_value)
+            rule[mapping.operator.value] = _numeric(_required_threshold(term))
 
-    elif mapping.shape is RuleShape.SQL:
+    elif shape is RuleShape.SQL:
         if condition is None:
             raise ValueError(
                 f"project_rule needs a resolved CatCondition to render {term.test_type!r}'s sql rule."
             )
         rule["query"] = _build_sql_query(term, condition, mapping.scope, server_type, column_type)
-        operator, value = _resolved_bound(condition, term, column_type)
-        rule[operator.value] = value
+        operator, bound = _resolved_bound(condition, term, column_type)
+        rule[operator.value] = bound
         system_properties.append(_server_type_marker(server_type))
 
-    elif mapping.shape is RuleShape.CUSTOM:
-        rule["engine"] = "testgen"
-        rule["implementation"] = _custom_implementation(term)
-        system_properties.append(_server_type_marker(server_type))
-
+    if not term.contract_term_id:
+        raise ValueError(
+            f"{term.test_type!r} term on {term.schema_name}.{term.table_name}"
+            f"{'.' + term.column_name if term.column_name else ''} has no contract identity, "
+            "so its rule has no id to carry."
+        )
     rule["id"] = term.contract_term_id
-    rule["dimension"] = mapping.dimension
+    rule["dimension"] = (
+        mapping.dimension if mapping is not None
+        else odcs_dimension(QualityDimension(test_type.dq_dimension))
+    )
 
     reserved_properties = _apply_reserved_subtree(rule, term.custom_metadata)
     user_properties = _user_custom_properties(term.custom_metadata)
@@ -1053,28 +863,19 @@ def project_rule(
 #      operator can express the same bound. Every row here is `unit: rows`: `nullValues` onto
 #      `Required`, `rowCount` onto `Row_Ct`, and `invalidValues` (carrying exactly one of
 #      `arguments.validValues` / `arguments.pattern`) onto `LOV_Match` / `Pattern_Match`.
-#      `duplicateValues` has no row: `Unique`'s measure counts NULLs as duplicates (no
-#      threshold conversion makes it match), and `Dupe_Rows` has no decided threshold shape --
-#      both are `PENDING_DECISION`, not `RULE_MAPPINGS` rows, so there is nothing to resolve
-#      onto regardless of which node the rule sits on.
+#      `duplicateValues` still has no tier-2 row: `Unique`'s measure counts NULLs as
+#      duplicates (no threshold conversion makes it match), so there is nothing to resolve
+#      onto regardless of which node the rule sits on. `Dupe_Rows` is a library row, but it is
+#      reachable through its marker (tier 1) alone.
 #   3. Everything else declines (`None`): any `unit: percent` (no TestGen type computes a
 #      plain proportion), an unrecognised unit (never defaulted to `rows`), `missingValues`,
 #      an operator TestGen cannot state, a `text`/`sql`/`custom` rule, a metric on a scope its
 #      target test type does not have, or an `invalidValues` rule with neither or both of its
 #      two recognised arguments.
 
-# Every test type name `resolve_rule` will accept from a marker -- the same union
-# `test_rule_mapping_coverage.py` asserts equals the full test type catalogue. A marker
-# naming anything else (a typo, or a type renamed since the rule was rendered -- test_type is
-# a primary key with a foreign key from test_results, so a rename is a real hazard here) is
-# rejected rather than trusted.
-_KNOWN_TEST_TYPES: frozenset[str] = (
-    frozenset(RULE_MAPPINGS) | frozenset(EXCLUDED_TEST_TYPES) | frozenset(PENDING_DECISION)
-)
-
 # The `_conversion_properties` entries a percent-shape term's rule carries -- the baseline
 # ratio/count and the threshold bound the rendered band was computed from. Reading them back
-# is what makes `Missing_Pct`/`Unique_Pct`/`Row_Ct_Pct` recoverable from `ResolvedTerm` alone;
+# is what makes `Missing_Pct`/`Row_Ct_Pct` recoverable from `ResolvedTerm` alone;
 # without it, a caller would have to re-parse `customProperties` itself -- a second reader of
 # the same data that could disagree with this one.
 _CONVERSION_PROPERTY_NAMES = frozenset({"baselineRatio", "baselineCount", "thresholdBound", "thresholdPercent"})
@@ -1087,12 +888,12 @@ class ResolvedTerm:
     ``thresholds`` is the rule's own acceptance-operator key(s) and value(s) -- ``{"mustBeLessOrEqualTo": 0}``,
     for instance -- read directly off the rule, or re-expressed onto the target's own operator where the
     incoming bound is strict but the target's measure is integral (see ``_resolve_row_count``). For
-    ``Missing_Pct``/``Unique_Pct``/``Row_Ct_Pct`` this is the *rendered* band, not the term's own threshold --
+    ``Missing_Pct``/``Row_Ct_Pct`` this is the *rendered* band, not the term's own threshold --
     see ``conversion``. ``arguments`` is the rule's ``arguments`` mapping when the target test type has one
     (``LOV_Match``, ``Pattern_Match``), otherwise empty. ``conversion`` is the rule's own
     ``_conversion_properties`` entries (``baselineRatio``/``baselineCount`` and
     ``thresholdBound``/``thresholdPercent``), read back by name -- non-empty only for a marked
-    ``Missing_Pct``/``Unique_Pct``/``Row_Ct_Pct`` rule, and it is what lets a caller recover that term's own
+    ``Missing_Pct``/``Row_Ct_Pct`` rule, and it is what lets a caller recover that term's own
     ``threshold_value`` without re-parsing the rule's ``customProperties`` itself.
     """
     test_type: str
@@ -1175,7 +976,6 @@ def _resolve_row_count(operator: Operator, value: Any, scope: RuleScope) -> tupl
     return None
 
 
-
 # The two recognised invalidValues arguments -- mutually exclusive alternates for the same
 # metric, one per target test type (`LOV_Match`'s `validValues`, `Pattern_Match`'s `pattern`).
 _INVALID_VALUES_ARGUMENT_KEYS = frozenset({"validValues", "pattern"})
@@ -1213,52 +1013,67 @@ def _resolve_invalid_values(
     return target, {operator.value: value}, dict(arguments)
 
 
-def _resolve_marker(rule: dict[str, Any], marker: str, scope: RuleScope) -> str | None:
-    """The marker's test type, once checked for coherence -- or ``None`` to decline a marker
-    that names an unknown/renamed type, sits on a node its type does not declare, claims more
-    than one operator at once, or disagrees with its own ``RULE_MAPPINGS`` row's operator or
-    (for ``LOV_Match``/``Pattern_Match``) argument shape. Beyond scope, a type with no
-    ``RULE_MAPPINGS`` row (``PENDING_DECISION``) declares no shape, operator or argument to
-    check it against.
+def _operator_matches(marker_operator: Operator, expected: Operator) -> bool:
+    """Whether a rule's operator is the one its mapping renders.
 
-    The scope check covers every type that declares one, routed and ``PENDING_DECISION``
-    alike. A marker naming a type that declares none -- one of ``EXCLUDED_TEST_TYPES``, which
-    is in the catalogue and so passes the membership check above -- is declined here, not
-    raised on: an incoming document is untrusted input, and this path answers a rule it cannot
-    place by declining it rather than by failing the import. ``declared_scope`` raises on the
-    same input, which is what the rendering path wants and why this does not call it.
+    ``mustBe`` also satisfies a ``mustBeBetween`` mapping: ``bound_clause`` collapses a band
+    whose bounds coincide, since ``mustBeBetween`` requires two unique items. Declining that
+    would reject a rule TestGen itself projected, on exactly the terms that allow no drift.
+    """
+    if marker_operator is expected:
+        return True
+    return expected is Operator.MUST_BE_BETWEEN and marker_operator is Operator.MUST_BE
+
+
+def _resolve_marker(
+    rule: dict[str, Any], marker: str, scope: RuleScope, known_test_types: frozenset[str]
+) -> str | None:
+    """The marker's test type, once checked for coherence -- or ``None`` to decline a marker
+    that names a type absent from ``known_test_types`` (a typo, or a type renamed since the rule
+    was rendered), names an excluded type, claims more than one operator at once, or disagrees
+    with its own routed shape.
+
+    A custom-routed type must carry no operator: its bound is one of its parameters, never an
+    operator on the rule. A library type must agree with its ``RULE_MAPPINGS`` row's scope,
+    operator and (for ``LOV_Match``/``Pattern_Match``) argument shape; an optional argument such as
+    ``Dupe_Rows``'s column list is not required. An incoming document is
+    untrusted input, so a rule this cannot place is declined rather than raised on.
 
     Tier 1 (the marker) is the only tier that can identify a type tier 2 (the
     exact-equivalence table) cannot -- that is its entire reason to exist -- but it must never
-    be *looser* than tier 2 about whether the rest of the rule is well-formed. Every coherence
-    check tier 2 applies to a rule it can reach, this applies too, on the marked type's own
-    declared shape, so a marker cannot carry a rule tier 2 would have refused.
+    be *looser* than tier 2 about whether the rest of the rule is well-formed.
     """
-    if marker not in _KNOWN_TEST_TYPES:
+    if marker not in known_test_types:
         return None
-    marker_scope = _DECLARED_SCOPES.get(marker)
-    if marker_scope is None or scope is not marker_scope:
+    shape = rule_shape(marker)
+    if shape is None:
         return None
+
     present_operators = _operators_present(rule)
     if len(present_operators) > 1:
         return None
     marker_operator = present_operators[0] if present_operators else None
 
-    mapping = RULE_MAPPINGS.get(marker)
-    if mapping is not None:
-        if mapping.shape is RuleShape.CUSTOM:
-            if marker_operator is not None:
-                return None
-        elif marker_operator is None or marker_operator is not mapping.operator:
+    if shape is RuleShape.CUSTOM:
+        if marker_operator is not None:
             return None
-        if mapping.argument is not None:
-            arguments = _unambiguous_argument(rule)
-            if arguments is None or mapping.argument not in arguments:
-                return None
+        return marker
+
+    mapping = RULE_MAPPINGS[marker]
+    if scope is not mapping.scope and not mapping.scope_follows_term:
+        return None
+    if marker_operator is None or not _operator_matches(marker_operator, mapping.operator):
+        return None
+    if mapping.argument is not None and mapping.argument.name in _INVALID_VALUES_ARGUMENT_KEYS:
+        arguments = _unambiguous_argument(rule)
+        if arguments is None or mapping.argument.name not in arguments:
+            return None
     return marker
 
 
-def resolve_rule(rule: dict[str, Any], scope: RuleScope) -> ResolvedTerm | None:
+def resolve_rule(
+    rule: dict[str, Any], scope: RuleScope, known_test_types: frozenset[str]
+) -> ResolvedTerm | None:
     """Resolve one incoming ODCS quality-rule object onto the TestGen test type that verifies
     exactly the claim it makes, or ``None`` when no TestGen type does.
 
@@ -1266,7 +1081,8 @@ def resolve_rule(rule: dict[str, Any], scope: RuleScope) -> ResolvedTerm | None:
     is not encoded in the rule object itself (the pinned schema has no scope-bearing field on
     a quality rule): a caller walking a document tree always knows the node it is standing on,
     and every routed metric's target has a fixed scope ODCS would otherwise let it sit on the
-    wrong node of and still validate.
+    wrong node of and still validate. ``known_test_types`` is the test type catalogue's names, supplied
+    by the caller so this module stays database-free; a marker naming anything else is declined.
 
     A rule carrying the ``testType`` marker under the ``testgen`` vendor (see
     ``_test_type_marker``) resolves to that test type once the marker itself checks out (see
@@ -1280,7 +1096,7 @@ def resolve_rule(rule: dict[str, Any], scope: RuleScope) -> ResolvedTerm | None:
 
     marker = _marker_test_type(rule)
     if marker is not None:
-        resolved_marker = _resolve_marker(rule, marker, scope)
+        resolved_marker = _resolve_marker(rule, marker, scope, known_test_types)
         if resolved_marker is None:
             return None
         return ResolvedTerm(

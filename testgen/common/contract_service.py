@@ -73,12 +73,11 @@ def freeze_version(suite: TestSuite, *, label: str | None = None) -> SuiteVersio
         raise ValueError("This contract has no draft to freeze.")
 
     document = render.render_document(draft)
-    api_version = document["apiVersion"]
-    problems = validate_document(document, api_version)
+    problems = validate_document(document)
     if problems:
         raise InvalidContractDocumentError(problems)
 
-    draft.odcs_api_version = api_version
+    draft.odcs_api_version = document["apiVersion"]
     draft.frozen_document = serialize.serialize_document(document)
     draft.frozen_at = datetime.now(UTC)
     if label is not None:
@@ -105,7 +104,7 @@ def export_version(version: SuiteVersion) -> ExportedDocument:
     is reported rather than presumed clean.
     """
     text = version.frozen_document or serialize.serialize_document(render.render_document(version))
-    problems = validate_document(yaml.safe_load(text), version.odcs_api_version)
+    problems = validate_document(yaml.safe_load(text))
     return ExportedDocument(text, problems)
 
 

@@ -21,11 +21,7 @@ class QualityDimension(StrEnum):
 
 
 class TestScope(StrEnum):
-    """Stored ``test_types.test_scope`` values -- where a test type's check applies.
-
-    Read by both the ODCS quality-rule mapping (``common/odcs/quality_rules.py``) and the
-    contract renderer, which is why it lives here rather than on ``TestDefinition``.
-    """
+    """Stored ``test_types.test_scope`` values -- where a test type's check applies."""
     COLUMN = "column"
     REFERENTIAL = "referential"
     TABLE = "table"

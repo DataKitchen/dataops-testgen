@@ -15,7 +15,7 @@ not invented stand-ins -- so the rendered ``query`` text is built from the measu
 execution engine runs.
 
 Substituted: the database session everywhere, and with it ``render``'s six reading helpers
-(``_terms_for_version``, ``_test_types_for``, ``_table_group_for``, ``_flavor_for``,
+(``_terms_for_version``, ``_test_types_for``, ``_table_group_for``, ``_flavor_code_for``,
 ``_conditions_for``, ``_column_types_for``) and ``contract_service._profiled_columns`` --
 the seam ``test_render.py`` already uses. Each is fed the data the query behind it would
 return. Term generation (``_generate_for_tables``) is a no-op; the terms are constructed
@@ -37,7 +37,8 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition, TestType, slugify_term_id
 from testgen.common.odcs import render, serialize
-from testgen.common.odcs.quality_rules import CatCondition
+from testgen.common.odcs.quality_rules import CatCondition, project_rule
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
 from testgen.common.odcs.validation import validate_document
 from testgen.common.read_file import get_template_files
 
@@ -237,7 +238,7 @@ def _rendered_contract(terms: list[TestDefinition]) -> dict:
         patch.object(render, "_terms_for_version", return_value=terms),
         patch.object(render, "_test_types_for", return_value=_test_types(test_type_codes)),
         patch.object(render, "_table_group_for", return_value=TableGroup(id=uuid4(), connection_id=1)),
-        patch.object(render, "_flavor_for", return_value=_FLAVOR.value),
+        patch.object(render, "_flavor_code_for", return_value=_FLAVOR.value),
         patch.object(render, "_conditions_for", return_value=_conditions(test_type_codes)),
         patch.object(render, "_column_types_for", return_value=column_types),
     ):
@@ -260,7 +261,7 @@ def _all_rules(document: dict) -> list[dict]:
 
 def test_a_realistic_contract_validates_in_strict_mode():
     document = _round_tripped(_rendered_contract(_terms()))
-    problems = validate_document(document, document["apiVersion"])
+    problems = validate_document(document)
     assert problems == [], f"the rendered contract does not validate: {problems}"
 
 
@@ -280,30 +281,6 @@ def test_every_term_is_rendered_exactly_once():
     assert {rule["id"] for rule in rules} == {term.contract_term_id for term in terms} | {_RETAINED_RULE["id"]}
 
 
-def test_a_routing_deferred_term_is_carried_as_an_unverifiable_text_rule_on_its_declared_node():
-    """``CUSTOM`` and the referential types sit in ``PENDING_DECISION``, not ``RULE_MAPPINGS``.
-    They are not unrenderable: each projects a ``text`` rule carrying the ``testType`` marker
-    and ``verifiable: false``, so a later routing decision replaces a rule that is already in
-    the document rather than resurrecting a term silent exclusion had lost.
-
-    Both of these carry a ``column_name`` that is not a column -- a free-text focus label and
-    a comma-separated column list -- so each also proves its rule hangs on the table, and that
-    no property was minted to represent a subject that is not one.
-    """
-    terms = _terms()
-    document = _round_tripped(_rendered_contract(terms))
-
-    for test_type, table_name in (("CUSTOM", "order_items"), ("Combo_Match", "customers")):
-        term = next(candidate for candidate in terms if candidate.test_type == test_type)
-        table = next(candidate for candidate in document["schema"] if candidate["name"] == table_name)
-        rule = next(candidate for candidate in table.get("quality", []) if candidate["id"] == term.contract_term_id)
-        assert rule["type"] == "text"
-        assert {"property": "testType", "value": test_type, "vendor": "testgen"} in rule["customProperties"]
-        assert {"property": "verifiable", "value": False, "vendor": "testgen"} in rule["customProperties"]
-        declared = [name for name, *_ in _PROFILED_COLUMNS[table_name]]
-        assert [prop["name"] for prop in table["properties"]] == declared
-
-
 def test_a_stray_key_inside_a_custom_property_is_rejected():
     """The negative control. ``CustomProperty`` is sealed with ``additionalProperties: false``,
     which is why ``_reconstruct_sealed_entries`` rebuilds a stored entry field by field instead
@@ -314,4 +291,54 @@ def test_a_stray_key_inside_a_custom_property_is_rejected():
     document = _round_tripped(_rendered_contract(_terms()))
     _all_rules(document)[0]["customProperties"][0]["units"] = "rows"
 
-    assert validate_document(document, document["apiVersion"])
+    assert validate_document(document)
+
+
+def test_a_custom_rule_with_an_object_implementation_validates_in_strict_mode():
+    """The standard's prose calls `implementation` a text block; the pinned schema accepts a
+    string or an object. The object is what this renderer emits, and this is what confirms it.
+    """
+    term = _term("Avg_Shift", "orders", "total_amount", threshold_value="0.5", baseline_avg="142.7")
+    test_type = TestType(
+        test_type="Avg_Shift",
+        dq_dimension="Consistency",
+        test_name_short="Average Shift",
+        test_name_long="Average Shift",
+        default_parm_columns="baseline_avg,threshold_value",
+        test_description="Tests for a shift in mean value.",
+        except_message="Difference is over the threshold.",
+        threshold_description="Standardized Difference Measure",
+    )
+    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    assert isinstance(rule["implementation"], dict)
+    document = {
+        "version": "1.0.0",
+        "apiVersion": ODCS_API_VERSION,
+        "kind": ODCS_KIND,
+        "id": "contract-1",
+        "schema": [{"name": "orders", "properties": [{"name": "total_amount", "quality": [rule]}]}],
+    }
+    problems = validate_document(_round_tripped(document))
+    assert problems == [], f"the custom rule does not validate: {problems}"
+
+
+def test_a_custom_rule_from_a_term_with_no_parameter_values_validates_in_strict_mode():
+    term = _term("Table_Freshness", "orders", None)
+    test_type = TestType(
+        test_type="Table_Freshness",
+        dq_dimension="Timeliness",
+        test_name_short="Freshness",
+        test_name_long="Freshness",
+        default_parm_columns=None,
+    )
+    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    assert rule["implementation"] == {}
+    document = {
+        "version": "1.0.0",
+        "apiVersion": ODCS_API_VERSION,
+        "kind": ODCS_KIND,
+        "id": "contract-1",
+        "schema": [{"name": "orders", "quality": [rule]}],
+    }
+    problems = validate_document(_round_tripped(document))
+    assert problems == [], f"the custom rule does not validate: {problems}"

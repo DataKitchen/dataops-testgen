@@ -499,6 +499,9 @@ def _apply_actions(
     # Single flush emits all INSERTs in one batch (SQLAlchemy uses executemany).
     session.flush()
 
+    # These were registered with `add`, not `save`, so none of them minted a contract identity.
+    TestDefinition.assign_missing_term_ids(version_id)
+
     # Pass 2: updates and deletes.
     ids_to_delete: list[UUID] = []
     for planned in actions:

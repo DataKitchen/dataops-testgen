@@ -146,7 +146,40 @@ def test_the_validators_own_messages_reach_the_caller():
         with pytest.raises(contract_service.InvalidContractDocumentError) as excinfo:
             contract_service.freeze_version(suite)
 
-    assert excinfo.value.problems == validate_document(invalid_document, ODCS_API_VERSION)
+    assert excinfo.value.problems == validate_document(invalid_document)
+
+
+def test_freezing_a_document_declaring_an_unbundled_api_version_is_refused_not_crashed():
+    """The standard allows eight api versions and we bundle one, so a document may legally
+    declare a version we have no schema for. That is a document we cannot check, and the
+    caller is documented to receive InvalidContractDocumentError for exactly that."""
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    document = {"version": "1.0.0", "apiVersion": "v3.1.0", "kind": ODCS_KIND, "id": "c1"}
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=document),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        with pytest.raises(contract_service.InvalidContractDocumentError) as excinfo:
+            contract_service.freeze_version(suite)
+
+    assert any("v3.1.0" in problem for problem in excinfo.value.problems)
+
+
+def test_exporting_checks_the_document_against_the_version_it_declares():
+    """``odcs_api_version`` on the row and ``apiVersion`` in the text are two answers to one
+    question. Checking the text against the row's answer reports clean on a document whose own
+    declaration was never checked."""
+    suite = _suite()
+    version = SuiteVersion(
+        id=uuid4(), test_suite_id=suite.id, version=1, odcs_api_version=ODCS_API_VERSION,
+        frozen_document=f"apiVersion: v3.1.0\nkind: {ODCS_KIND}\nid: c1\nversion: '1.0.0'\n",
+    )
+
+    exported = contract_service.export_version(version)
+
+    assert any("v3.1.0" in problem for problem in exported.problems)
 
 
 def test_discarding_without_a_draft_is_refused():
@@ -845,7 +878,7 @@ def test_a_new_contracts_prefilled_document_validates():
         contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
 
     draft = session.add.call_args.args[0]
-    assert validate_document(draft.metadata_document, draft.odcs_api_version) == []
+    assert validate_document(draft.metadata_document) == []
 
 
 def test_a_carried_forward_document_still_validates_after_its_version_is_restated():
@@ -875,7 +908,7 @@ def test_a_carried_forward_document_still_validates_after_its_version_is_restate
         draft, _ = SuiteVersion.open_draft(suite_id)
 
     assert draft.metadata_document["version"] == "7.0.0"
-    assert validate_document(draft.metadata_document, draft.odcs_api_version) == []
+    assert validate_document(draft.metadata_document) == []
 
 
 def test_a_document_built_through_the_real_contract_path_serializes():
@@ -968,7 +1001,10 @@ def test_generated_terms_are_stamped_with_a_term_identity():
     session = MagicMock()
     session.scalars.return_value.all.return_value = [term]
     session.scalar.return_value = None
-    with patch("testgen.common.models.test_definition.get_current_session", return_value=session):
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch("testgen.common.models.test_definition.SuiteVersion.is_suite_owned", return_value=True),
+    ):
         TestDefinition.assign_missing_term_ids(uuid4())
 
     assert term.contract_term_id == "Row_Ct-public-orders-order_id"

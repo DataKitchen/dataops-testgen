@@ -50,8 +50,8 @@ EXEMPT_METHODS = {
         "which is stricter than the resolved-version predicate rather than a bypass of it"
     ),
     "assign_missing_term_ids": (
-        "narrows by an explicit version_id, which is stricter than the resolved-version "
-        "predicate rather than a bypass of it"
+        "narrows by an explicit version_id and refuses one no suite owns, so it never reaches "
+        "past a single contract version"
     ),
 }
 

@@ -67,7 +67,7 @@ dependencies = [
     "statsmodels==0.14.6",
     "holidays~=0.89",
     "packaging>=24.0",
-    "jsonschema[format]==4.26.0",
+    "jsonschema[format-nongpl]==4.26.0",
 
     # Pinned to match the manually compiled libs or for security
     "pyarrow==23.0.1",

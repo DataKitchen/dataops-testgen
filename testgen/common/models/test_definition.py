@@ -197,35 +197,32 @@ _ODCS_STRING_FIELDS = ("name", "businessImpact", "method", "schedule", "schedule
 # The pinned ODCS schema's ``CustomProperty``/``AuthoritativeDefinitions`` item objects are
 # sealed (``additionalProperties: false``); a stray key inside one is invalid ODCS
 # permanently, so it is rejected here rather than accepted and left to break a freeze weeks
-# later. Mirrors the schema's own field lists -- kept here as a plain hardcoded set rather
+# later. Mirrors the schema's own field lists -- kept here as a plain hardcoded list rather
 # than read from the bundled schema file, since this module is not allowed to import the
-# ``odcs`` package (that package imports models, not the other way around).
-_CUSTOM_PROPERTY_REQUIRED_FIELDS = frozenset({"property", "value"})
-_CUSTOM_PROPERTY_FIELDS = frozenset({"id", "property", "value", "description", "vendor"})
-_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS = frozenset({"url", "type"})
-_AUTHORITATIVE_DEFINITION_FIELDS = frozenset({"id", "url", "type", "description"})
+# ``odcs`` package (that package imports models, not the other way around). Ordered as the
+# schema lists them: ``common.odcs.quality_rules`` rebuilds each entry in this order.
+ODCS_CUSTOM_PROPERTY_FIELDS: tuple[str, ...] = ("id", "property", "value", "description", "vendor")
+ODCS_CUSTOM_PROPERTY_REQUIRED_FIELDS = frozenset({"property", "value"})
+ODCS_AUTHORITATIVE_DEFINITION_FIELDS: tuple[str, ...] = ("id", "url", "type", "description")
+ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS = frozenset({"url", "type"})
 
 # ``$defs.StableId`` from the pinned ODCS schema -- the type both ``CustomProperty.id`` and
 # ``AuthoritativeDefinitions[].id`` are a ``$ref`` to. A value here that does not match is the
 # same failure shape as a stray key: it saves cleanly and then blocks the version's freeze.
-# Defined once and shared with ``common.odcs.quality_rules`` (that package may import models;
-# models must not import it, so the sharing only goes one way) -- unlike the field-name sets
-# above, which that package keeps as its own hardcoded copies for the same reason the schema
-# itself can't be read from here.
 #
 # The rule's own ``id`` (``contract_term_id``) needs no equivalent check: ``slugify_term_id``
 # already constrains it to ``^[A-Za-z0-9_-]+$``, a strict subset of this pattern.
 ODCS_STABLE_ID_PATTERN = re.compile(r"^[^\s.#/\\@!%&^]+$")
 
 
-def _valid_sealed_entries(items: object, required: frozenset[str], allowed: frozenset[str]) -> bool:
+def _valid_sealed_entries(items: object, required: frozenset[str], allowed: tuple[str, ...]) -> bool:
     """Whether ``items`` is a list of objects, each carrying every ``required`` key, no key
     outside ``allowed``, and an ``id`` (when present) that is a string matching
     ``ODCS_STABLE_ID_PATTERN`` -- the shape a sealed ODCS item schema demands."""
     if not isinstance(items, list):
         return False
     for entry in items:
-        if not isinstance(entry, dict) or not (required <= entry.keys()) or not (entry.keys() <= allowed):
+        if not isinstance(entry, dict) or not (required <= entry.keys()) or not (entry.keys() <= set(allowed)):
             return False
         entry_id = entry.get("id")
         if entry_id is not None and not (isinstance(entry_id, str) and ODCS_STABLE_ID_PATTERN.match(entry_id)):
@@ -257,21 +254,21 @@ def _validate_odcs_rule_metadata(subtree: object) -> str | None:
 
     custom_properties = subtree.get("customProperties")
     if custom_properties is not None and not _valid_sealed_entries(
-        custom_properties, _CUSTOM_PROPERTY_REQUIRED_FIELDS, _CUSTOM_PROPERTY_FIELDS
+        custom_properties, ODCS_CUSTOM_PROPERTY_REQUIRED_FIELDS, ODCS_CUSTOM_PROPERTY_FIELDS
     ):
         return (
             f"`{ODCS_RULE_METADATA_KEY}.customProperties` must be a list of objects, each with a "
-            f"`property` and a `value`, no keys other than {sorted(_CUSTOM_PROPERTY_FIELDS)}, and an "
+            f"`property` and a `value`, no keys other than {sorted(ODCS_CUSTOM_PROPERTY_FIELDS)}, and an "
             f"`id` (when present) matching `{ODCS_STABLE_ID_PATTERN.pattern}`"
         )
 
     authoritative_definitions = subtree.get("authoritativeDefinitions")
     if authoritative_definitions is not None and not _valid_sealed_entries(
-        authoritative_definitions, _AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS, _AUTHORITATIVE_DEFINITION_FIELDS
+        authoritative_definitions, ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS, ODCS_AUTHORITATIVE_DEFINITION_FIELDS
     ):
         return (
             f"`{ODCS_RULE_METADATA_KEY}.authoritativeDefinitions` must be a list of objects, each with "
-            f"a `url` and a `type`, no keys other than {sorted(_AUTHORITATIVE_DEFINITION_FIELDS)}, and an "
+            f"a `url` and a `type`, no keys other than {sorted(ODCS_AUTHORITATIVE_DEFINITION_FIELDS)}, and an "
             f"`id` (when present) matching `{ODCS_STABLE_ID_PATTERN.pattern}`"
         )
 
@@ -1359,6 +1356,9 @@ class TestDefinition(Entity):
             select(*select_columns).where(cls.id.in_(test_definition_ids), cls.version_clause()),
         )
         db_session.execute(query)
+        # A copy is a new term, so it takes none of the source's contract identity; it still
+        # needs one of its own when the target version is a contract's.
+        cls.assign_missing_term_ids(target_version)
 
     @classmethod
     def get_source_data_context(cls, test_definition_id: UUID, project_codes: list[str] | None = None) -> dict | None:
@@ -1506,7 +1506,13 @@ class TestDefinition(Entity):
         The identities the version holds are read once and grown in memory as terms are minted,
         so the sweep costs two queries whatever the number of terms and tells apart two terms
         sharing a natural key within the sweep.
+
+        A version no suite owns -- the placeholder that regular and monitor suites share --
+        holds no contract terms, so nothing is minted on it.
         """
+        if not SuiteVersion.is_suite_owned(version_id):
+            return 0
+
         session = get_current_session()
         taken = set(
             session.scalars(

@@ -27,14 +27,23 @@ def _validator_for(api_version: str) -> Draft201909Validator:
     return Draft201909Validator(schema, format_checker=Draft201909Validator.FORMAT_CHECKER)
 
 
-def validate_document(document: dict, api_version: str | None = None) -> list[str]:
-    """Validate a document against the pinned ODCS schema for ``api_version``.
+def validate_document(document: dict) -> list[str]:
+    """Validate a document against the bundled schema for the version it declares.
 
-    ``api_version`` defaults to the pinned ``ODCS_API_VERSION`` when ``None``. Returns every
-    violation the schema validator reports, as ``f"{json_path}: {message}"`` in the
-    validator's own wording, sorted by JSON path. An empty list means the document is valid.
-    Raises ``UnknownApiVersionError`` when no bundled schema matches ``api_version``.
+    The version comes from the document's own ``apiVersion``, falling back to the pinned
+    ``ODCS_API_VERSION`` when it declares none -- never from a value supplied alongside it,
+    which is how a document comes to be checked against a version it does not claim.
+
+    Returns every violation the schema validator reports, as ``f"{json_path}: {message}"`` in
+    the validator's own wording, sorted by JSON path. An empty list means the document is
+    valid. A version with no bundled schema is itself reported as a violation: the standard
+    allows eight and this bundles one, so declaring another is legal ODCS that cannot be
+    checked here, which a caller handles the same way as any other violation.
     """
-    validator = _validator_for(api_version or ODCS_API_VERSION)
+    api_version = document.get("apiVersion") or ODCS_API_VERSION
+    try:
+        validator = _validator_for(api_version)
+    except UnknownApiVersionError as exc:
+        return [f"$.apiVersion: {exc}"]
     errors = sorted(validator.iter_errors(document), key=lambda error: error.json_path)
     return [f"{error.json_path}: {error.message}" for error in errors]

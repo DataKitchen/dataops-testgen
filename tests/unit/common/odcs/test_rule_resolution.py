@@ -4,16 +4,20 @@ from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.odcs.quality_rules import (
     EXCLUDED_TEST_TYPES,
     RULE_MAPPINGS,
+    LibraryMetric,
     RuleMapping,
     RuleScope,
     RuleShape,
     project_rule,
     resolve_rule,
+    rule_scope,
 )
 from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, ServerType
 from testgen.common.odcs.validation import validate_document
 
 pytestmark = pytest.mark.unit
+
+_KNOWN = frozenset({"Required", "Row_Ct", "LOV_Match", "Pattern_Match", "Avg_Shift", "Unique", "Missing_Pct", "CUSTOM"})
 
 
 def _wrap(rule: dict, scope: RuleScope) -> dict:
@@ -70,9 +74,9 @@ def _rule_from(mapping: RuleMapping) -> tuple[dict, TestDefinition]:
     against the term's own stored values, not just its test type.
     """
     argument_value = None
-    if mapping.argument == "validValues":
+    if mapping.argument is not None and mapping.argument.name == "validValues":
         argument_value = "('Y','N')"
-    elif mapping.argument == "pattern":
+    elif mapping.argument is not None and mapping.argument.name == "pattern":
         argument_value = "[A-Z]{3}"
     term = _term(
         test_type=mapping.test_type,
@@ -112,7 +116,7 @@ def test_the_testgen_marker_is_honoured_before_the_table():
         "mustBeBetween": [1, 2],
         "customProperties": [{"property": "testType", "value": "Missing_Pct", "vendor": "testgen"}],
     }
-    resolved = resolve_rule(rule, scope=RuleScope.COLUMN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
     assert resolved is not None
     assert resolved.test_type == "Missing_Pct"
     assert resolved.thresholds == {"mustBeBetween": [1, 2]}
@@ -128,7 +132,7 @@ def test_a_marker_naming_an_unknown_test_type_resolves_to_unverifiable():
         "mustBeLessOrEqualTo": 5,
         "customProperties": [{"property": "testType", "value": "Not_A_Real_Test_Type", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_a_marker_whose_bound_does_not_match_its_types_own_operator_resolves_to_unverifiable():
@@ -140,7 +144,7 @@ def test_a_marker_whose_bound_does_not_match_its_types_own_operator_resolves_to_
         "mustBeBetween": [1, 2],
         "customProperties": [{"property": "testType", "value": "Required", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_a_marker_carrying_two_operators_at_once_resolves_to_unverifiable():
@@ -153,7 +157,7 @@ def test_a_marker_carrying_two_operators_at_once_resolves_to_unverifiable():
         "mustBeBetween": [1, 2],
         "customProperties": [{"property": "testType", "value": "Required", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_a_marker_carrying_both_valid_values_and_a_pattern_resolves_to_unverifiable():
@@ -167,7 +171,7 @@ def test_a_marker_carrying_both_valid_values_and_a_pattern_resolves_to_unverifia
         "arguments": {"validValues": ["Y", "N"], "pattern": "[A-Z]"},
         "customProperties": [{"property": "testType", "value": "LOV_Match", "vendor": "testgen"}],
     }
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_a_routed_types_marker_resolves_on_its_own_node_and_declines_on_the_other():
@@ -176,25 +180,15 @@ def test_a_routed_types_marker_resolves_on_its_own_node_and_declines_on_the_othe
     # type's own shape -- tier 1 refuses it exactly as tier 2 refuses a metric on the wrong
     # scope.
     rule, _ = _rule_from(RULE_MAPPINGS["Required"])
-    resolved = resolve_rule(rule, scope=RuleScope.COLUMN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
     assert resolved is not None
     assert resolved.test_type == "Required"
-    assert resolve_rule(rule, scope=RuleScope.TABLE) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
 
 
-def test_a_marker_for_a_pending_type_on_the_node_it_does_not_declare_resolves_to_unverifiable():
-    # CUSTOM declares TABLE: its column_name is a free-text focus label, so TestGen never
-    # renders it on a column node. A marker claiming it there is no more this type's own
-    # shape than a wrong operator would be.
+def test_a_marker_for_a_custom_routed_type_resolves_on_its_declared_node():
     rule = _pending_rule("CUSTOM")
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
-
-
-def test_a_marker_for_a_pending_type_on_its_declared_node_resolves():
-    # The other half of the check above -- the scope is what tier 1 refuses, not the fact
-    # that the type's rule shape is still undecided.
-    rule = _pending_rule("CUSTOM")
-    resolved = resolve_rule(rule, scope=RuleScope.TABLE)
+    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN)
     assert resolved is not None
     assert resolved.test_type == "CUSTOM"
 
@@ -203,16 +197,38 @@ def test_a_marker_naming_an_excluded_type_declines_and_does_not_raise():
     """An ``EXCLUDED_TEST_TYPES`` member is in the catalogue, so a marker naming one passes
     the membership check and reaches the scope lookup with nothing declared. Resolution
     answers a rule it cannot place by declining it: an incoming document is a counterparty's,
-    and failing the import over one is not this path's to do. (``declared_scope`` raises on
+    and failing the import over one is not this path's to do. (``rule_scope`` raises on
     the same input, for the rendering path, where such a term is our own inconsistency.)
     """
+    known = frozenset(EXCLUDED_TEST_TYPES)
     for test_type_code in EXCLUDED_TEST_TYPES:
         rule = {
             "type": "text",
             "customProperties": [{"property": "testType", "value": test_type_code, "vendor": "testgen"}],
         }
-        assert resolve_rule(rule, scope=RuleScope.TABLE) is None
-        assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+        assert resolve_rule(rule, RuleScope.TABLE, known) is None
+        assert resolve_rule(rule, RuleScope.COLUMN, known) is None
+
+
+@pytest.mark.parametrize(
+    ("test_type", "scope", "overrides"),
+    [
+        ("Row_Ct_Pct", RuleScope.TABLE, {"baseline_ct": "100", "threshold_value": "0", "column_name": None}),
+        ("Missing_Pct", RuleScope.COLUMN, {"baseline_ct": "100", "baseline_value_ct": "95", "threshold_value": "0"}),
+    ],
+)
+def test_a_collapsed_band_resolves_back_to_the_type_that_rendered_it(test_type, scope, overrides):
+    """A band whose bounds coincide renders ``mustBe``, because ``mustBeBetween`` requires two
+    unique items. It is still a rule TestGen projected, so declining it would break the round
+    trip on exactly the terms that allow no drift at all."""
+    term = _term(test_type=test_type, **overrides)
+    rule = project_rule(term, _test_type(test_type), ServerType.POSTGRES)
+    assert "mustBe" in rule, "bound_clause no longer collapses equal bounds; this case is moot"
+
+    resolved = resolve_rule(rule, scope, _KNOWN | {test_type})
+
+    assert resolved is not None, f"a projected {test_type} rule was declined by the resolver"
+    assert resolved.test_type == test_type
 
 
 def test_a_marker_carrying_a_conversion_band_surfaces_it_for_reconstruction():
@@ -229,21 +245,21 @@ def test_a_marker_carrying_a_conversion_band_surfaces_it_for_reconstruction():
             {"property": "thresholdBound", "value": 3.0, "vendor": "testgen"},
         ],
     }
-    resolved = resolve_rule(rule, scope=RuleScope.COLUMN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
     assert resolved is not None
     assert resolved.conversion == {"baselineRatio": 0.95, "thresholdBound": 3.0}
 
 
 def test_a_rule_with_no_conversion_properties_surfaces_an_empty_conversion():
     rule = {"metric": "nullValues", "unit": "rows", "mustBeLessOrEqualTo": 5}
-    resolved = resolve_rule(rule, scope=RuleScope.COLUMN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
     assert resolved is not None
     assert resolved.conversion == {}
 
 
 def test_a_null_values_rule_in_rows_resolves_to_required():
     rule = {"metric": "nullValues", "unit": "rows", "mustBeLessOrEqualTo": 5}
-    resolved = resolve_rule(rule, scope=RuleScope.COLUMN)
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
     assert resolved is not None
     assert resolved.test_type == "Required"
     assert resolved.thresholds == {"mustBeLessOrEqualTo": 5}
@@ -255,11 +271,11 @@ def test_a_null_values_rule_in_percent_is_declined_not_defaulted_to_missing_pct(
     # proportion, so nullValues/percent has no equivalent at all. Resolving it onto
     # Missing_Pct would assert a Cohen's h drift bound the contract never stated.
     rule = {"metric": "nullValues", "unit": "percent", "mustBeBetween": [1, 2]}
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_an_unrecognised_unit_resolves_to_unverifiable_and_is_not_defaulted_to_rows():
-    assert resolve_rule({"metric": "nullValues", "unit": "percentage", "mustBe": 0}, scope=RuleScope.COLUMN) is None
+    assert resolve_rule({"metric": "nullValues", "unit": "percentage", "mustBe": 0}, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_a_row_based_duplicate_values_rule_resolves_by_scope():
@@ -268,8 +284,8 @@ def test_a_row_based_duplicate_values_rule_resolves_by_scope():
     # duplicateValues/rows rule declines on both nodes rather than a (metric, unit) key
     # picking one of the two test types and being wrong for the other.
     rule = {"metric": "duplicateValues", "unit": "rows", "mustBeLessOrEqualTo": 0}
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
-    assert resolve_rule(rule, scope=RuleScope.TABLE) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
 
 
 def test_a_rule_carrying_both_valid_values_and_a_pattern_resolves_to_unverifiable():
@@ -279,7 +295,7 @@ def test_a_rule_carrying_both_valid_values_and_a_pattern_resolves_to_unverifiabl
         "mustBeLessOrEqualTo": 0,
         "arguments": {"validValues": ["Y", "N"], "pattern": "[A-Z]"},
     }
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_an_invalid_values_rule_with_an_unrecognised_argument_resolves_to_unverifiable():
@@ -292,7 +308,7 @@ def test_an_invalid_values_rule_with_an_unrecognised_argument_resolves_to_unveri
         "mustBeLessOrEqualTo": 0,
         "arguments": {"validValues": ["Y", "N"], "somethingElse": True},
     }
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
 
 
 def test_a_metric_on_the_wrong_scope_resolves_to_unverifiable():
@@ -300,8 +316,8 @@ def test_a_metric_on_the_wrong_scope_resolves_to_unverifiable():
     # a table-scoped test type, so a caller that knows the rule sits on a column node must
     # not get a resolution back.
     rule = {"metric": "rowCount", "unit": "rows", "mustBeGreaterOrEqualTo": 100}
-    assert resolve_rule(rule, scope=RuleScope.COLUMN) is None
-    resolved = resolve_rule(rule, scope=RuleScope.TABLE)
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN)
     assert resolved is not None
     assert resolved.test_type == "Row_Ct"
 
@@ -311,17 +327,17 @@ def test_the_operator_is_part_of_the_key():
     # mustBeLessOrEqualTo: 0 -- none of them is Required's exact shape, even though some
     # would coincide with it at this particular value.
     base = {"metric": "nullValues", "unit": "rows"}
-    assert resolve_rule({**base, "mustBe": 0}, scope=RuleScope.COLUMN) is None
-    assert resolve_rule({**base, "mustBeLessThan": 5}, scope=RuleScope.COLUMN) is None
-    assert resolve_rule({**base, "mustNotBe": 0}, scope=RuleScope.COLUMN) is None
-    assert resolve_rule({**base, "mustBeLessOrEqualTo": 0}, scope=RuleScope.COLUMN) is not None
+    assert resolve_rule({**base, "mustBe": 0}, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule({**base, "mustBeLessThan": 5}, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule({**base, "mustNotBe": 0}, RuleScope.COLUMN, _KNOWN) is None
+    assert resolve_rule({**base, "mustBeLessOrEqualTo": 0}, RuleScope.COLUMN, _KNOWN) is not None
 
 
 def test_a_strict_row_count_bound_is_reexpressed_as_the_next_integer():
     # rowCount counts rows -- always integral -- so re-expressing a strict lower bound as
     # the inclusive one is sound (unlike doing the same over a float-valued measure).
     rule = {"metric": "rowCount", "unit": "rows", "mustBeGreaterThan": 100}
-    resolved = resolve_rule(rule, scope=RuleScope.TABLE)
+    resolved = resolve_rule(rule, RuleScope.TABLE, _KNOWN)
     assert resolved is not None
     assert resolved.test_type == "Row_Ct"
     assert resolved.thresholds == {"mustBeGreaterOrEqualTo": 101}
@@ -329,12 +345,12 @@ def test_a_strict_row_count_bound_is_reexpressed_as_the_next_integer():
 
 def test_a_text_rule_always_resolves_to_unverifiable():
     rule = {"type": "text", "description": "Some free text quality expectation."}
-    assert resolve_rule(rule, scope=RuleScope.TABLE) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
 
 
 def test_a_custom_rule_always_resolves_to_unverifiable():
     rule = {"type": "custom", "engine": "soda", "implementation": "checks for tables:\n  - name: x"}
-    assert resolve_rule(rule, scope=RuleScope.TABLE) is None
+    assert resolve_rule(rule, RuleScope.TABLE, _KNOWN) is None
 
 
 def test_every_library_mapping_resolves_back_to_the_test_type_it_came_from():
@@ -348,30 +364,90 @@ def test_every_library_mapping_resolves_back_to_the_test_type_it_came_from():
         # With the marker: every library mapping round-trips through tier 1 -- this alone
         # says nothing about tier 2 (the exact-equivalence table), since the marker resolves
         # before the table is ever consulted.
-        resolved = resolve_rule(rule, scope=mapping.scope)
+        resolved = resolve_rule(rule, mapping.scope, frozenset(RULE_MAPPINGS))
         assert resolved is not None, f"{test_type} did not resolve from its own projected rule"
         assert resolved.test_type == test_type
 
         # ResolvedTerm must carry enough to reconstruct the term's own threshold, not just
-        # identify its type. `unit: rows` mappings render the term's own threshold directly
-        # into `thresholds`; the percent mappings render a converted band there instead, so
+        # identify its type. Mappings that state a single bound render the term's own threshold
+        # directly into `thresholds`; the `mustBeBetween` mappings render a converted band instead, so
         # the term's own threshold_value must still be recoverable from `conversion` -- this
         # is what `_conversion_properties` is emitted for in the first place.
-        if mapping.unit == "rows":
-            assert list(resolved.thresholds.values()) == [int(term.threshold_value)]
+        if mapping.operator.value != "mustBeBetween":
+            assert resolved.thresholds == {mapping.operator.value: rule[mapping.operator.value]}
             assert resolved.conversion == {}
         else:
             assert float(term.threshold_value) in resolved.conversion.values()
 
         # With the marker stripped: only the table can resolve it now. Partitioned on the
         # mapping's own `unit` -- not a hardcoded name list -- so a mapping added later lands
-        # on the right side automatically: `unit: rows` is the table's exact-equivalence
-        # shape and must still resolve to the same test type via the table alone; any other
-        # unit (the percent rows) has no table entry and must decline, exactly as it does
-        # under `resolve_rule` directly.
-        stripped = resolve_rule(_without_marker(rule), scope=mapping.scope)
-        if mapping.unit == "rows":
+        # on the right side automatically: a single-bound `unit: rows` mapping is the table's
+        # exact-equivalence shape and must still resolve to the same test type via the table
+        # alone; any other (the converted-band rows) has no table entry and must decline,
+        # exactly as it does under `resolve_rule` directly.
+        # `duplicateValues` has no table row either: `Unique`'s measure counts NULLs as duplicates,
+        # so `Dupe_Rows` is reachable through its marker alone.
+        stripped = resolve_rule(_without_marker(rule), mapping.scope, frozenset(RULE_MAPPINGS))
+        if mapping.operator.value != "mustBeBetween" and mapping.metric is not LibraryMetric.DUPLICATE_VALUES:
             assert stripped is not None, f"{test_type} did not resolve via the table once its marker was stripped"
             assert stripped.test_type == test_type
         else:
             assert stripped is None, f"{test_type} resolved with no marker and no table row for its unit"
+
+
+def test_a_marker_naming_a_custom_routed_type_resolves():
+    """The types that render `custom` have no RULE_MAPPINGS row. Their marker is still
+    the lossless round-trip of a rule this renderer wrote.
+    """
+    rule = {
+        "type": "custom", "engine": "testgen",
+        "customProperties": [{"property": "testType", "value": "Avg_Shift", "vendor": "testgen"}],
+    }
+    resolved = resolve_rule(rule, RuleScope.COLUMN, _KNOWN)
+    assert resolved is not None
+    assert resolved.test_type == "Avg_Shift"
+
+
+def test_a_custom_rule_claiming_a_comparison_operator_is_declined():
+    """A custom rule's bound is one of its parameters, never an operator on the rule."""
+    rule = {
+        "type": "custom", "engine": "testgen", "mustBeLessOrEqualTo": 0,
+        "customProperties": [{"property": "testType", "value": "Avg_Shift", "vendor": "testgen"}],
+    }
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+
+
+def test_a_marker_naming_a_type_the_caller_does_not_know_is_declined():
+    rule = {
+        "type": "custom", "engine": "testgen",
+        "customProperties": [{"property": "testType", "value": "Renamed_Away", "vendor": "testgen"}],
+    }
+    assert resolve_rule(rule, RuleScope.COLUMN, _KNOWN) is None
+
+
+def test_a_dupe_rows_rule_resolves_on_either_node():
+    """Its node follows the term's grouping, so both nodes are legal for the type."""
+    rule = {
+        "type": "library", "metric": "duplicateValues", "unit": "rows", "mustBeLessOrEqualTo": 0,
+        "customProperties": [{"property": "testType", "value": "Dupe_Rows", "vendor": "testgen"}],
+    }
+    for scope in (RuleScope.COLUMN, RuleScope.TABLE):
+        resolved = resolve_rule(rule, scope, frozenset({"Dupe_Rows"}))
+        assert resolved is not None
+        assert resolved.test_type == "Dupe_Rows"
+
+
+@pytest.mark.parametrize("groupby_names", ["order_id", "order_id,customer_id"])
+def test_a_dupe_rows_rule_round_trips_on_the_scope_it_renders_to(groupby_names):
+    term = _term(test_type="Dupe_Rows", column_name=None, groupby_names=groupby_names, contract_term_id="term-d")
+    test_type = _test_type("Dupe_Rows")
+    scope = rule_scope(term, test_type)
+    rule = project_rule(term, test_type, ServerType.POSTGRES)
+    resolved = resolve_rule(rule, scope, frozenset({"Dupe_Rows"}))
+    assert resolved is not None
+    assert resolved.test_type == "Dupe_Rows"
+
+
+def test_a_non_term_dependent_library_type_still_declines_on_the_wrong_node():
+    rule, _ = _rule_from(RULE_MAPPINGS["Required"])
+    assert resolve_rule(rule, RuleScope.TABLE, frozenset({"Required"})) is None

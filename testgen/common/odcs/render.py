@@ -12,7 +12,7 @@ from uuid import UUID
 
 from sqlalchemy import select, text
 
-from testgen.common.flavors import SqlFlavorCode
+from testgen.common.flavors import FLAVOR_CODE_TO_FAMILY, SqlFlavorCode
 from testgen.common.models import get_current_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.data_column import DataColumnChars
@@ -25,10 +25,18 @@ from testgen.common.odcs.quality_rules import (
     CatCondition,
     RuleScope,
     RuleShape,
-    declared_scope,
+    _groupby_columns,
+    lov_values,
     project_rule,
+    rule_scope,
+    rule_shape,
 )
-from testgen.common.odcs.servers import FLAVOR_TO_SERVER_TYPE, ODCS_API_VERSION, ODCS_KIND
+from testgen.common.odcs.servers import (
+    FLAVOR_TO_SERVER_TYPE,
+    ODCS_API_VERSION,
+    ODCS_KIND,
+    UnmappedFlavorError,
+)
 
 
 class OrphanedTermError(ValueError):
@@ -50,7 +58,7 @@ def _fill_root_fundamentals(document: dict[str, Any], version: SuiteVersion) -> 
 
 
 def _terms_for_version(version_id: UUID) -> list[TestDefinition]:
-    """Every term stored against this exact version.
+    """Every active term stored against this exact version -- the ones execution runs.
 
     Reads ``version_id`` directly rather than through ``TestDefinition.version_clause()``:
     that predicate resolves a *suite* to its draft-or-latest-frozen version, which is the
@@ -59,8 +67,14 @@ def _terms_for_version(version_id: UUID) -> list[TestDefinition]:
     """
     query = (
         select(TestDefinition)
-        .where(TestDefinition.version_id == version_id)
-        .order_by(TestDefinition.table_name, TestDefinition.column_name, TestDefinition.test_type)
+        .where(TestDefinition.version_id == version_id, TestDefinition.test_active == True)
+        .order_by(
+            TestDefinition.table_name,
+            TestDefinition.column_name,
+            TestDefinition.test_type,
+            TestDefinition.contract_term_id,
+            TestDefinition.id,
+        )
     )
     return list(get_current_session().scalars(query))
 
@@ -77,7 +91,7 @@ def _table_group_for(version: SuiteVersion) -> TableGroup:
     return TableGroup.get(suite.table_groups_id)
 
 
-def _flavor_for(table_group: TableGroup) -> str:
+def _flavor_code_for(table_group: TableGroup) -> str:
     """The sql_flavor_code of the connection backing this contract.
 
     Reached via the suite's table group rather than reversing the document's declared
@@ -85,7 +99,7 @@ def _flavor_for(table_group: TableGroup) -> str:
     (``sqlserver`` answers to both ``azure_mssql`` and ``mssql``), so it would silently pick
     one of two dialects for every sqlserver-backed contract. This path is unambiguous, and it
     is the same connection ``build_server_block`` read the declared server from, so the
-    query's dialect and the declared server agree by construction.
+    declared server and this code agree by construction.
     """
     connection = Connection.get(table_group.connection_id)
     return connection.sql_flavor_code
@@ -93,22 +107,23 @@ def _flavor_for(table_group: TableGroup) -> str:
 
 _CONDITIONS_QUERY = text(
     "SELECT test_type, measure, test_operator, test_condition "
-    "FROM cat_test_conditions WHERE sql_flavor = :flavor AND test_type = ANY(:test_types)"
+    "FROM cat_test_conditions WHERE sql_flavor = :family AND test_type = ANY(:test_types)"
 )
 
 
-def _conditions_for(test_type_codes: set[str], flavor: str) -> dict[str, CatCondition]:
-    """Resolved ``cat_test_conditions`` rows for the given SQL-shape test types and flavor.
+def _conditions_for(test_type_codes: set[str], family: str) -> dict[str, CatCondition]:
+    """Resolved ``cat_test_conditions`` rows for the given SQL-shape test types and flavor family.
 
     ``cat_test_conditions`` has no ORM model and is not version-scoped -- it is reference data
-    keyed by ``(test_type, sql_flavor)``, the same join ``get_active_test_definitions.sql``
-    uses at execution time. Fetched once for every SQL-shape test type a term needs, rather
+    keyed by ``(test_type, sql_flavor)``, which stores families; it is the same join
+    ``get_active_test_definitions.sql`` uses at execution time, binding
+    ``connection.sql_flavor``. Fetched once for every SQL-shape test type a term needs, rather
     than once per term.
     """
     if not test_type_codes:
         return {}
     rows = get_current_session().execute(
-        _CONDITIONS_QUERY, {"flavor": flavor, "test_types": sorted(test_type_codes)}
+        _CONDITIONS_QUERY, {"family": family, "test_types": sorted(test_type_codes)}
     ).mappings()
     return {
         row["test_type"]: CatCondition(
@@ -177,15 +192,27 @@ def _attach_to_property(
     return prop
 
 
-def _attach_rule(
-    table: dict[str, Any], term: TestDefinition, rule: dict[str, Any], synthesized_names: set[str]
-) -> dict[str, Any] | None:
-    """Attach ``rule`` to the node its test type declares, creating a measure property if
-    needed.
+def _property_name(term: TestDefinition, test_type: TestType) -> str:
+    """The property a column-scoped ``term`` attaches to: its sole grouped column for a type whose
+    scope follows the term, otherwise its ``column_name``."""
+    mapping = RULE_MAPPINGS.get(test_type.test_type)
+    if mapping is not None and mapping.scope_follows_term:
+        return _groupby_columns(term)[0]
+    return term.column_name
 
-    Placement follows the type's declared ``RuleScope`` (``declared_scope``) and never whether
-    the term happens to carry a ``column_name``. ``column_name`` does not mean the same thing
-    across types: on ``Condition_Flag`` and ``CUSTOM`` it is a free-text label distinguishing
+
+def _attach_rule(
+    table: dict[str, Any], term: TestDefinition, test_type: TestType, rule: dict[str, Any], synthesized_names: set[str]
+) -> dict[str, Any] | None:
+    """Attach ``rule`` to the node its term's ``RuleScope`` names, creating a measure property
+    if needed.
+
+    Placement follows the term's ``RuleScope`` (``rule_scope``) and never whether the term
+    happens to carry a ``column_name``. ``Dupe_Rows`` is the one type whose node depends on the
+    term rather than the type: a grouping of one column attaches to that column, a grouping of
+    several to the table, named by ``groupby_names`` and never by ``column_name``.
+    ``column_name`` does not mean the same thing across types: on ``Condition_Flag`` and ``CUSTOM``
+    it is a free-text label distinguishing
     one term from another on the same table, and on the ``Combo_Match`` family it is a
     comma-separated list of columns. Attaching by it would fabricate a property representing
     no real column, and for a routed ``TABLE``-scope type would also contradict the rule
@@ -204,18 +231,10 @@ def _attach_rule(
     searching again. Never replaces or clears an existing ``quality`` list: only appends, so a
     rule already stored there survives.
     """
-    if declared_scope(term.test_type) is RuleScope.TABLE:
+    if rule_scope(term, test_type) is RuleScope.TABLE:
         table.setdefault("quality", []).append(rule)
         return None
-    return _attach_to_property(table, term.column_name, rule, synthesized_names)
-
-
-_LOV_LITERAL_VALUE = re.compile(r"'((?:[^']|'')*)'")
-
-
-def _lov_values(raw: str) -> list[str]:
-    """The individual values inside a stored LOV literal, e.g. ``"('Y','N')"`` -> ``["Y", "N"]``."""
-    return [match.replace("''", "'") for match in _LOV_LITERAL_VALUE.findall(raw)]
+    return _attach_to_property(table, _property_name(term, test_type), rule, synthesized_names)
 
 
 def _apply_enum(prop: dict[str, Any], term: TestDefinition) -> None:
@@ -227,7 +246,7 @@ def _apply_enum(prop: dict[str, Any], term: TestDefinition) -> None:
     """
     if "enum" in prop or not term.baseline_value:
         return
-    values = _lov_values(term.baseline_value)
+    values = lov_values(term.baseline_value)
     if values:
         prop["enum"] = [{"value": value} for value in values]
 
@@ -236,10 +255,11 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
     """Merge ``version``'s stored metadata document with quality rules projected from its terms.
 
     Returns a new document; the version's own ``metadata_document`` is never mutated. Raises
-    ``OrphanedTermError`` if a term names a table the document does not declare, or if a
-    column-scoped term carries no ``column_name`` to attach its rule to, and ``ValueError``
-    (from ``declared_scope``) if a term's test type declares no rule scope at all -- none is
-    ever silently dropped or placed somewhere its query would not mean what it claims.
+    ``OrphanedTermError`` if a term names a table the document does not declare, names a test
+    type the catalogue no longer holds, or is column-scoped with no ``column_name`` to attach
+    its rule to; ``UnmappedFlavorError`` if the backing connection's flavor maps to no ODCS
+    server type; and ``ValueError`` (from ``rule_scope``) if a term's test type is excluded --
+    none is ever silently dropped or placed somewhere its query would not mean what it claims.
     """
     document = copy.deepcopy(version.metadata_document) if version.metadata_document else {}
     _fill_root_fundamentals(document, version)
@@ -248,6 +268,7 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
     if not terms:
         return document
 
+    test_types = _test_types_for({term.test_type for term in terms})
     tables_by_name = {table["name"]: table for table in document.get("schema", [])}
     for term in terms:
         if term.table_name not in tables_by_name:
@@ -255,7 +276,15 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
                 f"Term {term.contract_term_id!r} names table {term.table_name!r}, which this "
                 "document does not declare."
             )
-        if declared_scope(term.test_type) is RuleScope.COLUMN and not term.column_name:
+        if term.test_type not in test_types:
+            # A frozen version's terms outlive the catalogue they were generated against.
+            raise OrphanedTermError(
+                f"Term {term.contract_term_id!r} names test type {term.test_type!r}, which the "
+                "catalogue no longer holds."
+            )
+        if rule_scope(term, test_types[term.test_type]) is RuleScope.COLUMN and not _property_name(
+            term, test_types[term.test_type]
+        ):
             # project_rule decides the query's placeholder (`{property}` vs `{object}`) from
             # the mapping's own scope, independent of where this renderer attaches the result.
             # A column-scoped mapping with no column_name would still validate -- the schema
@@ -267,15 +296,12 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
             )
 
     table_group = _table_group_for(version)
-    flavor = _flavor_for(table_group)
-    server_type = FLAVOR_TO_SERVER_TYPE[SqlFlavorCode(flavor)]
-    test_types = _test_types_for({term.test_type for term in terms})
-    sql_test_types = {
-        term.test_type
-        for term in terms
-        if (mapping := RULE_MAPPINGS.get(term.test_type)) is not None and mapping.shape is RuleShape.SQL
-    }
-    conditions = _conditions_for(sql_test_types, flavor)
+    flavor_code = _flavor_code_for(table_group)
+    server_type = FLAVOR_TO_SERVER_TYPE.get(SqlFlavorCode(flavor_code))
+    if server_type is None:
+        raise UnmappedFlavorError(f"No server type for flavor {flavor_code!r}.")
+    sql_test_types = {term.test_type for term in terms if rule_shape(term.test_type) is RuleShape.SQL}
+    conditions = _conditions_for(sql_test_types, FLAVOR_CODE_TO_FAMILY[SqlFlavorCode(flavor_code)])
     column_types = _column_types_for(table_group.id)
     # One synthesized-name set per table: the slug fallback in `_attach_to_property` must only
     # ever reuse a property this render call minted itself, never a declared one that happens
@@ -292,7 +318,7 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
             condition=conditions.get(term.test_type),
             column_type=column_types.get((term.table_name, term.column_name)),
         )
-        prop = _attach_rule(table, term, rule, synthesized_names)
+        prop = _attach_rule(table, term, test_types[term.test_type], rule, synthesized_names)
         if prop is not None and term.test_type == "LOV_Match":
             _apply_enum(prop, term)
 

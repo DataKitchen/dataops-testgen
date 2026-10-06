@@ -398,6 +398,46 @@ def test_editing_a_terms_column_name_leaves_its_identity_unchanged():
     assert definition.contract_term_id == "Row_Ct-public-orders-order_id"
 
 
+def test_copying_terms_mints_identities_on_the_target_version():
+    """``copy`` is an INSERT...SELECT that nulls ``contract_term_id`` deliberately -- a copy is a
+    new term and must not carry the source's identity. Nothing went on to mint one, so copying
+    into a contract left terms that render ``id: null``."""
+    session = MagicMock()
+    target_version = uuid4()
+    session.scalar.return_value = target_version
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch.object(TestDefinition, "assert_version_writable"),
+        patch.object(TestDefinition, "assign_missing_term_ids") as sweep,
+    ):
+        TestDefinition.copy([uuid4()], uuid4(), uuid4())
+
+    sweep.assert_called_once_with(target_version)
+
+
+@pytest.fixture
+def contract_version():
+    with patch("testgen.common.models.test_definition.SuiteVersion.is_suite_owned", return_value=True):
+        yield
+
+
+def test_assigning_missing_identities_on_the_placeholder_touches_no_term():
+    """Every regular and monitor suite resolves to the shared placeholder, so a sweep over it
+    would mint an identity for every such term in the install."""
+    session = MagicMock()
+    session.scalar.return_value = None
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=session),
+    ):
+        count = TestDefinition.assign_missing_term_ids(uuid4())
+
+    assert count == 0
+    session.scalars.assert_not_called()
+    session.execute.assert_not_called()
+
+
+@pytest.mark.usefixtures("contract_version")
 def test_assigning_missing_identities_skips_terms_that_already_have_one():
     session = MagicMock()
     session.scalars.return_value.all.return_value = []
@@ -410,6 +450,7 @@ def test_assigning_missing_identities_skips_terms_that_already_have_one():
     assert count == 0
 
 
+@pytest.mark.usefixtures("contract_version")
 def test_assigning_missing_identities_sweeps_manual_terms_too():
     """The natural-key dedup indexes are partial on ``last_auto_gen_date``, so a manual term is
     deduped against nothing; the sweep no longer restricts to generated terms, which is what
@@ -425,6 +466,7 @@ def test_assigning_missing_identities_sweeps_manual_terms_too():
     assert not any(is_not_null_conjunct(term, "last_auto_gen_date", "test_definitions") for term in terms)
 
 
+@pytest.mark.usefixtures("contract_version")
 def test_assigning_missing_identities_sweeps_in_a_stable_order():
     session = MagicMock()
     session.scalars.return_value.all.return_value = []
@@ -544,6 +586,7 @@ def _unidentified_term(version_id, column_name: str = "email") -> TestDefinition
     )
 
 
+@pytest.mark.usefixtures("contract_version")
 def test_one_sweep_gives_two_terms_with_one_natural_key_distinct_identities():
     """Two hand-added terms on one column inside a single sweep: the ids they mint must differ
     without either having been written to the database first.
@@ -562,6 +605,7 @@ def test_one_sweep_gives_two_terms_with_one_natural_key_distinct_identities():
     assert all(re.match(TERM_ID_PATTERN, identity) for identity in minted)
 
 
+@pytest.mark.usefixtures("contract_version")
 def test_a_sweep_avoids_the_identities_the_version_already_holds():
     version_id = uuid4()
     terms = [_unidentified_term(version_id)]
@@ -574,6 +618,7 @@ def test_a_sweep_avoids_the_identities_the_version_already_holds():
     assert terms[0].contract_term_id.startswith("Pattern_Match-public-orders-email-")
 
 
+@pytest.mark.usefixtures("contract_version")
 def test_a_sweep_asks_the_database_twice_whatever_the_term_count():
     version_id = uuid4()
     terms = [_unidentified_term(version_id, f"column_{index}") for index in range(5)]

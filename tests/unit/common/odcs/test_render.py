@@ -10,7 +10,7 @@ from testgen.common.models.test_definition import TestDefinition, TestType
 from testgen.common.odcs import render
 from testgen.common.odcs.quality_rules import CatCondition
 from testgen.common.odcs.render import OrphanedTermError, render_document
-from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND, UnmappedFlavorError
 from testgen.common.odcs.validation import validate_document
 from tests.unit.sql_assertions import conjuncts, emitted_statements, equality_conjunct, scopes_to_a_version
 
@@ -82,12 +82,12 @@ def _property_named(document: dict, name: str) -> dict:
     raise AssertionError(f"no property named {name!r} in the rendered document")
 
 
-def _patched(*, terms, test_types, flavor="postgresql", conditions=None, column_types=None):
+def _patched(*, terms, test_types, flavor_code="postgresql", conditions=None, column_types=None):
     return (
         patch.object(render, "_terms_for_version", return_value=terms),
         patch.object(render, "_test_types_for", return_value=test_types),
         patch.object(render, "_table_group_for", return_value=_table_group()),
-        patch.object(render, "_flavor_for", return_value=flavor),
+        patch.object(render, "_flavor_code_for", return_value=flavor_code),
         patch.object(render, "_conditions_for", return_value=conditions or {}),
         patch.object(render, "_column_types_for", return_value=column_types or {}),
     )
@@ -98,6 +98,67 @@ def _render_with(*, terms, test_types, **kwargs):
     patchers = _patched(terms=terms, test_types=test_types, **kwargs)
     with patchers[0], patchers[1], patchers[2], patchers[3], patchers[4], patchers[5]:
         return render_document(version)
+
+
+@pytest.mark.parametrize(
+    ("flavor_code", "family"),
+    [("azure_mssql", "mssql"), ("synapse_mssql", "mssql"), ("postgresql", "postgresql")],
+)
+def test_the_conditions_query_is_asked_for_the_flavor_family_not_the_code(flavor_code, family):
+    """``cat_test_conditions.sql_flavor`` stores families -- execution binds
+    ``connection.sql_flavor`` for the same join. ``azure_mssql`` and ``synapse_mssql`` are the
+    two contract-capable flavors whose code differs from their family, so binding the code
+    finds no condition row and every sql-shape term on them fails to render.
+    """
+    version = _version(metadata_document={"schema": [{"name": "orders"}]})
+    term = _term(
+        test_type="Row_Ct", column_name=None, table_name="orders",
+        threshold_value="10", contract_term_id="term-row-ct",
+    )
+    test_types = {"Row_Ct": _test_type("Row_Ct", test_scope="table", dq_dimension="Completeness")}
+
+    with (
+        patch.object(render, "_terms_for_version", return_value=[term]),
+        patch.object(render, "_test_types_for", return_value=test_types),
+        patch.object(render, "_table_group_for", return_value=_table_group()),
+        patch.object(render, "_flavor_code_for", return_value=flavor_code),
+        patch.object(render, "_column_types_for", return_value={}),
+        patch.object(render, "_conditions_for", return_value={}) as conditions_for,
+    ):
+        render_document(version)
+
+    assert conditions_for.call_args.args[1] == family
+
+
+def test_a_term_whose_test_type_left_the_catalogue_is_refused_by_name():
+    """A frozen version's terms outlive the catalogue: deactivate or remove a test type and the
+    lookup that supplies its prose has no entry. The bare subscript raised ``KeyError``, which
+    is not the ``ValueError`` this module's callers are documented to expect and names no term."""
+    version = _version(metadata_document={"schema": [{"name": "orders"}]})
+    term = _term(
+        test_type="Gone_From_Catalogue", column_name=None, table_name="orders",
+        threshold_value="10", contract_term_id="term-orphan",
+    )
+
+    with pytest.raises(OrphanedTermError, match="term-orphan") as excinfo:
+        _render_with(version=version, terms=[term], test_types={})
+
+    assert "Gone_From_Catalogue" in str(excinfo.value)
+
+
+def test_a_flavor_that_maps_to_no_server_type_is_refused_by_name():
+    """``build_server_block`` checks this at contract creation and raises ``UnmappedFlavorError``;
+    rendering looked the same value up with a bare subscript, so any later divergence surfaced
+    as ``KeyError`` naming only an enum member."""
+    version = _version(metadata_document={"schema": [{"name": "orders"}]})
+    term = _term(
+        test_type="Row_Ct", column_name=None, table_name="orders",
+        threshold_value="10", contract_term_id="term-row-ct",
+    )
+    test_types = {"Row_Ct": _test_type("Row_Ct", test_scope="table", dq_dimension="Completeness")}
+
+    with pytest.raises(UnmappedFlavorError, match="s3"):
+        _render_with(version=version, terms=[term], test_types=test_types, flavor_code="s3")
 
 
 def test_a_table_level_term_lands_on_the_table_node():
@@ -530,8 +591,81 @@ def test_a_rendered_document_with_several_tables_and_both_rule_scopes_validates(
         version=version, terms=terms, test_types=test_types, conditions={"Avg_Shift": condition}
     )
 
-    assert validate_document(rendered, version.odcs_api_version) == []
+    assert validate_document(rendered) == []
     assert rendered["schema"][0]["quality"][0] == retained_rule
     prop = _property_named(rendered, "SUM_total_amount")
     rule = prop["quality"][0]
     assert {"property": "team", "value": "data-eng"} in rule["customProperties"]
+
+
+def test_a_dupe_rows_term_grouped_on_one_column_lands_on_that_column():
+    version = _version(metadata_document={"schema": [{"name": "orders", "properties": [{"name": "order_id"}]}]})
+    term = _term(
+        test_type="Dupe_Rows", table_name="orders", column_name=None, groupby_names="order_id",
+        contract_term_id="term-dupe",
+    )
+    test_types = {"Dupe_Rows": _test_type("Dupe_Rows", test_scope="table", dq_dimension="Uniqueness")}
+
+    document = _render_with(version=version, terms=[term], test_types=test_types)
+
+    assert _property_named(document, "order_id")["quality"][0]["metric"] == "duplicateValues"
+    assert "quality" not in document["schema"][0]
+
+
+def test_a_dupe_rows_term_grouped_on_several_columns_lands_on_the_table():
+    version = _version(metadata_document={"schema": [{"name": "orders"}]})
+    term = _term(
+        test_type="Dupe_Rows", table_name="orders", column_name=None, groupby_names="order_id, line_no",
+        contract_term_id="term-dupe",
+    )
+    test_types = {"Dupe_Rows": _test_type("Dupe_Rows", test_scope="table", dq_dimension="Uniqueness")}
+
+    document = _render_with(version=version, terms=[term], test_types=test_types)
+
+    rule = document["schema"][0]["quality"][0]
+    assert rule["arguments"] == {"properties": ["order_id", "line_no"]}
+
+
+def test_a_formerly_deferred_term_renders_a_custom_rule_not_a_text_one():
+    version = _version(metadata_document={"schema": [{"name": "orders", "properties": [{"name": "order_id"}]}]})
+    term = _term(
+        test_type="Unique", table_name="orders", column_name="order_id", threshold_value="0",
+        contract_term_id="term-unique",
+    )
+    test_types = {"Unique": _test_type("Unique", test_scope="column", dq_dimension="Uniqueness")}
+
+    document = _render_with(version=version, terms=[term], test_types=test_types)
+
+    rule = _property_named(document, "order_id")["quality"][0]
+    assert rule["type"] == "custom"
+    assert rule["engine"] == "testgen"
+
+
+def test_a_muted_term_is_not_rendered_as_a_rule():
+    """Execution runs only active terms, so a muted one in the document would be a check the
+    counterparty believes is in force when TestGen never runs it."""
+    session = MagicMock()
+    with patch.object(render, "get_current_session", return_value=session):
+        render._terms_for_version(uuid4())
+
+    statement = session.scalars.call_args.args[0]
+    assert any(
+        equality_conjunct(term, "test_active", "test_definitions", True)
+        for term in conjuncts(statement.whereclause)
+    )
+
+def test_terms_render_in_an_order_that_ties_cannot_reshuffle():
+    """A draft's chunks are fetched one render apart; terms tied on table, column and test type
+    (several custom terms on one table) must land in the same place every time."""
+    session = MagicMock()
+    with patch.object(render, "get_current_session", return_value=session):
+        render._terms_for_version(uuid4())
+
+    statement = session.scalars.call_args.args[0]
+    assert [str(clause) for clause in statement._order_by_clauses] == [
+        "test_definitions.table_name",
+        "test_definitions.column_name",
+        "test_definitions.test_type",
+        "test_definitions.contract_term_id",
+        "test_definitions.id",
+    ]
