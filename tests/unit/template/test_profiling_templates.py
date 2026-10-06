@@ -30,8 +30,11 @@ GENERAL_TYPES = ("A", "N", "D", "B", "X", "T")
 
 PLACEHOLDER = re.compile(r"^\s*NULL AS \w+,?\s*$", re.MULTILINE)
 DANGLING_COMMA = re.compile(r",\s*(?:FROM\b|CROSS JOIN\b|\))", re.IGNORECASE)
-# The percentile derived table: the innermost "(SELECT" that closes as ") pctile".
-PERCENTILE_SUBQUERY = re.compile(r"\(SELECT(?:(?!\(SELECT).)*?\)\s*pctile", re.DOTALL)
+# The percentile query: a derived table, the innermost "(SELECT" that closes as ") pctile", or a
+# "percentiles" CTE, which closes at the first line that starts with ")".
+PERCENTILE_SUBQUERY = re.compile(
+    r"\(SELECT(?:(?!\(SELECT).)*?\)\s*pctile|\bpercentiles AS \(.*?^\)", re.DOTALL | re.MULTILINE
+)
 # A percentile aggregated in the column's main read, one line per percentile.
 INLINE_PERCENTILE = re.compile(r"^.*\bAS percentile_\d+,?$", re.MULTILINE)
 # The sampling clauses the flavors use. Placeholders are rendered by then, so this matches the SQL.
@@ -53,7 +56,7 @@ def _percentile_methods(flavor: str) -> tuple[bool, ...]:
 
 
 def _percentile_sql(query: str) -> str:
-    """The SQL that computes the percentiles: the percentile derived table, or the percentile
+    """The SQL that computes the percentiles: the percentile derived table or CTE, or the percentile
     expressions where the flavor aggregates them in the column's main read."""
     if derived := PERCENTILE_SUBQUERY.search(query):
         return derived.group(0)
