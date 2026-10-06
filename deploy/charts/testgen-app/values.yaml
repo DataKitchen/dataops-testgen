@@ -6,7 +6,7 @@ testgen:
   databasePort: 5432
   databaseName: "datakitchen"
   databaseSchema: "tgapp"
-  # Role TestGen connects as. Needs CREATEDB and CREATEROLE on first install.
+  # Role TestGen connects as. Needs CREATEDB on first install.
   databaseUser: "postgres"
   # Secret and key holding the password for databaseUser.
   databasePasswordSecret:

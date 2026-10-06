@@ -75,21 +75,71 @@ def _get_params_mapping() -> dict:
         "OBSERVABILITY_COMPONENT_TYPE": settings.OBSERVABILITY_DEFAULT_COMPONENT_TYPE,
         "TESTGEN_ADMIN_USER": settings.DATABASE_ADMIN_USER,
         "TESTGEN_ADMIN_PASSWORD": settings.DATABASE_ADMIN_PASSWORD,
-        "TESTGEN_USER": settings.DATABASE_EXECUTE_USER,
-        "TESTGEN_PASSWORD": settings.DATABASE_PASSWORD,
-        "TESTGEN_REPORT_USER": settings.DATABASE_REPORT_USER,
-        "TESTGEN_REPORT_PASSWORD": settings.DATABASE_PASSWORD,
         "DB_REVISION": _get_latest_revision_number(),
     }
 
 
-@with_database_session
-def run_launch_db_config(delete_db: bool, drop_users_and_roles: bool = True) -> None:
-    params_mapping = _get_params_mapping()
+def _quote_identifier(name: str) -> str:
+    escaped = name.replace('"', '""')
+    return f'"{escaped}"'
 
-    create_database(get_tg_db(), params_mapping, drop_existing=delete_db, drop_users_and_roles=drop_users_and_roles)
+
+def _get_app_user_grants(schema: str, admin_user: str | None, app_user: str | None) -> list[str]:
+    """Return the statements that let the application user work on objects the admin user owns.
+
+    Args:
+        schema: TestGen schema name.
+        admin_user: Account that creates and owns the schema objects.
+        app_user: Account the application connects with.
+
+    Returns:
+        Grants on the existing objects plus default privileges for objects the admin user creates later,
+        or an empty list when both accounts are the same.
+    """
+    if not app_user or app_user == admin_user:
+        return []
+    grantee = _quote_identifier(app_user)
+    return [
+        f"GRANT USAGE ON SCHEMA {schema} TO {grantee}",
+        f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {schema} TO {grantee}",
+        f"GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {schema} TO {grantee}",
+        f"GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA {schema} TO {grantee}",
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {grantee}",
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {grantee}",
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA {schema} GRANT EXECUTE ON FUNCTIONS TO {grantee}",
+    ]
+
+
+def _ensure_app_user_exists(app_user: str, params_mapping: dict) -> None:
+    """Raise if the application user is not a role on the database server.
+
+    Args:
+        app_user: Account the application connects with.
+        params_mapping: Setup parameters holding the admin credentials.
+    """
+    (role_count,), _ = execute_db_queries(
+        [("SELECT COUNT(*) FROM pg_roles WHERE rolname = :role", {"role": app_user})],
+        user_override=params_mapping["TESTGEN_ADMIN_USER"],
+        password_override=params_mapping["TESTGEN_ADMIN_PASSWORD"],
+        user_type="database_admin",
+    )
+    if not role_count:
+        raise ValueError(f"The database user '{app_user}' set in TG_METADATA_DB_USER does not exist.")
+
+
+@with_database_session
+def run_launch_db_config(delete_db: bool) -> None:
+    params_mapping = _get_params_mapping()
+    app_user_grants = _get_app_user_grants(
+        params_mapping["SCHEMA_NAME"], params_mapping["TESTGEN_ADMIN_USER"], settings.DATABASE_USER
+    )
+    if app_user_grants:
+        _ensure_app_user_exists(settings.DATABASE_USER, params_mapping)
+
+    create_database(get_tg_db(), params_mapping, drop_existing=delete_db)
 
     queries = get_queries_for_command("dbsetup", params_mapping)
+    queries.extend(app_user_grants)
 
     execute_db_queries(
         [(query, None) for query in queries],
