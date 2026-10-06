@@ -246,6 +246,13 @@ class SuiteVersion(Entity):
         ).first()
 
     @classmethod
+    def for_number(cls, suite_id, version: int) -> Self | None:
+        """The suite's version carrying that number, if it has one."""
+        return get_current_session().scalars(
+            select(cls).where(cls.test_suite_id == suite_id, cls.version == version)
+        ).first()
+
+    @classmethod
     def next_version_for(cls, suite_id) -> int:
         """One past the suite's highest version number, or 1 when it has none."""
         highest = get_current_session().scalar(

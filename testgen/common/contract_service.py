@@ -94,6 +94,27 @@ class ExportedDocument:
     problems: list[str]
 
 
+def version_for_export(suite: TestSuite, version: int | None = None) -> SuiteVersion:
+    """The version of ``suite`` an export without further instruction should return.
+
+    With no ``version``, the draft where one exists, otherwise the version in force. With
+    one, the version carrying that number. Raises ``ValueError`` when the suite keeps no
+    versions, when it holds no version at the number asked for, or when it has neither a
+    draft nor a frozen version to fall back on.
+    """
+    _assert_contract(suite)
+    if version is not None:
+        numbered = SuiteVersion.for_number(suite.id, version)
+        if numbered is None:
+            raise ValueError(f"This contract has no version {version}.")
+        return numbered
+
+    resolved = SuiteVersion.draft_for(suite.id) or _active_version(suite)
+    if resolved is None:
+        raise ValueError("This contract has no version to export.")
+    return resolved
+
+
 def export_version(version: SuiteVersion) -> ExportedDocument:
     """The version's document as YAML text, with a fresh check of whether it validates.
 

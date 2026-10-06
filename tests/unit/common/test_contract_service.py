@@ -1076,3 +1076,60 @@ def test_exporting_a_draft_that_does_not_validate_still_returns_a_document():
 
     assert exported.text
     assert exported.problems
+
+
+def test_exporting_without_a_number_prefers_the_draft():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=4)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(SuiteVersion, "in_force_for", return_value=SuiteVersion(id=uuid4(), version=3)),
+    ):
+        assert contract_service.version_for_export(suite) is draft
+
+
+def test_exporting_without_a_number_falls_back_to_the_version_in_force():
+    suite = _suite()
+    active = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=3)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=None),
+        patch.object(SuiteVersion, "in_force_for", return_value=active),
+    ):
+        assert contract_service.version_for_export(suite) is active
+
+
+def test_exporting_a_contract_with_neither_a_draft_nor_a_frozen_version_is_refused():
+    suite = _suite()
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=None),
+        patch.object(SuiteVersion, "in_force_for", return_value=None),
+    ):
+        with pytest.raises(ValueError, match="no version"):
+            contract_service.version_for_export(suite)
+
+
+def test_exporting_a_named_number_returns_that_version_without_consulting_the_default():
+    suite = _suite()
+    asked_for = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    with (
+        patch.object(SuiteVersion, "for_number", return_value=asked_for) as for_number,
+        patch.object(SuiteVersion, "draft_for") as draft_for,
+    ):
+        assert contract_service.version_for_export(suite, 2) is asked_for
+
+    for_number.assert_called_once_with(suite.id, 2)
+    draft_for.assert_not_called()
+
+
+def test_exporting_a_number_the_contract_has_no_version_at_names_the_number():
+    suite = _suite()
+    with patch.object(SuiteVersion, "for_number", return_value=None):
+        with pytest.raises(ValueError, match="7"):
+            contract_service.version_for_export(suite, 7)
+
+
+def test_exporting_a_suite_that_keeps_no_versions_is_refused():
+    suite = _suite()
+    suite.suite_type = SuiteType.REGULAR
+    with pytest.raises(ValueError, match="not a contract"):
+        contract_service.version_for_export(suite)

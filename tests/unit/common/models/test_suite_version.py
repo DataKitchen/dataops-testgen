@@ -10,7 +10,13 @@ from testgen.common.models.suite_version import SuiteVersion
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_run import TestRun
 from testgen.utils import is_uuid4
-from tests.unit.sql_assertions import conjuncts, is_not_null_conjunct, is_null_conjunct
+from tests.unit.sql_assertions import (
+    conjuncts,
+    emitted_statements,
+    equality_conjunct,
+    is_not_null_conjunct,
+    is_null_conjunct,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -325,3 +331,34 @@ def test_open_draft_does_not_invent_a_version_field_in_a_document_that_has_none(
         draft, _ = SuiteVersion.open_draft(suite_id)
 
     assert "version" not in draft.metadata_document
+
+
+def _for_number_where(session) -> list:
+    statement, = emitted_statements(session)
+    return conjuncts(statement.whereclause)
+
+
+def test_for_number_narrows_by_both_the_suite_and_the_number():
+    # Either half alone matches another suite's version with the same number, or this
+    # suite's other versions -- so both must appear as their own conjunct.
+    suite_id, session = uuid4(), MagicMock()
+    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
+        SuiteVersion.for_number(suite_id, 3)
+
+    terms = _for_number_where(session)
+    assert any(equality_conjunct(term, "test_suite_id", "suite_versions", suite_id) for term in terms)
+    assert any(equality_conjunct(term, "version", "suite_versions", 3) for term in terms)
+
+
+def test_for_number_returns_the_version_the_suite_has_at_that_number():
+    version, session = SuiteVersion(id=uuid4(), version=3), MagicMock()
+    session.scalars.return_value.first.return_value = version
+    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
+        assert SuiteVersion.for_number(uuid4(), 3) is version
+
+
+def test_for_number_returns_none_when_the_suite_has_no_version_at_that_number():
+    session = MagicMock()
+    session.scalars.return_value.first.return_value = None
+    with patch("testgen.common.models.suite_version.get_current_session", return_value=session):
+        assert SuiteVersion.for_number(uuid4(), 99) is None
