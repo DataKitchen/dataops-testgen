@@ -3,6 +3,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, asc, func, select, text
@@ -29,6 +30,17 @@ class PredictSensitivity(enum.Enum):
     low = "low"
     medium = "medium"
     high = "high"
+
+# Monitor configuration a monitor suite starts with, mirroring the UI's setup form.
+MONITOR_SETTING_DEFAULTS: dict[str, Any] = {
+    "monitor_lookback": 14,
+    "monitor_regenerate_freshness": True,
+    "predict_min_lookback": 30,
+    "predict_sensitivity": PredictSensitivity.medium.value,
+    "predict_exclude_weekends": False,
+    "predict_holiday_codes": None,
+}
+
 
 @dataclass
 class TestSuiteMinimal(EntityMinimal):

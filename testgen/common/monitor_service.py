@@ -8,19 +8,25 @@ user-facing errors.
 """
 
 import logging
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 from sqlalchemy import func, select
 
 from testgen.commands.test_generation import run_monitor_generation
 from testgen.common.enums import MonitorType, SuiteType
+from testgen.common.holiday_service import (
+    canonicalize_holiday_code,
+    is_supported_holiday_code,
+    list_market_holiday_codes,
+)
 from testgen.common.models import get_current_session
 from testgen.common.models.scheduler import RUN_MONITORS_JOB_KEY, JobSchedule
 from testgen.common.models.table_group import TableGroup
 from testgen.common.models.test_definition import TestDefinition
 from testgen.common.models.test_result import TestResult
 from testgen.common.models.test_run import TestRun
-from testgen.common.models.test_suite import PredictSensitivity, TestSuite
+from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS, PredictSensitivity, TestSuite
 
 LOG = logging.getLogger("testgen")
 
@@ -29,19 +35,66 @@ LOG = logging.getLogger("testgen")
 # of the initial bootstrap set.
 INITIAL_MONITOR_TYPES = [MonitorType.VOLUME.value, MonitorType.SCHEMA.value]
 
-# Default monitor configuration applied at bootstrap, mirroring the UI's setup form.
-_DEFAULT_SUITE_ATTRS: dict[str, Any] = {
-    "monitor_lookback": 14,
-    "monitor_regenerate_freshness": True,
-    "predict_min_lookback": 30,
-    "predict_sensitivity": PredictSensitivity.medium.value,
-    "predict_exclude_weekends": False,
-    "predict_holiday_codes": None,
-}
+_DEFAULT_SUITE_ATTRS: dict[str, Any] = MONITOR_SETTING_DEFAULTS
 
 # The monitor-configuration columns callers may set via ``suite_attrs``. Used as a
 # whitelist so a caller's dict (e.g. a UI form payload) can't write arbitrary suite columns.
 _MONITOR_SETTING_COLUMNS = tuple(_DEFAULT_SUITE_ATTRS)
+
+LOOKBACK_RUNS_RANGE = (1, 200)
+MIN_TRAINING_LOOKBACK_RANGE = (20, 1000)
+
+_PUBLIC_FIELD_NAMES = {
+    "monitor_lookback": "lookback_runs",
+    "monitor_regenerate_freshness": "regenerate_freshness",
+    "predict_min_lookback": "min_training_lookback",
+    "predict_sensitivity": "sensitivity",
+    "predict_exclude_weekends": "exclude_weekends",
+    "predict_holiday_codes": "holiday_codes",
+}
+
+
+def validate_monitor_settings(suite_attrs: Mapping[str, Any]) -> list[str]:
+    """Return every reason a monitor configuration cannot be stored (empty list = valid).
+
+    Args:
+        suite_attrs: Monitor ``TestSuite`` columns to check, as passed to ``enable_monitoring``
+            or ``update_monitoring``. Absent or ``None`` values are not checked.
+
+    Messages name the settings by their public names (``lookback_runs``, ``sensitivity``, ...).
+    """
+    errors: list[str] = []
+
+    def field(attr: str) -> str:
+        return f"`{_PUBLIC_FIELD_NAMES[attr]}`"
+
+    for attr, (low, high) in (
+        ("monitor_lookback", LOOKBACK_RUNS_RANGE),
+        ("predict_min_lookback", MIN_TRAINING_LOOKBACK_RANGE),
+    ):
+        value = suite_attrs.get(attr)
+        if value is not None and not low <= value <= high:
+            errors.append(f"{field(attr)} must be between {low} and {high}.")
+
+    sensitivity = suite_attrs.get("predict_sensitivity")
+    if sensitivity is not None and sensitivity not in {member.value for member in PredictSensitivity}:
+        valid = ", ".join(member.value for member in PredictSensitivity)
+        errors.append(f"{field('predict_sensitivity')} must be one of {valid}.")
+
+    codes = suite_attrs.get("predict_holiday_codes")
+    if codes is not None and (unknown := [code for code in codes if not is_supported_holiday_code(code.strip())]):
+        errors.append(
+            f"{field('predict_holiday_codes')} has unknown codes: {', '.join(unknown)}. Countries use ISO 3166-1 "
+            f"alpha-2 codes (e.g. `US`, `GB`); financial markets use one of: {', '.join(list_market_holiday_codes())}."
+        )
+
+    return errors
+
+
+def canonical_holiday_codes(codes: Iterable[str]) -> list[str] | None:
+    """Return supported holiday codes in canonical form, blanks and duplicates dropped; ``None`` when none remain."""
+    canonical = [canonicalize_holiday_code(code.strip()) for code in codes if code.strip()]
+    return list(dict.fromkeys(canonical)) or None
 
 
 def enable_monitoring(
@@ -58,6 +111,9 @@ def enable_monitoring(
     run-monitors schedule, and links the suite to the table group.
 
     ``suite_attrs`` overrides the default monitor configuration.
+
+    The initial monitors are generated in the caller's session, so nothing is committed
+    here and the whole bootstrap rolls back with it.
 
     Returns ``(monitor_suite, monitor_count)``. Raises ``ValueError`` if the table
     group already has monitoring enabled.
@@ -95,14 +151,18 @@ def enable_monitoring(
     table_group.monitor_test_suite_id = monitor_suite.id
     table_group.save()
 
-    # Commit needed to make the test suite visible to run_monitor_generation's separate DB connection.
-    get_current_session().commit()
-    run_monitor_generation(monitor_suite.id, INITIAL_MONITOR_TYPES)
+    run_monitor_generation(monitor_suite.id, INITIAL_MONITOR_TYPES, in_session=True)
 
-    count = get_current_session().scalar(
-        select(func.count()).select_from(TestDefinition).where(TestDefinition.test_suite_id == monitor_suite.id)
-    )
-    return monitor_suite, count or 0
+    return monitor_suite, count_monitors(monitor_suite)
+
+
+def count_monitors(monitor_suite: TestSuite) -> int:
+    """Return the number of monitors in a monitor suite."""
+    return get_current_session().scalar(
+        select(func.count())
+        .select_from(TestDefinition)
+        .where(TestDefinition.test_suite_id == monitor_suite.id, TestDefinition.version_clause())
+    ) or 0
 
 
 def update_monitoring(

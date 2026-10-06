@@ -63,9 +63,10 @@ def test_enable_monitoring_merges_defaults_skipping_none(mock_ts, mock_js, mock_
     assert kwargs["predict_min_lookback"] == 30        # untouched default
     assert returned_suite is suite
     assert count == 4
-    mock_gen.assert_called_once_with(suite.id, ["Volume_Trend", "Schema_Drift"])
+    mock_gen.assert_called_once_with(suite.id, ["Volume_Trend", "Schema_Drift"], in_session=True)
     tg.save.assert_called()
     assert tg.monitor_test_suite_id == suite.id
+    mock_session.return_value.commit.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -151,3 +152,83 @@ def test_disable_monitoring_counts_before_cascade(mock_session, mock_ts):
 
     assert counts == {"monitors": 4, "events": 2, "runs": 1}
     mock_ts.cascade_delete.assert_called_once_with([suite.id])
+
+
+# ---------------------------------------------------------------------------
+# validate_monitor_settings / canonical_holiday_codes / count_monitors
+# ---------------------------------------------------------------------------
+
+
+def test_validate_monitor_settings_accepts_the_defaults():
+    from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS
+    from testgen.common.monitor_service import validate_monitor_settings
+
+    assert validate_monitor_settings(MONITOR_SETTING_DEFAULTS) == []
+
+
+@pytest.mark.parametrize(
+    ("attrs", "message"),
+    [
+        ({"monitor_lookback": 0}, "`lookback_runs` must be between 1 and 200."),
+        ({"monitor_lookback": 201}, "`lookback_runs` must be between 1 and 200."),
+        ({"predict_min_lookback": 19}, "`min_training_lookback` must be between 20 and 1000."),
+        ({"predict_min_lookback": 1001}, "`min_training_lookback` must be between 20 and 1000."),
+        ({"predict_sensitivity": "extreme"}, "`sensitivity` must be one of low, medium, high."),
+    ],
+)
+def test_validate_monitor_settings_reports_each_rule(attrs, message):
+    from testgen.common.monitor_service import validate_monitor_settings
+
+    assert validate_monitor_settings(attrs) == [message]
+
+
+@pytest.mark.parametrize(
+    ("attrs",),
+    [({"monitor_lookback": 1},), ({"monitor_lookback": 200},), ({"predict_min_lookback": 20},),
+     ({"predict_min_lookback": 1000},)],
+)
+def test_validate_monitor_settings_accepts_range_bounds(attrs):
+    from testgen.common.monitor_service import validate_monitor_settings
+
+    assert validate_monitor_settings(attrs) == []
+
+
+def test_validate_monitor_settings_lists_unknown_holiday_codes():
+    from testgen.common.monitor_service import validate_monitor_settings
+
+    [error] = validate_monitor_settings({"predict_holiday_codes": ["US", "ZZ", "QQ"]})
+
+    assert error.startswith("`holiday_codes` has unknown codes: ZZ, QQ.")
+
+
+def test_validate_monitor_settings_reports_every_failure():
+    from testgen.common.monitor_service import validate_monitor_settings
+
+    errors = validate_monitor_settings({
+        "monitor_lookback": 0, "predict_min_lookback": 5, "predict_sensitivity": "x", "predict_holiday_codes": ["ZZ"],
+    })
+
+    assert len(errors) == 4
+
+
+def test_canonical_holiday_codes_normalizes_and_deduplicates():
+    from testgen.common.monitor_service import canonical_holiday_codes
+
+    assert canonical_holiday_codes([" us", "US", "", "xnys"]) == ["US", "XNYS"]
+    assert canonical_holiday_codes([]) is None
+
+
+@patch(f"{MODULE}.get_current_session")
+def test_count_monitors_counts_the_resolved_version(mock_session):
+    from sqlalchemy.dialects import postgresql
+
+    from testgen.common.monitor_service import count_monitors
+
+    mock_session.return_value.scalar.return_value = 3
+    suite = MagicMock(id=uuid4())
+
+    assert count_monitors(suite) == 3
+    query = mock_session.return_value.scalar.call_args.args[0]
+    sql = str(query.compile(dialect=postgresql.dialect()))
+    assert "test_definitions.test_suite_id =" in sql
+    assert "test_definitions.version_id =" in sql
