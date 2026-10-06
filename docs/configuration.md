@@ -67,31 +67,17 @@ default: `os.environ["TESTGEN_PASSWORD"]`
 
 #### `DATABASE_ADMIN_USER`
 
-User with admin privileges in the testgen application postgres database used to create roles, users, database and schema. Required if the user in `TG_METADATA_DB_USER` does not have the required privileges.
+User with admin privileges in the testgen application postgres database used to create the database and schema and to apply upgrades. Required if the user in `TG_METADATA_DB_USER` does not have the required privileges.
 
-default: `os.environ["TG_METADATA_DB_USER"]` |
+When this is a different user, setup grants `TG_METADATA_DB_USER` read and write access to the schema, including objects that later upgrades create, as long as the upgrades run as this same user. To separate the two users after setup, or to change this user later, grant that access yourself.
+
+default: `os.environ["TG_METADATA_DB_USER"]`
 
 #### `DATABASE_ADMIN_PASSWORD`
 
 Password for the admin user to connect to the testgen application postgres database.
 
 default: `os.environ["TG_METADATA_DB_PASSWORD"]`
-
-#### `DATABASE_EXECUTE_USER`
-
-User to be created into the testgen application postgres database.
-
-Will be granted:
-- read/write to tables `test_results`, `test_suites` and `test_definitions`
-- read only to all other tables.
-
-default: `testgen_execute`
-
-#### `DATABASE_REPORT_USER`
-
-User to be created into the testgen application postgres database. Will be granted read_only access to all tables.
-
-default: `testgen_report`
 
 #### `TG_METADATA_DB_HOST`
 

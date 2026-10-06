@@ -112,8 +112,10 @@ defaults to: `environ[PASSWORD]`
 DATABASE_ADMIN_USER: str = getenv("DATABASE_ADMIN_USER", DATABASE_USER)
 """
 User with admin privileges in the testgen application postgres database
-used to create roles, users, database and schema. Required if the user
-in `TG_METADATA_DB_USER` does not have the required privileges.
+used to create the database and schema and to apply upgrades. Required
+if the user in `TG_METADATA_DB_USER` does not have the required privileges.
+When this is a different user, setup grants `TG_METADATA_DB_USER` read
+and write access to the schema, including objects later upgrades create.
 
 from env variable: `DATABASE_ADMIN_USER`
 defaults to: `environ[DATABASE_USER]`
@@ -126,27 +128,6 @@ postgres database.
 
 from env variable: `DATABASE_ADMIN_PASSWORD`
 defaults to: `environ[DATABASE_PASSWORD]`
-"""
-
-DATABASE_EXECUTE_USER: str = getenv("DATABASE_EXECUTE_USER", "testgen_execute")
-"""
-User to be created into the testgen application postgres database. Will
-be granted:
-
-_ read/write to tables `test_results`, `test_suites` and `test_definitions`
-_ read_only to all other tables
-
-from env variable: `DATABASE_EXECUTE_USER`
-defaults to: `testgen_execute`
-"""
-
-DATABASE_REPORT_USER: str = getenv("DATABASE_REPORT_USER", "testgen_report")
-"""
-User to be created into the testgen application postgres database. Will
-be granted read_only access to all tables.
-
-from env variable: `DATABASE_REPORT_USER`
-defaults to: `testgen_report`
 """
 
 DATABASE_HOST: str = getenv("TG_METADATA_DB_HOST", "localhost")
