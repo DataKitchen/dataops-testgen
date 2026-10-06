@@ -48,6 +48,7 @@ def _mock_test_suite(**overrides) -> MagicMock:
     suite.component_type = overrides.get("component_type", None)
     suite.component_name = overrides.get("component_name", None)
     suite.suite_type = overrides.get("suite_type", SuiteType.REGULAR)
+    suite.generation_sets = overrides.get("generation_sets", None)
     return suite
 
 
@@ -417,12 +418,30 @@ def test_create_test_suite_rejects_monitor_suite_type(mock_resolve, db_session_m
     assert "must be one of Regular, Contract" in msg
 
 
-def test_create_test_suite_empty_name_rejected(db_session_mock):
+@patch(f"{MODULE}.resolve_table_group")
+def test_create_test_suite_empty_name_rejected(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _mock_table_group()
+
     from testgen.mcp.tools.test_suites import create_test_suite
 
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
         create_test_suite(table_group_id=str(uuid4()), test_suite_name="   ")
-    assert "test_suite_name: must not be empty" in str(exc.value)
+    assert "`test_suite_name` is required." in str(exc.value)
+    db_session_mock.add.assert_not_called()
+
+
+@patch(f"{MODULE}.resolve_table_group")
+def test_create_test_suite_rejects_values_wider_than_their_columns(mock_resolve, db_session_mock):
+    mock_resolve.return_value = _mock_table_group()
+
+    from testgen.mcp.tools.test_suites import create_test_suite
+
+    with _patch_perms(), pytest.raises(MCPUserError) as exc:
+        create_test_suite(table_group_id=str(uuid4()), test_suite_name="x" * 201, component_key="k" * 101)
+    msg = str(exc.value)
+    assert "`test_suite_name` must be at most 200 characters." in msg
+    assert "`component_key` must be at most 100 characters." in msg
+    db_session_mock.add.assert_not_called()
 
 
 @patch(f"{MODULE}.TestSuite")
@@ -613,7 +632,7 @@ def test_update_test_suite_empty_name_rejected(mock_resolve, db_session_mock):
 
     with _patch_perms(), pytest.raises(MCPUserError) as exc:
         update_test_suite(test_suite_id=str(suite.id), test_suite_name="   ")
-    assert "test_suite_name: must not be empty" in str(exc.value)
+    assert "`test_suite_name` is required." in str(exc.value)
     suite.save.assert_not_called()
 
 
@@ -633,7 +652,7 @@ def test_update_test_suite_invalid_severity_collected(mock_resolve, db_session_m
         )
     msg = str(exc.value)
     assert "Update rejected" in msg
-    assert "test_suite_name: must not be empty" in msg
+    assert "`test_suite_name` is required." in msg
     # S6: field-scoped phrasing, no double-labeled "Invalid severity"
     assert "severity_default" in msg
     assert "Fail" in msg and "Warning" in msg

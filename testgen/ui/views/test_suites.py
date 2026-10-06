@@ -4,6 +4,7 @@ import streamlit as st
 
 from testgen.commands.run_observability_exporter import export_test_results
 from testgen.commands.test_generation import run_test_generation
+from testgen.common.database.test_suite_service import validate_test_suite_fields
 from testgen.common.enums import JobSource
 from testgen.common.generation_set_service import (
     get_generation_set_members,
@@ -309,23 +310,38 @@ def on_test_suites_filtered(filters: TestSuiteFilters) -> None:
     Router().set_query_params(filters)
 
 
+_FORM_FIELD_LABELS = {
+    "test_suite": "Test Suite Name",
+    "test_suite_description": "Test Suite Description",
+    "severity": "Severity",
+    "component_key": "Component Key",
+    "component_type": "Component Type",
+    "component_name": "Component Name",
+}
+
+
 @with_database_session
 def save_test_suite_form(data: dict) -> None:
     mode = data.get("mode")
-    if not data.get("test_suite"):
-        st.session_state["ts_form_dialog:result"] = {"success": False, "message": "Test Suite Name is required."}
+    values = {
+        "test_suite_description": data.get("test_suite_description", ""),
+        "severity": data.get("severity"),
+        "export_to_observability": data.get("export_to_observability", False),
+        "dq_score_exclude": data.get("dq_score_exclude", False),
+        "component_key": data.get("component_key", ""),
+        "component_type": data.get("component_type", "dataset"),
+        "component_name": data.get("component_name", ""),
+    }
+    # Validated on a detached copy, so a rejected edit never touches the stored suite.
+    candidate = TestSuite(test_suite=data.get("test_suite"), **values)
+    if errors := validate_test_suite_fields(candidate, field_names=_FORM_FIELD_LABELS, quote_fields=False):
+        st.session_state["ts_form_dialog:result"] = {"success": False, "message": " ".join(errors)}
         return
 
     if mode == "edit":
-        test_suite_id = data.get("test_suite_id")
-        test_suite = get_test_suite(test_suite_id)
-        test_suite.test_suite_description = data.get("test_suite_description", "")
-        test_suite.severity = data.get("severity")
-        test_suite.export_to_observability = data.get("export_to_observability", False)
-        test_suite.dq_score_exclude = data.get("dq_score_exclude", False)
-        test_suite.component_key = data.get("component_key", "")
-        test_suite.component_type = data.get("component_type", "dataset")
-        test_suite.component_name = data.get("component_name", "")
+        test_suite = get_test_suite(data.get("test_suite_id"))
+        for attr, value in values.items():
+            setattr(test_suite, attr, value)
         test_suite.save()
         st.session_state.pop("ts_form_dialog:result", None)
         st.session_state.pop(EDIT_DIALOG_KEY, None)
@@ -333,18 +349,13 @@ def save_test_suite_form(data: dict) -> None:
         st.session_state[PAGE_RESULT_KEY] = {"success": True, "message": "Changes have been saved successfully."}
     else:
         table_group = get_table_group(data.get("table_groups_id"))
-        test_suite = TestSuite()
-        test_suite.project_code = table_group.project_code
-        test_suite.test_suite = data.get("test_suite")
-        test_suite.connection_id = table_group.connection_id
-        test_suite.table_groups_id = table_group.id
-        test_suite.test_suite_description = data.get("test_suite_description", "")
-        test_suite.severity = data.get("severity")
-        test_suite.export_to_observability = data.get("export_to_observability", False)
-        test_suite.dq_score_exclude = data.get("dq_score_exclude", False)
-        test_suite.component_key = data.get("component_key", "")
-        test_suite.component_type = data.get("component_type", "dataset")
-        test_suite.component_name = data.get("component_name", "")
+        test_suite = TestSuite(
+            project_code=table_group.project_code,
+            test_suite=data.get("test_suite"),
+            connection_id=table_group.connection_id,
+            table_groups_id=table_group.id,
+            **values,
+        )
         test_suite.save()
         st.session_state.pop("ts_form_dialog:result", None)
         st.session_state.pop(ADD_DIALOG_KEY, None)
