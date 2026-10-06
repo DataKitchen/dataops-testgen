@@ -320,12 +320,12 @@ const RunTriggerInfo = (externalUrl, metadata, overrides, onOpenDetails) => {
         );
     }
     if (hasDetails) {
-        children.push(small({ class: 'text-caption' }, 'Execution overrides:'));
+        children.push(small({ class: 'text-caption' }, 'Run details:'));
         children.push(Button({
             type: 'icon',
             icon: 'info',
             iconSize: 18,
-            tooltip: 'View execution overrides',
+            tooltip: 'View run details',
             tooltipPosition: 'bottom-left',
             onclick: onOpenDetails,
         }));
@@ -872,7 +872,7 @@ const TestResults = (/** @type Properties */ props) => {
         // Run metadata dialog
         Dialog(
             {
-                title: 'Execution overrides',
+                title: 'Run details',
                 open: metadataDialogOpen,
                 onClose: () => { metadataDialogOpen.val = false; },
                 width: '36rem',

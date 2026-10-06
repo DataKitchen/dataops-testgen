@@ -781,8 +781,12 @@ def _make_schema_execution_sql() -> TestExecutionSQL:
     return TestExecutionSQL(Connection(sql_flavor="postgresql"), table_group, test_suite, test_run)
 
 
-def test_schema_comes_from_the_table_group():
-    assert _make_schema_execution_sql().schema == "test_schema"
+def test_the_table_group_schema_reaches_the_validation_query():
+    """Validation resolves identifiers in the schema the table group reads, which is the one its
+    tests run against."""
+    _query, params = _make_schema_execution_sql().get_target_identifiers(["test_schema"])
+
+    assert params["DATA_SCHEMA"] == "test_schema"
 
 
 def test_the_test_definition_drives_the_executed_sql():

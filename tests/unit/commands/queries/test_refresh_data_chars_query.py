@@ -318,14 +318,6 @@ def test_the_files_of_a_table_group_are_counted_in_one_query(tmp_path):
 # --- schema resolution ---
 
 
-def test_schema_comes_from_the_table_group():
-    sql_generator = RefreshDataCharsSQL(
-        Connection(sql_flavor="postgresql"), TableGroup(table_group_schema="test_schema")
-    )
-
-    assert sql_generator.schema == "test_schema"
-
-
 def test_every_read_of_the_scanned_schema_agrees():
     """The scanned schema reaches the DDF query, the row counts and the access probe.
 

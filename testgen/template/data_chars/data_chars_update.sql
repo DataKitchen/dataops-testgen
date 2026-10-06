@@ -41,17 +41,6 @@ updated_records AS (
       INNER JOIN data_table_chars d ON (
          n.table_groups_id = d.table_groups_id
          AND n.table_name = d.table_name
-         -- One row per table is the invariant, but nothing enforces it. Resolving to a single
-         -- row keeps a catalog that predates it from having every duplicate revived and
-         -- repointed here; the live one wins so a scan never resurrects a dropped twin.
-         AND d.table_id = (
-            SELECT x.table_id
-              FROM data_table_chars x
-             WHERE x.table_groups_id = n.table_groups_id
-               AND x.table_name = n.table_name
-             ORDER BY (x.drop_date IS NOT NULL), x.table_id
-             LIMIT 1
-         )
       )
    WHERE data_table_chars.table_id = d.table_id
    RETURNING data_table_chars.*, d.drop_date as old_drop_date
@@ -307,17 +296,6 @@ inserted_records AS (
       INNER JOIN data_table_chars dtc ON (
          n.table_groups_id = dtc.table_groups_id
          AND n.table_name = dtc.table_name
-         -- One row per table is the invariant, but nothing enforces it, and a catalog that
-         -- predates that holding would insert each column once per duplicate. Resolving to a
-         -- single table_id is a no-op when there is only one.
-         AND dtc.table_id = (
-            SELECT x.table_id
-              FROM data_table_chars x
-             WHERE x.table_groups_id = n.table_groups_id
-               AND x.table_name = n.table_name
-             ORDER BY x.table_id
-             LIMIT 1
-         )
       )
       LEFT JOIN data_column_chars d ON (
          n.table_groups_id = d.table_groups_id

@@ -46,7 +46,6 @@ class RefreshDataCharsSQL:
     def __init__(self, connection: Connection, table_group: TableGroup):
         self.connection = connection
         self.table_group = table_group
-        self.schema = table_group.table_group_schema
         self.flavor = connection.sql_flavor
         self.flavor_service = get_flavor_service(self.flavor)
 
@@ -58,7 +57,7 @@ class RefreshDataCharsSQL:
     ) -> tuple[str, dict]:
         query = read_template_sql_file(template_file_name, sub_directory)
         params = {
-            "DATA_SCHEMA": self.schema,
+            "DATA_SCHEMA": self.table_group.table_group_schema,
             "TABLE_GROUPS_ID": self.table_group.id,
         }
         if extra_params:
@@ -125,7 +124,7 @@ class RefreshDataCharsSQL:
 
     def get_row_counts(self, table_names: Iterable[str]) -> list[tuple[str, None]]:
         # Runs on Target database
-        schema = self.schema
+        schema = self.table_group.table_group_schema
         flavor_code = self.connection.sql_flavor_code
         count_queries = [
             f"SELECT '{table}' AS table_name, COUNT(*) AS row_count "
@@ -150,7 +149,7 @@ class RefreshDataCharsSQL:
 
     def verify_access(self, table_name: str) -> tuple[str, None]:
         # Runs on Target database
-        schema = self.schema
+        schema = self.table_group.table_group_schema
         table_ref = self.flavor_service.get_table_ref(schema, table_name, self.connection.sql_flavor_code)
         prefix, suffix = self.flavor_service.row_limit_clauses(1)
         query = f"SELECT {prefix} 1 FROM {table_ref} {suffix}".strip()

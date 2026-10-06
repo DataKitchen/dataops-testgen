@@ -313,7 +313,6 @@ class TestExecutionSQL:
     ):
         self.connection = connection
         self.table_group = table_group
-        self.schema = table_group.table_group_schema
         self.test_suite = test_suite
         self.test_run = test_run
         self.run_date = test_run.test_starttime
@@ -535,7 +534,7 @@ class TestExecutionSQL:
         # Runs on Target database
         filename = "get_target_identifiers.sql"
         params = {
-            "DATA_SCHEMA": self.schema,
+            "DATA_SCHEMA": self.table_group.table_group_schema,
             "TEST_SCHEMAS": ", ".join([f"'{item}'" for item in schemas]),
         }
         try:
