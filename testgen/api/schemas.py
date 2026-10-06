@@ -1,14 +1,27 @@
 """Pydantic request/response models for API v1 endpoints."""
 
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Discriminator, Field, RootModel, StrictBool, StrictInt, Tag
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    Field,
+    RootModel,
+    StrictBool,
+    StrictInt,
+    Tag,
+    ValidationInfo,
+    field_validator,
+)
 
 from testgen.api.enums import (
     AuthenticationMethod,
     ConnectionType,
+    DefaultSeverity,
+    DefaultSeverityInput,
     Disposition,
     GeneralType,
     HygieneDisposition,
@@ -979,3 +992,113 @@ class TableGroupCreate(BaseModel):
     add_scorecard: StrictBool = Field(
         default=True, description="Also add a scorecard for the table group to the Quality Dashboard."
     )
+
+
+# --- Test Suites ---
+
+
+class TestSuiteLatestRun(BaseModel):
+    """The test suite's last completed test run."""
+
+    job_execution_id: UUID = Field(description="The run's job ID, for `GET /test-runs/{job_id}`.")
+    started_at: datetime | None = None
+    test_count: int | None = Field(default=None, description="Tests the run executed.")
+    result_counts: ResultCounts
+
+
+class TestSuiteItem(BaseModel):
+    """One test suite in a list, with its test count and last completed run."""
+
+    test_suite_id: UUID
+    test_suite_name: str
+    project_code: str
+    connection_id: int
+    table_group_id: UUID
+    table_group_name: str | None = None
+    description: str | None = None
+    test_count: int = Field(description="Test definitions in the suite.")
+    latest_run: TestSuiteLatestRun | None = Field(
+        default=None, description="The last completed test run. Null when the suite has never completed a run."
+    )
+
+
+class TestSuiteListResponse(BaseModel):
+    items: list[TestSuiteItem]
+    page: int
+    limit: int
+    total: int
+
+
+class TestSuiteResponse(BaseModel):
+    """A test suite's configuration."""
+
+    test_suite_id: UUID
+    test_suite_name: str
+    project_code: str
+    connection_id: int
+    table_group_id: UUID
+    description: str | None = None
+    default_severity: DefaultSeverity | None = Field(
+        default=None,
+        description="Severity for the suite's tests that set none of their own. Null means each test takes "
+        "its test type's severity.",
+    )
+    exclude_from_quality_score: bool = Field(description="Whether the suite's results are left out of scoring.")
+    export_to_observability: bool
+    component_key: str | None = None
+    component_type: str | None = None
+    component_name: str | None = None
+    generation_sets: list[str] = Field(
+        default_factory=list,
+        description="Generation sets test generation uses for the suite. Empty means `Standard`.",
+    )
+    is_default: bool = Field(
+        description="Whether this is its table group's default test suite, which the table group's first "
+        "profiling run generates tests into."
+    )
+
+
+class TestSuiteCreate(BaseModel):
+    """A test suite to create under a table group.
+
+    Omitted optional fields, and fields sent as ``null``, take the default shown.
+    Unknown fields are rejected. Test suite names need not be unique, so repeating a
+    create makes a second suite with the same name.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    test_suite_name: str = Field(description="Up to 200 characters.")
+    description: str | None = None
+    default_severity: DefaultSeverityInput | None = Field(
+        default=None,
+        description="Severity for the suite's tests that set none of their own. Omit to have each test take "
+        "its test type's severity.",
+    )
+    exclude_from_quality_score: StrictBool = Field(
+        default=False, description="Leave the suite's results out of the Quality Score."
+    )
+    export_to_observability: StrictBool = Field(
+        default=False, description="Export the suite's test results to DataOps Observability."
+    )
+    component_key: str | None = Field(default=None, description="Component identifier in DataOps Observability.")
+    component_type: str | None = Field(default="dataset", description="Component type in DataOps Observability.")
+    component_name: str | None = Field(default=None, description="Component name in DataOps Observability.")
+    generation_sets: list[str] | None = Field(
+        default=None,
+        description="Generation sets test generation uses for the suite, from those TestGen defines. "
+        "Omit to use `Standard`.",
+    )
+    set_as_default: StrictBool = Field(
+        default=False,
+        description="Make this the table group's default test suite, replacing any other. The table group's "
+        "first profiling run then generates tests into it; a table group that has already been profiled "
+        "does not.",
+    )
+
+    @field_validator(
+        "component_type", "exclude_from_quality_score", "export_to_observability", "set_as_default", mode="before"
+    )
+    @classmethod
+    def _null_takes_the_default(cls, value: Any, info: ValidationInfo) -> Any:
+        return cls.model_fields[info.field_name].default if value is None else value
