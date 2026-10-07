@@ -608,7 +608,8 @@ CREATE TABLE test_types (
    active                        VARCHAR,
    overrides                     VARCHAR,
    uploaded_version              VARCHAR(20),
-   ai_redact_values              BOOLEAN NOT NULL DEFAULT FALSE
+   ai_redact_values              BOOLEAN NOT NULL DEFAULT FALSE,
+   null_measure_fails            BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE test_templates (

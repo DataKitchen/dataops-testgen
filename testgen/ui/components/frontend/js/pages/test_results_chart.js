@@ -19,6 +19,18 @@ const staleColorByStatus = {
     Log: colorMap.lightGrey,
 };
 
+/**
+ * @param {string?} params The test type's result_visualization_params JSON
+ * @returns {Object<string, string>} Legend labels keyed by measure value, empty when the params set none
+ */
+const parseLegendLabels = (params) => {
+    try {
+        return JSON.parse(params || '{}')?.legend?.labels ?? {};
+    } catch {
+        return {};
+    }
+};
+
 const TestResultsChart = (/** @type Properties */ props) => {
     const { emit } = props;
     loadStylesheet('testResultsChart', stylesheet);
@@ -161,6 +173,7 @@ const TestResultsChart = (/** @type Properties */ props) => {
         const updateStatuses = new Set();
         const staleStatuses = new Set();
         const dataPoints = [];
+        const legendLabels = parseLegendLabels(data[0]?.result_visualization_params);
 
         for (const item of data) {
             dataPoints.push({x: parseDate(item.test_date), y: item.result_measure_numeric, ...item});
@@ -199,7 +212,7 @@ const TestResultsChart = (/** @type Properties */ props) => {
                             fill: freshnessColorByStatus[status],
                         })
                     ),
-                    text({x: 10 + (11 * (updateStatuses.size - 1)), y: 0, class: 'text-small', fill: 'var(--caption-text-color)'}, 'Update'),
+                    text({x: 10 + (11 * (updateStatuses.size - 1)), y: 0, class: 'text-small', fill: 'var(--caption-text-color)'}, legendLabels['1'] ?? 'Update'),
                 )
                 : null,
             staleStatuses.size > 0
@@ -216,7 +229,7 @@ const TestResultsChart = (/** @type Properties */ props) => {
                             transform: 'rotate(45)',
                         })
                     ),
-                    text({x: 10 + (12 * (staleStatuses.size - 1)), y: 0, class: 'text-small', fill: 'var(--caption-text-color)'}, 'No update'),
+                    text({x: 10 + (12 * (staleStatuses.size - 1)), y: 0, class: 'text-small', fill: 'var(--caption-text-color)'}, legendLabels['0'] ?? 'No update'),
                 )
                 : null,
         );

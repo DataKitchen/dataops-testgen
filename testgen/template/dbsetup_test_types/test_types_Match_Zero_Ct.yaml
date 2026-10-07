@@ -1,0 +1,224 @@
+test_types:
+  id: '1528'
+  test_type: Match_Zero_Ct
+  test_name_short: Match Zero Count
+  test_name_long: Count of zero values equals baseline
+  test_description: |-
+    Tests that the number of zero values in the column equals the baseline count.
+  except_message: |-
+    Zero value count differs from baseline.
+  measure_uom: Zero values
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'N' AND value_ct > 0
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_ct
+  default_parm_values: |-
+    zero_value_ct
+  default_parm_prompts: |-
+    Zero Value Count at Baseline
+  default_parm_help: |-
+    The expected number of zero values in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected zero value count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Zero Count tests that the column holds exactly the baseline number of zeros. A rise alongside a drop in the null count points to nulls replaced by zeros.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7046'
+    test_type: Match_Zero_Ct
+    sql_flavor: bigquery
+    measure: |-
+      CAST(SUM(1 - ABS(SIGN(CAST({COLUMN_NAME} AS NUMERIC)))) AS INT64)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '6046'
+    test_type: Match_Zero_Ct
+    sql_flavor: databricks
+    measure: |-
+      CAST(SUM( 1 - ABS(SIGN({COLUMN_NAME})))AS BIGINT )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '3046'
+    test_type: Match_Zero_Ct
+    sql_flavor: mssql
+    measure: |-
+      CAST(SUM( 1 - ABS(SIGN({COLUMN_NAME})))AS BIGINT )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '4046'
+    test_type: Match_Zero_Ct
+    sql_flavor: postgresql
+    measure: |-
+      SUM( 1 - ABS(SIGN({COLUMN_NAME}::NUMERIC)) )::BIGINT
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2026'
+    test_type: Match_Zero_Ct
+    sql_flavor: redshift
+    measure: |-
+      SUM(1 - ABS(SIGN({COLUMN_NAME})))::BIGINT
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '7046'
+    test_type: Match_Zero_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(1 - ABS(SIGN({COLUMN_NAME})))::BIGINT
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2126'
+    test_type: Match_Zero_Ct
+    sql_flavor: snowflake
+    measure: |-
+      SUM( 1 - ABS(SIGN({COLUMN_NAME})) )::BIGINT
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8046'
+    test_type: Match_Zero_Ct
+    sql_flavor: oracle
+    measure: |-
+      SUM(1 - ABS(SIGN({COLUMN_NAME})))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8046'
+    test_type: Match_Zero_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(1 - ABS(SIGN({COLUMN_NAME})))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '10057'
+    test_type: Match_Zero_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS DOUBLE) = 0 THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '11120'
+    test_type: Match_Zero_Ct
+    sql_flavor: duckdb
+    measure: |-
+      SUM( 1 - ABS(SIGN({COLUMN_NAME})) )::BIGINT
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  target_data_lookups:
+  - id: '1531'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(SUM(1 - ABS(SIGN(CAST(`{COLUMN_NAME}` AS NUMERIC)))) AS INT64) AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1553'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(SUM( 1 - ABS(SIGN(`{COLUMN_NAME}`)))AS BIGINT ) AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1575'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT CAST(SUM( 1 - ABS(SIGN("{COLUMN_NAME}")))AS BIGINT ) AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1597'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM( 1 - ABS(SIGN("{COLUMN_NAME}"::NUMERIC)) )::BIGINT AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1619'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(1 - ABS(SIGN("{COLUMN_NAME}")))::BIGINT AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1641'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(1 - ABS(SIGN("{COLUMN_NAME}")))::BIGINT AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1663'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM( 1 - ABS(SIGN("{COLUMN_NAME}")) )::BIGINT AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8525'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(1 - ABS(SIGN("{COLUMN_NAME}"))) AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8525'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(1 - ABS(SIGN("{COLUMN_NAME}"))) AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10076'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN CAST("{COLUMN_NAME}" AS DOUBLE) = 0 THEN 1 ELSE 0 END) AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11121'
+    test_id: '1528'
+    test_type: Match_Zero_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM( 1 - ABS(SIGN("{COLUMN_NAME}")) )::BIGINT AS current_zero_ct, {BASELINE_CT} AS baseline_zero_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

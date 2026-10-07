@@ -92,9 +92,13 @@ class ProfilingSQL:
             "MAX_PATTERN_LENGTH": self.max_pattern_length,
         }
         if column_chars:
+            quote = self.flavor_service.quote_character
             params.update({
                 "DATA_TABLE": column_chars.table_name,
                 "COL_NAME": column_chars.column_name,
+                "COL_VALUE": self.flavor_service.text_value(
+                    f"{quote}{column_chars.column_name}{quote}", column_chars.column_type
+                ),
             })
         if table_sampling:
             params.update({

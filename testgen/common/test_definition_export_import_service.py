@@ -23,6 +23,7 @@ from testgen.common.models.test_definition import (
     NON_PUBLIC_TEST_TYPES,
     TestDefinition,
     TestType,
+    missing_required_fields,
     validate_custom_metadata,
 )
 from testgen.common.models.test_suite import TestSuite
@@ -76,6 +77,7 @@ class ImportReason(StrEnum):
     non_public_test_type = "non_public_test_type"
     invalid_table = "invalid_table"
     missing_external_id = "missing_external_id"
+    missing_required_field = "missing_required_field"
     absent = "absent"
 
 
@@ -312,7 +314,7 @@ def import_definitions(
     payload: ImportPayload,
 ) -> ImportResponse:
     incoming = payload.definitions
-    valid_test_types = _load_valid_test_types()
+    test_types = _load_test_types()
     table_group = TableGroup.get(test_suite.table_groups_id)
     profiled_tables = set(DataTable.select_table_names(test_suite.table_groups_id, limit=None))
 
@@ -363,12 +365,13 @@ def import_definitions(
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.missing_external_id, idx, td_import, target))
             continue
 
-        if td_import.test_type not in valid_test_types:
+        if td_import.test_type not in test_types:
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_test_type, idx, td_import, target))
             continue
 
-        # A non-public type is a real row in ``test_types``, so it clears the check above.
-        if td_import.test_type in NON_PUBLIC_TEST_TYPES:
+        # A non-public type is a real row in ``test_types``, so it clears the check above. Only a new
+        # definition is refused: an update keeps the stored type, so a matched one stays importable.
+        if target is None and td_import.test_type in NON_PUBLIC_TEST_TYPES:
             actions.append(
                 _PlannedAction(ImportAction.skip, ImportReason.non_public_test_type, idx, td_import, target)
             )
@@ -376,6 +379,12 @@ def import_definitions(
 
         if not _is_profiled(td_import, profiled_tables):
             actions.append(_PlannedAction(ImportAction.skip, ImportReason.invalid_table, idx, td_import, target))
+            continue
+
+        if missing_required_fields(test_types[td_import.test_type], lambda field: getattr(td_import, field, None)):
+            actions.append(
+                _PlannedAction(ImportAction.skip, ImportReason.missing_required_field, idx, td_import, target)
+            )
             continue
 
         if target is None:
@@ -420,10 +429,9 @@ class _PlannedAction:
     target: Any  # Row or TestDefinition (after create flush), None for unmatched creates
 
 
-def _load_valid_test_types() -> set[str]:
+def _load_test_types() -> dict[str, TestType]:
     session = get_current_session()
-    rows = session.execute(select(TestType.test_type)).all()
-    return {row[0] for row in rows}
+    return {tt.test_type: tt for tt in session.scalars(select(TestType).where(TestType.active == "Y")).all()}
 
 
 def _is_profiled(td_import: TestDefinitionExport, profiled_tables: set[str]) -> bool:

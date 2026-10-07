@@ -174,6 +174,7 @@ WITH new_chars AS (
       table_name,
       column_name,
       position,
+      general_type,
       column_type,
       db_data_type,
       is_decimal,
@@ -185,6 +186,7 @@ WITH new_chars AS (
 update_chars AS (
    UPDATE data_column_chars
    SET ordinal_position = n.position,
+      general_type = n.general_type,
       column_type = n.column_type,
       db_data_type = n.db_data_type,
       is_decimal = n.is_decimal,

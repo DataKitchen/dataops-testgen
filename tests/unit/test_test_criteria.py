@@ -16,9 +16,10 @@ YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
 # shared by the UI lookup and MCP. This dict pins the expected facet value for every test type;
 # redline here and the derivation together.
 EXPECTED_CRITERIA = {
-    # Custom Criteria: user authors the test in SQL (custom scope)
+    # Custom Criteria: user authors the test in SQL (custom scope or Custom SQL algorithm)
     "CUSTOM": TestCriteria.CUSTOM_CRITERIA,
     "Condition_Flag": TestCriteria.CUSTOM_CRITERIA,
+    "SQL_Metric": TestCriteria.CUSTOM_CRITERIA,
     # Reference Dataset: compared against another dataset (referential scope)
     "Aggregate_Balance": TestCriteria.REFERENCE_DATASET,
     "Aggregate_Balance_Percent": TestCriteria.REFERENCE_DATASET,
@@ -31,6 +32,7 @@ EXPECTED_CRITERIA = {
     # List of Values: tested against a set/lookup of allowed values (Set / lookup algorithm)
     "LOV_All": TestCriteria.LIST_OF_VALUES,
     "LOV_Match": TestCriteria.LIST_OF_VALUES,
+    "Required_No_Placeholder": TestCriteria.LIST_OF_VALUES,
     "US_State": TestCriteria.LIST_OF_VALUES,
     # Defined Rule: predefined validity/integrity rule, no user-supplied value (enumerated)
     "Dupe_Rows": TestCriteria.DEFINED_RULE,
@@ -45,6 +47,17 @@ EXPECTED_CRITERIA = {
     "Constant": TestCriteria.DEFINED_VALUE,
     "Pattern_Match": TestCriteria.DEFINED_VALUE,
     "Required": TestCriteria.DEFINED_VALUE,
+    # Defined Value: compared with a baseline stored on the test (Aggregate reconciliation, non-referential)
+    **dict.fromkeys(
+        [
+            "Match_Row_Ct", "Match_Column_Ct", "Match_Column_Type", "Match_Null_Ct", "Match_Distinct_Ct",
+            "Match_Min_Val", "Match_Max_Val", "Match_Zero_Ct", "Match_Sum", "Match_Stdev", "Match_Fractional_Sum",
+            "Match_Min_Date", "Match_Max_Date", "Match_Distinct_Date_Ct", "Match_True_Ct", "Match_Min_Length",
+            "Match_Max_Length", "Match_Total_Length", "Match_Lead_Space_Ct", "Match_Zero_Length_Ct", "Match_Upper_Case_Ct",
+            "Match_Non_Printing_Ct", "Match_Distinct_Hash", "Match_Frequent_Values", "Match_Frequent_Patterns",
+        ],
+        TestCriteria.DEFINED_VALUE,
+    ),
     # Defined Threshold: user tunes a numeric threshold/tolerance (fallthrough)
     "Alpha_Trunc": TestCriteria.DEFINED_THRESHOLD,
     "Avg_Shift": TestCriteria.DEFINED_THRESHOLD,
@@ -52,11 +65,11 @@ EXPECTED_CRITERIA = {
     "Dec_Trunc": TestCriteria.DEFINED_THRESHOLD,
     "Distinct_Date_Ct": TestCriteria.DEFINED_THRESHOLD,
     "Distinct_Value_Ct": TestCriteria.DEFINED_THRESHOLD,
-    "Freshness_Trend": TestCriteria.DEFINED_THRESHOLD,
     "Future_Date": TestCriteria.DEFINED_THRESHOLD,
     "Future_Date_1Y": TestCriteria.DEFINED_THRESHOLD,
     "Incr_Avg_Shift": TestCriteria.DEFINED_THRESHOLD,
-    "Metric_Trend": TestCriteria.DEFINED_THRESHOLD,
+    "Max_Date": TestCriteria.DEFINED_THRESHOLD,
+    "Max_Val": TestCriteria.DEFINED_THRESHOLD,
     "Min_Date": TestCriteria.DEFINED_THRESHOLD,
     "Min_Val": TestCriteria.DEFINED_THRESHOLD,
     "Missing_Pct": TestCriteria.DEFINED_THRESHOLD,
@@ -67,10 +80,10 @@ EXPECTED_CRITERIA = {
     "Row_Ct": TestCriteria.DEFINED_THRESHOLD,
     "Row_Ct_Pct": TestCriteria.DEFINED_THRESHOLD,
     "Table_Freshness": TestCriteria.DEFINED_THRESHOLD,
+    "Text_Length_Range": TestCriteria.DEFINED_THRESHOLD,
     "Unique_Pct": TestCriteria.DEFINED_THRESHOLD,
     "Variability_Increase": TestCriteria.DEFINED_THRESHOLD,
     "Variability_Decrease": TestCriteria.DEFINED_THRESHOLD,
-    "Volume_Trend": TestCriteria.DEFINED_THRESHOLD,
     "Weekly_Rec_Ct": TestCriteria.DEFINED_THRESHOLD,
 }
 

@@ -1,3 +1,5 @@
+import re
+
 from sqlalchemy.engine import URL
 
 from testgen import settings
@@ -10,6 +12,8 @@ class MssqlFlavorService(FlavorService):
     concat_operator = "+"
     escaped_underscore = "[_]"
     row_limiting_clause = "top"
+    # A plain literal is converted to the database code page, which drops characters outside it.
+    string_literal_prefix = "N"
     url_scheme = "mssql+pyodbc"
 
     # APPROX_PERCENTILE_CONT arrived in SQL Server 2022; older servers fail the probe and stay exact.
@@ -27,6 +31,12 @@ class MssqlFlavorService(FlavorService):
         if sql_flavor_code == "onelake_mssql":
             return ""
         return "WITH (NOLOCK)"
+
+    def text_value(self, column_ref: str, column_type: str | None) -> str:
+        # CHAR and NCHAR values are stored padded with spaces to the declared length.
+        if column_type and re.fullmatch(r"n?char(\(\d+\))?", column_type.lower()):
+            return f"RTRIM({column_ref})"
+        return column_ref
 
     def get_connection_string_from_fields(self, params: ResolvedConnectionParams) -> str:
         connection_url = URL.create(

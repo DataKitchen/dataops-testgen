@@ -8,10 +8,18 @@ EXPECTED_PAIRS = {("Standard", t) for t in [
     "Alpha_Trunc", "Avg_Shift", "Constant", "Daily_Record_Ct", "Dec_Trunc", "Distinct_Date_Ct",
     "Distinct_Value_Ct", "Dupe_Rows", "Email_Format", "Future_Date", "Future_Date_1Y",
     "Incr_Avg_Shift", "LOV_Match", "Min_Date", "Min_Val", "Missing_Pct", "Monthly_Rec_Ct",
-    "Outlier_Pct_Above", "Outlier_Pct_Below", "Pattern_Match", "Recency", "Required",
+    "Outlier_Pct_Above", "Outlier_Pct_Below", "Pattern_Match", "Recency", "Required", "Required_No_Placeholder",
     "Street_Addr_Pattern", "US_State", "Unique", "Unique_Pct", "Valid_Characters", "Valid_Month",
     "Valid_US_Zip", "Valid_US_Zip3", "Variability_Decrease", "Variability_Increase", "Weekly_Rec_Ct",
-]} | {("Monitor", t) for t in ["Schema_Drift", "Freshness_Trend", "Volume_Trend"]}
+]} | {("Monitor", t) for t in ["Schema_Drift", "Freshness_Trend", "Volume_Trend"]} | {("Contract", "Required_No_Placeholder")} | {
+    ("Table Comparison", t) for t in [
+        "Match_Row_Ct", "Match_Column_Ct", "Match_Column_Type", "Match_Null_Ct", "Match_Distinct_Ct",
+        "Match_Min_Val", "Match_Max_Val", "Match_Zero_Ct", "Match_Sum", "Match_Stdev", "Match_Fractional_Sum",
+        "Match_Min_Date", "Match_Max_Date", "Match_Distinct_Date_Ct", "Match_True_Ct", "Match_Min_Length",
+        "Match_Max_Length", "Match_Total_Length", "Match_Lead_Space_Ct", "Match_Zero_Length_Ct", "Match_Upper_Case_Ct",
+        "Match_Non_Printing_Ct", "Match_Distinct_Hash", "Match_Frequent_Values", "Match_Frequent_Patterns",
+    ]
+}
 
 
 def _load_all_core_test_types():

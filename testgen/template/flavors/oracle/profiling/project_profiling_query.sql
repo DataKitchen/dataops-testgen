@@ -43,7 +43,7 @@ WITH whole_table_measures AS (
     COUNT("{COL_NAME}") AS sample_value_ct,
     0 AS zero_length_ct,
     SUM(CASE
-           WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
+           WHEN ("{COL_NAME}" LIKE ' %' AND LTRIM("{COL_NAME}") IS NOT NULL) THEN 1
                                                 ELSE 0
          END) AS lead_space_ct,
     SUM(CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) AS quoted_value_ct,
@@ -58,20 +58,9 @@ WITH whole_table_measures AS (
                                       '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
                                                                                      ELSE 0
          END) AS filled_value_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', ' ') = "{COL_NAME}" THEN 0
-          WHEN TRANSLATE("{COL_NAME}", 'abcdefghijklmnopqrstuvwxyz', ' ') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS upper_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', ' ') = "{COL_NAME}" THEN 0
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', ' ') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS lower_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', ' ') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS non_alpha_ct,
+    SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" <> LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS upper_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" = LOWER("{COL_NAME}") AND "{COL_NAME}" <> UPPER("{COL_NAME}") THEN 1 ELSE 0 END) AS lower_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" = LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS non_alpha_ct,
     COUNT(CASE WHEN TRANSLATE("{COL_NAME}",
         'X' || UNISTR('\00A0') || UNISTR('\2009') || UNISTR('\200B') || UNISTR('\200C') || UNISTR('\200D') || UNISTR('\200E') || UNISTR('\200F') || UNISTR('\202F') || UNISTR('\3000') || UNISTR('\FEFF'),
         'XXXXXXXXXXX') <> "{COL_NAME}" THEN 1 END) AS non_printing_ct,
@@ -126,7 +115,7 @@ WITH whole_table_measures AS (
          value_ct,
          CASE
            WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, NLSSORT(pattern, 'NLS_SORT=BINARY'))
          END AS pattern_rank
     FROM pattern_counts
 )
@@ -179,7 +168,7 @@ SELECT
   MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS NUMBER(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

@@ -23,11 +23,12 @@ SELECT top_val AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
-       ( SELECT MD5(ARRAY_JOIN(ARRAY_AGG(v), '|')) as dvh
-           FROM (SELECT DISTINCT NULLIF("{COL_NAME}", '') AS v
+       ( SELECT CASE WHEN COUNT(*) <= 70 THEN MD5(ARRAY_JOIN(ARRAY_AGG(v), '|')) END as dvh
+           FROM (SELECT DISTINCT "{COL_NAME}" AS v
                    FROM target_table
-                  WHERE NULLIF("{COL_NAME}", '') IS NOT NULL
-                  ORDER BY v) sorted_vals ) AS distinct_value_hash
+                  WHERE "{COL_NAME}" IS NOT NULL
+                  ORDER BY v
+                  LIMIT 1000) sorted_vals ) AS distinct_value_hash
   FROM grouped_vals
  GROUP BY top_val
  ORDER BY 3;

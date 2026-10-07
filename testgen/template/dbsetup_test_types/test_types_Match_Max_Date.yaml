@@ -1,0 +1,224 @@
+test_types:
+  id: '1533'
+  test_type: Match_Max_Date
+  test_name_short: Match Maximum Date
+  test_name_long: Latest date equals baseline
+  test_description: |-
+    Tests that the latest date in the column equals the baseline date, compared to the second.
+  except_message: |-
+    Latest date differs from baseline.
+  measure_uom: Latest date
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'D' AND value_ct > 0
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    TO_CHAR(max_date, 'YYYY-MM-DD HH24:MI:SS')
+  default_parm_prompts: |-
+    Latest Date at Baseline
+  default_parm_help: |-
+    The expected latest date in the column, in the form YYYY-MM-DD HH:MM:SS.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected latest date
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Maximum Date tests that the latest date in the column is exactly the baseline date. Dates are compared to the second, and fractional seconds are ignored.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7051'
+    test_type: Match_Max_Date
+    sql_flavor: bigquery
+    measure: |-
+      FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', CAST(MAX({COLUMN_NAME}) AS DATETIME))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '6051'
+    test_type: Match_Max_Date
+    sql_flavor: databricks
+    measure: |-
+      DATE_FORMAT(MAX({COLUMN_NAME}), 'yyyy-MM-dd HH:mm:ss')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '3051'
+    test_type: Match_Max_Date
+    sql_flavor: mssql
+    measure: |-
+      CONVERT(VARCHAR(19), CAST(MAX({COLUMN_NAME}) AS DATETIME2), 120)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '4051'
+    test_type: Match_Max_Date
+    sql_flavor: postgresql
+    measure: |-
+      TO_CHAR(CAST(MAX({COLUMN_NAME}) AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '2031'
+    test_type: Match_Max_Date
+    sql_flavor: redshift
+    measure: |-
+      TO_CHAR(CAST(MAX({COLUMN_NAME}) AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '7051'
+    test_type: Match_Max_Date
+    sql_flavor: redshift_spectrum
+    measure: |-
+      TO_CHAR(CAST(MAX({COLUMN_NAME}) AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '2131'
+    test_type: Match_Max_Date
+    sql_flavor: snowflake
+    measure: |-
+      TO_CHAR(CAST(MAX({COLUMN_NAME}) AS TIMESTAMP_NTZ), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '8051'
+    test_type: Match_Max_Date
+    sql_flavor: oracle
+    measure: |-
+      TO_CHAR(MAX({COLUMN_NAME}), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '8051'
+    test_type: Match_Max_Date
+    sql_flavor: sap_hana
+    measure: |-
+      TO_VARCHAR(CAST(MAX({COLUMN_NAME}) AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '10062'
+    test_type: Match_Max_Date
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUBSTR(CAST(CAST(MAX({COLUMN_NAME}) AS TIMESTAMP) AS VARCHAR), 1, 19)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  - id: '11130'
+    test_type: Match_Max_Date
+    sql_flavor: duckdb
+    measure: |-
+      STRFTIME(MAX({COLUMN_NAME}), '%Y-%m-%d %H:%M:%S')
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE_LITERAL}
+  target_data_lookups:
+  - id: '1536'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M:%S', CAST(MAX(`{COLUMN_NAME}`) AS DATETIME)) AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1558'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DATE_FORMAT(MAX(`{COLUMN_NAME}`), 'yyyy-MM-dd HH:mm:ss') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1580'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT CONVERT(VARCHAR(19), CAST(MAX("{COLUMN_NAME}") AS DATETIME2), 120) AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1602'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(MAX("{COLUMN_NAME}") AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1624'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(MAX("{COLUMN_NAME}") AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1646'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(MAX("{COLUMN_NAME}") AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1668'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(CAST(MAX("{COLUMN_NAME}") AS TIMESTAMP_NTZ), 'YYYY-MM-DD HH24:MI:SS') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8530'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_CHAR(MAX("{COLUMN_NAME}"), 'YYYY-MM-DD HH24:MI:SS') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8530'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT TO_VARCHAR(CAST(MAX("{COLUMN_NAME}") AS TIMESTAMP), 'YYYY-MM-DD HH24:MI:SS') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10081'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUBSTR(CAST(CAST(MAX("{COLUMN_NAME}") AS TIMESTAMP) AS VARCHAR), 1, 19) AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11131'
+    test_id: '1533'
+    test_type: Match_Max_Date
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT STRFTIME(MAX("{COLUMN_NAME}"), '%Y-%m-%d %H:%M:%S') AS current_max_date, {BASELINE_VALUE_LITERAL} AS baseline_max_date FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

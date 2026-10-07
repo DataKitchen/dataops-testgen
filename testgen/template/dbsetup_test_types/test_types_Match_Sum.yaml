@@ -1,0 +1,225 @@
+test_types:
+  id: '1529'
+  test_type: Match_Sum
+  test_name_short: Match Sum
+  test_name_long: Sum of values equals baseline within tolerance
+  test_description: |-
+    Tests that the column total equals the baseline total, within a relative tolerance.
+  except_message: |-
+    Column sum differs from baseline by more than the tolerance.
+  measure_uom: Column sum
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'N' AND value_ct > 0 AND GREATEST(ABS(min_value), ABS(max_value)) * value_ct < 1e30
+    AND ABS(avg_value) >= 1e-5 * GREATEST(ABS(min_value), ABS(max_value))
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_sum,upper_tolerance
+  default_parm_values: |-
+    avg_value * value_ct,0.000000001
+  default_parm_prompts: |-
+    Sum at Baseline,Relative Tolerance
+  default_parm_help: |-
+    The expected total of the column values.|Allowed difference as a fraction of the baseline value. For example, 0.001 allows a difference of 0.1 percent.
+  default_parm_required: Y,Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected column sum
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Sum tests that the column total is within a relative tolerance of the baseline total. The default tolerance is close to an exact match; widen it per test when small numeric differences are expected.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7047'
+    test_type: Match_Sum
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS BIGNUMERIC))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS FLOAT64) - ABS(CAST({BASELINE_SUM} AS FLOAT64) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT64) + ABS(CAST({BASELINE_SUM} AS FLOAT64) * {UPPER_TOLERANCE})
+  - id: '6047'
+    test_type: Match_Sum
+    sql_flavor: databricks
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE})
+  - id: '3047'
+    test_type: Match_Sum
+    sql_flavor: mssql
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS FLOAT) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE})
+  - id: '4047'
+    test_type: Match_Sum
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS NUMERIC(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS DOUBLE PRECISION) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE PRECISION) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE})
+  - id: '2027'
+    test_type: Match_Sum
+    sql_flavor: redshift
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS FLOAT8) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT8) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE})
+  - id: '7047'
+    test_type: Match_Sum
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS FLOAT8) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT8) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT8) * {UPPER_TOLERANCE})
+  - id: '2127'
+    test_type: Match_Sum
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS NUMBER(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS FLOAT) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS FLOAT) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS FLOAT) * {UPPER_TOLERANCE})
+  - id: '8047'
+    test_type: Match_Sum
+    sql_flavor: oracle
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS NUMBER(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS BINARY_DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS BINARY_DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS BINARY_DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS BINARY_DOUBLE) * {UPPER_TOLERANCE})
+  - id: '8047'
+    test_type: Match_Sum
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE})
+  - id: '10058'
+    test_type: Match_Sum
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS NUMERIC(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS DOUBLE PRECISION) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE PRECISION) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE PRECISION) * {UPPER_TOLERANCE})
+  - id: '11122'
+    test_type: Match_Sum
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS DECIMAL(38,8)))
+    test_operator: NOT BETWEEN
+    test_condition: |-
+      CAST({BASELINE_SUM} AS DOUBLE) - COUNT({COLUMN_NAME}) * 0.000000005 - ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE}) AND CAST({BASELINE_SUM} AS DOUBLE) + COUNT({COLUMN_NAME}) * 0.000000005 + ABS(CAST({BASELINE_SUM} AS DOUBLE) * {UPPER_TOLERANCE})
+  target_data_lookups:
+  - id: '1532'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(`{COLUMN_NAME}` AS BIGNUMERIC)) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1554'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(`{COLUMN_NAME}` AS DECIMAL(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1576'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS DECIMAL(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1598'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS NUMERIC(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1620'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS DECIMAL(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1642'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS DECIMAL(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1664'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS NUMBER(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8526'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS NUMBER(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8526'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS DECIMAL(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10077'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS NUMERIC(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11123'
+    test_id: '1529'
+    test_type: Match_Sum
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS DECIMAL(38,8))) AS current_sum, {BASELINE_SUM} AS baseline_sum FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

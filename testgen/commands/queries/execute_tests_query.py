@@ -7,7 +7,7 @@ from uuid import UUID
 import pandas as pd
 
 from testgen.common import read_template_sql_file
-from testgen.common.clean_sql import concat_columns, null_if_empty
+from testgen.common.clean_sql import concat_columns, null_if_empty, parse_value_list, strip_trailing_semicolons
 from testgen.common.database.database_service import (
     fetch_dict_from_db,
     get_flavor_service,
@@ -80,6 +80,7 @@ class TestExecutionDef(InputParameters):
     measure: str
     test_operator: str
     test_condition: str
+    null_measure_fails: bool = False
     # Runtime attributes
     column_type: str = None
     measure_expression: str = None
@@ -221,6 +222,10 @@ def parse_cat_results(
         result_codes = result["result_codes"].split(",")
 
         for index, td in enumerate(test_defs):
+            measure = result_measures[index] if result_measures[index] != null_value else None
+            result_code = result_codes[index]
+            if measure is None and td.null_measure_fails and result_code == "1":
+                result_code = "0"
             test_results.append([
                 test_run_id,
                 test_suite_id,
@@ -232,10 +237,10 @@ def parse_cat_results(
                 td.column_name,
                 td.skip_errors or 0,
                 input_parameters_fn(td),
-                result_codes[index],
+                result_code,
                 None,  # result_status will be calculated later
                 None,  # No result_message
-                result_measures[index] if result_measures[index] != null_value else None,
+                measure,
             ])
 
     return test_results
@@ -290,6 +295,7 @@ class TestExecutionSQL:
             "test_time",
             "schema_name",
             "table_name",
+            "column_names",
             "input_parameters",
             "result_signal",
             "result_code",
@@ -396,7 +402,9 @@ class TestExecutionSQL:
                 "COLUMN_NAME_NO_QUOTES": test_def.column_name,
                 "CONCAT_COLUMNS": concat_columns(test_def.column_name, self.null_value) if test_def.column_name else "",
                 "SKIP_ERRORS": test_def.skip_errors or 0,
-                "CUSTOM_QUERY": test_def.custom_query,
+                "CUSTOM_QUERY": strip_trailing_semicolons(test_def.custom_query),
+                # After CUSTOM_QUERY, which may contain it
+                "DATA_SCHEMA": test_def.schema_name,
                 # Numeric baseline params feed division/arithmetic in CAT measures.
                 # Render empty values as NULL so the measure evaluates to NULL instead of producing
                 # invalid SQL like CAST( AS FLOAT). Cannot default to 0 — several are denominators.
@@ -433,10 +441,19 @@ class TestExecutionSQL:
                 "CONCAT_MATCH_GROUPBY": concat_columns(test_def.match_groupby_names, self.null_value) if test_def.match_groupby_names else "",
                 "MATCH_HAVING_CONDITION": f"HAVING {test_def.match_having_condition}" if test_def.match_having_condition else "",
                 "COLUMN_TYPE": test_def.column_type,
+                "COLUMN_VALUE": self.flavor_service.text_value(
+                    f"{quote}{test_def.column_name or ''}{quote}", test_def.column_type
+                ),
                 "INPUT_PARAMETERS": self._get_input_parameters(test_def),
             })
 
             params.update(self._freshness_exclusion_params(test_def))
+
+            # These two go last, so their values are never expanded by a later substitution
+            params["BASELINE_VALUE_LIST"] = self.flavor_service.string_literal_list(
+                parse_value_list(test_def.baseline_value)
+            )
+            params["BASELINE_VALUE_LITERAL"] = self.flavor_service.string_literal_or_null(test_def.baseline_value)
 
         return params
 
@@ -547,7 +564,7 @@ class TestExecutionSQL:
         # Runs on App database
         return self._get_query("update_history_calc_thresholds.sql")
 
-    def run_query_test(self, test_def: TestExecutionDef) -> tuple[str, dict]:
+    def run_query_test(self, test_def: TestExecutionDef) -> tuple[str, dict | None]:
         # Runs on Target database
         if test_def.template.startswith("@"):
             folder = "generic" if test_def.template.endswith("_generic.sql") else self.flavor
@@ -555,16 +572,12 @@ class TestExecutionSQL:
                 test_def.template,
                 f"flavors/{folder}/exec_query_tests",
                 no_bind=True,
-                # Final replace in CUSTOM_QUERY
-                extra_params={"DATA_SCHEMA": test_def.schema_name},
                 test_def=test_def,
             )
         else:
-            query = test_def.template
-            params = self._get_params(test_def)
-            params.update({"DATA_SCHEMA": test_def.schema_name})
-            query = replace_params(query, params)
-            return query, params
+            query = replace_params(test_def.template, self._get_params(test_def))
+            # Unbound, like the CAT queries: a substituted value may contain a colon
+            return query.replace(":", "\\:"), None
 
     def aggregate_cat_tests(
         self,

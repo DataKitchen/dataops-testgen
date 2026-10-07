@@ -6,7 +6,7 @@ WITH counts AS (
     `{COL_NAME}` AS col_val,
     COUNT(*) AS ct
   FROM `{DATA_SCHEMA}.{DATA_TABLE}`
-  WHERE `{COL_NAME}` > ' '
+  WHERE `{COL_NAME}` IS NOT NULL
 -- TG-IF do_sample_bool
     AND RAND() * 100 < {SAMPLE_PERCENT_CALC}
 -- TG-ENDIF
@@ -16,8 +16,9 @@ ranked AS (
   SELECT
     col_val,
     ct,
-    ROW_NUMBER() OVER (ORDER BY ct DESC, col_val ASC) AS rn
+    ROW_NUMBER() OVER (ORDER BY ct DESC, CAST(col_val AS BYTES) ASC) AS rn
   FROM counts
+  WHERE col_val > ' '
 ),
 grouped_vals AS (
   SELECT CASE WHEN rn <= 10 THEN col_val END AS top_val, ct, rn
@@ -28,7 +29,7 @@ SELECT
   SUM(ct) AS value_ct,
   MIN(rn) AS value_rank,
   CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
-  (SELECT TO_HEX(MD5(STRING_AGG(CAST(col_val AS STRING), '|' ORDER BY col_val)))
+  (SELECT CASE WHEN COUNT(*) <= 70 THEN TO_HEX(MD5(STRING_AGG(CAST(col_val AS STRING), '|' ORDER BY CAST(col_val AS BYTES)))) END
      FROM counts
   ) AS distinct_value_hash
 FROM grouped_vals

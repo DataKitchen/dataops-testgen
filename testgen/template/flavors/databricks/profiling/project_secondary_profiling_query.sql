@@ -12,7 +12,7 @@ AS
 ranked_vals
 AS (SELECT `{COL_NAME}` AS val,
             COUNT(*) AS  ct,
-            ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, `{COL_NAME}`) AS rn
+            ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(`{COL_NAME}` AS BINARY)) AS rn
      FROM target_table
      WHERE `{COL_NAME}` > ' '
      GROUP BY `{COL_NAME}`
@@ -25,8 +25,10 @@ SELECT top_val AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
-       (SELECT MD5(CONCAT_WS('|', ARRAY_SORT(COLLECT_LIST(NULLIF(dist_col_name,'')))))  as dvh
-        FROM (SELECT DISTINCT `{COL_NAME}` as dist_col_name FROM target_table) a
+       (SELECT CASE WHEN SIZE(COLLECT_SET(CAST(`{COL_NAME}` AS BINARY))) <= 70
+                    THEN MD5(CONCAT_WS('|', TRANSFORM(ARRAY_SORT(COLLECT_SET(CAST(`{COL_NAME}` AS BINARY))),
+                                                 val -> CAST(val AS STRING)))) END
+        FROM target_table
        ) AS distinct_value_hash
 FROM grouped_vals
 GROUP BY top_val

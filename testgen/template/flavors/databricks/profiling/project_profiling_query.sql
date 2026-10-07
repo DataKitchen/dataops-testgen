@@ -7,7 +7,7 @@ WITH whole_table_measures AS (
     SUM(CASE WHEN `{COL_NAME}` IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
     MIN(LEN(`{COL_NAME}`)) AS min_length,
     MAX(LEN(`{COL_NAME}`)) AS max_length,
-    AVG(CAST(NULLIF(LEN(`{COL_NAME}`), 0) AS FLOAT)) AS avg_length,
+    AVG(CAST(NULLIF(LEN(`{COL_NAME}`), 0) AS DOUBLE)) AS avg_length,
     SUM(CASE
           WHEN LTRIM(RTRIM(`{COL_NAME}`)) RLIKE '0([.]0*)' THEN 1 ELSE 0
         END) AS zero_value_ct,
@@ -46,7 +46,7 @@ WITH whole_table_measures AS (
           ELSE 0
         END) AS zero_length_ct,
     SUM(CASE
-          WHEN `{COL_NAME}` BETWEEN ' !' AND '!' THEN 1
+          WHEN (`{COL_NAME}` LIKE ' %' AND LTRIM(`{COL_NAME}`) <> '') THEN 1
           ELSE 0
         END) AS lead_space_ct,
     SUM(CASE WHEN `{COL_NAME}` LIKE '"%"' OR `{COL_NAME}` LIKE '\'%\'' THEN 1 ELSE 0 END) AS quoted_value_ct,
@@ -72,20 +72,9 @@ WITH whole_table_measures AS (
                                       '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
                                                                                      ELSE 0
          END) AS filled_value_ct,
-    SUM(CASE
-          WHEN TRANSLATE(`{COL_NAME}`, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '                                                    ') = `{COL_NAME}` THEN 0
-          WHEN TRANSLATE(`{COL_NAME}`, 'abcdefghijklmnopqrstuvwxyz', '                          ') = `{COL_NAME}` THEN 1
-          ELSE 0
-        END) AS upper_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE(`{COL_NAME}`, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '                                                    ') = `{COL_NAME}` THEN 0
-          WHEN TRANSLATE(`{COL_NAME}`, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '                          ') = `{COL_NAME}` THEN 1
-          ELSE 0
-        END) AS lower_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE(`{COL_NAME}`, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '                                                    ') = `{COL_NAME}` THEN 1
-          ELSE 0
-        END) AS non_alpha_ct,
+    SUM(CASE WHEN CAST(`{COL_NAME}` AS BINARY) = CAST(UPPER(`{COL_NAME}`) AS BINARY) AND CAST(`{COL_NAME}` AS BINARY) <> CAST(LOWER(`{COL_NAME}`) AS BINARY) THEN 1 ELSE 0 END) AS upper_case_ct,
+    SUM(CASE WHEN CAST(`{COL_NAME}` AS BINARY) = CAST(LOWER(`{COL_NAME}`) AS BINARY) AND CAST(`{COL_NAME}` AS BINARY) <> CAST(UPPER(`{COL_NAME}`) AS BINARY) THEN 1 ELSE 0 END) AS lower_case_ct,
+    SUM(CASE WHEN CAST(`{COL_NAME}` AS BINARY) = CAST(UPPER(`{COL_NAME}`) AS BINARY) AND CAST(`{COL_NAME}` AS BINARY) = CAST(LOWER(`{COL_NAME}`) AS BINARY) THEN 1 ELSE 0 END) AS non_alpha_ct,
     COUNT(CASE WHEN TRANSLATE(`{COL_NAME}`, '\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> `{COL_NAME}` THEN 1 END) AS non_printing_ct,
     SUM(<%IS_NUM;LEFT(`{COL_NAME}`, 31)%>) AS numeric_ct,
     SUM(<%IS_DATE;LEFT(`{COL_NAME}`, 26)%>) AS date_ct,
@@ -153,7 +142,7 @@ WITH whole_table_measures AS (
          value_ct,
          CASE
            WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, CAST(pattern AS BINARY))
          END AS pattern_rank
     FROM pattern_counts
 )
@@ -187,21 +176,21 @@ SELECT
 -- TG-IF is_type_DN
   MIN(LEN(`{COL_NAME}`)) AS min_length,
   MAX(LEN(`{COL_NAME}`)) AS max_length,
-  AVG(CAST(NULLIF(LEN(`{COL_NAME}`), 0) AS FLOAT)) AS avg_length,
+  AVG(CAST(NULLIF(LEN(`{COL_NAME}`), 0) AS DOUBLE)) AS avg_length,
 -- TG-ENDIF
 -- TG-IF is_type_N
   CAST(SUM( 1 - ABS(SIGN(`{COL_NAME}`)))AS BIGINT ) AS zero_value_ct,
   MIN(`{COL_NAME}`) AS min_value,
   MIN(CASE WHEN `{COL_NAME}` > 0 THEN `{COL_NAME}` ELSE NULL END) AS min_value_over_0,
   MAX(`{COL_NAME}`) AS max_value,
-  AVG(CAST(`{COL_NAME}` AS FLOAT)) AS avg_value,
-  STDDEV_SAMP(CAST(`{COL_NAME}` AS FLOAT)) AS stdev_value,
+  AVG(CAST(`{COL_NAME}` AS DOUBLE)) AS avg_value,
+  STDDEV_SAMP(CAST(`{COL_NAME}` AS DOUBLE)) AS stdev_value,
   MIN(pct_25) AS percentile_25,
   MIN(pct_50) AS percentile_50,
   MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(MOD(`{COL_NAME}`, 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD(`{COL_NAME}`, 1)) AS DECIMAL(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

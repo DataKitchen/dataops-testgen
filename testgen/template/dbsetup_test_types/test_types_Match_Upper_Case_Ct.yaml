@@ -1,0 +1,225 @@
+test_types:
+  id: '1540'
+  test_type: Match_Upper_Case_Ct
+  test_name_short: Match Upper Case
+  test_name_long: Count of upper-case values equals baseline
+  test_description: |-
+    Tests that the number of all-upper-case values in the column equals the baseline count.
+  except_message: |-
+    Upper-case value count differs from baseline.
+  measure_uom: Upper-case values
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND value_ct > 0
+    AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_ct
+  default_parm_values: |-
+    upper_case_ct
+  default_parm_prompts: |-
+    Upper-Case Count at Baseline
+  default_parm_help: |-
+    The expected number of values that are entirely upper case.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected upper-case count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Upper Case tests that exactly the baseline number of values are entirely upper case. A change points to values re-cased during a load.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7058'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS BYTES) = CAST(UPPER({COLUMN_NAME}) AS BYTES) AND CAST({COLUMN_NAME} AS BYTES) <> CAST(LOWER({COLUMN_NAME}) AS BYTES) THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '6058'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS BINARY) = CAST(UPPER({COLUMN_NAME}) AS BINARY) AND CAST({COLUMN_NAME} AS BINARY) <> CAST(LOWER({COLUMN_NAME}) AS BINARY) THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '3058'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} COLLATE Latin1_General_BIN = UPPER({COLUMN_NAME}) AND {COLUMN_NAME} COLLATE Latin1_General_BIN <> LOWER({COLUMN_NAME}) THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '4058'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} COLLATE "C" = UPPER({COLUMN_NAME}) COLLATE "C" AND {COLUMN_NAME} COLLATE "C" <> LOWER({COLUMN_NAME}) COLLATE "C" THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2038'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(CASE WHEN COLLATE({COLUMN_NAME}, 'case_sensitive') = COLLATE(UPPER({COLUMN_NAME}), 'case_sensitive') AND COLLATE({COLUMN_NAME}, 'case_sensitive') <> COLLATE(LOWER({COLUMN_NAME}), 'case_sensitive') THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '7058'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(CASE WHEN COLLATE({COLUMN_NAME}, 'case_sensitive') = COLLATE(UPPER({COLUMN_NAME}), 'case_sensitive') AND COLLATE({COLUMN_NAME}, 'case_sensitive') <> COLLATE(LOWER({COLUMN_NAME}), 'case_sensitive') THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2138'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(CASE WHEN COLLATE({COLUMN_NAME}, 'utf8') = COLLATE(UPPER({COLUMN_NAME}), 'utf8') AND COLLATE({COLUMN_NAME}, 'utf8') <> COLLATE(LOWER({COLUMN_NAME}), 'utf8') THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8058'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} = UPPER({COLUMN_NAME}) AND {COLUMN_NAME} <> LOWER({COLUMN_NAME}) THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8058'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} = UPPER({COLUMN_NAME}) AND {COLUMN_NAME} <> LOWER({COLUMN_NAME}) THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '10069'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} = UPPER({COLUMN_NAME}) AND {COLUMN_NAME} <> LOWER({COLUMN_NAME}) THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '11144'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS VARCHAR) COLLATE "binary" = UPPER({COLUMN_NAME}) COLLATE "binary" AND CAST({COLUMN_NAME} AS VARCHAR) COLLATE "binary" <> LOWER({COLUMN_NAME}) COLLATE "binary" THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  target_data_lookups:
+  - id: '1543'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN CAST(`{COLUMN_NAME}` AS BYTES) = CAST(UPPER(`{COLUMN_NAME}`) AS BYTES) AND CAST(`{COLUMN_NAME}` AS BYTES) <> CAST(LOWER(`{COLUMN_NAME}`) AS BYTES) THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1565'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN CAST(`{COLUMN_NAME}` AS BINARY) = CAST(UPPER(`{COLUMN_NAME}`) AS BINARY) AND CAST(`{COLUMN_NAME}` AS BINARY) <> CAST(LOWER(`{COLUMN_NAME}`) AS BINARY) THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1587'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN "{COLUMN_NAME}" COLLATE Latin1_General_BIN = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" COLLATE Latin1_General_BIN <> LOWER("{COLUMN_NAME}") THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1609'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN "{COLUMN_NAME}" COLLATE "C" = UPPER("{COLUMN_NAME}") COLLATE "C" AND "{COLUMN_NAME}" COLLATE "C" <> LOWER("{COLUMN_NAME}") COLLATE "C" THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1631'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN COLLATE("{COLUMN_NAME}", 'case_sensitive') = COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive') THEN 1 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1653'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN COLLATE("{COLUMN_NAME}", 'case_sensitive') = COLLATE(UPPER("{COLUMN_NAME}"), 'case_sensitive') AND COLLATE("{COLUMN_NAME}", 'case_sensitive') <> COLLATE(LOWER("{COLUMN_NAME}"), 'case_sensitive') THEN 1 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1675'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN COLLATE("{COLUMN_NAME}", 'utf8') = COLLATE(UPPER("{COLUMN_NAME}"), 'utf8') AND COLLATE("{COLUMN_NAME}", 'utf8') <> COLLATE(LOWER("{COLUMN_NAME}"), 'utf8') THEN 1 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8537'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}") THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8537'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}") THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10088'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN "{COLUMN_NAME}" = UPPER("{COLUMN_NAME}") AND "{COLUMN_NAME}" <> LOWER("{COLUMN_NAME}") THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11145'
+    test_id: '1540'
+    test_type: Match_Upper_Case_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" = UPPER("{COLUMN_NAME}") COLLATE "binary" AND CAST("{COLUMN_NAME}" AS VARCHAR) COLLATE "binary" <> LOWER("{COLUMN_NAME}") COLLATE "binary" THEN 1 ELSE 0 END) AS current_upper_case_ct, {BASELINE_CT} AS baseline_upper_case_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

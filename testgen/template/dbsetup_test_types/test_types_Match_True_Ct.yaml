@@ -1,0 +1,224 @@
+test_types:
+  id: '1535'
+  test_type: Match_True_Ct
+  test_name_short: Match True Count
+  test_name_long: Count of true values equals baseline
+  test_description: |-
+    Tests that the number of true values in the column equals the baseline count.
+  except_message: |-
+    True value count differs from baseline.
+  measure_uom: True values
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'B' AND value_ct > 0
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_ct
+  default_parm_values: |-
+    boolean_true_ct
+  default_parm_prompts: |-
+    True Count at Baseline
+  default_parm_help: |-
+    The expected number of true values in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected true value count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match True Count tests that the column holds exactly the baseline number of true values. With Match Null Count, it accounts for every value in a boolean column.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7053'
+    test_type: Match_True_Ct
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INT64))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '6053'
+    test_type: Match_True_Ct
+    sql_flavor: databricks
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '3053'
+    test_type: Match_True_Ct
+    sql_flavor: mssql
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '4053'
+    test_type: Match_True_Ct
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2033'
+    test_type: Match_True_Ct
+    sql_flavor: redshift
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '7053'
+    test_type: Match_True_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2133'
+    test_type: Match_True_Ct
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8053'
+    test_type: Match_True_Ct
+    sql_flavor: oracle
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS NUMBER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8053'
+    test_type: Match_True_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '10064'
+    test_type: Match_True_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '11134'
+    test_type: Match_True_Ct
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CAST({COLUMN_NAME} AS INTEGER))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  target_data_lookups:
+  - id: '1538'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(`{COLUMN_NAME}` AS INT64)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1560'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST(`{COLUMN_NAME}` AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1582'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1604'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1626'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1648'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1670'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8532'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS NUMBER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8532'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10083'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11135'
+    test_id: '1535'
+    test_type: Match_True_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CAST("{COLUMN_NAME}" AS INTEGER)) AS current_true_ct, {BASELINE_CT} AS baseline_true_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

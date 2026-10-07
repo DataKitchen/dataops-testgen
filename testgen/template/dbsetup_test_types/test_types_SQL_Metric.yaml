@@ -1,0 +1,505 @@
+test_types:
+  id: '1516'
+  test_type: SQL_Metric
+  test_name_short: SQL Metric
+  test_name_long: Query result within set bounds
+  test_description: |-
+    Tests that the single value returned by the query falls within the set bounds.
+  except_message: |-
+    Query result outside expected bounds.
+  measure_uom: Query result
+  measure_uom_description: |-
+    Value returned by the query
+  selection_criteria: null
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: custom_query,lower_tolerance,upper_tolerance
+  default_parm_values: null
+  default_parm_prompts: |-
+    Metric Query,Minimum Value,Maximum Value
+  default_parm_help: |-
+    Query should return a single numeric value: one row with one named column, for example `SELECT COUNT(*) AS late_orders FROM {DATA_SCHEMA}.orders WHERE shipped_date IS NULL`. A query can refer to any tables in the database. You must hard-code the schema or use `{DATA_SCHEMA}` to represent the schema defined for the Table Group.|The minimum acceptable query result. Leave blank for no minimum.|The maximum acceptable query result. Leave blank for no maximum.
+  default_parm_required: Y,A,A
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: table
+  dq_dimension: Accuracy
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected range for the query result
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test runs a query you write and checks the single value it returns against a minimum, a maximum, or both. Use it for any metric that can be computed by a query, such as the number of orders awaiting shipment or the hours since the last load, when the acceptable range is known in advance. The query must return exactly one row with one numeric column. A query that returns more than one row or column, a value that is not numeric, or no value at all ends the test with an error rather than a failure, because it does not produce a metric to check. The query runs separately from other tests, so its performance depends largely on how efficiently it is written.
+  active: Y
+  ai_redact_values: true
+  algorithm: Custom SQL
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1491'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '1492'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '1493'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP {LIMIT} q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+    error_type: Test Results
+  - id: '1494'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '1495'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '1496'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '1497'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '8515'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8515'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10047'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '11099'
+    test_id: '1516'
+    test_type: SQL_Metric
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT q.*, {LOWER_TOLERANCE} AS lower_bound, {UPPER_TOLERANCE} AS upper_bound
+      FROM (
+        {CUSTOM_QUERY}
+      ) q
+      LIMIT {LIMIT}
+    error_type: Test Results
+  test_templates:
+  - id: '2518'
+    test_type: SQL_Metric
+    sql_flavor: bigquery
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS FLOAT64) IS NULL THEN NULL
+               WHEN CAST(metric AS FLOAT64) < {LOWER_TOLERANCE} OR CAST(metric AS FLOAT64) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS FLOAT64) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '2418'
+    test_type: SQL_Metric
+    sql_flavor: databricks
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS DOUBLE) IS NULL THEN NULL
+               WHEN CAST(metric AS DOUBLE) < {LOWER_TOLERANCE} OR CAST(metric AS DOUBLE) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS DOUBLE) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '2218'
+    test_type: SQL_Metric
+    sql_flavor: mssql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS FLOAT) IS NULL THEN NULL
+               WHEN CAST(metric AS FLOAT) < {LOWER_TOLERANCE} OR CAST(metric AS FLOAT) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS FLOAT) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '2318'
+    test_type: SQL_Metric
+    sql_flavor: postgresql
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS NUMERIC) IS NULL THEN NULL
+               WHEN CAST(metric AS NUMERIC) < {LOWER_TOLERANCE} OR CAST(metric AS NUMERIC) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS NUMERIC) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '2018'
+    test_type: SQL_Metric
+    sql_flavor: redshift
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS FLOAT8) IS NULL THEN NULL
+               WHEN CAST(metric AS FLOAT8) < {LOWER_TOLERANCE} OR CAST(metric AS FLOAT8) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS FLOAT8) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '2615'
+    test_type: SQL_Metric
+    sql_flavor: redshift_spectrum
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS FLOAT8) IS NULL THEN NULL
+               WHEN CAST(metric AS FLOAT8) < {LOWER_TOLERANCE} OR CAST(metric AS FLOAT8) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS FLOAT8) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '2118'
+    test_type: SQL_Metric
+    sql_flavor: snowflake
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS FLOAT) IS NULL THEN NULL
+               WHEN CAST(metric AS FLOAT) < {LOWER_TOLERANCE} OR CAST(metric AS FLOAT) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS FLOAT) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '8015'
+    test_type: SQL_Metric
+    sql_flavor: oracle
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS NUMBER) IS NULL THEN NULL
+               WHEN CAST(metric AS NUMBER) < {LOWER_TOLERANCE} OR CAST(metric AS NUMBER) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS NUMBER) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric FROM DUAL ) s
+             ) test
+  - id: '8015'
+    test_type: SQL_Metric
+    sql_flavor: sap_hana
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS DECIMAL) IS NULL THEN NULL
+               WHEN CAST(metric AS DECIMAL) < {LOWER_TOLERANCE} OR CAST(metric AS DECIMAL) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS DECIMAL) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric FROM DUMMY ) s
+             ) test
+  - id: '10014'
+    test_type: SQL_Metric
+    sql_flavor: salesforce_data360
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS DOUBLE PRECISION) IS NULL THEN NULL
+               WHEN CAST(metric AS DOUBLE PRECISION) < {LOWER_TOLERANCE} OR CAST(metric AS DOUBLE PRECISION) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS DOUBLE PRECISION) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test
+  - id: '11098'
+    test_type: SQL_Metric
+    sql_flavor: duckdb
+    template: |-
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             NULL as result_signal,
+             CASE
+               WHEN CAST(metric AS DOUBLE) IS NULL THEN NULL
+               WHEN CAST(metric AS DOUBLE) < {LOWER_TOLERANCE} OR CAST(metric AS DOUBLE) > {UPPER_TOLERANCE} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN CAST(metric AS DOUBLE) IS NULL THEN 'Query returned no numeric value.'
+             END AS result_message,
+             metric AS result_measure
+        FROM ( SELECT MAX(metric) AS metric
+                 FROM ( SELECT ( SELECT * FROM (
+                 {CUSTOM_QUERY}
+                 ) q ) AS metric ) s
+             ) test

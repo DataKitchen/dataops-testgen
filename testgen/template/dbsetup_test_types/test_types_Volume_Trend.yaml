@@ -36,7 +36,7 @@ test_types:
     This test compares the row count of all or a subset of records in a table against a derived tolerance range.
   active: Y
   ai_redact_values: false
-  algorithm: Custom SQL
+  algorithm: Counting
   generation_sets:
     - Monitor
   cat_test_conditions:

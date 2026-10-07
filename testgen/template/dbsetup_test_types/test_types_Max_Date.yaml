@@ -1,0 +1,219 @@
+test_types:
+  id: '1518'
+  test_type: Max_Date
+  test_name_short: Maximum Date
+  test_name_long: All dates on or before set maximum
+  test_description: |-
+    Tests that latest date referenced in column is no later than baseline data.
+  except_message: |-
+    Latest date value found is after latest value at baseline.
+  measure_uom: Dates after limit
+  measure_uom_description: null
+  selection_criteria: null
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value,threshold_value
+  default_parm_values: null
+  default_parm_prompts: |-
+    Maximum Date at Baseline,Threshold Error Count
+  default_parm_help: |-
+    The latest date allowed. The comparison is exact, so on a timestamp column a date entered without a time means midnight at the start of that day, and later times on that day count as after it.|The number of dates after the maximum that the test allows.
+  default_parm_required: Y,N
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of dates after maximum
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test is appropriate where the latest date is a real ceiling, such as a closed historical range or a table that is no longer loaded. In a table that is still being added to, the latest date moves forward with every load, so a maximum taken from the baseline data fails on the next load. Use Recency to check that dates keep advancing, or Past Dates to check that no date is later than the test date. For an exact latest date, use Match Maximum Date.
+  active: Y
+  ai_redact_values: false
+  algorithm: Boundary check
+  cat_test_conditions:
+  - id: '7038'
+    test_type: Max_Date
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > CAST(CAST('{BASELINE_VALUE}' AS DATETIME) AS {COLUMN_TYPE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6038'
+    test_type: Max_Date
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3038'
+    test_type: Max_Date
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4038'
+    test_type: Max_Date
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2018'
+    test_type: Max_Date
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7038'
+    test_type: Max_Date
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2118'
+    test_type: Max_Date
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8038'
+    test_type: Max_Date
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > TO_DATE('{BASELINE_VALUE}', 'YYYY-MM-DD HH24:MI:SS') THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8038'
+    test_type: Max_Date
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '10040'
+    test_type: Max_Date
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN CAST({COLUMN_NAME} AS TIMESTAMP) > CAST('{BASELINE_VALUE}' AS TIMESTAMP) THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11102'
+    test_type: Max_Date
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > '{BASELINE_VALUE}' THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1499'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > CAST(CAST('{BASELINE_VALUE}' AS DATETIME) AS {COLUMN_TYPE}) GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1503'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > '{BASELINE_VALUE}' GROUP BY `{COLUMN_NAME}` LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1507'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}";
+    error_type: Test Results
+  - id: '1511'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1515'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1519'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1523'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8517'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > TO_DATE('{BASELINE_VALUE}', 'YYYY-MM-DD HH24:MI:SS') GROUP BY "{COLUMN_NAME}" FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8517'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > CAST('{BASELINE_VALUE}' AS {COLUMN_TYPE}) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10049'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE CAST("{COLUMN_NAME}" AS TIMESTAMP) > CAST('{BASELINE_VALUE}' AS TIMESTAMP) GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11103'
+    test_id: '1518'
+    test_type: Max_Date
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > '{BASELINE_VALUE}' GROUP BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  test_templates: []

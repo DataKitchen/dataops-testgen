@@ -23,7 +23,7 @@ SELECT top_val AS value,
        SUM(ct) AS value_ct,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
-       ( SELECT MD5(STRING_AGG(DISTINCT "{COL_NAME}", '|' ORDER BY "{COL_NAME}"))
+       ( SELECT CASE WHEN COUNT(DISTINCT "{COL_NAME}") <= 70 THEN MD5(STRING_AGG(DISTINCT "{COL_NAME}", '|' ORDER BY "{COL_NAME}")) END
            FROM target_table ) AS distinct_value_hash
   FROM grouped_vals
  GROUP BY top_val

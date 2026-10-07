@@ -47,11 +47,11 @@ _PARENT_FIELDS: frozenset[str] = frozenset({
     "default_severity", "run_type", "test_scope", "dq_dimension", "impact_dimension",
     "health_dimension", "algorithm", "statistical_technique",
     "threshold_description", "result_visualization", "result_visualization_params",
-    "usage_notes", "active", "overrides", "ai_redact_values",
+    "usage_notes", "active", "overrides", "ai_redact_values", "null_measure_fails",
 })
 
 # Parent fields stored as a real boolean rather than a string.
-_PARENT_BOOLEAN_FIELDS: frozenset[str] = frozenset({"ai_redact_values"})
+_PARENT_BOOLEAN_FIELDS: frozenset[str] = frozenset({"ai_redact_values", "null_measure_fails"})
 
 # ``uploaded_version`` is system-managed; the file must not set it.
 _RESERVED_PARENT_FIELDS: frozenset[str] = frozenset({"uploaded_version"})
@@ -298,10 +298,10 @@ def _check_parent_specials(parent: dict[str, Any], errors: list[str]) -> None:
     if isinstance(parm_required, str) and parm_required != "":
         for token in parm_required.split(","):
             normalized = token.strip().upper()
-            if normalized not in {"Y", "N", ""}:
+            if normalized not in {"Y", "N", "A", ""}:
                 errors.append(
                     f"default_parm_required: '{parm_required}' is not a valid value. "
-                    f"Expected a comma-separated list of Y or N."
+                    f"Expected a comma-separated list of Y, N or A."
                 )
                 break
 
@@ -449,6 +449,7 @@ def _emit_apply_statements(session, parsed: ParsedTestType, current_version: str
     # re-upload that drops the key resets the flag instead of retaining the old value.
     parent = {
         "ai_redact_values": True,
+        "null_measure_fails": False,
         **parsed.parent,
         "uploaded_version": current_version,
     }

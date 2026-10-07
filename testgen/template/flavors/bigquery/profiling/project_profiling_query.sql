@@ -49,7 +49,7 @@ WITH whole_table_measures AS (
   SELECT
     COUNT(`{COL_NAME}`) AS sample_value_ct,
     SUM(CASE WHEN `{COL_NAME}` = '' THEN 1 ELSE 0 END) AS zero_length_ct,
-    SUM(CASE WHEN `{COL_NAME}` BETWEEN ' !' AND '!' THEN 1 ELSE 0 END) AS lead_space_ct,
+    SUM(CASE WHEN (`{COL_NAME}` LIKE ' %' AND LTRIM(`{COL_NAME}`) <> '') THEN 1 ELSE 0 END) AS lead_space_ct,
     SUM(
       CASE
         WHEN LOWER(CAST(`{COL_NAME}` AS STRING)) LIKE '"%"'
@@ -75,9 +75,9 @@ WITH whole_table_measures AS (
         ELSE 0
       END
     ) AS filled_value_ct,
-    SUM(CASE WHEN `{COL_NAME}` = UPPER(`{COL_NAME}`) AND `{COL_NAME}` <> LOWER(`{COL_NAME}`) THEN 1 ELSE 0 END) AS upper_case_ct,
-    SUM(CASE WHEN `{COL_NAME}` = LOWER(`{COL_NAME}`) AND `{COL_NAME}` <> UPPER(`{COL_NAME}`) THEN 1 ELSE 0 END) AS lower_case_ct,
-    SUM(CASE WHEN `{COL_NAME}` = UPPER(`{COL_NAME}`) AND `{COL_NAME}` = LOWER(`{COL_NAME}`) THEN 1 ELSE 0 END) AS non_alpha_ct,
+    SUM(CASE WHEN CAST(`{COL_NAME}` AS BYTES) = CAST(UPPER(`{COL_NAME}`) AS BYTES) AND CAST(`{COL_NAME}` AS BYTES) <> CAST(LOWER(`{COL_NAME}`) AS BYTES) THEN 1 ELSE 0 END) AS upper_case_ct,
+    SUM(CASE WHEN CAST(`{COL_NAME}` AS BYTES) = CAST(LOWER(`{COL_NAME}`) AS BYTES) AND CAST(`{COL_NAME}` AS BYTES) <> CAST(UPPER(`{COL_NAME}`) AS BYTES) THEN 1 ELSE 0 END) AS lower_case_ct,
+    SUM(CASE WHEN CAST(`{COL_NAME}` AS BYTES) = CAST(UPPER(`{COL_NAME}`) AS BYTES) AND CAST(`{COL_NAME}` AS BYTES) = CAST(LOWER(`{COL_NAME}`) AS BYTES) THEN 1 ELSE 0 END) AS non_alpha_ct,
     COUNTIF(
       TRANSLATE(
         CAST(`{COL_NAME}` AS STRING),
@@ -138,7 +138,7 @@ WITH whole_table_measures AS (
          value_ct,
          CASE
            WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, CAST(pattern AS BYTES))
          END AS pattern_rank
     FROM pattern_counts
 )
@@ -186,7 +186,7 @@ SELECT
   MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(COALESCE(ROUND(ABS(MOD(`{COL_NAME}`, 1)), 5), 0)) AS fractional_sum,
+  SUM(COALESCE(ROUND(ROUND(CAST(ABS(MOD(`{COL_NAME}`, 1)) AS NUMERIC), 8), 5), 0)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   MIN(`{COL_NAME}`) AS min_date, -- Other flavors have a minimum threshold of 0001-01-01, but BigQuery doesn't make it easy to to the same
