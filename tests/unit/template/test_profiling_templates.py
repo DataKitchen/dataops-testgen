@@ -241,3 +241,38 @@ def test_a_duckdb_column_query_reads_its_source_once(tmp_path, general_type, sam
         plan = json.loads(database.execute(f"EXPLAIN (FORMAT json) {query}").fetchone()[1])
         assert _source_reads(plan) == 1
         assert database.execute(query).fetchone()
+
+
+# --- the frequency analysis query --------------------------------------------------------
+
+# The value count summed over the grouped read the frequencies come from, not taken by a read of its own.
+FREQUENCY_SAMPLE_VALUE_CT = re.compile(
+    r"SUM\(\s*(?:COUNT(?:_BIG)?\(\*\)|ct)\s*\)\s+OVER\s*\(\s*\)\s+AS\s+sample_value_ct", re.IGNORECASE
+)
+
+
+def _render_frequency(flavor: str, sampled: bool) -> str:
+    sampling = TableSampling(table_name="t", sample_count=300, sample_ratio=1000 / 300, sample_percent=30.0) if sampled else None
+    query, _ = _profiling_sql(flavor).run_frequency_analysis(_column("A"), sampling)
+    return query
+
+
+@pytest.mark.parametrize("sampled", [False, True])
+@pytest.mark.parametrize("flavor", FLAVORS)
+def test_the_frequency_query_counts_its_values_on_the_read_it_ranks(flavor, sampled):
+    query = _render_frequency(flavor, sampled)
+    assert FREQUENCY_SAMPLE_VALUE_CT.search(query), f"{flavor}: sample_value_ct is not a window over the ranked read"
+    assert re.search(r"MAX\(sample_value_ct\) AS sample_value_ct", query), f"{flavor}: sample_value_ct not in the output"
+
+
+def test_a_duckdb_frequency_query_counts_blank_values_without_listing_them():
+    database = duckdb.connect()
+    database.execute("CREATE SCHEMA s")
+    database.execute(
+        "CREATE TABLE s.t AS SELECT * FROM (VALUES ('a'), ('a'), ('a'), ('b'), ('b'), (''), (' '), (NULL)) v(c)"
+    )
+    cursor = database.execute(_render_frequency("duckdb", sampled=False))
+    rows = [dict(zip([column[0] for column in cursor.description], row, strict=True)) for row in cursor.fetchall()]
+
+    assert [(row["value"], row["value_ct"], row["value_rank"]) for row in rows] == [("a", 3, 1), ("b", 2, 2)]
+    assert {row["sample_value_ct"] for row in rows} == {7}

@@ -1,5 +1,6 @@
 import hashlib
 from datetime import UTC, datetime, timedelta
+from types import MappingProxyType
 from typing import get_args
 from unittest.mock import ANY, MagicMock, patch
 from uuid import uuid4
@@ -227,7 +228,7 @@ def test_a_frequency_error_does_not_write_the_column_pass_error_row():
 
     with (
         patch(POOL, side_effect=fake_pool),
-        patch(f"{MODULE}.fetch_dict_from_db", return_value=[{"schema_name": "s", "table_name": "t", "column_name": "c1"}]),
+        patch(f"{MODULE}.fetch_dict_from_db", return_value=[MappingProxyType({"schema_name": "s", "table_name": "t", "column_name": "c1", "value_ct": 10})]),
         patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
         patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
         patch.object(ProfilingJob, "on_start", lambda _self: None),
@@ -238,6 +239,49 @@ def test_a_frequency_error_does_not_write_the_column_pass_error_row():
 
     write_frequency_error.assert_called_once()
     write_column_error.assert_not_called()
+
+
+def _run_frequency(sampling_params: dict[str, TableSampling]) -> dict:
+    rows = [
+        {"value": "A", "value_ct": 6, "value_rank": 1, "other_distinct_ct": None, "sample_value_ct": 10,
+         "distinct_value_hash": "h"},
+        {"value": None, "value_ct": 3, "value_rank": 11, "other_distinct_ct": 4, "sample_value_ct": 10,
+         "distinct_value_hash": "h"},
+    ]
+    job = _freq_job(tasks=[], completed=0)
+    job.sampling_params = sampling_params
+    job.STEPS = (Step("freq_analysis", ProfilingJob._freq_analysis, fatal=False),)
+
+    def fake_pool(items, _process, *, max_threads, stop=None):
+        for column, _built in items:
+            yield WorkerOutcome(key=column, result=rows, error=None)
+
+    with (
+        patch(POOL, side_effect=fake_pool),
+        patch(
+            f"{MODULE}.fetch_dict_from_db",
+            return_value=[MappingProxyType({"schema_name": "s", "table_name": "t", "column_name": "c1", "value_ct": 25})],
+        ),
+        patch(f"{MODULE}.get_current_session", return_value=MagicMock()),
+        patch("testgen.common.pausable_job.get_current_session", return_value=_no_job_row_session()),
+        patch.object(ProfilingJob, "on_start", lambda _self: None),
+        patch.object(ProfileResult, "upsert") as upsert,
+    ):
+        job.execute()
+
+    upsert.assert_called_once()
+    return upsert.call_args.args[0]["frequent_values"]
+
+
+def test_frequent_values_of_a_sampled_table_are_lifted_by_the_columns_value_count():
+    assert _run_frequency({"t": SAMPLING}) == {
+        "values": [{"value": "A", "ct": 15}],
+        "other": {"distinct_ct": 4, "ct": 8},
+    }
+
+
+def test_frequent_values_of_a_table_that_is_not_sampled_are_written_as_counted():
+    assert _run_frequency({}) == {"values": [{"value": "A", "ct": 6}], "other": {"distinct_ct": 4, "ct": 3}}
 
 
 def test_losing_every_eligible_column_restarts_the_run():

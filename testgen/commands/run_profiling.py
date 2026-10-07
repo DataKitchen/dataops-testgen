@@ -43,7 +43,7 @@ LOG = logging.getLogger("testgen")
 # measures, or a different meaning for an existing one. A parked run resuming under a build that
 # measures differently would file both readings under one profiling run; a bump discards its
 # checkpoint so the run starts over and is measured one way.
-PROFILE_RESULT_SHAPE_VERSION = 3
+PROFILE_RESULT_SHAPE_VERSION = 4
 
 
 @with_database_session
@@ -329,10 +329,12 @@ class ProfilingJob(PausableJob[ColumnChars]):
             return
 
         LOG.info("Selecting columns for frequency analysis")
-        frequency_columns = [
-            ColumnChars(**column)
-            for column in fetch_dict_from_db(*self.sql_generator.get_frequency_analysis_columns())
-        ]
+        frequency_columns: list[ColumnChars] = []
+        whole_value_cts: dict[tuple[str, str], int | None] = {}
+        for row in fetch_dict_from_db(*self.sql_generator.get_frequency_analysis_columns()):
+            column = dict(row)
+            whole_value_cts[(column["table_name"], column["column_name"])] = column.pop("value_ct")
+            frequency_columns.append(ColumnChars(**column))
         if not frequency_columns:
             # Losing every eligible column means the column pass's results are not the ones the
             # checkpoint was written against.
@@ -341,15 +343,21 @@ class ProfilingJob(PausableJob[ColumnChars]):
 
         frequency_columns = _order_largest_work_first(frequency_columns, self.table_record_counts)
         LOG.info(f"Running frequency analysis queries: {len(frequency_columns)}")
+
+        def handle(outcome: WorkerOutcome[ColumnChars, list[dict]]) -> None:
+            if outcome.result:
+                column = outcome.key
+                sampled = column.table_name in self.sampling_params
+                whole_value_ct = whole_value_cts[(column.table_name, column.column_name)] if sampled else None
+                _write_frequency_result(self.sql_generator, column, outcome.result, whole_value_ct)
+
         result = self.fan_out(
             frequency_columns,
             lambda column: self.sql_generator.run_frequency_analysis(
                 column, self.sampling_params.get(column.table_name)
             ),
             _fetch_target,
-            lambda outcome: _write_frequency_result(self.sql_generator, outcome.key, outcome.result)
-            if outcome.result
-            else None,
+            handle,
             on_error=lambda column, error: _write_frequency_error(self.sql_generator, column, error),
             max_threads=self.connection.effective_max_threads,
         )
@@ -543,16 +551,21 @@ def _write_frequency_error(sql_generator: ProfilingSQL, column: ColumnChars, err
     )
 
 
-def _write_frequency_result(sql_generator: ProfilingSQL, column: ColumnChars, rows: list[dict]) -> None:
+def _write_frequency_result(
+    sql_generator: ProfilingSQL, column: ColumnChars, rows: list[dict], whole_value_ct: int | None
+) -> None:
     # Identity comes from the column read out of profile_results (so it matches the stored
     # row exactly); only the frequency measures are overwritten on conflict.
+    frequent_values = build_frequent_values(rows)
+    if whole_value_ct is not None:
+        ProfileResult.calibrate_frequent_values(frequent_values, whole_value_ct, rows[0]["sample_value_ct"])
     ProfileResult.upsert(
         {
             "table_groups_id": sql_generator.table_group.id,
             "table_name": column.table_name,
             "column_name": column.column_name,
             "profile_run_id": sql_generator.profiling_run.id,
-            "frequent_values": build_frequent_values(rows),
+            "frequent_values": frequent_values,
             "distinct_value_hash": rows[0]["distinct_value_hash"],
         }
     )

@@ -3,7 +3,8 @@
 -- time it is asked for; a run that continues skips what it already wrote by its own account.
 SELECT schema_name,
        table_name,
-       column_name
+       column_name,
+       value_ct
   FROM profile_results p
  WHERE p.profile_run_id = :PROFILE_RUN_ID
    AND p.general_type = 'A'
