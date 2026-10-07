@@ -66,24 +66,28 @@ class JobSubmittedResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class TableGroupSchemaMoveRequest(BaseModel):
-    """Body for moving a table group to another schema."""
+class TableGroupUpdateRequest(BaseModel):
+    """Fields to change on a table group. Every field is optional; omitted ones are left alone."""
 
-    schema_name: str = Field(
+    schema_name: str | None = Field(
+        default=None,
         pattern=SCHEMA_NAME_PATTERN,
         max_length=SCHEMA_NAME_MAX_LENGTH,
-        description="Schema on the target database the table group's data now lives in.",
+        description=(
+            "Schema on the target database the table group's data now lives in. Changing it moves "
+            "the table group: profiling, test generation, the data catalog and later runs all read "
+            "the new schema, and the test definitions keep their identity and their history."
+        ),
     )
 
 
-class TableGroupSchemaMoveResponse(BaseModel):
-    """What the move did."""
+class TableGroupSchemaMove(BaseModel):
+    """What changing the schema did, present only when the request changed it."""
 
-    table_group_id: UUID
     previous_schema_name: str
     schema_name: str
     definitions_repointed: int = Field(
-        description="Test definitions whose stored schema was moved. A contract's frozen version keeps its own.",
+        description="Test definitions whose stored schema was moved.",
     )
     missing_tables: list[str] = Field(
         default_factory=list,
@@ -987,6 +991,12 @@ class TableGroupResponse(BaseModel):
     include_in_dashboard: bool
 
     catalog_tags: CatalogTags
+
+
+class TableGroupUpdateResponse(TableGroupResponse):
+    """The table group as it now stands, plus what a schema change did."""
+
+    schema_move: TableGroupSchemaMove | None = None
 
 
 _TABLE_GROUP_DEFAULTS = table_group_defaults()

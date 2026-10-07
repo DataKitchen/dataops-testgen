@@ -18,8 +18,9 @@ from testgen.api.schemas import (
     TableGroupItem,
     TableGroupListResponse,
     TableGroupResponse,
-    TableGroupSchemaMoveRequest,
-    TableGroupSchemaMoveResponse,
+    TableGroupSchemaMove,
+    TableGroupUpdateRequest,
+    TableGroupUpdateResponse,
 )
 from testgen.common.database.table_group_service import (
     SchemaMoveRefused,
@@ -221,38 +222,50 @@ _REFUSAL_STATUS = {
 
 
 @router.patch(
-    "/table-groups/{table_group_id}/schema",
-    response_model=TableGroupSchemaMoveResponse,
-    summary="Move a table group to another schema",
+    "/table-groups/{table_group_id}",
+    response_model=TableGroupUpdateResponse,
+    summary="Update a table group",
     responses={
         409: {"model": ErrorResponse, "description": "A job for this table group is still running"},
-        422: {"model": ErrorResponse, "description": "The schema cannot be moved to"},
+        422: {"model": ErrorResponse, "description": "A supplied field cannot be applied"},
     },
 )
-def move_schema(
+def update_table_group(
     table_group: TableGroup = resolve_table_group("edit"),  # noqa: B008
-    body: TableGroupSchemaMoveRequest = Body(...),  # noqa: B008
-) -> TableGroupSchemaMoveResponse:
-    """Point a table group at the schema its data now lives in.
+    body: TableGroupUpdateRequest = Body(...),  # noqa: B008
+) -> TableGroupUpdateResponse:
+    """Change a table group's configuration. Omitted fields are left as they are.
 
-    Profiling, test generation, the catalog and every later run read the table group's schema, so
-    this moves all of them together and the suite keeps its test definitions, their history and
-    their predicted thresholds.
+    Changing `schema_name` moves the table group to that schema: profiling, test generation, the
+    data catalog and every later run read it from then on, and the suite keeps its test
+    definitions, their history and their predicted thresholds.
 
     The new schema has to carry the tables the table group covers. One carrying none of them is
-    refused; one missing some is applied and the missing tables are listed back.
+    refused; one missing some is applied and the missing tables are listed back under
+    `schema_move`.
     """
-    try:
-        move = move_table_group_schema(table_group, body.schema_name)
-    except SchemaMoveRefused as refusal:
-        raise api_error(_REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message) from refusal
+    supplied = body.model_dump(exclude_unset=True)
+    if not supplied:
+        raise api_error(422, "no_fields", "No fields supplied to update.")
 
-    apply_schema_move(move, table_group.id)
+    move = None
+    if body.schema_name is not None and body.schema_name != table_group.table_group_schema:
+        try:
+            move = move_table_group_schema(table_group, body.schema_name)
+        except SchemaMoveRefused as refusal:
+            raise api_error(
+                _REFUSAL_STATUS.get(refusal.reason, 422), refusal.reason, refusal.message
+            ) from refusal
+        apply_schema_move(move, table_group.id)
 
-    return TableGroupSchemaMoveResponse(
-        table_group_id=table_group.id,
-        previous_schema_name=move.previous_schema,
-        schema_name=move.schema,
-        definitions_repointed=move.definitions_repointed,
-        missing_tables=move.missing_tables,
+    return TableGroupUpdateResponse(
+        **_to_response(table_group).model_dump(),
+        schema_move=TableGroupSchemaMove(
+            previous_schema_name=move.previous_schema,
+            schema_name=move.schema,
+            definitions_repointed=move.definitions_repointed,
+            missing_tables=move.missing_tables,
+        )
+        if move
+        else None,
     )

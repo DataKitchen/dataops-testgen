@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from testgen.api.deps import db_session, get_authorized_user
 from testgen.api.schemas import CatalogTags, TableGroupCreate
 from testgen.api.table_groups import get_table_group, list_table_groups, router
+from testgen.common.database.table_group_service import SchemaMove, SchemaMoveRefused
 from testgen.common.models.table_group import TableGroup
 
 pytestmark = pytest.mark.unit
@@ -781,3 +782,103 @@ def test_detail_reports_no_schema_for_a_type_that_has_none(target_connection):
     response = get_table_group(table_group=_table_group(table_group_schema="main"))
 
     assert response.schema_name is None
+
+
+# --- PATCH /table-groups/{id} ---
+
+
+def _move(previous="public", schema="onboard_2026_09_16", missing=None, repointed=3):
+    return SchemaMove(
+        previous_schema=previous,
+        schema=schema,
+        missing_tables=missing or [],
+        definitions_repointed=repointed,
+    )
+
+
+@patch(f"{MODULE}.apply_schema_move")
+@patch(f"{MODULE}.move_table_group_schema")
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_update_table_group_moves_the_schema_and_reports_what_moved(
+    mock_cls, _perm, mock_move, mock_apply,
+):
+    """The caller needs the tables the new schema lacks: their tests report a missing table until
+    the schema carries them."""
+    mock_cls.get.return_value = _table_group()
+    mock_move.return_value = _move(missing=["archive"])
+
+    resp = _client().patch(
+        f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "onboard_2026_09_16"}
+    )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["schema_move"]["previous_schema_name"] == "public"
+    assert body["schema_move"]["missing_tables"] == ["archive"]
+    assert body["schema_move"]["definitions_repointed"] == 3
+    mock_apply.assert_called_once()
+
+
+@patch(f"{MODULE}.apply_schema_move")
+@patch(f"{MODULE}.move_table_group_schema")
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_update_table_group_resending_the_current_schema_moves_nothing(
+    mock_cls, _perm, mock_move, mock_apply,
+):
+    mock_cls.get.return_value = _table_group(table_group_schema="public")
+
+    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "public"})
+
+    assert resp.status_code == 200
+    assert resp.json()["schema_move"] is None
+    mock_move.assert_not_called()
+    mock_apply.assert_not_called()
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_update_table_group_rejects_an_empty_body(mock_cls, _perm):
+    """An empty patch would report success having changed nothing."""
+    mock_cls.get.return_value = _table_group()
+
+    assert _client().patch(f"/api/v1/table-groups/{TG_ID}", json={}).status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("reason", "status"),
+    [
+        ("job_in_flight", 409),
+        ("schema_empty", 422),
+        ("schema_unreadable", 422),
+        ("schema_unsupported", 422),
+        ("invalid_schema_name", 422),
+    ],
+)
+@patch(f"{MODULE}.move_table_group_schema")
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_update_table_group_maps_each_refusal_to_its_status(
+    mock_cls, _perm, mock_move, reason, status,
+):
+    """A job still running is a conflict the caller can retry; the rest are the request's fault."""
+    mock_cls.get.return_value = _table_group()
+    mock_move.side_effect = SchemaMoveRefused(reason, "nope")
+
+    resp = _client().patch(
+        f"/api/v1/table-groups/{TG_ID}", json={"schema_name": "onboard_2026_09_16"}
+    )
+
+    assert resp.status_code == status
+
+
+@pytest.mark.parametrize("schema_name", ['x" OR 1=1--', "x`y", "a'b", "a\nb", "a" * 51])
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_update_table_group_rejects_a_schema_that_would_end_the_quoting(mock_cls, _perm, schema_name):
+    mock_cls.get.return_value = _table_group()
+
+    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": schema_name})
+
+    assert resp.status_code == 422
