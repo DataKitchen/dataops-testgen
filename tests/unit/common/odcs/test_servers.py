@@ -1,9 +1,12 @@
+import json
+from importlib import resources
 from unittest.mock import MagicMock
 
 import pytest
+import yaml
 
 from testgen.common.flavors import SqlFlavorCode
-from testgen.common.odcs_server import (
+from testgen.common.odcs.servers import (
     FLAVOR_TO_SERVER_TYPE,
     ODCS_API_VERSION,
     UNMAPPABLE_FLAVORS,
@@ -192,5 +195,29 @@ def test_a_duckdb_connection_with_no_database_file_is_refused():
         build_server_block(connection, table_group=MagicMock(table_group_schema="main"))
 
 
+def test_the_server_types_value_is_a_plain_string_not_the_enum_member():
+    # isinstance(block["type"], str) is not enough -- ServerType is a StrEnum, so a member
+    # passes isinstance(x, str) and compares equal to its own value ("postgres" ==
+    # ServerType.POSTGRES is True), which is exactly why every earlier test here asserting
+    # `block["type"] == ServerType.POSTGRES` kept passing with the enum member still leaked
+    # in. type(x) is str is the one check that tells the two apart, because it is also the
+    # one check yaml.safe_dump's representer lookup actually uses.
+    connection = _connection("postgresql", project_host="db.example", project_port="5432", project_db="sales")
+    block = build_server_block(connection, table_group=MagicMock(table_group_schema="public"))
+
+    assert type(block["type"]) is str
+    assert block["type"] == "postgres"
+
+
+def test_a_server_block_survives_yaml_serialization():
+    connection = _connection("postgresql", project_host="db.example", project_port="5432", project_db="sales")
+    block = build_server_block(connection, table_group=MagicMock(table_group_schema="public"))
+
+    yaml.safe_dump(block)
+
+
 def test_the_pinned_api_version_is_a_member_of_the_schemas_enum():
-    assert ODCS_API_VERSION == "v3.2.0"
+    schema = json.loads(
+        resources.files("testgen.common.odcs.schemas").joinpath("odcs-json-schema-v3.2.0.json").read_text()
+    )
+    assert ODCS_API_VERSION in schema["properties"]["apiVersion"]["enum"]

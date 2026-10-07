@@ -1,4 +1,6 @@
+import hashlib
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,7 +30,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import InstrumentedAttribute
 from sqlalchemy.sql.expression import case, literal
 
-from testgen.common.enums import MonitorCalculation, MonitorType, SuiteType
+from testgen.common.enums import MonitorCalculation, MonitorType, OdcsDimension, SuiteType, TestScope
 from testgen.common.models import Base, get_current_session
 from testgen.common.models.custom_types import NullIfEmptyString, YNString, ZeroIfEmptyInteger
 from testgen.common.models.entity import Entity, EntityMinimal
@@ -44,16 +46,6 @@ class TestRunType(StrEnum):
     QUERY = "QUERY"
     CAT = "CAT"
     METADATA = "METADATA"
-
-
-class TestScope(StrEnum):
-    """The evaluation scope for a test type (stored on ``test_types.test_scope``)."""
-
-    COLUMN = "column"
-    REFERENTIAL = "referential"
-    TABLE = "table"
-    TABLEGROUP = "tablegroup"
-    CUSTOM = "custom"
 
 
 class Severity(StrEnum):
@@ -160,13 +152,29 @@ CUSTOM_METADATA_MAX_BYTES = 10_240
 
 MISSING_TEST_DEFINITION_MESSAGE = "Test definition no longer exists."
 
+# The key under custom_metadata reserved for ODCS quality-rule fields (dimension, tags,
+# customProperties, ...) that a contract render promotes onto the rule it emits. Kept here,
+# beside the validator that enforces its shape, rather than in the odcs package: the package
+# imports models, not the other way around, and a later task imports this constant from here.
+ODCS_RULE_METADATA_KEY = "odcs"
+
 
 def validate_custom_metadata(value: object) -> str | None:
     """Return an error message if ``value`` is not a valid ``custom_metadata`` payload, else ``None``.
 
     ``custom_metadata`` must be a JSON object (key-value pairs), bounded in key count and serialized
-    size. Shared by every write path — ``TestDefinition.validate`` (UI/CLI/MCP) and the
-    ``TestDefinitionExport`` import schema — so the rule has a single definition.
+    size. A value under the reserved ``odcs`` key, when present, must itself be a JSON object, and
+    any of its ``dimension``, ``tags``, ``customProperties``, ``authoritativeDefinitions``,
+    ``name``, ``businessImpact``, ``method``, ``schedule``, or ``scheduler`` fields it carries must
+    conform to the shape a rendered contract document requires. An unrecognized key at the
+    subtree's own top level is accepted -- it is simply not emitted at render, which keeps a
+    document written by a newer TestGen readable by an older one. That tolerance does not extend
+    inside ``customProperties`` or ``authoritativeDefinitions`` entries: each entry's item shape is
+    sealed in the pinned ODCS schema (``additionalProperties: false``), so a stray key there is
+    invalid ODCS permanently, not a field a future TestGen might define -- accepting one here would
+    let a term save cleanly and then block its contract version's freeze weeks later. Shared by
+    every write path — ``TestDefinition.validate`` (UI/CLI/MCP) and the ``TestDefinitionExport``
+    import schema — so the rule has a single definition.
     """
     if value is None:
         return None
@@ -176,7 +184,144 @@ def validate_custom_metadata(value: object) -> str | None:
         return f"must have at most {CUSTOM_METADATA_MAX_KEYS} keys"
     if len(json.dumps(value)) > CUSTOM_METADATA_MAX_BYTES:
         return f"must be at most {CUSTOM_METADATA_MAX_BYTES} bytes when serialized as JSON"
+    if ODCS_RULE_METADATA_KEY in value:
+        return _validate_odcs_rule_metadata(value[ODCS_RULE_METADATA_KEY])
     return None
+
+
+# Reserved-subtree fields that must be strings when present. Only these five carry that
+# constraint -- ``dimension``, ``tags``, ``customProperties`` and ``authoritativeDefinitions``
+# each have their own list-of-objects shape instead.
+_ODCS_STRING_FIELDS = ("name", "businessImpact", "method", "schedule", "scheduler")
+
+# The pinned ODCS schema's ``CustomProperty``/``AuthoritativeDefinitions`` item objects are
+# sealed (``additionalProperties: false``); a stray key inside one is invalid ODCS
+# permanently, so it is rejected here rather than accepted and left to break a freeze weeks
+# later. Mirrors the schema's own field lists -- kept here as a plain hardcoded list rather
+# than read from the bundled schema file, since this module is not allowed to import the
+# ``odcs`` package (that package imports models, not the other way around). Ordered as the
+# schema lists them: ``common.odcs.quality_rules`` rebuilds each entry in this order.
+ODCS_CUSTOM_PROPERTY_FIELDS: tuple[str, ...] = ("id", "property", "value", "description", "vendor")
+ODCS_CUSTOM_PROPERTY_REQUIRED_FIELDS = frozenset({"property", "value"})
+ODCS_AUTHORITATIVE_DEFINITION_FIELDS: tuple[str, ...] = ("id", "url", "type", "description")
+ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS = frozenset({"url", "type"})
+
+# ``$defs.StableId`` from the pinned ODCS schema -- the type both ``CustomProperty.id`` and
+# ``AuthoritativeDefinitions[].id`` are a ``$ref`` to. A value here that does not match is the
+# same failure shape as a stray key: it saves cleanly and then blocks the version's freeze.
+#
+# The rule's own ``id`` (``contract_term_id``) needs no equivalent check: ``slugify_term_id``
+# already constrains it to ``^[A-Za-z0-9_-]+$``, a strict subset of this pattern.
+ODCS_STABLE_ID_PATTERN = re.compile(r"^[^\s.#/\\@!%&^]+$")
+
+
+def _valid_sealed_entries(items: object, required: frozenset[str], allowed: tuple[str, ...]) -> bool:
+    """Whether ``items`` is a list of objects, each carrying every ``required`` key, no key
+    outside ``allowed``, and an ``id`` (when present) that is a string matching
+    ``ODCS_STABLE_ID_PATTERN`` -- the shape a sealed ODCS item schema demands."""
+    if not isinstance(items, list):
+        return False
+    for entry in items:
+        if not isinstance(entry, dict) or not (required <= entry.keys()) or not (entry.keys() <= set(allowed)):
+            return False
+        entry_id = entry.get("id")
+        if entry_id is not None and not (isinstance(entry_id, str) and ODCS_STABLE_ID_PATTERN.match(entry_id)):
+            return False
+    return True
+
+
+def _validate_odcs_rule_metadata(subtree: object) -> str | None:
+    """Return an error message if the reserved ``odcs`` subtree is malformed, else ``None``."""
+    if not isinstance(subtree, dict):
+        return f"`{ODCS_RULE_METADATA_KEY}` must be a JSON object"
+
+    dimension = subtree.get("dimension")
+    if dimension is not None:
+        try:
+            OdcsDimension(dimension)
+        except ValueError:
+            allowed = ", ".join(f"`{member.value}`" for member in OdcsDimension)
+            return f"`{ODCS_RULE_METADATA_KEY}.dimension` must be one of {allowed} (got `{dimension}`)"
+
+    for field in _ODCS_STRING_FIELDS:
+        value = subtree.get(field)
+        if value is not None and not isinstance(value, str):
+            return f"`{ODCS_RULE_METADATA_KEY}.{field}` must be a string"
+
+    tags = subtree.get("tags")
+    if tags is not None and (not isinstance(tags, list) or not all(isinstance(tag, str) for tag in tags)):
+        return f"`{ODCS_RULE_METADATA_KEY}.tags` must be a list of strings"
+
+    custom_properties = subtree.get("customProperties")
+    if custom_properties is not None and not _valid_sealed_entries(
+        custom_properties, ODCS_CUSTOM_PROPERTY_REQUIRED_FIELDS, ODCS_CUSTOM_PROPERTY_FIELDS
+    ):
+        return (
+            f"`{ODCS_RULE_METADATA_KEY}.customProperties` must be a list of objects, each with a "
+            f"`property` and a `value`, no keys other than {sorted(ODCS_CUSTOM_PROPERTY_FIELDS)}, and an "
+            f"`id` (when present) matching `{ODCS_STABLE_ID_PATTERN.pattern}`"
+        )
+
+    authoritative_definitions = subtree.get("authoritativeDefinitions")
+    if authoritative_definitions is not None and not _valid_sealed_entries(
+        authoritative_definitions, ODCS_AUTHORITATIVE_DEFINITION_REQUIRED_FIELDS, ODCS_AUTHORITATIVE_DEFINITION_FIELDS
+    ):
+        return (
+            f"`{ODCS_RULE_METADATA_KEY}.authoritativeDefinitions` must be a list of objects, each with "
+            f"a `url` and a `type`, no keys other than {sorted(ODCS_AUTHORITATIVE_DEFINITION_FIELDS)}, and an "
+            f"`id` (when present) matching `{ODCS_STABLE_ID_PATTERN.pattern}`"
+        )
+
+    return None
+
+
+TERM_ID_MAX_LENGTH = 100
+_DIGEST_LENGTH = 8
+
+_INVALID = re.compile(r"[^A-Za-z0-9_-]+")
+_REPEATS = re.compile(r"_{2,}")
+
+
+def slugify_term_id(*parts: str | None) -> str:
+    """Build a term identity from natural-key parts, matching ``^[A-Za-z0-9_-]+$``.
+
+    Each part is reduced to the allowed character set and the surviving parts are joined with
+    ``-``, bounded to ``TERM_ID_MAX_LENGTH``. Raises ``ValueError`` when no part survives.
+
+    The identity sits in a unique index, so a key the reduction does not render exactly carries
+    a digest of the raw parts and stays distinct from every key that reduces the same way. The
+    reduction loses information wherever it collapses a run of disallowed characters, cuts at
+    the bound, keeps a ``-`` that then reads as the one joining parts, or drops an absent part
+    and shifts the ones after it. The result stays a pure function of the parts.
+    """
+    slugged = []
+    for part in parts:
+        if not part:
+            continue
+        cleaned = _REPEATS.sub("_", _INVALID.sub("_", part.strip())).strip("_-")
+        if cleaned:
+            slugged.append(cleaned)
+
+    if not slugged:
+        raise ValueError("no part of the natural key survives slugification")
+
+    joined = "-".join(slugged)
+    present = [part for part in parts if part]
+    renders_exactly = (
+        present == slugged
+        and present == list(parts[: len(present)])
+        and not any("-" in part for part in slugged)
+        and len(joined) <= TERM_ID_MAX_LENGTH
+    )
+    if renders_exactly:
+        return joined
+
+    # Joined on a character no identifier carries, so the digest tells apart the keys the
+    # reduction cannot -- including ones differing only in how many parts they have.
+    raw_key = "\x00".join(part or "" for part in parts)
+    digest = hashlib.sha256(raw_key.encode()).hexdigest()[:_DIGEST_LENGTH]
+    kept = joined[: TERM_ID_MAX_LENGTH - _DIGEST_LENGTH - 1].rstrip("-_")
+    return f"{kept}-{digest}"
 
 
 class ParamFieldsMixin:
@@ -1211,6 +1356,9 @@ class TestDefinition(Entity):
             select(*select_columns).where(cls.id.in_(test_definition_ids), cls.version_clause()),
         )
         db_session.execute(query)
+        # A copy is a new term, so it takes none of the source's contract identity; it still
+        # needs one of its own when the target version is a contract's.
+        cls.assign_missing_term_ids(target_version)
 
     @classmethod
     def get_source_data_context(cls, test_definition_id: UUID, project_codes: list[str] | None = None) -> dict | None:
@@ -1251,6 +1399,141 @@ class TestDefinition(Entity):
         result = session.execute(text(sql), params).first()
         return dict(result._mapping) if result else None
 
+    @classmethod
+    def _term_id_candidates(
+        cls,
+        test_type: str,
+        schema_name: str | None,
+        table_name: str | None,
+        column_name: str | None,
+        term_id: UUID | str | None,
+    ) -> list[str]:
+        """Every contract identity this natural key could take, in preference order.
+
+        The bare ``slugify_term_id`` slug first, then the forms suffixed with a growing prefix
+        of ``term_id``'s digest. Only the slug when ``term_id`` is ``None``.
+        """
+        slug = slugify_term_id(test_type, schema_name, table_name, column_name)
+        candidates = [slug]
+        if term_id is not None:
+            digest = hashlib.sha256(str(term_id).encode()).hexdigest()
+            for length in range(_DIGEST_LENGTH, len(digest) + 1):
+                kept = slug[: TERM_ID_MAX_LENGTH - length - 1].rstrip("-_")
+                candidates.append(f"{kept}-{digest[:length]}")
+        return candidates
+
+    @classmethod
+    def _mint_against(
+        cls,
+        taken: set[str],
+        test_type: str,
+        schema_name: str | None,
+        table_name: str | None,
+        column_name: str | None,
+        term_id: UUID | str | None = None,
+    ) -> str:
+        """Pick this term's contract identity, treating ``taken`` as the whole set to avoid.
+
+        Returns the bare ``slugify_term_id`` slug when it is free. ``slugify_term_id`` is
+        already injective over distinct natural keys, so the only collision possible here is
+        two terms sharing an identical natural key -- legal because the natural-key dedup
+        indexes are partial on ``last_auto_gen_date``. In that case the slug is disambiguated
+        with a digest of this term's own primary key (``term_id``), a function of the term
+        rather than of minting order.
+
+        ``slugify_term_id``'s plain and digested forms are not disjoint -- a natural key that
+        itself ends in something shaped like a hex digest can already own the exact string a
+        suffix would mint -- so every candidate is checked against ``taken`` in turn, never
+        assumed free from its shape alone. When a candidate is taken, the next one keeps more
+        of the digest (never an ordinal, which would depend on minting order) until a free one
+        is found or the digest is exhausted, trimming the slug so the result still fits
+        ``TERM_ID_MAX_LENGTH``.
+
+        Raises ``ValueError`` when the digest is exhausted, and when ``term_id`` is ``None``
+        and the bare slug is taken: the digest has nothing to hash, and hashing a constant in
+        its place would turn every such call into a generator of the same colliding id.
+        """
+        slug, *suffixed = cls._term_id_candidates(test_type, schema_name, table_name, column_name, term_id)
+        if slug not in taken:
+            return slug
+
+        if term_id is None:
+            raise ValueError(f"minting {slug!r} needs the term's own primary key to disambiguate it")
+
+        for candidate in suffixed:
+            if candidate not in taken:
+                return candidate
+
+        raise ValueError(f"no free term identity for {slug!r}")
+
+    @classmethod
+    def mint_term_id(
+        cls,
+        version_id: UUID | str,
+        test_type: str,
+        schema_name: str | None,
+        table_name: str | None,
+        column_name: str | None,
+        term_id: UUID | str | None = None,
+    ) -> str:
+        """Derive a term's contract identity, disambiguated against what ``version_id`` holds.
+
+        Reads in one query which of the identities this term could take are already held on the
+        version, then picks a free one. Raises ``ValueError`` when none is free.
+        """
+        candidates = cls._term_id_candidates(test_type, schema_name, table_name, column_name, term_id)
+        taken = set(
+            get_current_session()
+            .scalars(
+                select(cls.contract_term_id).where(
+                    cls.version_id == version_id, cls.contract_term_id.in_(candidates)
+                )
+            )
+            .all()
+        )
+        return cls._mint_against(taken, test_type, schema_name, table_name, column_name, term_id)
+
+    @classmethod
+    def assign_missing_term_ids(cls, version_id: UUID | str) -> int:
+        """Mint a contract identity for every term in the version that has none.
+
+        Covers manual terms as well as generated ones -- the natural-key dedup indexes are
+        partial on ``last_auto_gen_date``, so a manual term is deduped against nothing and this
+        is the only place a duplicate natural key becomes visible as a duplicate. Sweeps in a
+        stable order (``test_type``, ``schema_name``, ``table_name``, ``column_name``) so two
+        runs over the same data mint the same ids. Returns the number of terms minted.
+
+        The identities the version holds are read once and grown in memory as terms are minted,
+        so the sweep costs two queries whatever the number of terms and tells apart two terms
+        sharing a natural key within the sweep.
+
+        A version no suite owns -- the placeholder that regular and monitor suites share --
+        holds no contract terms, so nothing is minted on it.
+        """
+        if not SuiteVersion.is_suite_owned(version_id):
+            return 0
+
+        session = get_current_session()
+        taken = set(
+            session.scalars(
+                select(cls.contract_term_id).where(
+                    cls.version_id == version_id, cls.contract_term_id.is_not(None)
+                )
+            ).all()
+        )
+        terms = session.scalars(
+            select(cls)
+            .where(cls.version_id == version_id, cls.contract_term_id.is_(None))
+            .order_by(cls.test_type, cls.schema_name, cls.table_name, cls.column_name)
+        ).all()
+        for term in terms:
+            term.contract_term_id = cls._mint_against(
+                taken, term.test_type, term.schema_name, term.table_name, term.column_name, term.id
+            )
+            taken.add(term.contract_term_id)
+        session.flush()
+        return len(terms)
+
     def save(self) -> None:
         if self.id:
             self._route_to_writable_version()
@@ -1272,6 +1555,15 @@ class TestDefinition(Entity):
                     select(SuiteVersion.resolved_for(self.test_suite_id))
                 )
             self._route_to_writable_version()
+            # A SQLAlchemy column default is evaluated at flush, not at construction, so the
+            # primary key does not exist yet here. An explicit value takes precedence over the
+            # column default and the post-flush refresh returns the same value, so nothing
+            # downstream shifts.
+            self.id = self.id or uuid4()
+            if not self.contract_term_id and SuiteVersion.is_suite_owned(self.version_id):
+                self.contract_term_id = self.mint_term_id(
+                    self.version_id, self.test_type, self.schema_name, self.table_name, self.column_name, self.id
+                )
             super().save()
 
 

@@ -43,6 +43,7 @@ from testgen.mcp.tools.common import (
     parse_score_type,
     parse_severity,
     parse_uuid,
+    resolve_contract,
     resolve_hygiene_issue,
     resolve_issue_type,
     resolve_profiling_run,
@@ -1603,3 +1604,65 @@ def test_a_secrets_backed_field_must_be_marked_secret():
 
     with pytest.raises(ValueError, match="must set secret=True"):
         ConnField("Secret Access Key", "secret_access_key", Req.REQUIRED, in_secrets=True)
+
+
+# --- resolve_contract ---
+
+
+def _mock_contract(suite_type=SuiteType.CONTRACT):
+    suite = MagicMock()
+    suite.suite_type = suite_type
+    return suite
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_resolve_contract_returns_a_contract_suite(mock_suite_cls, mock_get_perms, db_session_mock):
+    suite = _mock_contract()
+    mock_suite_cls.get.return_value = suite
+    mock_get_perms.return_value = _mock_perms()
+
+    assert resolve_contract(str(uuid4())) is suite
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_resolve_contract_missing_or_inaccessible(mock_suite_cls, mock_get_perms, db_session_mock):
+    """A contract that does not exist and one in a forbidden project collapse to one error."""
+    mock_suite_cls.get.return_value = None
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPResourceNotAccessible, match=r"Contract .* not found or not accessible"):
+        resolve_contract(str(uuid4()))
+
+
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_resolve_contract_scopes_the_lookup_to_allowed_projects(mock_suite_cls, mock_get_perms, db_session_mock):
+    """The project scope rides in the query, so inaccessible and missing are indistinguishable."""
+    mock_suite_cls.get.return_value = _mock_contract()
+    mock_get_perms.return_value = _mock_perms()
+
+    resolve_contract(str(uuid4()))
+
+    assert mock_suite_cls.get.call_args.args[1:], "the lookup passed no scoping clause"
+
+
+@pytest.mark.parametrize("suite_type", [SuiteType.REGULAR, SuiteType.MONITOR])
+@patch("testgen.mcp.tools.common.get_project_permissions")
+@patch("testgen.mcp.tools.common.TestSuite")
+def test_resolve_contract_rejects_a_suite_that_keeps_no_versions(
+    mock_suite_cls, mock_get_perms, suite_type, db_session_mock
+):
+    """Named rather than collapsed: the caller passed the access check, so the suite is one
+    they can already see, and `not found` would send them looking for a typo."""
+    mock_suite_cls.get.return_value = _mock_contract(suite_type)
+    mock_get_perms.return_value = _mock_perms()
+
+    with pytest.raises(MCPUserError, match="not a contract"):
+        resolve_contract(str(uuid4()))
+
+
+def test_resolve_contract_invalid_uuid():
+    with pytest.raises(MCPUserError, match="Invalid test_suite_id"):
+        resolve_contract("not-a-uuid")

@@ -94,6 +94,7 @@ class DocGroup(StrEnum):
     MONITORS = "Browse monitor health and events"
     TRIGGER = "Trigger profiling, tests, and test generation"
     SCORING = "Track data quality scores"
+    CONTRACTS = "Work with data contracts"
     MANAGE = "Manage TestGen configuration"
 
 
@@ -837,6 +838,23 @@ def resolve_hygiene_issue(issue_id: str) -> HygieneIssue:
     if issue is None:
         raise MCPResourceNotAccessible("Hygiene issue", issue_id)
     return issue
+
+
+def resolve_contract(test_suite_id: str) -> TestSuite:
+    """Resolve a contract's test suite ID, collapsing missing-or-inaccessible into one error path.
+
+    A suite the caller can reach but which keeps no versions is reported as not a contract
+    rather than as missing: the access check has already passed, so the suite is one the
+    caller can see in any suite listing, and a unified error would send them hunting a typo.
+    """
+    suite_uuid = parse_uuid(test_suite_id, "test_suite_id")
+    perms = get_project_permissions()
+    suite = TestSuite.get(suite_uuid, TestSuite.project_code.in_(perms.allowed_codes))
+    if suite is None:
+        raise MCPResourceNotAccessible("Contract", test_suite_id)
+    if suite.suite_type != SuiteType.CONTRACT:
+        raise MCPUserError(f"Test suite `{test_suite_id}` is not a contract, so it keeps no versions.")
+    return suite
 
 
 def resolve_test_suite(test_suite_id: str) -> TestSuite:

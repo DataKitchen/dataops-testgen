@@ -371,6 +371,39 @@ class Test_import_matching:
         assert result.summary.created == 1
         assert ImportReason.no_match in _reasons(result, ImportAction.create)
 
+    @patch(f"{SERVICE_MODULE}.DataTable")
+    @patch(f"{SERVICE_MODULE}.TableGroup")
+    @patch(f"{SERVICE_MODULE}.get_current_session")
+    def test_an_import_mints_contract_identities_for_what_it_created(
+        self, mock_session_fn, mock_tg_cls, mock_dt_cls
+    ):
+        """Import registers terms with ``session.add`` rather than ``save()``, so nothing mints
+        their contract identity. On a contract suite that renders ``id: null``, which the pinned
+        schema rejects by JSON path -- naming no term."""
+        session = MagicMock()
+        mock_session_fn.return_value = session
+        mock_tg_cls.get.return_value = _make_table_group()
+        mock_dt_cls.select_table_names.return_value = ["t1"]
+        session.execute.return_value.all.return_value = []
+        version_id = uuid4()
+        session.scalar.return_value = version_id
+
+        ts = _make_test_suite()
+        td = _make_import_td(test_type="Alpha", table_name="t1")
+        config = _make_config(mode=ImportMode.apply, on_new=OnNew.create)
+
+        from testgen.common.test_definition_export_import_service import import_definitions
+
+        with (
+            patch(f"{SERVICE_MODULE}._load_valid_test_types", return_value={"Alpha"}),
+            patch.object(TestDefinition, "assert_version_writable"),
+            patch.object(TestDefinition, "assign_missing_term_ids") as sweep,
+        ):
+            result = import_definitions(ts, config, _make_payload(td))
+
+        assert result.summary.created == 1
+        sweep.assert_called_once_with(version_id)
+
 
 # --- Import: policy resolution ---
 

@@ -232,6 +232,7 @@ def build_mcp_server(
         list_connections,
         test_connection,
     )
+    from testgen.mcp.tools.contracts import export_contract
     from testgen.mcp.tools.data_catalog import update_catalog_metadata
     from testgen.mcp.tools.discovery import (
         get_data_inventory,
@@ -512,6 +513,8 @@ def build_mcp_server(
     tool_wrapper(update_project)
     tool_wrapper(create_test_suite)
     tool_wrapper(update_test_suite)
+    if not env_hides_source_only_tools:
+        tool_wrapper(export_contract)
     tool_wrapper(update_catalog_metadata)
 
     # Resources

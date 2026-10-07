@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from testgen.mcp.exceptions import MCPUserError
-from testgen.mcp.server import _build_server_instructions
+from testgen.mcp.server import _build_server_instructions, build_mcp_server
 from testgen.mcp.services.source_data_protection import (
     _MODE_RANK,
     SourceDataProtectionMode,
@@ -266,7 +266,7 @@ class Test_mcp_source_data_only:
 
 
 class Test_source_only_tool_gating:
-    """The five value-exposure tools plus the two SQL dry-run tools refuse under the mode."""
+    """The value-exposure tools, the two SQL dry-run tools and the contract export refuse under the mode."""
 
     GATED = (
         ("testgen.mcp.tools.source_data", "get_source_data"),
@@ -276,6 +276,7 @@ class Test_source_only_tool_gating:
         ("testgen.mcp.tools.profiling", "get_column_patterns"),
         ("testgen.mcp.tools.test_definitions", "validate_custom_test"),
         ("testgen.mcp.tools.monitor_metrics", "validate_metric_expression"),
+        ("testgen.mcp.tools.contracts", "export_contract"),
     )
 
     @pytest.mark.parametrize(("module", "name"), GATED)
@@ -296,3 +297,21 @@ class Test_source_only_tool_gating:
         import importlib
 
         assert getattr(importlib.import_module(module), name).__name__ == name
+
+    @staticmethod
+    def _registered_tools(env_mode: SourceDataProtectionMode) -> set[str]:
+        with (
+            patch("testgen.mcp.server.mcp_source_data_env_mode", return_value=env_mode),
+            patch(
+                "testgen.mcp.server.mcp_source_data_protected",
+                return_value=env_mode is not SourceDataProtectionMode.OFF,
+            ),
+        ):
+            server = build_mcp_server(api_base_url="https://testgen.example.com")
+        return {tool.name for tool in server._tool_manager.list_tools()}
+
+    def test_they_are_registered_when_the_env_var_leaves_protection_off(self):
+        assert {name for _, name in self.GATED} <= self._registered_tools(SourceDataProtectionMode.OFF)
+
+    def test_none_is_registered_when_the_env_var_turns_protection_on(self):
+        assert not {name for _, name in self.GATED} & self._registered_tools(SourceDataProtectionMode.STRICT)

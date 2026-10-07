@@ -17,7 +17,7 @@ from sqlalchemy.exc import DataError, IntegrityError
 from yaml import YAMLError, safe_load
 
 from testgen import settings
-from testgen.common.enums import HealthDimension, ImpactDimension, QualityDimension
+from testgen.common.enums import HealthDimension, ImpactDimension, QualityDimension, TestScope
 from testgen.common.flavors import FLAVOR_FAMILIES
 from testgen.common.models import database_session
 from testgen.common.models.test_definition import (
@@ -25,7 +25,6 @@ from testgen.common.models.test_definition import (
     StatisticalTechnique,
     TestAlgorithm,
     TestRunType,
-    TestScope,
 )
 
 LOG = logging.getLogger("testgen")
