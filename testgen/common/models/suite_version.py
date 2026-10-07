@@ -181,6 +181,15 @@ class SuiteVersion(Entity):
         ) is not None
 
     @classmethod
+    def is_suite_owned(cls, version_id: UUID | str | None) -> bool:
+        """Whether the id names a version a suite owns rather than the shared placeholder."""
+        if version_id is None:
+            return False
+        return get_current_session().scalar(
+            select(cls.id).where(cls.id == version_id, cls.test_suite_id.is_not(None))
+        ) is not None
+
+    @classmethod
     def is_active(cls, version_id: UUID | str | None, suite_id: UUID | str) -> bool:
         """Whether the id names the suite's agreement in force."""
         if version_id is None:
@@ -234,6 +243,13 @@ class SuiteVersion(Entity):
         """The suite's open draft, if it has one."""
         return get_current_session().scalars(
             select(cls).where(cls.test_suite_id == suite_id, cls.frozen_at.is_(None))
+        ).first()
+
+    @classmethod
+    def for_number(cls, suite_id, version: int) -> Self | None:
+        """The suite's version carrying that number, if it has one."""
+        return get_current_session().scalars(
+            select(cls).where(cls.test_suite_id == suite_id, cls.version == version)
         ).first()
 
     @classmethod

@@ -144,7 +144,11 @@ def build_server_block(connection: Connection, table_group: TableGroup) -> dict[
             f"The connection does not supply {', '.join(missing)}, which {server_type} requires."
         )
 
-    block: dict[str, Any] = {"server": connection.connection_name, "type": server_type}
+    # `.value`, not `server_type` itself: the result is document data destined for
+    # `yaml.safe_dump`, which raises on an unregistered type -- and a `StrEnum` member, though
+    # it compares equal to its own value and passes `isinstance(x, str)`, is not `str` by
+    # `type()`, which is what `yaml.safe_dump`'s representer lookup actually uses.
+    block: dict[str, Any] = {"server": connection.connection_name, "type": server_type.value}
     for name in REQUIRED_FIELDS[server_type] + OPTIONAL_FIELDS.get(server_type, ()):
         if available.get(name) not in (None, ""):
             block[name] = available[name]

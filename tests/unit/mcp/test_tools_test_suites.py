@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 
 from testgen.common.enums import SuiteType
-from testgen.common.odcs_server import UnmappedFlavorError
+from testgen.common.odcs.servers import UnmappedFlavorError
 from testgen.mcp.exceptions import MCPPermissionDenied, MCPResourceNotAccessible, MCPUserError
 from testgen.mcp.permissions import ProjectPermissions
 
