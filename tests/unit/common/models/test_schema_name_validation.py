@@ -1,8 +1,13 @@
-"""The schema-name rule, which both caller-supplied surfaces have to apply identically.
+"""The schema-name rule, which every surface that takes one has to apply identically.
 
-The pattern is handed to Pydantic for the REST body and used directly here for MCP. Pydantic
-anchors a pattern as a full match; anything that anchors it more loosely lets a value through one
-surface that the other rejects, and the value reaches the target database by substitution.
+The pattern is handed to Pydantic for the REST body and used directly here for MCP and for
+create. Pydantic anchors a pattern as a full match; anything that anchors it more loosely lets a
+value through one surface that the other rejects, and the value reaches the target database by
+substitution.
+
+The rule excludes what would end the quoting the templates put the name inside, rather than
+restricting it to a bare identifier: a schema a table group can be created on is one it can be
+moved to.
 """
 
 import re
@@ -40,10 +45,13 @@ def _rest_accepts(value: str) -> bool:
         "onboard_2026_09_10",
         "_leading_underscore",
         "with$dollar",
+        "Sales-Data_2026_09",
+        "Sales Data",
+        "9leading_digit",
         "a" * SCHEMA_NAME_MAX_LENGTH,
     ],
 )
-def test_accepts_a_bare_identifier(value):
+def test_accepts_a_name_the_templates_can_quote(value):
     assert validate_schema_name(value) is None
     assert _rest_accepts(value)
 
@@ -54,14 +62,14 @@ def test_accepts_a_bare_identifier(value):
         "public\n",
         "public\nDROP TABLE x",
         'x" OR 1=1--',
-        "has space",
-        "has-hyphen",
-        "9leading_digit",
+        "x' OR 1=1--",
+        "with`backtick",
+        "with\ttab",
         "",
         "a" * (SCHEMA_NAME_MAX_LENGTH + 1),
     ],
 )
-def test_rejects_anything_that_is_not_one(value):
+def test_rejects_what_would_end_the_quoting(value):
     assert validate_schema_name(value) is not None
     assert not _rest_accepts(value)
 

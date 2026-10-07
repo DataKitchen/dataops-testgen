@@ -19,7 +19,7 @@ from testgen.common.database.table_group_service import (
     validate_table_group_fields,
 )
 from testgen.common.models.connection import Connection
-from testgen.common.models.table_group import TableGroup, table_group_defaults
+from testgen.common.models.table_group import SCHEMA_NAME_MAX_LENGTH, TableGroup, table_group_defaults
 from testgen.ui.services.database_service import TargetQuery
 
 pytestmark = pytest.mark.unit
@@ -199,7 +199,6 @@ def test_validate_name_length_counts_the_padding_it_is_stored_with():
 @pytest.mark.parametrize(
     ("attr", "max_length", "message_name"),
     [
-        ("table_group_schema", 100, "schema_name"),
         ("profile_id_column_mask", 2000, "profile_id_column_mask"),
         ("profile_sk_column_mask", 150, "profile_sk_column_mask"),
         ("description", 1000, "description"),
@@ -212,6 +211,20 @@ def test_validate_rejects_a_value_wider_than_its_column(attr, max_length, messag
     assert validate_table_group_fields(_tg(**{attr: "x" * (max_length + 1)})) == [
         f"`{message_name}` must be at most {max_length} characters.",
     ]
+
+
+def test_validate_rejects_a_schema_wider_than_the_catalog_holds():
+    """The schema is capped by its own rule rather than by the table_groups column, because the
+    catalog columns it has to land in are narrower than that column."""
+    errors = validate_table_group_fields(_tg(table_group_schema="a" * (SCHEMA_NAME_MAX_LENGTH + 1)))
+
+    assert f"`schema_name` must be at most {SCHEMA_NAME_MAX_LENGTH} characters." in errors
+
+
+def test_validate_rejects_a_schema_that_would_end_the_quoting():
+    errors = validate_table_group_fields(_tg(table_group_schema='sales" OR 1=1--'))
+
+    assert "`schema_name` must not contain quote characters or control characters." in errors
 
 
 @pytest.mark.parametrize(

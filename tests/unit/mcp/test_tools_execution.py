@@ -124,7 +124,7 @@ def test_run_tests_rejects_metadata_that_is_not_an_object(mock_suite_cls, mock_j
 
 @patch("testgen.mcp.tools.execution.JobExecution")
 @patch("testgen.mcp.tools.common.TestSuite")
-def test_run_tests_rejects_a_schema_that_is_not_a_bare_identifier(
+def test_run_tests_rejects_a_schema_that_would_end_the_quoting(
     mock_suite_cls, mock_job_exec, db_session_mock
 ):
     """The value is substituted into generated SQL inside quote characters, so a name carrying
@@ -134,7 +134,7 @@ def test_run_tests_rejects_a_schema_that_is_not_a_bare_identifier(
 
     from testgen.mcp.tools.execution import run_tests
 
-    with pytest.raises(MCPUserError, match="match_schema_name must start with"):
+    with pytest.raises(MCPUserError, match="match_schema_name must not contain"):
         run_tests(str(suite_id), match_schema_name='x" OR 1=1--')
 
     mock_job_exec.submit.assert_not_called()

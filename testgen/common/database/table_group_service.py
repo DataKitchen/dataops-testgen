@@ -63,7 +63,6 @@ _BIGINT_MAX = 2**63 - 1
 
 # Widths of the ``table_groups`` VARCHAR columns (030_initialize_new_schema_structure.sql).
 _MAX_LENGTHS: dict[str, int] = {
-    "table_group_schema": 100,
     "profiling_table_set": 2000,
     "profiling_include_mask": 2000,
     "profiling_exclude_mask": 2000,
@@ -137,8 +136,10 @@ def validate_table_group_fields(
                 table_group.file_declarations, base_location(connection.sql_flavor_code, connection.parameters)
             )
         )
-    elif _missing(table_group.table_group_schema):
-        errors.append(f"{field('table_group_schema')} is required.")
+    elif error := validate_schema_name(table_group.table_group_schema or ""):
+        # The same rule the move applies, so a table group cannot be created on a schema it could
+        # never be moved to, nor on one wider than the catalog columns it has to land in.
+        errors.append(f"{field('table_group_schema')} {error}.")
 
     for attr, max_length in _MAX_LENGTHS.items():
         value = getattr(table_group, attr)

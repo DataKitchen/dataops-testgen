@@ -1045,18 +1045,12 @@ CREATE INDEX ix_ares_anid
 CREATE UNIQUE INDEX uix_dtc_tg_table
   ON data_table_chars (table_groups_id, table_name);
 
-CREATE INDEX idx_dtc_id
-  ON data_table_chars (table_id);
-
 -- Index data_column_chars
 CREATE UNIQUE INDEX uix_dcc_tg_table_column
   ON data_column_chars (table_groups_id, table_name, column_name);
 
 CREATE INDEX idx_dcc_tableid_column
   ON data_column_chars (table_id, column_name);
-
-CREATE INDEX idx_dcc_id
-  ON data_column_chars (column_id);
 
 -- Conditional Index for dq_scoring views
 CREATE INDEX idx_test_results_filter_join

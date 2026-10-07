@@ -189,16 +189,13 @@ def test_test_run_request_accepts_nested_metadata():
     [
         'x" OR 1=1--',   # closes the double quote the templates wrap it in
         "x` OR 1=1--",   # and the backtick, for the flavors that use it
-        "a'; DROP TABLE x; --",
-        "a;b",
-        "a b",
-        "a.b",
-        "1abc",
+        "a'; DROP TABLE x; --",   # and the single quote, for the metadata reads
+        "a\nb",
         "",
         "a" * (SCHEMA_NAME_MAX_LENGTH + 1),
     ],
 )
-def test_test_run_request_rejects_anything_but_a_bare_identifier(schema_name):
+def test_test_run_request_rejects_a_name_that_would_end_the_quoting(schema_name):
     with pytest.raises(ValidationError):
         TestRunRequest(match_schema_name=schema_name)
 

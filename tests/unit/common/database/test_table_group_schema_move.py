@@ -58,7 +58,7 @@ def test_the_connection_is_checked_before_the_name():
     """A connection with no schema to move to is refused whatever the name looks like, so the
     caller is told the operation does not apply rather than to fix the name."""
     with pytest.raises(SchemaMoveRefused) as refusal:
-        move_table_group_schema(_table_group("main"), "not a valid name", connection=_connection(SqlFlavorCode.FILES))
+        move_table_group_schema(_table_group("main"), 'quote" in it', connection=_connection(SqlFlavorCode.FILES))
 
     assert refusal.value.reason == "schema_unsupported"
 
@@ -68,7 +68,7 @@ def test_a_database_connection_passes_the_flavor_guard(_mock_job):
     """The guard rejects only schemaless connections; a database one goes on to the name check."""
     with pytest.raises(SchemaMoveRefused) as refusal:
         move_table_group_schema(
-            _table_group("public"), "not a valid name", connection=_connection(SqlFlavorCode.POSTGRESQL)
+            _table_group("public"), 'quote" in it', connection=_connection(SqlFlavorCode.POSTGRESQL)
         )
 
     assert refusal.value.reason == "invalid_schema_name"
