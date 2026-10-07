@@ -140,6 +140,8 @@ class FlavorService:
     concat_operator = "||"
     quote_character = '"'
     escaped_single_quote = "''"
+    literal_escapes_backslash = False
+    string_literal_prefix = ""
     escaped_underscore = "\\_"
     escape_clause = ""
     varchar_type = "VARCHAR(1000)"
@@ -188,6 +190,19 @@ class FlavorService:
         """
         return ""
 
+    def text_value(self, column_ref: str, column_type: str | None) -> str:  # noqa: ARG002
+        """Return the SQL expression that reads a column's text value.
+
+        Args:
+            column_ref: The quoted column reference.
+            column_type: The column's type as recorded in the data catalog.
+
+        Returns:
+            ``column_ref``, or an expression over it that strips padding the flavor adds to
+            fixed-length text values.
+        """
+        return column_ref
+
     def get_schema_columns(self, _params: ResolvedConnectionParams, _schema: str) -> list[ColumnChars] | None:
         """Return column metadata without querying information_schema.
 
@@ -195,6 +210,21 @@ class FlavorService:
         Return None to use the standard SQL template path.
         """
         return None
+
+    def string_literal(self, value: str) -> str:
+        """Return ``value`` as a single-quoted SQL string literal."""
+        if self.literal_escapes_backslash:
+            value = value.replace("\\", "\\\\")
+        escaped = value.replace("'", self.escaped_single_quote)
+        return f"{self.string_literal_prefix}'{escaped}'"
+
+    def string_literal_or_null(self, value: str | None) -> str:
+        """Return ``value`` as a SQL string literal, or ``NULL`` when it is empty."""
+        return self.string_literal(value) if value else "NULL"
+
+    def string_literal_list(self, values: list[str]) -> str:
+        """Return ``values`` as a comma-separated list of SQL string literals, or ``NULL`` when empty."""
+        return ", ".join(self.string_literal(value) for value in values) or "NULL"
 
     def get_table_ref(self, schema: str, table: str, sql_flavor_code: str) -> str:
         """Return a table reference for SQL queries, qualified where the flavor qualifies."""

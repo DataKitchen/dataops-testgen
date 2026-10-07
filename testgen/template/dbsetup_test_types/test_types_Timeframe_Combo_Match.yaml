@@ -18,12 +18,13 @@ test_types:
     Categorical Column List
   column_name_help: |-
     Specify one or more Categorical columns, separated by commas. Do not use continuous measurements here. Do not use numeric values unless they represent discrete categories.
-  default_parm_columns: window_date_column,window_days,subset_condition
+  default_parm_columns: window_date_column,window_days,subset_condition,skip_errors
   default_parm_values: null
   default_parm_prompts: |-
-    Date Column for Time Windows,Time Window in Days,Record Subset Condition
-  default_parm_help: null
-  default_parm_required: Y,Y,N
+    Date Column for Time Windows,Time Window in Days,Record Subset Condition,Threshold Error Count
+  default_parm_help: |-
+    |||The number of mismatched value combinations that are acceptable before the test fails.
+  default_parm_required: Y,Y,N,N
   default_severity: Fail
   run_type: QUERY
   test_scope: referential

@@ -1744,26 +1744,49 @@ def test_create_test_rejects_non_public_test_type(
     mock_tg.get.assert_not_called()
 
 
+@patch("testgen.mcp.tools.test_definitions.TableGroup")
 @patch("testgen.mcp.tools.test_definitions.TestType")
-@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
-def test_update_test_rejects_non_public_test_type(mock_resolve_td, mock_tt_model, db_session_mock):
-    """Guards a non-public definition that already sits in a regular suite."""
+@patch("testgen.mcp.tools.test_definitions.resolve_test_type")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_suite")
+def test_create_test_rejects_volume_trend(
+    mock_resolve_suite, mock_resolve_tt, mock_tt_model, mock_tg, db_session_mock,
+):
     from testgen.common.enums import MonitorType
 
-    td = MagicMock()
-    td.test_type = MonitorType.SCHEMA.value
+    mock_resolve_suite.return_value = _make_suite()
+    mock_resolve_tt.return_value = MonitorType.VOLUME.value
+    volume_type = _make_test_type(code=MonitorType.VOLUME.value, short_name="Volume Trend")
+    mock_tt_model.get.return_value = volume_type
+
+    from testgen.mcp.tools.test_definitions import create_test
+
+    with pytest.raises(MCPUserError, match="Volume Trend is not an available test type"):
+        create_test(test_suite_id=str(uuid4()), test_type="Volume Trend", table_name="orders")
+
+    mock_tg.get.assert_not_called()
+
+
+@patch("testgen.mcp.tools.test_definitions.TestType")
+@patch("testgen.mcp.tools.test_definitions.resolve_test_definition")
+def test_update_test_allows_existing_non_public_test_type(mock_resolve_td, mock_tt_model, db_session_mock):
+    """A Volume Trend test already in a regular suite stays editable, though new ones cannot be created."""
+    from testgen.common.enums import MonitorType
+    from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
+
+    assert MonitorType.VOLUME.value in NON_PUBLIC_TEST_TYPES
+    td = _make_td_orm(test_type=MonitorType.VOLUME.value)
     mock_resolve_td.return_value = td
-    schema_type = MagicMock()
-    schema_type.test_type = MonitorType.SCHEMA.value
-    schema_type.test_name_short = "Schema"
-    mock_tt_model.get.return_value = schema_type
+    mock_tt_model.get.return_value = _make_test_type(
+        code=MonitorType.VOLUME.value, short_name="Volume Trend",
+    )
 
     from testgen.mcp.tools.test_definitions import update_test
 
-    with pytest.raises(MCPUserError, match="Schema is not an available test type"):
-        update_test(str(uuid4()), fields={"test_active": False})
+    result = update_test(str(td.id), fields={"test_active": False})
 
-    td.save.assert_not_called()
+    assert "updated" in result.lower()
+    assert td.test_active is False
+    td.save.assert_called_once()
 
 
 # -- version scoping ----------------------------------------------------------

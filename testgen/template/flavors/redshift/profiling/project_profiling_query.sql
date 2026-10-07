@@ -39,8 +39,8 @@ WITH whole_table_measures AS (
 , sampleable_measures AS (
   SELECT
     COUNT("{COL_NAME}") AS sample_value_ct,
-    COUNT(CASE WHEN "{COL_NAME}" = '' THEN 1 END) AS zero_length_ct,
-    COUNT(CASE WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1 END) AS lead_space_ct,
+    COUNT(CASE WHEN LEN("{COL_NAME}") = 0 THEN 1 END) AS zero_length_ct,
+    COUNT(CASE WHEN ("{COL_NAME}" LIKE ' %' AND LTRIM("{COL_NAME}") <> '') THEN 1 END) AS lead_space_ct,
     COUNT(CASE WHEN "{COL_NAME}" ILIKE '"%"' OR "{COL_NAME}" ILIKE '''%''' THEN 1 END) AS quoted_value_ct,
     COUNT(CASE WHEN "{COL_NAME}" ~ '[0-9]' THEN 1 END) AS includes_digit_ct,
     COUNT(CASE
@@ -52,9 +52,9 @@ WITH whole_table_measures AS (
            WHEN LOWER("{COL_NAME}") IN ('[blank]','[error]','[missing]','[tbd]',
                                       '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
          END) AS filled_value_ct,
-    COUNT(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" <> LOWER("{COL_NAME}") THEN 1 END) AS upper_case_ct,
-    COUNT(CASE WHEN "{COL_NAME}" = LOWER("{COL_NAME}") AND "{COL_NAME}" <> UPPER("{COL_NAME}") THEN 1 END) AS lower_case_ct,
-    COUNT(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" = LOWER("{COL_NAME}") THEN 1 END) AS non_alpha_ct,
+    COUNT(CASE WHEN COLLATE("{COL_NAME}", 'case_sensitive') = COLLATE(UPPER("{COL_NAME}"), 'case_sensitive') AND COLLATE("{COL_NAME}", 'case_sensitive') <> COLLATE(LOWER("{COL_NAME}"), 'case_sensitive') THEN 1 END) AS upper_case_ct,
+    COUNT(CASE WHEN COLLATE("{COL_NAME}", 'case_sensitive') = COLLATE(LOWER("{COL_NAME}"), 'case_sensitive') AND COLLATE("{COL_NAME}", 'case_sensitive') <> COLLATE(UPPER("{COL_NAME}"), 'case_sensitive') THEN 1 END) AS lower_case_ct,
+    COUNT(CASE WHEN COLLATE("{COL_NAME}", 'case_sensitive') = COLLATE(UPPER("{COL_NAME}"), 'case_sensitive') AND COLLATE("{COL_NAME}", 'case_sensitive') = COLLATE(LOWER("{COL_NAME}"), 'case_sensitive') THEN 1 END) AS non_alpha_ct,
     COUNT(CASE WHEN TRANSLATE("{COL_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COL_NAME}" THEN 1 END) AS non_printing_ct,
     SUM(<%IS_NUM;LEFT("{COL_NAME}", 31)%>) AS numeric_ct,
     SUM(<%IS_DATE;LEFT("{COL_NAME}", 26)%>) AS date_ct,
@@ -107,7 +107,7 @@ WITH whole_table_measures AS (
          value_ct,
          CASE
            WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, COLLATE(pattern, 'case_sensitive'))
          END AS pattern_rank
     FROM pattern_counts
 )
@@ -155,7 +155,7 @@ SELECT
   MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS DECIMAL(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

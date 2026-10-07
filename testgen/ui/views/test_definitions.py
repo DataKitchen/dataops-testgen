@@ -11,7 +11,7 @@ import streamlit as st
 from sqlalchemy import and_, asc, case, desc, func, or_, tuple_
 
 from testgen.common import date_service
-from testgen.common.custom_test_validation import validate_custom_query
+from testgen.common.custom_test_validation import validate_custom_query, validate_metric_query
 from testgen.common.database.database_service import get_flavor_service
 from testgen.common.database.table_group_service import apply_test_definition_flavor_rules
 from testgen.common.enums import JobSource, SuiteType
@@ -948,6 +948,7 @@ IMPORT_REASON_LABELS = {
     ImportReason.non_public_test_type: "Test type cannot be imported",
     ImportReason.invalid_table: "Table has not been profiled",
     ImportReason.missing_external_id: "Missing external ID",
+    ImportReason.missing_required_field: "Missing a required field",
     ImportReason.absent: "Not in the file",
 }
 
@@ -1166,6 +1167,7 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         tt.health_dimension, tt.algorithm, tt.statistical_technique,
         tt.column_name_prompt, tt.column_name_help,
         tt.default_parm_prompts, tt.default_parm_help, tt.default_parm_required, tt.usage_notes,
+        tt.test_type != ALL(:non_public_test_types) AS offered,
         CASE tt.test_scope
             WHEN 'referential' THEN '⧉ '
             WHEN 'custom' THEN '⛭ '
@@ -1183,7 +1185,6 @@ def run_test_type_lookup_query(test_type: str | None = None) -> pd.DataFrame:
         END as select_name
     FROM test_types tt
     WHERE tt.active = 'Y'
-        AND tt.test_type != ALL(:non_public_test_types)
         {"AND tt.test_type = :test_type" if test_type else ""}
     ORDER BY
         CASE tt.test_scope
@@ -1397,5 +1398,7 @@ def validate_test(test_definition: dict, table_group: TableGroupMinimal) -> None
         FROM {table_ref};
         """
         fetch_from_target_db(connection, query, table_group=table_group)
+    elif test_definition["test_type"] == "SQL_Metric":
+        validate_metric_query(connection, schema, test_definition["custom_query"], table_group=table_group)
     else:
         validate_custom_query(connection, schema, test_definition["custom_query"], table_group=table_group)

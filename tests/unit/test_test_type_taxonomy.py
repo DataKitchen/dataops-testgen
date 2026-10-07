@@ -6,6 +6,7 @@ from yaml import safe_load
 
 import testgen
 from testgen.commands.queries.execute_tests_query import TestExecutionSQL
+from testgen.common.models.profile_result import MeasureAcquisition, ProfileResult
 from testgen.common.models.test_definition import StatisticalTechnique, TestAlgorithm
 
 YAML_DIR = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
@@ -89,4 +90,37 @@ def test_templates_sharing_a_result_header_agree_on_their_columns():
             selected = _selected_result_columns(template["template"])
             assert selected == columns, (
                 f"{filename} [{template['sql_flavor']}]: output columns {selected}, expected {columns}"
+            )
+
+
+@pytest.mark.unit
+def test_test_types_comparing_to_skip_errors_declare_it_as_a_parameter():
+    """The form offers Threshold Error Count only through default_parm_columns, so a test type
+    whose templates compare a result to {SKIP_ERRORS} must declare it, and one that never does
+    must not offer it."""
+    for filename, tt in _test_type_docs():
+        templates = [template["template"] for template in tt.get("test_templates") or []]
+        compares = any(re.search(r"[<>]=?\s*\{SKIP_ERRORS\}", template) for template in templates)
+        declared = "skip_errors" in (tt.get("default_parm_columns") or "").split(",")
+        assert compares == declared, (
+            f"{filename}: templates {'compare' if compares else 'never compare'} a result to {{SKIP_ERRORS}}, "
+            f"but skip_errors is {'not ' if not declared else ''}in default_parm_columns"
+        )
+
+
+@pytest.mark.unit
+def test_table_comparison_baselines_from_sampled_measures_skip_sampled_profiles():
+    """A Table Comparison test compares exactly, so a baseline read from a measure that a sampled
+    profile takes from the sample would fail on the whole table."""
+    sampled = {
+        column for column, acquisition in ProfileResult.measure_acquisition.items()
+        if acquisition in (MeasureAcquisition.SAMPLEABLE, MeasureAcquisition.SAMPLEABLE_COUNT)
+    }
+    for filename, tt in _test_type_docs():
+        if "Table Comparison" not in (tt.get("generation_sets") or []) or tt.get("selection_criteria") in (None, "TEMPLATE"):
+            continue
+        reads = set(re.findall(r"[a-z_]+", tt.get("default_parm_values") or "")) & sampled
+        if reads:
+            assert "sample_ratio IS NULL" in tt["selection_criteria"], (
+                f"{filename}: baseline reads {sorted(reads)}, which a sampled profile measures on the sample"
             )

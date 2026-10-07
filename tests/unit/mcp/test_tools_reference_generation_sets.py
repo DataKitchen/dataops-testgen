@@ -84,3 +84,20 @@ def test_generation_sets_resource_handles_no_sets(_mock_members, db_session_mock
     from testgen.mcp.tools.reference import generation_sets_resource
 
     assert generation_sets_resource() == "No generation sets found."
+
+
+@patch(f"{MODULE}.TestType")
+@patch(f"{MODULE}.get_generation_set_members")
+def test_generation_sets_resource_keeps_a_name_with_a_comma_whole(mock_members, mock_tt_cls, db_session_mock):
+    mock_members.return_value = {"Standard": ["Required", "Required_No_Placeholder"]}
+    mock_tt_cls.select_where.return_value = [
+        _test_type("Required", "Required Entry"),
+        _test_type("Required_No_Placeholder", "Required, No Placeholder"),
+    ]
+
+    from testgen.mcp.tools.reference import generation_sets_resource
+
+    lines = generation_sets_resource().splitlines()
+
+    assert "- Required Entry" in lines
+    assert "- Required, No Placeholder" in lines

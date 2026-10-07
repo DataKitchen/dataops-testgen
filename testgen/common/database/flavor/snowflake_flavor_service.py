@@ -10,6 +10,7 @@ from testgen.common.database.flavor.flavor_service import FlavorService, Resolve
 class SnowflakeFlavorService(FlavorService):
 
     escaped_underscore = "\\\\_"
+    literal_escapes_backslash = True
     escape_clause = "ESCAPE '\\\\'"
     default_uppercase = True
     url_scheme = "snowflake"

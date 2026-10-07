@@ -1,0 +1,219 @@
+test_types:
+  id: '1519'
+  test_type: Text_Length_Range
+  test_name_short: Text Length Range
+  test_name_long: All values within set length range
+  test_description: |-
+    Tests that the character length of every value in the column falls within the set minimum and maximum.
+  except_message: |-
+    Values found outside set length range.
+  measure_uom: Values outside range
+  measure_uom_description: null
+  selection_criteria: null
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: lower_tolerance,upper_tolerance,threshold_value
+  default_parm_values: null
+  default_parm_prompts: |-
+    Minimum Length,Maximum Length,Threshold Error Count
+  default_parm_help: |-
+    The minimum acceptable length of a value. Leave blank for no minimum.|The maximum acceptable length of a value. Leave blank for no maximum.|The number of errors that are acceptable before test fails.
+  default_parm_required: A,A,N
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of values outside range
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test counts values whose length in characters is shorter than the minimum or longer than the maximum. Either bound can be left blank to check one side only. Empty values have a length of zero, and null values are not counted.
+  active: Y
+  ai_redact_values: false
+  algorithm: Boundary check
+  cat_test_conditions:
+  - id: '7039'
+    test_type: Text_Length_Range
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN LENGTH(CAST({COLUMN_NAME} AS STRING)) < {LOWER_TOLERANCE} OR LENGTH(CAST({COLUMN_NAME} AS STRING)) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6039'
+    test_type: Text_Length_Range
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN LEN({COLUMN_NAME}) < {LOWER_TOLERANCE} OR LEN({COLUMN_NAME}) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3039'
+    test_type: Text_Length_Range
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN (LEN(CAST({COLUMN_NAME} AS NVARCHAR(MAX)) + N'.') - 1) < {LOWER_TOLERANCE} OR (LEN(CAST({COLUMN_NAME} AS NVARCHAR(MAX)) + N'.') - 1) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4039'
+    test_type: Text_Length_Range
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN LENGTH(CAST({COLUMN_NAME} AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST({COLUMN_NAME} AS TEXT)) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2019'
+    test_type: Text_Length_Range
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN LEN({COLUMN_NAME}) < {LOWER_TOLERANCE} OR LEN({COLUMN_NAME}) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7039'
+    test_type: Text_Length_Range
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN LEN({COLUMN_NAME}) < {LOWER_TOLERANCE} OR LEN({COLUMN_NAME}) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2119'
+    test_type: Text_Length_Range
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN LEN({COLUMN_NAME}) < {LOWER_TOLERANCE} OR LEN({COLUMN_NAME}) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8039'
+    test_type: Text_Length_Range
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN LENGTH(TO_CHAR({COLUMN_NAME})) < {LOWER_TOLERANCE} OR LENGTH(TO_CHAR({COLUMN_NAME})) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8039'
+    test_type: Text_Length_Range
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN LENGTH(TO_VARCHAR({COLUMN_NAME})) < {LOWER_TOLERANCE} OR LENGTH(TO_VARCHAR({COLUMN_NAME})) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '10041'
+    test_type: Text_Length_Range
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN LENGTH(CAST({COLUMN_NAME} AS VARCHAR)) < {LOWER_TOLERANCE} OR LENGTH(CAST({COLUMN_NAME} AS VARCHAR)) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11104'
+    test_type: Text_Length_Range
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN LENGTH(CAST({COLUMN_NAME} AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST({COLUMN_NAME} AS TEXT)) > {UPPER_TOLERANCE} THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1500'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) AS value_length, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) < {LOWER_TOLERANCE} OR LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) > {UPPER_TOLERANCE} GROUP BY `{COLUMN_NAME}`, LENGTH(CAST(`{COLUMN_NAME}` AS STRING)) LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1504'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, LEN(`{COLUMN_NAME}`) AS value_length, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE LEN(`{COLUMN_NAME}`) < {LOWER_TOLERANCE} OR LEN(`{COLUMN_NAME}`) > {UPPER_TOLERANCE} GROUP BY `{COLUMN_NAME}`, LEN(`{COLUMN_NAME}`) LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1508'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP {LIMIT} "{COLUMN_NAME}", (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) < {LOWER_TOLERANCE} OR (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", (LEN(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) + N'.') - 1);
+    error_type: Test Results
+  - id: '1512'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1516'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1520'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1524'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LEN("{COLUMN_NAME}") AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LEN("{COLUMN_NAME}") < {LOWER_TOLERANCE} OR LEN("{COLUMN_NAME}") > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LEN("{COLUMN_NAME}") LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8518'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LENGTH(TO_CHAR("{COLUMN_NAME}")) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(TO_CHAR("{COLUMN_NAME}")) < {LOWER_TOLERANCE} OR LENGTH(TO_CHAR("{COLUMN_NAME}")) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(TO_CHAR("{COLUMN_NAME}")) FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8518'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LENGTH(TO_VARCHAR("{COLUMN_NAME}")) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(TO_VARCHAR("{COLUMN_NAME}")) < {LOWER_TOLERANCE} OR LENGTH(TO_VARCHAR("{COLUMN_NAME}")) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(TO_VARCHAR("{COLUMN_NAME}")) LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10050'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) AS value_length, COUNT(*) AS count FROM "{TABLE_NAME}" WHERE LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR)) LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11105'
+    test_id: '1519'
+    test_type: Text_Length_Range
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) AS value_length, COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) < {LOWER_TOLERANCE} OR LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) > {UPPER_TOLERANCE} GROUP BY "{COLUMN_NAME}", LENGTH(CAST("{COLUMN_NAME}" AS TEXT)) LIMIT {LIMIT};
+    error_type: Test Results
+  test_templates: []

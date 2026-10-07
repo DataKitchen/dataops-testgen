@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Decimal Truncation tests that the fractional (decimal) part of a numeric column has not been truncated since Baseline.  This works by summing all the fractional values after the decimal point and confirming that the total is at least equal to the fractional total at baseline.  This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset.
+    Decimal Truncation tests that the fractional (decimal) part of a numeric column has not been truncated since Baseline.  This works by summing all the fractional values after the decimal point and confirming that the total is at least equal to the fractional total at baseline.  This could indicate a problem in a cumulative dataset, where prior values should still exist unchanged. A failure here would suggest that some process changed data that you would still expect to be present and matching its value when the column was profiled. This test would not be appropriate for an incremental or windowed dataset. For an exact sum of fractional values, use Match Fractional Sum.
   active: Y
   ai_redact_values: true
   algorithm: Boundary check

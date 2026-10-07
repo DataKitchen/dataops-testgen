@@ -1,12 +1,20 @@
 """Tests for testgen.common.custom_test_validation."""
 
+import re
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import duckdb
 import pytest
+import yaml
 
+import testgen
 from testgen.common.custom_test_validation import (
     CustomQueryResult,
+    InvalidMetricQuery,
+    render_metric_validation_query,
     validate_custom_query,
+    validate_metric_query,
 )
 from testgen.common.database.flavor.flavor_service import FlavorService
 
@@ -171,3 +179,55 @@ def test_validate_custom_query_propagates_db_errors(mock_get_flavor, mock_fetch)
 
     with pytest.raises(Exception, match="syntax error"):
         validate_custom_query(_connection(), "demo", "DROP TABLE orders")
+
+
+# -- validate_metric_query ----------------------------------------------------
+
+_SQL_METRIC_YAML = Path(testgen.__file__).parent / "template" / "dbsetup_test_types" / "test_types_SQL_Metric.yaml"
+
+
+def _sql_metric_templates() -> dict[str, str]:
+    doc = yaml.safe_load(_SQL_METRIC_YAML.read_text())["test_types"]
+    return {row["sql_flavor"]: row["template"] for row in doc["test_templates"]}
+
+
+@pytest.mark.parametrize("flavor", sorted(_sql_metric_templates()))
+def test_render_metric_validation_query_fills_every_placeholder(flavor):
+    query = render_metric_validation_query(
+        _sql_metric_templates()[flavor], "demo", "SELECT COUNT(*) AS n FROM {DATA_SCHEMA}.orders"
+    )
+    assert not re.findall(r"\{[A-Z_]+\}", query)
+    assert "demo.orders" in query
+
+
+@pytest.mark.parametrize(
+    ("metric_sql", "outcome"),
+    [
+        ("SELECT COUNT(*) AS n FROM t", 3),
+        ("SELECT COUNT(*) AS n FROM t;\n", 3),
+        ("SELECT MAX(n) AS n FROM t WHERE n > 5", InvalidMetricQuery),
+        ("SELECT n FROM t WHERE n > 5", InvalidMetricQuery),
+        ("SELECT n FROM t", duckdb.Error),
+        ("SELECT 1 AS a, 2 AS b", duckdb.Error),
+        ("SELECT 'abc' AS s", duckdb.Error),
+    ],
+)
+@patch("testgen.common.custom_test_validation.fetch_from_target_db")
+@patch("testgen.common.custom_test_validation.fetch_dict_from_db")
+def test_validate_metric_query_runs_the_execution_template(mock_templates, mock_target, metric_sql, outcome):
+    con = duckdb.connect()
+    con.execute("CREATE TABLE t AS SELECT * FROM (VALUES (1), (2), (3)) v(n)")
+    mock_templates.return_value = [{"template": _sql_metric_templates()["duckdb"]}]
+
+    def run_on_duckdb(_connection, query, **_kwargs):
+        cursor = con.execute(query)
+        columns = [column[0] for column in cursor.description]
+        return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+
+    mock_target.side_effect = run_on_duckdb
+
+    if isinstance(outcome, type) and issubclass(outcome, Exception):
+        with pytest.raises(outcome):
+            validate_metric_query(_connection("duckdb"), "main", metric_sql)
+    else:
+        assert validate_metric_query(_connection("duckdb"), "main", metric_sql) == outcome

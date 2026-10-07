@@ -75,6 +75,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -130,6 +131,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -185,6 +187,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -240,6 +243,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -295,6 +299,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -350,6 +355,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -405,6 +411,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -460,6 +467,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -515,6 +523,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -570,6 +579,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'
@@ -625,6 +635,7 @@ test_types:
             '{RUN_DATE}'    AS test_time,
             '{SCHEMA_NAME}' AS schema_name,
             table_name,
+            NULL AS column_names,
             '{INPUT_PARAMETERS}' AS input_parameters,
             (CASE
                   WHEN last_add_date IS NOT NULL AND (last_drop_date IS NULL OR last_add_date > last_drop_date) THEN 'A'

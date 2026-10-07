@@ -1,0 +1,218 @@
+test_types:
+  id: '1517'
+  test_type: Max_Val
+  test_name_short: Maximum Value
+  test_name_long: All values at or below set maximum
+  test_description: |-
+    Tests that maximum value present in column is no higher than maximum value in baseline data.
+  except_message: |-
+    Maximum column value greater than baseline.
+  measure_uom: Values over limit
+  measure_uom_description: null
+  selection_criteria: null
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    ({RESULT_MEASURE}-{THRESHOLD_VALUE})::FLOAT/NULLIF({RECORD_CT}::FLOAT, 0)
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value,threshold_value
+  default_parm_values: null
+  default_parm_prompts: |-
+    Maximum Value at Baseline,Threshold Error Count
+  default_parm_help: null
+  default_parm_required: Y,N
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Validity
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected count of values over limit
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    This test is appropriate for a cumulative dataset, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable maximum value, or a heuristic that makes sense for valid data. For an exact maximum, use Match Maximum Value.
+  active: Y
+  ai_redact_values: false
+  algorithm: Boundary check
+  cat_test_conditions:
+  - id: '7037'
+    test_type: Max_Val
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6037'
+    test_type: Max_Val
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3037'
+    test_type: Max_Val
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4037'
+    test_type: Max_Val
+    sql_flavor: postgresql
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2017'
+    test_type: Max_Val
+    sql_flavor: redshift
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7037'
+    test_type: Max_Val
+    sql_flavor: redshift_spectrum
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2117'
+    test_type: Max_Val
+    sql_flavor: snowflake
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8037'
+    test_type: Max_Val
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8037'
+    test_type: Max_Val
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '10039'
+    test_type: Max_Val
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11100'
+    test_type: Max_Val
+    sql_flavor: duckdb
+    measure: |-
+      SUM(CASE WHEN {COLUMN_NAME} > {BASELINE_VALUE} + 1e-6 THEN 1 ELSE 0 END)
+    test_operator: '>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1498'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1502'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT `{COLUMN_NAME}`, (ABS(`{COLUMN_NAME}`) - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1506'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT TOP {LIMIT} "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE};
+    error_type: Test Results
+  - id: '1510'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1514'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1518'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1522'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8516'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8516'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10048'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11101'
+    test_id: '1517'
+    test_type: Max_Val
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT DISTINCT "{COLUMN_NAME}", (ABS("{COLUMN_NAME}") - ABS({BASELINE_VALUE})) AS difference_from_baseline FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > {BASELINE_VALUE} LIMIT {LIMIT};
+    error_type: Test Results
+  test_templates: []

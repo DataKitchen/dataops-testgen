@@ -53,7 +53,7 @@ WITH column_rows AS MATERIALIZED (
                                ELSE 0
         END) AS zero_length_ct,
     SUM( CASE
-           WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
+           WHEN ("{COL_NAME}" LIKE ' %' AND LTRIM("{COL_NAME}") <> '') THEN 1
                                                 ELSE 0
          END ) AS lead_space_ct,
     SUM( CASE WHEN "{COL_NAME}" ILIKE '"%"' OR "{COL_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END ) AS quoted_value_ct,
@@ -72,20 +72,9 @@ WITH column_rows AS MATERIALIZED (
                                       '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
                                                                                      ELSE 0
          END ) AS filled_value_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
-          WHEN TRANSLATE("{COL_NAME}", 'abcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS upper_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS lower_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS non_alpha_ct,
+    SUM(CASE WHEN CAST("{COL_NAME}" AS VARCHAR) COLLATE "binary" = UPPER("{COL_NAME}") COLLATE "binary" AND CAST("{COL_NAME}" AS VARCHAR) COLLATE "binary" <> LOWER("{COL_NAME}") COLLATE "binary" THEN 1 ELSE 0 END) AS upper_case_ct,
+    SUM(CASE WHEN CAST("{COL_NAME}" AS VARCHAR) COLLATE "binary" = LOWER("{COL_NAME}") COLLATE "binary" AND CAST("{COL_NAME}" AS VARCHAR) COLLATE "binary" <> UPPER("{COL_NAME}") COLLATE "binary" THEN 1 ELSE 0 END) AS lower_case_ct,
+    SUM(CASE WHEN CAST("{COL_NAME}" AS VARCHAR) COLLATE "binary" = UPPER("{COL_NAME}") COLLATE "binary" AND CAST("{COL_NAME}" AS VARCHAR) COLLATE "binary" = LOWER("{COL_NAME}") COLLATE "binary" THEN 1 ELSE 0 END) AS non_alpha_ct,
     -- DuckDB's escape strings implement no \uXXXX escape, so the same ten code points
     -- (NBSP, thin/zero-width/directional marks, narrow NBSP, ideographic space, BOM) are spelled
     -- with chr() rather than embedded as invisible characters.
@@ -200,7 +189,7 @@ SELECT
   (PERCENTILE_CONT([0.25, 0.50, 0.75]) WITHIN GROUP (ORDER BY "{COL_NAME}"))[3] AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS DECIMAL(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

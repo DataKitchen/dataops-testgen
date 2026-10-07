@@ -5,35 +5,35 @@ WITH whole_table_measures AS (
     COUNT_BIG("{COL_NAME}") AS value_ct,
     COUNT_BIG(DISTINCT "{COL_NAME}") AS distinct_value_ct,
     SUM(CASE WHEN "{COL_NAME}" IS NULL THEN CAST(1 AS BIGINT) ELSE 0 END) AS null_value_ct,
-    MIN(LEN("{COL_NAME}")) AS min_length,
-    MAX(LEN("{COL_NAME}")) AS max_length,
-    AVG(CAST(NULLIF(LEN("{COL_NAME}"), 0) AS FLOAT)) AS avg_length,
+    MIN((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS min_length,
+    MAX((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS max_length,
+    AVG(CAST(NULLIF((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1), 0) AS FLOAT)) AS avg_length,
     SUM(CASE
           WHEN LTRIM(RTRIM("{COL_NAME}")) LIKE '0([.]0*)' THEN CAST(1 AS BIGINT) ELSE 0
         END) AS zero_value_ct,
     COUNT_BIG(DISTINCT UPPER(REPLACE(TRANSLATE("{COL_NAME}",' '''',.-',REPLICATE(' ', LEN(' '''',.-'))),' ',''))) AS distinct_std_value_ct,
     LEFT(MIN(NULLIF("{COL_NAME}", '') COLLATE Latin1_General_BIN ), 100) AS min_text,
     LEFT(MAX(NULLIF("{COL_NAME}", '') COLLATE Latin1_General_BIN ), 100) AS max_text
-    FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
+    FROM (SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}) source_rows
 )
 -- TG-ENDIF
 -- TG-IF is_A_sampling
 , sampleable_rows AS (
-  SELECT "{COL_NAME}"
+  SELECT {COL_VALUE} AS "{COL_NAME}"
     FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) {TABLE_HINT}
 )
 , pattern_rows AS (
-  SELECT "{COL_NAME}" AS v
+  SELECT {COL_VALUE} AS v
     FROM "{DATA_SCHEMA}"."{DATA_TABLE}" TABLESAMPLE ({SAMPLE_PERCENT_CALC} PERCENT) {TABLE_HINT}
 )
 -- TG-ENDIF
 -- TG-IF is_A_no_sampling
 , sampleable_rows AS (
-  SELECT "{COL_NAME}"
+  SELECT {COL_VALUE} AS "{COL_NAME}"
     FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
 )
 , pattern_rows AS (
-  SELECT "{COL_NAME}" AS v
+  SELECT {COL_VALUE} AS v
     FROM "{DATA_SCHEMA}"."{DATA_TABLE}" {TABLE_HINT}
 )
 -- TG-ENDIF
@@ -42,11 +42,11 @@ WITH whole_table_measures AS (
   SELECT
     COUNT_BIG("{COL_NAME}") AS sample_value_ct,
     SUM(CASE
-          WHEN "{COL_NAME}" = '' THEN CAST(1 AS BIGINT)
+          WHEN DATALENGTH("{COL_NAME}") = 0 THEN CAST(1 AS BIGINT)
           ELSE 0
         END) AS zero_length_ct,
     SUM(CASE
-          WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN CAST(1 AS BIGINT)
+          WHEN ("{COL_NAME}" LIKE ' %' AND LTRIM("{COL_NAME}") <> '') THEN CAST(1 AS BIGINT)
           ELSE 0
         END) AS lead_space_ct,
     SUM(CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN CAST(1 AS BIGINT) ELSE 0 END ) AS quoted_value_ct,
@@ -85,10 +85,14 @@ WITH whole_table_measures AS (
           ELSE 0
         END) AS lower_case_ct,
     SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '                                                    ') = "{COL_NAME}" THEN CAST(1 AS BIGINT)
+          WHEN "{COL_NAME}" COLLATE Latin1_General_BIN = UPPER("{COL_NAME}")
+           AND "{COL_NAME}" COLLATE Latin1_General_BIN = LOWER("{COL_NAME}") THEN CAST(1 AS BIGINT)
           ELSE 0
         END) AS non_alpha_ct,
-    COUNT_BIG(CASE WHEN TRANSLATE("{COL_NAME}", NCHAR(160), 'X') <> "{COL_NAME}" THEN 1 END) AS non_printing_ct,
+    -- Binary collation: Windows collations ignore zero-width characters
+    COUNT_BIG(CASE WHEN TRANSLATE(CAST("{COL_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2,
+                                  NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), N'XXXXXXXXXX')
+                      <> CAST("{COL_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 THEN 1 END) AS non_printing_ct,
     SUM(CAST(<%IS_NUM;LEFT("{COL_NAME}", 31)%> AS BIGINT)) AS numeric_ct,
     SUM(CAST(<%IS_DATE;LEFT("{COL_NAME}", 26)%> AS BIGINT)) AS date_ct,
     CASE
@@ -147,7 +151,7 @@ WITH whole_table_measures AS (
                       THEN TRANSLATE(v COLLATE Latin1_General_BIN,
                              'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 'aaaaaaaaaaaaaaaaaaaaaaaaaaAAAAAAAAAAAAAAAAAAAAAAAAAANNNNNNNNNN' )
                   END AS pattern,
-                  LEN(v) AS value_length
+                  (LEN(CAST(v AS NVARCHAR(MAX)) + N'.') - 1) AS value_length
              FROM pattern_rows ) patterned
    GROUP BY pattern
 )
@@ -157,7 +161,7 @@ WITH whole_table_measures AS (
          value_ct,
          CASE
            WHEN pattern > ' ' AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern > ' ' THEN 0 ELSE 1 END, pattern_ct DESC, pattern)
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern > ' ' THEN 0 ELSE 1 END, pattern_ct DESC, CAST(pattern AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2)
          END AS pattern_rank
     FROM pattern_counts
 )
@@ -197,9 +201,9 @@ SELECT
   SUM(CASE WHEN "{COL_NAME}" IS NULL THEN CAST(1 AS BIGINT) ELSE 0 END) AS null_value_ct,
 -- TG-ENDIF
 -- TG-IF is_type_DN
-  MIN(LEN("{COL_NAME}")) AS min_length,
-  MAX(LEN("{COL_NAME}")) AS max_length,
-  AVG(CAST(NULLIF(LEN("{COL_NAME}"), 0) AS FLOAT)) AS avg_length,
+  MIN((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS min_length,
+  MAX((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1)) AS max_length,
+  AVG(CAST(NULLIF((LEN(CAST("{COL_NAME}" AS NVARCHAR(MAX)) + N'.') - 1), 0) AS FLOAT)) AS avg_length,
 -- TG-ENDIF
 -- TG-IF is_type_N
   SUM(CAST(1 - ABS(SIGN("{COL_NAME}")) AS BIGINT)) AS zero_value_ct,
@@ -210,7 +214,7 @@ SELECT
   STDEV(CAST("{COL_NAME}" AS FLOAT)) AS stdev_value,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(("{COL_NAME}" % 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(("{COL_NAME}" % 1)) AS DECIMAL(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

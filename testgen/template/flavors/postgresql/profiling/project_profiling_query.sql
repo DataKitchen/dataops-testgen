@@ -46,7 +46,7 @@ WITH whole_table_measures AS (
                                ELSE 0
         END) AS zero_length_ct,
     SUM( CASE
-           WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
+           WHEN ("{COL_NAME}" LIKE ' %' AND LTRIM("{COL_NAME}") <> '') THEN 1
                                                 ELSE 0
          END ) AS lead_space_ct,
     SUM( CASE WHEN "{COL_NAME}" ILIKE '"%"' OR "{COL_NAME}" ILIKE '''%''' THEN 1 ELSE 0 END ) AS quoted_value_ct,
@@ -61,20 +61,9 @@ WITH whole_table_measures AS (
                                       '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
                                                                                      ELSE 0
          END ) AS filled_value_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
-          WHEN TRANSLATE("{COL_NAME}", 'abcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS upper_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 0
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS lower_case_ct,
-    SUM(CASE
-          WHEN TRANSLATE("{COL_NAME}", 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz', '') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS non_alpha_ct,
+    SUM(CASE WHEN "{COL_NAME}" COLLATE "C" = UPPER("{COL_NAME}") COLLATE "C" AND "{COL_NAME}" COLLATE "C" <> LOWER("{COL_NAME}") COLLATE "C" THEN 1 ELSE 0 END) AS upper_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" COLLATE "C" = LOWER("{COL_NAME}") COLLATE "C" AND "{COL_NAME}" COLLATE "C" <> UPPER("{COL_NAME}") COLLATE "C" THEN 1 ELSE 0 END) AS lower_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" COLLATE "C" = UPPER("{COL_NAME}") COLLATE "C" AND "{COL_NAME}" COLLATE "C" = LOWER("{COL_NAME}") COLLATE "C" THEN 1 ELSE 0 END) AS non_alpha_ct,
     COUNT( CASE WHEN TRANSLATE("{COL_NAME}", E'\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> "{COL_NAME}" THEN 1 END) AS non_printing_ct,
     SUM(<%IS_NUM;LEFT("{COL_NAME}", 31)%>) AS numeric_ct,
     SUM(<%IS_DATE;LEFT("{COL_NAME}", 26)%>) AS date_ct,
@@ -126,7 +115,7 @@ WITH whole_table_measures AS (
          value_ct,
          CASE
            WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern COLLATE "C")
          END AS pattern_rank
     FROM pattern_counts
 )
@@ -174,7 +163,7 @@ SELECT
   MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS NUMERIC(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

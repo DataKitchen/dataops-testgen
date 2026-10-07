@@ -8,6 +8,7 @@ from testgen.common.database.flavor.redshift_flavor_service import RedshiftFlavo
 class PostgresqlFlavorService(RedshiftFlavorService):
 
     escaped_underscore = "\\_"
+    literal_escapes_backslash = False
     url_scheme = "postgresql"
 
     # Inherited from Redshift, which has APPROXIMATE PERCENTILE_DISC; PostgreSQL has no equivalent.
