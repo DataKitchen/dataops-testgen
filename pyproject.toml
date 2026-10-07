@@ -222,6 +222,7 @@ line-length = 120
 indent-width = 4
 include = [
     "invocations/**/*.py",
+    "scripts/**/*.py",
     "testgen/**/*.py",
     "tests/**/*.py",
 ]
