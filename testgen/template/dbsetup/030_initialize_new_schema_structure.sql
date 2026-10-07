@@ -142,6 +142,7 @@ CREATE TABLE profiling_runs (
    project_code            VARCHAR(30) NOT NULL,
    connection_id           BIGINT      NOT NULL,
    table_groups_id         UUID        NOT NULL,
+   schema_name             VARCHAR(50),
    profiling_starttime     TIMESTAMP,
    progress                JSONB,
    table_ct                BIGINT,

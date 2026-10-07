@@ -146,6 +146,9 @@ class ProfilingRun(Entity):
     project_code: str = Column(String, nullable=False)
     connection_id: str = Column(BigInteger, nullable=False)
     table_groups_id: UUID = Column(postgresql.UUID(as_uuid=True), nullable=False)
+    # The schema this run read, stamped when it starts. The table group's own schema is where it
+    # reads now, which is not where a run from before it moved read.
+    schema_name: str = Column(String)
     profiling_starttime: datetime = Column(postgresql.TIMESTAMP)
     progress: list[ProgressStep] = Column(postgresql.JSONB, default=[])
     table_ct: int = Column(BigInteger)
@@ -170,7 +173,7 @@ class ProfilingRun(Entity):
         project_code,
         table_groups_id,
         TableGroup.table_groups_name,
-        TableGroup.table_group_schema,
+        func.coalesce(schema_name, TableGroup.table_group_schema).label("table_group_schema"),
         profiling_starttime,
         dq_score_profiling,
         case(
@@ -285,7 +288,7 @@ class ProfilingRun(Entity):
             je.error_message,
             COALESCE(pr.progress, '[]'::jsonb) AS progress,
             tg.table_groups_name,
-            tg.table_group_schema,
+            COALESCE(pr.schema_name, tg.table_group_schema) AS table_group_schema,
             cn.sql_flavor_code,
             pr.table_ct,
             pr.column_ct,

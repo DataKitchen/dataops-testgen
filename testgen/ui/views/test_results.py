@@ -938,6 +938,11 @@ def get_excel_report_data(
     if data is None:
         data = test_result_queries.get_test_results(run_id)
 
+    # Each result records the schema its test read, which is where this run looked rather than
+    # where the table group reads now.
+    if not data.empty and "schema_name" in data:
+        schema = data["schema_name"].iloc[0] or schema
+
     columns = {
         "table_name": {"header": "Table"},
         "column_names": {"header": "Columns/Focus"},
