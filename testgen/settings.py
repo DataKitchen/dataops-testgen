@@ -772,6 +772,14 @@ from env variable: `TG_UI_BASE_URL`
 defaults to: computed from UI_TLS_ENABLED and UI_PORT
 """
 
+MCP_CONTRACT_EXPORT_CHUNK_BYTES: int = int(getenv("TG_MCP_CONTRACT_EXPORT_CHUNK_BYTES", str(100 * 1024)))
+"""
+Size in bytes past which `export_contract` splits a contract document into chunks.
+
+from env variable: `TG_MCP_CONTRACT_EXPORT_CHUNK_BYTES`
+defaults to: 102400 (100 KB)
+"""
+
 MCP_EXTRA_ALLOWED_HOSTS: list[str] = [
     h.strip() for h in (getenv("TG_MCP_EXTRA_ALLOWED_HOSTS", "") or "").split(",") if h.strip()
 ]

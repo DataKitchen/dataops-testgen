@@ -49,6 +49,7 @@ _GROUP_ORDER: list[DocGroup] = [
     DocGroup.BROWSE_PROFILING,
     DocGroup.TRIGGER,
     DocGroup.SCORING,
+    DocGroup.CONTRACTS,
     DocGroup.MANAGE,
 ]
 _FALLBACK_GROUP = "Other tools"

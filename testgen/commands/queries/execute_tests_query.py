@@ -14,7 +14,7 @@ from testgen.common.database.database_service import (
     get_tg_schema,
     replace_params,
 )
-from testgen.common.enums import MonitorCalculation, SuiteType
+from testgen.common.enums import MonitorCalculation, SuiteType, TestScope
 from testgen.common.freshness_service import (
     count_excluded_minutes,
     effective_exclude_weekends,
@@ -26,7 +26,7 @@ from testgen.common.freshness_service import (
 from testgen.common.models.connection import DEFAULT_MAX_QUERY_CHARS, Connection
 from testgen.common.models.scheduler import JobSchedule
 from testgen.common.models.table_group import TableGroup
-from testgen.common.models.test_definition import TestRunType, TestScope
+from testgen.common.models.test_definition import TestRunType
 from testgen.common.models.test_run import TestRun
 from testgen.common.models.test_suite import TestSuite
 from testgen.common.read_file import replace_templated_functions

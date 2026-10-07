@@ -19,7 +19,7 @@ from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection
 from testgen.common.models.test_definition import Severity
 from testgen.common.models.test_suite import TestSuite
-from testgen.common.odcs_server import UnmappedFlavorError
+from testgen.common.odcs.servers import UnmappedFlavorError
 from testgen.mcp.exceptions import MCPUserError
 from testgen.mcp.permissions import mcp_permission
 from testgen.mcp.tools.common import (

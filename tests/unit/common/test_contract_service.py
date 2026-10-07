@@ -3,16 +3,28 @@ from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
 import pytest
+import yaml
 from sqlalchemy.sql import operators
 from sqlalchemy.sql.elements import BinaryExpression, BooleanClauseList
 
 from testgen.common import contract_service
 from testgen.common.enums import SuiteType
+from testgen.common.flavors import SqlFlavorCode
 from testgen.common.models.suite_version import SuiteVersion
-from testgen.common.odcs_server import ODCS_API_VERSION, ODCS_KIND
-from tests.unit.sql_assertions import equality_conjunct, is_not_null_conjunct, is_null_conjunct
+from testgen.common.models.test_definition import TestDefinition
+from testgen.common.odcs import render, serialize
+from testgen.common.odcs.servers import ODCS_API_VERSION, ODCS_KIND
+from testgen.common.odcs.validation import validate_document
+from tests.unit.sql_assertions import equality_conjunct
 
 pytestmark = pytest.mark.unit
+
+# A merged document carrying only the ODCS root's own required keys (``version``,
+# ``apiVersion``, ``kind``, ``id``) -- everything else at the root is optional, so this is
+# already a valid document on its own.
+_VALID_MERGED_DOCUMENT = {
+    "version": "1.0.0", "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND, "id": "orders-contract",
+}
 
 
 def _suite():
@@ -32,25 +44,45 @@ def test_an_existing_draft_receives_the_write_and_nothing_is_copied():
     assert id_map == {}
 
 
-def test_freezing_sets_the_freeze_time_and_does_not_touch_the_document_fields():
+def test_freezing_sets_the_freeze_time():
     suite = _suite()
-    # A pre-existing (sentinel) value proves freeze_version leaves these fields alone in either
-    # direction -- a draft always starts with them NULL, so asserting only "still None" would
-    # hold even for an implementation that never looked at them at all.
-    draft = SuiteVersion(
-        id=uuid4(), test_suite_id=suite.id, version=2,
-        frozen_document="sentinel-document", odcs_api_version="sentinel-version",
-    )
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
         frozen = contract_service.freeze_version(suite, label="first")
 
     assert frozen.frozen_at is not None
-    assert frozen.frozen_document == "sentinel-document"
-    assert frozen.odcs_api_version == "sentinel-version"
     assert frozen.label == "first"
+
+
+def test_freezing_stores_the_rendered_bytes():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        frozen = contract_service.freeze_version(suite)
+
+    assert frozen.frozen_document
+    assert yaml.safe_load(frozen.frozen_document)["kind"] == ODCS_KIND
+
+
+def test_freezing_records_the_api_version_the_bytes_were_validated_against():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, odcs_api_version=None)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        frozen = contract_service.freeze_version(suite)
+
+    assert frozen.odcs_api_version == ODCS_API_VERSION
 
 
 def test_freezing_without_a_label_leaves_the_drafts_label_untouched():
@@ -58,6 +90,7 @@ def test_freezing_without_a_label_leaves_the_drafts_label_untouched():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, label="carried over")
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
         frozen = contract_service.freeze_version(suite)
@@ -70,6 +103,7 @@ def test_freezing_does_not_touch_the_drafts_author():
     draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2, created_by="original-author")
     with (
         patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT),
         patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
     ):
         frozen = contract_service.freeze_version(suite, label="first")
@@ -82,6 +116,70 @@ def test_freezing_without_a_draft_is_refused():
     with patch.object(SuiteVersion, "draft_for", return_value=None):
         with pytest.raises(ValueError, match="no draft"):
             contract_service.freeze_version(suite)
+
+
+def test_an_invalid_merge_blocks_the_freeze_and_leaves_the_draft_a_draft():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    invalid_document = {"version": "1.0.0", "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND}  # no id
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=invalid_document),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        with pytest.raises(contract_service.InvalidContractDocumentError):
+            contract_service.freeze_version(suite)
+
+    assert draft.frozen_at is None
+    assert draft.frozen_document is None
+
+
+def test_the_validators_own_messages_reach_the_caller():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    invalid_document = {"version": "1.0.0", "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND}  # no id
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=invalid_document),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        with pytest.raises(contract_service.InvalidContractDocumentError) as excinfo:
+            contract_service.freeze_version(suite)
+
+    assert excinfo.value.problems == validate_document(invalid_document)
+
+
+def test_freezing_a_document_declaring_an_unbundled_api_version_is_refused_not_crashed():
+    """The standard allows eight api versions and we bundle one, so a document may legally
+    declare a version we have no schema for. That is a document we cannot check, and the
+    caller is documented to receive InvalidContractDocumentError for exactly that."""
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    document = {"version": "1.0.0", "apiVersion": "v3.1.0", "kind": ODCS_KIND, "id": "c1"}
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(contract_service.render, "render_document", return_value=document),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        with pytest.raises(contract_service.InvalidContractDocumentError) as excinfo:
+            contract_service.freeze_version(suite)
+
+    assert any("v3.1.0" in problem for problem in excinfo.value.problems)
+
+
+def test_exporting_checks_the_document_against_the_version_it_declares():
+    """``odcs_api_version`` on the row and ``apiVersion`` in the text are two answers to one
+    question. Checking the text against the row's answer reports clean on a document whose own
+    declaration was never checked."""
+    suite = _suite()
+    version = SuiteVersion(
+        id=uuid4(), test_suite_id=suite.id, version=1, odcs_api_version=ODCS_API_VERSION,
+        frozen_document=f"apiVersion: v3.1.0\nkind: {ODCS_KIND}\nid: c1\nversion: '1.0.0'\n",
+    )
+
+    exported = contract_service.export_version(version)
+
+    assert any("v3.1.0" in problem for problem in exported.problems)
 
 
 def test_discarding_without_a_draft_is_refused():
@@ -759,6 +857,125 @@ def test_the_documents_contract_version_tracks_the_suite_version():
     assert session.add.call_args.args[0].metadata_document["version"] == "4.0.0"
 
 
+def test_a_new_contracts_prefilled_document_validates():
+    """The four keys ``test_the_prefilled_document_carries_every_field_odcs_requires`` asserts
+    are present must also be legal ODCS values, not merely present -- a UUID string for ``id``
+    and an invented ``version`` string are exactly the kind of value the schema could reject
+    without either of them being absent.
+    """
+    suite = _suite()
+    suite.test_suite = "Orders contract"
+    session = MagicMock()
+    server_block = {
+        "server": "main_pg", "type": "postgres", "host": "db.example.com",
+        "port": 5432, "database": "analytics", "schema": "public",
+    }
+    with (
+        patch.object(SuiteVersion, "next_version_for", return_value=1),
+        patch("testgen.common.contract_service.get_current_session", return_value=session),
+        patch("testgen.common.contract_service.build_server_block", return_value=server_block),
+    ):
+        contract_service.initialize_contract(suite, table_group=MagicMock(), connection=MagicMock())
+
+    draft = session.add.call_args.args[0]
+    assert validate_document(draft.metadata_document) == []
+
+
+def test_a_carried_forward_document_still_validates_after_its_version_is_restated():
+    # open_draft rewrites the carried document's root `version`; `document_version`'s
+    # `N.0.0` has to stay a legal semantic version string for every N, not just the first.
+    suite_id = uuid4()
+    source_document = {
+        "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND, "id": str(suite_id), "version": "1.0.0",
+        "name": "Orders contract",
+        "servers": [
+            {
+                "server": "main_pg", "type": "postgres", "host": "db.example.com",
+                "port": 5432, "database": "analytics", "schema": "public",
+            },
+        ],
+        "schema": [],
+    }
+    source = SuiteVersion(
+        id=uuid4(), test_suite_id=suite_id, version=1,
+        frozen_at=datetime.now(UTC), metadata_document=source_document, odcs_api_version=ODCS_API_VERSION,
+    )
+    with (
+        patch.object(SuiteVersion, "in_force_for", return_value=source),
+        patch.object(SuiteVersion, "next_version_for", return_value=7),
+        patch("testgen.common.models.suite_version.get_current_session", return_value=MagicMock()),
+    ):
+        draft, _ = SuiteVersion.open_draft(suite_id)
+
+    assert draft.metadata_document["version"] == "7.0.0"
+    assert validate_document(draft.metadata_document) == []
+
+
+def test_a_document_built_through_the_real_contract_path_serializes():
+    """Guards the whole enum-leak class in one assertion, rather than one field at a time.
+
+    ``yaml.safe_dump`` is the only thing in this stack that tells a ``StrEnum`` member apart
+    from its own value: the schema does not (jsonschema's type and enum checks pass a member
+    the same as its value), dict equality does not, and ``isinstance`` does not (``StrEnum``
+    subclasses ``str``). So the guard against every present and future instance of this class
+    is to build a document through the real production path and serialize it for real, rather
+    than asserting about one field's type.
+
+    Real: ``initialize_contract``, ``build_server_block``, ``add_table``'s document merge
+    (``_merge_properties`` / ``_column_descriptor``), ``render_document``'s root-fundamentals
+    fill, and ``serialize_document``.
+
+    Substituted: the database session everywhere (``get_current_session`` -> ``MagicMock``,
+    so nothing here reaches a real connection), the profiled columns ``add_table`` reads
+    (``_profiled_columns`` -> in-memory objects, never queried), and term generation
+    (``_generate_for_tables`` -> no-op). Because the contract ends up with no terms,
+    ``render_document`` returns after filling the root and reusing the schema
+    ``add_table`` wrote, without needing a real ``TableGroup``, ``Connection``, ``TestType``,
+    or ``cat_test_conditions`` row -- the term-projection chain has its own leak coverage in
+    ``test_rule_projection.py`` and is not what this test is proving.
+    """
+    suite = _suite()
+    suite.test_suite = "Orders contract"
+
+    connection = MagicMock()
+    connection.sql_flavor_code = SqlFlavorCode.POSTGRESQL
+    connection.connection_name = "main_pg"
+    connection.project_host = "db.example.com"
+    connection.project_port = "5432"
+    connection.project_db = "analytics"
+    connection.parameters = {}
+    table_group = MagicMock()
+    table_group.table_group_schema = "public"
+
+    session_for_init = MagicMock()
+    with (
+        patch.object(SuiteVersion, "next_version_for", return_value=1),
+        patch("testgen.common.contract_service.get_current_session", return_value=session_for_init),
+    ):
+        contract_service.initialize_contract(suite, table_group=table_group, connection=connection)
+    draft = session_for_init.add.call_args.args[0]
+
+    columns = [
+        MagicMock(column_name="id", general_type="N", functional_data_type="ID", column_type="integer"),
+        MagicMock(column_name="order_date", general_type="D", functional_data_type=None, column_type="date"),
+    ]
+    with (
+        patch.object(contract_service, "resolve_write_target", return_value=(draft.id, {})),
+        patch.object(SuiteVersion, "get", return_value=draft),
+        patch.object(contract_service, "_profiled_columns", return_value=columns),
+        patch.object(contract_service, "_generate_for_tables"),
+        patch("testgen.common.contract_service.get_current_session", return_value=MagicMock()),
+    ):
+        contract_service.add_table(suite, "orders")
+
+    with patch("testgen.common.odcs.render.get_current_session") as render_session:
+        render_session.return_value.scalars.return_value = []
+        document = render.render_document(draft)
+
+    assert type(document["servers"][0]["type"]) is str
+    serialize.serialize_document(document)
+
+
 def test_generation_runs_only_after_the_draft_is_committed():
     """Generation reaches the database on its own connection, so a draft that is merely
     flushed is invisible to it and the terms it inserts violate the version foreign key.
@@ -770,7 +987,7 @@ def test_generation_runs_only_after_the_draft_is_committed():
     with (
         patch("testgen.common.contract_service.get_current_session", return_value=session),
         patch("testgen.common.contract_service.run_test_generation", side_effect=lambda *_args, **_kwargs: calls.append("generate")),
-        patch.object(contract_service, "_stamp_term_ids"),
+        patch.object(TestDefinition, "assign_missing_term_ids"),
     ):
         contract_service._generate_for_tables(suite, ["orders"], uuid4())
 
@@ -778,28 +995,141 @@ def test_generation_runs_only_after_the_draft_is_committed():
 
 
 def test_generated_terms_are_stamped_with_a_term_identity():
-    suite = _suite()
     term = MagicMock(
         test_type="Row_Ct", schema_name="public", table_name="orders", column_name="order_id"
     )
     session = MagicMock()
     session.scalars.return_value.all.return_value = [term]
-    with patch("testgen.common.contract_service.get_current_session", return_value=session):
-        contract_service._stamp_term_ids(uuid4())
+    session.scalar.return_value = None
+    with (
+        patch("testgen.common.models.test_definition.get_current_session", return_value=session),
+        patch("testgen.common.models.test_definition.SuiteVersion.is_suite_owned", return_value=True),
+    ):
+        TestDefinition.assign_missing_term_ids(uuid4())
 
     assert term.contract_term_id == "Row_Ct-public-orders-order_id"
 
 
-def test_only_generated_terms_are_stamped_with_an_identity():
-    """A manual term is deduped by nothing -- the natural-key indexes are partial on
-    ``last_auto_gen_date`` -- so one sharing a generated term's key would slug identically and
-    fail the unique index the identity lives in. It keeps no identity instead.
-    """
-    session = MagicMock()
-    session.scalars.return_value.all.return_value = []
-    with patch("testgen.common.contract_service.get_current_session", return_value=session):
-        contract_service._stamp_term_ids(uuid4())
+def _frozen_version(**overrides) -> SuiteVersion:
+    fields = {
+        "id": uuid4(), "test_suite_id": uuid4(), "version": 1,
+        "frozen_at": datetime.now(UTC),
+        "frozen_document": yaml.dump(_VALID_MERGED_DOCUMENT),
+        "odcs_api_version": ODCS_API_VERSION,
+    }
+    fields.update(overrides)
+    return SuiteVersion(**fields)
 
-    terms = _conjuncts(session.scalars.call_args.args[0].whereclause)
-    assert any(is_not_null_conjunct(term, "last_auto_gen_date", "test_definitions") for term in terms)
-    assert any(is_null_conjunct(term, "contract_term_id", "test_definitions") for term in terms)
+
+def test_exporting_a_frozen_version_returns_its_stored_bytes():
+    frozen = _frozen_version()
+    assert contract_service.export_version(frozen).text == frozen.frozen_document
+
+
+def test_a_frozen_version_exports_identically_after_the_serialiser_changes(monkeypatch):
+    # Without the monkeypatch this proves nothing -- a re-render would produce the same
+    # string today. Reversing the serialiser's own root key order changes what a fresh
+    # serialization would produce, so an unchanged result here can only come from the
+    # stored bytes, never from rendering and serializing again.
+    frozen = _frozen_version()
+    before = contract_service.export_version(frozen).text
+    monkeypatch.setattr(serialize, "ROOT_KEY_ORDER", list(reversed(serialize.ROOT_KEY_ORDER)))
+    assert contract_service.export_version(frozen).text == before
+
+
+def test_exporting_a_frozen_version_renders_nothing(monkeypatch):
+    # The coalesce short-circuits: no terms are read and no rules are projected.
+    def _raises(*_args, **_kwargs):
+        raise AssertionError("render_document must not run for a frozen export")
+
+    frozen = _frozen_version()
+    monkeypatch.setattr(contract_service.render, "render_document", _raises)
+    assert contract_service.export_version(frozen).text == frozen.frozen_document
+
+
+def test_exporting_a_frozen_version_reports_whether_it_still_validates():
+    frozen = _frozen_version()
+    assert contract_service.export_version(frozen).problems == []
+
+
+def test_exporting_a_draft_renders_it_fresh():
+    draft = SuiteVersion(
+        id=uuid4(), test_suite_id=uuid4(), version=2, odcs_api_version=ODCS_API_VERSION,
+    )
+    with patch.object(contract_service.render, "render_document", return_value=_VALID_MERGED_DOCUMENT) as render_mock:
+        exported = contract_service.export_version(draft)
+
+    render_mock.assert_called_once_with(draft)
+    assert yaml.safe_load(exported.text)["kind"] == ODCS_KIND
+    assert exported.problems == []
+
+
+def test_exporting_a_draft_that_does_not_validate_still_returns_a_document():
+    # A preview that refuses to show itself because it is not yet valid is the opposite of
+    # useful.
+    draft = SuiteVersion(
+        id=uuid4(), test_suite_id=uuid4(), version=2, odcs_api_version=ODCS_API_VERSION,
+    )
+    invalid_document = {"version": "1.0.0", "apiVersion": ODCS_API_VERSION, "kind": ODCS_KIND}  # no id
+    with patch.object(contract_service.render, "render_document", return_value=invalid_document):
+        exported = contract_service.export_version(draft)
+
+    assert exported.text
+    assert exported.problems
+
+
+def test_exporting_without_a_number_prefers_the_draft():
+    suite = _suite()
+    draft = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=4)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=draft),
+        patch.object(SuiteVersion, "in_force_for", return_value=SuiteVersion(id=uuid4(), version=3)),
+    ):
+        assert contract_service.version_for_export(suite) is draft
+
+
+def test_exporting_without_a_number_falls_back_to_the_version_in_force():
+    suite = _suite()
+    active = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=3)
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=None),
+        patch.object(SuiteVersion, "in_force_for", return_value=active),
+    ):
+        assert contract_service.version_for_export(suite) is active
+
+
+def test_exporting_a_contract_with_neither_a_draft_nor_a_frozen_version_is_refused():
+    suite = _suite()
+    with (
+        patch.object(SuiteVersion, "draft_for", return_value=None),
+        patch.object(SuiteVersion, "in_force_for", return_value=None),
+    ):
+        with pytest.raises(ValueError, match="no version"):
+            contract_service.version_for_export(suite)
+
+
+def test_exporting_a_named_number_returns_that_version_without_consulting_the_default():
+    suite = _suite()
+    asked_for = SuiteVersion(id=uuid4(), test_suite_id=suite.id, version=2)
+    with (
+        patch.object(SuiteVersion, "for_number", return_value=asked_for) as for_number,
+        patch.object(SuiteVersion, "draft_for") as draft_for,
+    ):
+        assert contract_service.version_for_export(suite, 2) is asked_for
+
+    for_number.assert_called_once_with(suite.id, 2)
+    draft_for.assert_not_called()
+
+
+def test_exporting_a_number_the_contract_has_no_version_at_names_the_number():
+    suite = _suite()
+    with patch.object(SuiteVersion, "for_number", return_value=None):
+        with pytest.raises(ValueError, match="7"):
+            contract_service.version_for_export(suite, 7)
+
+
+def test_exporting_a_suite_that_keeps_no_versions_is_refused():
+    suite = _suite()
+    suite.suite_type = SuiteType.REGULAR
+    with pytest.raises(ValueError, match="not a contract"):
+        contract_service.version_for_export(suite)
