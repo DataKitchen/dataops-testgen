@@ -67,7 +67,10 @@ class JobSubmittedResponse(BaseModel):
 
 
 class TableGroupUpdateRequest(BaseModel):
-    """Fields to change on a table group. Every field is optional; omitted ones are left alone."""
+    """Fields to change on a table group. Omitted fields are left alone; unknown fields are
+    rejected, so a caller is told when it names a field this endpoint does not take yet."""
+
+    model_config = ConfigDict(extra="forbid")
 
     schema_name: str | None = Field(
         default=None,
@@ -92,8 +95,10 @@ class TableGroupSchemaMove(BaseModel):
     missing_tables: list[str] = Field(
         default_factory=list,
         description=(
-            "Catalogued tables the new schema does not carry. The move still applies; their tests "
-            "report a missing table until the schema carries them or the tests are removed."
+            "Catalogued tables the new schema does not carry. The move still applies. Their tests "
+            "report a missing table until the schema carries them or the tests are removed, and "
+            "their monitors are removed on the suite's next run, along with the thresholds those "
+            "monitors had learned."
         ),
     )
 

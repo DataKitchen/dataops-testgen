@@ -247,6 +247,14 @@ def update_table_group(
     supplied = body.model_dump(exclude_unset=True)
     if not supplied:
         raise api_error(422, "no_fields", "No fields supplied to update.")
+    # A field sent as null reads as "clear it", which no field here supports. Omit it instead,
+    # rather than have the request look applied when it was skipped.
+    if nulled := sorted(name for name, value in supplied.items() if value is None):
+        raise api_error(
+            422,
+            "null_field",
+            f"{', '.join(nulled)} cannot be null. Omit a field to leave it unchanged.",
+        )
 
     move = None
     if body.schema_name is not None and body.schema_name != table_group.table_group_schema:

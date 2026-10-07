@@ -882,3 +882,26 @@ def test_update_table_group_rejects_a_schema_that_would_end_the_quoting(mock_cls
     resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": schema_name})
 
     assert resp.status_code == 422
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_update_table_group_rejects_an_unknown_field(mock_cls, _perm):
+    """A field this endpoint does not take yet would otherwise be dropped silently, and the
+    response is the whole table group, so the caller sees its old value and no error."""
+    mock_cls.get.return_value = _table_group()
+
+    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"description": "moved"})
+
+    assert resp.status_code == 422
+
+
+@patch("testgen.api.deps.has_project_permission", return_value=True)
+@patch("testgen.api.deps.TableGroup")
+def test_update_table_group_rejects_an_explicit_null(mock_cls, _perm):
+    """Null reads as "clear it"; omitting the field is how you leave it alone."""
+    mock_cls.get.return_value = _table_group()
+
+    resp = _client().patch(f"/api/v1/table-groups/{TG_ID}", json={"schema_name": None})
+
+    assert resp.status_code == 422

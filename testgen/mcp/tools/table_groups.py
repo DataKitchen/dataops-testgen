@@ -723,7 +723,9 @@ def update_table_group(
         if move.missing_tables:
             doc.text(
                 f"{len(move.missing_tables)} catalogued tables are not in `{move.schema}`. Their tests "
-                "report a missing table until the schema carries them or the tests are removed: "
+                "report a missing table until the schema carries them or the tests are removed, and "
+                "their monitors are removed on the suite's next run with the thresholds they had "
+                "learned: "
                 + ", ".join(f"`{name}`" for name in sorted(move.missing_tables))
             )
 
