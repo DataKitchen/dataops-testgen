@@ -726,13 +726,16 @@ def update_table_group(
 def preview_table_group(
     table_group_id: Annotated[str, Field(description="UUID of the table group.")],
     verify_access: Annotated[bool, Field(description="When True, probe read access on every matched table.")] = False,
+    include_columns: Annotated[
+        bool, Field(description="When True, also list every matched table's columns and column types.")
+    ] = False,
 ) -> str:
     """Probe the data source for the tables a table group covers.
 
     On a database, these are the tables matching its filters; on a file data source, its declared files.
 
-    Returns counts plus a per-table breakdown. Does not save anything to the
-    application database.
+    Returns counts plus a per-table breakdown, and each table's columns with their types when
+    ``include_columns`` is set. Does not save anything to the application database.
     """
     table_group = resolve_table_group(table_group_id)
     connection = Connection.get_by_table_group(table_group.id)
@@ -805,6 +808,17 @@ def preview_table_group(
             doc.field(table_name, reason)
     elif preview.get("message"):
         doc.text(preview["message"])
+
+    if include_columns:
+        doc.heading(2, "Columns")
+        for table_name, info in preview["tables"].items():
+            if columns := info.get("columns"):
+                doc.heading(3, MdDoc.code(table_name))
+                doc.table(
+                    ["Column", "Type"],
+                    [[column["column_name"], column["column_type"]] for column in columns],
+                    code=[0],
+                )
 
     return doc.render()
 

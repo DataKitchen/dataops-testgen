@@ -249,7 +249,7 @@ class StatsPreview(TypedDict, total=False):
 
 class PreviewColumn(TypedDict):
     column_name: str
-    column_type: str
+    column_type: str | None
 
 
 class TablePreview(TypedDict, total=False):
@@ -412,6 +412,7 @@ def _build_preview(
                 "approx_data_point_ct": None,
                 "can_access": None,
                 "file_ct": column.file_ct,
+                "columns": [],
             }
             stats["table_ct"] += 1
             if column.approx_record_ct is not None:
@@ -419,6 +420,9 @@ def _build_preview(
 
         stats["column_ct"] += 1
         tables[column.table_name]["column_ct"] += 1
+        tables[column.table_name]["columns"].append(
+            {"column_name": column.column_name, "column_type": column.column_type}
+        )
         if column.approx_record_ct is not None:
             stats["approx_data_point_ct"] = (stats["approx_data_point_ct"] or 0) + column.approx_record_ct
             tables[column.table_name]["approx_data_point_ct"] = (
@@ -462,12 +466,8 @@ def _add_declaration_detail(
     from the catalog read rather than present and empty.
     """
     tables = preview["tables"]
-    for column in data_chars:
-        table = tables[column.table_name]
-        table.setdefault("columns", []).append(
-            {"column_name": column.column_name, "column_type": column.column_type}
-        )
-        table.setdefault("error", None)
+    for table in tables.values():
+        table["error"] = None
 
     failed = 0
     for declaration in _selected_declarations(sql_generator):

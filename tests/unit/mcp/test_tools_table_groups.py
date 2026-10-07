@@ -1410,6 +1410,89 @@ def test_preview_reports_the_files_each_table_reads(mock_resolve, mock_conn_cls,
     assert "| `claims` | 3 | 2 |" in output
 
 
+def _preview_with_columns(tg, tables: dict) -> tuple:
+    return (
+        {
+            "stats": {"id": tg.id, "table_groups_name": "Sample TG", "table_ct": len(tables), "column_ct": 0},
+            "tables": tables,
+            "success": True,
+            "message": None,
+        },
+        None,
+        None,
+    )
+
+
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_preview_lists_columns_only_when_asked(mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock):
+    tg = _mock_table_group(table_groups_name="Sample TG", table_group_schema="public")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _mock_connection()
+    mock_preview_svc.return_value = _preview_with_columns(tg, {
+        "customer": {
+            "column_ct": 2,
+            "approx_record_ct": 100,
+            "approx_data_point_ct": 200,
+            "can_access": None,
+            "columns": [
+                {"column_name": "id", "column_type": "integer"},
+                {"column_name": "email", "column_type": "character varying(255)"},
+            ],
+        },
+    })
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms():
+        default_output = preview_table_group(table_group_id=str(tg.id))
+        output = preview_table_group(table_group_id=str(tg.id), include_columns=True)
+
+    assert "## Columns" not in default_output
+    assert "character varying" not in default_output
+    assert "## Columns" in output
+    assert "### `customer`" in output
+    assert "| Column | Type |\n| --- | --- |\n| `id` | integer |\n| `email` | character varying(255) |" in output
+
+
+@patch(f"{MODULE}.preview_table_group_service")
+@patch(f"{MODULE}.Connection")
+@patch(f"{MODULE}.resolve_table_group")
+def test_preview_lists_no_columns_for_an_unreadable_declaration(
+    mock_resolve, mock_conn_cls, mock_preview_svc, db_session_mock,
+):
+    tg = _mock_table_group(table_groups_name="Files TG", table_group_schema="main")
+    mock_resolve.return_value = tg
+    mock_conn_cls.get_by_table_group.return_value = _files_connection()
+    mock_preview_svc.return_value = _preview_with_columns(tg, {
+        "orders": {
+            "column_ct": 1,
+            "can_access": None,
+            "file_ct": 1,
+            "columns": [{"column_name": "order_id", "column_type": "BIGINT"}],
+            "error": None,
+        },
+        "claims": {
+            "column_ct": 0,
+            "can_access": None,
+            "columns": [],
+            "error": "No files matched this path.",
+        },
+    })
+
+    from testgen.mcp.tools.table_groups import preview_table_group
+
+    with _patch_perms():
+        output = preview_table_group(table_group_id=str(tg.id), include_columns=True)
+
+    assert "### `orders`" in output
+    assert "| `order_id` | BIGINT |" in output
+    assert "### `claims`" not in output
+    # The column listing can run long, so the read failures come before it.
+    assert output.index("No files matched this path.") < output.index("## Columns")
+
+
 @patch(f"{MODULE}.TableGroup")
 def test_list_table_groups_shows_no_schema_for_a_files_connection(mock_tg_cls, db_session_mock):
     """The stored value is the engine's own default schema, not one the user chose."""
