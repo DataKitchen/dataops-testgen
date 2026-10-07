@@ -1,3 +1,5 @@
+import csv
+import io
 import re
 
 
@@ -25,6 +27,22 @@ def null_if_empty(value: object) -> object:
     Freshness_Trend), where ``"NULL"`` would not be valid SQL.
     """
     return "NULL" if value in (None, "") else value
+
+
+def strip_trailing_semicolons(sql: str | None) -> str | None:
+    """Remove trailing semicolons and whitespace, so a complete statement can be nested as a subquery."""
+    return re.sub(r"[\s;]+$", "", sql) if sql else sql
+
+
+def parse_value_list(value: str | None) -> list[str]:
+    """Split a list parameter stored as CSV into its values.
+
+    Follows Python ``csv`` quoting: ``""`` is the empty string and ``"a,b"`` is one value holding a
+    comma. Whitespace after a delimiter is dropped; quote a value to keep leading whitespace.
+    """
+    if not value:
+        return []
+    return [item for row in csv.reader(io.StringIO(value), skipinitialspace=True) for item in row]
 
 
 def concat_columns(columns: str, null_value: str):

@@ -59,10 +59,12 @@ const SCOPE_ORDER = ['Column', 'Table', 'Referential', 'Custom', 'Table Group'];
 const FALLBACK = 'var(--facet-grey)';
 const EMPTY = '—';
 
-const NUMERIC_ONLY = ['Min_Val', 'Avg_Shift', 'Incr_Avg_Shift', 'Variability_Increase', 'Variability_Decrease',
-    'Outlier_Pct_Above', 'Outlier_Pct_Below', 'Dec_Trunc', 'Distribution_Shift', 'Aggregate_Minimum'];
-const DATE_ONLY = ['Min_Date', 'Future_Date', 'Future_Date_1Y', 'Recency', 'Distinct_Date_Ct',
-    'Daily_Record_Ct', 'Weekly_Rec_Ct', 'Monthly_Rec_Ct', 'Valid_Month', 'Freshness_Trend', 'Table_Freshness'];
+const NUMERIC_ONLY = ['Min_Val', 'Max_Val', 'Avg_Shift', 'Incr_Avg_Shift', 'Variability_Increase', 'Variability_Decrease',
+    'Outlier_Pct_Above', 'Outlier_Pct_Below', 'Dec_Trunc', 'Distribution_Shift', 'Aggregate_Minimum',
+    'Match_Min_Val', 'Match_Max_Val', 'Match_Zero_Ct', 'Match_Sum', 'Match_Stdev', 'Match_Fractional_Sum'];
+const DATE_ONLY = ['Min_Date', 'Max_Date', 'Future_Date', 'Future_Date_1Y', 'Recency', 'Distinct_Date_Ct',
+    'Daily_Record_Ct', 'Weekly_Rec_Ct', 'Monthly_Rec_Ct', 'Valid_Month', 'Freshness_Trend', 'Table_Freshness',
+    'Match_Min_Date', 'Match_Max_Date', 'Match_Distinct_Date_Ct'];
 
 function appliesToSelectedColumn(t, generalType) {
     if (['table', 'tablegroup', 'referential'].includes(t.test_scope)) return false;

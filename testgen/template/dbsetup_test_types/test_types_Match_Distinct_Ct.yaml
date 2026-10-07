@@ -1,0 +1,224 @@
+test_types:
+  id: '1525'
+  test_type: Match_Distinct_Ct
+  test_name_short: Match Distinct Count
+  test_name_long: Distinct value count equals baseline
+  test_description: |-
+    Tests that the number of distinct values in the column equals the baseline count.
+  except_message: |-
+    Distinct value count differs from baseline.
+  measure_uom: Unique values
+  measure_uom_description: null
+  selection_criteria: |-
+    record_ct > 0 AND general_type <> 'X'
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_unique_ct
+  default_parm_values: |-
+    distinct_value_ct
+  default_parm_prompts: |-
+    Distinct Value Count at Baseline
+  default_parm_help: |-
+    The expected number of distinct values in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected distinct value count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Distinct Count tests that the column holds exactly the baseline number of distinct values. For a count that is only expected not to drop, use Value Count.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7043'
+    test_type: Match_Distinct_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '6043'
+    test_type: Match_Distinct_Ct
+    sql_flavor: databricks
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '3043'
+    test_type: Match_Distinct_Ct
+    sql_flavor: mssql
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '4043'
+    test_type: Match_Distinct_Ct
+    sql_flavor: postgresql
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '2023'
+    test_type: Match_Distinct_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '7043'
+    test_type: Match_Distinct_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '2123'
+    test_type: Match_Distinct_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '8043'
+    test_type: Match_Distinct_Ct
+    sql_flavor: oracle
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '8043'
+    test_type: Match_Distinct_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '10054'
+    test_type: Match_Distinct_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  - id: '11114'
+    test_type: Match_Distinct_Ct
+    sql_flavor: duckdb
+    measure: |-
+      COUNT(DISTINCT {COLUMN_NAME})
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_UNIQUE_CT}
+  target_data_lookups:
+  - id: '1528'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT `{COLUMN_NAME}`) AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1550'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT `{COLUMN_NAME}`) AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1572'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1594'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1616'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1638'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1660'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8522'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8522'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10073'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11115'
+    test_id: '1525'
+    test_type: Match_Distinct_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(DISTINCT "{COLUMN_NAME}") AS current_distinct_ct, {BASELINE_UNIQUE_CT} AS baseline_distinct_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

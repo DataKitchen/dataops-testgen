@@ -1,0 +1,223 @@
+test_types:
+  id: '1521'
+  test_type: Match_Row_Ct
+  test_name_short: Match Row Count
+  test_name_long: Row count equals baseline
+  test_description: |-
+    Tests that the number of rows in the table equals the baseline row count.
+  except_message: |-
+    Row count differs from baseline.
+  measure_uom: Row count
+  measure_uom_description: null
+  selection_criteria: |-
+    TEMPLATE
+  generation_template: gen_Match_Row_Ct.sql
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: null
+  default_parm_prompts: |-
+    Row Count at Baseline
+  default_parm_help: |-
+    The expected number of rows in the table.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: table
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Volume
+  threshold_description: |-
+    Expected row count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Row Count tests that the table holds exactly the baseline number of rows. Use it to confirm that a copy or a reload has the same row count as its original, or that a reference table has not gained or lost rows. For a minimum rather than an exact count, use Row Count.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7041'
+    test_type: Match_Row_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '6041'
+    test_type: Match_Row_Ct
+    sql_flavor: databricks
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '3041'
+    test_type: Match_Row_Ct
+    sql_flavor: mssql
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '4041'
+    test_type: Match_Row_Ct
+    sql_flavor: postgresql
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2021'
+    test_type: Match_Row_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '7041'
+    test_type: Match_Row_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '2121'
+    test_type: Match_Row_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8041'
+    test_type: Match_Row_Ct
+    sql_flavor: oracle
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '8041'
+    test_type: Match_Row_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '10052'
+    test_type: Match_Row_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  - id: '11108'
+    test_type: Match_Row_Ct
+    sql_flavor: duckdb
+    measure: |-
+      COUNT(*)
+    test_operator: '<>'
+    test_condition: |-
+      {THRESHOLD_VALUE}
+  target_data_lookups:
+  - id: '1526'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1548'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1570'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1592'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1614'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1636'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1658'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8520'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8520'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10071'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11109'
+    test_id: '1521'
+    test_type: Match_Row_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(*) AS current_row_ct, {THRESHOLD_VALUE} AS baseline_row_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

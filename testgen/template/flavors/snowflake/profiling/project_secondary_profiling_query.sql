@@ -14,7 +14,7 @@ ranked_vals
 AS (
   SELECT "{COL_NAME}" AS val,
          COUNT(*) AS ct,
-         ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC, "{COL_NAME}") AS rn,
+         ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC, TO_BINARY("{COL_NAME}", 'UTF-8')) AS rn,
          SUM(COUNT(*)) OVER () AS sample_value_ct
    FROM target_table
    WHERE "{COL_NAME}" IS NOT NULL
@@ -30,9 +30,10 @@ SELECT top_val AS value,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
        MAX(sample_value_ct) AS sample_value_ct,
-       ( SELECT MD5(LISTAGG(DISTINCT NULLIF("{COL_NAME}", ''), '|')
-                           WITHIN GROUP (ORDER BY NULLIF("{COL_NAME}", '')))
-           FROM target_table ) AS distinct_value_hash
+       ( SELECT CASE WHEN COUNT(*) <= 70 THEN MD5(LISTAGG(TO_VARCHAR(val, 'UTF-8'), '|') WITHIN GROUP (ORDER BY val)) END
+           FROM ( SELECT DISTINCT TO_BINARY("{COL_NAME}", 'UTF-8') AS val
+                    FROM target_table
+                   WHERE "{COL_NAME}" IS NOT NULL ) distinct_vals ) AS distinct_value_hash
   FROM grouped_vals
  GROUP BY top_val
  ORDER BY 3;

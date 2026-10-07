@@ -1,0 +1,277 @@
+test_types:
+  id: '1522'
+  test_type: Match_Column_Ct
+  test_name_short: Match Column Count
+  test_name_long: Column count equals baseline
+  test_description: |-
+    Tests that the number of columns in the table equals the baseline column count.
+  except_message: |-
+    Column count differs from baseline.
+  measure_uom: Column count
+  measure_uom_description: null
+  selection_criteria: |-
+    TEMPLATE
+  generation_template: gen_Match_Column_Ct.sql
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: threshold_value
+  default_parm_values: null
+  default_parm_prompts: |-
+    Column Count at Baseline
+  default_parm_help: |-
+    The expected number of columns in the table.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: METADATA
+  test_scope: table
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Schema Drift
+  threshold_description: |-
+    Expected column count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Column Count tests that the table has exactly the baseline number of columns. A failure means columns were added or removed.
+  active: Y
+  ai_redact_values: false
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions: []
+  target_data_lookups: []
+  test_templates:
+  - id: '2519'
+    test_type: Match_Column_Ct
+    sql_flavor: bigquery
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '2419'
+    test_type: Match_Column_Ct
+    sql_flavor: databricks
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '2219'
+    test_type: Match_Column_Ct
+    sql_flavor: mssql
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '2319'
+    test_type: Match_Column_Ct
+    sql_flavor: postgresql
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '2019'
+    test_type: Match_Column_Ct
+    sql_flavor: redshift
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '2616'
+    test_type: Match_Column_Ct
+    sql_flavor: redshift_spectrum
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '2119'
+    test_type: Match_Column_Ct
+    sql_flavor: snowflake
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '8016'
+    test_type: Match_Column_Ct
+    sql_flavor: oracle
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '8016'
+    test_type: Match_Column_Ct
+    sql_flavor: sap_hana
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '10095'
+    test_type: Match_Column_Ct
+    sql_flavor: salesforce_data360
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;
+  - id: '11110'
+    test_type: Match_Column_Ct
+    sql_flavor: duckdb
+    template: |-
+      SELECT '{TEST_TYPE}'   AS test_type,
+             '{TEST_DEFINITION_ID}' AS test_definition_id,
+             '{TEST_SUITE_ID}' AS test_suite_id,
+             '{TEST_RUN_ID}' AS test_run_id,
+             '{RUN_DATE}'    AS test_time,
+             '{SCHEMA_NAME}' AS schema_name,
+             '{TABLE_NAME}'  AS table_name,
+             NULL AS column_names,
+             '{INPUT_PARAMETERS}' AS input_parameters,
+             NULL AS result_signal,
+             CASE WHEN COUNT(*) <> {THRESHOLD_VALUE} THEN 0 ELSE 1 END AS result_code,
+             NULL AS result_message,
+             COUNT(*) AS result_measure
+        FROM {APP_SCHEMA_NAME}.data_column_chars
+       WHERE table_groups_id = '{TABLE_GROUPS_ID}'::UUID
+         AND table_name = '{TABLE_NAME}'
+         AND drop_date IS NULL;

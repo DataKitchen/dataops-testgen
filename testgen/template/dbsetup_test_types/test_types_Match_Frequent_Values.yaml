@@ -1,0 +1,637 @@
+test_types:
+  id: '1543'
+  test_type: Match_Frequent_Values
+  test_name_short: Match Frequent Values
+  test_name_long: Most frequent values and counts equal baseline
+  test_description: |-
+    Tests that the ten most frequent values in the column, and the count of each, equal the baseline.
+  except_message: |-
+    Most frequent values or their counts differ from baseline.
+  measure_uom: Matches baseline
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND frequent_values IS NOT NULL
+    AND LENGTH((SELECT STRING_AGG((entry ->> 'value') || ' (' || (entry ->> 'ct') || ')', ', ' ORDER BY rank)
+       FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent_values -> 'values', '[]'::JSONB)) WITH ORDINALITY AS t(entry, rank))) <= 1000
+    AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    (SELECT STRING_AGG((entry ->> 'value') || ' (' || (entry ->> 'ct') || ')', ', ' ORDER BY rank)
+       FROM JSONB_ARRAY_ELEMENTS(COALESCE(frequent_values -> 'values', '[]'::JSONB)) WITH ORDINALITY AS t(entry, rank))
+  default_parm_prompts: |-
+    Frequent Values at Baseline
+  default_parm_help: |-
+    The ten most frequent values with their counts, most frequent first, written as value (count) and separated by a comma and a space, for example `Open (120), Closed (45)`. Values with equal counts are listed in byte order, and blank values are not counted.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected frequent values
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Differs","1":"Matches"}}}'
+  usage_notes: |-
+    Match Frequent Values tests that the ten most frequent values in the column, and the count of each, are exactly the baseline. Blank values are not counted. It is the most direct test of how the distribution of a column has moved.
+  active: Y
+  ai_redact_values: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1546'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT `{COLUMN_NAME}` AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(`{COLUMN_NAME}` AS BYTES)) AS rn FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > ' ' GROUP BY `{COLUMN_NAME}` ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '1568'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT `{COLUMN_NAME}` AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST(`{COLUMN_NAME}` AS BINARY)) AS rn FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` > ' ' GROUP BY `{COLUMN_NAME}` ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '1590'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT {COLUMN_VALUE} AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '1612'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT {COLUMN_VALUE} AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, {COLUMN_VALUE} COLLATE "C") AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '1634'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT {COLUMN_VALUE} AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '1656'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT {COLUMN_VALUE} AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} > ' ' GROUP BY {COLUMN_VALUE} ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '1678'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT "{COLUMN_NAME}" AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY("{COLUMN_NAME}", 'UTF-8')) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' GROUP BY "{COLUMN_NAME}" ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '8540'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT "{COLUMN_NAME}" AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, NLSSORT("{COLUMN_NAME}", 'NLS_SORT=BINARY')) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND "{COLUMN_NAME}" > ' ' GROUP BY "{COLUMN_NAME}" ) ranked WHERE rn <= 10 ORDER BY rn
+    error_type: Test Results
+  - id: '8540'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT "{COLUMN_NAME}" AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY("{COLUMN_NAME}")) AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL AND "{COLUMN_NAME}" > ' ' GROUP BY "{COLUMN_NAME}" ) ranked WHERE rn <= 10 ORDER BY rn
+    error_type: Test Results
+  - id: '10091'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT "{COLUMN_NAME}" AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, "{COLUMN_NAME}") AS rn FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' GROUP BY "{COLUMN_NAME}" ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  - id: '11151'
+    test_id: '1543'
+    test_type: Match_Frequent_Values
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT val AS frequent_value, ct AS count FROM ( SELECT "{COLUMN_NAME}" AS val, COUNT(*) AS ct, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, "{COLUMN_NAME}") AS rn FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" > ' ' GROUP BY "{COLUMN_NAME}" ) ranked WHERE rn <= 10 ORDER BY rn;
+    error_type: Test Results
+  test_templates:
+  - id: '2522'
+    test_type: Match_Frequent_Values
+    sql_flavor: bigquery
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_NAME} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST({COLUMN_NAME} AS BYTES)) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_NAME} > ' '
+         GROUP BY {COLUMN_NAME}
+      ),
+      test AS (
+        SELECT STRING_AGG(CONCAT(val, ' (', CAST(ct AS STRING), ')'), ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2422'
+    test_type: Match_Frequent_Values
+    sql_flavor: databricks
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_NAME} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST({COLUMN_NAME} AS BINARY)) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_NAME} > ' '
+         GROUP BY {COLUMN_NAME}
+      ),
+      test AS (
+        SELECT ARRAY_JOIN(TRANSFORM(ARRAY_SORT(COLLECT_LIST(NAMED_STRUCT('rn', rn, 'entry', CONCAT(val, ' (', CAST(ct AS STRING), ')')))), e -> e.entry), ', ') AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2222'
+    test_type: Match_Frequent_Values
+    sql_flavor: mssql
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_VALUE} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_VALUE} > ' '
+         GROUP BY {COLUMN_VALUE}
+      ),
+      test AS (
+        SELECT STRING_AGG(CONCAT(CAST(val AS NVARCHAR(MAX)), N' (', CAST(ct AS NVARCHAR(20)), N')'), N', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2322'
+    test_type: Match_Frequent_Values
+    sql_flavor: postgresql
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_VALUE} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, {COLUMN_VALUE} COLLATE "C") AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_VALUE} > ' '
+         GROUP BY {COLUMN_VALUE}
+      ),
+      test AS (
+        SELECT STRING_AGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2022'
+    test_type: Match_Frequent_Values
+    sql_flavor: redshift
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_VALUE} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_VALUE} > ' '
+         GROUP BY {COLUMN_VALUE}
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2619'
+    test_type: Match_Frequent_Values
+    sql_flavor: redshift_spectrum
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_VALUE} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, COLLATE({COLUMN_VALUE}, 'case_sensitive')) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_VALUE} > ' '
+         GROUP BY {COLUMN_VALUE}
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2122'
+    test_type: Match_Frequent_Values
+    sql_flavor: snowflake
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_NAME} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY({COLUMN_NAME}, 'UTF-8')) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_NAME} > ' '
+         GROUP BY {COLUMN_NAME}
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || TO_VARCHAR(ct) || ')', ', ') WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '8019'
+    test_type: Match_Frequent_Values
+    sql_flavor: oracle
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_NAME} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, NLSSORT({COLUMN_NAME}, 'NLS_SORT=BINARY')) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_NAME} IS NOT NULL AND {COLUMN_NAME} > ' '
+         GROUP BY {COLUMN_NAME}
+      ),
+      test AS (
+        SELECT LISTAGG(val || ' (' || TO_CHAR(ct) || ')', ', ' ON OVERFLOW TRUNCATE) WITHIN GROUP (ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             SUBSTR(measure, 1, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '8019'
+    test_type: Match_Frequent_Values
+    sql_flavor: sap_hana
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_NAME} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, TO_BINARY({COLUMN_NAME})) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_NAME} IS NOT NULL AND {COLUMN_NAME} > ' '
+         GROUP BY {COLUMN_NAME}
+      ),
+      test AS (
+        SELECT STRING_AGG(val || ' (' || TO_VARCHAR(ct) || ')', ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '10098'
+    test_type: Match_Frequent_Values
+    sql_flavor: salesforce_data360
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_NAME} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, {COLUMN_NAME}) AS rn
+          FROM {QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_NAME} > ' '
+         GROUP BY {COLUMN_NAME}
+      ),
+      test AS (
+        SELECT ARRAY_JOIN(ARRAY_AGG(entry), ', ') AS measure
+          FROM ( SELECT val || ' (' || CAST(ct AS VARCHAR) || ')' AS entry
+                   FROM ranked
+                  WHERE rn <= 10
+                  ORDER BY rn
+                  LIMIT 10 ) ordered
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             SUBSTR(measure, 1, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '11150'
+    test_type: Match_Frequent_Values
+    sql_flavor: duckdb
+    template: |-
+      WITH ranked AS (
+        SELECT {COLUMN_NAME} AS val,
+               COUNT(*) AS ct,
+               ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, {COLUMN_NAME}) AS rn
+          FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+         WHERE {COLUMN_NAME} > ' '
+         GROUP BY {COLUMN_NAME}
+      ),
+      test AS (
+        SELECT STRING_AGG(val || ' (' || CAST(ct AS VARCHAR) || ')', ', ' ORDER BY rn) AS measure
+          FROM ranked
+         WHERE rn <= 10
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Most frequent values or their counts differ from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test

@@ -7,7 +7,7 @@ WITH whole_table_measures AS (
     SUM(CASE WHEN "{COL_NAME}" IS NULL THEN 1 ELSE 0 END) AS null_value_ct,
     MIN(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS min_length,
     MAX(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS max_length,
-    AVG(NULLIF(LENGTH(TO_VARCHAR("{COL_NAME}")), 0)) AS avg_length,
+    AVG(CAST(NULLIF(LENGTH(TO_VARCHAR("{COL_NAME}")), 0) AS DOUBLE)) AS avg_length,
     SUM(CASE
           WHEN TRIM("{COL_NAME}") LIKE_REGEXPR '^0(\.0*)?$' THEN 1 ELSE 0
         END) AS zero_value_ct,
@@ -41,9 +41,9 @@ WITH whole_table_measures AS (
 , sampleable_measures AS (
   SELECT
     COUNT("{COL_NAME}") AS sample_value_ct,
-    0 AS zero_length_ct,
+    SUM(CASE WHEN "{COL_NAME}" = '' THEN 1 ELSE 0 END) AS zero_length_ct,
     SUM(CASE
-           WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
+           WHEN ("{COL_NAME}" LIKE ' %' AND LTRIM("{COL_NAME}") <> '') THEN 1
                                                 ELSE 0
          END) AS lead_space_ct,
     SUM(CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN 1 ELSE 0 END) AS quoted_value_ct,
@@ -115,7 +115,7 @@ WITH whole_table_measures AS (
          value_ct,
          CASE
            WHEN pattern IS NOT NULL AND MAX(max_length) OVER () BETWEEN 3 AND {MAX_PATTERN_LENGTH}
-             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, pattern)
+             THEN ROW_NUMBER() OVER (ORDER BY CASE WHEN pattern IS NULL THEN 1 ELSE 0 END, pattern_ct DESC, TO_BINARY(pattern))
          END AS pattern_rank
     FROM pattern_counts
 )
@@ -151,7 +151,7 @@ SELECT
 -- TG-IF is_type_DN
   MIN(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS min_length,
   MAX(LENGTH(TO_VARCHAR("{COL_NAME}"))) AS max_length,
-  AVG(NULLIF(LENGTH(TO_VARCHAR("{COL_NAME}")), 0)) AS avg_length,
+  AVG(CAST(NULLIF(LENGTH(TO_VARCHAR("{COL_NAME}")), 0) AS DOUBLE)) AS avg_length,
 -- TG-ENDIF
 -- TG-IF is_type_N
   SUM(1 - ABS(SIGN("{COL_NAME}"))) AS zero_value_ct,
@@ -159,13 +159,13 @@ SELECT
   MIN(CASE WHEN "{COL_NAME}" > 0 THEN "{COL_NAME}" ELSE NULL END) AS min_value_over_0,
   MAX("{COL_NAME}") AS max_value,
   AVG(CAST("{COL_NAME}" AS DECIMAL)) AS avg_value,
-  STDDEV(CAST("{COL_NAME}" AS DECIMAL)) AS stdev_value,
+  STDDEV(CAST("{COL_NAME}" AS DOUBLE)) AS stdev_value,
   MIN(pct_25) AS percentile_25,
   MIN(pct_50) AS percentile_50,
   MIN(pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(MOD("{COL_NAME}", 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD("{COL_NAME}", 1)) AS DECIMAL(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE

@@ -1,0 +1,600 @@
+test_types:
+  id: '1542'
+  test_type: Match_Distinct_Hash
+  test_name_short: Match Distinct Hash
+  test_name_long: Hash of distinct values equals baseline
+  test_description: |-
+    Tests that the set of distinct values in the column equals the baseline set, using a hash of the values.
+  except_message: |-
+    Set of distinct values differs from baseline.
+  measure_uom: Matches baseline
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND distinct_value_hash IS NOT NULL
+    AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    distinct_value_hash
+  default_parm_prompts: |-
+    Distinct Value Hash at Baseline
+  default_parm_help: |-
+    The MD5 hash, in lower-case hexadecimal, of the distinct non-null values in the column, sorted by their bytes and joined with the pipe character.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: QUERY
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected distinct value hash
+  result_visualization: binary_chart
+  result_visualization_params: '{"legend":{"labels":{"0":"Differs","1":"Matches"}}}'
+  usage_notes: |-
+    Match Distinct Hash tests that the set of distinct values in the column is exactly the baseline set. Values are compared exactly, including case and spacing. A failure says the set changed, not how; Match Frequent Values shows which values differ.
+  active: Y
+  ai_redact_values: false
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions: []
+  target_data_lookups:
+  - id: '1545'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY CAST(`{COLUMN_NAME}` AS BYTES) LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1567'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT `{COLUMN_NAME}`, COUNT(*) AS count FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}` WHERE `{COLUMN_NAME}` IS NOT NULL GROUP BY `{COLUMN_NAME}` ORDER BY CAST(`{COLUMN_NAME}` AS BINARY) LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1589'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT TOP {LIMIT} {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY CAST({COLUMN_VALUE} AS NVARCHAR(4000)) COLLATE Latin1_General_100_BIN2;
+    error_type: Test Results
+  - id: '1611'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY {COLUMN_VALUE} COLLATE "C" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1633'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY COLLATE({COLUMN_VALUE}, 'case_sensitive') LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1655'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT {COLUMN_VALUE} AS "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE {COLUMN_VALUE} IS NOT NULL GROUP BY {COLUMN_VALUE} ORDER BY COLLATE({COLUMN_VALUE}, 'case_sensitive') LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '1677'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY TO_BINARY("{COLUMN_NAME}", 'UTF-8') LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '8539'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY NLSSORT("{COLUMN_NAME}", 'NLS_SORT=BINARY') FETCH FIRST {LIMIT} ROWS ONLY
+    error_type: Test Results
+  - id: '8539'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY TO_BINARY("{COLUMN_NAME}") LIMIT {LIMIT}
+    error_type: Test Results
+  - id: '10090'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  - id: '11149'
+    test_id: '1542'
+    test_type: Match_Distinct_Hash
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT "{COLUMN_NAME}", COUNT(*) AS count FROM "{TARGET_SCHEMA}"."{TABLE_NAME}" WHERE "{COLUMN_NAME}" IS NOT NULL GROUP BY "{COLUMN_NAME}" ORDER BY "{COLUMN_NAME}" LIMIT {LIMIT};
+    error_type: Test Results
+  test_templates:
+  - id: '2521'
+    test_type: Match_Distinct_Hash
+    sql_flavor: bigquery
+    template: |-
+      WITH test AS (
+        SELECT TO_HEX(MD5(STRING_AGG(CAST(val AS STRING), '|' ORDER BY CAST(val AS BYTES)))) AS measure
+          FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2421'
+    test_type: Match_Distinct_Hash
+    sql_flavor: databricks
+    template: |-
+      WITH test AS (
+        SELECT MD5(CONCAT_WS('|', TRANSFORM(ARRAY_SORT(COLLECT_SET(CAST(val AS BINARY))),
+                                             val -> CAST(val AS STRING)))) AS measure
+          FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2221'
+    test_type: Match_Distinct_Hash
+    sql_flavor: mssql
+    template: |-
+      WITH hash_input AS (
+        SELECT STRING_AGG(val, N'|') WITHIN GROUP (ORDER BY val, DATALENGTH(val)) AS agg
+          FROM ( SELECT CAST(bin AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 AS val
+                   FROM ( SELECT DISTINCT TOP 71 CAST(LEFT(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)), 71) AS VARBINARY(MAX)) AS bin
+                            FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                           WHERE {COLUMN_VALUE} IS NOT NULL ) distinct_bins ) distinct_vals
+      ),
+      hash_code_points AS (
+        SELECT pos,
+               CASE WHEN unit BETWEEN 55296 AND 56319 THEN 65536 + (unit - 55296) * 1024 + (next_unit - 56320)
+                    ELSE unit END AS cp
+          FROM ( SELECT p.pos, UNICODE(SUBSTRING(h.agg, p.pos, 1)) AS unit, UNICODE(SUBSTRING(h.agg, p.pos + 1, 1)) AS next_unit
+                   FROM hash_input h
+                  CROSS JOIN ( SELECT TOP (SELECT ISNULL(DATALENGTH(agg) / 2, 0) FROM hash_input)
+                                      ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS pos
+                                 FROM sys.all_columns a CROSS JOIN sys.all_columns b ) p ) units
+         WHERE unit NOT BETWEEN 56320 AND 57343
+      ),
+      hash_bytes AS (
+        SELECT pos,
+               CASE WHEN cp < 128 THEN CONVERT(VARCHAR(8), CAST(cp AS BINARY(1)), 2)
+                    WHEN cp < 2048 THEN CONVERT(VARCHAR(8), CAST(192 + cp / 64 AS BINARY(1)) + CAST(128 + cp % 64 AS BINARY(1)), 2)
+                    WHEN cp < 65536 THEN CONVERT(VARCHAR(8), CAST(224 + cp / 4096 AS BINARY(1)) + CAST(128 + cp / 64 % 64 AS BINARY(1))
+                                                           + CAST(128 + cp % 64 AS BINARY(1)), 2)
+                    ELSE CONVERT(VARCHAR(8), CAST(240 + cp / 262144 AS BINARY(1)) + CAST(128 + cp / 4096 % 64 AS BINARY(1))
+                                           + CAST(128 + cp / 64 % 64 AS BINARY(1)) + CAST(128 + cp % 64 AS BINARY(1)), 2)
+               END AS hex
+          FROM hash_code_points
+      ),
+      test AS (
+        SELECT CASE WHEN (SELECT agg FROM hash_input) IS NOT NULL
+                    THEN LOWER(CONVERT(VARCHAR(32), HASHBYTES('MD5',
+                             ISNULL(CONVERT(VARBINARY(MAX), STRING_AGG(CAST(hex AS VARCHAR(MAX)), '') WITHIN GROUP (ORDER BY pos), 2), 0x)), 2))
+               END AS measure
+          FROM hash_bytes
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure COLLATE Latin1_General_100_BIN2 <> {BASELINE_VALUE_LITERAL} COLLATE Latin1_General_100_BIN2 THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2321'
+    test_type: Match_Distinct_Hash
+    sql_flavor: postgresql
+    template: |-
+      WITH test AS (
+        SELECT MD5(STRING_AGG(val, '|' ORDER BY val)) AS measure
+          FROM ( SELECT DISTINCT LEFT({COLUMN_VALUE}, 71) COLLATE "C" AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_VALUE} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2021'
+    test_type: Match_Distinct_Hash
+    sql_flavor: redshift
+    template: |-
+      WITH test AS (
+        SELECT MD5(LISTAGG(val, '|') WITHIN GROUP (ORDER BY COLLATE(val, 'case_sensitive'))) AS measure
+          FROM ( SELECT DISTINCT COLLATE(LEFT({COLUMN_VALUE}, 71), 'case_sensitive') AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_VALUE} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2618'
+    test_type: Match_Distinct_Hash
+    sql_flavor: redshift_spectrum
+    template: |-
+      WITH test AS (
+        SELECT MD5(LISTAGG(val, '|') WITHIN GROUP (ORDER BY COLLATE(val, 'case_sensitive'))) AS measure
+          FROM ( SELECT DISTINCT COLLATE(LEFT({COLUMN_VALUE}, 71), 'case_sensitive') AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_VALUE} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '2121'
+    test_type: Match_Distinct_Hash
+    sql_flavor: snowflake
+    template: |-
+      WITH test AS (
+        SELECT MD5(LISTAGG(TO_VARCHAR(val, 'UTF-8'), '|') WITHIN GROUP (ORDER BY val)) AS measure
+          FROM ( SELECT DISTINCT TO_BINARY(LEFT({COLUMN_NAME}, 71), 'UTF-8') AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR MD5(measure) <> MD5({BASELINE_VALUE_LITERAL}) THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '8018'
+    test_type: Match_Distinct_Hash
+    sql_flavor: oracle
+    template: |-
+      WITH test AS (
+        -- LISTAGG returns VARCHAR2, so a list past 4000 bytes gets no hash, as in profiling, and fails
+        SELECT LOWER(RAWTOHEX(STANDARD_HASH(
+                 LISTAGG(val, '|') WITHIN GROUP (ORDER BY NLSSORT(val, 'NLS_SORT=BINARY')), 'MD5'))) AS measure
+          FROM ( SELECT val, SUM(LENGTHB(val)) OVER () + COUNT(*) OVER () - 1 AS list_bytes
+                   FROM ( SELECT DISTINCT TO_CHAR(SUBSTR({COLUMN_NAME}, 1, 71)) AS val
+                            FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                           WHERE {COLUMN_NAME} IS NOT NULL
+                           FETCH FIRST 71 ROWS ONLY ) distinct_vals ) sized_vals
+         WHERE list_bytes <= 4000
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             SUBSTR(measure, 1, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '8018'
+    test_type: Match_Distinct_Hash
+    sql_flavor: sap_hana
+    template: |-
+      WITH test AS (
+        SELECT LOWER(BINTOHEX(HASH_MD5(TO_BINARY(STRING_AGG(val, '|' ORDER BY TO_BINARY(val)))))) AS measure
+          FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '10097'
+    test_type: Match_Distinct_Hash
+    sql_flavor: salesforce_data360
+    template: |-
+      WITH test AS (
+        SELECT MD5(ARRAY_JOIN(ARRAY_AGG(val), '|')) AS measure
+          FROM ( SELECT DISTINCT SUBSTR({COLUMN_NAME}, 1, 71) AS val
+                   FROM {QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL
+                  ORDER BY val
+                  LIMIT 71 ) sorted_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             SUBSTR(measure, 1, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test
+  - id: '11148'
+    test_type: Match_Distinct_Hash
+    sql_flavor: duckdb
+    template: |-
+      WITH test AS (
+        SELECT MD5(STRING_AGG(val, '|' ORDER BY val)) AS measure
+          FROM ( SELECT DISTINCT LEFT({COLUMN_NAME}, 71) AS val
+                   FROM {QUOTE}{SCHEMA_NAME}{QUOTE}.{QUOTE}{TABLE_NAME}{QUOTE}
+                  WHERE {COLUMN_NAME} IS NOT NULL
+                  LIMIT 71 ) distinct_vals
+      )
+      SELECT '{TEST_TYPE}'   as test_type,
+             '{TEST_DEFINITION_ID}' as test_definition_id,
+             '{TEST_SUITE_ID}' as test_suite_id,
+             '{TEST_RUN_ID}' as test_run_id,
+             '{RUN_DATE}'    as test_time,
+             '{SCHEMA_NAME}' as schema_name,
+             '{TABLE_NAME}'  as table_name,
+             '{COLUMN_NAME_NO_QUOTES}' as column_names,
+             NULL as threshold_value,
+             {SKIP_ERRORS} as skip_errors,
+             '{INPUT_PARAMETERS}' as input_parameters,
+             LEFT(measure, 1000) as result_signal,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_code,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN 'Baseline is missing.'
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 'Set of distinct values differs from baseline.'
+               ELSE 'Matches baseline.'
+             END AS result_message,
+             CASE
+               WHEN {BASELINE_VALUE_LITERAL} IS NULL THEN NULL
+               WHEN measure IS NULL OR measure <> {BASELINE_VALUE_LITERAL} THEN 0
+               ELSE 1
+             END AS result_measure
+        FROM test

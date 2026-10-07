@@ -1,0 +1,224 @@
+test_types:
+  id: '1537'
+  test_type: Match_Max_Length
+  test_name_short: Match Maximum Length
+  test_name_long: Maximum text length equals baseline
+  test_description: |-
+    Tests that the length of the longest value in the column equals the baseline length.
+  except_message: |-
+    Maximum text length differs from baseline.
+  measure_uom: Maximum length
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND value_ct > 0
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_value
+  default_parm_values: |-
+    max_length
+  default_parm_prompts: |-
+    Maximum Length at Baseline
+  default_parm_help: |-
+    The expected length in characters of the longest value in the column.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected maximum length
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Maximum Length tests that the longest value in the column has exactly the baseline length. A drop points to truncation.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7055'
+    test_type: Match_Max_Length
+    sql_flavor: bigquery
+    measure: |-
+      MAX(LENGTH(CAST({COLUMN_NAME} AS STRING)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '6055'
+    test_type: Match_Max_Length
+    sql_flavor: databricks
+    measure: |-
+      MAX(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '3055'
+    test_type: Match_Max_Length
+    sql_flavor: mssql
+    measure: |-
+      MAX((LEN(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) + N'.') - 1))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '4055'
+    test_type: Match_Max_Length
+    sql_flavor: postgresql
+    measure: |-
+      MAX(LENGTH(CAST({COLUMN_NAME} AS TEXT)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '2035'
+    test_type: Match_Max_Length
+    sql_flavor: redshift
+    measure: |-
+      MAX(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '7055'
+    test_type: Match_Max_Length
+    sql_flavor: redshift_spectrum
+    measure: |-
+      MAX(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '2135'
+    test_type: Match_Max_Length
+    sql_flavor: snowflake
+    measure: |-
+      MAX(LEN({COLUMN_NAME}))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '8055'
+    test_type: Match_Max_Length
+    sql_flavor: oracle
+    measure: |-
+      MAX(LENGTH(TO_CHAR({COLUMN_NAME})))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '8055'
+    test_type: Match_Max_Length
+    sql_flavor: sap_hana
+    measure: |-
+      MAX(LENGTH(TO_VARCHAR({COLUMN_NAME})))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '10066'
+    test_type: Match_Max_Length
+    sql_flavor: salesforce_data360
+    measure: |-
+      MAX(LENGTH(CAST({COLUMN_NAME} AS VARCHAR)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  - id: '11138'
+    test_type: Match_Max_Length
+    sql_flavor: duckdb
+    measure: |-
+      MAX(LENGTH(CAST({COLUMN_NAME} AS TEXT)))
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_VALUE}
+  target_data_lookups:
+  - id: '1540'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LENGTH(CAST(`{COLUMN_NAME}` AS STRING))) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1562'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LEN(`{COLUMN_NAME}`)) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1584'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX((LEN(CAST({COLUMN_VALUE} AS NVARCHAR(MAX)) + N'.') - 1)) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1606'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LENGTH(CAST("{COLUMN_NAME}" AS TEXT))) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1628'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LEN("{COLUMN_NAME}")) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1650'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LEN("{COLUMN_NAME}")) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1672'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LEN("{COLUMN_NAME}")) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8534'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LENGTH(TO_CHAR("{COLUMN_NAME}"))) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8534'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LENGTH(TO_VARCHAR("{COLUMN_NAME}"))) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10085'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LENGTH(CAST("{COLUMN_NAME}" AS VARCHAR))) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11139'
+    test_id: '1537'
+    test_type: Match_Max_Length
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT MAX(LENGTH(CAST("{COLUMN_NAME}" AS TEXT))) AS current_max_length, {BASELINE_VALUE} AS baseline_max_length FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

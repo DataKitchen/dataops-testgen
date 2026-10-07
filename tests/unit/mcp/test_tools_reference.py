@@ -410,21 +410,23 @@ def test_test_types_resource_applies_public_filter(mock_tt_cls, db_session_mock)
 
 
 @patch("testgen.mcp.tools.reference.TestType")
-def test_get_test_type_rejects_non_public_type(mock_tt_cls, db_session_mock):
-    """Non-public types are absent from every test-type surface, single-item lookup included."""
+def test_get_test_type_describes_non_public_type(mock_tt_cls, db_session_mock):
+    """A non-public type stays describable, since tests already in a suite can carry it, and says it cannot be created."""
     from testgen.common.enums import MonitorType
     from testgen.common.models.test_definition import NON_PUBLIC_TEST_TYPES
 
-    schema_type = MagicMock()
-    schema_type.test_type = MonitorType.SCHEMA.value
-    schema_type.test_name_short = "Schema"
-    mock_tt_cls.get.return_value = schema_type
-    assert MonitorType.SCHEMA.value in NON_PUBLIC_TEST_TYPES
+    volume_type = MagicMock()
+    volume_type.test_type = MonitorType.VOLUME.value
+    volume_type.test_name_short = "Volume Trend"
+    volume_type.param_fields = []
+    mock_tt_cls.get.return_value = volume_type
+    assert MonitorType.VOLUME.value in NON_PUBLIC_TEST_TYPES
 
     from testgen.mcp.tools.reference import get_test_type
 
-    with patch("testgen.mcp.tools.reference.resolve_test_type", return_value=MonitorType.SCHEMA.value):
-        result = get_test_type("Schema")
+    with patch("testgen.mcp.tools.reference.resolve_test_type", return_value=MonitorType.VOLUME.value):
+        result = get_test_type("Volume Trend")
 
-    assert "not found" in result
-    assert MonitorType.SCHEMA.value not in result
+    assert "not found" not in result
+    assert "# Volume Trend" in result
+    assert "New tests of this type cannot be created" in result

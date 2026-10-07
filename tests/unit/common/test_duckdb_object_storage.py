@@ -319,6 +319,7 @@ def test_credentials_are_registered_before_the_configuration_is_locked(monkeypat
 
     order = [statement.split(" (")[0].split(" =")[0] for statement in connection.statements[1:]]
     assert order == [
+        "SET TimeZone",
         "LOAD httpfs",
         "LOAD aws",
         "CREATE SECRET tg_storage",
@@ -334,7 +335,7 @@ def test_an_azure_connection_reads_through_the_curl_transport(monkeypatch):
     connection = RecordingConnection()
     DuckdbFlavorService().init(connection, resolve_connection_params(connection_params("azure_blob", AZURE_MI)), [])
 
-    order = [statement.split(" (")[0].split(" =")[0] for statement in connection.statements[1:4]]
+    order = [statement.split(" (")[0].split(" =")[0] for statement in connection.statements[2:5]]
     assert order == ["LOAD azure", "SET azure_transport_option_type", "CREATE SECRET tg_storage"]
     assert "SET azure_transport_option_type = 'curl'" in connection.statements
 
@@ -343,7 +344,7 @@ def test_extensions_are_installed_only_where_none_are_bundled(monkeypatch):
     monkeypatch.setattr(duckdb_flavor_service.settings, "DUCKDB_EXTENSION_DIRECTORY", "")
     connection = RecordingConnection()
     DuckdbFlavorService().init(connection, resolve_connection_params(connection_params("azure_blob", AZURE_MI)), [])
-    assert connection.statements[1:3] == ["INSTALL azure", "LOAD azure"]
+    assert connection.statements[2:4] == ["INSTALL azure", "LOAD azure"]
 
 
 def test_an_iam_role_that_finds_nothing_says_where_it_looked(monkeypatch):

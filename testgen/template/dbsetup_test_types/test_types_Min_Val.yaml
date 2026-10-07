@@ -35,7 +35,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    This test is appropriate for a cumulative dataset only, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable minimum value, or a heuristic that makes sense for valid data.
+    This test is appropriate for a cumulative dataset, assuming all prior values are still present. It is also appropriate for any measure that has an absolute, definable minimum value, or a heuristic that makes sense for valid data. For an exact minimum, use Match Minimum Value.
   active: Y
   ai_redact_values: false
   algorithm: Boundary check

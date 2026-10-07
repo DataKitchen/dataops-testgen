@@ -1,9 +1,13 @@
+import re
 from dataclasses import dataclass
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+from yaml import safe_load
 
+import testgen
 from testgen.common.pii_masking import PII_REDACTED
 from testgen.common.source_data_service import (
     LookupData,
@@ -74,6 +78,8 @@ class _FakeTestDefinition:
     baseline_ct: int | None = None
     baseline_avg: float | None = None
     baseline_sd: float | None = None
+    baseline_sum: str | None = None
+    baseline_unique_ct: str | None = None
     lower_tolerance: str | None = None
     upper_tolerance: str | None = None
     threshold_value: str | None = "0"
@@ -154,6 +160,29 @@ class Test_build_query_standard:
         assert params["UPPER_TOLERANCE"] == "NULL"
 
     @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
+    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}._get_lookup_data")
+    def test_custom_query_data_schema_is_substituted(self, mock_lookup, mock_td, _mock_templated):
+        mock_lookup.return_value = LookupData(lookup_query="SELECT q.* FROM ({CUSTOM_QUERY}) q", sql_flavor="postgresql")
+        mock_td.return_value = _FakeTestDefinition(custom_query="SELECT COUNT(*) AS n FROM {DATA_SCHEMA}.orders")
+        query = _build_query_standard(_standard_issue_data(), limit=500)
+        schema = _standard_issue_data()["schema_name"]
+        assert query == f"SELECT q.* FROM (SELECT COUNT(*) AS n FROM {schema}.orders) q"
+
+    @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
+    @patch(f"{MODULE}.replace_params")
+    @patch(f"{MODULE}.TestDefinition.get")
+    @patch(f"{MODULE}._get_lookup_data")
+    def test_baseline_value_list_renders_flavor_literals(self, mock_lookup, mock_td, mock_replace, _mock_templated):
+        mock_lookup.return_value = LookupData(lookup_query="SELECT 1", sql_flavor="databricks")
+        mock_td.return_value = _FakeTestDefinition(baseline_value='"",it\'s')
+        _build_query_standard(_standard_issue_data(), limit=500)
+        params = mock_replace.call_args[0][1]
+        assert params["BASELINE_VALUE_LIST"] == "'', 'it\\'s'"
+        assert params["BASELINE_VALUE_LITERAL"] == "'\"\",it\\'s'"
+        assert list(params)[-2:] == ["BASELINE_VALUE_LIST", "BASELINE_VALUE_LITERAL"]
+
+    @patch(f"{MODULE}.replace_templated_functions", side_effect=lambda q, _f: q)
     @patch(f"{MODULE}.replace_params")
     @patch(f"{MODULE}.TestDefinition.get")
     @patch(f"{MODULE}._get_lookup_data")
@@ -164,6 +193,31 @@ class Test_build_query_standard:
         params = mock_replace.call_args[0][1]
         assert params["SUBSET_CONDITION"] == "1=1"
         assert params["MATCH_SUBSET_CONDITION"] == "1=1"
+
+
+def _test_type_lookups():
+    yaml_dir = Path(testgen.__file__).parent / "template" / "dbsetup_test_types"
+    for path in sorted(yaml_dir.glob("*.yaml")):
+        test_type = safe_load(path.read_text())["test_types"]
+        for lookup in test_type.get("target_data_lookups") or []:
+            if lookup.get("lookup_query"):
+                yield pytest.param(
+                    lookup["sql_flavor"],
+                    lookup["lookup_query"],
+                    id=f"{test_type['test_type']}-{lookup['sql_flavor']}",
+                )
+
+
+@pytest.mark.parametrize(("sql_flavor", "lookup_query"), list(_test_type_lookups()))
+@patch(f"{MODULE}.TestDefinition.get")
+@patch(f"{MODULE}._get_lookup_data")
+def test_every_lookup_placeholder_is_substituted(mock_lookup, mock_td, sql_flavor, lookup_query):
+    mock_lookup.return_value = LookupData(lookup_query=lookup_query, sql_flavor=sql_flavor)
+    mock_td.return_value = _FakeTestDefinition(
+        **{name: "1" for name in _FakeTestDefinition.__dataclass_fields__ if name.startswith("baseline_")}
+    )
+    query = _build_query_standard(_standard_issue_data(column_names="email"), limit=500)
+    assert not re.findall(r"\{[A-Z_0-9]+\}", query)
 
 
 # ---------------------------------------------------------------------------

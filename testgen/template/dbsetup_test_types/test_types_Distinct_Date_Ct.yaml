@@ -36,7 +36,7 @@ test_types:
   result_visualization: line_chart
   result_visualization_params: null
   usage_notes: |-
-    Date Count tests that the count of distinct dates present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained. A failure here would indicate missing records, which could be caused by a processing error or changed upstream data sources.
+    Date Count tests that the count of distinct dates present in the column has not dropped since baseline. The test is relevant for cumulative datasets, where old records are retained. A failure here would indicate missing records, which could be caused by a processing error or changed upstream data sources. For an exact count of distinct dates, use Match Date Count.
   active: Y
   ai_redact_values: false
   algorithm: Counting

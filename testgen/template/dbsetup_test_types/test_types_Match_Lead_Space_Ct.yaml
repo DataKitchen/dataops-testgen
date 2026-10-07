@@ -1,0 +1,225 @@
+test_types:
+  id: '1538'
+  test_type: Match_Lead_Space_Ct
+  test_name_short: Match Leading Spaces
+  test_name_long: Count of values with leading spaces equals baseline
+  test_description: |-
+    Tests that the number of values with leading spaces equals the baseline count.
+  except_message: |-
+    Count of values with leading spaces differs from baseline.
+  measure_uom: Values with leading spaces
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND value_ct > 0
+    AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_ct
+  default_parm_values: |-
+    lead_space_ct
+  default_parm_prompts: |-
+    Leading Space Count at Baseline
+  default_parm_help: |-
+    The expected number of values that begin with a space.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected leading space count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Leading Spaces tests that exactly the baseline number of values begin with a space. A drop points to values trimmed during a load.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7056'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: bigquery
+    measure: |-
+      SUM(CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '6056'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: databricks
+    measure: |-
+      SUM(CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '3056'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: mssql
+    measure: |-
+      SUM(CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '4056'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: postgresql
+    measure: |-
+      SUM( CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 ELSE 0 END )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2036'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '7056'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2136'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT( CASE WHEN ({COLUMN_NAME}::VARCHAR LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8056'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: oracle
+    measure: |-
+      SUM(CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) IS NOT NULL) THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8056'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      SUM(CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '10067'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM( CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 ELSE 0 END )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '11140'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: duckdb
+    measure: |-
+      SUM( CASE WHEN ({COLUMN_NAME} LIKE ' %' AND LTRIM({COLUMN_NAME}) <> '') THEN 1 ELSE 0 END )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  target_data_lookups:
+  - id: '1541'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN (`{COLUMN_NAME}` LIKE ' %' AND LTRIM(`{COLUMN_NAME}`) <> '') THEN 1 ELSE 0 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1563'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN (`{COLUMN_NAME}` LIKE ' %' AND LTRIM(`{COLUMN_NAME}`) <> '') THEN 1 ELSE 0 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1585'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1607'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM( CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END ) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1629'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1651'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1673'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT( CASE WHEN ("{COLUMN_NAME}"::VARCHAR LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8535'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") IS NOT NULL) THEN 1 ELSE 0 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8535'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10086'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM( CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END ) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11141'
+    test_id: '1538'
+    test_type: Match_Lead_Space_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM( CASE WHEN ("{COLUMN_NAME}" LIKE ' %' AND LTRIM("{COLUMN_NAME}") <> '') THEN 1 ELSE 0 END ) AS current_lead_space_ct, {BASELINE_CT} AS baseline_lead_space_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

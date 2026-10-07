@@ -5,6 +5,7 @@ import re
 
 import pytest
 
+from testgen.common.database.database_service import get_flavor_service
 from testgen.common.flavors import (
     FLAVOR_CODE_TO_FAMILY,
     FLAVOR_CODE_TO_LABEL,
@@ -96,6 +97,44 @@ def test_the_two_quote_literal_escape_copies_group_the_flavors_identically():
         read_template_sql_file("0222_incremental_upgrade.sql", "dbupgrade")
     )
     assert setup == migration
+
+
+# --- FlavorService.string_literal agrees with fn_quote_literal_escape ------------------------
+
+# What each branch of the function produces for a value holding a quote and a backslash, as the
+# literal its flavors read back as ``a'b\c``.
+_BRANCH_LITERALS = ["'a''b\\c'", "'a''b\\\\c'", "'a''b\\c'", "'a\\'b\\\\c'"]
+
+
+@pytest.mark.parametrize("family", sorted(FLAVOR_FAMILIES))
+def test_string_literal_escapes_like_fn_quote_literal_escape(family):
+    branches = _quote_literal_escape_branches(
+        read_template_sql_file("020_create_standard_functions_sprocs.sql", "dbsetup")
+    )
+    assert len(branches) == len(_BRANCH_LITERALS)
+    branch = next(index for index, names in enumerate(branches) if family in names)
+    service = get_flavor_service(family)
+    literal = service.string_literal("a'b\\c")
+    assert literal.removeprefix(service.string_literal_prefix) == _BRANCH_LITERALS[branch]
+
+
+def test_mssql_string_literal_is_national():
+    assert get_flavor_service("mssql").string_literal("café") == "N'café'"
+
+
+def test_string_literal_or_null_renders_null_when_empty():
+    service = get_flavor_service("postgresql")
+    assert service.string_literal_or_null("") == "NULL"
+    assert service.string_literal_or_null(None) == "NULL"
+    assert service.string_literal_or_null("it's") == "'it''s'"
+
+
+def test_string_literal_list_renders_null_when_empty():
+    assert get_flavor_service("postgresql").string_literal_list([]) == "NULL"
+
+
+def test_string_literal_list_keeps_empty_and_comma_values():
+    assert get_flavor_service("postgresql").string_literal_list(["", "a,b", " "]) == "'', 'a,b', ' '"
 
 
 # --- Connection.effective_max_threads ---------------------------------------

@@ -7,6 +7,7 @@ class BigqueryFlavorService(FlavorService):
 
     quote_character = "`"
     escaped_single_quote = "\\'"
+    literal_escapes_backslash = True
     varchar_type = "STRING"
     url_scheme = "bigquery"
 

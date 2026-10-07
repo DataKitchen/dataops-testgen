@@ -4,7 +4,7 @@
 -- Every row also carries sample_value_ct, the number of non-null values the read held, blank ones
 -- included. Blank values are ranked after every other value so that they never reach the output.
 WITH target_table AS (
-  SELECT *  FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
+  SELECT {COL_VALUE} AS "{COL_NAME}" FROM "{DATA_SCHEMA}"."{DATA_TABLE}"
 -- TG-IF do_sample_bool
         TABLESAMPLE BERNOULLI ({SAMPLE_PERCENT_CALC}) REPEATABLE (64)
 -- TG-ENDIF
@@ -12,7 +12,7 @@ WITH target_table AS (
 ranked_vals AS (
   SELECT "{COL_NAME}" AS val,
          COUNT(*) AS ct,
-         ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC, "{COL_NAME}") AS rn,
+         ROW_NUMBER() OVER (ORDER BY CASE WHEN "{COL_NAME}" > ' ' THEN 0 ELSE 1 END, COUNT(*) DESC, "{COL_NAME}" COLLATE "C") AS rn,
          SUM(COUNT(*)) OVER () AS sample_value_ct
     FROM target_table
    WHERE "{COL_NAME}" IS NOT NULL
@@ -28,8 +28,10 @@ SELECT top_val AS value,
        MIN(rn) AS value_rank,
        CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
        MAX(sample_value_ct) AS sample_value_ct,
-       ( SELECT MD5(STRING_AGG(DISTINCT "{COL_NAME}", '|' ORDER BY "{COL_NAME}"))
-           FROM target_table ) AS distinct_value_hash
+       ( SELECT CASE WHEN COUNT(*) <= 70 THEN MD5(STRING_AGG(val, '|' ORDER BY val)) END
+           FROM ( SELECT DISTINCT "{COL_NAME}" COLLATE "C" AS val
+                    FROM target_table
+                   WHERE "{COL_NAME}" IS NOT NULL ) distinct_vals ) AS distinct_value_hash
   FROM grouped_vals
  GROUP BY top_val
  ORDER BY 3;

@@ -55,7 +55,7 @@ WITH result_calc
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
-           AND r.result_measure IS NOT NULL
+           AND (r.result_measure IS NOT NULL OR tt.dq_score_prevalence_formula NOT LIKE '%{RESULT_MEASURE}%')
            AND tt.test_scope = 'column'
            AND tt.dq_score_prevalence_formula IS NOT NULL
            AND NOT COALESCE(disposition, '') IN ('Dismissed', 'Inactive') )
@@ -85,7 +85,7 @@ WITH result_calc
              AND r.table_name ILIKE tc.table_name)
          WHERE r.test_run_id = '{RUN_ID}'::UUID
            AND result_code = 0
-           AND r.result_measure IS NOT NULL
+           AND (r.result_measure IS NOT NULL OR tt.dq_score_prevalence_formula NOT LIKE '%{RESULT_MEASURE}%')
            AND tt.test_scope <> 'column'
            AND tt.dq_score_prevalence_formula IS NOT NULL
            AND NOT COALESCE(disposition, '') IN ('Dismissed', 'Inactive') )

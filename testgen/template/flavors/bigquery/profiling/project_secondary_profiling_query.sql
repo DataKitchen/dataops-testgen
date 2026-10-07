@@ -18,7 +18,7 @@ ranked AS (
   SELECT
     col_val,
     ct,
-    ROW_NUMBER() OVER (ORDER BY CASE WHEN col_val > ' ' THEN 0 ELSE 1 END, ct DESC, col_val ASC) AS rn,
+    ROW_NUMBER() OVER (ORDER BY CASE WHEN col_val > ' ' THEN 0 ELSE 1 END, ct DESC, CAST(col_val AS BYTES) ASC) AS rn,
     SUM(ct) OVER () AS sample_value_ct
   FROM counts
 ),
@@ -33,9 +33,8 @@ SELECT
   MIN(rn) AS value_rank,
   CASE WHEN MIN(rn) > 10 THEN COUNT(*) END AS other_distinct_ct,
   MAX(sample_value_ct) AS sample_value_ct,
-  (SELECT TO_HEX(MD5(STRING_AGG(CAST(col_val AS STRING), '|' ORDER BY col_val)))
+  (SELECT CASE WHEN COUNT(*) <= 70 THEN TO_HEX(MD5(STRING_AGG(CAST(col_val AS STRING), '|' ORDER BY CAST(col_val AS BYTES)))) END
      FROM counts
-    WHERE col_val > ' '
   ) AS distinct_value_hash
 FROM grouped_vals
 GROUP BY top_val

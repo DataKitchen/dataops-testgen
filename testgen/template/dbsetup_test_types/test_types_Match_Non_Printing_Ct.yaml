@@ -1,0 +1,225 @@
+test_types:
+  id: '1541'
+  test_type: Match_Non_Printing_Ct
+  test_name_short: Match Non-Printing
+  test_name_long: Count of values with non-printing characters equals baseline
+  test_description: |-
+    Tests that the number of values containing non-printing characters equals the baseline count.
+  except_message: |-
+    Count of values with non-printing characters differs from baseline.
+  measure_uom: Values with non-printing characters
+  measure_uom_description: null
+  selection_criteria: |-
+    general_type = 'A' AND value_ct > 0
+    AND sample_ratio IS NULL
+  generation_template: null
+  dq_score_prevalence_formula: |-
+    1
+  dq_score_risk_factor: '1.0'
+  column_name_prompt: null
+  column_name_help: null
+  default_parm_columns: baseline_ct
+  default_parm_values: |-
+    non_printing_ct
+  default_parm_prompts: |-
+    Non-Printing Count at Baseline
+  default_parm_help: |-
+    The expected number of values that contain a non-printing character.
+  default_parm_required: Y
+  default_severity: Fail
+  run_type: CAT
+  test_scope: column
+  dq_dimension: Consistency
+  impact_dimension: Conformance
+  health_dimension: Data Drift
+  threshold_description: |-
+    Expected non-printing count
+  result_visualization: line_chart
+  result_visualization_params: null
+  usage_notes: |-
+    Match Non-Printing tests that exactly the baseline number of values contain a non-printing character, such as a non-breaking or zero-width space. A change points to encoding damage, or to cleanup during a load.
+  active: Y
+  ai_redact_values: false
+  null_measure_fails: true
+  algorithm: Aggregate reconciliation
+  generation_sets:
+    - Table Comparison
+  cat_test_conditions:
+  - id: '7059'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: bigquery
+    measure: |-
+      COUNTIF( TRANSLATE( CAST({COLUMN_NAME} AS STRING), CODE_POINTS_TO_STRING([160, 8201, 8203, 8204, 8205, 8206, 8207, 8239, 12288, 65279]), REPEAT('X', 10) ) <> CAST({COLUMN_NAME} AS STRING) )
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '6059'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: databricks
+    measure: |-
+      COUNT(CASE WHEN TRANSLATE({COLUMN_NAME}, '\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '3059'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: mssql
+    measure: |-
+      COUNT(CASE WHEN TRANSLATE(CAST({COLUMN_NAME} AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2, NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), N'XXXXXXXXXX') <> CAST({COLUMN_NAME} AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '4059'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: postgresql
+    measure: |-
+      COUNT( CASE WHEN TRANSLATE({COLUMN_NAME}, E'\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2039'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: redshift
+    measure: |-
+      COUNT(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '7059'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: redshift_spectrum
+    measure: |-
+      COUNT(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '2139'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: snowflake
+    measure: |-
+      COUNT(CASE WHEN TRANSLATE({COLUMN_NAME}, CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8059'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: oracle
+    measure: |-
+      COUNT(CASE WHEN TRANSLATE({COLUMN_NAME}, 'X' || UNISTR('\00A0') || UNISTR('\2009') || UNISTR('\200B') || UNISTR('\200C') || UNISTR('\200D') || UNISTR('\200E') || UNISTR('\200F') || UNISTR('\202F') || UNISTR('\3000') || UNISTR('\FEFF'), 'XXXXXXXXXXX') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '8059'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: sap_hana
+    measure: |-
+      COUNT(CASE WHEN REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({COLUMN_NAME}, NCHAR(160), ''), NCHAR(8201), ''), NCHAR(8203), ''), NCHAR(8204), ''), NCHAR(8205), ''), NCHAR(8206), ''), NCHAR(8207), ''), NCHAR(8239), ''), NCHAR(12288), ''), NCHAR(65279), '') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '10070'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: salesforce_data360
+    measure: |-
+      SUM(CASE WHEN REGEXP_REPLACE({COLUMN_NAME}, '[' || CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279) || ']', 'X', 'g') <> {COLUMN_NAME} THEN 1 ELSE 0 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  - id: '11146'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: duckdb
+    measure: |-
+      COUNT( CASE WHEN TRANSLATE({COLUMN_NAME}, chr(160) || chr(8201) || chr(8203) || chr(8204) || chr(8205) || chr(8206) || chr(8207) || chr(8239) || chr(12288) || chr(65279), 'XXXXXXXXXX') <> {COLUMN_NAME} THEN 1 END)
+    test_operator: '<>'
+    test_condition: |-
+      {BASELINE_CT}
+  target_data_lookups:
+  - id: '1544'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: bigquery
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNTIF( TRANSLATE( CAST(`{COLUMN_NAME}` AS STRING), CODE_POINTS_TO_STRING([160, 8201, 8203, 8204, 8205, 8206, 8207, 8239, 12288, 65279]), REPEAT('X', 10) ) <> CAST(`{COLUMN_NAME}` AS STRING) ) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1566'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: databricks
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN TRANSLATE(`{COLUMN_NAME}`, '\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> `{COLUMN_NAME}` THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM `{TARGET_SCHEMA}`.`{TABLE_NAME}`;
+    error_type: Test Results
+  - id: '1588'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: mssql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN TRANSLATE(CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2, NCHAR(160) + NCHAR(8201) + NCHAR(8203) + NCHAR(8204) + NCHAR(8205) + NCHAR(8206) + NCHAR(8207) + NCHAR(8239) + NCHAR(12288) + NCHAR(65279), N'XXXXXXXXXX') <> CAST("{COLUMN_NAME}" AS NVARCHAR(MAX)) COLLATE Latin1_General_100_BIN2 THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1610'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: postgresql
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT( CASE WHEN TRANSLATE("{COLUMN_NAME}", E'\u00a0\u2009\u200b\u200c\u200d\u200e\u200f\u202f\u3000\ufeff', 'XXXXXXXXXX') <> "{COLUMN_NAME}" THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1632'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: redshift
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}" THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1654'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: redshift_spectrum
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}" THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '1676'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: snowflake
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN TRANSLATE("{COLUMN_NAME}", CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}" THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  - id: '8538'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: oracle
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN TRANSLATE("{COLUMN_NAME}", 'X' || UNISTR('\00A0') || UNISTR('\2009') || UNISTR('\200B') || UNISTR('\200C') || UNISTR('\200D') || UNISTR('\200E') || UNISTR('\200F') || UNISTR('\202F') || UNISTR('\3000') || UNISTR('\FEFF'), 'XXXXXXXXXXX') <> "{COLUMN_NAME}" THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '8538'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: sap_hana
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT(CASE WHEN REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE("{COLUMN_NAME}", NCHAR(160), ''), NCHAR(8201), ''), NCHAR(8203), ''), NCHAR(8204), ''), NCHAR(8205), ''), NCHAR(8206), ''), NCHAR(8207), ''), NCHAR(8239), ''), NCHAR(12288), ''), NCHAR(65279), '') <> "{COLUMN_NAME}" THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}"
+    error_type: Test Results
+  - id: '10089'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: salesforce_data360
+    lookup_type: null
+    lookup_query: |-
+      SELECT SUM(CASE WHEN REGEXP_REPLACE("{COLUMN_NAME}", '[' || CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279) || ']', 'X', 'g') <> "{COLUMN_NAME}" THEN 1 ELSE 0 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TABLE_NAME}";
+    error_type: Test Results
+  - id: '11147'
+    test_id: '1541'
+    test_type: Match_Non_Printing_Ct
+    sql_flavor: duckdb
+    lookup_type: null
+    lookup_query: |-
+      SELECT COUNT( CASE WHEN TRANSLATE("{COLUMN_NAME}", chr(160) || chr(8201) || chr(8203) || chr(8204) || chr(8205) || chr(8206) || chr(8207) || chr(8239) || chr(12288) || chr(65279), 'XXXXXXXXXX') <> "{COLUMN_NAME}" THEN 1 END) AS current_non_printing_ct, {BASELINE_CT} AS baseline_non_printing_ct FROM "{TARGET_SCHEMA}"."{TABLE_NAME}";
+    error_type: Test Results
+  test_templates: []

@@ -46,7 +46,7 @@ WITH whole_table_measures AS (
                                ELSE 0
         END) AS zero_length_ct,
     SUM( CASE
-           WHEN "{COL_NAME}" BETWEEN ' !' AND '!' THEN 1
+           WHEN ("{COL_NAME}" LIKE ' %' AND LTRIM("{COL_NAME}") <> '') THEN 1
                                                 ELSE 0
          END ) AS lead_space_ct,
     SUM( CASE WHEN "{COL_NAME}" LIKE '"%"' OR "{COL_NAME}" LIKE '''%''' THEN 1 ELSE 0 END ) AS quoted_value_ct,
@@ -61,20 +61,9 @@ WITH whole_table_measures AS (
                                       '[n/a]','[#na]','[none]','[null]','[unknown]') THEN 1
                                                                                      ELSE 0
          END ) AS filled_value_ct,
-    SUM(CASE
-          WHEN REGEXP_REPLACE("{COL_NAME}", '[A-Za-z]', '', 'g') = "{COL_NAME}" THEN 0
-          WHEN REGEXP_REPLACE("{COL_NAME}", '[a-z]', '', 'g') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS upper_case_ct,
-    SUM(CASE
-          WHEN REGEXP_REPLACE("{COL_NAME}", '[A-Za-z]', '', 'g') = "{COL_NAME}" THEN 0
-          WHEN REGEXP_REPLACE("{COL_NAME}", '[A-Z]', '', 'g') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS lower_case_ct,
-    SUM(CASE
-          WHEN REGEXP_REPLACE("{COL_NAME}", '[A-Za-z]', '', 'g') = "{COL_NAME}" THEN 1
-          ELSE 0
-        END) AS non_alpha_ct,
+    SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" <> LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS upper_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" = LOWER("{COL_NAME}") AND "{COL_NAME}" <> UPPER("{COL_NAME}") THEN 1 ELSE 0 END) AS lower_case_ct,
+    SUM(CASE WHEN "{COL_NAME}" = UPPER("{COL_NAME}") AND "{COL_NAME}" = LOWER("{COL_NAME}") THEN 1 ELSE 0 END) AS non_alpha_ct,
     SUM(CASE WHEN REGEXP_REPLACE("{COL_NAME}",
               '[' || CHR(160) || CHR(8201) || CHR(8203) || CHR(8204) || CHR(8205) || CHR(8206) || CHR(8207) || CHR(8239) || CHR(12288) || CHR(65279) || ']',
               'X', 'g') <> "{COL_NAME}" THEN 1 ELSE 0 END) AS non_printing_ct,
@@ -177,7 +166,7 @@ SELECT
   MIN(pctile.pct_75) AS percentile_75,
 -- TG-ENDIF
 -- TG-IF is_N_decimal
-  SUM(ROUND(ABS(MOD(CAST("{COL_NAME}" AS DOUBLE), 1)), 5)) AS fractional_sum,
+  SUM(ROUND(CAST(ABS(MOD(CAST("{COL_NAME}" AS DOUBLE), 1)) AS NUMERIC(38,8)), 5)) AS fractional_sum,
 -- TG-ENDIF
 -- TG-IF is_type_D
   CASE
