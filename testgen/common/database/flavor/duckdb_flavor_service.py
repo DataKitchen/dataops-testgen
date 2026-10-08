@@ -1,17 +1,22 @@
+import atexit
+import contextlib
+import ctypes
 import logging
 import os
 import re
 import shutil
+import sys
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import text
+from sqlalchemy import event, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.engine.base import Connection
 from sqlalchemy.pool import NullPool, QueuePool
 
@@ -19,6 +24,7 @@ from testgen import settings
 from testgen.common.database.file_declarations import (
     BASE_PATH_PARAMETER,
     FileDeclaration,
+    FileFormat,
     create_view_statement,
     file_count_query,
     skip_reason,
@@ -26,10 +32,12 @@ from testgen.common.database.file_declarations import (
 from testgen.common.database.flavor import duckdb_object_storage as object_storage
 from testgen.common.database.flavor.flavor_service import (
     ConnectionField,
+    ConnectionParams,
     FlavorConnectionError,
     FlavorService,
     ResolvedConnectionParams,
 )
+from testgen.common.database.sql_quoting import sql_identifier, sql_literal
 from testgen.common.flavors import SqlFlavorCode, declares_files, fixed_table_group_schema
 
 LOG = logging.getLogger("testgen")
@@ -60,6 +68,10 @@ _SPILL_DIRECTORY_PATTERN = re.compile(r"(\d{1,7})-[0-9a-f]{32}")
 # its place where pids cannot be trusted to mean anything -- a spill root shared between containers
 # -- by keeping the sweep off anything recent enough to still be in use.
 _STALE_SPILL_AGE = timedelta(hours=1)
+
+_RUN_CACHE_DIRECTORY_KEY = "run_cache_directory"
+_RUN_CACHE_TABLES_KEY = "run_cache_tables"
+RUN_CACHE_CATALOG = "tg_run_cache"
 
 # The customer's database is attached under a fixed alias and selected with USE, so that the
 # two-part schema.table references the templates emit resolve inside it.
@@ -188,15 +200,49 @@ def attach_error_message(failure: AttachFailure, error: Exception, database_file
     return f"Could not open the DuckDB database. {getattr(error, 'orig', error)}"
 
 
+if sys.platform == "win32":
+    from ctypes import wintypes
+
+    _PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    _ERROR_ACCESS_DENIED = 5
+    _STILL_ACTIVE = 259
+
+    # Declared so a HANDLE keeps its full width on 64-bit Windows instead of passing through as a C int.
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _kernel32.OpenProcess.restype = wintypes.HANDLE
+    _kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    _kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+    _kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+    _kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
+    def _windows_process_is_alive(pid: int) -> bool:
+        handle = _kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # Refused rather than absent, which means there is a process there to refuse it.
+            return ctypes.get_last_error() == _ERROR_ACCESS_DENIED
+        try:
+            exit_code = wintypes.DWORD()
+            if not _kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return True
+            # A process that exited with this very code reads as alive, which only keeps its directory.
+            return exit_code.value == _STILL_ACTIVE
+        finally:
+            _kernel32.CloseHandle(handle)
+
+
 def _process_is_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        # Refused rather than undeliverable, which means there is a process there to refuse it.
+    if sys.platform == "win32":
+        # os.kill is no probe on Windows: any signal but the console ones terminates the process.
+        return _windows_process_is_alive(pid)
+    else:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except OSError:
+            # Refused rather than undeliverable, which means there is a process there to refuse it.
+            return True
         return True
-    return True
 
 
 def sweep_stale_spill_directories() -> None:
@@ -227,6 +273,18 @@ def sweep_stale_spill_directories() -> None:
             LOG.warning(f"Could not remove stale DuckDB spill directory {entry}: {error}")
 
 
+def remove_own_spill_directories() -> None:
+    """Remove every spill and run-cache directory this process created, including ones still in use."""
+    try:
+        if TEMP_DIRECTORY.is_symlink():
+            return
+        for entry in TEMP_DIRECTORY.glob(f"{os.getpid()}-*"):
+            if _SPILL_DIRECTORY_PATTERN.fullmatch(entry.name) and not entry.is_symlink():
+                shutil.rmtree(entry, ignore_errors=True)
+    except OSError:
+        return
+
+
 def base_location(sql_flavor_code: str, parameters: dict[str, Any] | None) -> str:
     """Where a connection that declares files reads them from: a directory, or an object-storage URI."""
     if (store := object_storage.store_for(sql_flavor_code)) is not None:
@@ -238,8 +296,35 @@ def _first_line(error: Exception) -> str:
     return str(error).splitlines()[0]
 
 
-def _sql_literal(value: str) -> str:
-    return "'" + value.replace("'", "''") + "'"
+def _remove_run_cache(dbapi_connection: Any, connection_record: Any) -> None:
+    """Detach and delete a closing connection's local copies.
+
+    Detached first: Windows refuses to delete a file that is still open, and the pool runs this
+    before it closes the connection.
+    """
+    if (run_cache_directory := connection_record.info.get(_RUN_CACHE_DIRECTORY_KEY)) is None:
+        return
+    # A transaction still open on the copies would refuse the detach. With none open, DuckDB refuses the rollback.
+    with contextlib.suppress(Exception):
+        dbapi_connection.rollback()
+    try:
+        dbapi_connection.cursor().execute(f"DETACH DATABASE IF EXISTS {RUN_CACHE_CATALOG}")
+    except Exception as error:
+        LOG.warning(f"Could not detach the local copies in {run_cache_directory}: {error}")
+    shutil.rmtree(run_cache_directory, ignore_errors=True)
+
+
+def _is_write_failure(error: Exception) -> bool:
+    """Whether a failed copy could not write to local disk, rather than read its source."""
+    # Matched by this process's cache or spill directory name, since DuckDB reports a path with its symlinks
+    # resolved. Error text such as ENOSPC is not matched: a failed read can quote the source row.
+    return re.search(rf"(?<!\d){os.getpid()}-[0-9a-f]{{32}}(?![0-9a-f])", str(error)) is not None
+
+
+def _release_run_cache_at_exit(engine: Engine, run_cache_directory: Path) -> None:
+    """Close the engine's connections, which detaches and deletes their local copies, then delete what is left."""
+    engine.dispose()
+    shutil.rmtree(run_cache_directory, ignore_errors=True)
 
 
 class DuckdbFlavorService(FlavorService):
@@ -288,6 +373,11 @@ class DuckdbFlavorService(FlavorService):
         # A statement that fails has its bound values printed into SQLAlchemy's exception text,
         # and the object storage codes bind their credentials.
         return {"hide_parameters": True, **self._pool_args(params)}
+
+    def create_engine(self, connection_params: ConnectionParams) -> Engine:
+        engine = super().create_engine(connection_params)
+        event.listen(engine, "close", _remove_run_cache)
+        return engine
 
     def _pool_args(self, params: ResolvedConnectionParams) -> dict[str, Any]:
         if declares_files(params.sql_flavor_code):
@@ -387,7 +477,7 @@ class DuckdbFlavorService(FlavorService):
         This is also the first request that reaches the store, so it is where a credential that
         resolves only on use -- a managed identity -- is found to be missing.
         """
-        pattern = _sql_literal(f"{self.get_base_path(params)}/**")
+        pattern = sql_literal(f"{self.get_base_path(params)}/**")
         query = f"SELECT COUNT(*) AS file_ct FROM (SELECT 1 FROM glob({pattern}) LIMIT {_FILE_COUNT_LIMIT + 1})"
         try:
             count = connection.execute(text(query)).scalar() or 0
@@ -460,15 +550,18 @@ class DuckdbFlavorService(FlavorService):
             if not base_path:
                 raise DuckdbConnectionError("This connection has no storage location configured.")
             self._register_storage_secret(connection, store, params)
+            # Named like a spill directory, so the startup sweep removes one a killed run left behind.
+            run_cache_directory = TEMP_DIRECTORY / f"{os.getpid()}-{uuid4().hex}"
+            connection.info[_RUN_CACHE_DIRECTORY_KEY] = run_cache_directory
             # The trailing slash keeps a sibling that shares the prefix, such as data-archive
             # beside data, outside the allow-list.
-            allowed = f"{base_path}/"
+            allowed = [f"{base_path}/", f"{run_cache_directory}/"]
         else:
             if not base_path:
                 raise DuckdbConnectionError("This connection has no base path configured.")
             if not Path(base_path).is_dir():
                 raise DuckdbConnectionError(f"The base path was not found. {container_path_note()}".rstrip())
-            allowed = base_path
+            allowed = [base_path]
 
         self._confine_reads(connection, allowed)
         connection.info[_DECLARATION_FAILURES_KEY] = self.build_declaration_views(
@@ -516,6 +609,115 @@ class DuckdbFlavorService(FlavorService):
     def declaration_failures(self, connection: Connection) -> dict[str, str]:
         return connection.info.get(_DECLARATION_FAILURES_KEY, {})
 
+    def caches_tables(self, sql_flavor_code: str) -> bool:
+        return object_storage.store_for(sql_flavor_code) is not None
+
+    def cache_tables(
+        self,
+        connection: Connection,
+        params: ResolvedConnectionParams,
+        declarations: list[FileDeclaration],
+        table_names: Iterable[str],
+    ) -> None:
+        """Copy the named declarations from object storage into a local database and repoint their views.
+
+        Every later query on this connection reads the copy, so the object is downloaded once. A
+        Parquet declaration is left on storage, since a query reads only the columns and row groups
+        it needs. A declaration that fails to copy keeps reading from storage, and a failure to write
+        the copy stops copying the rest.
+        """
+        run_cache_directory: Path | None = connection.info.get(_RUN_CACHE_DIRECTORY_KEY)
+        table_group_schema = fixed_table_group_schema(params.sql_flavor_code)
+        if run_cache_directory is None or table_group_schema is None:
+            return
+        cached: set[str] = connection.info.get(_RUN_CACHE_TABLES_KEY, set())
+        failures = self.declaration_failures(connection)
+        wanted = set(table_names)
+        to_copy = [
+            declaration
+            for declaration in declarations
+            if declaration.name in wanted
+            and declaration.format is not FileFormat.PARQUET
+            and declaration.name not in failures
+            and declaration.name not in cached
+        ]
+        if not to_copy:
+            return
+
+        if _RUN_CACHE_TABLES_KEY not in connection.info:
+            try:
+                run_cache_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                # A job process exits without disposing its engine, so the pool would never close the connection.
+                atexit.register(_release_run_cache_at_exit, connection.engine, run_cache_directory)
+                database_file = sql_literal(str(run_cache_directory / "run.duckdb"))
+                connection.execute(text(f"ATTACH {database_file} AS {RUN_CACHE_CATALOG}"))
+                # ATTACH participates in the transaction, so a failed copy's rollback would drop it.
+                connection.commit()
+            except Exception as error:
+                connection.rollback()
+                self._disable_run_cache(connection)
+                LOG.warning(f"Tables are read from storage, because no local copy could be set up: {error}")
+                return
+            connection.info[_RUN_CACHE_TABLES_KEY] = cached
+
+        schema = sql_identifier(table_group_schema)
+        error_message = self._error_message_for(params)
+        for position, declaration in enumerate(to_copy):
+            name = sql_identifier(declaration.name)
+            copy = f"{RUN_CACHE_CATALOG}.{name}"
+            started = time.monotonic()
+            copied = False
+            # Two transactions: DuckDB lets one transaction write to only one attached database.
+            try:
+                connection.execute(text(f"CREATE TABLE {copy} AS SELECT * FROM {schema}.{name}"))
+                connection.commit()
+                copied = True
+                connection.execute(text(f"CREATE OR REPLACE VIEW {schema}.{name} AS SELECT * FROM {copy}"))
+                connection.commit()
+            except Exception as error:
+                connection.rollback()
+                if copied:
+                    self._drop_copy(connection, copy)
+                driver_error = getattr(error, "orig", error)
+                LOG.warning(
+                    f"Declaration {declaration.name} could not be copied locally, so it is read from storage: "
+                    f"{error_message(driver_error)}"
+                )
+                if _is_write_failure(driver_error):
+                    # Most likely a full disk, which every later copy would hit too.
+                    if skipped := [remaining.name for remaining in to_copy[position + 1:]]:
+                        LOG.warning(f"Declarations not copied locally, so read from storage: {', '.join(skipped)}")
+                    # With nothing copied yet, the cache holds only the failed partial write, so deleting it frees
+                    # that space for spilling queries.
+                    if not cached:
+                        self._disable_run_cache(connection)
+                    return
+                continue
+            cached.add(declaration.name)
+            LOG.info(f"Copied declaration {declaration.name} locally in {time.monotonic() - started:.1f} s")
+
+    @staticmethod
+    def _drop_copy(connection: Connection, copy: str) -> None:
+        try:
+            connection.execute(text(f"DROP TABLE {copy}"))
+            connection.commit()
+        except Exception as error:
+            connection.rollback()
+            LOG.warning(f"Could not drop the local copy {copy}: {getattr(error, 'orig', error)}")
+
+    @staticmethod
+    def _disable_run_cache(connection: Connection) -> None:
+        """Detach and delete this connection's local copies, and stop it making more."""
+        try:
+            connection.execute(text(f"DETACH DATABASE IF EXISTS {RUN_CACHE_CATALOG}"))
+            connection.commit()
+        except Exception as error:
+            connection.rollback()
+            LOG.warning(f"Could not detach the local copies: {getattr(error, 'orig', error)}")
+        connection.info.pop(_RUN_CACHE_TABLES_KEY, None)
+        if (run_cache_directory := connection.info.pop(_RUN_CACHE_DIRECTORY_KEY, None)) is not None:
+            shutil.rmtree(run_cache_directory, ignore_errors=True)
+
     def file_count_queries(self, params: ResolvedConnectionParams, declarations: list[FileDeclaration]) -> list[str]:
         if not declares_files(params.sql_flavor_code):
             return []
@@ -528,16 +730,15 @@ class DuckdbFlavorService(FlavorService):
             if skip_reason(base_path, declaration) is None
         ]
 
-    def _confine_reads(self, connection: Connection, base_path: str) -> None:
-        """Restrict this connection to reading inside the base path.
+    def _confine_reads(self, connection: Connection, allowed: list[str]) -> None:
+        """Restrict this connection to reading inside the allowed directories.
 
         The order is the whole mechanism. The allow-list cannot be set once external access is
         closed, and on its own it enforces nothing at all -- a read outside it still succeeds.
         Locking the configuration afterwards stops anything later widening either one.
         """
-        quoted_base_path = base_path.replace("'", "''")
         for statement in (
-            f"SET allowed_directories = ['{quoted_base_path}']",
+            f"SET allowed_directories = [{', '.join(sql_literal(directory) for directory in allowed)}]",
             "SET enable_external_access = false",
             "SET lock_configuration = true",
         ):

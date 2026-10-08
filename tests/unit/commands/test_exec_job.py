@@ -1,5 +1,9 @@
 import inspect
+import signal
+import subprocess
 import sys
+import textwrap
+import time
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
@@ -321,6 +325,46 @@ def test_exec_job_sweeps_stale_spill_directories(mock_session):
         exec_job(job.id)
 
     sweep.assert_called_once_with()
+
+
+_TERMINATED_JOB = textwrap.dedent("""
+    import os, sys, time, uuid
+    from pathlib import Path
+    from unittest.mock import patch
+    import testgen.__main__ as main
+    from testgen.common.database.flavor import duckdb_flavor_service
+
+    temp_directory = Path(sys.argv[1])
+
+    def run(_):
+        (temp_directory / f"{os.getpid()}-{uuid.uuid4().hex}").mkdir()
+        (temp_directory / "ready").touch()
+        time.sleep(60)
+
+    with patch.object(duckdb_flavor_service, "TEMP_DIRECTORY", temp_directory), patch.object(main, "exec_job", run):
+        main.exec_job_cmd.callback(uuid.uuid4())
+""")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows terminates a job process without a signal")
+def test_exec_job_removes_its_spill_when_terminated(tmp_path):
+    """A canceled job is sent SIGTERM, which ends the process before its exit hooks delete the run's local file copies."""
+    other_process = tmp_path / f"1-{uuid4().hex}"
+    other_process.mkdir()
+    proc = subprocess.Popen([sys.executable, "-c", _TERMINATED_JOB, str(tmp_path)])  # noqa: S603
+    try:
+        deadline = time.monotonic() + 60
+        while not (tmp_path / "ready").exists():
+            assert proc.poll() is None, "the job process exited before it was ready"
+            assert time.monotonic() < deadline, "the job process never became ready"
+            time.sleep(0.05)
+        proc.send_signal(signal.SIGTERM)
+        assert proc.wait(timeout=30) == -signal.SIGTERM
+    finally:
+        proc.kill()
+        proc.wait()
+
+    assert sorted(path.name for path in tmp_path.iterdir()) == sorted([other_process.name, "ready"])
 
 
 def test_run_tests_handler_accepts_the_payload_the_submit_routes_build():
