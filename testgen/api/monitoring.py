@@ -2,6 +2,7 @@
 
 from datetime import UTC
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Response
 
@@ -17,7 +18,9 @@ from testgen.common.models.test_suite import TestSuite
 from testgen.common.monitor_service import (
     canonical_holiday_codes,
     count_monitors,
+    create_monitor_schedule,
     enable_monitoring,
+    lock_monitor_link,
     update_monitoring,
     validate_monitor_settings,
 )
@@ -34,6 +37,8 @@ _SETTING_COLUMNS = {
     "exclude_weekends": "predict_exclude_weekends",
     "holiday_codes": "predict_holiday_codes",
 }
+
+_SCHEDULE_FIELD_NAMES = {"cron_expr": "cron_expression", "cron_tz": "timezone"}
 
 router = APIRouter(tags=["Monitors"], dependencies=[Depends(db_session)], responses=_error_responses)
 
@@ -73,16 +78,21 @@ def put_monitoring(
     _validate(body.cron_expression, body.timezone, settings)
     cron_expr = normalize_cron(body.cron_expression)
 
-    monitor_suite = _monitor_suite(table_group)
+    # The lock makes a concurrent or retried PUT wait for this one, then take the replace path.
+    monitor_suite_id = lock_monitor_link(table_group)
+    monitor_suite = _monitor_suite(monitor_suite_id)
     if monitor_suite is None:
         monitor_suite, _ = enable_monitoring(table_group, cron_expr, body.timezone, suite_attrs=settings)
+        schedule = JobSchedule.get_for_monitor_suite(monitor_suite.id)
         response.status_code = 201
     else:
         schedule = JobSchedule.get_for_monitor_suite(monitor_suite.id)
+        if schedule is None:
+            schedule = create_monitor_schedule(monitor_suite, cron_expr, body.timezone)
         update_monitoring(monitor_suite, schedule, suite_attrs=settings, cron_expr=cron_expr, cron_tz=body.timezone)
 
     get_current_session().flush()
-    return _to_response(table_group, monitor_suite, JobSchedule.get_for_monitor_suite(monitor_suite.id))
+    return _to_response(table_group, monitor_suite, schedule)
 
 
 @router.patch(
@@ -132,7 +142,9 @@ def _settings(body: MonitoringConfig | MonitoringUpdate, fields) -> dict[str, An
 
 def _validate(cron_expr: str | None, cron_tz: str | None, settings: dict[str, Any]) -> None:
     """Raise a 400 listing every invalid schedule field and setting; then store holiday codes canonically."""
-    errors = validate_schedule(cron_expr, cron_tz) if cron_expr is not None or cron_tz is not None else []
+    errors = []
+    if cron_expr is not None or cron_tz is not None:
+        errors = validate_schedule(cron_expr, cron_tz, field_names=_SCHEDULE_FIELD_NAMES)
     errors.extend(validate_monitor_settings(settings))
     if errors:
         raise api_errors(400, "invalid_monitoring", errors)
@@ -140,14 +152,14 @@ def _validate(cron_expr: str | None, cron_tz: str | None, settings: dict[str, An
         settings["predict_holiday_codes"] = canonical_holiday_codes(settings["predict_holiday_codes"])
 
 
-def _monitor_suite(table_group: TableGroup) -> TestSuite | None:
-    if not table_group.monitor_test_suite_id:
+def _monitor_suite(monitor_suite_id: UUID | None) -> TestSuite | None:
+    if not monitor_suite_id:
         return None
-    return TestSuite.get(table_group.monitor_test_suite_id, TestSuite.suite_type == SuiteType.MONITOR)
+    return TestSuite.get(monitor_suite_id, TestSuite.suite_type == SuiteType.MONITOR)
 
 
 def _require_monitoring(table_group: TableGroup) -> tuple[TestSuite, JobSchedule]:
-    monitor_suite = _monitor_suite(table_group)
+    monitor_suite = _monitor_suite(table_group.monitor_test_suite_id)
     schedule = JobSchedule.get_for_monitor_suite(monitor_suite.id) if monitor_suite else None
     if monitor_suite is None or schedule is None:
         raise api_error(404, "monitoring_not_enabled", "Monitoring is not enabled for this table group.")

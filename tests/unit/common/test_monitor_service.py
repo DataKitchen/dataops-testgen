@@ -28,11 +28,56 @@ def _table_group(**overrides) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-def test_enable_monitoring_rejects_when_already_enabled():
+@patch(f"{MODULE}.TestSuite")
+@patch(f"{MODULE}.get_current_session")
+def test_enable_monitoring_rejects_when_already_enabled(mock_session, mock_ts):
+    """The check reads the locked row, so a table group enabled by a concurrent request is caught
+    even when this request's copy of it still says monitoring is off."""
+    mock_session.return_value.scalar.return_value = uuid4()
+
     from testgen.common.monitor_service import enable_monitoring
 
     with pytest.raises(ValueError, match="already enabled"):
-        enable_monitoring(_table_group(monitor_test_suite_id=uuid4()), "0 6 * * *")
+        enable_monitoring(_table_group(monitor_test_suite_id=None), "0 6 * * *")
+    mock_ts.assert_not_called()
+
+
+@patch(f"{MODULE}.get_current_session")
+def test_lock_monitor_link_locks_the_table_group_row(mock_session):
+    from sqlalchemy.dialects import postgresql
+
+    from testgen.common.monitor_service import lock_monitor_link
+
+    suite_id = uuid4()
+    mock_session.return_value.scalar.return_value = suite_id
+    tg = _table_group()
+
+    assert lock_monitor_link(tg) == suite_id
+    query = mock_session.return_value.scalar.call_args.args[0]
+    sql = str(query.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert sql.startswith("SELECT table_groups.monitor_test_suite_id")
+    assert f"WHERE table_groups.id = '{tg.id}'" in sql
+    assert sql.endswith("FOR UPDATE")
+
+
+@patch(f"{MODULE}.JobSchedule")
+def test_create_monitor_schedule_targets_the_monitor_suite(mock_js):
+    from testgen.common.monitor_service import create_monitor_schedule
+
+    suite = MagicMock(id=uuid4(), project_code="demo")
+
+    schedule = create_monitor_schedule(suite, "0 6 * * *", "UTC")
+
+    assert schedule is mock_js.return_value
+    assert mock_js.call_args.kwargs == {
+        "project_code": "demo",
+        "key": "run-monitors",
+        "kwargs": {"test_suite_id": str(suite.id)},
+        "cron_expr": "0 6 * * *",
+        "cron_tz": "UTC",
+        "active": True,
+    }
+    schedule.save.assert_called_once()
 
 
 @patch(f"{MODULE}.run_monitor_generation")
@@ -43,7 +88,7 @@ def test_enable_monitoring_merges_defaults_skipping_none(mock_ts, mock_js, mock_
     tg = _table_group()
     suite = mock_ts.return_value
     suite.id = uuid4()
-    mock_session.return_value.scalar.return_value = 4
+    mock_session.return_value.scalar.side_effect = [None, 4]  # the locked link, then the monitor count
 
     from testgen.common.monitor_service import enable_monitoring
 
@@ -85,6 +130,7 @@ def test_enable_monitoring_honors_regenerate_freshness(
     mock_ts, mock_js, mock_session, mock_gen, provided, expected
 ):
     mock_ts.return_value.id = uuid4()
+    mock_session.return_value.scalar.side_effect = [None, 0]
 
     from testgen.common.monitor_service import enable_monitoring
 

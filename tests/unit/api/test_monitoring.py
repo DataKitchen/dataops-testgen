@@ -1,5 +1,6 @@
 """Tests for testgen.api.monitoring."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
@@ -50,10 +51,15 @@ def _schedule(**overrides) -> JobSchedule:
     return JobSchedule(**{**defaults, **overrides})
 
 
+_MISSING = object()
+# The lock and schedule-creation mocks of the most recent ``_call``.
+LAST_CALL = SimpleNamespace(lock=None, create_schedule=None)
+
+
 def _call(method: str, body: dict | None = None, *, monitored: bool = True, permitted: bool = True, suite=None,
-          schedule=None):
+          schedule=_MISSING):
     suite = suite or _suite()
-    schedule = schedule or _schedule()
+    schedule = _schedule() if schedule is _MISSING else schedule
     table_group = MagicMock(id=TG_ID, project_code="demo", monitor_test_suite_id=SUITE_ID if monitored else None)
     with (
         patch("testgen.api.deps.TableGroup") as mock_tg_cls,
@@ -63,6 +69,8 @@ def _call(method: str, body: dict | None = None, *, monitored: bool = True, perm
         patch(f"{MODULE}.enable_monitoring", return_value=(suite, 2)) as mock_enable,
         patch(f"{MODULE}.update_monitoring") as mock_update,
         patch(f"{MODULE}.count_monitors", return_value=2),
+        patch(f"{MODULE}.lock_monitor_link", return_value=SUITE_ID if monitored else None) as mock_lock,
+        patch(f"{MODULE}.create_monitor_schedule", return_value=_schedule()) as mock_create_schedule,
         patch(f"{MODULE}.get_current_session"),
         patch("testgen.common.monitor_service.is_supported_holiday_code", side_effect=lambda c: c.upper() != "ZZ"),
     ):
@@ -70,6 +78,7 @@ def _call(method: str, body: dict | None = None, *, monitored: bool = True, perm
         mock_suite_cls.get.return_value = suite if monitored else None
         mock_schedule_cls.get_for_monitor_suite.return_value = schedule
         resp = getattr(_client(), method)(URL, **({"json": body} if body is not None else {}))
+    LAST_CALL.lock, LAST_CALL.create_schedule = mock_lock, mock_create_schedule
     return resp, mock_enable, mock_update, mock_perm
 
 
@@ -171,6 +180,33 @@ def test_put_replaces_the_configuration_when_already_enabled():
     assert kwargs["suite_attrs"]["predict_sensitivity"] == "medium"
     assert kwargs["suite_attrs"]["predict_holiday_codes"] is None
     assert "active" not in kwargs or kwargs["active"] is None
+
+
+def test_put_takes_the_lock_before_deciding_to_enable():
+    """A PUT that waited on a concurrent enable sees the committed link and replaces instead."""
+    resp, mock_enable, mock_update, _ = _call("put", {"cron_expression": "0 6 * * *"}, monitored=True)
+
+    assert resp.status_code == 200
+    LAST_CALL.lock.assert_called_once()
+    mock_enable.assert_not_called()
+    mock_update.assert_called_once()
+
+
+def test_put_recreates_a_missing_schedule_from_the_body():
+    resp, mock_enable, mock_update, _ = _call(
+        "put", {"cron_expression": "0 6 * * *", "timezone": "America/New_York"}, schedule=None
+    )
+
+    assert resp.status_code == 200
+    LAST_CALL.create_schedule.assert_called_once()
+    assert LAST_CALL.create_schedule.call_args.args[1:] == ("0 6 * * *", "America/New_York")
+    assert mock_update.call_args.args[1] is LAST_CALL.create_schedule.return_value
+    mock_enable.assert_not_called()
+
+
+def test_get_and_patch_404_when_the_schedule_is_missing():
+    assert _call("get", schedule=None)[0].status_code == 404
+    assert _call("patch", {"sensitivity": "high"}, schedule=None)[0].status_code == 404
 
 
 def test_put_treats_null_settings_as_omitted():

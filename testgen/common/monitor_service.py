@@ -10,6 +10,7 @@ user-facing errors.
 import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import func, select
 
@@ -35,11 +36,9 @@ LOG = logging.getLogger("testgen")
 # of the initial bootstrap set.
 INITIAL_MONITOR_TYPES = [MonitorType.VOLUME.value, MonitorType.SCHEMA.value]
 
-_DEFAULT_SUITE_ATTRS: dict[str, Any] = MONITOR_SETTING_DEFAULTS
-
 # The monitor-configuration columns callers may set via ``suite_attrs``. Used as a
 # whitelist so a caller's dict (e.g. a UI form payload) can't write arbitrary suite columns.
-_MONITOR_SETTING_COLUMNS = tuple(_DEFAULT_SUITE_ATTRS)
+_MONITOR_SETTING_COLUMNS = tuple(MONITOR_SETTING_DEFAULTS)
 
 LOOKBACK_RUNS_RANGE = (1, 200)
 MIN_TRAINING_LOOKBACK_RANGE = (20, 1000)
@@ -97,6 +96,31 @@ def canonical_holiday_codes(codes: Iterable[str]) -> list[str] | None:
     return list(dict.fromkeys(canonical)) or None
 
 
+def lock_monitor_link(table_group: TableGroup) -> UUID | None:
+    """Lock the table group's row and return its monitor suite id as stored.
+
+    Holding the lock until the caller's transaction ends serializes concurrent attempts to enable
+    monitoring for one table group: the second waits, then sees the first one's monitor suite.
+    """
+    return get_current_session().scalar(
+        select(TableGroup.monitor_test_suite_id).where(TableGroup.id == table_group.id).with_for_update()
+    )
+
+
+def create_monitor_schedule(monitor_suite: TestSuite, cron_expr: str, cron_tz: str, *, active: bool = True) -> JobSchedule:
+    """Create the run-monitors schedule for a monitor suite."""
+    schedule = JobSchedule(
+        project_code=monitor_suite.project_code,
+        key=RUN_MONITORS_JOB_KEY,
+        kwargs={"test_suite_id": str(monitor_suite.id)},
+        cron_expr=cron_expr,
+        cron_tz=cron_tz,
+        active=active,
+    )
+    schedule.save()
+    return schedule
+
+
 def enable_monitoring(
     table_group: TableGroup,
     cron_expr: str,
@@ -118,11 +142,11 @@ def enable_monitoring(
     Returns ``(monitor_suite, monitor_count)``. Raises ``ValueError`` if the table
     group already has monitoring enabled.
     """
-    if table_group.monitor_test_suite_id:
+    if lock_monitor_link(table_group):
         raise ValueError("Monitoring is already enabled for this table group.")
 
     provided = suite_attrs or {}
-    attrs = dict(_DEFAULT_SUITE_ATTRS)
+    attrs = dict(MONITOR_SETTING_DEFAULTS)
     for key in _MONITOR_SETTING_COLUMNS:
         if (value := provided.get(key)) is not None:
             attrs[key] = value
@@ -139,14 +163,7 @@ def enable_monitoring(
     )
     monitor_suite.save()
 
-    JobSchedule(
-        project_code=table_group.project_code,
-        key=RUN_MONITORS_JOB_KEY,
-        kwargs={"test_suite_id": str(monitor_suite.id)},
-        cron_expr=cron_expr,
-        cron_tz=cron_tz,
-        active=active,
-    ).save()
+    create_monitor_schedule(monitor_suite, cron_expr, cron_tz, active=active)
 
     table_group.monitor_test_suite_id = monitor_suite.id
     table_group.save()
