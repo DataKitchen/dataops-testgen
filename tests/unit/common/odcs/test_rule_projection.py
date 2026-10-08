@@ -648,17 +648,16 @@ def test_no_testgen_placeholder_survives_into_a_sql_query_across_several_real_me
         assert not leftover, (test_type_code, rule["query"], leftover)
 
 
-def test_a_column_type_carrying_measure_raises_without_one_and_builds_with_one(monkeypatch):
+def test_a_column_type_carrying_measure_renders_custom_without_one_and_builds_with_one(monkeypatch):
     _route_to_sql(monkeypatch, "Future_Date")
     # bigquery's Future_Date measure needs {COLUMN_TYPE} (the profiled column's data type,
     # DataColumnChars.column_type) -- not reachable from term/test_type alone. Without it,
-    # project_rule must raise rather than ship a query no engine can run; with it (the
-    # caller's to supply, same move as `condition` in fix round 1), it builds and validates.
+    # project_rule renders custom rather than ship a query no engine can run; with it, the
+    # query builds and validates.
     term = _term(test_type="Future_Date", column_name="ship_date", threshold_value="0")
     test_type = _test_type("Future_Date", dq_dimension="Timeliness")
 
-    with pytest.raises(ValueError, match=r"\{COLUMN_TYPE\}"):
-        project_rule(term, test_type, ServerType.BIGQUERY, FUTURE_DATE_BIGQUERY_CONDITION)
+    assert project_rule(term, test_type, ServerType.BIGQUERY, FUTURE_DATE_BIGQUERY_CONDITION)["type"] == "custom"
 
     rule = project_rule(term, test_type, ServerType.BIGQUERY, FUTURE_DATE_BIGQUERY_CONDITION, column_type="DATETIME")
     assert "{COLUMN_TYPE}" not in rule["query"]
@@ -675,8 +674,7 @@ def test_a_column_type_carrying_measure_on_its_second_flavor_also_builds_with_on
     )
     test_type = _test_type("Min_Date", dq_dimension="Validity")
 
-    with pytest.raises(ValueError, match=r"\{COLUMN_TYPE\}"):
-        project_rule(term, test_type, ServerType.HANA, MIN_DATE_SAP_HANA_CONDITION)
+    assert project_rule(term, test_type, ServerType.HANA, MIN_DATE_SAP_HANA_CONDITION)["type"] == "custom"
 
     rule = project_rule(term, test_type, ServerType.HANA, MIN_DATE_SAP_HANA_CONDITION, column_type="DATE")
     assert "{COLUMN_TYPE}" not in rule["query"]
@@ -766,12 +764,6 @@ def test_a_missing_pct_term_whose_band_saturates_renders_a_range_not_an_equality
     assert rule["mustBeBetween"] == [pytest.approx(29.19, abs=0.01), pytest.approx(100.0)]
 
 
-def test_a_missing_pct_term_with_a_zero_baseline_count_is_refused_by_name():
-    term = _term(test_type="Missing_Pct", baseline_ct="0", baseline_value_ct="0", threshold_value="2.0")
-    with pytest.raises(ValueError, match="Missing_Pct"):
-        project_rule(term, _test_type("Missing_Pct", dq_dimension="Completeness"), ServerType.POSTGRES)
-
-
 def test_a_term_with_no_contract_identity_is_refused_by_name():
     """Rendering it instead emits ``id: null``, which the pinned schema rejects by JSON path --
     so the freeze fails naming a node position rather than the term that has no identity."""
@@ -780,22 +772,41 @@ def test_a_term_with_no_contract_identity_is_refused_by_name():
         project_rule(term, _test_type("Required"), ServerType.POSTGRES)
 
 
-@pytest.mark.parametrize("stored", [None, "", "   "])
 @pytest.mark.parametrize(
-    ("test_type", "extra"),
+    ("test_type", "fields"),
     [
-        ("Required", {}),
-        ("Missing_Pct", {"baseline_ct": "50", "baseline_value_ct": "40"}),
-        ("Row_Ct_Pct", {"baseline_ct": "50"}),
+        ("Required", {"threshold_value": None}),
+        ("Required", {"threshold_value": ""}),
+        ("Required", {"threshold_value": "   "}),
+        ("Required", {"threshold_value": "many"}),
+        ("Missing_Pct", {"baseline_ct": "50", "baseline_value_ct": "40", "threshold_value": None}),
+        ("Missing_Pct", {"baseline_ct": "0", "baseline_value_ct": "0", "threshold_value": "2.0"}),
+        ("Missing_Pct", {"baseline_ct": None, "baseline_value_ct": "40", "threshold_value": "2.0"}),
+        ("Missing_Pct", {"baseline_ct": "50", "baseline_value_ct": "60", "threshold_value": "0.5"}),
+        ("Missing_Pct", {"baseline_ct": "-5", "baseline_value_ct": "1", "threshold_value": "0.5"}),
+        ("Row_Ct_Pct", {"baseline_ct": "50", "threshold_value": None}),
+        ("Row_Ct_Pct", {"baseline_ct": "0", "threshold_value": "10"}),
+        ("LOV_Match", {"baseline_value": "Val1,Val2", "threshold_value": "0"}),
+        ("Pattern_Match", {"baseline_value": "", "threshold_value": "0"}),
+        ("Match_Null_Ct", {"baseline_ct": None}),
+        ("Match_Row_Ct", {"threshold_value": None}),
+        ("Dupe_Rows", {"groupby_names": "order_id"}),
+        ("Dupe_Rows", {"groupby_names": '"order_id", line_no'}),
+        ("SQL_Metric", {"column_name": None, "custom_query": "SELECT 1"}),
+        ("SQL_Metric", {"column_name": None, "upper_tolerance": "1", "custom_query": "SELECT {RUN_DATE}"}),
+        ("SQL_Metric", {"column_name": None, "upper_tolerance": "1", "custom_query": None}),
     ],
 )
-def test_a_term_whose_threshold_was_never_set_is_refused_by_name(test_type, extra, stored):
-    """``threshold_value`` is optional on every library-routed type, so a term saved with it
-    cleared reaches rendering with no bound to compare against. Refusing by name beats the
-    ``TypeError`` that parsing it as a number would raise, which names no term."""
-    term = _term(test_type=test_type, threshold_value=stored, **extra)
-    with pytest.raises(ValueError, match=test_type):
-        project_rule(term, _test_type(test_type), ServerType.POSTGRES)
+def test_a_term_whose_values_cannot_be_stated_exactly_renders_custom(test_type, fields):
+    """TestGen still runs such a term -- a cleared bound reads as NULL and passes -- so the
+    contract carries it as a ``custom`` rule rather than failing the freeze or export."""
+    term = _term(test_type=test_type, **fields)
+    rule = project_rule(term, _test_type(test_type), ServerType.POSTGRES)
+    assert rule["type"] == "custom"
+    assert "metric" not in rule
+    assert "query" not in rule
+    assert not [key for key in rule if key.startswith("must")]
+    assert not validate_document(_wrap(rule, rule_scope(term, _test_type(test_type))))
 
 
 def test_unique_pct_renders_as_a_custom_rule():
@@ -806,7 +817,7 @@ def test_unique_pct_renders_as_a_custom_rule():
 
 
 def test_dupe_rows_on_one_column_renders_a_column_scoped_duplicate_values_rule():
-    term = _term(test_type="Dupe_Rows", groupby_names="order_id")
+    term = _term(test_type="Dupe_Rows", groupby_names='"order_id"')
     test_type = _test_type("Dupe_Rows", dq_dimension="Uniqueness", test_scope="table")
     assert rule_scope(term, test_type) is RuleScope.COLUMN
     rule = project_rule(term, test_type, ServerType.POSTGRES)
@@ -817,32 +828,14 @@ def test_dupe_rows_on_one_column_renders_a_column_scoped_duplicate_values_rule()
 
 
 def test_dupe_rows_bound_is_the_terms_skip_errors():
-    term = _term(test_type="Dupe_Rows", groupby_names="order_id", skip_errors=5)
+    term = _term(test_type="Dupe_Rows", groupby_names='"order_id"', skip_errors=5)
     test_type = _test_type("Dupe_Rows", dq_dimension="Uniqueness", test_scope="table")
     rule = project_rule(term, test_type, ServerType.POSTGRES)
     assert rule["mustBeLessOrEqualTo"] == 5
 
 
-def test_a_lov_match_term_with_an_unparseable_baseline_fails_the_export():
-    term = _term(test_type="LOV_Match", baseline_value="Val1,Val2", threshold_value="0")
-    with pytest.raises(ValueError, match="LOV_Match"):
-        project_rule(term, _test_type("LOV_Match", dq_dimension="Validity"), ServerType.POSTGRES)
-
-
-def test_a_pattern_match_term_with_no_baseline_fails_the_export():
-    term = _term(test_type="Pattern_Match", baseline_value="", threshold_value="0")
-    with pytest.raises(ValueError, match="Pattern_Match"):
-        project_rule(term, _test_type("Pattern_Match", dq_dimension="Validity"), ServerType.POSTGRES)
-
-
-def test_a_row_ct_pct_term_with_a_zero_baseline_fails_the_export():
-    term = _term(test_type="Row_Ct_Pct", baseline_ct="0", threshold_value="10", table_name="customers")
-    with pytest.raises(ValueError, match="Row_Ct_Pct"):
-        project_rule(term, _test_type("Row_Ct_Pct", dq_dimension="Completeness"), ServerType.POSTGRES)
-
-
 def test_dupe_rows_on_several_columns_renders_a_table_scoped_rule_listing_them():
-    term = _term(test_type="Dupe_Rows", groupby_names="order_id, line_no")
+    term = _term(test_type="Dupe_Rows", groupby_names='"order_id", "line_no"')
     test_type = _test_type("Dupe_Rows", dq_dimension="Uniqueness", test_scope="table")
     assert rule_scope(term, test_type) is RuleScope.TABLE
     rule = project_rule(term, test_type, ServerType.POSTGRES)
@@ -1049,3 +1042,67 @@ def test_a_dupe_rows_term_with_quoted_groupby_names_renders_unquoted_properties(
     rule = project_rule(term, _test_type("Dupe_Rows", dq_dimension="Uniqueness"), ServerType.POSTGRES)
 
     assert rule["arguments"] == {"properties": ["id", "status"]}
+
+
+@pytest.mark.parametrize(("lower", "upper", "operators"), [
+    ("1", "10", {"mustBeBetween": [1, 10]}),
+    ("5", "5", {"mustBe": 5}),
+    ("", "10", {"mustBeLessOrEqualTo": 10}),
+    ("2.5", None, {"mustBeGreaterOrEqualTo": 2.5}),
+])
+def test_sql_metric_renders_its_own_query_against_its_own_bounds(lower, upper, operators):
+    term = _term(
+        test_type="SQL_Metric", column_name=None, schema_name="sales", lower_tolerance=lower, upper_tolerance=upper,
+        custom_query="SELECT COUNT(*) AS late FROM {DATA_SCHEMA}.orders WHERE shipped IS NULL;\n",
+    )
+
+    rule = project_rule(term, _test_type("SQL_Metric", dq_dimension="Accuracy"), ServerType.POSTGRES)
+
+    assert rule["type"] == "sql"
+    assert rule["query"] == "SELECT COUNT(*) AS late FROM sales.orders WHERE shipped IS NULL"
+    assert {key: value for key, value in rule.items() if key.startswith("must")} == operators
+    assert rule["dimension"] == "accuracy"
+
+
+def test_match_null_ct_must_equal_its_baseline_count():
+    term = _term(test_type="Match_Null_Ct", baseline_ct="12")
+    rule = project_rule(term, _test_type("Match_Null_Ct"), ServerType.POSTGRES)
+    assert (rule["metric"], rule["unit"], rule["mustBe"]) == ("nullValues", "rows", 12)
+
+
+def test_match_row_ct_must_equal_its_threshold():
+    term = _term(test_type="Match_Row_Ct", column_name=None, threshold_value="600")
+    rule = project_rule(term, _test_type("Match_Row_Ct"), ServerType.POSTGRES)
+    assert (rule["metric"], rule["mustBe"]) == ("rowCount", 600)
+
+
+@pytest.mark.parametrize(("baseline", "arguments"), [
+    ('"",N/A,"a,b"', {"arguments": {"missingValues": ["", "N/A", "a,b"]}}),
+    ("", {}),
+])
+def test_required_no_placeholder_lists_its_placeholders_as_missing_values(baseline, arguments):
+    term = _term(test_type="Required_No_Placeholder", baseline_value=baseline, threshold_value="2")
+    rule = project_rule(term, _test_type("Required_No_Placeholder"), ServerType.POSTGRES)
+    assert rule["metric"] == "missingValues"
+    assert {key: rule[key] for key in ("arguments",) if key in rule} == arguments
+    assert rule["mustBeLessOrEqualTo"] == 2
+
+
+@pytest.mark.parametrize(("test_type", "argument"), [
+    ("Email_Format", {"pattern": quality_rules.EMAIL_PATTERN}),
+    ("Valid_US_Zip", {"pattern": quality_rules.US_ZIP_PATTERN}),
+    ("Valid_US_Zip3", {"pattern": quality_rules.US_ZIP3_PATTERN}),
+    ("US_State", {"validValues": list(quality_rules.US_STATE_VALID_VALUES)}),
+])
+def test_a_fixed_predicate_type_renders_its_own_predicate(test_type, argument):
+    rule = project_rule(_term(test_type=test_type, threshold_value="3"), _test_type(test_type), ServerType.POSTGRES)
+    assert (rule["metric"], rule["arguments"], rule["mustBeLessOrEqualTo"]) == ("invalidValues", argument, 3)
+
+
+@pytest.mark.parametrize(("server_type", "shape"), [
+    (ServerType.POSTGRES, "library"), (ServerType.SNOWFLAKE, "library"),
+    (ServerType.SQLSERVER, "custom"), (ServerType.BIGQUERY, "custom"),
+])
+def test_email_format_is_a_pattern_rule_only_where_its_measure_checks_that_pattern(server_type, shape):
+    rule = project_rule(_term(test_type="Email_Format"), _test_type("Email_Format"), server_type)
+    assert rule["type"] == shape

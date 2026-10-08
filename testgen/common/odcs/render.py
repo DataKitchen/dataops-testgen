@@ -2,7 +2,10 @@
 
 The stored ``metadata_document`` carries the contract's authored shape -- servers, declared
 tables and columns, and any rule a human or another process wrote directly. This module adds
-one quality rule per term on top of that shape without disturbing anything already there.
+each term on top of that shape: as a declaration on its column's property when one makes
+exactly the term's claim (``property_declaration``), otherwise as one quality rule. A
+declaration replaces a differing stored value for the same field, since the term is what
+TestGen checks; every other stored field and rule is left as it was.
 """
 
 import copy
@@ -26,8 +29,11 @@ from testgen.common.odcs.quality_rules import (
     RuleScope,
     RuleShape,
     _groupby_columns,
+    declaration_marker,
+    is_declaration_marker,
     lov_values,
     project_rule,
+    property_declaration,
     rule_scope,
     rule_shape,
 )
@@ -251,8 +257,82 @@ def _apply_enum(prop: dict[str, Any], term: TestDefinition) -> None:
         prop["enum"] = [{"value": value} for value in values]
 
 
+def _declared_property(
+    table: dict[str, Any], term: TestDefinition, test_type: TestType, synthesized_names: set[str]
+) -> dict[str, Any] | None:
+    """The declared property a column-scoped ``term`` names, or ``None`` for a table-scoped term, a
+    column the table does not declare, or a measure property this render synthesized."""
+    if rule_scope(term, test_type) is RuleScope.TABLE:
+        return None
+    name = _property_name(term, test_type)
+    if name in synthesized_names:
+        return None
+    return next((prop for prop in table.get("properties", []) if prop.get("name") == name), None)
+
+
+def _declare(prop: dict[str, Any], declaration: dict[str, Any], claimed: dict[tuple[str, ...], Any]) -> bool:
+    """Set ``declaration``'s fields on ``prop``, unless an earlier term in this render already set
+    one of them to a different value. Returns whether it did.
+
+    ``claimed`` maps each field path this render has set on ``prop`` to its value; the caller owns
+    one per property. A field set only by the stored metadata is not claimed, so the term replaces it.
+    """
+    fields: list[tuple[tuple[str, ...], Any]] = []
+    for key, value in declaration.items():
+        if isinstance(value, dict):
+            fields.extend(((key, sub_key), sub_value) for sub_key, sub_value in value.items())
+        else:
+            fields.append(((key,), value))
+    if any(path in claimed and claimed[path] != value for path, value in fields):
+        return False
+    for path, value in fields:
+        node = prop
+        for key in path[:-1]:
+            node = node.setdefault(key, {})
+        node[path[-1]] = value
+        claimed[path] = value
+    return True
+
+
+def _drop_declarations(document: dict[str, Any]) -> None:
+    """Remove every ``testgenTerm`` entry the stored metadata carries, with the fields it declares.
+
+    Those entries and fields came from terms, not from the metadata, and this render writes them
+    again for each term that still declares them.
+    """
+    for table in document.get("schema", []):
+        for prop in table.get("properties", []):
+            entries = prop.get("customProperties") or []
+            for entry in filter(is_declaration_marker, entries):
+                paths = entry.get("value", {}).get("declares") if isinstance(entry.get("value"), dict) else None
+                for path in paths if isinstance(paths, list) else []:
+                    _drop_field(prop, str(path).split("."))
+            if "customProperties" in prop:
+                kept = [entry for entry in entries if not is_declaration_marker(entry)]
+                if kept:
+                    prop["customProperties"] = kept
+                else:
+                    del prop["customProperties"]
+
+
+def _drop_field(node: dict[str, Any], path: list[str]) -> None:
+    """Remove the field at ``path`` under ``node``, and a parent object it leaves empty."""
+    if len(path) == 1:
+        node.pop(path[0], None)
+        return
+    child = node.get(path[0])
+    if isinstance(child, dict):
+        _drop_field(child, path[1:])
+        if not child:
+            del node[path[0]]
+
+
 def render_document(version: SuiteVersion) -> dict[str, Any]:
-    """Merge ``version``'s stored metadata document with quality rules projected from its terms.
+    """Merge ``version``'s stored metadata document with its terms, each rendered as a property
+    declaration or a quality rule.
+
+    A term renders as a declaration when ``property_declaration`` finds one on its declared
+    column that no earlier term contradicts (``_declare``), otherwise as a quality rule.
 
     Returns a new document; the version's own ``metadata_document`` is never mutated. Raises
     ``OrphanedTermError`` if a term names a table the document does not declare, names a test
@@ -265,6 +345,7 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
     """
     document = copy.deepcopy(version.metadata_document) if version.metadata_document else {}
     _fill_root_fundamentals(document, version)
+    _drop_declarations(document)
 
     terms = [term for term in _terms_for_version(version.id) if term.test_type not in MANAGED_TEST_TYPES]
     if not terms:
@@ -309,18 +390,31 @@ def render_document(version: SuiteVersion) -> dict[str, Any]:
     # ever reuse a property this render call minted itself, never a declared one that happens
     # to share its name.
     synthesized_by_table: dict[str, set[str]] = {}
+    claimed_by_property: dict[tuple[str, str], dict[tuple[str, ...], Any]] = {}
 
     for term in terms:
         table = tables_by_name[term.table_name]
+        test_type = test_types[term.test_type]
         synthesized_names = synthesized_by_table.setdefault(term.table_name, set())
+        declared = _declared_property(table, term, test_type, synthesized_names)
+        logical_type = declared.get("logicalType") if declared is not None else None
+        if declared is not None and (declaration := property_declaration(term, logical_type)) is not None:
+            claimed = claimed_by_property.setdefault((term.table_name, declared["name"]), {})
+            if _declare(declared, declaration, claimed):
+                declared.setdefault("customProperties", []).append(
+                    declaration_marker(term, test_type, declaration)
+                )
+                continue
+
         rule = project_rule(
             term,
-            test_types[term.test_type],
+            test_type,
             server_type,
             condition=conditions.get(term.test_type),
             column_type=column_types.get((term.table_name, term.column_name)),
+            logical_type=logical_type,
         )
-        prop = _attach_rule(table, term, test_types[term.test_type], rule, synthesized_names)
+        prop = _attach_rule(table, term, test_type, rule, synthesized_names)
         if prop is not None and term.test_type == "LOV_Match":
             _apply_enum(prop, term)
 
