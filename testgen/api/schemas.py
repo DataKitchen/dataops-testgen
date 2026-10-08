@@ -15,6 +15,7 @@ from pydantic import (
     Tag,
     ValidationInfo,
     field_validator,
+    model_validator,
 )
 
 from testgen.api.enums import (
@@ -27,6 +28,7 @@ from testgen.api.enums import (
     HygieneDisposition,
     ImpactDimension,
     IssueLikelihood,
+    MonitorSensitivity,
     MonitorThresholdMode,
     MonitorType,
     PiiFlag,
@@ -42,6 +44,7 @@ from testgen.common.models.table_group import (
     SCHEMA_NAME_PATTERN,
     table_group_defaults,
 )
+from testgen.common.models.test_suite import MONITOR_SETTING_DEFAULTS
 from testgen.common.test_definition_export_import_service import ImportConfig, ImportPayload, ImportResponse
 
 SchemaName = Annotated[
@@ -1232,3 +1235,108 @@ class ScheduleListResponse(BaseModel):
     page: int
     limit: int
     total: int
+
+
+# --- Monitoring ---
+
+_LOOKBACK_RUNS = "Monitor runs summarized on the monitors dashboard, from 1 to 200. Does not affect detection."
+_REGENERATE_FRESHNESS = "Reconfigure Freshness monitors from each new profiling run."
+_MIN_TRAINING_LOOKBACK = "Monitor runs needed before the prediction model starts flagging anomalies, from 20 to 1000."
+_SENSITIVITY = "How readily monitors flag a deviation."
+_EXCLUDE_WEEKENDS = "Leave weekends out of the prediction model's training data."
+_HOLIDAY_CODES = (
+    "Holiday calendars to leave out of the prediction model's training data: ISO 3166-1 alpha-2 country codes "
+    "(e.g. `US`) or financial-market codes (e.g. `XNYS`)."
+)
+
+
+class MonitoringConfig(BaseModel):
+    """A table group's full monitoring configuration.
+
+    Omitted settings, and settings sent as ``null``, take the default shown. Unknown fields are rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cron_expression: str = Field(
+        description="Five-field cron expression for when monitors run, e.g. `0 */12 * * *` for every 12 hours."
+    )
+    timezone: str = Field(default="UTC", description="IANA timezone the expression is read in.")
+    lookback_runs: StrictInt = Field(default=MONITOR_SETTING_DEFAULTS["monitor_lookback"], description=_LOOKBACK_RUNS)
+    regenerate_freshness: StrictBool = Field(
+        default=MONITOR_SETTING_DEFAULTS["monitor_regenerate_freshness"], description=_REGENERATE_FRESHNESS
+    )
+    min_training_lookback: StrictInt = Field(
+        default=MONITOR_SETTING_DEFAULTS["predict_min_lookback"], description=_MIN_TRAINING_LOOKBACK
+    )
+    sensitivity: MonitorSensitivity = Field(
+        default=MonitorSensitivity(MONITOR_SETTING_DEFAULTS["predict_sensitivity"]), description=_SENSITIVITY
+    )
+    exclude_weekends: StrictBool = Field(
+        default=MONITOR_SETTING_DEFAULTS["predict_exclude_weekends"], description=_EXCLUDE_WEEKENDS
+    )
+    holiday_codes: list[str] = Field(default_factory=list, description=_HOLIDAY_CODES)
+
+    @field_validator(
+        "timezone",
+        "lookback_runs",
+        "regenerate_freshness",
+        "min_training_lookback",
+        "sensitivity",
+        "exclude_weekends",
+        "holiday_codes",
+        mode="before",
+    )
+    @classmethod
+    def _null_takes_the_default(cls, value: Any, info: ValidationInfo) -> Any:
+        if value is not None:
+            return value
+        field = cls.model_fields[info.field_name]
+        return field.default_factory() if field.default_factory else field.default
+
+
+class MonitoringUpdate(BaseModel):
+    """Changes to a table group's monitoring configuration. Only the fields sent are changed.
+
+    Send an empty `holiday_codes` list to clear the holiday calendars. Unknown fields are rejected.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cron_expression: str | None = None
+    timezone: str | None = None
+    lookback_runs: StrictInt | None = Field(default=None, description=_LOOKBACK_RUNS)
+    regenerate_freshness: StrictBool | None = Field(default=None, description=_REGENERATE_FRESHNESS)
+    min_training_lookback: StrictInt | None = Field(default=None, description=_MIN_TRAINING_LOOKBACK)
+    sensitivity: MonitorSensitivity | None = Field(default=None, description=_SENSITIVITY)
+    exclude_weekends: StrictBool | None = Field(default=None, description=_EXCLUDE_WEEKENDS)
+    holiday_codes: list[str] | None = Field(default=None, description=_HOLIDAY_CODES)
+    active: StrictBool | None = Field(
+        default=None, description="`false` pauses the monitor schedule, `true` resumes it."
+    )
+
+    @model_validator(mode="after")
+    def _sent_fields_are_not_null(self) -> "MonitoringUpdate":
+        if nulls := sorted(name for name in self.model_fields_set if getattr(self, name) is None):
+            raise ValueError(f"Omit a field to leave it unchanged rather than sending null: {', '.join(nulls)}.")
+        return self
+
+
+class MonitoringResponse(BaseModel):
+    """A table group's monitoring configuration and schedule."""
+
+    table_group_id: UUID
+    monitor_count: int = Field(description="Monitors on the table group.")
+    cron_expression: str = Field(description="The schedule's expression as stored, in canonical form.")
+    timezone: str
+    description: str | None = Field(default=None, description="The expression in words, e.g. `Every 12 hours`.")
+    active: bool = Field(description="False while the monitor schedule is paused.")
+    next_run_at: datetime | None = Field(
+        default=None, description="When monitors next run, in UTC. Null while the schedule is paused."
+    )
+    lookback_runs: int | None = Field(default=None, description=_LOOKBACK_RUNS)
+    regenerate_freshness: bool | None = Field(default=None, description=_REGENERATE_FRESHNESS)
+    min_training_lookback: int | None = Field(default=None, description=_MIN_TRAINING_LOOKBACK)
+    sensitivity: MonitorSensitivity | None = Field(default=None, description=_SENSITIVITY)
+    exclude_weekends: bool | None = Field(default=None, description=_EXCLUDE_WEEKENDS)
+    holiday_codes: list[str] = Field(default_factory=list, description=_HOLIDAY_CODES)

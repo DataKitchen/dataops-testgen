@@ -27,7 +27,7 @@ from testgen.common.flavors import (
     fixed_max_threads,
     table_group_schema_label,
 )
-from testgen.common.models import with_database_session
+from testgen.common.models import get_current_session, with_database_session
 from testgen.common.models.connection import Connection, ConnectionMinimal
 from testgen.common.models.job_execution import JobExecution
 from testgen.common.models.scheduler import RUN_TESTS_JOB_KEY, JobSchedule
@@ -459,6 +459,7 @@ class ConnectionsPage(Page):
                     else:
                         LOG.info("Table group %s created", table_group.id)
                 except Exception as error:
+                    get_current_session().rollback()
                     message = "Something went wrong while creating the table group."
                     success = False
                     LOG.exception(message)

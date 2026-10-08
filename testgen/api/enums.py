@@ -19,7 +19,7 @@ from testgen.common.enums import QualityDimension as DbQualityDimension
 from testgen.common.flavors import SqlFlavorLabel
 from testgen.common.models.test_definition import ThresholdMode
 from testgen.common.models.test_result import TestResultStatus
-from testgen.common.models.test_suite import SuiteSeverity
+from testgen.common.models.test_suite import PredictSensitivity, SuiteSeverity
 
 
 class ResultStatus(StrEnum):
@@ -396,3 +396,9 @@ SCHEDULE_KIND_TO_JOB_KEY: dict[ScheduleKind, JobKey] = {
     ScheduleKind.test_run: JobKey.run_tests,
 }
 SCHEDULE_KIND_FROM_JOB_KEY: dict[JobKey, ScheduleKind] = {v: k for k, v in SCHEDULE_KIND_TO_JOB_KEY.items()}
+
+
+MonitorSensitivity = StrEnum("MonitorSensitivity", {m.name: m.value for m in PredictSensitivity})  # type: ignore[misc]
+MonitorSensitivity.__doc__ = (
+    "How readily monitors flag a deviation: ``high`` flags smaller deviations, ``low`` only large ones."
+)
